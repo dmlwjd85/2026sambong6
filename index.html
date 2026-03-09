@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ko" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 삼봉 월드: 인터랙티브 플레이어 가이드</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Noto Sans KR', 'sans-serif'],
+                        'display': ['Black Han Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        'sb-bg': '#0f172a',
+                        'sb-panel': '#1e293b',
+                        'sb-gold': '#fbbf24',
+                        'sb-blue': '#3b82f6',
+                        'sb-green': '#10b981',
+                        'sb-red': '#ef4444',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        
+        h1, h2, h3, .font-display {
+            font-family: 'Black Han Sans', sans-serif;
+            letter-spacing: 1px;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+            max-height: 400px;
+        }
+
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 450px;
+            }
+        }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #fbbf24; }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .quest-btn.active {
+            background-color: rgba(59, 130, 246, 0.2);
+            border-color: #3b82f6;
+        }
+
+        .shop-btn {
+            transition: all 0.3s ease;
+        }
+        .shop-btn.affordable {
+            border-color: #fbbf24;
+            box-shadow: 0 0 15px rgba(251, 191, 36, 0.2);
+            opacity: 1;
+            cursor: pointer;
+        }
+        .shop-btn.unaffordable {
+            border-color: #ef4444;
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(80%);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <nav class="fixed top-0 w-full z-50 glass-panel border-b border-slate-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-gamepad text-2xl text-sb-gold"></i>
+                    <span class="font-display text-2xl text-white tracking-wider">SAMBONG WORLD <span class="text-sm text-sb-red ml-2">v2.3</span></span>
+                </div>
+                <div class="hidden md:flex space-x-8">
+                    <a href="#growth" class="text-slate-300 hover:text-sb-gold transition font-bold">성장 시스템</a>
+                    <a href="#economy" class="text-slate-300 hover:text-sb-gold transition font-bold">직업 & 경제</a>
+                    <a href="#simulator" class="text-slate-300 hover:text-sb-gold transition font-bold">퀘스트 시뮬레이터</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="pt-24 pb-12 px-4 max-w-7xl mx-auto space-y-20">
+
+        <header class="text-center space-y-6">
+            <h1 class="text-5xl md:text-7xl text-transparent bg-clip-text bg-gradient-to-r from-sb-gold to-yellow-200 drop-shadow-lg">
+                플레이어 공식 가이드
+            </h1>
+            <p class="text-xl text-slate-400 max-w-2xl mx-auto">
+                삼봉초등학교 6학년 1반의 GM(선생님)과 플레이어(학생)들을 위한 규칙서입니다. 매일 성실하게 활동하여 전설의 마스터가 되어보세요.
+            </p>
+            <div class="inline-flex items-center gap-3 bg-sb-red/20 text-red-300 border border-sb-red px-6 py-3 rounded-full font-bold text-sm">
+                <i class="fa-solid fa-triangle-exclamation animate-pulse"></i>
+                [v2.3 경제 패치] 인플레이션 방지를 위해 화폐 단위(B)가 10% 수준으로 조정되었습니다!
+            </div>
+        </header>
+
+        <!-- Growth System Section -->
+        <section id="growth" class="scroll-mt-24">
+            <div class="mb-8">
+                <h2 class="text-3xl font-display text-sb-blue flex items-center gap-3"><i class="fa-solid fa-arrow-trend-up"></i> 성장 시스템 (XP)</h2>
+                <p class="text-slate-400 mt-2">경험치(XP)는 학급 기여도와 성실함을 상징합니다. 레벨업을 통해 새로운 권한을 해금하세요.</p>
+            </div>
+            
+            <div class="glass-panel p-6 rounded-2xl">
+                <div class="chart-container">
+                    <canvas id="levelChart"></canvas>
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-8">
+                    <div class="bg-slate-800 p-4 rounded-xl border-t-4 border-slate-500 text-center">
+                        <div class="text-xs text-slate-400 font-bold mb-1">Lv.1~14</div>
+                        <div class="font-bold text-white mb-2">새내기</div>
+                        <div class="text-sm text-sb-blue">기본 권한 사용</div>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-xl border-t-4 border-sb-green text-center">
+                        <div class="text-xs text-slate-400 font-bold mb-1">Lv.15~30</div>
+                        <div class="font-bold text-white mb-2">초보</div>
+                        <div class="text-sm text-slate-500">[해금 예정]</div>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-xl border-t-4 border-blue-400 text-center">
+                        <div class="text-xs text-slate-400 font-bold mb-1">Lv.31~50</div>
+                        <div class="font-bold text-white mb-2">중수</div>
+                        <div class="text-sm text-slate-500">[해금 예정]</div>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-xl border-t-4 border-yellow-500 text-center">
+                        <div class="text-xs text-slate-400 font-bold mb-1">Lv.51~80</div>
+                        <div class="font-bold text-white mb-2">고수</div>
+                        <div class="text-sm text-slate-500">[해금 예정]</div>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-xl border-t-4 border-purple-500 text-center">
+                        <div class="text-xs text-slate-400 font-bold mb-1">Lv.81~99</div>
+                        <div class="font-bold text-white mb-2">수호자</div>
+                        <div class="text-sm text-slate-500">[해금 예정]</div>
+                    </div>
+                    <div class="bg-slate-800 p-4 rounded-xl border-t-4 border-sb-red bg-sb-red/10 text-center">
+                        <div class="text-xs text-sb-red font-bold mb-1">Lv.100</div>
+                        <div class="font-display text-sb-gold text-lg mb-1">전설</div>
+                        <div class="text-sm text-white font-bold">명예의 전당 박제</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Economy & Jobs Section -->
+        <section id="economy" class="scroll-mt-24">
+            <div class="mb-8">
+                <h2 class="text-3xl font-display text-sb-gold flex items-center gap-3"><i class="fa-solid fa-coins"></i> 직업 클래스 & 고정 수입</h2>
+                <p class="text-slate-400 mt-2">전용 화폐인 '봉(B)'은 매주 금요일 직업 수행도에 따라 지급됩니다.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-blue-400 hover:bg-slate-800 transition">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-glass-water text-3xl text-blue-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">체력물약 보급관</h3>
+                    <p class="text-sm text-slate-400">매일 아침 우유를 배식하여 플레이어들에게 에너지를 공급합니다.</p>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-slate-400 hover:bg-slate-800 transition">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-chalkboard text-3xl text-slate-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">역사 기록관</h3>
+                    <p class="text-sm text-slate-400">칠판을 깨끗이 지우고 새로운 지식을 맞이할 준비를 합니다.</p>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-cyan-400 hover:bg-slate-800 transition">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-desktop text-3xl text-cyan-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">시스템 관리자</h3>
+                    <p class="text-sm text-slate-400">교실의 메인 서버(컴퓨터)와 스크린을 관리합니다.</p>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-sb-green hover:bg-slate-800 transition">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-recycle text-3xl text-sb-green"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 7 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">자원 연금술사</h3>
+                    <p class="text-sm text-slate-400">분리수거를 통해 쓰레기를 가치 있는 자원으로 연금술합니다. (고수익)</p>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-purple-400 hover:bg-slate-800 transition">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-tablet-screen-button text-3xl text-purple-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">마나 충전소 주인</h3>
+                    <p class="text-sm text-slate-400">스마트 패드를 충전하고 안전하게 관리합니다.</p>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border-l-4 border-l-yellow-400 hover:bg-slate-800 transition">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-lightbulb text-3xl text-yellow-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">빛의 파수꾼</h3>
+                    <p class="text-sm text-slate-400">불필요한 에너지를 감시하고 이동 시 전원을 차단합니다.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Simulator Section -->
+        <section id="simulator" class="scroll-mt-24">
+            <div class="mb-8 text-center">
+                <h2 class="text-4xl font-display text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 inline-block mb-4"><i class="fa-solid fa-flask-vial mr-2 text-emerald-400"></i> 퀘스트 & 상점 시뮬레이터</h2>
+                <p class="text-slate-400">오늘 수행할 퀘스트를 클릭하여 자산을 모으고, 상점에서 어떤 혜택을 살 수 있는지 확인해보세요!</p>
+            </div>
+
+            <div class="grid lg:grid-cols-12 gap-8">
+                <!-- Quests -->
+                <div class="lg:col-span-5 space-y-6">
+                    <div class="glass-panel p-6 rounded-2xl">
+                        <h3 class="font-bold text-xl mb-4 border-b border-slate-700 pb-2"><i class="fa-solid fa-list-check text-slate-400 mr-2"></i> 일일 퀘스트 보드</h3>
+                        
+                        <div class="space-y-3" id="questContainer">
+                            <button onclick="toggleQuest(this, 10, 0.5)" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                                <div>
+                                    <div class="font-bold group-hover:text-white transition">출석의 축복</div>
+                                    <div class="text-xs text-slate-400">8:40 전 등교 완료</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-sb-blue font-bold text-sm block">+10 XP</span>
+                                    <span class="text-sb-gold font-bold text-sm block">+0.5 B</span>
+                                </div>
+                            </button>
+
+                            <button onclick="toggleQuest(this, 0, 0.2)" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                                <div>
+                                    <div class="font-bold group-hover:text-white transition">등교 보너스</div>
+                                    <div class="text-xs text-slate-400">무단 결석 없는 등교 (기본)</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-sb-gold font-bold text-sm block">+0.2 B</span>
+                                </div>
+                            </button>
+
+                            <button onclick="toggleQuest(this, 50, 2.0)" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                                <div>
+                                    <div class="font-bold group-hover:text-white transition">지식의 외침</div>
+                                    <div class="text-xs text-slate-400">수업 중 적극적인 발표</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-sb-blue font-bold text-sm block">+50 XP</span>
+                                    <span class="text-sb-gold font-bold text-sm block">+2.0 B</span>
+                                </div>
+                            </button>
+
+                            <button onclick="toggleQuest(this, 100, 5.0)" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                                <div>
+                                    <div class="font-bold group-hover:text-white transition">뉴비 도우미</div>
+                                    <div class="text-xs text-slate-400">특수학급 및 친구 지원</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-sb-blue font-bold text-sm block">+100 XP</span>
+                                    <span class="text-sb-gold font-bold text-sm block">+5.0 B</span>
+                                </div>
+                            </button>
+
+                            <button onclick="toggleQuest(this, 500, 20.0)" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-sb-red transition flex justify-between items-center group bg-slate-800/50">
+                                <div>
+                                    <div class="font-bold text-red-300 group-hover:text-red-400 transition">자아 극복 (주간 퀘스트)</div>
+                                    <div class="text-xs text-slate-400">단원평가 성적 향상</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-sb-blue font-bold text-sm block">+500 XP</span>
+                                    <span class="text-sb-gold font-bold text-sm block">+20.0 B</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Simulation Result & Shop -->
+                <div class="lg:col-span-7 space-y-6">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="glass-panel p-6 rounded-2xl text-center border-t-4 border-t-sb-blue flex flex-col justify-center">
+                            <h4 class="text-slate-400 text-sm font-bold mb-2">획득 예상 경험치</h4>
+                            <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+                                <span id="simXp">0</span> <span class="text-2xl text-sb-blue">XP</span>
+                            </div>
+                        </div>
+                        <div class="glass-panel p-6 rounded-2xl text-center border-t-4 border-t-sb-gold flex flex-col justify-center">
+                            <h4 class="text-slate-400 text-sm font-bold mb-2">획득 예상 자산</h4>
+                            <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]">
+                                <span id="simBong">0.0</span> <span class="text-2xl text-sb-gold">B</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel p-6 rounded-2xl">
+                        <h3 class="font-bold text-xl mb-4 border-b border-slate-700 pb-2 flex justify-between items-end">
+                            <span><i class="fa-solid fa-store text-sb-gold mr-2"></i> 아이템 상점</span>
+                            <span class="text-xs font-normal text-slate-400">클릭하여 구매 가능 여부를 확인하세요</span>
+                        </h3>
+                        
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="1" onclick="alertShop(this, '회복 포션', 1)">
+                                <div class="bg-slate-900 w-12 h-12 rounded-full flex items-center justify-center text-pink-400 text-xl"><i class="fa-solid fa-flask"></i></div>
+                                <div class="flex-grow">
+                                    <div class="font-bold">회복 포션</div>
+                                    <div class="text-xs text-slate-400">맛있는 간식</div>
+                                </div>
+                                <div class="font-display text-xl text-sb-gold">1 B</div>
+                            </div>
+
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="5" onclick="alertShop(this, '시간 왜곡', 5)">
+                                <div class="bg-slate-900 w-12 h-12 rounded-full flex items-center justify-center text-blue-400 text-xl"><i class="fa-solid fa-music"></i></div>
+                                <div class="flex-grow">
+                                    <div class="font-bold">시간 왜곡</div>
+                                    <div class="text-xs text-slate-400">신청곡 방송</div>
+                                </div>
+                                <div class="font-display text-xl text-sb-gold">5 B</div>
+                            </div>
+
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="10" onclick="alertShop(this, '순간 이동', 10)">
+                                <div class="bg-slate-900 w-12 h-12 rounded-full flex items-center justify-center text-green-400 text-xl"><i class="fa-solid fa-chair"></i></div>
+                                <div class="flex-grow">
+                                    <div class="font-bold">순간 이동</div>
+                                    <div class="text-xs text-slate-400">자리 지정 (1일)</div>
+                                </div>
+                                <div class="font-display text-xl text-sb-gold">10 B</div>
+                            </div>
+
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="30" onclick="alertShop(this, '숙제 방패', 30)">
+                                <div class="bg-slate-900 w-12 h-12 rounded-full flex items-center justify-center text-purple-400 text-xl"><i class="fa-solid fa-shield-halved"></i></div>
+                                <div class="flex-grow">
+                                    <div class="font-bold">숙제 방패</div>
+                                    <div class="text-xs text-slate-400">과제 1회 면제</div>
+                                </div>
+                                <div class="font-display text-xl text-sb-gold">30 B</div>
+                            </div>
+
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 sm:col-span-2 flex items-center gap-4" data-price="200" onclick="alertShop(this, '전설 성물', 200)">
+                                <div class="bg-slate-900 w-16 h-16 rounded-full flex items-center justify-center text-sb-gold text-3xl"><i class="fa-solid fa-crown"></i></div>
+                                <div class="flex-grow">
+                                    <div class="font-bold text-lg text-sb-gold">전설 성물 (파티 전용)</div>
+                                    <div class="text-xs text-slate-300">체육 종목 결정권. 친구들과 합심하여 모으세요.</div>
+                                </div>
+                                <div class="font-display text-3xl text-sb-gold">200 B</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <footer class="text-center text-slate-500 py-8 border-t border-slate-800">
+            <p class="font-display text-xl text-slate-600 mb-2">"여러분의 모든 성실함은 데이터가 되어 전설이 됩니다."</p>
+            <p class="text-sm">- 2026 삼봉초등학교 6학년 1반 담임교사 -</p>
+        </footer>
+    </div>
+
+    <script>
+        let currentXP = 0;
+        let currentBong = 0.0;
+
+        function toggleQuest(btn, xpReward, bongReward) {
+            btn.classList.toggle('active');
+            
+            if(btn.classList.contains('active')) {
+                currentXP += xpReward;
+                currentBong += bongReward;
+                btn.innerHTML += '<i class="fa-solid fa-check text-sb-blue absolute right-4 top-1/2 -translate-y-1/2 opacity-50 text-4xl check-icon"></i>';
+                btn.style.position = 'relative';
+            } else {
+                currentXP -= xpReward;
+                currentBong -= bongReward;
+                const checkIcon = btn.querySelector('.check-icon');
+                if (checkIcon) checkIcon.remove();
+            }
+
+            document.getElementById('simXp').innerText = currentXP.toLocaleString();
+            document.getElementById('simBong').innerText = currentBong.toFixed(1);
+
+            updateShopUI();
+        }
+
+        function updateShopUI() {
+            const shopItems = document.querySelectorAll('.shop-btn');
+            shopItems.forEach(item => {
+                const price = parseFloat(item.getAttribute('data-price'));
+                if(currentBong >= price) {
+                    item.classList.remove('unaffordable');
+                    item.classList.add('affordable');
+                } else {
+                    item.classList.remove('affordable');
+                    item.classList.add('unaffordable');
+                }
+            });
+        }
+
+        function alertShop(btn, itemName, price) {
+            const modal = document.createElement('div');
+            modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4";
+            
+            let message = "";
+            let color = "";
+            
+            if (currentBong >= price) {
+                message = `🎉 [구매 가능] 시뮬레이션 자산으로 '${itemName}' 아이템을 구매할 수 있습니다!`;
+                color = "text-sb-gold";
+            } else {
+                let needed = (price - currentBong).toFixed(1);
+                message = `❌ [골드 부족] '${itemName}'을 구매하려면 ${needed}B가 더 필요합니다. 퀘스트를 더 수행하세요!`;
+                color = "text-sb-red";
+            }
+
+            modal.innerHTML = `
+                <div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4">
+                    <h3 class="text-2xl font-display ${color}">알림</h3>
+                    <p class="text-slate-300 leading-relaxed">${message}</p>
+                    <button onclick="this.parentElement.parentElement.remove()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-8 rounded-full transition">확인</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('levelChart').getContext('2d');
+            
+            Chart.defaults.color = '#94a3b8';
+            Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Lv.1 새내기', 'Lv.15 초보', 'Lv.31 중수', 'Lv.51 고수', 'Lv.81 수호자', 'Lv.100 전설'],
+                    datasets: [{
+                        label: '누적 필요 경험치 (XP)',
+                        data: [0, 1500, 4500, 10000, 22000, 40000],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: ['#64748b', '#10b981', '#60a5fa', '#eab308', '#a855f7', '#ef4444'],
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 6,
+                        pointHoverRadius: 10,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                            titleFont: { size: 16, family: "'Black Han Sans'" },
+                            bodyFont: { size: 14, weight: 'bold' },
+                            padding: 15,
+                            borderColor: '#3b82f6',
+                            borderWidth: 1,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    if(context.dataIndex === 0) return ' 초기 단계';
+                                    if(context.dataIndex === 5) return ' 40,000 XP 이상';
+                                    return ' 달성 조건: ' + context.parsed.y.toLocaleString() + ' XP';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { callback: function(value) { return value.toLocaleString() + ' XP'; } }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { weight: 'bold' } }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index',
+                    },
+                }
+            });
+            
+            updateShopUI();
+        });
+    </script>
+</body>
+</html>

@@ -375,7 +375,7 @@
                         
                         <div class="space-y-3" id="questContainer">
                             <!-- 매일 퀘스트 -->
-                            <button id="btn-q1" data-quest-id="q1" data-xp="10" data-bong="0.5" onclick="attemptQuest('q1')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                            <button id="btn-q1" data-quest-id="q1" data-xp="10" data-bong="0.5" onclick="window.attemptQuest('q1')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
                                 <div>
                                     <div class="font-bold group-hover:text-white transition">출석의 축복</div>
                                     <div class="text-xs text-slate-400">매일 8:40 전 등교 완료</div>
@@ -386,7 +386,7 @@
                                 </div>
                             </button>
                             
-                            <button id="btn-q4" data-quest-id="q4" data-xp="150" data-bong="7.0" onclick="attemptQuest('q4')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                            <button id="btn-q4" data-quest-id="q4" data-xp="150" data-bong="7.0" onclick="window.attemptQuest('q4')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
                                 <div>
                                     <div class="font-bold group-hover:text-white transition">뉴비 도우미</div>
                                     <div class="text-xs text-slate-400">라온반 및 도움이 필요한 친구 지원</div>
@@ -398,7 +398,7 @@
                             </button>
 
                             <!-- 금요일 전용 퀘스트 -->
-                            <button id="btn-q2" data-quest-id="q2" data-xp="50" data-bong="2.0" onclick="attemptQuest('q2')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                            <button id="btn-q2" data-quest-id="q2" data-xp="50" data-bong="2.0" onclick="window.attemptQuest('q2')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
                                 <div>
                                     <div class="font-bold text-yellow-200 group-hover:text-yellow-300 transition" id="title-q2">주간 등교 보너스</div>
                                     <div class="text-xs text-slate-400">일주일간 무단 결석 없는 성실한 등교</div>
@@ -410,7 +410,7 @@
                             </button>
 
                             <!-- 마스터 활성화 퀘스트 -->
-                            <button id="btn-q3" data-quest-id="q3" data-xp="100" data-bong="5.0" onclick="attemptQuest('q3')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                            <button id="btn-q3" data-quest-id="q3" data-xp="100" data-bong="5.0" onclick="window.attemptQuest('q3')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
                                 <div>
                                     <div class="font-bold text-purple-300 group-hover:text-purple-400 transition flex items-center">
                                         <i class="fa-solid fa-lock text-slate-500 mr-2" id="icon-q3"></i> 던전 레이드
@@ -423,7 +423,7 @@
                                 </div>
                             </button>
 
-                            <button id="btn-q5" data-quest-id="q5" data-xp="500" data-bong="20.0" onclick="attemptQuest('q5')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
+                            <button id="btn-q5" data-quest-id="q5" data-xp="500" data-bong="20.0" onclick="window.attemptQuest('q5')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
                                 <div>
                                     <div class="font-bold text-red-300 group-hover:text-red-400 transition flex items-center">
                                         <i class="fa-solid fa-lock text-slate-500 mr-2" id="icon-q5"></i> 자아 극복 (보스전)
@@ -463,7 +463,7 @@
                         </h3>
                         
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="15" onclick="alertShop(this, '뮤직 타임', 15)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="15" onclick="window.alertShop(this, '뮤직 타임', 15)">
                                 <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-pink-400 text-xl"><i class="fa-solid fa-music"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold">뮤직 타임</div>
@@ -472,7 +472,7 @@
                                 <div class="font-display text-xl text-sb-gold">15 B</div>
                             </div>
 
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="100" onclick="alertShop(this, '시간 왜곡', 100)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="100" onclick="window.alertShop(this, '시간 왜곡', 100)">
                                 <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-blue-400 text-xl"><i class="fa-solid fa-clock-rotate-left"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold">시간 왜곡</div>
@@ -481,7 +481,7 @@
                                 <div class="font-display text-xl text-sb-gold">100 B</div>
                             </div>
 
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="400" onclick="alertShop(this, '보드게임 타임', 400)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="400" onclick="window.alertShop(this, '보드게임 타임', 400)">
                                 <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-green-400 text-xl"><i class="fa-solid fa-dice"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold">보드게임 타임</div>
@@ -490,7 +490,7 @@
                                 <div class="font-display text-xl text-sb-gold">400 B</div>
                             </div>
 
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="500" onclick="alertShop(this, '무비 타임', 500)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="500" onclick="window.alertShop(this, '무비 타임', 500)">
                                 <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-purple-400 text-xl"><i class="fa-solid fa-film"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold">무비 타임</div>
@@ -499,7 +499,7 @@
                                 <div class="font-display text-xl text-sb-gold">500 B</div>
                             </div>
 
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="600" onclick="alertShop(this, '피지컬 타임', 600)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="600" onclick="window.alertShop(this, '피지컬 타임', 600)">
                                 <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-orange-400 text-xl"><i class="fa-solid fa-basketball"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold">피지컬 타임</div>
@@ -508,7 +508,7 @@
                                 <div class="font-display text-xl text-sb-gold">600 B</div>
                             </div>
 
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="600" onclick="alertShop(this, '플레이 타임', 600)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="600" onclick="window.alertShop(this, '플레이 타임', 600)">
                                 <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-cyan-400 text-xl"><i class="fa-solid fa-gamepad"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold">플레이 타임</div>
@@ -517,7 +517,7 @@
                                 <div class="font-display text-xl text-sb-gold">600 B</div>
                             </div>
 
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 sm:col-span-2 flex items-center gap-4" data-price="2000" onclick="alertShop(this, '레전더리 타임', 2000)">
+                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 sm:col-span-2 flex items-center gap-4" data-price="2000" onclick="window.alertShop(this, '레전더리 타임', 2000)">
                                 <div class="bg-slate-900 w-16 h-16 flex-shrink-0 rounded-full flex items-center justify-center text-sb-red text-3xl"><i class="fa-solid fa-crown"></i></div>
                                 <div class="flex-grow">
                                     <div class="font-bold text-lg text-sb-red">레전더리 타임 (파티 전용)</div>
@@ -537,71 +537,45 @@
         </footer>
     </div>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK 및 전체 로직 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ★ 커스텀 UI 알림창 (미리보기 화면 차단 방지용) ★
-        window.customAlert = function(message) {
-            return new Promise((resolve) => {
-                const modal = document.createElement('div');
-                modal.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-                modal.innerHTML = `
-                    <div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                        <h3 class="text-2xl font-display text-white mb-2">알림</h3>
-                        <p class="text-slate-300 leading-relaxed whitespace-pre-wrap">${message}</p>
-                        <button id="btnAlertOk" class="bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full transition mt-4 w-full">확인</button>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                document.getElementById('btnAlertOk').onclick = () => { modal.remove(); resolve(true); };
-            });
-        };
+        // ==========================================
+        // UI 커스텀 알림창 (모달) 함수 설정
+        // ==========================================
+        window.customAlert = (m) => new Promise(r => {
+            const d = document.createElement('div'); 
+            d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-white">알림</h3><p class="text-slate-300 whitespace-pre-wrap">${m}</p><button id="bOk" class="bg-sb-blue text-white font-bold py-2 px-8 rounded-full w-full">확인</button></div>`;
+            document.body.appendChild(d); 
+            document.getElementById('bOk').onclick = () => { d.remove(); r(true); };
+        });
 
-        window.customConfirm = function(message) {
-            return new Promise((resolve) => {
-                const modal = document.createElement('div');
-                modal.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-                modal.innerHTML = `
-                    <div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                        <h3 class="text-2xl font-display text-white mb-2">시스템 확인</h3>
-                        <p class="text-slate-300 leading-relaxed whitespace-pre-wrap">${message}</p>
-                        <div class="flex gap-4 justify-center mt-6">
-                            <button id="btnConfirmCancel" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-full transition w-full">취소</button>
-                            <button id="btnConfirmOk" class="bg-sb-red hover:bg-red-500 text-white font-bold py-2 px-6 rounded-full transition w-full">확인</button>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                document.getElementById('btnConfirmOk').onclick = () => { modal.remove(); resolve(true); };
-                document.getElementById('btnConfirmCancel').onclick = () => { modal.remove(); resolve(false); };
-            });
-        };
+        window.customConfirm = (m) => new Promise(r => {
+            const d = document.createElement('div'); 
+            d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-white">확인</h3><p class="text-slate-300 whitespace-pre-wrap">${m}</p><div class="flex gap-4 mt-6"><button id="bNo" class="bg-slate-700 text-white font-bold py-2 px-6 rounded-full w-full">취소</button><button id="bYes" class="bg-sb-red text-white font-bold py-2 px-6 rounded-full w-full">확인</button></div></div>`;
+            document.body.appendChild(d); 
+            document.getElementById('bYes').onclick = () => { d.remove(); r(true); }; 
+            document.getElementById('bNo').onclick = () => { d.remove(); r(false); };
+        });
 
-        window.customPrompt = function(message) {
-            return new Promise((resolve) => {
-                const modal = document.createElement('div');
-                modal.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-                modal.innerHTML = `
-                    <div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                        <h3 class="text-2xl font-display text-sb-gold mb-2"><i class="fa-solid fa-lock"></i> 보안 구역</h3>
-                        <p class="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap mb-4">${message}</p>
-                        <input type="password" id="promptInput" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold text-center mb-4" placeholder="비밀 코드 입력">
-                        <div class="flex gap-4 justify-center">
-                            <button id="btnPromptCancel" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-full transition w-full">취소</button>
-                            <button id="btnPromptOk" class="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2 px-6 rounded-full transition w-full">활성화</button>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                document.getElementById('promptInput').focus();
-                document.getElementById('btnPromptOk').onclick = () => { modal.remove(); resolve(document.getElementById('promptInput').value); };
-                document.getElementById('btnPromptCancel').onclick = () => { modal.remove(); resolve(null); };
-            });
-        };
+        window.customPrompt = (m) => new Promise(r => {
+            const d = document.createElement('div'); 
+            d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-sb-gold">보안 구역</h3><p class="text-slate-300">${m}</p><input type="password" id="pIn" class="w-full bg-slate-800 border text-white rounded-xl px-4 py-3 text-center my-4"><div class="flex gap-4"><button id="bpNo" class="bg-slate-700 text-white font-bold py-2 px-6 rounded-full w-full">취소</button><button id="bpYes" class="bg-emerald-500 text-white font-bold py-2 px-6 rounded-full w-full">입력</button></div></div>`;
+            document.body.appendChild(d); 
+            document.getElementById('pIn').focus();
+            document.getElementById('bpYes').onclick = () => { const v = document.getElementById('pIn').value; d.remove(); r(v); }; 
+            document.getElementById('bpNo').onclick = () => { d.remove(); r(null); };
+        });
 
+        // ==========================================
+        // 기본 데이터 설정
+        // ==========================================
         const LEVEL_DATA = [
             { max: 1499, name: '새내기', emoji: '🥺🪵', borderColor: 'border-slate-600', bgColor: 'bg-slate-800', textColor: 'text-slate-400', anim: 'avatar-bounce' },
             { max: 4499, name: '초보', emoji: '😐🗡️', borderColor: 'border-sb-green', bgColor: 'bg-green-900/30', textColor: 'text-sb-green', anim: 'avatar-bounce' },
@@ -611,36 +585,29 @@
             { max: Infinity, name: '전설', emoji: '👑🐉', borderColor: 'border-sb-red', bgColor: 'bg-red-900/30', textColor: 'text-sb-red', anim: 'avatar-legend' }
         ];
 
-        // ★ 실명제 데이터 매핑 ★
         const STUDENT_NAMES = {
             "1": "김단엘", "2": "김라희", "3": "김민지", "4": "김정훈",
             "5": "박문경", "6": "박소윤", "7": "박하율", "8": "박현수",
             "9": "백시율", "10": "조이담", "11": "황훈태", "12": "임은영",
-            "gm": "마스터 J",
-            "guest": "손님 (Guest)"
+            "gm": "마스터 J", "guest": "손님 (Guest)"
         };
 
         window.playerState = { xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM: false };
         
-        let db;
-        let auth;
-        let currentStudentDocRef = null;
-        let currentLevelIndex = 0;
-        let unsubscribeSnapshot = null;
-        let unsubscribeAdmin = null;
-        
+        let db, auth, currentStudentDocRef = null, currentLevelIndex = 0;
+        let unsubscribeSnapshot = null, unsubscribeAdmin = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
+        // ==========================================
+        // 파이어베이스 초기화
+        // ==========================================
         async function initApp() {
             try {
                 let firebaseConfig;
-
-                // 1. Canvas 미리보기 환경
                 if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                     firebaseConfig = JSON.parse(__firebase_config);
-                } 
-                // 2. 실제 선생님 깃허브 배포 환경 (선생님의 진짜 정보로 변경하세요!)
-                else {
+                } else {
+                    // 선생님의 진짜 정보
                     firebaseConfig = {
                         apiKey: "AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8",
                         authDomain: "sambong-world-2026.firebaseapp.com",
@@ -664,12 +631,8 @@
                 db = getFirestore(app);
 
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    try {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } catch (e) {
-                        console.warn("토큰 인증 실패, 익명 로그인으로 우회합니다.", e);
-                        await signInAnonymously(auth);
-                    }
+                    try { await signInWithCustomToken(auth, __initial_auth_token); } 
+                    catch (e) { await signInAnonymously(auth); }
                 } else {
                     await signInAnonymously(auth);
                 }
@@ -692,20 +655,17 @@
             }
         }
 
+        // ==========================================
+        // 로그인 및 로그아웃 관련 함수
+        // ==========================================
         document.getElementById('btnLogin').addEventListener('click', async () => {
             const stuId = document.getElementById('loginId').value;
             const stuPin = document.getElementById('loginPin').value;
             
             if (!stuId) return await window.customAlert("이름을 선택하세요!");
-            
             if (!stuPin || stuPin.length !== 4) return await window.customAlert("4자리 비밀번호(PIN)를 정확히 입력하세요!");
             attemptLogin(stuId, stuPin, false);
         });
-
-        window.loginAsGuest = function() {
-            window.playerState = { xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], isGuest: true, isGM: false };
-            completeLoginUI(STUDENT_NAMES["guest"], false);
-        };
 
         async function attemptLogin(studentId, pin, isAutoLogin) {
             const user = auth && auth.currentUser;
@@ -743,9 +703,7 @@
                     const isOk = await window.customConfirm(confirmMsg);
                     if(!isOk) return;
                     
-                    window.playerState = {
-                        pin: pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM: isGM
-                    };
+                    window.playerState = { pin: pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM: isGM };
                     await setDoc(docRef, window.playerState);
                 }
 
@@ -758,30 +716,21 @@
                 if (unsubscribeSnapshot) unsubscribeSnapshot();
                 unsubscribeSnapshot = onSnapshot(currentStudentDocRef, (snap) => {
                     if (snap.exists()) {
-                        const data = snap.data();
-                        window.playerState = { ...data, isGuest: false, isGM: isGM };
+                        window.playerState = { ...snap.data(), isGuest: false, isGM: isGM };
                         if(!window.playerState.jobs) window.playerState.jobs = [];
                         if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
                         updateUI();
                     }
-                }, (error) => {
-                    console.error("Snapshot error:", error);
                 });
 
                 if (isGM) {
                     if (unsubscribeAdmin) unsubscribeAdmin();
-                    const studentsCol = collection(db, 'artifacts', appId, 'public', 'data', 'students');
-                    unsubscribeAdmin = onSnapshot(studentsCol, (snapshot) => {
+                    unsubscribeAdmin = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), (snapshot) => {
                         const students = [];
                         snapshot.forEach(d => {
-                            if(d.id !== 'student_gm') {
-                                students.push({ id: d.id.replace('student_', ''), ...d.data() });
-                            }
+                            if(d.id !== 'student_gm') students.push({ id: d.id.replace('student_', ''), ...d.data() });
                         });
                         renderAdminTable(students);
-                    }, async (error) => {
-                        console.error("Admin dashboard snapshot error:", error);
-                        await window.customAlert("데이터를 불러오지 못했습니다. 새로고침 해주세요.");
                     });
                 }
 
@@ -813,9 +762,13 @@
             } else {
                 document.getElementById('adminDashboard').classList.add('hidden');
             }
-
             updateUI();
         }
+
+        window.loginAsGuest = function() {
+            window.playerState = { xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], isGuest: true, isGM: false };
+            completeLoginUI(STUDENT_NAMES["guest"], false);
+        };
 
         window.logout = async function() {
             const isOk = await window.customConfirm("로그아웃 하시겠습니까?");
@@ -823,22 +776,12 @@
             
             localStorage.removeItem('sambong_student_id');
             localStorage.removeItem('sambong_student_pin');
-            document.getElementById('loginId').value = "";
-            document.getElementById('loginPin').value = "";
-            
-            document.getElementById('pinContainer').classList.remove('hidden');
-            document.getElementById('btnLogin').innerText = "월드 입장하기";
-            document.getElementById('btnLogin').className = "w-full bg-gradient-to-r from-sb-blue to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold py-3 rounded-xl shadow-lg transition transform hover:scale-105 mt-4";
+            location.reload();
+        };
 
-            document.getElementById('loginOverlay').style.opacity = '1';
-            document.getElementById('loginOverlay').classList.remove('hidden');
-            document.getElementById('adminDashboard').classList.add('hidden');
-            
-            if(unsubscribeSnapshot) { unsubscribeSnapshot(); unsubscribeSnapshot = null; }
-            if(unsubscribeAdmin) { unsubscribeAdmin(); unsubscribeAdmin = null; }
-            currentStudentDocRef = null;
-        }
-
+        // ==========================================
+        // 인터랙션 함수 (DB 저장 연동)
+        // ==========================================
         async function saveDataToCloud() {
             if (window.playerState.isGuest || !currentStudentDocRef || !db || !auth || !auth.currentUser) return;
             try { 
@@ -846,9 +789,7 @@
                 delete dataToSave.isGuest;
                 delete dataToSave.isGM;
                 await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
-            } catch(e) { 
-                console.error("데이터 저장 실패", e); 
-            }
+            } catch(e) { console.error("데이터 저장 실패", e); }
         }
 
         window.toggleJob = async function(jobName, iconClass, colorClass) {
@@ -870,7 +811,7 @@
             myCard.classList.add('level-up-anim');
             setTimeout(() => myCard.classList.remove('level-up-anim'), 1000);
             window.location.hash = '#plaza'; 
-        }
+        };
 
         window.promptUnlock = async function(qId) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드입니다.");
@@ -887,7 +828,7 @@
             } else if (code !== null) {
                 await window.customAlert("❌ 코드가 일치하지 않습니다.");
             }
-        }
+        };
 
         window.attemptQuest = async function(questId) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드에서는 퀘스트를 체크할 수 없습니다.");
@@ -895,79 +836,30 @@
             if (window.playerState.quests[questId]) return;
 
             const btn = document.querySelector(`button[data-quest-id="${questId}"]`);
-            const xpReward = parseInt(btn.getAttribute('data-xp'));
-            const bongReward = parseFloat(btn.getAttribute('data-bong'));
-
-            window.playerState.xp += xpReward;
-            window.playerState.bong += bongReward;
+            window.playerState.xp += parseInt(btn.getAttribute('data-xp'));
+            window.playerState.bong += parseFloat(btn.getAttribute('data-bong'));
             window.playerState.quests[questId] = true;
 
             updateUI();
             saveDataToCloud(); 
-        }
+        };
 
         window.alertShop = async function(btn, itemName, price) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드입니다.");
-            const modal = document.createElement('div');
-            modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4";
-            let message = window.playerState.bong >= price 
-                ? `🎉 [구매 가능] 현재 보유하신 자산으로 '${itemName}'을(를) 구매할 수 있습니다!<br>(구매는 선생님(GM)께 직접 신청하세요)`
+            const msg = window.playerState.bong >= price 
+                ? `🎉 [구매 가능] '${itemName}'을(를) 구매할 수 있습니다!\n(마스터 J 선생님에게 직접 신청하세요)`
                 : `❌ [골드 부족] '${itemName}'을 구매하려면 ${(price - window.playerState.bong).toFixed(1)}B가 더 필요합니다.`;
-            let color = window.playerState.bong >= price ? "text-sb-gold" : "text-sb-red";
+            await window.customAlert(msg);
+        };
 
-            modal.innerHTML = `
-                <div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-2xl font-display ${color}">상점 알림</h3>
-                    <p class="text-slate-300 leading-relaxed">${message}</p>
-                    <button id="btnShopOk" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-8 rounded-full transition mt-4 w-full">확인</button>
-                </div>
-            `;
-            document.body.appendChild(modal);
-            document.getElementById('btnShopOk').onclick = () => modal.remove();
-        }
-
+        // ==========================================
+        // UI 업데이트
+        // ==========================================
         function getLevelInfo(xp) {
             for (let i = 0; i < LEVEL_DATA.length; i++) {
                 if (xp <= LEVEL_DATA[i].max) return { info: LEVEL_DATA[i], index: i };
             }
             return { info: LEVEL_DATA[LEVEL_DATA.length - 1], index: LEVEL_DATA.length - 1 };
-        }
-
-        window.renderAdminTable = function(studentsData) {
-            const tbody = document.getElementById('adminTableBody');
-            tbody.innerHTML = '';
-            
-            for(let i=1; i<=12; i++) {
-                const stu = studentsData.find(s => s.id === String(i));
-                const realName = STUDENT_NAMES[i]; 
-
-                if(stu) {
-                    const levelData = getLevelInfo(stu.xp || 0);
-                    const jobsHtml = (stu.jobs || []).map(j => `<i class="fa-solid ${j.icon} ${j.color}" title="${j.name}"></i>`).join(' ');
-                    
-                    tbody.innerHTML += `
-                        <tr class="border-b border-slate-700 hover:bg-slate-800 transition">
-                            <td class="px-4 py-3 font-bold text-white">${i}. ${realName}</td>
-                            <td class="px-4 py-3"><span class="text-lg mr-1">${levelData.info.emoji}</span> ${levelData.info.name}</td>
-                            <td class="px-4 py-3 text-sb-blue font-bold">${(stu.xp||0).toLocaleString()}</td>
-                            <td class="px-4 py-3 text-sb-gold font-bold">${(stu.bong||0).toFixed(1)} B</td>
-                            <td class="px-4 py-3 flex gap-2 text-lg items-center h-full">${jobsHtml || '<span class="text-xs text-slate-500">없음</span>'}</td>
-                            <td class="px-4 py-3 text-emerald-400 text-xs font-bold">🟢 활동중</td>
-                        </tr>
-                    `;
-                } else {
-                    tbody.innerHTML += `
-                        <tr class="border-b border-slate-700 text-slate-500 bg-slate-800/30">
-                            <td class="px-4 py-3">${i}. ${realName}</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3 text-slate-600 text-xs">⚫ 미접속</td>
-                        </tr>
-                    `;
-                }
-            }
         }
 
         function updateUI() {
@@ -1006,7 +898,6 @@
             }
 
             const today = new Date().getDay(); 
-            
             const btnQ2 = document.getElementById('btn-q2');
             if (window.playerState.quests['q2']) {
                 btnQ2.className = "quest-btn w-full text-left p-4 rounded-xl border border-3b82f6 transition flex justify-between items-center group bg-slate-800/90 active cursor-not-allowed relative";
@@ -1019,7 +910,7 @@
             } else {
                 btnQ2.className = "quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50";
                 document.getElementById('title-q2').innerText = "주간 등교 보너스";
-                btnQ2.onclick = () => attemptQuest('q2');
+                btnQ2.onclick = () => window.attemptQuest('q2');
             }
 
             ['q3', 'q5'].forEach(qId => {
@@ -1036,11 +927,11 @@
                 } else if (!isUnlocked) {
                     btn.className = "quest-btn w-full text-left p-4 rounded-xl border border-slate-700 flex justify-between items-center group bg-slate-800/50 locked cursor-pointer";
                     if (icon) icon.className = "fa-solid fa-lock text-slate-500 mr-2";
-                    btn.onclick = () => promptUnlock(qId);
+                    btn.onclick = () => window.promptUnlock(qId);
                 } else {
                     btn.className = "quest-btn w-full text-left p-4 rounded-xl border border-emerald-500 hover:border-emerald-400 transition flex justify-between items-center group bg-slate-800/50";
                     if (icon) icon.className = "fa-solid fa-unlock text-emerald-400 mr-2";
-                    btn.onclick = () => attemptQuest(qId);
+                    btn.onclick = () => window.attemptQuest(qId);
                 }
             });
 
@@ -1065,13 +956,54 @@
             });
         }
 
+        window.renderAdminTable = function(studentsData) {
+            const tbody = document.getElementById('adminTableBody');
+            if(!tbody) return;
+            tbody.innerHTML = '';
+            
+            for(let i=1; i<=12; i++) {
+                const stu = studentsData.find(s => s.id === String(i));
+                const realName = STUDENT_NAMES[i]; 
+
+                if(stu) {
+                    const levelData = getLevelInfo(stu.xp || 0);
+                    const jobsHtml = (stu.jobs || []).map(j => `<i class="fa-solid ${j.icon} ${j.color}" title="${j.name}"></i>`).join(' ');
+                    
+                    tbody.innerHTML += `
+                        <tr class="border-b border-slate-700 hover:bg-slate-800 transition">
+                            <td class="px-4 py-3 font-bold text-white">${i}. ${realName}</td>
+                            <td class="px-4 py-3"><span class="text-lg mr-1">${levelData.info.emoji}</span> ${levelData.info.name}</td>
+                            <td class="px-4 py-3 text-sb-blue font-bold">${(stu.xp||0).toLocaleString()}</td>
+                            <td class="px-4 py-3 text-sb-gold font-bold">${(stu.bong||0).toFixed(1)} B</td>
+                            <td class="px-4 py-3 flex gap-2 text-lg items-center h-full">${jobsHtml || '<span class="text-xs text-slate-500">없음</span>'}</td>
+                            <td class="px-4 py-3 text-emerald-400 text-xs font-bold">🟢 활동중</td>
+                        </tr>
+                    `;
+                } else {
+                    tbody.innerHTML += `
+                        <tr class="border-b border-slate-700 text-slate-500 bg-slate-800/30">
+                            <td class="px-4 py-3">${i}. ${realName}</td>
+                            <td class="px-4 py-3">-</td>
+                            <td class="px-4 py-3">-</td>
+                            <td class="px-4 py-3">-</td>
+                            <td class="px-4 py-3">-</td>
+                            <td class="px-4 py-3 text-slate-600 text-xs">⚫ 미접속</td>
+                        </tr>
+                    `;
+                }
+            }
+        }
+
+        // 실행
         initApp();
     </script>
 
     <!-- 차트 그리기 -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const ctx = document.getElementById('levelChart').getContext('2d');
+            const canv = document.getElementById('levelChart');
+            if(!canv) return;
+            const ctx = canv.getContext('2d');
             Chart.defaults.color = '#94a3b8';
             Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
 

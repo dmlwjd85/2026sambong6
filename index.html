@@ -52,7 +52,7 @@
         .shop-btn.affordable { border-color: #fbbf24; box-shadow: 0 0 15px rgba(251, 191, 36, 0.2); opacity: 1; cursor: pointer; }
         .shop-btn.unaffordable { border-color: #ef4444; opacity: 0.5; cursor: not-allowed; filter: grayscale(80%); }
 
-        /* 광장 캐릭터 애니메이션 */
+        /* 캐릭터 애니메이션 */
         .avatar-bounce { animation: bounce-subtle 2s infinite ease-in-out; }
         .avatar-flex { animation: flex-muscle 1.5s infinite ease-in-out; }
         .avatar-float { animation: float-magic 3s infinite ease-in-out; }
@@ -66,7 +66,6 @@
         .level-up-anim { animation: levelUpPulse 1s ease-out; }
         @keyframes levelUpPulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.7); } 50% { transform: scale(1.1); box-shadow: 0 0 20px 10px rgba(251, 191, 36, 0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); } }
 
-        /* 멀티 뱃지 정렬용 */
         .badge-container { position: absolute; top: -10px; right: -10px; display: flex; flex-direction: column-reverse; gap: 4px; }
         .job-badge { background-color: #0f172a; border: 1px solid #475569; border-radius: 9999px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); }
     </style>
@@ -90,18 +89,10 @@
                     <select id="loginId" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold appearance-none">
                         <option value="" disabled selected>이름을 선택하세요</option>
                         <option disabled>─── 6학년 1반 ───</option>
-                        <option value="1">1. 김단엘</option>
-                        <option value="2">2. 김라희</option>
-                        <option value="3">3. 김민지</option>
-                        <option value="4">4. 김정훈</option>
-                        <option value="5">5. 박문경</option>
-                        <option value="6">6. 박소윤</option>
-                        <option value="7">7. 박하율</option>
-                        <option value="8">8. 박현수</option>
-                        <option value="9">9. 백시율</option>
-                        <option value="10">10. 조이담</option>
-                        <option value="11">11. 황훈태</option>
-                        <option value="12">12. 임은영</option>
+                        <option value="1">1. 김단엘</option><option value="2">2. 김라희</option><option value="3">3. 김민지</option>
+                        <option value="4">4. 김정훈</option><option value="5">5. 박문경</option><option value="6">6. 박소윤</option>
+                        <option value="7">7. 박하율</option><option value="8">8. 박현수</option><option value="9">9. 백시율</option>
+                        <option value="10">10. 조이담</option><option value="11">11. 황훈태</option><option value="12">12. 임은영</option>
                         <option disabled>─── 관리자 ───</option>
                         <option value="gm" class="text-sb-gold">👑 마스터 J (담임교사)</option>
                     </select>
@@ -110,16 +101,15 @@
                 <div id="pinContainer">
                     <label class="block text-sm font-bold text-slate-400 mb-1">비밀번호 (PIN)</label>
                     <input type="password" id="loginPin" placeholder="4자리 숫자" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold text-center tracking-[0.5em]" maxlength="4" pattern="[0-9]*" inputmode="numeric">
-                    <p class="text-xs text-slate-500 mt-2 text-center" id="pinHelpText"><i class="fa-solid fa-circle-info"></i> 처음 접속 시 입력한 번호가 영구 비밀번호가 됩니다.</p>
+                    <p class="text-xs text-slate-500 mt-2 text-center"><i class="fa-solid fa-circle-info"></i> 처음 접속 시 입력한 번호가 영구 비밀번호가 됩니다.</p>
                 </div>
 
                 <button id="btnLogin" class="w-full bg-gradient-to-r from-sb-blue to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold py-3 rounded-xl shadow-lg transition transform hover:scale-105 mt-4">
                     월드 입장하기
                 </button>
 
-                <!-- ★ 분리된 '구경하기' 전용 버튼 ★ -->
                 <div class="mt-4 border-t border-slate-700 pt-4">
-                    <button onclick="loginAsGuest()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 rounded-xl shadow-lg transition transform hover:scale-105 flex items-center justify-center gap-2">
+                    <button onclick="window.loginAsGuest()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 rounded-xl shadow-lg transition transform hover:scale-105 flex items-center justify-center gap-2">
                         <i class="fa-solid fa-eye"></i> 로그인 없이 구경하기 (게스트)
                     </button>
                 </div>
@@ -145,7 +135,7 @@
                         <a href="#plaza" class="text-slate-300 hover:text-sb-gold transition font-bold">광장</a>
                         <a href="#economy" class="text-slate-300 hover:text-sb-gold transition font-bold">직업</a>
                     </div>
-                    <button onclick="logout()" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition">
+                    <button onclick="window.logout()" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition">
                         <i class="fa-solid fa-right-from-bracket"></i> <span class="hidden sm:inline">로그아웃</span>
                     </button>
                 </div>
@@ -157,15 +147,10 @@
     <div class="pt-24 pb-12 px-4 max-w-7xl mx-auto space-y-20">
 
         <header class="text-center space-y-6">
-            <h1 class="text-[1.75rem] sm:text-5xl md:text-7xl text-transparent bg-clip-text bg-gradient-to-r from-sb-gold to-yellow-200 drop-shadow-lg whitespace-nowrap tracking-tight">
-                플레이어 공식 가이드
-            </h1>
-            <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto break-keep">
-                삼봉초등학교 6학년 1반의 GM(선생님)과 플레이어(학생)들을 위한 규칙서입니다. 매일 성실하게 활동하여 전설의 마스터가 되어보세요.
-            </p>
+            <h1 class="text-[1.75rem] sm:text-5xl md:text-7xl text-transparent bg-clip-text bg-gradient-to-r from-sb-gold to-yellow-200 drop-shadow-lg whitespace-nowrap tracking-tight">플레이어 공식 가이드</h1>
+            <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto break-keep">삼봉초등학교 6학년 1반의 GM(선생님)과 플레이어(학생)들을 위한 규칙서입니다. 매일 성실하게 활동하여 전설의 마스터가 되어보세요.</p>
             <div class="inline-flex items-center gap-3 bg-sb-blue/20 text-blue-300 border border-sb-blue px-4 sm:px-6 py-3 rounded-full font-bold text-xs sm:text-sm">
-                <i class="fa-solid fa-shield-halved animate-pulse"></i>
-                [v2.8 핫픽스] 12개 직업 완비 및 마스터 관찰구역 시스템이 강화되었습니다.
+                <i class="fa-solid fa-shield-halved animate-pulse"></i> [스마트 렌더링 적용] 코드가 획기적으로 가벼워지고 안정성이 향상되었습니다.
             </div>
         </header>
 
@@ -178,18 +163,9 @@
             <div class="glass-panel p-6 rounded-2xl overflow-x-auto shadow-2xl border border-sb-red/30">
                 <table class="w-full text-left text-sm text-slate-300">
                     <thead class="text-xs uppercase bg-slate-800 text-slate-400 border-b border-slate-600">
-                        <tr>
-                            <th class="px-4 py-3">학번</th>
-                            <th class="px-4 py-3">레벨 / 상태</th>
-                            <th class="px-4 py-3">누적 XP</th>
-                            <th class="px-4 py-3">보유 자산 (B)</th>
-                            <th class="px-4 py-3">장착 직업</th>
-                            <th class="px-4 py-3">접속 여부</th>
-                        </tr>
+                        <tr><th class="px-4 py-3">학번</th><th class="px-4 py-3">레벨 / 상태</th><th class="px-4 py-3">누적 XP</th><th class="px-4 py-3">보유 자산 (B)</th><th class="px-4 py-3">장착 직업</th><th class="px-4 py-3">접속 여부</th></tr>
                     </thead>
-                    <tbody id="adminTableBody">
-                        <!-- JS로 자동 생성됨 -->
-                    </tbody>
+                    <tbody id="adminTableBody"></tbody>
                 </table>
             </div>
         </section>
@@ -198,169 +174,39 @@
         <section id="growth" class="scroll-mt-24">
             <div class="mb-8">
                 <h2 class="text-3xl font-display text-sb-blue flex items-center gap-3"><i class="fa-solid fa-arrow-trend-up"></i> 성장 시스템 (XP)</h2>
-                <p class="text-slate-400 mt-2">경험치(XP)는 학급 기여도와 성실함을 상징합니다. 레벨업을 통해 새로운 권한을 해금하세요.</p>
             </div>
-            <div class="glass-panel p-6 rounded-2xl">
-                <div class="chart-container">
-                    <canvas id="levelChart"></canvas>
-                </div>
-            </div>
+            <div class="glass-panel p-6 rounded-2xl"><div class="chart-container"><canvas id="levelChart"></canvas></div></div>
         </section>
 
-        <!-- ★ 삼봉 광장 Section ★ -->
+        <!-- 삼봉 광장 Section -->
         <section id="plaza" class="scroll-mt-24">
             <div class="mb-8">
                 <h2 class="text-3xl font-display text-emerald-400 flex items-center gap-3"><i class="fa-solid fa-users"></i> 삼봉 광장</h2>
-                <p class="text-slate-400 mt-2">나와 친구들의 현재 캐릭터 외형입니다. 경험치(XP)가 쌓일수록 꼬질꼬질한 초보 모험가가 전설의 영웅으로 진화합니다!</p>
+                <p class="text-slate-400 mt-2">나와 친구들의 현재 캐릭터 외형입니다.</p>
             </div>
-            
             <div class="glass-panel p-8 rounded-2xl overflow-hidden">
                 <div class="flex flex-wrap gap-6 justify-center items-end min-h-[160px]" id="plazaContainer">
-                    
-                    <!-- '나'의 캐릭터 -->
                     <div id="myCharacterCard" class="flex flex-col items-center p-4 rounded-2xl border-2 border-slate-600 bg-slate-800 w-40 relative transition-all duration-500 shadow-lg">
-                        <div id="myJobBadgeContainer" class="badge-container">
-                            <div class="job-badge text-slate-400"><i class="fa-solid fa-user text-xs"></i></div>
-                        </div>
+                        <div id="myJobBadgeContainer" class="badge-container"><div class="job-badge text-slate-400"><i class="fa-solid fa-user text-xs"></i></div></div>
                         <div id="myAvatar" class="text-5xl mb-3 avatar-bounce">🥺🪵</div>
                         <div id="myLevelName" class="text-xs font-bold text-slate-400 mb-1">새내기</div>
                         <div class="font-bold text-white bg-slate-900 px-3 py-1 rounded-md text-sm whitespace-nowrap" id="myCharacterName">나 (Player)</div>
                         <div id="myTotalXp" class="text-xs text-sb-blue mt-2 font-bold">0 XP</div>
                     </div>
-
-                    <!-- 더미 데이터: 다른 친구들 진화 예시 -->
-                    <div class="flex flex-col items-center p-4 rounded-2xl border-2 border-sb-green bg-green-900/20 w-40 relative opacity-60 hidden sm:flex">
-                        <div class="text-5xl mb-3 avatar-bounce" style="animation-delay: 0.2s">😐🗡️</div>
-                        <div class="text-xs font-bold text-sb-green mb-1">초보</div>
-                        <div class="font-bold text-slate-300 bg-slate-900 px-3 py-1 rounded-md text-sm whitespace-nowrap">다른 학생 예시</div>
-                    </div>
-                </div>
-                <div class="text-center mt-6 text-sm text-slate-500">
-                    <i class="fa-solid fa-circle-info"></i> 레벨업을 통해 <strong>[🥺새내기 -> 😐초보 -> 😠중수 -> 😎고수 -> 🦸수호자 -> 👑전설]</strong> 로 외형이 진화합니다.
                 </div>
             </div>
         </section>
 
-        <!-- Economy & Jobs Section -->
+        <!-- Economy & Jobs Section (JS 자동 생성) -->
         <section id="economy" class="scroll-mt-24">
             <div class="mb-8">
                 <h2 class="text-3xl font-display text-sb-gold flex items-center gap-3"><i class="fa-solid fa-coins"></i> 직업 클래스 (멀티 클래스 지원)</h2>
                 <p class="text-slate-400 mt-2">전용 화폐인 '봉(B)'은 매주 금요일 직업 수행도에 따라 지급됩니다. 카드를 클릭하여 <strong>여러 직업을 동시에 장착(토글)</strong> 할 수 있습니다.</p>
             </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <!-- 12개 직업 목록 -->
-                <div onclick="toggleJob('길드 마스터', 'fa-flag', 'text-yellow-300')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-yellow-300 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-flag text-3xl text-yellow-300"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 10 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">길드 마스터 <span class="text-xs font-normal text-slate-400 ml-1">(학급회장)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">학급 전체를 통솔하고 선생님(GM)을 보좌하여 학급 회의를 진행하는 최고 명예 클래스입니다.</p>
-                </div>
-
-                <div onclick="toggleJob('그림자 보좌관', 'fa-star-half-stroke', 'text-yellow-100')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-yellow-100 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-star-half-stroke text-3xl text-yellow-100"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 8 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">그림자 보좌관 <span class="text-xs font-normal text-slate-400 ml-1">(부회장)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">길드 마스터를 도와 학급의 규칙을 수호하고 분위기를 긍정적으로 이끄는 핵심 클래스입니다.</p>
-                </div>
-
-                <div onclick="toggleJob('심연의 청소부', 'fa-trash-can', 'text-stone-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-stone-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-trash-can text-3xl text-stone-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 7 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">심연의 청소부 <span class="text-xs font-normal text-slate-400 ml-1">(일반쓰레기)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">교실의 일반 쓰레기통을 비우며 교실이라는 대지를 정화하는 성스러운 의무를 가집니다.</p>
-                </div>
-
-                <div onclick="toggleJob('체력물약 보급관', 'fa-glass-water', 'text-blue-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-blue-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-glass-water text-3xl text-blue-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">체력물약 보급관 <span class="text-xs font-normal text-slate-400 ml-1">(우유 배식)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">매일 아침 시원한 우유를 배식하여 플레이어들의 기초 체력을 책임집니다.</p>
-                </div>
-
-                <div onclick="toggleJob('역사 기록관', 'fa-chalkboard', 'text-slate-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-slate-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-chalkboard text-3xl text-slate-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">역사 기록관 <span class="text-xs font-normal text-slate-400 ml-1">(칠판 관리)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">칠판을 깨끗이 지우고 정돈하여 새로운 지식을 맞이할 준비를 합니다.</p>
-                </div>
-
-                <div onclick="toggleJob('시스템 관리자', 'fa-desktop', 'text-cyan-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-cyan-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-desktop text-3xl text-cyan-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">시스템 관리자 <span class="text-xs font-normal text-slate-400 ml-1">(기기 관리)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">교실의 메인 서버(컴퓨터)와 스크린, 전자기기의 원활한 작동을 보장합니다.</p>
-                </div>
-
-                <div onclick="toggleJob('자원 연금술사', 'fa-recycle', 'text-sb-green')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-sb-green hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-recycle text-3xl text-sb-green"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 7 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">자원 연금술사 <span class="text-xs font-normal text-slate-400 ml-1">(분리수거)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">철저한 분리수거를 통해 버려지는 쓰레기를 가치 있는 재활용 자원으로 연금술합니다.</p>
-                </div>
-
-                <div onclick="toggleJob('마나 충전소 주인', 'fa-tablet-screen-button', 'text-purple-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-purple-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-tablet-screen-button text-3xl text-purple-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">마나 충전소 주인 <span class="text-xs font-normal text-slate-400 ml-1">(스마트패드)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">학급 스마트 패드를 충전함에 넣고 관리하여 언제든 마나가 가득 차 있도록 합니다.</p>
-                </div>
-
-                <div onclick="toggleJob('빛의 파수꾼', 'fa-lightbulb', 'text-yellow-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-yellow-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-lightbulb text-3xl text-yellow-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">빛의 파수꾼 <span class="text-xs font-normal text-slate-400 ml-1">(소등 관리)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">불필요한 에너지를 감시하고 교실 이동 시 모든 전원을 차단하는 파수꾼입니다.</p>
-                </div>
-
-                <div onclick="toggleJob('음유시인', 'fa-music', 'text-pink-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-pink-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-music text-3xl text-pink-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">음유시인 <span class="text-xs font-normal text-slate-400 ml-1">(음악/알리미)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">아침 시간과 점심시간에 활기찬 음악을 재생하고, 중요한 전달 사항을 학급에 전파합니다.</p>
-                </div>
-
-                <div onclick="toggleJob('생명의 수호자', 'fa-leaf', 'text-emerald-500')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-emerald-500 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-leaf text-3xl text-emerald-500"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">생명의 수호자 <span class="text-xs font-normal text-slate-400 ml-1">(식물/환기)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">교실의 화분에 생명수(물)를 공급하고, 주기적인 환기로 쾌적한 공기를 유지합니다.</p>
-                </div>
-
-                <div onclick="toggleJob('보급기지 수비대장', 'fa-box-open', 'text-orange-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-orange-400 hover:bg-slate-800 transition relative">
-                    <div class="flex justify-between items-start mb-4">
-                        <i class="fa-solid fa-box-open text-3xl text-orange-400"></i>
-                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
-                    </div>
-                    <h3 class="text-xl font-bold mb-1">보급기지 수비대장 <span class="text-xs font-normal text-slate-400 ml-1">(비품 관리)</span></h3>
-                    <p class="text-sm text-slate-400 leading-relaxed">가위, 풀, 색종이 등 학급의 공용 비품이 떨어지지 않게 정리하고 마스터에게 보충을 요청합니다.</p>
-                </div>
-            </div>
+            <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </section>
 
-        <!-- Personal Terminal Section -->
+        <!-- Personal Terminal Section (JS 자동 생성) -->
         <section id="simulator" class="scroll-mt-24">
             <div class="mb-8 text-center">
                 <h2 class="text-4xl font-display text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 inline-block mb-4"><i class="fa-solid fa-mobile-screen mr-2 text-emerald-400"></i> 개인 플레이어 단말기</h2>
@@ -372,70 +218,7 @@
                 <div class="lg:col-span-5 space-y-6">
                     <div class="glass-panel p-6 rounded-2xl">
                         <h3 class="font-bold text-xl mb-4 border-b border-slate-700 pb-2"><i class="fa-solid fa-list-check text-slate-400 mr-2"></i> 퀘스트 보드</h3>
-                        
-                        <div class="space-y-3" id="questContainer">
-                            <!-- 매일 퀘스트 -->
-                            <button id="btn-q1" data-quest-id="q1" data-xp="10" data-bong="0.5" onclick="window.attemptQuest('q1')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
-                                <div>
-                                    <div class="font-bold group-hover:text-white transition">출석의 축복</div>
-                                    <div class="text-xs text-slate-400">매일 8:40 전 등교 완료</div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-sb-blue font-bold text-sm block">+10 XP</span>
-                                    <span class="text-sb-gold font-bold text-sm block">+0.5 B</span>
-                                </div>
-                            </button>
-                            
-                            <button id="btn-q4" data-quest-id="q4" data-xp="150" data-bong="7.0" onclick="window.attemptQuest('q4')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
-                                <div>
-                                    <div class="font-bold group-hover:text-white transition">뉴비 도우미</div>
-                                    <div class="text-xs text-slate-400">라온반 및 도움이 필요한 친구 지원</div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-sb-blue font-bold text-sm block">+150 XP</span>
-                                    <span class="text-sb-gold font-bold text-sm block">+7.0 B</span>
-                                </div>
-                            </button>
-
-                            <!-- 금요일 전용 퀘스트 -->
-                            <button id="btn-q2" data-quest-id="q2" data-xp="50" data-bong="2.0" onclick="window.attemptQuest('q2')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
-                                <div>
-                                    <div class="font-bold text-yellow-200 group-hover:text-yellow-300 transition" id="title-q2">주간 등교 보너스</div>
-                                    <div class="text-xs text-slate-400">일주일간 무단 결석 없는 성실한 등교</div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-sb-blue font-bold text-sm block">+50 XP</span>
-                                    <span class="text-sb-gold font-bold text-sm block">+2.0 B</span>
-                                </div>
-                            </button>
-
-                            <!-- 마스터 활성화 퀘스트 -->
-                            <button id="btn-q3" data-quest-id="q3" data-xp="100" data-bong="5.0" onclick="window.attemptQuest('q3')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
-                                <div>
-                                    <div class="font-bold text-purple-300 group-hover:text-purple-400 transition flex items-center">
-                                        <i class="fa-solid fa-lock text-slate-500 mr-2" id="icon-q3"></i> 던전 레이드
-                                    </div>
-                                    <div class="text-xs text-slate-400 mt-1">교과 전담 및 강사 선생님 시간 완벽 공략</div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-sb-blue font-bold text-sm block">+100 XP</span>
-                                    <span class="text-sb-gold font-bold text-sm block">+5.0 B</span>
-                                </div>
-                            </button>
-
-                            <button id="btn-q5" data-quest-id="q5" data-xp="500" data-bong="20.0" onclick="window.attemptQuest('q5')" class="quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50">
-                                <div>
-                                    <div class="font-bold text-red-300 group-hover:text-red-400 transition flex items-center">
-                                        <i class="fa-solid fa-lock text-slate-500 mr-2" id="icon-q5"></i> 자아 극복 (보스전)
-                                    </div>
-                                    <div class="text-xs text-slate-400 mt-1">단원평가 및 수행평가 성적 향상</div>
-                                </div>
-                                <div class="text-right">
-                                    <span class="text-sb-blue font-bold text-sm block">+500 XP</span>
-                                    <span class="text-sb-gold font-bold text-sm block">+20.0 B</span>
-                                </div>
-                            </button>
-                        </div>
+                        <div id="questContainer" class="space-y-3"></div>
                     </div>
                 </div>
 
@@ -444,138 +227,73 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div class="glass-panel p-6 rounded-2xl text-center border-t-4 border-t-sb-blue flex flex-col justify-center">
                             <h4 class="text-slate-400 text-sm font-bold mb-2">나의 누적 경험치</h4>
-                            <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">
-                                <span id="simXp" class="transition-all duration-300">0</span> <span class="text-2xl text-sb-blue">XP</span>
-                            </div>
+                            <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]"><span id="simXp" class="transition-all duration-300">0</span> <span class="text-2xl text-sb-blue">XP</span></div>
                         </div>
                         <div class="glass-panel p-6 rounded-2xl text-center border-t-4 border-t-sb-gold flex flex-col justify-center">
                             <h4 class="text-slate-400 text-sm font-bold mb-2">나의 현재 자산</h4>
-                            <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]">
-                                <span id="simBong" class="transition-all duration-300">0.0</span> <span class="text-2xl text-sb-gold">B</span>
-                            </div>
+                            <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]"><span id="simBong" class="transition-all duration-300">0.0</span> <span class="text-2xl text-sb-gold">B</span></div>
                         </div>
                     </div>
 
                     <div class="glass-panel p-6 rounded-2xl">
                         <h3 class="font-bold text-xl mb-4 border-b border-slate-700 pb-2 flex justify-between items-end">
                             <span><i class="fa-solid fa-store text-sb-gold mr-2"></i> 아이템 상점</span>
-                            <span class="text-xs font-normal text-slate-400">자산 충족 시 활성화</span>
+                            <span class="text-xs font-normal text-slate-400">자산 충족 시 자동 활성화</span>
                         </h3>
-                        
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="15" onclick="window.alertShop(this, '뮤직 타임', 15)">
-                                <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-pink-400 text-xl"><i class="fa-solid fa-music"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold">뮤직 타임</div>
-                                    <div class="text-xs text-slate-400">쉬는 시간 신청곡 틀기</div>
-                                </div>
-                                <div class="font-display text-xl text-sb-gold">15 B</div>
-                            </div>
-
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="100" onclick="window.alertShop(this, '시간 왜곡', 100)">
-                                <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-blue-400 text-xl"><i class="fa-solid fa-clock-rotate-left"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold">시간 왜곡</div>
-                                    <div class="text-xs text-slate-400">시간표 순서 바꾸기</div>
-                                </div>
-                                <div class="font-display text-xl text-sb-gold">100 B</div>
-                            </div>
-
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="400" onclick="window.alertShop(this, '보드게임 타임', 400)">
-                                <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-green-400 text-xl"><i class="fa-solid fa-dice"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold">보드게임 타임</div>
-                                    <div class="text-xs text-slate-400">보드게임 시간 생성</div>
-                                </div>
-                                <div class="font-display text-xl text-sb-gold">400 B</div>
-                            </div>
-
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="500" onclick="window.alertShop(this, '무비 타임', 500)">
-                                <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-purple-400 text-xl"><i class="fa-solid fa-film"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold">무비 타임</div>
-                                    <div class="text-xs text-slate-400">영화 관람 시간 생성</div>
-                                </div>
-                                <div class="font-display text-xl text-sb-gold">500 B</div>
-                            </div>
-
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="600" onclick="window.alertShop(this, '피지컬 타임', 600)">
-                                <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-orange-400 text-xl"><i class="fa-solid fa-basketball"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold">피지컬 타임</div>
-                                    <div class="text-xs text-slate-400">체육 시간 생성</div>
-                                </div>
-                                <div class="font-display text-xl text-sb-gold">600 B</div>
-                            </div>
-
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4" data-price="600" onclick="window.alertShop(this, '플레이 타임', 600)">
-                                <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-cyan-400 text-xl"><i class="fa-solid fa-gamepad"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold">플레이 타임</div>
-                                    <div class="text-xs text-slate-400">자유 시간 생성</div>
-                                </div>
-                                <div class="font-display text-xl text-sb-gold">600 B</div>
-                            </div>
-
-                            <div class="shop-btn unaffordable bg-slate-800 p-4 rounded-xl border-2 sm:col-span-2 flex items-center gap-4" data-price="2000" onclick="window.alertShop(this, '레전더리 타임', 2000)">
-                                <div class="bg-slate-900 w-16 h-16 flex-shrink-0 rounded-full flex items-center justify-center text-sb-red text-3xl"><i class="fa-solid fa-crown"></i></div>
-                                <div class="flex-grow">
-                                    <div class="font-bold text-lg text-sb-red">레전더리 타임 (파티 전용)</div>
-                                    <div class="text-xs text-slate-300">하루종일 자유시간! 학급 전체가 돈을 모아 구매하세요.</div>
-                                </div>
-                                <div class="font-display text-3xl text-sb-red">2000 B</div>
-                            </div>
-                        </div>
+                        <div id="shopContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <footer class="text-center text-slate-500 py-12 border-t border-slate-800 px-4">
+        <footer class="text-center text-slate-500 py-12 border-t border-slate-800 px-4 mt-20">
             <p class="font-display text-xl md:text-2xl text-slate-300 mb-4 break-keep">"당신의 모든 행동은 데이터가 되어 당신을 성장시키고 전설로 만들 것입니다."</p>
             <p class="text-sm font-bold text-emerald-400">- SAMBONG WORLD 마스터 J -</p>
         </footer>
     </div>
 
-    <!-- Firebase SDK 및 전체 로직 -->
+    <!-- Firebase SDK 및 통합 로직 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ==========================================
-        // UI 커스텀 알림창 (모달) 함수 설정
+        // 1. 데이터 베이스 (배열화 - 코드 경량화의 핵심)
         // ==========================================
-        window.customAlert = (m) => new Promise(r => {
-            const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-white">알림</h3><p class="text-slate-300 whitespace-pre-wrap">${m}</p><button id="bOk" class="bg-sb-blue text-white font-bold py-2 px-8 rounded-full w-full">확인</button></div>`;
-            document.body.appendChild(d); 
-            document.getElementById('bOk').onclick = () => { d.remove(); r(true); };
-        });
+        const JOB_DATA = [
+            { id: 'job1', name: '길드 마스터', sub: '(학급회장)', icon: 'fa-flag', color: 'text-yellow-300', pay: 10, desc: '학급 전체를 통솔하고 선생님(GM)을 보좌하여 학급 회의를 진행하는 최고 명예 클래스입니다.' },
+            { id: 'job2', name: '그림자 보좌관', sub: '(부회장)', icon: 'fa-star-half-stroke', color: 'text-yellow-100', pay: 8, desc: '길드 마스터를 도와 학급의 규칙을 수호하고 분위기를 긍정적으로 이끄는 핵심 클래스입니다.' },
+            { id: 'job3', name: '심연의 청소부', sub: '(일반쓰레기)', icon: 'fa-trash-can', color: 'text-stone-400', pay: 7, desc: '교실의 일반 쓰레기통을 비우며 교실이라는 대지를 정화하는 성스러운 의무를 가집니다.' },
+            { id: 'job4', name: '체력물약 보급관', sub: '(우유 배식)', icon: 'fa-glass-water', color: 'text-blue-400', pay: 6, desc: '매일 아침 시원한 우유를 배식하여 플레이어들의 기초 체력을 책임집니다.' },
+            { id: 'job5', name: '역사 기록관', sub: '(칠판 관리)', icon: 'fa-chalkboard', color: 'text-slate-400', pay: 5, desc: '칠판을 깨끗이 지우고 정돈하여 새로운 지식을 맞이할 준비를 합니다.' },
+            { id: 'job6', name: '시스템 관리자', sub: '(기기 관리)', icon: 'fa-desktop', color: 'text-cyan-400', pay: 6, desc: '교실의 메인 서버(컴퓨터)와 스크린, 전자기기의 원활한 작동을 보장합니다.' },
+            { id: 'job7', name: '자원 연금술사', sub: '(분리수거)', icon: 'fa-recycle', color: 'text-sb-green', pay: 7, desc: '철저한 분리수거를 통해 버려지는 쓰레기를 가치 있는 재활용 자원으로 연금술합니다.' },
+            { id: 'job8', name: '마나 충전소 주인', sub: '(스마트패드)', icon: 'fa-tablet-screen-button', color: 'text-purple-400', pay: 6, desc: '학급 스마트 패드를 충전함에 넣고 관리하여 언제든 마나가 가득 차 있도록 합니다.' },
+            { id: 'job9', name: '빛의 파수꾼', sub: '(소등 관리)', icon: 'fa-lightbulb', color: 'text-yellow-400', pay: 5, desc: '불필요한 에너지를 감시하고 교실 이동 시 모든 전원을 차단하는 파수꾼입니다.' },
+            { id: 'job10', name: '음유시인', sub: '(음악/알리미)', icon: 'fa-music', color: 'text-pink-400', pay: 6, desc: '아침 시간과 점심시간에 활기찬 음악을 재생하고, 중요한 전달 사항을 학급에 전파합니다.' },
+            { id: 'job11', name: '생명의 수호자', sub: '(식물/환기)', icon: 'fa-leaf', color: 'text-emerald-500', pay: 5, desc: '교실의 화분에 생명수(물)를 공급하고, 주기적인 환기로 쾌적한 공기를 유지합니다.' },
+            { id: 'job12', name: '보급기지 수비대장', sub: '(비품 관리)', icon: 'fa-box-open', color: 'text-orange-400', pay: 6, desc: '가위, 풀, 색종이 등 학급의 공용 비품이 떨어지지 않게 정리하고 마스터에게 보충을 요청합니다.' }
+        ];
 
-        window.customConfirm = (m) => new Promise(r => {
-            const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-white">확인</h3><p class="text-slate-300 whitespace-pre-wrap">${m}</p><div class="flex gap-4 mt-6"><button id="bNo" class="bg-slate-700 text-white font-bold py-2 px-6 rounded-full w-full">취소</button><button id="bYes" class="bg-sb-red text-white font-bold py-2 px-6 rounded-full w-full">확인</button></div></div>`;
-            document.body.appendChild(d); 
-            document.getElementById('bYes').onclick = () => { d.remove(); r(true); }; 
-            document.getElementById('bNo').onclick = () => { d.remove(); r(false); };
-        });
+        const QUEST_DATA = [
+            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '매일 8:40 전 등교 완료', xp: 10, bong: 0.5, icon: '', color: 'text-white' },
+            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반 및 도움이 필요한 친구 지원', xp: 150, bong: 7.0, icon: '', color: 'text-white' },
+            { id: 'q2', type: 'weekly', name: '주간 등교 보너스', desc: '일주일간 무단 결석 없는 성실한 등교', xp: 50, bong: 2.0, icon: '', color: 'text-yellow-200' },
+            { id: 'q3', type: 'locked', name: '던전 레이드', desc: '교과 전담 및 강사 선생님 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-lock', color: 'text-purple-300' },
+            { id: 'q5', type: 'locked', name: '자아 극복 (보스전)', desc: '단원평가 및 수행평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-lock', color: 'text-red-300' }
+        ];
 
-        window.customPrompt = (m) => new Promise(r => {
-            const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-sb-gold">보안 구역</h3><p class="text-slate-300">${m}</p><input type="password" id="pIn" class="w-full bg-slate-800 border text-white rounded-xl px-4 py-3 text-center my-4"><div class="flex gap-4"><button id="bpNo" class="bg-slate-700 text-white font-bold py-2 px-6 rounded-full w-full">취소</button><button id="bpYes" class="bg-emerald-500 text-white font-bold py-2 px-6 rounded-full w-full">입력</button></div></div>`;
-            document.body.appendChild(d); 
-            document.getElementById('pIn').focus();
-            document.getElementById('bpYes').onclick = () => { const v = document.getElementById('pIn').value; d.remove(); r(v); }; 
-            document.getElementById('bpNo').onclick = () => { d.remove(); r(null); };
-        });
+        const SHOP_DATA = [
+            { id: 's1', name: '뮤직 타임', desc: '쉬는 시간 신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400', isWide: false },
+            { id: 's2', name: '시간 왜곡', desc: '시간표 순서 바꾸기', price: 100, icon: 'fa-clock-rotate-left', iconColor: 'text-blue-400', isWide: false },
+            { id: 's3', name: '보드게임 타임', desc: '보드게임 시간 생성', price: 400, icon: 'fa-dice', iconColor: 'text-green-400', isWide: false },
+            { id: 's4', name: '무비 타임', desc: '영화 관람 시간 생성', price: 500, icon: 'fa-film', iconColor: 'text-purple-400', isWide: false },
+            { id: 's5', name: '피지컬 타임', desc: '체육 시간 생성', price: 600, icon: 'fa-basketball', iconColor: 'text-orange-400', isWide: false },
+            { id: 's6', name: '플레이 타임', desc: '자유 시간 생성', price: 600, icon: 'fa-gamepad', iconColor: 'text-cyan-400', isWide: false },
+            { id: 's7', name: '레전더리 타임', desc: '하루종일 자유시간! 학급 전체가 돈을 모아 구매하세요.', price: 2000, icon: 'fa-crown', iconColor: 'text-sb-red', isWide: true }
+        ];
 
-        // ==========================================
-        // 기본 데이터 설정
-        // ==========================================
         const LEVEL_DATA = [
             { max: 1499, name: '새내기', emoji: '🥺🪵', borderColor: 'border-slate-600', bgColor: 'bg-slate-800', textColor: 'text-slate-400', anim: 'avatar-bounce' },
             { max: 4499, name: '초보', emoji: '😐🗡️', borderColor: 'border-sb-green', bgColor: 'bg-green-900/30', textColor: 'text-sb-green', anim: 'avatar-bounce' },
@@ -593,177 +311,191 @@
         };
 
         window.playerState = { xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM: false };
-        
         let db, auth, currentStudentDocRef = null, currentLevelIndex = 0;
         let unsubscribeSnapshot = null, unsubscribeAdmin = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
         // ==========================================
-        // 파이어베이스 초기화
+        // 2. 초기화 및 동적 HTML 생성 함수
         // ==========================================
-        async function initApp() {
-            try {
-                let firebaseConfig;
-                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-                    firebaseConfig = JSON.parse(__firebase_config);
-                } else {
-                    // 선생님의 진짜 정보
-                    firebaseConfig = {
-                        apiKey: "AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8",
-                        authDomain: "sambong-world-2026.firebaseapp.com",
-                        projectId: "sambong-world-2026",
-                        storageBucket: "sambong-world-2026.firebasestorage.app",
-                        messagingSenderId: "728320769100",
-                        appId: "1:728320769100:web:7510c9a77cca6b87a788e9",
-                        measurementId: "G-H1RGMJHGTV"
-                    };
-                }
+        function initDynamicContent() {
+            // 직업 생성
+            document.getElementById('jobGrid').innerHTML = JOB_DATA.map(job => `
+                <div onclick="window.toggleJob('${job.name}', '${job.icon}', '${job.color}')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-${job.color.replace('text-', '')} hover:bg-slate-800 transition relative group">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid ${job.icon} text-3xl ${job.color} group-hover:scale-110 transition"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold text-xs sm:text-sm">주급 ${job.pay} B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">${job.name} <span class="text-xs font-normal text-slate-400 ml-1">${job.sub}</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">${job.desc}</p>
+                </div>
+            `).join('');
 
-                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("여기에")) {
-                    console.warn("로컬 모드: API 키가 확인되지 않아 DB 연동을 생략합니다.");
-                    document.getElementById('loginOverlay').classList.remove('hidden');
-                    updateUI();
-                    return;
-                }
+            // 상점 생성
+            document.getElementById('shopContainer').innerHTML = SHOP_DATA.map(shop => `
+                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800 p-4 rounded-xl border-2 ${shop.isWide ? 'sm:col-span-2' : ''} flex items-center gap-4 transition-all duration-300 unaffordable" onclick="window.alertShop('${shop.name}', ${shop.price})">
+                    <div class="bg-slate-900 ${shop.isWide ? 'w-16 h-16 text-3xl' : 'w-12 h-12 text-xl'} flex-shrink-0 rounded-full flex items-center justify-center ${shop.iconColor}"><i class="fa-solid ${shop.icon}"></i></div>
+                    <div class="flex-grow">
+                        <div class="font-bold ${shop.isWide ? 'text-lg text-sb-red' : ''}">${shop.name}</div>
+                        <div class="text-xs text-slate-400">${shop.desc}</div>
+                    </div>
+                    <div class="font-display ${shop.isWide ? 'text-3xl text-sb-red' : 'text-xl text-sb-gold'}">${shop.price} B</div>
+                </div>
+            `).join('');
+        }
+
+        async function initApp() {
+            initDynamicContent(); // 화면 로딩 시 뼈대 먼저 생성
+
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8",
+                    authDomain: "sambong-world-2026.firebaseapp.com",
+                    projectId: "sambong-world-2026",
+                    storageBucket: "sambong-world-2026.firebasestorage.app",
+                    messagingSenderId: "728320769100",
+                    appId: "1:728320769100:web:7510c9a77cca6b87a788e9",
+                    measurementId: "G-H1RGMJHGTV"
+                };
 
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    try { await signInWithCustomToken(auth, __initial_auth_token); } 
-                    catch (e) { await signInAnonymously(auth); }
-                } else {
-                    await signInAnonymously(auth);
-                }
+                await signInAnonymously(auth);
 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         const savedId = localStorage.getItem('sambong_student_id');
                         const savedPin = localStorage.getItem('sambong_student_pin');
-                        
-                        if (savedId && savedPin) {
-                            attemptLogin(savedId, savedPin, true);
-                        } else {
-                            document.getElementById('loginOverlay').classList.remove('hidden');
-                        }
+                        if (savedId && savedPin) attemptLogin(savedId, savedPin, true);
+                        else document.getElementById('loginOverlay').classList.remove('hidden');
                     }
                 });
-            } catch(e) {
-                console.error("초기화 실패:", e);
-                document.getElementById('loginOverlay').classList.add('hidden');
-            }
+            } catch(e) { console.error("초기화 실패:", e); }
         }
 
         // ==========================================
-        // 로그인 및 로그아웃 관련 함수
+        // 3. UI 업데이트 및 인터랙션 로직
         // ==========================================
+        function updateUI() {
+            if (!window.playerState.isGuest && !currentStudentDocRef) return;
+
+            // 퀘스트 동적 렌더링 (상태에 따라 클래스가 달라지므로 매번 그림)
+            const today = new Date().getDay();
+            document.getElementById('questContainer').innerHTML = QUEST_DATA.map(q => {
+                const isCompleted = window.playerState.quests && window.playerState.quests[q.id];
+                const isUnlocked = window.playerState.unlockedQuests && window.playerState.unlockedQuests[q.id];
+                const isWeekly = q.type === 'weekly';
+                
+                let stateClass = "border-slate-700 hover:border-slate-500 cursor-pointer";
+                let titleColor = q.color;
+                let iconHtml = q.icon ? `<i class="fa-solid ${q.icon} text-slate-500 mr-2"></i>` : '';
+                let clickAction = `window.attemptQuest('${q.id}', ${q.xp}, ${q.bong})`;
+                let checkMark = '';
+                let titleAddon = '';
+
+                if (isCompleted) {
+                    stateClass = "border-3b82f6 bg-slate-800/90 active cursor-not-allowed";
+                    if (q.icon) iconHtml = `<i class="fa-solid fa-check text-sb-blue mr-2"></i>`;
+                    checkMark = `<i class="fa-solid fa-check text-sb-blue absolute right-4 top-1/2 -translate-y-1/2 opacity-80 text-4xl drop-shadow-lg"></i>`;
+                    clickAction = "null";
+                } else if (q.type === 'locked' && !isUnlocked) {
+                    stateClass = "border-slate-700 locked cursor-pointer";
+                    clickAction = `window.promptUnlock('${q.id}')`;
+                } else if (q.type === 'locked' && isUnlocked) {
+                    stateClass = "border-emerald-500 hover:border-emerald-400";
+                    iconHtml = `<i class="fa-solid fa-unlock text-emerald-400 mr-2"></i>`;
+                } else if (isWeekly && today !== 5 && !window.playerState.isGM) {
+                    stateClass = "border-slate-700 locked cursor-not-allowed";
+                    titleColor = "text-slate-500";
+                    titleAddon = " (금요일 오픈)";
+                    clickAction = `window.customAlert('이 퀘스트는 매주 금요일에만 수행할 수 있습니다!')`;
+                }
+
+                return `<button onclick="${clickAction}" class="w-full text-left p-4 rounded-xl border transition flex justify-between items-center group bg-slate-800/50 relative ${stateClass}">
+                    <div><div class="font-bold ${titleColor} group-hover:brightness-125 transition flex items-center">${iconHtml} ${q.name}${titleAddon}</div>
+                    <div class="text-xs text-slate-400 mt-1">${q.desc}</div></div>
+                    <div class="text-right"><span class="text-sb-blue font-bold text-sm block">+${q.xp} XP</span><span class="text-sb-gold font-bold text-sm block">+${q.bong.toFixed(1)} B</span></div>${checkMark}
+                </button>`;
+            }).join('');
+
+            // 상점 스타일 업데이트
+            SHOP_DATA.forEach(shop => {
+                const item = document.getElementById(`shop-btn-${shop.id}`);
+                if (item) {
+                    if (window.playerState.bong >= shop.price || window.playerState.isGM) {
+                        item.classList.replace('unaffordable', 'affordable');
+                    } else {
+                        item.classList.replace('affordable', 'unaffordable');
+                    }
+                }
+            });
+
+            // 내 캐릭터 카드 및 상단 수치 업데이트
+            const myCard = document.getElementById('myCharacterCard');
+            const myAvatar = document.getElementById('myAvatar');
+            const myLevelName = document.getElementById('myLevelName');
+            const myTotalXp = document.getElementById('myTotalXp');
+
+            if (window.playerState.isGM) {
+                // ★ 마스터 전용 초월 연출 ★
+                myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-48 relative transition-all duration-500 shadow-[0_0_30px_rgba(251,191,36,0.5)] border-sb-gold bg-slate-900`;
+                myAvatar.innerHTML = `<div class="relative"><div class="text-6xl mb-3 avatar-legend relative z-10">👑🐉</div><div class="absolute inset-0 bg-sb-gold/20 blur-xl rounded-full animate-pulse"></div></div>`;
+                myLevelName.innerText = "세계관 창조자 (GM)";
+                myLevelName.className = `text-sm font-black mb-1 text-sb-gold tracking-widest`;
+                myTotalXp.innerHTML = `<span class="text-transparent bg-clip-text bg-gradient-to-r from-sb-gold to-sb-red font-bold text-lg drop-shadow-lg">SYSTEM MASTER</span>`;
+                document.getElementById('simXp').innerText = "∞";
+                document.getElementById('simBong').innerText = "∞";
+            } else {
+                // 일반 플레이어 연출
+                const lv = getLevelInfo(window.playerState.xp);
+                myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-40 relative transition-all duration-500 shadow-lg ${lv.info.borderColor} ${lv.info.bgColor}`;
+                myAvatar.innerText = lv.info.emoji;
+                myAvatar.className = `text-5xl mb-3 transition-all duration-300 ${lv.info.anim}`;
+                myLevelName.innerText = lv.info.name;
+                myLevelName.className = `text-xs font-bold mb-1 ${lv.info.textColor}`;
+                myTotalXp.innerText = `${(window.playerState.xp || 0).toLocaleString()} XP`;
+                document.getElementById('simXp').innerText = (window.playerState.xp || 0).toLocaleString();
+                document.getElementById('simBong').innerText = (window.playerState.bong || 0).toFixed(1);
+            }
+
+            // 뱃지 업데이트
+            const badgeContainer = document.getElementById('myJobBadgeContainer');
+            badgeContainer.innerHTML = (!window.playerState.jobs || window.playerState.jobs.length === 0) 
+                ? `<div class="job-badge text-slate-400"><i class="fa-solid fa-user text-xs"></i></div>`
+                : window.playerState.jobs.map((j, i) => `<div class="job-badge ${j.color}" style="z-index: ${10 - i}"><i class="fa-solid ${j.icon} text-xs"></i></div>`).join('');
+        }
+
+        // ==========================================
+        // 4. 모달 및 이벤트 함수 정의
+        // ==========================================
+        window.customAlert = (m) => new Promise(r => {
+            const d = document.createElement('div'); d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-white">알림</h3><p class="text-slate-300 whitespace-pre-wrap">${m}</p><button id="bOk" class="bg-sb-blue text-white font-bold py-2 px-8 rounded-full w-full">확인</button></div>`;
+            document.body.appendChild(d); document.getElementById('bOk').onclick = () => { d.remove(); r(true); };
+        });
+
+        window.customConfirm = (m) => new Promise(r => {
+            const d = document.createElement('div'); d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-white">확인</h3><p class="text-slate-300 whitespace-pre-wrap">${m}</p><div class="flex gap-4 mt-6"><button id="bNo" class="bg-slate-700 text-white font-bold py-2 px-6 rounded-full w-full">취소</button><button id="bYes" class="bg-sb-red text-white font-bold py-2 px-6 rounded-full w-full">확인</button></div></div>`;
+            document.body.appendChild(d); document.getElementById('bYes').onclick = () => { d.remove(); r(true); }; document.getElementById('bNo').onclick = () => { d.remove(); r(false); };
+        });
+
+        window.customPrompt = (m) => new Promise(r => {
+            const d = document.createElement('div'); d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-2xl font-display text-sb-gold">보안 구역</h3><p class="text-slate-300">${m}</p><input type="password" id="pIn" class="w-full bg-slate-800 border text-white rounded-xl px-4 py-3 text-center my-4"><div class="flex gap-4"><button id="bpNo" class="bg-slate-700 text-white font-bold py-2 px-6 rounded-full w-full">취소</button><button id="bpYes" class="bg-emerald-500 text-white font-bold py-2 px-6 rounded-full w-full">입력</button></div></div>`;
+            document.body.appendChild(d); document.getElementById('pIn').focus();
+            document.getElementById('bpYes').onclick = () => { const v = document.getElementById('pIn').value; d.remove(); r(v); }; document.getElementById('bpNo').onclick = () => { d.remove(); r(null); };
+        });
+
         document.getElementById('btnLogin').addEventListener('click', async () => {
             const stuId = document.getElementById('loginId').value;
             const stuPin = document.getElementById('loginPin').value;
-            
             if (!stuId) return await window.customAlert("이름을 선택하세요!");
             if (!stuPin || stuPin.length !== 4) return await window.customAlert("4자리 비밀번호(PIN)를 정확히 입력하세요!");
             attemptLogin(stuId, stuPin, false);
         });
-
-        async function attemptLogin(studentId, pin, isAutoLogin) {
-            const user = auth && auth.currentUser;
-            if (!db || !user) {
-                if (!isAutoLogin) await window.customAlert("서버와 연결 중입니다. 잠시 후 다시 시도해주세요.");
-                return;
-            }
-            
-            const isGM = (studentId === 'gm');
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
-            
-            try {
-                const docSnap = await getDoc(docRef);
-                
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.pin !== pin) {
-                        if (isAutoLogin) {
-                            localStorage.removeItem('sambong_student_id');
-                            localStorage.removeItem('sambong_student_pin');
-                            document.getElementById('loginOverlay').classList.remove('hidden');
-                            return;
-                        }
-                        return await window.customAlert("❌ 비밀번호가 틀렸습니다!");
-                    }
-                    window.playerState = { ...data, isGuest: false, isGM: isGM };
-                } else {
-                    if (isAutoLogin) return; 
-                    
-                    const realName = STUDENT_NAMES[studentId];
-                    const confirmMsg = isGM 
-                        ? `[${realName}]\n입력하신 [${pin}] 번호가 관리자 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`
-                        : `[${realName} 학생]\n입력하신 [${pin}] 번호가 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`;
-                    
-                    const isOk = await window.customConfirm(confirmMsg);
-                    if(!isOk) return;
-                    
-                    window.playerState = { pin: pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM: isGM };
-                    await setDoc(docRef, window.playerState);
-                }
-
-                localStorage.setItem('sambong_student_id', studentId);
-                localStorage.setItem('sambong_student_pin', pin);
-                currentStudentDocRef = docRef;
-
-                completeLoginUI(STUDENT_NAMES[studentId], isGM);
-
-                if (unsubscribeSnapshot) unsubscribeSnapshot();
-                unsubscribeSnapshot = onSnapshot(currentStudentDocRef, (snap) => {
-                    if (snap.exists()) {
-                        window.playerState = { ...snap.data(), isGuest: false, isGM: isGM };
-                        if(!window.playerState.jobs) window.playerState.jobs = [];
-                        if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
-                        updateUI();
-                    }
-                });
-
-                if (isGM) {
-                    if (unsubscribeAdmin) unsubscribeAdmin();
-                    unsubscribeAdmin = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), (snapshot) => {
-                        const students = [];
-                        snapshot.forEach(d => {
-                            if(d.id !== 'student_gm') students.push({ id: d.id.replace('student_', ''), ...d.data() });
-                        });
-                        renderAdminTable(students);
-                    });
-                }
-
-            } catch (e) {
-                console.error("로그인 에러:", e);
-                await window.customAlert("로그인 중 오류가 발생했습니다: " + e.message);
-            }
-        }
-
-        function completeLoginUI(nameLabel, isGM) {
-            document.getElementById('loginOverlay').style.opacity = '0';
-            setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
-            
-            document.getElementById('playerNameDisplay').innerText = nameLabel;
-            document.getElementById('myCharacterName').innerText = nameLabel;
-            
-            document.getElementById('saveStatus').classList.remove('hidden');
-            document.getElementById('saveStatus').classList.add('flex');
-
-            if (window.playerState.isGuest) {
-                document.getElementById('cloudIcon').className = "fa-solid fa-eye text-slate-400";
-                document.getElementById('saveStatus').innerHTML = `<span class="font-bold text-white">게스트 모드</span> <i class="fa-solid fa-eye-slash text-slate-400"></i>`;
-            } else {
-                document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue";
-            }
-
-            if (isGM) {
-                document.getElementById('adminDashboard').classList.remove('hidden');
-            } else {
-                document.getElementById('adminDashboard').classList.add('hidden');
-            }
-            updateUI();
-        }
 
         window.loginAsGuest = function() {
             window.playerState = { xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], isGuest: true, isGM: false };
@@ -772,229 +504,136 @@
 
         window.logout = async function() {
             const isOk = await window.customConfirm("로그아웃 하시겠습니까?");
-            if(!isOk) return;
-            
-            localStorage.removeItem('sambong_student_id');
-            localStorage.removeItem('sambong_student_pin');
-            location.reload();
+            if(isOk) { localStorage.clear(); location.reload(); }
         };
-
-        // ==========================================
-        // 인터랙션 함수 (DB 저장 연동)
-        // ==========================================
-        async function saveDataToCloud() {
-            if (window.playerState.isGuest || !currentStudentDocRef || !db || !auth || !auth.currentUser) return;
-            try { 
-                const dataToSave = { ...window.playerState };
-                delete dataToSave.isGuest;
-                delete dataToSave.isGM;
-                await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
-            } catch(e) { console.error("데이터 저장 실패", e); }
-        }
 
         window.toggleJob = async function(jobName, iconClass, colorClass) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드에서는 체험만 가능하며 저장되지 않습니다.");
-            if (!currentStudentDocRef) return await window.customAlert("로그인 후 이용 가능합니다.");
             if (!window.playerState.jobs) window.playerState.jobs = [];
-            
             const existingIndex = window.playerState.jobs.findIndex(j => j.name === jobName);
-            if (existingIndex > -1) {
-                window.playerState.jobs.splice(existingIndex, 1);
-            } else {
-                window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
-            }
+            if (existingIndex > -1) window.playerState.jobs.splice(existingIndex, 1);
+            else window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
+            updateUI(); saveDataToCloud(); window.location.hash = '#plaza'; 
+        };
 
-            updateUI();
-            saveDataToCloud();
-            
-            const myCard = document.getElementById('myCharacterCard');
-            myCard.classList.add('level-up-anim');
-            setTimeout(() => myCard.classList.remove('level-up-anim'), 1000);
-            window.location.hash = '#plaza'; 
+        window.attemptQuest = async function(qId, xp, bong) {
+            if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드에서는 퀘스트를 체크할 수 없습니다.");
+            if (window.playerState.quests[qId]) return;
+            window.playerState.xp += xp;
+            window.playerState.bong += bong;
+            window.playerState.quests[qId] = true;
+            updateUI(); saveDataToCloud(); 
         };
 
         window.promptUnlock = async function(qId) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드입니다.");
-            if (!currentStudentDocRef) return await window.customAlert("로그인 후 이용 가능합니다.");
-            
-            const code = await window.customPrompt("GM(마스터 J)이 부여한 활성화 코드를 입력하세요:");
-            
+            const code = await window.customPrompt("마스터 J가 부여한 비밀 코드를 입력하세요:");
             if (code === "마스터J" || code === "오픈" || code === "master") { 
                 await window.customAlert("🔓 퀘스트가 활성화되었습니다!");
                 if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
                 window.playerState.unlockedQuests[qId] = true;
-                updateUI();
-                saveDataToCloud();
-            } else if (code !== null) {
-                await window.customAlert("❌ 코드가 일치하지 않습니다.");
-            }
+                updateUI(); saveDataToCloud();
+            } else if (code !== null) { await window.customAlert("❌ 코드가 일치하지 않습니다."); }
         };
 
-        window.attemptQuest = async function(questId) {
-            if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드에서는 퀘스트를 체크할 수 없습니다.");
-            if (!currentStudentDocRef) return await window.customAlert("로그인 후 이용 가능합니다.");
-            if (window.playerState.quests[questId]) return;
-
-            const btn = document.querySelector(`button[data-quest-id="${questId}"]`);
-            window.playerState.xp += parseInt(btn.getAttribute('data-xp'));
-            window.playerState.bong += parseFloat(btn.getAttribute('data-bong'));
-            window.playerState.quests[questId] = true;
-
-            updateUI();
-            saveDataToCloud(); 
-        };
-
-        window.alertShop = async function(btn, itemName, price) {
+        window.alertShop = async function(itemName, price) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드입니다.");
-            const msg = window.playerState.bong >= price 
+            const msg = window.playerState.bong >= price || window.playerState.isGM
                 ? `🎉 [구매 가능] '${itemName}'을(를) 구매할 수 있습니다!\n(마스터 J 선생님에게 직접 신청하세요)`
                 : `❌ [골드 부족] '${itemName}'을 구매하려면 ${(price - window.playerState.bong).toFixed(1)}B가 더 필요합니다.`;
             await window.customAlert(msg);
         };
 
         // ==========================================
-        // UI 업데이트
+        // 5. 코어 데이터 동기화 함수
         // ==========================================
-        function getLevelInfo(xp) {
-            for (let i = 0; i < LEVEL_DATA.length; i++) {
-                if (xp <= LEVEL_DATA[i].max) return { info: LEVEL_DATA[i], index: i };
-            }
-            return { info: LEVEL_DATA[LEVEL_DATA.length - 1], index: LEVEL_DATA.length - 1 };
+        async function attemptLogin(studentId, pin, isAutoLogin) {
+            if (!db || !auth.currentUser) return;
+            const isGM = (studentId === 'gm');
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
+            try {
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.pin !== pin) {
+                        if (isAutoLogin) { localStorage.clear(); location.reload(); return; }
+                        return await window.customAlert("❌ 비밀번호가 틀렸습니다!");
+                    }
+                    window.playerState = { ...data, isGuest: false, isGM };
+                } else {
+                    if (isAutoLogin) return; 
+                    const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`);
+                    if(!isOk) return;
+                    window.playerState = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM };
+                    await setDoc(docRef, window.playerState);
+                }
+
+                localStorage.setItem('sambong_student_id', studentId); localStorage.setItem('sambong_student_pin', pin);
+                currentStudentDocRef = docRef;
+                completeLoginUI(STUDENT_NAMES[studentId], isGM);
+
+                unsubscribeSnapshot = onSnapshot(currentStudentDocRef, (snap) => {
+                    if (snap.exists()) {
+                        window.playerState = { ...snap.data(), isGuest: false, isGM };
+                        updateUI();
+                    }
+                });
+
+                if (isGM) {
+                    unsubscribeAdmin = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), (snapshot) => {
+                        const students = [];
+                        snapshot.forEach(d => { if(d.id !== 'student_gm') students.push({ id: d.id.replace('student_', ''), ...d.data() }); });
+                        window.renderAdminTable(students);
+                    });
+                }
+            } catch (e) { await window.customAlert("에러: " + e.message); }
         }
 
-        function updateUI() {
-            if (!window.playerState.isGuest && !currentStudentDocRef && typeof __firebase_config !== 'undefined') return;
+        function completeLoginUI(nameLabel, isGM) {
+            document.getElementById('loginOverlay').style.opacity = '0';
+            setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
+            document.getElementById('playerNameDisplay').innerText = nameLabel;
+            document.getElementById('myCharacterName').innerText = nameLabel;
+            document.getElementById('saveStatus').classList.remove('hidden');
+            document.getElementById('saveStatus').classList.add('flex');
+            
+            if (window.playerState.isGuest) {
+                document.getElementById('cloudIcon').className = "fa-solid fa-eye text-slate-400";
+                document.getElementById('saveStatus').innerHTML = `<span class="font-bold text-white">게스트</span> <i class="fa-solid fa-eye-slash text-slate-400"></i>`;
+            } else { document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue"; }
 
-            document.getElementById('simXp').innerText = window.playerState.xp.toLocaleString();
-            document.getElementById('simBong').innerText = window.playerState.bong.toFixed(1);
+            if (isGM) document.getElementById('adminDashboard').classList.remove('hidden');
+            updateUI();
+        }
 
-            const levelData = getLevelInfo(window.playerState.xp);
-            const myCard = document.getElementById('myCharacterCard');
-            const myAvatar = document.getElementById('myAvatar');
-            const myLevelName = document.getElementById('myLevelName');
-            const myTotalXp = document.getElementById('myTotalXp');
-            const badgeContainer = document.getElementById('myJobBadgeContainer');
+        async function saveDataToCloud() {
+            if (window.playerState.isGuest || !currentStudentDocRef) return;
+            const dataToSave = { ...window.playerState }; delete dataToSave.isGuest; delete dataToSave.isGM;
+            await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
+        }
 
-            if (levelData.index > currentLevelIndex && currentLevelIndex !== 0) {
-                myCard.classList.add('level-up-anim');
-                setTimeout(() => myCard.classList.remove('level-up-anim'), 1000);
-            }
-            currentLevelIndex = levelData.index;
-
-            myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-40 relative transition-all duration-500 shadow-lg ${levelData.info.borderColor} ${levelData.info.bgColor}`;
-            myAvatar.innerText = levelData.info.emoji;
-            myAvatar.className = `text-5xl mb-3 transition-all duration-300 ${levelData.info.anim}`;
-            myLevelName.innerText = levelData.info.name;
-            myLevelName.className = `text-xs font-bold mb-1 ${levelData.info.textColor}`;
-            myTotalXp.innerText = `${window.playerState.xp.toLocaleString()} XP`;
-
-            badgeContainer.innerHTML = '';
-            if (!window.playerState.jobs || window.playerState.jobs.length === 0) {
-                badgeContainer.innerHTML = `<div class="job-badge text-slate-400"><i class="fa-solid fa-user text-xs"></i></div>`;
-            } else {
-                window.playerState.jobs.forEach((job, index) => {
-                    badgeContainer.innerHTML += `<div class="job-badge ${job.color}" style="z-index: ${10 - index}"><i class="fa-solid ${job.icon} text-xs"></i></div>`;
-                });
-            }
-
-            const today = new Date().getDay(); 
-            const btnQ2 = document.getElementById('btn-q2');
-            if (window.playerState.quests['q2']) {
-                btnQ2.className = "quest-btn w-full text-left p-4 rounded-xl border border-3b82f6 transition flex justify-between items-center group bg-slate-800/90 active cursor-not-allowed relative";
-                if (!btnQ2.querySelector('.check-icon')) btnQ2.innerHTML += '<i class="fa-solid fa-check text-sb-blue absolute right-4 top-1/2 -translate-y-1/2 opacity-80 text-4xl check-icon drop-shadow-lg"></i>';
-                btnQ2.onclick = null;
-            } else if (today !== 5 && !window.playerState.isGM) {
-                btnQ2.className = "quest-btn w-full text-left p-4 rounded-xl border border-slate-700 flex justify-between items-center group bg-slate-800/50 locked cursor-not-allowed";
-                document.getElementById('title-q2').innerText = "주간 등교 보너스 (금요일 오픈)";
-                btnQ2.onclick = async () => await window.customAlert("이 퀘스트는 매주 금요일에만 수행할 수 있습니다!");
-            } else {
-                btnQ2.className = "quest-btn w-full text-left p-4 rounded-xl border border-slate-700 hover:border-slate-500 transition flex justify-between items-center group bg-slate-800/50";
-                document.getElementById('title-q2').innerText = "주간 등교 보너스";
-                btnQ2.onclick = () => window.attemptQuest('q2');
-            }
-
-            ['q3', 'q5'].forEach(qId => {
-                const btn = document.getElementById(`btn-${qId}`);
-                const icon = document.getElementById(`icon-${qId}`);
-                const isUnlocked = window.playerState.unlockedQuests && window.playerState.unlockedQuests[qId];
-                const isCompleted = window.playerState.quests[qId];
-
-                if (isCompleted) {
-                    btn.className = "quest-btn w-full text-left p-4 rounded-xl border border-3b82f6 transition flex justify-between items-center group bg-slate-800/90 active cursor-not-allowed relative";
-                    if (icon) icon.className = "fa-solid fa-check text-sb-blue mr-2";
-                    if (!btn.querySelector('.check-icon')) btn.innerHTML += '<i class="fa-solid fa-check text-sb-blue absolute right-4 top-1/2 -translate-y-1/2 opacity-80 text-4xl check-icon drop-shadow-lg"></i>';
-                    btn.onclick = null;
-                } else if (!isUnlocked) {
-                    btn.className = "quest-btn w-full text-left p-4 rounded-xl border border-slate-700 flex justify-between items-center group bg-slate-800/50 locked cursor-pointer";
-                    if (icon) icon.className = "fa-solid fa-lock text-slate-500 mr-2";
-                    btn.onclick = () => window.promptUnlock(qId);
-                } else {
-                    btn.className = "quest-btn w-full text-left p-4 rounded-xl border border-emerald-500 hover:border-emerald-400 transition flex justify-between items-center group bg-slate-800/50";
-                    if (icon) icon.className = "fa-solid fa-unlock text-emerald-400 mr-2";
-                    btn.onclick = () => window.attemptQuest(qId);
-                }
-            });
-
-            ['q1', 'q4'].forEach(qId => {
-                const btn = document.getElementById(`btn-${qId}`);
-                if (window.playerState.quests[qId]) {
-                    btn.className = "quest-btn w-full text-left p-4 rounded-xl border border-3b82f6 transition flex justify-between items-center group bg-slate-800/90 active cursor-not-allowed relative";
-                    if (!btn.querySelector('.check-icon')) btn.innerHTML += '<i class="fa-solid fa-check text-sb-blue absolute right-4 top-1/2 -translate-y-1/2 opacity-80 text-4xl check-icon drop-shadow-lg"></i>';
-                    btn.onclick = null;
-                }
-            });
-
-            document.querySelectorAll('.shop-btn').forEach(item => {
-                const price = parseFloat(item.getAttribute('data-price'));
-                if(window.playerState.bong >= price) {
-                    item.classList.remove('unaffordable');
-                    item.classList.add('affordable');
-                } else {
-                    item.classList.remove('affordable');
-                    item.classList.add('unaffordable');
-                }
-            });
+        function getLevelInfo(xp) {
+            for (let i = 0; i < LEVEL_DATA.length; i++) { if (xp <= LEVEL_DATA[i].max) return { info: LEVEL_DATA[i], index: i }; }
+            return { info: LEVEL_DATA[LEVEL_DATA.length - 1], index: LEVEL_DATA.length - 1 };
         }
 
         window.renderAdminTable = function(studentsData) {
             const tbody = document.getElementById('adminTableBody');
             if(!tbody) return;
             tbody.innerHTML = '';
-            
             for(let i=1; i<=12; i++) {
                 const stu = studentsData.find(s => s.id === String(i));
-                const realName = STUDENT_NAMES[i]; 
-
                 if(stu) {
                     const levelData = getLevelInfo(stu.xp || 0);
                     const jobsHtml = (stu.jobs || []).map(j => `<i class="fa-solid ${j.icon} ${j.color}" title="${j.name}"></i>`).join(' ');
-                    
-                    tbody.innerHTML += `
-                        <tr class="border-b border-slate-700 hover:bg-slate-800 transition">
-                            <td class="px-4 py-3 font-bold text-white">${i}. ${realName}</td>
-                            <td class="px-4 py-3"><span class="text-lg mr-1">${levelData.info.emoji}</span> ${levelData.info.name}</td>
-                            <td class="px-4 py-3 text-sb-blue font-bold">${(stu.xp||0).toLocaleString()}</td>
-                            <td class="px-4 py-3 text-sb-gold font-bold">${(stu.bong||0).toFixed(1)} B</td>
-                            <td class="px-4 py-3 flex gap-2 text-lg items-center h-full">${jobsHtml || '<span class="text-xs text-slate-500">없음</span>'}</td>
-                            <td class="px-4 py-3 text-emerald-400 text-xs font-bold">🟢 활동중</td>
-                        </tr>
-                    `;
+                    tbody.innerHTML += `<tr class="border-b border-slate-700 hover:bg-slate-800 transition"><td class="px-4 py-3 font-bold text-white">${i}. ${STUDENT_NAMES[i]}</td><td class="px-4 py-3"><span class="text-lg mr-1">${levelData.info.emoji}</span> ${levelData.info.name}</td><td class="px-4 py-3 text-sb-blue font-bold">${(stu.xp||0).toLocaleString()}</td><td class="px-4 py-3 text-sb-gold font-bold">${(stu.bong||0).toFixed(1)} B</td><td class="px-4 py-3 flex gap-2 text-lg items-center h-full">${jobsHtml || '<span class="text-xs text-slate-500">없음</span>'}</td><td class="px-4 py-3 text-emerald-400 text-xs font-bold">🟢 활동중</td></tr>`;
                 } else {
-                    tbody.innerHTML += `
-                        <tr class="border-b border-slate-700 text-slate-500 bg-slate-800/30">
-                            <td class="px-4 py-3">${i}. ${realName}</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3">-</td>
-                            <td class="px-4 py-3 text-slate-600 text-xs">⚫ 미접속</td>
-                        </tr>
-                    `;
+                    tbody.innerHTML += `<tr class="border-b border-slate-700 text-slate-500 bg-slate-800/30"><td class="px-4 py-3">${i}. ${STUDENT_NAMES[i]}</td><td class="px-4 py-3">-</td><td class="px-4 py-3">-</td><td class="px-4 py-3">-</td><td class="px-4 py-3">-</td><td class="px-4 py-3 text-slate-600 text-xs">⚫ 미접속</td></tr>`;
                 }
             }
         }
 
-        // 실행
+        // 앱 구동
         initApp();
     </script>
 
@@ -1006,7 +645,6 @@
             const ctx = canv.getContext('2d');
             Chart.defaults.color = '#94a3b8';
             Chart.defaults.font.family = "'Noto Sans KR', sans-serif";
-
             new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -1027,13 +665,8 @@
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.05)' } },
-                        x: { grid: { display: false }, ticks: { font: { weight: 'bold' } } }
-                    },
+                    responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, grid: { color: 'rgba(255, 255, 255, 0.05)' } }, x: { grid: { display: false }, ticks: { font: { weight: 'bold' } } } },
                     interaction: { intersect: false, mode: 'index' },
                 }
             });

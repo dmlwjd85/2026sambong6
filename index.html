@@ -303,6 +303,61 @@
                     <h3 class="text-xl font-bold mb-1">시스템 관리자 <span class="text-xs font-normal text-slate-400 ml-1">(기기 관리)</span></h3>
                     <p class="text-sm text-slate-400 leading-relaxed">교실의 메인 서버(컴퓨터)와 스크린, 전자기기의 원활한 작동을 보장합니다.</p>
                 </div>
+
+                <!-- 복구 및 새로 추가된 직업 6개 (총 12개 완성) -->
+                <div onclick="toggleJob('자원 연금술사', 'fa-recycle', 'text-sb-green')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-sb-green hover:bg-slate-800 transition relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-recycle text-3xl text-sb-green"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 7 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">자원 연금술사 <span class="text-xs font-normal text-slate-400 ml-1">(분리수거)</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">철저한 분리수거를 통해 버려지는 쓰레기를 가치 있는 재활용 자원으로 연금술합니다.</p>
+                </div>
+
+                <div onclick="toggleJob('마나 충전소 주인', 'fa-tablet-screen-button', 'text-purple-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-purple-400 hover:bg-slate-800 transition relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-tablet-screen-button text-3xl text-purple-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">마나 충전소 주인 <span class="text-xs font-normal text-slate-400 ml-1">(스마트패드)</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">학급 스마트 패드를 충전함에 넣고 관리하여 언제든 마나가 가득 차 있도록 합니다.</p>
+                </div>
+
+                <div onclick="toggleJob('빛의 파수꾼', 'fa-lightbulb', 'text-yellow-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-yellow-400 hover:bg-slate-800 transition relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-lightbulb text-3xl text-yellow-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">빛의 파수꾼 <span class="text-xs font-normal text-slate-400 ml-1">(소등 관리)</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">불필요한 에너지를 감시하고 교실 이동 시 모든 전원을 차단하는 파수꾼입니다.</p>
+                </div>
+
+                <div onclick="toggleJob('음유시인', 'fa-music', 'text-pink-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-pink-400 hover:bg-slate-800 transition relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-music text-3xl text-pink-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">음유시인 <span class="text-xs font-normal text-slate-400 ml-1">(음악/알리미)</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">아침 시간과 점심시간에 활기찬 음악을 재생하고, 중요한 전달 사항을 학급에 전파합니다.</p>
+                </div>
+
+                <div onclick="toggleJob('생명의 수호자', 'fa-leaf', 'text-emerald-500')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-emerald-500 hover:bg-slate-800 transition relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-leaf text-3xl text-emerald-500"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 5 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">생명의 수호자 <span class="text-xs font-normal text-slate-400 ml-1">(식물/환기)</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">교실의 화분에 생명수(물)를 공급하고, 주기적인 환기로 쾌적한 공기를 유지합니다.</p>
+                </div>
+
+                <div onclick="toggleJob('보급기지 수비대장', 'fa-box-open', 'text-orange-400')" class="cursor-pointer glass-panel p-6 rounded-xl border-l-4 border-l-orange-400 hover:bg-slate-800 transition relative">
+                    <div class="flex justify-between items-start mb-4">
+                        <i class="fa-solid fa-box-open text-3xl text-orange-400"></i>
+                        <span class="bg-slate-900 text-sb-gold px-3 py-1 rounded-full font-bold">주급 6 B</span>
+                    </div>
+                    <h3 class="text-xl font-bold mb-1">보급기지 수비대장 <span class="text-xs font-normal text-slate-400 ml-1">(비품 관리)</span></h3>
+                    <p class="text-sm text-slate-400 leading-relaxed">가위, 풀, 색종이 등 학급의 공용 비품이 떨어지지 않게 정리하고 마스터에게 보충을 요청합니다.</p>
+                </div>
             </div>
         </section>
 
@@ -579,40 +634,35 @@
 
         async function initApp() {
             try {
-                if (typeof __firebase_config !== 'undefined') {
-                    const firebaseConfig = JSON.parse(__firebase_config);
-                    const app = initializeApp(firebaseConfig);
-                    auth = getAuth(app);
-                    db = getFirestore(app);
+                // 선생님의 파이어베이스 설정 코드를 여기에 붙여넣으세요!
+                const firebaseConfig = {
+                    apiKey: "여기에_선생님_API_키_입력",
+                    authDomain: "sambong-world-2026.firebaseapp.com",
+                    projectId: "sambong-world-2026",
+                    storageBucket: "sambong-world-2026.firebasestorage.app",
+                    messagingSenderId: "123456789",
+                    appId: "1:123456789:web:abcdefg"
+                };
 
-                    // ★ [에러 수정 포인트 1] 토큰 인증 실패 시 안전하게 익명 로그인으로 우회
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        try {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } catch (e) {
-                            console.warn("토큰 인증 실패, 익명 로그인으로 우회합니다.", e);
-                            await signInAnonymously(auth);
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // 익명 로그인으로 바로 처리되게 수정
+                await signInAnonymously(auth);
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        const savedId = localStorage.getItem('sambong_student_id');
+                        const savedPin = localStorage.getItem('sambong_student_pin');
+                        
+                        if (savedId && savedPin) {
+                            attemptLogin(savedId, savedPin, true);
+                        } else {
+                            document.getElementById('loginOverlay').classList.remove('hidden');
                         }
-                    } else {
-                        await signInAnonymously(auth);
                     }
-
-                    onAuthStateChanged(auth, (user) => {
-                        if (user) {
-                            const savedId = localStorage.getItem('sambong_student_id');
-                            const savedPin = localStorage.getItem('sambong_student_pin');
-                            
-                            if (savedId && savedPin) {
-                                attemptLogin(savedId, savedPin, true);
-                            } else {
-                                document.getElementById('loginOverlay').classList.remove('hidden');
-                            }
-                        }
-                    });
-                } else {
-                    document.getElementById('loginOverlay').classList.add('hidden');
-                    updateUI();
-                }
+                });
             } catch(e) {
                 console.error("초기화 실패:", e);
                 document.getElementById('loginOverlay').classList.add('hidden');

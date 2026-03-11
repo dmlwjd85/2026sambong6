@@ -92,7 +92,7 @@
                         <option value="1">1. 김단엘</option><option value="2">2. 김라희</option><option value="3">3. 김민지</option>
                         <option value="4">4. 김정훈</option><option value="5">5. 박문경</option><option value="6">6. 박소윤</option>
                         <option value="7">7. 박하율</option><option value="8">8. 박현수</option><option value="9">9. 백시율</option>
-                        <option value="10">10. 조이담</option><option value="11">11. 황훈태</option><option value="12">12. 임은영</option>
+                        <option value="10">10. 임은영</option><option value="11">11. 조이담</option><option value="12">12. 황훈태</option>
                         <option disabled>─── 관리자 ───</option>
                         <option value="gm" class="text-sb-gold">👑 마스터 J (담임교사)</option>
                     </select>
@@ -123,7 +123,7 @@
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center gap-3">
                     <i class="fa-solid fa-gamepad text-2xl text-sb-gold"></i>
-                    <span class="font-display text-xl sm:text-2xl text-white tracking-wider">SAMBONG WORLD <span class="text-xs sm:text-sm text-sb-red ml-2">v2.8</span></span>
+                    <span class="font-display text-xl sm:text-2xl text-white tracking-wider">SAMBONG WORLD <span class="text-xs sm:text-sm text-sb-red ml-2">v2.9</span></span>
                 </div>
                 <div class="flex items-center space-x-4">
                     <div id="saveStatus" class="hidden text-xs text-slate-400 items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
@@ -149,8 +149,8 @@
         <header class="text-center space-y-6">
             <h1 class="text-[1.75rem] sm:text-5xl md:text-7xl text-transparent bg-clip-text bg-gradient-to-r from-sb-gold to-yellow-200 drop-shadow-lg whitespace-nowrap tracking-tight">플레이어 공식 가이드</h1>
             <p class="text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto break-keep">삼봉초등학교 6학년 1반의 GM(선생님)과 플레이어(학생)들을 위한 규칙서입니다. 매일 성실하게 활동하여 전설의 마스터가 되어보세요.</p>
-            <div class="inline-flex items-center gap-3 bg-sb-blue/20 text-blue-300 border border-sb-blue px-4 sm:px-6 py-3 rounded-full font-bold text-xs sm:text-sm">
-                <i class="fa-solid fa-shield-halved animate-pulse"></i> [스마트 렌더링 적용] 코드가 획기적으로 가벼워지고 안정성이 향상되었습니다.
+            <div class="inline-flex items-center gap-3 bg-pink-500/20 text-pink-300 border border-pink-500 px-4 sm:px-6 py-3 rounded-full font-bold text-xs sm:text-sm">
+                <i class="fa-solid fa-wand-magic-sparkles animate-pulse"></i> [v2.9 핫픽스] 스킨 꾸미기 시스템(마법사 모자, 선글라스 등)이 추가되었습니다!
             </div>
         </header>
 
@@ -163,7 +163,7 @@
             <div class="glass-panel p-6 rounded-2xl overflow-x-auto shadow-2xl border border-sb-red/30">
                 <table class="w-full text-left text-sm text-slate-300">
                     <thead class="text-xs uppercase bg-slate-800 text-slate-400 border-b border-slate-600">
-                        <tr><th class="px-4 py-3">학번</th><th class="px-4 py-3">레벨 / 상태</th><th class="px-4 py-3">누적 XP</th><th class="px-4 py-3">보유 자산 (B)</th><th class="px-4 py-3">장착 직업</th><th class="px-4 py-3">접속 여부</th></tr>
+                        <tr><th class="px-4 py-3">학번</th><th class="px-4 py-3">캐릭터 (스킨)</th><th class="px-4 py-3">누적 XP</th><th class="px-4 py-3">보유 자산 (B)</th><th class="px-4 py-3">장착 직업</th><th class="px-4 py-3">접속 여부</th></tr>
                     </thead>
                     <tbody id="adminTableBody"></tbody>
                 </table>
@@ -182,13 +182,17 @@
         <section id="plaza" class="scroll-mt-24">
             <div class="mb-8">
                 <h2 class="text-3xl font-display text-emerald-400 flex items-center gap-3"><i class="fa-solid fa-users"></i> 삼봉 광장</h2>
-                <p class="text-slate-400 mt-2">나와 친구들의 현재 캐릭터 외형입니다.</p>
+                <p class="text-slate-400 mt-2">나와 친구들의 현재 캐릭터 외형과 장착 중인 스킨입니다.</p>
             </div>
             <div class="glass-panel p-8 rounded-2xl overflow-hidden">
                 <div class="flex flex-wrap gap-6 justify-center items-end min-h-[160px]" id="plazaContainer">
-                    <div id="myCharacterCard" class="flex flex-col items-center p-4 rounded-2xl border-2 border-slate-600 bg-slate-800 w-40 relative transition-all duration-500 shadow-lg">
+                    <div id="myCharacterCard" class="flex flex-col items-center p-4 rounded-2xl border-2 border-slate-600 bg-slate-800 w-44 relative transition-all duration-500 shadow-lg">
                         <div id="myJobBadgeContainer" class="badge-container"><div class="job-badge text-slate-400"><i class="fa-solid fa-user text-xs"></i></div></div>
-                        <div id="myAvatar" class="text-5xl mb-3 avatar-bounce">🥺🪵</div>
+                        <!-- 아바타 & 스킨 렌더링 구역 -->
+                        <div id="myAvatarWrapper" class="relative mb-3 flex flex-col items-center">
+                            <div id="myAvatar" class="text-5xl avatar-bounce">🥺🪵</div>
+                            <div id="mySkinBadge" class="absolute -bottom-3 text-xl bg-slate-900/80 px-2 py-0.5 rounded-full shadow border border-slate-600 empty:hidden"></div>
+                        </div>
                         <div id="myLevelName" class="text-xs font-bold text-slate-400 mb-1">새내기</div>
                         <div class="font-bold text-white bg-slate-900 px-3 py-1 rounded-md text-sm whitespace-nowrap" id="myCharacterName">나 (Player)</div>
                         <div id="myTotalXp" class="text-xs text-sb-blue mt-2 font-bold">0 XP</div>
@@ -233,6 +237,15 @@
                             <h4 class="text-slate-400 text-sm font-bold mb-2">나의 현재 자산</h4>
                             <div class="font-display text-5xl text-white drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]"><span id="simBong" class="transition-all duration-300">0.0</span> <span class="text-2xl text-sb-gold">B</span></div>
                         </div>
+                    </div>
+
+                    <!-- ★ 스킨 상점 추가 ★ -->
+                    <div class="glass-panel p-6 rounded-2xl border-t-4 border-t-pink-500">
+                        <h3 class="font-bold text-xl mb-4 border-b border-slate-700 pb-2 flex justify-between items-end">
+                            <span><i class="fa-solid fa-shirt text-pink-400 mr-2"></i> 스킨 부티크 (캐릭터 꾸미기)</span>
+                            <span class="text-xs font-normal text-slate-400">보유 시 자유롭게 장착/해제</span>
+                        </h3>
+                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
                     </div>
 
                     <div class="glass-panel p-6 rounded-2xl">
@@ -284,6 +297,14 @@
             { id: 'q5', type: 'locked', name: '자아 극복 (보스전)', desc: '단원평가 및 수행평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-lock', color: 'text-red-300' }
         ];
 
+        // 스킨 데이터 추가 (색상/테두리 효과 포함)
+        const SKIN_DATA = [
+            { id: 'sk1', name: '마법사 모자', desc: '지능 상승의 모자', price: 150, emoji: '🎩', border: 'border-purple-500', glow: 'shadow-[0_0_20px_rgba(168,85,247,0.6)]' },
+            { id: 'sk2', name: '선글라스', desc: '인싸의 기본 소양', price: 200, emoji: '🕶️', border: 'border-slate-400', glow: 'shadow-[0_0_20px_rgba(148,163,184,0.6)]' },
+            { id: 'sk3', name: '다이아 귀걸이', desc: '매력 스탯 증가', price: 300, emoji: '💎', border: 'border-cyan-400', glow: 'shadow-[0_0_20px_rgba(34,211,238,0.6)]' },
+            { id: 'sk4', name: '헤드폰', desc: '소음 완벽 차단', price: 250, emoji: '🎧', border: 'border-pink-500', glow: 'shadow-[0_0_20px_rgba(236,72,153,0.6)]' }
+        ];
+
         const SHOP_DATA = [
             { id: 's1', name: '뮤직 타임', desc: '쉬는 시간 신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400', isWide: false },
             { id: 's2', name: '시간 왜곡', desc: '시간표 순서 바꾸기', price: 100, icon: 'fa-clock-rotate-left', iconColor: 'text-blue-400', isWide: false },
@@ -306,11 +327,12 @@
         const STUDENT_NAMES = {
             "1": "김단엘", "2": "김라희", "3": "김민지", "4": "김정훈",
             "5": "박문경", "6": "박소윤", "7": "박하율", "8": "박현수",
-            "9": "백시율", "10": "조이담", "11": "황훈태", "12": "임은영",
+            "9": "백시율", "10": "임은영", "11": "조이담", "12": "황훈태",
             "gm": "마스터 J", "guest": "손님 (Guest)"
         };
 
-        window.playerState = { xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM: false };
+        // 스킨 보유/장착 데이터 구조 추가
+        window.playerState = { xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, isGuest: false, isGM: false };
         let db, auth, currentStudentDocRef = null, currentLevelIndex = 0;
         let unsubscribeSnapshot = null, unsubscribeAdmin = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
@@ -342,10 +364,24 @@
                     <div class="font-display ${shop.isWide ? 'text-3xl text-sb-red' : 'text-xl text-sb-gold'}">${shop.price} B</div>
                 </div>
             `).join('');
+
+            // 스킨 상점 생성
+            document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
+                <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800 p-4 rounded-xl border-2 flex items-center gap-4 transition-all duration-300" onclick="window.handleSkin('${skin.id}')">
+                    <div class="bg-slate-900 w-12 h-12 flex-shrink-0 rounded-full flex items-center justify-center text-2xl">${skin.emoji}</div>
+                    <div class="flex-grow">
+                        <div class="font-bold">${skin.name}</div>
+                        <div class="text-xs text-slate-400">${skin.desc}</div>
+                    </div>
+                    <div class="text-right" id="skin-status-${skin.id}">
+                        <div class="font-display text-xl text-pink-400">${skin.price} B</div>
+                    </div>
+                </div>
+            `).join('');
         }
 
         async function initApp() {
-            initDynamicContent(); // 화면 로딩 시 뼈대 먼저 생성
+            initDynamicContent();
 
             try {
                 const firebaseConfig = {
@@ -354,8 +390,7 @@
                     projectId: "sambong-world-2026",
                     storageBucket: "sambong-world-2026.firebasestorage.app",
                     messagingSenderId: "728320769100",
-                    appId: "1:728320769100:web:7510c9a77cca6b87a788e9",
-                    measurementId: "G-H1RGMJHGTV"
+                    appId: "1:728320769100:web:7510c9a77cca6b87a788e9"
                 };
 
                 const app = initializeApp(firebaseConfig);
@@ -380,8 +415,12 @@
         // ==========================================
         function updateUI() {
             if (!window.playerState.isGuest && !currentStudentDocRef) return;
+            
+            // 데이터 안정성 확인
+            if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
+            if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
-            // 퀘스트 동적 렌더링 (상태에 따라 클래스가 달라지므로 매번 그림)
+            // 퀘스트 동적 렌더링
             const today = new Date().getDay();
             document.getElementById('questContainer').innerHTML = QUEST_DATA.map(q => {
                 const isCompleted = window.playerState.quests && window.playerState.quests[q.id];
@@ -420,7 +459,33 @@
                 </button>`;
             }).join('');
 
-            // 상점 스타일 업데이트
+            // 스킨 상점 업데이트
+            SKIN_DATA.forEach(skin => {
+                const item = document.getElementById(`skin-btn-${skin.id}`);
+                const status = document.getElementById(`skin-status-${skin.id}`);
+                if (item && status) {
+                    const isOwned = window.playerState.ownedSkins[skin.id];
+                    const isEquipped = window.playerState.equippedSkins[skin.id];
+
+                    if (isOwned) {
+                        item.classList.replace('unaffordable', 'affordable');
+                        item.classList.add('border-pink-500'); 
+                        status.innerHTML = isEquipped 
+                            ? '<span class="text-xs bg-pink-500 text-white px-2 py-1 rounded-full font-bold">장착 중</span>' 
+                            : '<span class="text-xs border border-pink-500 text-pink-400 px-2 py-1 rounded-full font-bold">보유 중</span>';
+                    } else {
+                        item.classList.remove('border-pink-500');
+                        if (window.playerState.bong >= skin.price || window.playerState.isGM) {
+                            item.classList.replace('unaffordable', 'affordable');
+                        } else {
+                            item.classList.replace('affordable', 'unaffordable');
+                        }
+                        status.innerHTML = `<div class="font-display text-xl text-pink-400">${skin.price} B</div>`;
+                    }
+                }
+            });
+
+            // 아이템 상점 업데이트
             SHOP_DATA.forEach(shop => {
                 const item = document.getElementById(`shop-btn-${shop.id}`);
                 if (item) {
@@ -432,15 +497,32 @@
                 }
             });
 
-            // 내 캐릭터 카드 및 상단 수치 업데이트
+            // 내 캐릭터 카드 스킨 및 수치 업데이트
             const myCard = document.getElementById('myCharacterCard');
             const myAvatar = document.getElementById('myAvatar');
             const myLevelName = document.getElementById('myLevelName');
             const myTotalXp = document.getElementById('myTotalXp');
+            const skinBadge = document.getElementById('mySkinBadge');
+
+            // 스킨 효과(이모지 및 카드 테두리) 계산
+            let equippedEmojis = '';
+            let customBorder = '';
+            let customGlow = '';
+            
+            SKIN_DATA.forEach(s => {
+                if (window.playerState.equippedSkins[s.id]) {
+                    equippedEmojis += s.emoji;
+                    customBorder = s.border; // 장착된 스킨의 테두리 색상 적용
+                    customGlow = s.glow;     // 장착된 스킨의 네온 효과 적용
+                }
+            });
+            skinBadge.innerHTML = equippedEmojis; 
 
             if (window.playerState.isGM) {
-                // ★ 마스터 전용 초월 연출 ★
-                myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-48 relative transition-all duration-500 shadow-[0_0_30px_rgba(251,191,36,0.5)] border-sb-gold bg-slate-900`;
+                const gmBorder = customBorder || 'border-sb-gold';
+                const gmGlow = customGlow || 'shadow-[0_0_30px_rgba(251,191,36,0.5)]';
+                
+                myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-48 relative transition-all duration-500 ${gmGlow} ${gmBorder} bg-slate-900`;
                 myAvatar.innerHTML = `<div class="relative"><div class="text-6xl mb-3 avatar-legend relative z-10">👑🐉</div><div class="absolute inset-0 bg-sb-gold/20 blur-xl rounded-full animate-pulse"></div></div>`;
                 myLevelName.innerText = "세계관 창조자 (GM)";
                 myLevelName.className = `text-sm font-black mb-1 text-sb-gold tracking-widest`;
@@ -448,19 +530,21 @@
                 document.getElementById('simXp').innerText = "∞";
                 document.getElementById('simBong').innerText = "∞";
             } else {
-                // 일반 플레이어 연출
                 const lv = getLevelInfo(window.playerState.xp);
-                myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-40 relative transition-all duration-500 shadow-lg ${lv.info.borderColor} ${lv.info.bgColor}`;
+                const finalBorder = customBorder || lv.info.borderColor;
+                const finalGlow = customGlow || 'shadow-lg';
+                
+                myCard.className = `flex flex-col items-center p-4 rounded-2xl border-2 w-44 relative transition-all duration-500 ${finalGlow} ${finalBorder} ${lv.info.bgColor}`;
                 myAvatar.innerText = lv.info.emoji;
-                myAvatar.className = `text-5xl mb-3 transition-all duration-300 ${lv.info.anim}`;
+                myAvatar.className = `text-5xl avatar-bounce transition-all duration-300 ${lv.info.anim}`;
                 myLevelName.innerText = lv.info.name;
-                myLevelName.className = `text-xs font-bold mb-1 ${lv.info.textColor}`;
+                myLevelName.className = `text-xs font-bold mb-1 mt-2 ${lv.info.textColor}`;
                 myTotalXp.innerText = `${(window.playerState.xp || 0).toLocaleString()} XP`;
                 document.getElementById('simXp').innerText = (window.playerState.xp || 0).toLocaleString();
                 document.getElementById('simBong').innerText = (window.playerState.bong || 0).toFixed(1);
             }
 
-            // 뱃지 업데이트
+            // 직업 뱃지 업데이트
             const badgeContainer = document.getElementById('myJobBadgeContainer');
             badgeContainer.innerHTML = (!window.playerState.jobs || window.playerState.jobs.length === 0) 
                 ? `<div class="job-badge text-slate-400"><i class="fa-solid fa-user text-xs"></i></div>`
@@ -498,7 +582,7 @@
         });
 
         window.loginAsGuest = function() {
-            window.playerState = { xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], isGuest: true, isGM: false };
+            window.playerState = { xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], ownedSkins: {}, equippedSkins: {}, isGuest: true, isGM: false };
             completeLoginUI(STUDENT_NAMES["guest"], false);
         };
 
@@ -528,12 +612,45 @@
         window.promptUnlock = async function(qId) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드입니다.");
             const code = await window.customPrompt("마스터 J가 부여한 비밀 코드를 입력하세요:");
-            if (code === "마스터J" || code === "오픈" || code === "master") { 
+            if (code === "마스터J" || code === "오픈" || code === "master" || code === "1") { 
                 await window.customAlert("🔓 퀘스트가 활성화되었습니다!");
                 if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
                 window.playerState.unlockedQuests[qId] = true;
                 updateUI(); saveDataToCloud();
             } else if (code !== null) { await window.customAlert("❌ 코드가 일치하지 않습니다."); }
+        };
+
+        // ★ 스킨 구매 및 장착 로직 ★
+        window.handleSkin = async function(skinId) {
+            if (window.playerState.isGuest) return await window.customAlert("👀 게스트 모드입니다.");
+            const skin = SKIN_DATA.find(s => s.id === skinId);
+            
+            if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
+            if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
+
+            if (window.playerState.ownedSkins[skinId]) {
+                // 이미 보유중이면 장착 토글
+                window.playerState.equippedSkins[skinId] = !window.playerState.equippedSkins[skinId];
+                updateUI();
+                saveDataToCloud();
+                window.location.hash = '#plaza';
+            } else {
+                // 미보유시 구매 진행
+                if (window.playerState.bong >= skin.price || window.playerState.isGM) {
+                    const isOk = await window.customConfirm(`'${skin.name}' 스킨을 ${skin.price} B에 구매하시겠습니까?`);
+                    if (isOk) {
+                        if (!window.playerState.isGM) window.playerState.bong -= skin.price;
+                        window.playerState.ownedSkins[skinId] = true;
+                        window.playerState.equippedSkins[skinId] = true; // 구매시 자동 장착
+                        await window.customAlert(`🎉 '${skin.name}' 스킨 획득 완료! 캐릭터에 적용되었습니다.`);
+                        updateUI();
+                        saveDataToCloud();
+                        window.location.hash = '#plaza';
+                    }
+                } else {
+                    await window.customAlert(`❌ [골드 부족] ${skin.price - window.playerState.bong}B가 더 필요합니다.`);
+                }
+            }
         };
 
         window.alertShop = async function(itemName, price) {
@@ -564,7 +681,7 @@
                     if (isAutoLogin) return; 
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`);
                     if(!isOk) return;
-                    window.playerState = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], isGuest: false, isGM };
+                    window.playerState = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, isGuest: false, isGM };
                     await setDoc(docRef, window.playerState);
                 }
 
@@ -626,7 +743,13 @@
                 if(stu) {
                     const levelData = getLevelInfo(stu.xp || 0);
                     const jobsHtml = (stu.jobs || []).map(j => `<i class="fa-solid ${j.icon} ${j.color}" title="${j.name}"></i>`).join(' ');
-                    tbody.innerHTML += `<tr class="border-b border-slate-700 hover:bg-slate-800 transition"><td class="px-4 py-3 font-bold text-white">${i}. ${STUDENT_NAMES[i]}</td><td class="px-4 py-3"><span class="text-lg mr-1">${levelData.info.emoji}</span> ${levelData.info.name}</td><td class="px-4 py-3 text-sb-blue font-bold">${(stu.xp||0).toLocaleString()}</td><td class="px-4 py-3 text-sb-gold font-bold">${(stu.bong||0).toFixed(1)} B</td><td class="px-4 py-3 flex gap-2 text-lg items-center h-full">${jobsHtml || '<span class="text-xs text-slate-500">없음</span>'}</td><td class="px-4 py-3 text-emerald-400 text-xs font-bold">🟢 활동중</td></tr>`;
+                    
+                    let equippedEmojis = '';
+                    if (stu.equippedSkins) {
+                        SKIN_DATA.forEach(sk => { if (stu.equippedSkins[sk.id]) equippedEmojis += sk.emoji; });
+                    }
+
+                    tbody.innerHTML += `<tr class="border-b border-slate-700 hover:bg-slate-800 transition"><td class="px-4 py-3 font-bold text-white">${i}. ${STUDENT_NAMES[i]}</td><td class="px-4 py-3"><span class="text-lg mr-1">${levelData.info.emoji}</span> <span class="text-sm bg-slate-700 rounded px-1 tracking-widest">${equippedEmojis}</span> <span class="text-xs text-slate-400 ml-1">${levelData.info.name}</span></td><td class="px-4 py-3 text-sb-blue font-bold">${(stu.xp||0).toLocaleString()}</td><td class="px-4 py-3 text-sb-gold font-bold">${(stu.bong||0).toFixed(1)} B</td><td class="px-4 py-3 flex gap-2 text-lg items-center h-full">${jobsHtml || '<span class="text-xs text-slate-500">없음</span>'}</td><td class="px-4 py-3 text-emerald-400 text-xs font-bold">🟢 활동중</td></tr>`;
                 } else {
                     tbody.innerHTML += `<tr class="border-b border-slate-700 text-slate-500 bg-slate-800/30"><td class="px-4 py-3">${i}. ${STUDENT_NAMES[i]}</td><td class="px-4 py-3">-</td><td class="px-4 py-3">-</td><td class="px-4 py-3">-</td><td class="px-4 py-3">-</td><td class="px-4 py-3 text-slate-600 text-xs">⚫ 미접속</td></tr>`;
                 }

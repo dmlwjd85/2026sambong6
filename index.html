@@ -162,13 +162,16 @@
                 <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2">12명 플레이어의 실시간 데이터 및 일괄/개별 편집 패널입니다. (전자칠판 터치 최적화)</p>
             </div>
 
-            <!-- ★ 전담 레이드 비밀번호 설정 패널 ★ -->
-            <div class="glass-panel p-4 sm:p-6 rounded-2xl mb-4 border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.1)] flex justify-between items-center">
+            <!-- ★ 전담 레이드 비밀번호 & 초기화 관리 패널 ★ -->
+            <div class="glass-panel p-4 sm:p-6 rounded-2xl mb-4 border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h3 class="text-white font-bold flex items-center text-sm sm:text-base"><i class="fa-solid fa-key text-purple-400 mr-2"></i> 전담교사 레이드 비밀번호</h3>
+                    <h3 class="text-white font-bold flex items-center text-sm sm:text-base"><i class="fa-solid fa-key text-purple-400 mr-2"></i> 전담교사 레이드 관리</h3>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">현재 설정된 비밀번호: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold tracking-widest text-base sm:text-lg ml-1">1234</span></p>
                 </div>
-                <button onclick="window.setRaidPassword()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-3 sm:px-4 rounded-xl shadow transition text-xs sm:text-sm whitespace-nowrap">변경하기</button>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    <button onclick="window.setRaidPassword()" class="flex-1 sm:flex-none bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-3 sm:px-4 rounded-xl shadow transition text-xs sm:text-sm whitespace-nowrap">비번 변경</button>
+                    <button onclick="window.resetRaids()" class="flex-1 sm:flex-none bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-3 sm:px-4 rounded-xl shadow transition text-xs sm:text-sm whitespace-nowrap"><i class="fa-solid fa-rotate-right"></i> 레이드 초기화</button>
+                </div>
             </div>
             
             <!-- 마스터 일괄 지급/차감 패널 -->
@@ -230,7 +233,7 @@
             <div class="glass-panel p-4 sm:p-6 rounded-2xl overflow-x-auto shadow-2xl border border-sb-red/30">
                 <table class="w-full text-left text-xs sm:text-sm text-slate-300 min-w-[700px]">
                     <thead class="text-[10px] sm:text-xs uppercase bg-slate-800 text-slate-400 border-b border-slate-600">
-                        <tr><th class="px-3 py-2 sm:py-3">학번</th><th class="px-3 py-2 sm:py-3">캐릭터 (방패/스킨)</th><th class="px-3 py-2 sm:py-3">누적 XP <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">보유 자산 (B) <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">장착 직업</th><th class="px-3 py-2 sm:py-3 text-center text-emerald-400"><i class="fa-solid fa-bolt"></i> 터치 보상 (전자칠판용)</th></tr>
+                        <tr><th class="px-3 py-2 sm:py-3">학번/PIN <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">캐릭터 (방패/스킨)</th><th class="px-3 py-2 sm:py-3">누적 XP <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">보유 자산 (B) <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">장착 직업</th><th class="px-3 py-2 sm:py-3 text-center text-emerald-400"><i class="fa-solid fa-bolt"></i> 터치 보상 (전자칠판용)</th></tr>
                     </thead>
                     <tbody id="adminTableBody"></tbody>
                 </table>
@@ -590,7 +593,8 @@
                     });
                 }
                 
-                const shieldHtml = displayData.hasShield ? `<div class="absolute -top-3 -left-3 text-2xl sm:text-3xl drop-shadow-lg z-30 animate-pulse">🛡️</div>` : '';
+                const currentShieldHP = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
+                const shieldHtml = currentShieldHP > 0 ? `<div class="absolute -top-3 -left-3 drop-shadow-lg z-30 animate-pulse flex flex-col items-center"><span class="text-2xl sm:text-3xl">🛡️</span><span class="text-[10px] font-bold text-white bg-indigo-600 px-1 rounded-sm -mt-2 leading-tight shadow-md">${currentShieldHP}</span></div>` : '';
 
                 if (isGMCard) {
                     const border = customBorder || 'border-sb-gold';

@@ -94,6 +94,7 @@
                         <option value="4">4. 김정훈</option><option value="5">5. 박문경</option><option value="6">6. 박소윤</option>
                         <option value="7">7. 박하율</option><option value="8">8. 박현수</option><option value="9">9. 백시율</option>
                         <option value="10">10. 임은영</option><option value="11">11. 조이담</option><option value="12">12. 황훈태</option>
+                        <option value="13">13. 석서영</option>
                         <option disabled>─── 관리자 ───</option>
                         <option value="gm" class="text-sb-gold">👑 마스터 J (담임교사)</option>
                     </select>
@@ -124,7 +125,7 @@
             <div class="flex items-center justify-between h-14 sm:h-16">
                 <div class="flex items-center gap-2 sm:gap-3">
                     <i class="fa-solid fa-gamepad text-xl sm:text-2xl text-sb-gold"></i>
-                    <span class="font-display text-lg sm:text-2xl text-white tracking-wider">SAMBONG WORLD <span class="text-[10px] sm:text-xs text-sb-red ml-1 sm:ml-2">v5.0</span></span>
+                    <span class="font-display text-lg sm:text-2xl text-white tracking-wider">SAMBONG WORLD <span class="text-[10px] sm:text-xs text-sb-red ml-1 sm:ml-2">v5.3</span></span>
                 </div>
                 <div class="flex items-center space-x-2 sm:space-x-4">
                     <div id="saveStatus" class="hidden text-[10px] sm:text-xs text-slate-400 items-center gap-1.5 sm:gap-2 bg-slate-800 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-slate-700">
@@ -151,7 +152,7 @@
             <h1 class="text-2xl sm:text-5xl md:text-7xl text-transparent bg-clip-text bg-gradient-to-r from-sb-gold to-yellow-200 drop-shadow-lg whitespace-nowrap tracking-tight">플레이어 공식 가이드</h1>
             <p class="text-sm sm:text-xl text-slate-400 max-w-2xl mx-auto break-keep px-2">삼봉초등학교 6학년 1반의 GM(선생님)과 플레이어(학생)들을 위한 규칙서입니다. 매일 성실하게 활동하여 전설의 마스터가 되어보세요.</p>
             <div class="inline-flex flex-wrap justify-center items-center gap-2 sm:gap-3 bg-indigo-500/20 text-indigo-300 border border-indigo-500 px-3 sm:px-6 py-2 sm:py-3 rounded-full font-bold text-[10px] sm:text-sm">
-                <i class="fa-solid fa-wand-magic-sparkles animate-pulse"></i> [v5.0 대규모 패치] 기본 얼굴 고정 + 펫(알➔불새) 진화 도입 & 얼굴(Face) 커스텀 스킨 상점 오픈!
+                <i class="fa-solid fa-wand-magic-sparkles animate-pulse"></i> [v5.3 패치] 학생 핀 번호 보안 강화(클릭 시 확인) 및 직관적 +/- 퀵 컨트롤 버튼 패널 적용
             </div>
         </header>
 
@@ -159,7 +160,7 @@
         <section id="adminDashboard" class="hidden scroll-mt-20">
             <div class="mb-4 sm:mb-8">
                 <h2 class="text-2xl sm:text-3xl font-display text-sb-red flex items-center gap-2 sm:gap-3"><i class="fa-solid fa-eye"></i> 마스터 관찰구역</h2>
-                <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2">12명 플레이어의 실시간 데이터 및 일괄/개별 편집 패널입니다. (전자칠판 터치 최적화)</p>
+                <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2">13명 플레이어의 실시간 데이터 및 일괄/개별 편집 패널입니다. (전자칠판 터치 최적화)</p>
             </div>
 
             <!-- ★ 전담 레이드 비밀번호 & 초기화 관리 패널 ★ -->
@@ -227,13 +228,13 @@
                         </div>
                     </div>
                 </div>
-                <p class="text-[11px] sm:text-xs text-yellow-400 mt-4 border-t border-slate-700 pt-3"><i class="fa-solid fa-circle-info"></i> <strong>수업 중 즉각 보상:</strong> 표 우측의 <strong>[터치 보상]</strong> 버튼이나 아래 <strong>[삼봉 광장]</strong>의 캐릭터 카드를 직접 터치하면 번쩍이는 효과와 함께 경험치가 즉시 지급됩니다!</p>
+                <p class="text-[11px] sm:text-xs text-yellow-400 mt-4 border-t border-slate-700 pt-3"><i class="fa-solid fa-circle-info"></i> <strong>수업 중 즉각 보상:</strong> 표 우측의 컨트롤 패널이나 아래 <strong>[삼봉 광장]</strong>의 캐릭터 카드를 터치하여 바로 보상을 지급 및 차감할 수 있습니다.</p>
             </div>
 
             <div class="glass-panel p-4 sm:p-6 rounded-2xl overflow-x-auto shadow-2xl border border-sb-red/30">
-                <table class="w-full text-left text-xs sm:text-sm text-slate-300 min-w-[700px]">
+                <table class="w-full text-left text-xs sm:text-sm text-slate-300 min-w-[750px]">
                     <thead class="text-[10px] sm:text-xs uppercase bg-slate-800 text-slate-400 border-b border-slate-600">
-                        <tr><th class="px-3 py-2 sm:py-3">학번/PIN <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">캐릭터 (방패/스킨)</th><th class="px-3 py-2 sm:py-3">누적 XP <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">보유 자산 (B) <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">장착 직업</th><th class="px-3 py-2 sm:py-3 text-center text-emerald-400"><i class="fa-solid fa-bolt"></i> 터치 보상 (전자칠판용)</th></tr>
+                        <tr><th class="px-3 py-2 sm:py-3">학번/PIN <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">캐릭터 (방패/스킨)</th><th class="px-3 py-2 sm:py-3">누적 XP <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">보유 자산 (B) <i class="fa-solid fa-pen text-[10px]"></i></th><th class="px-3 py-2 sm:py-3">장착 직업</th><th class="px-3 py-2 sm:py-3 text-center text-emerald-400">⚡ 퀵 컨트롤 (전자칠판용)</th></tr>
                     </thead>
                     <tbody id="adminTableBody"></tbody>
                 </table>
@@ -252,7 +253,7 @@
         <section id="plaza" class="scroll-mt-20">
             <div class="mb-4 sm:mb-8">
                 <h2 class="text-2xl sm:text-3xl font-display text-emerald-400 flex items-center gap-2 sm:gap-3"><i class="fa-solid fa-users"></i> 삼봉 광장</h2>
-                <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2">나와 친구들의 실시간 캐릭터 외형입니다. <strong class="text-sb-gold">마스터 J(선생님)는 카드를 클릭하여 +2 XP를 즉각 지급할 수 있습니다.</strong></p>
+                <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2">나와 친구들의 실시간 캐릭터 외형입니다. <strong class="text-sb-gold">마스터 J(선생님)는 카드 하단의 +,- 버튼으로 즉각 보상/차감이 가능합니다.</strong></p>
             </div>
             <div class="glass-panel p-4 sm:p-8 rounded-2xl overflow-hidden">
                 <div class="flex flex-wrap gap-3 sm:gap-6 justify-center items-end min-h-[160px]" id="plazaContainer">
@@ -432,18 +433,20 @@
             { max: Infinity, name: '전설', prop: '🐦‍🔥', borderColor: 'border-sb-red', bgColor: 'bg-red-900/30', textColor: 'text-sb-red', anim: 'avatar-legend' }
         ];
 
+        // ★ 13번 분교 학생 (석서영) 추가 ★
         const STUDENT_NAMES = {
             "1": "김단엘", "2": "김라희", "3": "김민지", "4": "김정훈",
             "5": "박문경", "6": "박소윤", "7": "박하율", "8": "박현수",
             "9": "백시율", "10": "임은영", "11": "조이담", "12": "황훈태",
+            "13": "석서영",
             "gm": "마스터 J", "guest": "손님 (Guest)"
         };
 
-        // ★ 성별 지정 (F: 여학생, M: 남학생) ★
         const STUDENT_GENDERS = {
             "1": "M", "2": "F", "3": "F", "4": "M",
             "5": "M", "6": "F", "7": "F", "8": "M",
             "9": "M", "10": "F", "11": "M", "12": "M",
+            "13": "F",
             "gm": "M", "guest": "M"
         };
 
@@ -596,10 +599,27 @@
                 const currentShieldHP = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
                 const shieldHtml = currentShieldHP > 0 ? `<div class="absolute -top-3 -left-3 drop-shadow-lg z-30 animate-pulse flex flex-col items-center"><span class="text-2xl sm:text-3xl">🛡️</span><span class="text-[10px] font-bold text-white bg-indigo-600 px-1 rounded-sm -mt-2 leading-tight shadow-md">${currentShieldHP}</span></div>` : '';
 
+                // ★ 마스터를 위한 광장 퀵 컨트롤 버튼 패널 (각 카드 하단) ★
+                let gmControls = '';
+                if (window.playerState.isGM && !isGMCard) {
+                    gmControls = `
+                    <div class="w-full mt-2 pt-2 border-t border-slate-700/50 flex flex-col gap-1 z-20 relative cursor-default" onclick="event.stopPropagation();">
+                        <div class="flex justify-between items-center gap-1">
+                            <button onclick="window.quickReward('xp', 5, '${targetId}', this)" class="flex-1 bg-sb-blue/20 text-sb-blue text-[11px] font-bold py-1.5 rounded shadow-sm hover:bg-sb-blue hover:text-white transition">+5</button>
+                            <span class="text-[9px] text-slate-400 font-bold w-4 text-center">XP</span>
+                            <button onclick="window.quickReward('xp', -5, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[11px] font-bold py-1.5 rounded shadow-sm hover:bg-sb-red hover:text-white transition">-5</button>
+                        </div>
+                        <div class="flex justify-between items-center gap-1">
+                            <button onclick="window.quickReward('bong', 1, '${targetId}', this)" class="flex-1 bg-sb-gold/20 text-sb-gold text-[11px] font-bold py-1.5 rounded shadow-sm hover:bg-sb-gold hover:text-slate-900 transition">+1</button>
+                            <span class="text-[9px] text-slate-400 font-bold w-4 text-center">B</span>
+                            <button onclick="window.quickReward('bong', -1, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[11px] font-bold py-1.5 rounded shadow-sm hover:bg-sb-red hover:text-white transition">-1</button>
+                        </div>
+                    </div>`;
+                }
+
                 if (isGMCard) {
                     const border = customBorder || 'border-sb-gold';
                     const glow = customGlow || 'shadow-[0_0_25px_rgba(251,191,36,0.6)]';
-                    // ★ 마스터 카드 사이즈 확대 및 드래곤 폼 변경 ★
                     return `<div class="flex flex-col items-center p-4 sm:p-5 rounded-2xl border-2 w-36 sm:w-48 relative transition-all duration-300 ${glow} ${border} bg-slate-900 ${meHighlight} transform sm:scale-105 mx-2 z-10">${shieldHtml}
                         <div class="relative mb-3 flex flex-col items-center">
                             <div class="text-5xl sm:text-6xl avatar-legend flex items-center justify-center relative z-10 drop-shadow-[0_0_15px_rgba(251,191,36,0.8)]">
@@ -614,8 +634,7 @@
                     const glow = customGlow || 'shadow-md';
                     const jobsHtml = (displayData.jobs || []).map((j, i) => `<div class="job-badge ${j.color} w-4 h-4 sm:w-5 sm:h-5" style="z-index: ${10 - i}"><i class="fa-solid ${j.icon} text-[8px] sm:text-[10px]"></i></div>`).join('');
 
-                    // 학생들 펫 진화 폼 적용
-                    return `<div ${gmOnClick} class="flex flex-col items-center p-3 sm:p-4 rounded-xl border-2 w-[104px] sm:w-36 relative transition-all duration-300 ${glow} ${border} ${lv.info.bgColor} ${meHighlight} ${gmCursor}">${shieldHtml}
+                    return `<div ${gmOnClick} class="flex flex-col items-center p-3 sm:p-4 rounded-xl border-2 w-[110px] sm:w-36 relative transition-all duration-300 ${glow} ${border} ${lv.info.bgColor} ${meHighlight} ${gmCursor}">${shieldHtml}
                         <div class="badge-container gap-1">${jobsHtml}</div>
                         <div class="relative mb-2 flex flex-col items-center">
                             <div class="text-4xl sm:text-5xl transition-all duration-300 ${lv.info.anim} flex items-end justify-center gap-1 relative z-10">
@@ -625,14 +644,14 @@
                         </div>
                         <div class="text-[9px] sm:text-[10px] font-bold mb-1 mt-1 ${lv.info.textColor}">${lv.info.name}</div>
                         <div class="font-bold text-white bg-slate-900 px-2 py-0.5 sm:py-1 rounded-md text-[10px] sm:text-xs whitespace-nowrap w-full text-center truncate">${idLabel}</div>
-                        <div class="text-[9px] sm:text-[10px] text-sb-blue mt-1 font-bold">${(displayData.xp || 0).toLocaleString()} XP</div>
+                        <div class="text-[10px] sm:text-xs text-sb-blue mt-1.5 font-bold">${(displayData.xp || 0).toLocaleString()} XP</div>
+                        ${gmControls}
                     </div>`;
                 }
             };
 
-            // GM 카드가 중간이나 잘 보이게 맨 앞으로 배치합니다.
             html += createCard(gmData, true, '마스터 J');
-            for(let i=1; i<=12; i++) {
+            for(let i=1; i<=13; i++) {
                 const stu = studentsData.find(s => s.id === String(i));
                 html += createCard(stu, false, `${i}. ${STUDENT_NAMES[i]}`);
             }
@@ -978,52 +997,70 @@
         window.plazaClickXP = async function(stuId, element) {
             if (!window.playerState.isGM) return;
             if (stuId === 'gm') return;
-
-            playCoinSound();
-
-            const rect = element.getBoundingClientRect();
-            const floater = document.createElement('div');
-            floater.className = 'floating-text text-sb-blue';
-            floater.innerHTML = `+2 <span class="text-xs">XP</span>`;
-            floater.style.left = `${rect.left + (rect.width/2) - 15 + window.scrollX}px`;
-            floater.style.top = `${rect.top + window.scrollY}px`;
-            document.body.appendChild(floater);
-            setTimeout(() => floater.remove(), 1000);
-
-            element.classList.add('ring-4', 'ring-emerald-400');
-            setTimeout(() => element.classList.remove('ring-4', 'ring-emerald-400'), 300);
-
-            const stu = window.allStudentsData.find(s => s.id === stuId);
-            let currentXp = stu ? (stu.xp || 0) : 0;
-            let currentBong = stu ? (stu.bong || 0) : 0;
             
-            let docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
-            await setDoc(docRef, { xp: currentXp + 2, bong: currentBong }, { merge: true });
+            // 광장 전체 카드 클릭 시 기본 +2 XP 동작 유지
+            window.quickReward('xp', 2, stuId, element);
         };
 
+        // ★ +,- 퀵 보상/차감 로직 강화 ★
         window.quickReward = async function(type, amount, stuId, btnElement) {
             if (!window.playerState.isGM) return;
-            playRewardSound();
+            
+            if (amount > 0) playRewardSound();
+            else playCoinSound();
 
             const rect = btnElement.getBoundingClientRect();
             const floater = document.createElement('div');
-            floater.className = 'floating-text ' + (type === 'xp' ? 'text-sb-blue' : 'text-yellow-400');
-            floater.innerHTML = `+${amount} <span class="text-sm">${type === 'xp' ? 'XP' : 'B'}</span>`;
-            floater.style.left = `${rect.left + (rect.width/2) - 20 + window.scrollX}px`;
+            const colorClass = amount > 0 ? (type === 'xp' ? 'text-sb-blue' : 'text-yellow-400') : 'text-sb-red';
+            floater.className = 'floating-text ' + colorClass;
+            const sign = amount > 0 ? '+' : '';
+            floater.innerHTML = `${sign}${amount} <span class="text-[10px] sm:text-xs">${type === 'xp' ? 'XP' : 'B'}</span>`;
+            floater.style.left = `${rect.left + (rect.width/2) - 15 + window.scrollX}px`;
             floater.style.top = `${rect.top + window.scrollY - 10}px`;
             document.body.appendChild(floater);
             setTimeout(() => floater.remove(), 1000);
 
+            // 표(Table) 깜빡임 효과
             const row = document.getElementById(`admin-row-${stuId}`);
             if (row) {
-                row.classList.add('bg-emerald-900/60');
-                setTimeout(() => row.classList.remove('bg-emerald-900/60'), 400);
+                row.classList.add(amount > 0 ? 'bg-emerald-900/60' : 'bg-red-900/60');
+                setTimeout(() => row.classList.remove('bg-emerald-900/60', 'bg-red-900/60'), 400);
             }
 
             const stu = window.allStudentsData.find(s => s.id === stuId);
+            if (!stu) return;
+
             let docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
             let updates = {};
-            updates[type] = (stu ? (stu[type] || 0) : 0) + amount;
+
+            if (amount < 0) {
+                // ⚠️ 차감 시 절대방패(HP) 우선 차감 로직 적용
+                let currentShieldHP = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
+                if (stu.hasShield) updates.hasShield = false; 
+
+                let deductAmount = Math.abs(amount);
+                
+                if (currentShieldHP > 0) {
+                    if (currentShieldHP >= deductAmount) {
+                        updates.shieldHP = currentShieldHP - deductAmount;
+                        deductAmount = 0;
+                    } else {
+                        deductAmount -= currentShieldHP;
+                        updates.shieldHP = 0;
+                    }
+                }
+                
+                if (deductAmount > 0) {
+                    let newVal = (stu[type] || 0) - deductAmount;
+                    if (newVal < 0) newVal = 0;
+                    updates[type] = newVal;
+                } else if (updates.shieldHP !== undefined) {
+                    // 방패로 전액 방어했을 때 방패 내구도 깎인건 저장해야 함
+                }
+            } else {
+                updates[type] = (stu[type] || 0) + amount;
+            }
+
             await setDoc(docRef, updates, { merge: true });
         };
 
@@ -1097,6 +1134,7 @@
             }
         };
 
+        // ★ 레이드 완벽 초기화 (체크해제 및 자물쇠 잠금 복구) ★
         window.resetRaids = async function() {
             if (!window.playerState.isGM) return;
             const ok = await window.customConfirm("⚠️ 모든 학생의 '전담 레이드(특수 퀘스트)' 완료 및 잠금 해제 상태를 초기화하시겠습니까?\n(일주일에 2회 이상 전담 수업이 있을 경우 다시 보상을 받도록 해줍니다.)");
@@ -1106,17 +1144,17 @@
                 if (stu.id === 'gm') continue;
                 let docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
                 let updates = {
-                    quests: stu.quests || {},
-                    unlockedQuests: stu.unlockedQuests || {}
+                    quests: { ...(stu.quests || {}) },
+                    unlockedQuests: { ...(stu.unlockedQuests || {}) }
                 };
                 let modified = false;
                 raidIds.forEach(qId => {
-                    if (updates.quests[qId]) { delete updates.quests[qId]; modified = true; }
-                    if (updates.unlockedQuests[qId]) { delete updates.unlockedQuests[qId]; modified = true; }
+                    if (updates.quests[qId]) { updates.quests[qId] = false; modified = true; } // false로 덮어써서 파이어베이스 완벽 병합유도
+                    if (updates.unlockedQuests[qId]) { updates.unlockedQuests[qId] = false; modified = true; }
                 });
-                if (modified) await setDoc(docRef, updates, { merge: true });
+                if (modified) await setDoc(docRef, { quests: updates.quests, unlockedQuests: updates.unlockedQuests }, { merge: true });
             }
-            await window.customAlert("✅ 모든 학생의 전담 레이드가 성공적으로 초기화되었습니다!");
+            await window.customAlert("✅ 모든 학생의 전담 레이드가 성공적으로 다시 잠금 및 초기화되었습니다!");
         };
 
         window.changeStudentPin = async function(stuId, stuName) {
@@ -1142,11 +1180,19 @@
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    if (data.pin !== pin) {
+                    // ★ 비밀번호(PIN) 미설정 계정 해결 ★ (선생님이 보상을 먼저 줘서 계정이 껍데기만 생겼을 경우)
+                    if (!data.pin) {
+                        if (isAutoLogin) return; 
+                        const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`);
+                        if(!isOk) return;
+                        window.playerState = { ...data, pin: pin, isGuest: false, isGM };
+                        await setDoc(docRef, { pin: pin }, { merge: true });
+                    } else if (data.pin !== pin) {
                         if (isAutoLogin) { localStorage.clear(); location.reload(); return; }
                         return await window.customAlert("❌ 비밀번호가 틀렸습니다!");
+                    } else {
+                        window.playerState = { ...data, isGuest: false, isGM };
                     }
-                    window.playerState = { ...data, isGuest: false, isGM };
                 } else {
                     if (isAutoLogin) return; 
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`);
@@ -1160,7 +1206,41 @@
                 completeLoginUI(STUDENT_NAMES[studentId], isGM);
 
                 onSnapshot(currentStudentDocRef, (snap) => {
-                    if (snap.exists()) { window.playerState = { ...snap.data(), isGuest: false, isGM }; updateUI(); }
+                    if (snap.exists()) { 
+                        const data = snap.data();
+                        
+                        // ★ 일일 퀘스트 자동 초기화 로직 (아침 8시 기준) ★
+                        if (!isGM && !window.playerState.isGuest) {
+                            const now = new Date();
+                            const gameTime = new Date(now.getTime() - 8 * 60 * 60 * 1000); // 8시간을 빼서 아침 8시 전에는 어제로 인식하게 함
+                            const yyyy = gameTime.getFullYear();
+                            const mm = String(gameTime.getMonth() + 1).padStart(2, '0');
+                            const dd = String(gameTime.getDate()).padStart(2, '0');
+                            const gameDateStr = `${yyyy}-${mm}-${dd}`; // 안전한 로컬 타임존 날짜 포맷
+                            
+                            if (data.lastDailyReset !== gameDateStr) {
+                                const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+                                let modified = false;
+                                let updatedQuests = { ...(data.quests || {}) };
+                                
+                                dailyQuestIds.forEach(qId => {
+                                    if (updatedQuests[qId]) {
+                                        updatedQuests[qId] = false; 
+                                        modified = true;
+                                    }
+                                });
+                                
+                                if (modified || !data.lastDailyReset) {
+                                    setDoc(currentStudentDocRef, { quests: updatedQuests, lastDailyReset: gameDateStr }, { merge: true });
+                                    // 파이어베이스에 저장하면 onSnapshot이 다시 트리거 되므로 여기서 리턴하여 UI 렌더링 꼬임 방지
+                                    return; 
+                                }
+                            }
+                        }
+
+                        window.playerState = { ...data, isGuest: false, isGM }; 
+                        updateUI(); 
+                    }
                 });
             } catch (e) { await window.customAlert("에러: " + e.message); }
         }
@@ -1192,7 +1272,7 @@
             const tbody = document.getElementById('adminTableBody');
             if(!tbody) return;
             tbody.innerHTML = '';
-            for(let i=1; i<=12; i++) {
+            for(let i=1; i<=13; i++) { // 13번 학생까지 루프 
                 const stu = studentsData.find(s => s.id === String(i));
                 if(stu) {
                     const levelData = getLevelInfo(stu.xp || 0);
@@ -1223,10 +1303,13 @@
                         </div>
                     `;
 
+                    // ★ PIN 숨김 토글 및 +,- 통합 버튼 패널 추가 ★
                     tbody.innerHTML += `<tr id="admin-row-${stu.id}" class="border-b border-slate-700 hover:bg-slate-800 transition duration-300">
                     <td class="px-3 py-2 sm:py-3 font-bold text-white whitespace-nowrap cursor-pointer hover:bg-slate-700 rounded transition" onclick="window.changeStudentPin('${stu.id}', '${STUDENT_NAMES[i]}')" title="클릭하여 비밀번호 변경">
                         ${i}. ${STUDENT_NAMES[i]}<br>
-                        <span class="text-[10px] text-slate-400 font-normal">PIN: <span class="text-sb-gold tracking-widest">${stu.pin || '미설정'}</span></span>
+                        <span class="text-[10px] text-slate-400 font-normal">PIN: 
+                            <span class="cursor-pointer text-slate-500 hover:text-sb-gold transition bg-slate-800 px-1.5 py-0.5 rounded shadow-inner" onclick="event.stopPropagation(); this.innerText = this.innerText === '****' ? '${stu.pin || '미설정'}' : '****';">****</span>
+                        </span>
                     </td>
                     <td class="px-3 py-2 sm:py-3 whitespace-nowrap flex items-center">
                         ${avatarHtml}
@@ -1235,9 +1318,17 @@
                     <td class="px-3 py-2 sm:py-3 text-sb-blue font-bold whitespace-nowrap cursor-pointer hover:bg-slate-700 rounded transition" onclick="window.editStudentStat('${stu.id}', 'xp', '${STUDENT_NAMES[i]}', ${stu.xp || 0})" title="클릭하여 수정">${(stu.xp||0).toLocaleString()} <i class="fa-solid fa-pen text-[10px] ml-1 text-slate-500"></i></td>
                     <td class="px-3 py-2 sm:py-3 text-sb-gold font-bold whitespace-nowrap cursor-pointer hover:bg-slate-700 rounded transition" onclick="window.editStudentStat('${stu.id}', 'bong', '${STUDENT_NAMES[i]}', ${stu.bong || 0})" title="클릭하여 수정">${(stu.bong||0).toFixed(1)} B <i class="fa-solid fa-pen text-[10px] ml-1 text-slate-500"></i></td>
                     <td class="px-3 py-2 sm:py-3 flex gap-1 sm:gap-2 text-sm sm:text-lg items-center h-full">${jobsHtml || '<span class="text-[10px] sm:text-xs text-slate-500">없음</span>'}</td>
-                    <td class="px-3 py-2 sm:py-3 text-center whitespace-nowrap border-l border-slate-700/50">
-                        <button onclick="window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 hover:bg-sb-blue text-sb-blue hover:text-white border border-sb-blue px-3 py-1.5 rounded-lg text-xs font-black shadow-lg shadow-sb-blue/20 transition-all transform hover:scale-110 mr-1 active:scale-95"><i class="fa-solid fa-bolt"></i> 5 XP</button>
-                        <button onclick="window.quickReward('bong', 1, '${stu.id}', this)" class="bg-sb-gold/20 hover:bg-sb-gold text-yellow-400 hover:text-slate-900 border border-sb-gold px-3 py-1.5 rounded-lg text-xs font-black shadow-lg shadow-sb-gold/20 transition-all transform hover:scale-110 active:scale-95"><i class="fa-solid fa-coins"></i> 1 B</button>
+                    <td class="px-3 py-2 sm:py-3 whitespace-nowrap border-l border-slate-700/50 w-32">
+                        <div class="flex flex-col gap-1 w-full">
+                            <div class="flex gap-1 w-full">
+                                <button onclick="window.quickReward('xp', 5, '${stu.id}', this)" class="flex-1 bg-sb-blue/20 hover:bg-sb-blue text-sb-blue hover:text-white border border-sb-blue/50 px-2 py-1.5 rounded text-[10px] sm:text-xs font-black transition-all shadow-md">+5 XP</button>
+                                <button onclick="window.quickReward('xp', -5, '${stu.id}', this)" class="flex-1 bg-slate-700 hover:bg-sb-red text-slate-300 hover:text-white border border-slate-600 hover:border-sb-red px-2 py-1.5 rounded text-[10px] sm:text-xs font-black transition-all shadow-md">-5 XP</button>
+                            </div>
+                            <div class="flex gap-1 w-full">
+                                <button onclick="window.quickReward('bong', 1, '${stu.id}', this)" class="flex-1 bg-sb-gold/20 hover:bg-sb-gold text-yellow-400 hover:text-slate-900 border border-sb-gold/50 px-2 py-1.5 rounded text-[10px] sm:text-xs font-black transition-all shadow-md">+1 B</button>
+                                <button onclick="window.quickReward('bong', -1, '${stu.id}', this)" class="flex-1 bg-slate-700 hover:bg-sb-red text-slate-300 hover:text-white border border-slate-600 hover:border-sb-red px-2 py-1.5 rounded text-[10px] sm:text-xs font-black transition-all shadow-md">-1 B</button>
+                            </div>
+                        </div>
                     </td></tr>`;
                 } else {
                     tbody.innerHTML += `<tr class="border-b border-slate-700 text-slate-500 bg-slate-800/30"><td class="px-3 py-2 sm:py-3 whitespace-nowrap">${i}. ${STUDENT_NAMES[i]}</td><td class="px-3 py-2 sm:py-3">-</td><td class="px-3 py-2 sm:py-3">-</td><td class="px-3 py-2 sm:py-3">-</td><td class="px-3 py-2 sm:py-3">-</td><td class="px-3 py-2 sm:py-3 text-slate-600 text-[10px] sm:text-xs whitespace-nowrap text-center">⚫ 미접속</td></tr>`;

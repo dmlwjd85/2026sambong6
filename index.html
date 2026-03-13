@@ -97,6 +97,9 @@
         /* 즉각 보상 플로팅 텍스트 애니메이션 */
         @keyframes floatUpFade { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-40px) scale(1.5); opacity: 0; } }
         .floating-text { position: absolute; pointer-events: none; animation: floatUpFade 1s cubic-bezier(0.25, 1, 0.5, 1) forwards; font-weight: 900; z-index: 9999; text-shadow: 0 0 10px rgba(0,0,0,0.8); font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px;}
+        
+        /* D-Day 타이머 빛 반사 효과 */
+        @keyframes shimmer { 100% { transform: translateX(100%); } }
     </style>
 </head>
 <body class="antialiased">
@@ -165,7 +168,6 @@
                         <a href="#plaza" class="text-slate-300 hover:text-sb-gold transition font-bold text-sm">광장</a>
                         <a href="#economy" class="text-slate-300 hover:text-sb-gold transition font-bold text-sm">직업</a>
                     </div>
-                    <!-- ★ 앱 설치 버튼 (모바일/PC PWA 설치용) ★ -->
                     <button id="btnInstallApp" class="hidden text-[10px] sm:text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg transition font-bold shadow-[0_0_10px_rgba(16,185,129,0.3)]">
                         <i class="fa-solid fa-download"></i> <span class="hidden sm:inline">앱 설치</span>
                     </button>
@@ -185,6 +187,21 @@
             <p class="text-sm sm:text-xl text-slate-400 max-w-2xl mx-auto break-keep px-2">삼봉초등학교 6학년 1반의 GM(선생님)과 플레이어(학생)들을 위한 규칙서입니다. 매일 성실하게 활동하여 전설의 마스터가 되어보세요.</p>
             <div class="inline-flex flex-wrap justify-center items-center gap-2 sm:gap-3 bg-indigo-500/20 text-indigo-300 border border-indigo-500 px-3 sm:px-6 py-2 sm:py-3 rounded-full font-bold text-[10px] sm:text-sm">
                 <i class="fa-solid fa-wand-magic-sparkles animate-pulse"></i> [v5.3 패치] 학생 핀 번호 보안 강화(클릭 시 확인) 및 직관적 +/- 퀵 컨트롤 버튼 패널 적용
+            </div>
+            
+            <!-- ★ 신규 추가: 서버 종료(졸업) D-Day 타이머 ★ -->
+            <div class="mt-4 sm:mt-8 flex justify-center">
+                <div class="inline-flex flex-col items-center justify-center bg-slate-900/80 border-2 border-sb-red/50 px-8 sm:px-12 py-3 sm:py-5 rounded-2xl shadow-[0_0_25px_rgba(239,68,68,0.25)] backdrop-blur-sm relative overflow-hidden group">
+                    <!-- 빛 반사 효과 -->
+                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
+                    
+                    <span class="text-xs sm:text-sm text-sb-red font-bold mb-1 flex items-center gap-2 tracking-widest">
+                        <i class="fa-solid fa-server animate-pulse text-sb-red"></i> 2026 삼봉월드 정규 시즌 종료까지
+                    </span>
+                    <div class="font-display text-4xl sm:text-5xl text-white tracking-wider drop-shadow-lg" id="dday-timer">
+                        계산 중...
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -1453,6 +1470,36 @@
 
         // 앱 구동
         initApp();
+    </script>
+
+    <!-- ★ D-Day 타이머 로직 ★ -->
+    <script>
+        function updateDday() {
+            // 2027년 1월 8일 자정 기준 (시간을 맞추고 싶다면 T09:00:00 등으로 수정 가능)
+            const targetDate = new Date('2027-01-08T00:00:00+09:00').getTime(); 
+            const now = new Date().getTime();
+            const distance = targetDate - now;
+
+            const ddayElement = document.getElementById('dday-timer');
+            if (!ddayElement) return;
+
+            if (distance < 0) {
+                ddayElement.innerHTML = `<span class="text-sb-red animate-pulse">시즌 종료 (졸업 축하합니다! 🎉)</span>`;
+                return;
+            }
+
+            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            // D-OO 포맷 렌더링
+            ddayElement.innerHTML = `D-<span class="text-sb-gold">${days}</span> <span class="text-xl sm:text-2xl text-slate-400 font-sans font-black ml-1 sm:ml-2">${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}</span>`;
+        }
+
+        // 1초마다 업데이트
+        setInterval(updateDday, 1000);
+        updateDday();
     </script>
 
     <!-- 차트 그리기 -->

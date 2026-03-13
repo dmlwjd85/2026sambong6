@@ -134,10 +134,10 @@
                         <option value="4">4. 김정훈</option><option value="5">5. 박문경</option><option value="6">6. 박소윤</option>
                         <option value="7">7. 박하율</option><option value="8">8. 박현수</option><option value="9">9. 백시율</option>
                         <option value="10">10. 임은영</option><option value="11">11. 조이담</option><option value="12">12. 황훈태</option>
-                        <option value="13" class="text-pink-300">13. 석서영 (분교)</option>
+                        <option value="13" class="text-cyan-300">13. 석서영 (분교)</option>
                         <option disabled>─── 관리자 ───</option>
                         <option value="gm" class="text-sb-gold">👑 마스터 J (담임교사)</option>
-                        <option value="gm_a" class="text-pink-400">🌸 마스터 A (분교 전담)</option>
+                        <option value="gm_a" class="text-cyan-400">🏴‍☠️ 마스터 A (분교 해적)</option>
                     </select>
                 </div>
                 
@@ -187,7 +187,7 @@
     <!-- 메인 콘텐츠 영역 -->
     <div class="pt-20 sm:pt-24 pb-20 px-3 sm:px-4 max-w-7xl mx-auto space-y-8 sm:space-y-16">
 
-        <!-- ★ 1. 인터랙티브 NPC 마스터 J (스토리텔링 대화창) ★ -->
+        <!-- ★ 1. 인터랙티브 NPC (스토리텔링 대화창) ★ -->
         <header>
             <div class="max-w-3xl mx-auto mt-2 mb-4 cursor-pointer transform hover:scale-[1.02] transition-transform" onclick="window.talkToNPC()">
                 <div class="flex items-start gap-3 sm:gap-4 bg-slate-800/60 p-4 sm:p-5 rounded-3xl border border-slate-600/50 backdrop-blur-md relative overflow-hidden shadow-[0_0_20px_rgba(30,41,59,0.8)] group">
@@ -485,7 +485,7 @@
 
         <footer class="text-center text-slate-500 py-8 sm:py-12 border-t border-slate-800 px-4 mt-12 sm:mt-20">
             <p class="font-display text-lg sm:text-2xl text-slate-300 mb-2 sm:mb-4 break-keep">"당신의 모든 행동은 데이터가 되어 당신을 성장시킵니다."</p>
-            <p class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & A -</p>
+            <p class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
         </footer>
     </div>
 
@@ -556,7 +556,7 @@
         const SHOP_DATA = [
             { id: 'item_shield', name: '절대 방패 (내구도 100)', desc: '마스터의 차감 공격을 최대 100(XP 또는 B)만큼 방어합니다.', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 'item_xp', name: '지혜의 비약 (+100 XP)', desc: '100 XP를 즉시 획득하여 폭풍 성장합니다.', price: 100, icon: 'fa-flask', iconColor: 'text-blue-400', isConsumable: true },
-            { id: 'item_gacha', name: '행운의 랜덤 박스', desc: '50 B를 내고 0~100 B를 무작위로 획득합니다. 대박을 노리세요!', price: 50, icon: 'fa-gift', iconColor: 'text-red-400', isConsumable: true },
+            { id: 'item_gacha', name: '행운의 랜덤 박스', desc: '50 B를 내고 0~100 B 무작위 획득. 대박을 노리세요!', price: 50, icon: 'fa-gift', iconColor: 'text-red-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '쉬는 시간 신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
             { id: 's2', name: '시간 왜곡', desc: '시간표 순서 바꾸기', price: 100, icon: 'fa-clock-rotate-left', iconColor: 'text-blue-400' },
             { id: 's3', name: '보드게임 타임', desc: '보드게임 시간 생성', price: 400, icon: 'fa-dice', iconColor: 'text-green-400' },
@@ -795,15 +795,16 @@
 
                 if (isGMCard) {
                     const isMasterA = data.id === 'gm_a';
-                    const masterTitle = isMasterA ? '분교 전담' : '창조자';
-                    const masterEmoji = isMasterA ? '🌸' : '🐉';
+                    const masterTitle = isMasterA ? '분교 해적' : '창조자';
+                    const masterEmoji = isMasterA ? '🏴‍☠️' : '🐉';
+                    const subEmoji = isMasterA ? '🌊' : '🔥';
                     const masterName = isMasterA ? '마스터 A' : '마스터 J';
-                    const nameColor = isMasterA ? 'from-pink-400 to-rose-300 border-pink-500' : 'from-sb-gold to-yellow-300 border-yellow-500';
-                    const titleColor = isMasterA ? 'text-pink-400' : 'text-sb-gold';
-                    const border = customBorder || (isMasterA ? 'border-pink-500' : 'border-sb-gold'); 
-                    const glow = customGlow || (isMasterA ? 'shadow-[0_0_25px_rgba(244,114,182,0.6)]' : 'shadow-[0_0_25px_rgba(251,191,36,0.6)]');
+                    const nameColor = isMasterA ? 'from-cyan-600 to-blue-800 border-cyan-400 text-white' : 'from-sb-gold to-yellow-300 border-yellow-500 text-slate-900';
+                    const titleColor = isMasterA ? 'text-cyan-400' : 'text-sb-gold';
+                    const border = customBorder || (isMasterA ? 'border-cyan-500' : 'border-sb-gold'); 
+                    const glow = customGlow || (isMasterA ? 'shadow-[0_0_25px_rgba(6,182,212,0.6)]' : 'shadow-[0_0_25px_rgba(251,191,36,0.6)]');
                     
-                    return `<div class="flex flex-col items-center p-4 sm:p-5 rounded-2xl border-2 w-36 sm:w-48 relative transition-all duration-300 ${glow} ${border} bg-slate-900 ${meHighlight} mx-2 z-10">${shieldHtml}<div class="text-5xl sm:text-6xl avatar-legend mb-3 z-10">${masterEmoji}<span class="absolute -bottom-2 -right-2 text-2xl sm:text-3xl">🔥</span></div><div class="text-[10px] sm:text-xs font-black ${titleColor} tracking-widest mb-1">${masterTitle}</div><div class="font-bold text-slate-900 bg-gradient-to-r ${nameColor} px-3 py-1 rounded-lg text-xs sm:text-sm w-full text-center border">${masterName}</div></div>`;
+                    return `<div class="flex flex-col items-center p-4 sm:p-5 rounded-2xl border-2 w-36 sm:w-48 relative transition-all duration-300 ${glow} ${border} bg-slate-900 ${meHighlight} mx-2 z-10">${shieldHtml}<div class="text-5xl sm:text-6xl avatar-legend mb-3 z-10">${masterEmoji}<span class="absolute -bottom-2 -right-2 text-2xl sm:text-3xl">${subEmoji}</span></div><div class="text-[10px] sm:text-xs font-black ${titleColor} tracking-widest mb-1">${masterTitle}</div><div class="font-bold bg-gradient-to-r ${nameColor} px-3 py-1 rounded-lg text-xs sm:text-sm w-full text-center border">${masterName}</div></div>`;
                 } else {
                     const border = customBorder || lv.info.borderColor; const glow = customGlow || 'shadow-md';
                     const jobsHtml = (displayData.jobs || []).map((j, i) => `<div class="job-badge ${j.color} w-4 h-4 sm:w-5 sm:h-5" style="z-index: ${10 - i}"><i class="fa-solid ${j.icon} text-[8px] sm:text-[10px]"></i></div>`).join('');

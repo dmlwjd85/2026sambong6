@@ -109,9 +109,18 @@
         /* 체크박스 애니메이션 */
         .todo-checkbox:checked + div { background-color: #3b82f6; border-color: #3b82f6; }
         .todo-checkbox:checked + div i { opacity: 1; transform: scale(1); }
+
+        /* 레이드 전용 애니메이션 */
+        @keyframes shake { 0% { transform: translate(1px, 1px) rotate(0deg); } 10% { transform: translate(-1px, -2px) rotate(-1deg); } 20% { transform: translate(-3px, 0px) rotate(1deg); } 30% { transform: translate(3px, 2px) rotate(0deg); } 40% { transform: translate(1px, -1px) rotate(1deg); } 50% { transform: translate(-1px, 2px) rotate(-1deg); } 60% { transform: translate(-3px, 1px) rotate(0deg); } 70% { transform: translate(3px, 1px) rotate(-1deg); } 80% { transform: translate(-1px, -1px) rotate(1deg); } 90% { transform: translate(1px, 2px) rotate(0deg); } 100% { transform: translate(1px, -2px) rotate(-1deg); } }
+        .shake-screen { animation: shake 0.5s; }
+        .boss-damage { animation: shake 0.3s; filter: brightness(2) sepia(1) hue-rotate(-50deg) saturate(5); }
+        .berserk-bg { animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0% { background-color: rgba(239, 68, 68, 0.1); } 50% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: rgba(239, 68, 68, 0.1); } }
+        .debuff-blur { filter: blur(3px); transition: filter 0.3s; }
+        .debuff-shake { animation: shake 0.2s infinite; }
     </style>
 </head>
-<body class="antialiased selection:bg-sb-gold selection:text-slate-900 bg-season">
+<body class="antialiased selection:bg-sb-gold selection:text-slate-900 bg-season" id="mainBody">
 
     <!-- ★ 로그인 화면 ★ -->
     <div id="loginOverlay" class="fixed inset-0 bg-[#020617] z-[100] flex flex-col items-center justify-center px-4 transition-opacity duration-500 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')]">
@@ -183,6 +192,55 @@
             </div>
         </div>
     </nav>
+
+    <!-- ★ 레이드 전투 모달 (전체 화면) ★ -->
+    <div id="raidBattleModal" class="hidden fixed inset-0 z-[200] bg-slate-900 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300">
+        <!-- 상단: 보스 구역 -->
+        <div class="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden" id="raidBossArea">
+            <div class="absolute inset-0 bg-gradient-to-b from-red-900/20 to-transparent pointer-events-none" id="berserkEffect"></div>
+            
+            <h2 class="text-2xl sm:text-4xl font-display text-white mb-2 z-10 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)] flex items-center gap-2"><i class="fa-solid fa-skull"></i> 어둠의 중간고사 보스</h2>
+            
+            <!-- 보스 HP 바 -->
+            <div class="w-full max-w-lg bg-slate-800 rounded-full h-6 sm:h-8 border-2 border-slate-600 relative z-10 mb-6 shadow-2xl overflow-hidden">
+                <div id="raidBossHPBar" class="bg-gradient-to-r from-red-600 to-red-400 h-full stat-fill w-full"></div>
+                <div class="absolute inset-0 flex items-center justify-center text-white font-black text-sm sm:text-base drop-shadow-md" id="raidBossHPText">1000 / 1000</div>
+            </div>
+
+            <!-- 보스 이미지 (이모지) -->
+            <div id="raidBossImage" class="text-8xl sm:text-[150px] drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] z-10 transition-transform duration-200">👹</div>
+            <div id="raidComboText" class="absolute right-10 top-1/2 -translate-y-1/2 font-display text-4xl sm:text-6xl text-sb-gold drop-shadow-lg opacity-0 transition-opacity">2 COMBO!</div>
+        </div>
+
+        <!-- 중단: 문제 및 입력 구역 -->
+        <div class="h-auto bg-slate-800 border-y-4 border-sb-blue p-4 sm:p-6 shadow-[0_0_30px_rgba(59,130,246,0.2)] z-20 flex flex-col justify-center items-center" id="raidInputArea">
+            <div class="text-sb-blue font-bold text-sm sm:text-base mb-2" id="raidTurnText">대기 중...</div>
+            <div class="text-lg sm:text-2xl text-white font-bold text-center break-keep max-w-2xl mb-4" id="raidQuestionText">레이드 시작을 기다리고 있습니다.</div>
+            
+            <div class="flex gap-2 w-full max-w-md" id="raidInputGroup">
+                <input type="text" id="raidAnswerInput" placeholder="정답을 입력하세요" class="flex-1 bg-slate-900 border-2 border-slate-600 text-white px-4 py-3 rounded-xl font-bold focus:border-sb-blue focus:outline-none disabled:opacity-50 transition" disabled>
+                <button id="btnSubmitAnswer" class="bg-sb-blue hover:bg-blue-500 text-white font-bold px-6 py-3 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-lg" disabled>공격!</button>
+            </div>
+            <div class="text-[10px] sm:text-xs text-slate-400 mt-2"><span class="text-sb-gold">5초 이내 정답 = 크리티컬(x2)</span> | 10초 이내 = 그레이트 | 오답/초과 = 보스 회복(5%)</div>
+        </div>
+
+        <!-- 하단: 참가자 목록 및 전투 로그 -->
+        <div class="h-48 sm:h-64 bg-slate-900 p-4 flex gap-4 overflow-hidden z-10">
+            <!-- 참가자 -->
+            <div class="w-1/3 sm:w-1/4 border-r border-slate-700 pr-2 sm:pr-4 overflow-y-auto">
+                <h3 class="text-xs sm:text-sm text-slate-400 font-bold mb-2 pb-1 border-b border-slate-700 text-center">공격대 (5명)</h3>
+                <div id="raidParticipantsList" class="flex flex-col gap-2"></div>
+            </div>
+            <!-- 전투 로그 -->
+            <div class="flex-1 flex flex-col">
+                <h3 class="text-xs sm:text-sm text-slate-400 font-bold mb-2 pb-1 border-b border-slate-700"><i class="fa-solid fa-list-ul"></i> 전투 로그</h3>
+                <div id="raidLogContainer" class="flex-1 overflow-y-auto space-y-1 pr-2 font-mono text-[10px] sm:text-xs text-slate-300 flex flex-col-reverse"></div>
+            </div>
+        </div>
+        
+        <!-- 나가기 버튼 (레이드 종료 시 활성화) -->
+        <button id="btnExitRaid" onclick="window.closeRaidModal()" class="hidden absolute top-4 right-4 bg-slate-800/80 hover:bg-sb-red text-white border border-slate-600 px-4 py-2 rounded-lg font-bold transition z-50">레이드 종료 후 복귀</button>
+    </div>
 
     <!-- 메인 콘텐츠 영역 -->
     <div class="pt-20 sm:pt-24 pb-20 px-3 sm:px-4 max-w-7xl mx-auto space-y-8 sm:space-y-16">
@@ -309,7 +367,27 @@
             <div class="mb-4 sm:mb-8 flex justify-between items-end">
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-display text-sb-red flex items-center gap-2 sm:gap-3"><i class="fa-solid fa-eye"></i> 마스터 관찰구역</h2>
-                    <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2" id="adminSubtitle">플레이어의 실시간 데이터 및 개별/일괄 편집 패널입니다.</p>
+                    <p class="text-xs sm:text-sm text-slate-400 mt-1 sm:mt-2" id="adminSubtitle">플레이어의 실시간 데이터 및 레이드/편집 패널입니다.</p>
+                </div>
+            </div>
+
+            <!-- ★ 주말 레이드 퀘스트 출제 패널 (마스터 전용) ★ -->
+            <div class="glass-panel p-4 sm:p-6 rounded-2xl mb-6 border border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.15)] bg-slate-900/80">
+                <div class="flex justify-between items-end mb-4 border-b border-slate-700 pb-2">
+                    <h3 class="text-white font-bold flex items-center text-lg"><i class="fa-solid fa-skull-crossbones text-purple-400 mr-2"></i> 주말 협동 레이드 세팅 (마스터)</h3>
+                    <span id="raidAdminStatus" class="text-xs font-bold bg-slate-800 px-2 py-1 rounded border border-slate-600">상태: 대기중</span>
+                </div>
+                
+                <p class="text-xs text-slate-400 mb-4">5개의 문제와 정답을 입력하고 레이드 로비를 오픈하세요. (1~5번 순서대로 학생이 풀게 됩니다.)</p>
+                
+                <div class="space-y-3 mb-6" id="raidQuestionInputs">
+                    <!-- JS로 5개 인풋 생성 -->
+                </div>
+
+                <div class="flex gap-3">
+                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 rounded-xl transition border border-slate-500"><i class="fa-solid fa-floppy-disk"></i> 문제 임시저장</button>
+                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition shadow-[0_0_15px_rgba(168,85,247,0.5)]"><i class="fa-solid fa-door-open"></i> 레이드 로비 오픈 (5명 모집)</button>
+                    <button onclick="window.resetRaidForce()" class="w-1/4 bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-3 rounded-xl transition border border-red-900"><i class="fa-solid fa-stop"></i> 강제 종료</button>
                 </div>
             </div>
 
@@ -391,7 +469,7 @@
             </div>
         </section>
 
-        <!-- ★ 4. 명예의 전당 (Archive - 전설 영구 박제) ★ -->
+        <!-- ★ 4. 명예의 전당 (Archive) ★ -->
         <section id="hallOfFameSection" class="hidden scroll-mt-20 relative my-12">
             <div class="absolute inset-0 bg-gradient-to-b from-yellow-600/30 via-yellow-900/10 to-transparent blur-3xl -z-10 rounded-full"></div>
             <div class="text-center mb-8 relative z-10">
@@ -403,7 +481,7 @@
             <div id="hofContainer" class="flex flex-wrap gap-8 justify-center relative z-10 px-4"></div>
         </section>
 
-        <!-- ★ 5. 삼봉 광장 Section (친구들 뷰) ★ -->
+        <!-- ★ 5. 삼봉 광장 Section ★ -->
         <section id="plaza" class="scroll-mt-20">
             <div class="mb-4 sm:mb-8">
                 <h2 class="text-xl sm:text-3xl font-display text-emerald-400 flex items-center gap-2 sm:gap-3"><i class="fa-solid fa-users"></i> 길드 광장</h2>
@@ -432,17 +510,30 @@
             <div id="jobGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6"></div>
         </section>
 
-        <!-- ★ 7. 퀘스트 보드 & 상점 (완벽 복구 유지) ★ -->
+        <!-- ★ 7. 퀘스트 보드 & 상점 ★ -->
         <section id="simulator" class="scroll-mt-20">
-            <div class="mb-6 sm:mb-8 text-center">
-                <h2 class="text-3xl sm:text-4xl font-display text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 inline-block mb-2 sm:mb-4"><i class="fa-solid fa-map mr-2 text-emerald-400"></i> 전체 퀘스트 & 상점</h2>
-                <p class="text-xs sm:text-sm text-slate-400">수행한 퀘스트를 클릭하여 보상을 받으세요. 완료 퀘스트 취소 시 수수료(-0.5B)가 부과됩니다.</p>
-            </div>
+            <div class="mb-6 sm:mb-8 text-center"><h2 class="text-3xl sm:text-4xl font-display text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 inline-block mb-2 sm:mb-4"><i class="fa-solid fa-map mr-2 text-emerald-400"></i> 전체 퀘스트 & 상점</h2></div>
 
             <div class="grid lg:grid-cols-12 gap-4 sm:gap-8">
                 <!-- Quests -->
                 <div class="lg:col-span-6 space-y-4 sm:space-y-6">
                     <div class="glass-panel p-4 sm:p-6 rounded-3xl">
+                        
+                        <!-- ★ 주말 레이드 입장 카드 (학생 전용) ★ -->
+                        <div class="mb-6 bg-gradient-to-r from-purple-900/50 to-slate-900 p-1 rounded-2xl border border-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                            <div class="bg-slate-900/80 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-4">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-2"></i> 주말 협동 레이드 (5인)</h3>
+                                    <p class="text-xs text-slate-400 break-keep">금요일 저녁~일요일 주말에만 열립니다! 5명이 모여 보스를 무찌르고 엄청난 보상을 획득하세요. (빠른 정답 = 크리티컬 대미지!)</p>
+                                    <div class="text-[10px] text-yellow-500 mt-2 font-bold" id="raidTimeStatusText">현재 시간 동기화 중...</div>
+                                </div>
+                                <div class="text-center w-full sm:w-auto shrink-0">
+                                    <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-3 px-6 rounded-xl border border-slate-600 transition shadow-md cursor-not-allowed" disabled>모집 대기중</button>
+                                    <div id="raidJoinCount" class="text-xs text-purple-300 mt-1 font-bold hidden">현재: <span id="rCount">0</span>/5 명</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- 일일 퀘스트 -->
                         <div class="mb-6 sm:mb-8">
                             <h3 class="font-bold text-lg sm:text-xl mb-3 sm:mb-4 border-b border-slate-700 pb-2 flex items-center"><i class="fa-solid fa-calendar-day text-slate-400 mr-2"></i> 일일 퀘스트</h3>
@@ -496,7 +587,7 @@
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ==========================================
-        // 1. 완벽 복구된 데이터 베이스 (v5.3 기준 15개 직업)
+        // ★ 기존 15개 직업 완벽 복구 ★
         // ==========================================
         const JOB_DATA = [
             { id: 'job_sp', name: '학생회 연합대장', sub: '(전교회장)', icon: 'fa-crown', color: 'text-amber-400', pay: 15, desc: '삼봉 월드 전체를 아우르는 전설적인 리더. 압도적인 명예와 높은 주급을 받습니다.' },
@@ -516,6 +607,9 @@
             { id: 'job12', name: 'SB 편의점 매니저', sub: '(비품/매점 관리)', icon: 'fa-store', color: 'text-orange-400', pay: 6, desc: '길드원들의 상점 이용을 돕습니다.' }
         ];
 
+        // ==========================================
+        // ★ 기존 모든 퀘스트 데이터 복구 ★
+        // ==========================================
         const QUEST_DATA = [
             { id: 'q1', type: 'daily', name: '출석의 축복', desc: '매일 8:40 전 등교 완료', xp: 10, bong: 0.5, icon: 'fa-sun', color: 'text-yellow-200' },
             { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반 및 도움이 필요한 친구 지원', xp: 50, bong: 7.0, icon: 'fa-hands-holding-child', color: 'text-pink-300' },
@@ -532,6 +626,9 @@
             { id: 'q5', type: 'locked', name: '전투력 측정 (보스전)', desc: '단원평가 및 수행평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-scroll', color: 'text-red-300' }
         ];
 
+        // ==========================================
+        // ★ 스킨 데이터 전체 복구 ★
+        // ==========================================
         const SKIN_DATA = [
             { id: 'f_ninja', type: 'face', name: '닌자 (남/여 공용)', desc: '어둠의 암살자 얼굴', price: 400, emoji: '🥷' },
             { id: 'f_fairy', type: 'face', name: '숲의 요정 (여)', desc: '신비로운 요정의 얼굴', price: 450, emoji: '🧚‍♀️' },
@@ -553,8 +650,11 @@
             { id: 'sk_blk', type: 'aura', name: '다크 오라', desc: '어둠의 그림자 테두리', price: 150, emoji: '⚫', border: 'border-slate-900', glow: 'shadow-[0_0_15px_rgba(0,0,0,0.9)]' }
         ];
 
+        // ==========================================
+        // ★ 상점 데이터 전체 복구 ★
+        // ==========================================
         const SHOP_DATA = [
-            { id: 'item_shield', name: '절대 방패 (내구도 100)', desc: '마스터의 차감 공격을 최대 100(XP 또는 B)만큼 방어합니다.', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
+            { id: 'item_shield', name: '절대 방패 (내구도 100)', desc: '마스터의 차감 공격을 최대 100만큼 방어합니다.', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 'item_xp', name: '지혜의 비약 (+100 XP)', desc: '100 XP를 즉시 획득하여 폭풍 성장합니다.', price: 100, icon: 'fa-flask', iconColor: 'text-blue-400', isConsumable: true },
             { id: 'item_gacha', name: '행운의 랜덤 박스', desc: '50 B를 내고 0~100 B 무작위 획득. 대박을 노리세요!', price: 50, icon: 'fa-gift', iconColor: 'text-red-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '쉬는 시간 신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
@@ -580,76 +680,423 @@
 
         window.playerState = { xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, isGuest: false, isGM: false, isGMA: false, isAdmin: false };
         window.allStudentsData = []; window.gmData = null; window.gmaData = null; window.globalSettings = { raidPassword: '1234' };
-        let db, auth, currentStudentDocRef = null; let unsubscribeGlobal = null; let unsubscribeSettings = null;
+        
+        let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
+
+        // ★ 레이드 전용 전역 변수 ★
+        window.currentRaidState = { status: 'waiting', participants: [], bossHP: 1000, maxBossHP: 1000, currentTurn: 0, startTime: 0, combo: 0, logs: [], questions: [] };
+        let isWeekend = false;
+        const BASE_BOSS_HP = 500;
+        const RAID_REWARD = { xp: 500, bong: 20.0 };
 
         function calculateExactLevel(xp) { return Math.min(100, Math.max(1, Math.floor(1 + Math.sqrt((xp || 0) / 4.04)))); }
         function getLevelInfo(xp) { for(let i=0; i<LEVEL_DATA.length; i++) { if(xp <= LEVEL_DATA[i].max) return {info: LEVEL_DATA[i], index: i}; } return {info: LEVEL_DATA[LEVEL_DATA.length-1], index: LEVEL_DATA.length-1}; }
 
         // ==========================================
-        // ★ NPC 마스터 대화(스토리텔링) 로직 ★
+        // UI 알림 모달
+        // ==========================================
+        window.customAlert = (m) => new Promise(r => {
+            const d = document.createElement('div'); d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-6 sm:p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-xl sm:text-2xl font-display text-white">알림</h3><p class="text-sm sm:text-base text-slate-300 whitespace-pre-wrap">${m}</p><button id="bOk" class="bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full transition">확인</button></div>`;
+            document.body.appendChild(d); document.getElementById('bOk').onclick = () => { d.remove(); r(true); };
+        });
+
+        window.customConfirm = (m) => new Promise(r => {
+            const d = document.createElement('div'); d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-6 sm:p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-xl sm:text-2xl font-display text-white">확인</h3><p class="text-sm sm:text-base text-slate-300 whitespace-pre-wrap">${m}</p><div class="flex gap-4 mt-6"><button id="bNo" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-full w-full border border-slate-500">취소</button><button id="bYes" class="bg-sb-red hover:bg-red-500 text-white font-bold py-2 px-6 rounded-full w-full shadow-lg">확인</button></div></div>`;
+            document.body.appendChild(d); document.getElementById('bYes').onclick = () => { d.remove(); r(true); }; document.getElementById('bNo').onclick = () => { d.remove(); r(false); };
+        });
+
+        window.customPrompt = (m, type="password") => new Promise(r => {
+            const d = document.createElement('div'); d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `<div class="bg-sb-panel p-6 sm:p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-xl sm:text-2xl font-display text-sb-gold">입력 구역</h3><p class="text-sm sm:text-base text-slate-300 whitespace-pre-wrap">${m}</p><input type="${type}" id="pIn" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl px-4 py-3 focus:border-sb-blue focus:outline-none text-center my-4 font-bold shadow-inner"><div class="flex gap-4"><button id="bpNo" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-full w-full border border-slate-500">취소</button><button id="bpYes" class="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2 px-6 rounded-full w-full shadow-lg">확인</button></div></div>`;
+            document.body.appendChild(d); document.getElementById('pIn').focus();
+            document.getElementById('bpYes').onclick = () => { const v = document.getElementById('pIn').value; d.remove(); r(v); }; document.getElementById('bpNo').onclick = () => { d.remove(); r(null); };
+        });
+
+        // ==========================================
+        // ★ 레이드 (Raid) 로직 구현부 ★
+        // ==========================================
+        window.updateRaidEntryUI = function() {
+            const btn = document.getElementById('btnJoinRaid');
+            const countDiv = document.getElementById('raidJoinCount');
+            const rCount = document.getElementById('rCount');
+            if(!btn || !window.currentRaidState) return;
+
+            const state = window.currentRaidState.status;
+            const participants = window.currentRaidState.participants || [];
+            rCount.innerText = participants.length;
+
+            if(state === 'waiting') {
+                btn.innerText = "모집 대기중";
+                btn.disabled = true;
+                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-3 px-6 rounded-xl border border-slate-600 transition shadow-md cursor-not-allowed";
+                countDiv.classList.add('hidden');
+            } else if(state === 'recruiting') {
+                countDiv.classList.remove('hidden');
+                if(participants.includes(localStorage.getItem('sambong_student_id'))) {
+                    btn.innerText = "입장 대기중...";
+                    btn.disabled = true;
+                    btn.className = "w-full bg-purple-600/50 text-white font-bold py-3 px-6 rounded-xl border border-purple-500 transition shadow-md cursor-not-allowed";
+                } else if(participants.length >= 5) {
+                    btn.innerText = "모집 완료";
+                    btn.disabled = true;
+                    btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-3 px-6 rounded-xl border border-slate-600 transition shadow-md cursor-not-allowed";
+                } else {
+                    btn.innerText = isWeekend ? "⚔️ 레이드 참가 (선착순)" : "참가 불가 (평일)";
+                    btn.disabled = !isWeekend;
+                    btn.className = isWeekend ? "w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-6 rounded-xl border border-purple-400 transition shadow-[0_0_15px_rgba(168,85,247,0.5)] animate-pulse" : "w-full bg-slate-700 text-slate-400 font-bold py-3 px-6 rounded-xl border border-slate-600 transition shadow-md cursor-not-allowed";
+                }
+            } else if(state === 'playing') {
+                countDiv.classList.add('hidden');
+                if(participants.includes(localStorage.getItem('sambong_student_id'))) {
+                    btn.innerText = "⚔️ 전투 참여중!";
+                    btn.disabled = false;
+                    btn.className = "w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-xl border border-red-500 transition shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse";
+                    btn.onclick = () => document.getElementById('raidBattleModal').classList.remove('hidden');
+                } else {
+                    btn.innerText = "전투 진행중";
+                    btn.disabled = true;
+                    btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-3 px-6 rounded-xl border border-slate-600 transition shadow-md cursor-not-allowed";
+                }
+            } else if(state === 'finished' || state === 'failed') {
+                countDiv.classList.add('hidden');
+                btn.innerText = state === 'finished' ? "🏆 레이드 토벌 성공!" : "💀 레이드 실패";
+                btn.disabled = true;
+                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-3 px-6 rounded-xl border border-slate-600 transition shadow-md cursor-not-allowed";
+            }
+
+            // Admin UI update
+            const adminStatus = document.getElementById('raidAdminStatus');
+            if(adminStatus) {
+                adminStatus.innerText = `상태: ${state === 'waiting' ? '대기중' : state === 'recruiting' ? '모집중('+participants.length+'/5)' : state === 'playing' ? '전투중' : state === 'finished' ? '클리어' : '실패'}`;
+            }
+        };
+
+        window.updateRaidBattleUI = function() {
+            if(!window.currentRaidState) return;
+            const state = window.currentRaidState;
+            const hpPct = Math.max(0, (state.bossHP / state.maxBossHP) * 100);
+            document.getElementById('raidBossHPBar').style.width = `${hpPct}%`;
+            document.getElementById('raidBossHPText').innerText = `${state.bossHP} / ${state.maxBossHP}`;
+
+            // List participants
+            const pList = document.getElementById('raidParticipantsList');
+            pList.innerHTML = (state.participants||[]).map((pId, idx) => {
+                const name = STUDENT_NAMES[pId] || '용사';
+                const isMyTurn = state.currentTurn === idx && state.status === 'playing';
+                return `<div class="text-xs sm:text-sm p-1.5 rounded ${isMyTurn ? 'bg-sb-blue/30 border border-sb-blue animate-pulse text-white' : 'text-slate-400'}">${idx+1}. ${name} ${isMyTurn ? '⚔️' : ''}</div>`;
+            }).join('');
+
+            // Logs
+            const logContainer = document.getElementById('raidLogContainer');
+            logContainer.innerHTML = (state.logs||[]).map(l => `<div>${l}</div>`).join('');
+
+            // Turn info & Inputs
+            const turnText = document.getElementById('raidTurnText');
+            const qText = document.getElementById('raidQuestionText');
+            const ansInput = document.getElementById('raidAnswerInput');
+            const submitBtn = document.getElementById('btnSubmitAnswer');
+            const myId = localStorage.getItem('sambong_student_id');
+
+            if(state.status === 'playing') {
+                document.getElementById('raidBattleModal').classList.remove('hidden');
+                const cTurn = state.currentTurn;
+                const cPlayer = state.participants[cTurn];
+                
+                if(cTurn < state.questions.length) {
+                    qText.innerText = `Q${cTurn+1}. ${state.questions[cTurn].q}`;
+                }
+
+                if(cPlayer === myId) {
+                    turnText.innerText = "⚔️ 나의 턴입니다! 빠르게 정답을 입력하세요!";
+                    turnText.className = "text-emerald-400 font-bold text-sm sm:text-base mb-2 animate-pulse";
+                    ansInput.disabled = false;
+                    submitBtn.disabled = false;
+                    ansInput.focus();
+                } else {
+                    turnText.innerText = `⏳ [${STUDENT_NAMES[cPlayer]}] 용사의 턴 대기중...`;
+                    turnText.className = "text-sb-gold font-bold text-sm sm:text-base mb-2";
+                    ansInput.disabled = true;
+                    submitBtn.disabled = true;
+                    ansInput.value = '';
+                }
+            } else if (state.status === 'finished') {
+                qText.innerHTML = `<span class="text-yellow-400">🎉 보스를 처치했습니다! 🎉<br>모든 참가자에게 ${RAID_REWARD.xp}XP, ${RAID_REWARD.bong}B 지급 완료!</span>`;
+                turnText.innerText = "전투 종료";
+                ansInput.disabled = true;
+                submitBtn.disabled = true;
+                document.getElementById('btnExitRaid').classList.remove('hidden');
+                document.getElementById('raidBossImage').innerText = '👼';
+            } else if (state.status === 'failed') {
+                qText.innerHTML = `<span class="text-red-400">💀 용사들이 전멸했습니다... (보스 회복 완료)</span>`;
+                turnText.innerText = "전투 실패";
+                ansInput.disabled = true;
+                submitBtn.disabled = true;
+                document.getElementById('btnExitRaid').classList.remove('hidden');
+            }
+        };
+
+        window.saveRaidQuestions = async function() {
+            if(!window.playerState.isAdmin) return;
+            const qs = [];
+            for(let i=0; i<5; i++) {
+                const q = document.getElementById(`rq_${i}`).value.trim();
+                const a = document.getElementById(`ra_${i}`).value.trim();
+                if(!q || !a) return window.customAlert('5개의 문제와 정답을 모두 입력해주세요!');
+                qs.push({q, a});
+            }
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { questions: qs }, {merge: true});
+            window.customAlert('✅ 레이드 문제가 임시저장되었습니다.');
+        };
+
+        window.openRaidLobby = async function() {
+            if(!window.playerState.isAdmin) return;
+            const qs = window.currentRaidState?.questions || [];
+            if(qs.length < 5) return window.customAlert('문제를 먼저 저장해주세요!');
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP,
+                currentTurn: 0, combo: 0, logs: [`[시스템] 레이드 보스가 출현했습니다! 용사들을 모집합니다.`], questions: qs
+            }, {merge: true});
+            window.customAlert('🔥 레이드 로비가 오픈되었습니다!');
+        };
+
+        window.resetRaidForce = async function() {
+            if(!window.playerState.isAdmin) return;
+            const ok = await window.customConfirm("레이드를 강제 종료하고 대기 상태로 만드시겠습니까?");
+            if(ok) {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                    status: 'waiting', participants: [], logs: []
+                }, {merge: true});
+                document.getElementById('btnExitRaid').classList.add('hidden');
+                document.getElementById('raidBattleModal').classList.add('hidden');
+                document.getElementById('raidBossImage').innerText = '👹';
+            }
+        };
+
+        window.joinRaid = async function() {
+            if(window.playerState.isGuest) return window.customAlert('게스트는 참여할 수 없습니다.');
+            const myId = localStorage.getItem('sambong_student_id');
+            const state = window.currentRaidState;
+            if(!state || state.status !== 'recruiting') return;
+            if(state.participants.includes(myId)) return;
+            if(state.participants.length >= 5) return window.customAlert('이미 5명이 모집되었습니다!');
+
+            const newParts = [...state.participants, myId];
+            const updates = { participants: newParts };
+            
+            if(newParts.length === 5) {
+                updates.status = 'playing';
+                updates.startTime = Date.now();
+                updates.logs = [...(state.logs||[]), `[시스템] 5명의 용사가 모였습니다. 전투를 시작합니다!`];
+                document.getElementById('raidBossImage').innerText = '👹'; // 보스 얼굴 초기화
+            }
+            
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updates, {merge: true});
+        };
+
+        window.closeRaidModal = function() {
+            document.getElementById('raidBattleModal').classList.add('hidden');
+            document.getElementById('btnExitRaid').classList.add('hidden');
+        };
+
+        window.submitRaidAnswer = async function() {
+            const state = window.currentRaidState;
+            if(!state || state.status !== 'playing') return;
+            const myId = localStorage.getItem('sambong_student_id');
+            const cTurn = state.currentTurn;
+            if(state.participants[cTurn] !== myId) return;
+
+            const inputAns = document.getElementById('raidAnswerInput').value.trim();
+            if(!inputAns) return;
+
+            const correctAns = state.questions[cTurn].a;
+            const timeTaken = (Date.now() - state.startTime) / 1000;
+            
+            let damage = 0;
+            let isCrit = false;
+            let msg = '';
+            let newCombo = state.combo || 0;
+            
+            if(inputAns === correctAns) {
+                if(timeTaken <= 5) {
+                    damage = 200; isCrit = true; msg = `💥 크리티컬! (5초 이내)`; newCombo++;
+                } else if(timeTaken <= 10) {
+                    damage = 100; msg = `⚔️ 그레이트! (10초 이내)`; newCombo++;
+                } else {
+                    damage = 50; msg = `🔪 굿! (정답)`; newCombo++;
+                }
+            } else {
+                damage = -50; msg = `❌ 오답! 보스가 체력을 50 회복합니다!`; newCombo = 0;
+            }
+
+            let newHP = state.bossHP - damage;
+            if(newHP > state.maxBossHP) newHP = state.maxBossHP;
+            
+            const logMsg = `[${STUDENT_NAMES[myId]}] ${inputAns} 제출! -> ${msg} (대미지: ${damage})`;
+            const newLogs = [logMsg, ...(state.logs||[])].slice(0, 20);
+
+            let newStatus = state.status;
+            let nextTurn = cTurn + 1;
+
+            if(newHP <= 0) {
+                newHP = 0;
+                newStatus = 'finished';
+                newLogs.unshift(`[시스템] 보스 토벌 완료! 🎉 모든 용사에게 보상 지급!`);
+                await distributeRaidRewards(state.participants);
+            } else if(nextTurn >= 5) {
+                newStatus = 'failed';
+                newLogs.unshift(`[시스템] 모든 용사가 공격했으나 보스를 쓰러뜨리지 못했습니다...`);
+            }
+
+            document.getElementById('raidAnswerInput').value = '';
+
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                bossHP: newHP,
+                currentTurn: nextTurn,
+                combo: newCombo,
+                logs: newLogs,
+                status: newStatus,
+                startTime: Date.now()
+            }, {merge: true});
+        };
+
+        async function distributeRaidRewards(participants) {
+            const batch = writeBatch(db);
+            participants.forEach(pId => {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + pId);
+                const pData = window.allStudentsData.find(s => s.id === pId);
+                if(pData) {
+                    batch.set(docRef, {
+                        xp: (pData.xp||0) + RAID_REWARD.xp,
+                        bong: (pData.bong||0) + RAID_REWARD.bong
+                    }, {merge: true});
+                }
+            });
+            await batch.commit();
+        }
+
+        // ==========================================
+        // ★ NPC 대화 로직 ★
         // ==========================================
         const npcDialogs = [
-            '"환영한다, 용사여. 모험의 첫 번째 시즌이 시작되었다. 성실한 출석과 훈련으로 너의 잠재력을 폭발시켜라! 명예의 전당이 너를 기다리고 있다."',
-            '"💡 힌트: 매일 아침 8시 40분 이전에 등교하여 하단의 투두(To-Do) 리스트에서 [출석의 축복]을 바로 인증해라!"',
-            '"💡 힌트: 상점에서 파는 [절대 방패] 아이템은 나의 무서운 차감 공격을 1회(최대 100) 막아주는 신비한 물건이지."',
-            '"전담 교사 레이드 보스를 조심해라! 수업에 늦거나 태도가 불량하면 큰 피해를 입을 수 있다."',
-            '"금요일에는 일주일간 성실했던 자를 위한 특별한 보너스 퀘스트가 열린다. 놓치지 마라!"',
-            '"레벨 100 [전설] 등급에 도달하는 자, 삼봉초등학교의 역사에 영구히 이름을 남기게 될 것이다!"'
+            '"환영한다, 용사여. 모험의 첫 번째 시즌이 시작되었다. 성실한 출석과 훈련으로 너의 잠재력을 폭발시켜라!"',
+            '"💡 힌트: 매일 아침 8시 40분 이전에 등교하여 하단의 투두 리스트에서 [출석의 축복]을 인증해라!"',
+            '"💡 힌트: 상점의 [절대 방패] 아이템은 나의 무서운 차감 공격을 1회(최대 100) 막아주는 신비한 물건이지."',
+            '"주말에는 협동 레이드 보스가 출현한다! 친구들 5명을 모아 함께 도전하라!"',
+            '"레벨 100 [전설] 등급에 도달하는 자, 명예의 전당에 영구히 기록될 것이다!"'
         ];
         let dialogIdx = 0;
         window.talkToNPC = function() {
             dialogIdx = (dialogIdx + 1) % npcDialogs.length;
             const textEl = document.getElementById('npcText');
-            textEl.style.opacity = 0;
-            setTimeout(() => {
-                textEl.innerText = npcDialogs[dialogIdx];
-                textEl.style.opacity = 1;
-            }, 300);
+            if(textEl) {
+                textEl.style.opacity = 0;
+                setTimeout(() => { textEl.innerText = npcDialogs[dialogIdx]; textEl.style.opacity = 1; }, 300);
+            }
         };
 
         // ==========================================
-        // 2. 초기화 (DOM 동적 생성 및 파이어베이스)
+        // ★ 주말 시간 동기화 (레이드) ★
         // ==========================================
-        function initDynamicContent() {
-            document.getElementById('jobGrid').innerHTML = JOB_DATA.map(job => `
-                <div onclick="window.toggleJob('${job.name}', '${job.icon}', '${job.color}')" class="cursor-pointer glass-panel p-4 sm:p-5 rounded-xl border-l-4 border-l-${job.color.replace('text-', '')} hover:bg-slate-800 transition relative group">
-                    <div class="flex justify-between items-start mb-3 sm:mb-4">
-                        <i class="fa-solid ${job.icon} text-2xl sm:text-3xl ${job.color} group-hover:scale-110 transition"></i>
-                        <span class="bg-slate-900 text-sb-gold px-2 sm:px-3 py-1 rounded-full font-bold text-[10px] sm:text-xs whitespace-nowrap border border-slate-700">주급 ${job.pay} B</span>
-                    </div>
-                    <h3 class="text-base sm:text-lg font-bold mb-1 font-sans">${job.name} <span class="text-[10px] sm:text-xs font-normal text-slate-400 ml-1">${job.sub}</span></h3>
-                    <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">${job.desc}</p>
-                </div>
-            `).join('');
-
-            document.getElementById('shopContainer').innerHTML = SHOP_DATA.map(shop => `
-                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800 p-3 sm:p-4 rounded-xl border-2 flex items-center gap-3 sm:gap-4 transition-all duration-300 unaffordable" onclick="window.buyItem('${shop.id}', '${shop.name}', ${shop.price}, ${shop.isConsumable || false})">
-                    <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-full flex items-center justify-center ${shop.iconColor} text-lg sm:text-xl shadow-inner"><i class="fa-solid ${shop.icon}"></i></div>
-                    <div class="flex-grow">
-                        <div class="font-bold text-sm sm:text-base font-sans">${shop.name}</div>
-                        <div class="text-[10px] sm:text-xs text-slate-400">${shop.desc}</div>
-                    </div>
-                    <div class="font-display text-base sm:text-xl text-sb-gold whitespace-nowrap bg-slate-900 px-3 py-1 rounded-lg">${shop.price} B</div>
-                </div>
-            `).join('');
-
-            document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
-                <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800 p-3 sm:p-4 rounded-xl border-2 flex items-center gap-3 sm:gap-4 transition-all duration-300" onclick="window.handleSkin('${skin.id}')">
-                    <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-full flex items-center justify-center text-lg sm:text-2xl shadow-inner">${skin.emoji}</div>
-                    <div class="flex-grow">
-                        <div class="font-bold font-sans text-sm sm:text-base">${skin.name}</div>
-                        <div class="text-[10px] sm:text-xs text-slate-400">${skin.desc}</div>
-                    </div>
-                    <div class="text-right whitespace-nowrap" id="skin-status-${skin.id}">
-                        <div class="font-display text-base sm:text-lg text-pink-400 bg-slate-900 px-3 py-1 rounded-lg">${skin.price} B</div>
-                    </div>
-                </div>
-            `).join('');
+        async function checkWeekendTime() {
+            try {
+                const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Seoul', {cache: 'no-store'});
+                if(!res.ok) throw new Error('API Fail');
+                const data = await res.json();
+                const now = new Date(data.datetime);
+                const day = now.getDay(); const hour = now.getHours();
+                isWeekend = (day === 5 && hour >= 16) || (day === 6) || (day === 0);
+                document.getElementById('raidTimeStatusText').innerText = isWeekend ? "⚔️ 레이드 가능 시간입니다! (주말)" : "🔒 주말(금 16시~일 24시)에만 참여 가능합니다.";
+                document.getElementById('raidTimeStatusText').className = isWeekend ? "text-[10px] text-emerald-400 mt-2 font-bold" : "text-[10px] text-red-400 mt-2 font-bold";
+            } catch(e) {
+                const now = new Date(); const day = now.getDay(); const hour = now.getHours();
+                isWeekend = (day === 5 && hour >= 16) || (day === 6) || (day === 0);
+                document.getElementById('raidTimeStatusText').innerText = isWeekend ? "⚔️ 레이드 가능 (로컬 시간 기준)" : "🔒 주말(금 16시~일 24시)에만 참여 가능합니다.";
+                document.getElementById('raidTimeStatusText').className = isWeekend ? "text-[10px] text-emerald-400 mt-2 font-bold" : "text-[10px] text-red-400 mt-2 font-bold";
+            }
+            updateRaidEntryUI();
         }
 
+        // ==========================================
+        // ★ 화면 렌더링 (직업, 상점, 퀘스트 등) ★
+        // ==========================================
+        function initDynamicContent() {
+            // 직업 렌더링
+            const jg = document.getElementById('jobGrid');
+            if(jg) {
+                jg.innerHTML = JOB_DATA.map(job => `
+                    <div onclick="window.toggleJob('${job.name}', '${job.icon}', '${job.color}')" class="cursor-pointer glass-panel p-4 sm:p-5 rounded-xl border-l-4 border-l-${job.color.replace('text-', '')} hover:bg-slate-800 transition relative group">
+                        <div class="flex justify-between items-start mb-3 sm:mb-4">
+                            <i class="fa-solid ${job.icon} text-2xl sm:text-3xl ${job.color} group-hover:scale-110 transition"></i>
+                            <span class="bg-slate-900 text-sb-gold px-2 sm:px-3 py-1 rounded-full font-bold text-[10px] sm:text-xs whitespace-nowrap border border-slate-700">주급 ${job.pay} B</span>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-bold mb-1 font-sans">${job.name} <span class="text-[10px] sm:text-xs font-normal text-slate-400 ml-1">${job.sub}</span></h3>
+                        <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">${job.desc}</p>
+                    </div>
+                `).join('');
+            }
+
+            // 아이템 상점 렌더링
+            const sc = document.getElementById('shopContainer');
+            if(sc) {
+                sc.innerHTML = SHOP_DATA.map(shop => `
+                    <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800 p-3 sm:p-4 rounded-xl border-2 flex items-center gap-3 sm:gap-4 transition-all duration-300 unaffordable" onclick="window.buyItem('${shop.id}', '${shop.name}', ${shop.price}, ${shop.isConsumable || false})">
+                        <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-full flex items-center justify-center ${shop.iconColor} text-lg sm:text-xl shadow-inner"><i class="fa-solid ${shop.icon}"></i></div>
+                        <div class="flex-grow">
+                            <div class="font-bold text-sm sm:text-base font-sans">${shop.name}</div>
+                            <div class="text-[10px] sm:text-xs text-slate-400">${shop.desc}</div>
+                        </div>
+                        <div class="font-display text-base sm:text-xl text-sb-gold whitespace-nowrap bg-slate-900 px-3 py-1 rounded-lg">${shop.price} B</div>
+                    </div>
+                `).join('');
+            }
+
+            // 스킨 상점 렌더링
+            const skinC = document.getElementById('skinContainer');
+            if(skinC) {
+                skinC.innerHTML = SKIN_DATA.map(skin => `
+                    <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800 p-3 sm:p-4 rounded-xl border-2 flex items-center gap-3 sm:gap-4 transition-all duration-300 unaffordable" onclick="window.handleSkin('${skin.id}')">
+                        <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0 rounded-full flex items-center justify-center text-lg sm:text-2xl shadow-inner">${skin.emoji}</div>
+                        <div class="flex-grow">
+                            <div class="font-bold font-sans text-sm sm:text-base">${skin.name}</div>
+                            <div class="text-[10px] sm:text-xs text-slate-400">${skin.desc}</div>
+                        </div>
+                        <div class="text-right whitespace-nowrap" id="skin-status-${skin.id}">
+                            <div class="font-display text-base sm:text-lg text-pink-400 bg-slate-900 px-3 py-1 rounded-lg">${skin.price} B</div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // 관리자 레이드 세팅 UI 렌더링
+            const rq = document.getElementById('raidQuestionInputs');
+            if(rq) {
+                let html = '';
+                for(let i=0; i<5; i++) {
+                    html += `<div class="bg-slate-800 p-3 rounded-lg border border-slate-600 flex gap-2">
+                        <span class="text-sb-blue font-bold text-sm w-6 shrink-0 pt-2">Q${i+1}</span>
+                        <input type="text" id="rq_${i}" placeholder="문제를 입력하세요" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-sm focus:border-sb-blue focus:outline-none">
+                        <input type="text" id="ra_${i}" placeholder="정답" class="w-1/4 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-sm focus:border-sb-gold focus:outline-none">
+                    </div>`;
+                }
+                rq.innerHTML = html;
+            }
+        }
+
+        // ==========================================
+        // ★ Firebase 연동 및 상태 구독 ★
+        // ==========================================
         async function initApp() {
             initDynamicContent();
+
+            // 레이드 이벤트 리스너 바인딩
+            const btnSubmit = document.getElementById('btnSubmitAnswer');
+            const inputAns = document.getElementById('raidAnswerInput');
+            if(btnSubmit) btnSubmit.onclick = window.submitRaidAnswer;
+            if(inputAns) inputAns.addEventListener('keypress', (e) => { if(e.key === 'Enter') window.submitRaidAnswer(); });
+
             try {
                 const firebaseConfig = { apiKey: "AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8", authDomain: "sambong-world-2026.firebaseapp.com", projectId: "sambong-world-2026", storageBucket: "sambong-world-2026.firebasestorage.app", messagingSenderId: "728320769100", appId: "1:728320769100:web:7510c9a77cca6b87a788e9" };
                 const app = initializeApp(firebaseConfig); auth = getAuth(app); db = getFirestore(app);
@@ -657,6 +1104,9 @@
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
+                        checkWeekendTime(); setInterval(checkWeekendTime, 60000); // 1분마다 주말 체크
+                        
+                        // 1. 전체 학생 데이터 구독
                         if (unsubscribeGlobal) unsubscribeGlobal();
                         unsubscribeGlobal = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), snap => {
                             const students = []; let gmD = null, gmaD = null;
@@ -667,14 +1117,12 @@
                             });
                             window.allStudentsData = students; window.gmData = gmD; window.gmaData = gmaD;
                             
-                            if (!window.playerState.isGuest) {
-                                const myId = localStorage.getItem('sambong_student_id');
-                                if (myId) {
-                                    const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find(s => s.id === myId));
-                                    if (myData) {
-                                        window.playerState = { ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a') };
-                                        updateUI();
-                                    }
+                            const myId = localStorage.getItem('sambong_student_id');
+                            if (myId && !window.playerState.isGuest) {
+                                const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find(s => s.id === myId));
+                                if (myData) {
+                                    window.playerState = { ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a') };
+                                    updateUI();
                                 }
                             }
 
@@ -683,6 +1131,7 @@
                             window.renderHallOfFame(students);
                         }, e => console.error(e));
 
+                        // 2. 글로벌 설정 (레이드 비번 등)
                         const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
                         if (unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(settingsRef, snap => {
@@ -690,6 +1139,38 @@
                                 window.globalSettings = snap.data();
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
+                            }
+                        });
+
+                        // 3. 레이드 상태 데이터 구독
+                        if(unsubscribeRaid) unsubscribeRaid();
+                        unsubscribeRaid = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), snap => {
+                            if(snap.exists()) {
+                                const oldHP = window.currentRaidState?.bossHP;
+                                window.currentRaidState = snap.data();
+                                
+                                // 피격 이펙트
+                                if(oldHP !== undefined && window.currentRaidState.bossHP < oldHP) {
+                                    const bImg = document.getElementById('raidBossImage');
+                                    bImg.classList.add('boss-damage');
+                                    setTimeout(()=>bImg.classList.remove('boss-damage'), 300);
+                                    if(navigator.vibrate) navigator.vibrate(100);
+                                }
+                                // 상태이상 디버프 이펙트 (내가 다음 턴인데 앞사람이 틀렸을 때)
+                                const myId = localStorage.getItem('sambong_student_id');
+                                const cTurn = window.currentRaidState.currentTurn;
+                                const pLog = (window.currentRaidState.logs||[])[(window.currentRaidState.logs||[]).length-2];
+                                if(window.currentRaidState.status === 'playing' && window.currentRaidState.participants[cTurn] === myId) {
+                                    if(pLog && pLog.includes('❌')) {
+                                        document.getElementById('raidInputArea').classList.add('debuff-blur', 'debuff-shake');
+                                        setTimeout(()=>document.getElementById('raidInputArea').classList.remove('debuff-blur', 'debuff-shake'), 2000);
+                                    }
+                                }
+
+                                updateRaidEntryUI();
+                                updateRaidBattleUI();
+                            } else {
+                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { status: 'waiting', participants: [], logs: [], questions: [] });
                             }
                         });
                         
@@ -701,29 +1182,7 @@
         }
 
         // ==========================================
-        // 3. UI 알림 및 모달 로직
-        // ==========================================
-        window.customAlert = (m) => new Promise(r => {
-            const d = document.createElement('div'); d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-            d.innerHTML = `<div class="bg-sb-panel p-6 sm:p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-xl sm:text-2xl font-display text-white">알림</h3><p class="text-sm sm:text-base text-slate-300 whitespace-pre-wrap">${m}</p><button id="bOk" class="bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full transition">확인</button></div>`;
-            document.body.appendChild(d); document.getElementById('bOk').onclick = () => { d.remove(); r(true); };
-        });
-
-        window.customConfirm = (m) => new Promise(r => {
-            const d = document.createElement('div'); d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-            d.innerHTML = `<div class="bg-sb-panel p-6 sm:p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-xl sm:text-2xl font-display text-white">확인</h3><p class="text-sm sm:text-base text-slate-300 whitespace-pre-wrap">${m}</p><div class="flex gap-4 mt-6"><button id="bNo" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-full w-full border border-slate-500">취소</button><button id="bYes" class="bg-sb-red hover:bg-red-500 text-white font-bold py-2 px-6 rounded-full w-full shadow-lg">확인</button></div></div>`;
-            document.body.appendChild(d); document.getElementById('bYes').onclick = () => { d.remove(); r(true); }; document.getElementById('bNo').onclick = () => { d.remove(); r(false); };
-        });
-
-        window.customPrompt = (m, type="password") => new Promise(r => {
-            const d = document.createElement('div'); d.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/80 px-4";
-            d.innerHTML = `<div class="bg-sb-panel p-6 sm:p-8 rounded-3xl border-2 border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl"><h3 class="text-xl sm:text-2xl font-display text-sb-gold">입력 구역</h3><p class="text-sm sm:text-base text-slate-300 whitespace-pre-wrap">${m}</p><input type="${type}" id="pIn" class="w-full bg-slate-800 border border-slate-600 text-white rounded-xl px-4 py-3 focus:border-sb-blue focus:outline-none text-center my-4 font-bold shadow-inner"><div class="flex gap-4"><button id="bpNo" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-6 rounded-full w-full border border-slate-500">취소</button><button id="bpYes" class="bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-2 px-6 rounded-full w-full shadow-lg">확인</button></div></div>`;
-            document.body.appendChild(d); document.getElementById('pIn').focus();
-            document.getElementById('bpYes').onclick = () => { const v = document.getElementById('pIn').value; d.remove(); r(v); }; document.getElementById('bpNo').onclick = () => { d.remove(); r(null); };
-        });
-
-        // ==========================================
-        // 4. 핵심 렌더링 함수 (UI, 광장, GM 표, 명예의 전당)
+        // ★ 메인 렌더링 (광장, 명예의 전당, Admin 표) ★
         // ==========================================
         window.renderHallOfFame = function(students) {
             const legends = students.filter(s => calculateExactLevel(s.xp || 0) >= 100);
@@ -754,7 +1213,6 @@
                 const emptyId = idLabel.split('.')[0].trim();
                 const targetId = data ? data.id : emptyId;
                 
-                // 마스터 권한 확인 (마스터 J는 전체, 마스터 A는 13번만 제어 가능)
                 const canEdit = window.playerState.isGM || (window.playerState.isGMA && targetId === '13');
                 const gmOnClick = canEdit && !isGMCard ? `onclick="window.plazaClickXP('${targetId}', this)"` : '';
                 const gmCursor = canEdit && !isGMCard ? 'cursor-pointer hover:scale-[1.03] active:scale-95' : '';
@@ -830,8 +1288,6 @@
             tbody.innerHTML = '';
             for(let i=1; i<=13; i++) { 
                 const stu = studentsData.find(s => s.id === String(i));
-                
-                // 마스터 A는 서영이(13번)만 수정 가능, 다른 학생은 보기만 가능 (흐리게 표시)
                 const canEdit = window.playerState.isGM || (window.playerState.isGMA && String(i) === '13');
                 
                 if(stu) {
@@ -866,12 +1322,14 @@
             }
         };
 
+        // ==========================================
+        // ★ 내 상태 UI 업데이트 ★
+        // ==========================================
         function updateUI() {
             if (!window.playerState.isGuest && !currentStudentDocRef) return;
             if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
-            // 1. 대시보드 및 관리자 패널 토글 로직
             if (!window.playerState.isAdmin) {
                 document.getElementById('myDashboardSection').classList.remove('hidden');
                 document.getElementById('adminDashboard').classList.add('hidden');
@@ -916,11 +1374,8 @@
                 document.getElementById('myDashboardSection').classList.add('hidden');
                 document.getElementById('adminDashboard').classList.remove('hidden');
                 
-                // 마스터 A인 경우 일괄 관리 패널 숨기기
                 const gmOnlyPanels = document.getElementById('gmOnlyPanels');
-                if(gmOnlyPanels) {
-                    gmOnlyPanels.style.display = window.playerState.isGM ? 'block' : 'none';
-                }
+                if(gmOnlyPanels) { gmOnlyPanels.style.display = window.playerState.isGM ? 'block' : 'none'; }
                 const subtitle = document.getElementById('adminSubtitle');
                 if(subtitle) {
                     subtitle.innerText = window.playerState.isGM 
@@ -929,7 +1384,7 @@
                 }
             }
 
-            // 2. 퀘스트 보드 업데이트
+            // 퀘스트 렌더링
             const renderQuests = (quests, containerId) => {
                 const today = new Date().getDay();
                 document.getElementById(containerId).innerHTML = quests.map(q => {
@@ -967,7 +1422,7 @@
             renderQuests(QUEST_DATA.filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
             renderQuests(QUEST_DATA.filter(q => q.type === 'locked'), 'specialQuestContainer');
 
-            // 3. 스킨 및 아이템 렌더링
+            // 스킨 및 상점 UI 업데이트
             SKIN_DATA.forEach(skin => {
                 const item = document.getElementById(`skin-btn-${skin.id}`); const status = document.getElementById(`skin-status-${skin.id}`);
                 if (item && status) {
@@ -978,7 +1433,7 @@
                     } else {
                         item.classList.remove('border-pink-500');
                         if (window.playerState.bong >= skin.price || window.playerState.isAdmin) { item.classList.replace('unaffordable', 'affordable'); } else { item.classList.replace('affordable', 'unaffordable'); }
-                        status.innerHTML = `<div class="font-display text-base sm:text-lg text-pink-400 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700">${skin.price} B</div>`;
+                        status.innerHTML = `<div class="font-display text-base sm:text-lg text-pink-400 bg-slate-900 px-3 py-1 rounded-lg border border-slate-700">${skin.price} B</div>`;
                     }
                 }
             });
@@ -992,7 +1447,7 @@
         }
 
         // ==========================================
-        // 5. 로그인 및 유저 액션 로직
+        // ★ 로그인, 구매, 퀘스트 등 기본 로직 ★
         // ==========================================
         document.getElementById('btnLogin').onclick = () => attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
 
@@ -1038,23 +1493,16 @@
 
                 if (!isAdmin) {
                     const now = new Date();
-                    const gameTime = new Date(now.getTime() - 8 * 60 * 60 * 1000); // 8시간을 빼서 아침 8시 전에는 어제로 인식하게 함
-                    const yyyy = gameTime.getFullYear();
-                    const mm = String(gameTime.getMonth() + 1).padStart(2, '0');
-                    const dd = String(gameTime.getDate()).padStart(2, '0');
+                    const gameTime = new Date(now.getTime() - 8 * 60 * 60 * 1000); 
+                    const yyyy = gameTime.getFullYear(); const mm = String(gameTime.getMonth() + 1).padStart(2, '0'); const dd = String(gameTime.getDate()).padStart(2, '0');
                     const gameDateStr = `${yyyy}-${mm}-${dd}`; 
                     
                     if (data.lastDailyReset !== gameDateStr) {
                         const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
                         let modified = false; let updatedQuests = { ...(data.quests || {}) };
-                        
-                        dailyQuestIds.forEach(qId => {
-                            if (updatedQuests[qId]) { updatedQuests[qId] = false; modified = true; }
-                        });
-                        
+                        dailyQuestIds.forEach(qId => { if (updatedQuests[qId]) { updatedQuests[qId] = false; modified = true; } });
                         if (modified || !data.lastDailyReset) {
-                            data.quests = updatedQuests;
-                            data.lastDailyReset = gameDateStr;
+                            data.quests = updatedQuests; data.lastDailyReset = gameDateStr;
                             await setDoc(docRef, { quests: updatedQuests, lastDailyReset: gameDateStr }, { merge: true });
                         }
                     }
@@ -1170,7 +1618,7 @@
                             updateUI(); saveDataToCloud();
                             await window.customAlert(`🧪 지혜의 비약을 마셨습니다!\n경험치가 100 증가했습니다.${levelUpMsg}`);
                         } else if (id === 'item_gacha') {
-                            const reward = Math.floor(Math.random() * 101); // 0 ~ 100 B 무작위
+                            const reward = Math.floor(Math.random() * 101);
                             window.playerState.bong += reward;
                             updateUI(); saveDataToCloud();
                             if (reward > 50) { await window.customAlert(`🎉 대박!! 행운의 상자에서 [${reward} B]가 나왔습니다!\n(순이익: +${reward - 50} B)`); } 
@@ -1230,7 +1678,7 @@
         };
 
         // ==========================================
-        // 6. 마스터 전용 완벽 복구 함수들 (v5.3)
+        // ★ 마스터 전용 기능 (일괄 지급, 퀵 컨트롤 등) ★
         // ==========================================
         window.plazaClickXP = async function(stuId, element) {
             if (!window.playerState.isAdmin || stuId === 'gm' || stuId === 'gm_a') return;
@@ -1344,7 +1792,7 @@
 
         window.resetRaids = async function() {
             if (!window.playerState.isGM) return window.customAlert('이 기능은 마스터 J만 사용할 수 있습니다.');
-            const ok = await window.customConfirm("⚠️ 모든 학생의 '전담 레이드(특수 퀘스트)' 완료 및 잠금 해제 상태를 초기화하시겠습니까?\n(일주일에 2회 이상 전담 수업이 있을 경우 다시 보상을 받도록 해줍니다.)");
+            const ok = await window.customConfirm("⚠️ 모든 학생의 '전담 레이드(특수 퀘스트)' 완료 및 잠금 해제 상태를 초기화하시겠습니까?");
             if(!ok) return;
             const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the'];
             const batch = writeBatch(db);
@@ -1395,6 +1843,9 @@
             else ddayElement.innerHTML = `<span class="text-sb-red animate-pulse">시즌 종료 (졸업 축하합니다! 🎉)</span>`;
         }, 1000);
 
+        // ==========================================
+        // 앱 초기화 시작
+        // ==========================================
         initApp();
     </script>
 </body>

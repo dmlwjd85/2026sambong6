@@ -248,11 +248,11 @@
                             </div>
                         </div>
 
-                        <!-- ★ 오늘의 컨디션 기능 ★ -->
+                        <!-- ★ 오늘의 컨디션 기능 (자동 적용) ★ -->
                         <div class="border-t border-slate-700/50 pt-4 relative z-10">
                             <div class="flex justify-between items-end mb-3">
                                 <h3 class="font-bold text-sm text-slate-300"><i class="fa-solid fa-face-smile text-yellow-400 mr-1"></i> 오늘의 상태 (Condition)</h3>
-                                <button onclick="window.saveCondition()" class="text-[10px] bg-sb-blue hover:bg-blue-500 text-white px-3 py-1.5 rounded font-bold shadow transition">상태 적용</button>
+                                <span class="text-[9px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">터치 시 자동 적용</span>
                             </div>
                             
                             <div class="grid grid-cols-2 gap-4">
@@ -457,7 +457,6 @@
         // ★ 1. 환경 설정 및 데이터 정의 ★
         // ==========================================
         
-        // 레이드 관련 상수 설정 (이전에 누락되었던 부분 복구)
         const BASE_BOSS_HP = 1000;
         const RAID_REWARD = { xp: 500, bong: 20 };
 
@@ -757,7 +756,7 @@
                     </div>
                 </div>`).join('');
 
-            // 컨디션 버튼 렌더링
+            // 컨디션 버튼 렌더링 (클릭 시 자동 저장)
             document.getElementById('emotionBtns').innerHTML = EMOTIONS.map(e => `
                 <button onclick="window.selectEmotion('${e.id}')" id="btn-emo-${e.id}" class="cond-btn w-8 h-8 text-sm sm:text-base rounded-full bg-slate-900 border border-slate-600 flex justify-center items-center transition" title="${e.label}">
                     ${e.icon}
@@ -792,26 +791,42 @@
             document.getElementById('raidQuestionInputs').innerHTML = html;
         }
 
-        window.selectEmotion = function(id) {
+        window.selectEmotion = async function(id, autoSave = true) {
             selectedEmotion = EMOTIONS.find(e => e.id === id);
-            EMOTIONS.forEach(e => document.getElementById(`btn-emo-${e.id}`).classList.remove('active'));
-            document.getElementById(`btn-emo-${id}`).classList.add('active');
+            EMOTIONS.forEach(e => {
+                const btn = document.getElementById(`btn-emo-${e.id}`);
+                if(btn) btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`btn-emo-${id}`);
+            if(activeBtn) activeBtn.classList.add('active');
+
+            if (autoSave) {
+                if (window.playerState.isGuest) return window.customAlert("게스트 모드입니다.");
+                if (!selectedBody && window.playerState.condition) selectedBody = window.playerState.condition.body;
+                if (!selectedBody) selectedBody = BODY_STATES[2]; // 기본값: 보통
+                
+                window.playerState.condition = { emotion: selectedEmotion, body: selectedBody };
+                await saveDataToCloud();
+            }
         };
         
-        window.selectBody = function(val) {
+        window.selectBody = async function(val, autoSave = true) {
             selectedBody = BODY_STATES.find(b => b.val === val);
-            BODY_STATES.forEach(b => document.getElementById(`btn-body-${b.val}`).classList.remove('active'));
-            document.getElementById(`btn-body-${val}`).classList.add('active');
-        };
-        
-        window.saveCondition = async function() {
-            if (window.playerState.isGuest) return window.customAlert("게스트 모드입니다.");
-            if (!selectedEmotion || !selectedBody) return window.customAlert("기분과 신체 상태를 모두 선택해주세요!");
-            
-            window.playerState.condition = { emotion: selectedEmotion, body: selectedBody };
-            await saveDataToCloud();
-            window.customAlert("✅ 오늘의 상태가 기록되어 광장에 표시됩니다!");
-            updateUI();
+            BODY_STATES.forEach(b => {
+                const btn = document.getElementById(`btn-body-${b.val}`);
+                if(btn) btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`btn-body-${val}`);
+            if(activeBtn) activeBtn.classList.add('active');
+
+            if (autoSave) {
+                if (window.playerState.isGuest) return window.customAlert("게스트 모드입니다.");
+                if (!selectedEmotion && window.playerState.condition) selectedEmotion = window.playerState.condition.emotion;
+                if (!selectedEmotion) selectedEmotion = EMOTIONS[0]; // 기본값: 기쁨
+                
+                window.playerState.condition = { emotion: selectedEmotion, body: selectedBody };
+                await saveDataToCloud();
+            }
         };
 
 
@@ -981,13 +996,14 @@
                 const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
                 const shieldHtml = hp > 0 ? `<div class="absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
-                // 컨디션 뱃지
+                // 컨디션 뱃지 (배터리 아이콘 적용)
                 let condHtml = '';
                 if (displayData.condition && displayData.condition.emotion) {
                     const emo = displayData.condition.emotion.icon;
                     const bColor = displayData.condition.body ? displayData.condition.body.color : 'text-slate-400';
-                    condHtml = `<div class="absolute top-1 right-1 bg-slate-900/80 px-1 py-0.5 rounded-full border border-slate-600 flex items-center gap-0.5 shadow z-20">
-                                    <span class="text-[10px]">${emo}</span><i class="fa-solid fa-bolt text-[8px] ${bColor}"></i>
+                    const bIcon = displayData.condition.body ? displayData.condition.body.icon : 'fa-battery-half';
+                    condHtml = `<div class="absolute top-1 right-1 bg-slate-900/80 px-1.5 py-0.5 rounded-full border border-slate-600 flex items-center gap-1 shadow z-20">
+                                    <span class="text-[10px] leading-none">${emo}</span><i class="fa-solid ${bIcon} text-[10px] ${bColor} leading-none"></i>
                                 </div>`;
                 }
 
@@ -1006,7 +1022,6 @@
 
                 if (isGMCard) {
                     const isA = data.id === 'gm_a';
-                    // 버그 수정됨: 변수가 없던 부분을 직접 삼항연산자로 처리
                     const cBorder = isA ? 'border-cyan-500' : 'border-sb-gold';
                     const cGlow = isA ? 'shadow-[0_0_15px_rgba(6,182,212,0.6)]' : 'shadow-[0_0_15px_rgba(251,191,36,0.6)]';
                     
@@ -1072,7 +1087,9 @@
                     
                     let condStr = '';
                     if(stu.condition && stu.condition.emotion) {
-                        condStr = `${stu.condition.emotion.icon}(${stu.condition.body.val})`;
+                        const bIcon = stu.condition.body ? stu.condition.body.icon : 'fa-battery-half';
+                        const bColor = stu.condition.body ? stu.condition.body.color : 'text-slate-400';
+                        condStr = `${stu.condition.emotion.icon} <i class="fa-solid ${bIcon} ${bColor}"></i>`;
                     }
                     
                     tbody.innerHTML += `
@@ -1175,10 +1192,10 @@
                 document.getElementById('expBar').style.width = `${Math.min(100, Math.max(0, progress))}%`;
                 document.getElementById('expText').innerText = exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`;
 
-                // 선택된 컨디션 UI 복원
+                // 선택된 컨디션 UI 복원 (버튼 시각적 활성화만 수행, 저장은 안함)
                 if(window.playerState.condition && window.playerState.condition.emotion) {
-                    window.selectEmotion(window.playerState.condition.emotion.id);
-                    window.selectBody(window.playerState.condition.body.val);
+                    window.selectEmotion(window.playerState.condition.emotion.id, false);
+                    window.selectBody(window.playerState.condition.body.val, false);
                 }
 
                 // 투두 리스트
@@ -1991,7 +2008,7 @@
         }, 5000);
 
         // ==========================================
-        // ★ 12. 레이드 전투 로직 (버그 수정됨) ★
+        // ★ 12. 레이드 전투 로직 ★
         // ==========================================
         window.updateRaidEntryUI = function() {
             const btn = document.getElementById('btnJoinRaid'); 
@@ -2289,7 +2306,6 @@
                 nS = 'finished'; 
                 l.unshift(`토벌 완료!`); 
                 
-                // 보상 지급 (이전에 누락되었던 RAID_REWARD 값 복구)
                 const b = writeBatch(db); 
                 st.participants.forEach(pId => { 
                     const pD = window.allStudentsData.find(s => s.id === pId); 

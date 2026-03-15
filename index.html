@@ -218,6 +218,7 @@
     <div id="swipeWrapper" class="pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
         <!-- ★ 1. 대시보드 탭 (컨디션, 투두, 드래곤볼) ★ -->
+        <!-- 마스터도 이 화면을 통해 자신의 상태와 기분을 업데이트 합니다. -->
         <section id="dashboardSection" class="space-y-6">
             <div class="flex flex-col md:flex-row gap-4 sm:gap-6">
                 <!-- 아바타 카드 -->
@@ -272,8 +273,8 @@
                         </div>
                     </div>
 
-                    <!-- 투두 리스트 -->
-                    <div class="glass-panel p-5 rounded-3xl shadow-lg border-t-4 border-t-emerald-500 bg-slate-800/80 max-h-56 overflow-y-auto scrollbar-hide">
+                    <!-- 투두 리스트 (관리자는 숨김) -->
+                    <div id="todoPanel" class="glass-panel p-5 rounded-3xl shadow-lg border-t-4 border-t-emerald-500 bg-slate-800/80 max-h-56 overflow-y-auto scrollbar-hide">
                         <h3 class="font-bold text-sm text-slate-300 mb-3 flex justify-between items-center">
                             <span><i class="fa-solid fa-list-check text-emerald-400 mr-1"></i> 오늘의 퀘스트</span>
                             <span class="text-[9px] font-normal text-slate-400 bg-slate-900 px-2 py-1 rounded">터치하여 인증</span>
@@ -300,7 +301,7 @@
                 <div class="w-12 h-12 rounded-full bg-gradient-to-br from-sb-gold to-yellow-600 flex items-center justify-center text-2xl flex-shrink-0 border shadow-inner">🐉</div>
                 <div class="flex-grow pt-0.5">
                     <div class="flex justify-between items-center mb-1"><h3 class="text-sb-gold font-black text-xs">마스터 J</h3></div>
-                    <p id="npcText" class="text-slate-200 text-xs font-medium leading-relaxed break-keep">"오늘의 기분을 기록하고 하루를 힘차게 시작해라!"</p>
+                    <p id="npcText" class="text-slate-200 text-xs font-medium leading-relaxed break-keep">"(공지 불러오는 중...)"</p>
                 </div>
             </div>
         </section>
@@ -422,13 +423,45 @@
                 </div>
                 
                 <div class="glass-panel p-4 rounded-xl border border-sb-gold/50">
-                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-wand-magic-sparkles text-sb-gold"></i> 일괄 처리</h3>
-                    <div class="grid grid-cols-2 gap-2">
-                        <div class="bg-slate-800/50 p-2 rounded border border-emerald-500/30 text-center"><span class="text-emerald-400 text-[10px] font-bold mb-1 block">일괄 지급</span>
-                            <div class="flex gap-1 mb-1"><button onclick="window.bulkAdd('xp', 5)" class="flex-1 bg-slate-700 text-white text-[9px] py-1 rounded">+5 XP</button><button onclick="window.bulkAdd('bong', 5)" class="flex-1 bg-slate-700 text-white text-[9px] py-1 rounded">+5 B</button></div>
+                    <h3 class="text-white font-bold text-sm mb-3"><i class="fa-solid fa-wand-magic-sparkles text-sb-gold"></i> 일괄 처리</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- 세분화된 일괄 지급 5,10,30,50,100 -->
+                        <div class="bg-slate-800/50 p-2.5 rounded border border-emerald-500/30 text-center">
+                            <span class="text-emerald-400 text-[10px] font-bold mb-1.5 block">일괄 지급 (XP)</span>
+                            <div class="grid grid-cols-5 gap-1 mb-2">
+                                <button onclick="window.bulkAdd('xp', 5)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+5X</button>
+                                <button onclick="window.bulkAdd('xp', 10)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+10X</button>
+                                <button onclick="window.bulkAdd('xp', 30)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+30X</button>
+                                <button onclick="window.bulkAdd('xp', 50)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+50X</button>
+                                <button onclick="window.bulkAdd('xp', 100)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+100X</button>
+                            </div>
+                            <span class="text-emerald-400 text-[10px] font-bold mb-1.5 block">일괄 지급 (자산 B)</span>
+                            <div class="grid grid-cols-5 gap-1">
+                                <button onclick="window.bulkAdd('bong', 5)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+5B</button>
+                                <button onclick="window.bulkAdd('bong', 10)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+10B</button>
+                                <button onclick="window.bulkAdd('bong', 30)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+30B</button>
+                                <button onclick="window.bulkAdd('bong', 50)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+50B</button>
+                                <button onclick="window.bulkAdd('bong', 100)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+100B</button>
+                            </div>
                         </div>
-                        <div class="bg-slate-800/50 p-2 rounded border border-sb-red/30 text-center"><span class="text-sb-red text-[10px] font-bold mb-1 block">일괄 차감</span>
-                            <div class="flex gap-1 mb-1"><button onclick="window.bulkDeduct('xp', 5)" class="flex-1 bg-slate-700 text-white text-[9px] py-1 rounded">-5 XP</button><button onclick="window.bulkDeduct('bong', 5)" class="flex-1 bg-slate-700 text-white text-[9px] py-1 rounded">-5 B</button></div>
+                        <!-- 세분화된 일괄 차감 5,10,30,50,100 -->
+                        <div class="bg-slate-800/50 p-2.5 rounded border border-sb-red/30 text-center">
+                            <span class="text-sb-red text-[10px] font-bold mb-1.5 block">일괄 차감 (XP)</span>
+                            <div class="grid grid-cols-5 gap-1 mb-2">
+                                <button onclick="window.bulkDeduct('xp', 5)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-5X</button>
+                                <button onclick="window.bulkDeduct('xp', 10)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-10X</button>
+                                <button onclick="window.bulkDeduct('xp', 30)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-30X</button>
+                                <button onclick="window.bulkDeduct('xp', 50)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-50X</button>
+                                <button onclick="window.bulkDeduct('xp', 100)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-100X</button>
+                            </div>
+                            <span class="text-sb-red text-[10px] font-bold mb-1.5 block">일괄 차감 (자산 B)</span>
+                            <div class="grid grid-cols-5 gap-1">
+                                <button onclick="window.bulkDeduct('bong', 5)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-5B</button>
+                                <button onclick="window.bulkDeduct('bong', 10)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-10B</button>
+                                <button onclick="window.bulkDeduct('bong', 30)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-30B</button>
+                                <button onclick="window.bulkDeduct('bong', 50)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-50B</button>
+                                <button onclick="window.bulkDeduct('bong', 100)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-100B</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -641,9 +674,7 @@
             let diffX = touchstartX - touchendX; 
             let diffY = touchstartY - touchendY;
             
-            // X축 이동이 충분히 크고 Y축 이동이 작을 때만 스와이프로 인식
             if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
-                // 내부 스크롤 요소에서는 스와이프 탭 변경을 무시
                 if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer')) return;
                 
                 let visibleTabs = TABS.filter(t => !document.getElementById('tab-' + t).classList.contains('hidden'));
@@ -715,7 +746,7 @@
         // ★ 4. 동적 콘텐츠 렌더링 ★
         // ==========================================
         function initDynamicContent() {
-            // 직업 렌더링 (가로형 슬림 디자인)
+            // 직업 렌더링
             const jg = document.getElementById('jobGrid');
             if(jg) {
                 jg.innerHTML = JOB_DATA.map(job => `
@@ -899,8 +930,9 @@
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
                                 
-                                if (window.globalSettings.announcement && npcDialogs[0].includes("[공지]") === false) { 
-                                    npcDialogs[0] = `"[공지] ${window.globalSettings.announcement}"`; 
+                                const npcEl = document.getElementById('npcText');
+                                if (npcEl) {
+                                    npcEl.innerText = window.globalSettings.announcement ? `"[공지] ${window.globalSettings.announcement}"` : '"(등록된 공지가 없습니다)"';
                                 }
                             }
                         });
@@ -964,7 +996,7 @@
                 const gmOnClick = canEdit && !isGMCard ? `onclick="window.plazaClickXP('${targetId}', this)"` : '';
                 const gmCursor = canEdit && !isGMCard ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : '';
 
-                if (!data) {
+                if (!data && !isGMCard) {
                     return `<div class="flex flex-col items-center p-2 rounded-xl border border-slate-700 bg-slate-800/30 w-full opacity-50">
                                 <div class="text-3xl mb-1 opacity-30 grayscale">👤</div>
                                 <div class="font-bold bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
@@ -1021,19 +1053,19 @@
                     </div>` : '';
 
                 if (isGMCard) {
-                    const isA = data.id === 'gm_a';
+                    const isA = targetId === 'gm_a';
                     const cBorder = isA ? 'border-cyan-500' : 'border-sb-gold';
                     const cGlow = isA ? 'shadow-[0_0_15px_rgba(6,182,212,0.6)]' : 'shadow-[0_0_15px_rgba(251,191,36,0.6)]';
                     
                     return `
-                    <div class="flex flex-col items-center p-3 rounded-xl border-2 w-full transition ${cGlow} ${cBorder} bg-slate-900 mx-auto z-10">
-                        ${shieldHtml}
+                    <div class="flex flex-col items-center p-3 rounded-xl border-2 w-full transition ${cGlow} ${cBorder} bg-slate-900 mx-auto z-10 relative">
+                        ${shieldHtml}${condHtml}
                         <div class="text-4xl sm:text-5xl avatar-legend mb-2 z-10">
                             ${isA?'🏴‍☠️':'🐉'}<span class="absolute -bottom-1 -right-1 text-xl">${isA?'🌊':'🔥'}</span>
                         </div>
                         <div class="text-[8px] font-black ${isA?'text-cyan-400':'text-sb-gold'} mb-0.5">${isA?'해적섬 두목':'창조자'}</div>
-                        <div class="font-bold bg-gradient-to-r ${isA?'from-cyan-600 to-blue-800 text-white':'from-sb-gold to-yellow-300 text-slate-900'} px-1 py-0.5 rounded text-[9px] w-full text-center truncate">
-                            ${isA?'마스터 A':'마스터 J'}
+                        <div class="font-bold bg-gradient-to-r ${isA?'from-cyan-600 to-blue-800 text-white':'from-sb-gold to-yellow-300 text-slate-900'} px-1 py-0.5 rounded text-[9px] w-full text-center truncate border border-slate-700">
+                            ${idLabel}
                         </div>
                     </div>`;
                 }
@@ -1052,10 +1084,10 @@
                 </div>`;
             };
 
-            let html = createCard(gmData, true, '마스터 J');
+            let html = createCard(gmData || {id: 'gm', xp: 0, bong: 0}, true, '마스터 J');
             
             if(gmaData || window.playerState.isGMA) {
-                html += createCard(gmaData || {id: 'gm_a'}, true, '마스터 A');
+                html += createCard(gmaData || {id: 'gm_a', xp: 0, bong: 0}, true, '마스터 A');
             }
             
             for(let i=1; i<=13; i++) { 
@@ -1150,105 +1182,106 @@
             if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
-            if (!window.playerState.isAdmin) {
-                document.getElementById('dashboardSection').classList.remove('hidden');
-                document.getElementById('adminSection').classList.add('hidden');
-                document.getElementById('tab-admin').classList.add('hidden');
-                
-                const xp = window.playerState.xp || 0;
-                const lvInfo = getLevelInfo(xp); 
-                const exactLv = calculateExactLevel(xp);
-                
-                let face = STUDENT_GENDERS[localStorage.getItem('sambong_student_id')] === 'F' ? '👧' : '👦';
-                let overlays = '';
-                
-                if(window.playerState.equippedSkins) { 
-                    SKIN_DATA.forEach(s => { 
-                        if(window.playerState.equippedSkins[s.id]) { 
-                            if(s.type === 'face') face = s.emoji; 
-                            if(s.type === 'overlay') overlays += `<span class="absolute ${s.overlayClass} pointer-events-none">${s.emoji}</span>`; 
-                        }
-                    }); 
-                }
-                
-                document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="text-[0.5em] absolute -bottom-1 -right-2 animate-pulse">${lvInfo.info.prop}</div>`;
-                document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
-                document.getElementById('dashLevelName').innerText = `Lv.${exactLv} ${lvInfo.info.name}`;
-                document.getElementById('dashXp').innerText = xp.toLocaleString();
-                document.getElementById('dashBong').innerText = (window.playerState.bong||0).toFixed(1);
-
-                const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
-                document.getElementById('dashShield').innerHTML = hp > 0 ? `🛡️<span class="text-[10px] bg-indigo-600 px-1 rounded absolute -top-1 -right-2 font-bold text-white border border-indigo-400 shadow">${hp}</span>` : '';
-                
-                document.getElementById('dashJobBadge').innerHTML = (window.playerState.jobs||[]).map(j => `
-                    <div class="w-6 h-6 rounded-full bg-slate-900 border flex items-center justify-center ${j.color}">
-                        <i class="fa-solid ${j.icon} text-[10px]"></i>
-                    </div>`).join('');
-
-                let prevMax = lvInfo.index > 0 ? LEVEL_DATA[lvInfo.index-1].max : 0;
-                let curMax = lvInfo.info.max === Infinity ? xp : lvInfo.info.max;
-                let progress = exactLv >= 100 ? 100 : ((xp - prevMax) / (curMax - prevMax)) * 100;
-                
-                document.getElementById('expBar').style.width = `${Math.min(100, Math.max(0, progress))}%`;
-                document.getElementById('expText').innerText = exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`;
-
-                // 선택된 컨디션 UI 복원 (버튼 시각적 활성화만 수행, 저장은 안함)
-                if(window.playerState.condition && window.playerState.condition.emotion) {
-                    window.selectEmotion(window.playerState.condition.emotion.id, false);
-                    window.selectBody(window.playerState.condition.body.val, false);
-                }
-
-                // 투두 리스트
-                document.getElementById('todoContainer').innerHTML = QUEST_DATA.filter(q => q.type === 'daily').map(q => {
-                    const done = window.playerState.quests && window.playerState.quests[q.id];
-                    return `
-                    <label class="flex items-center gap-2 p-2.5 bg-slate-900/60 rounded-xl border ${done ? 'border-sb-blue shadow' : 'border-slate-700'} cursor-pointer">
-                        <input type="checkbox" class="todo-checkbox hidden" ${done ? 'checked' : ''} onchange="window.${done ? 'cancelQuest' : 'attemptQuest'}('${q.id}', ${q.xp}, ${q.bong})">
-                        <div class="w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${done?'border-sb-blue bg-sb-blue':'border-slate-500'}">
-                            <i class="fa-solid fa-check text-white text-[10px] ${done?'opacity-100':'opacity-0'}"></i>
-                        </div>
-                        <div class="flex-grow min-w-0">
-                            <div class="text-xs font-bold ${done ? 'text-slate-500 line-through' : q.color} truncate">${q.name}</div>
-                        </div>
-                        <div class="shrink-0 bg-slate-800 px-1.5 py-0.5 rounded text-right">
-                            <span class="text-sb-blue text-[9px] font-bold block">+${q.xp}</span>
-                        </div>
-                    </label>`;
-                }).join('');
-
-                // 보물상자 보관함
-                const dbSlots = document.getElementById('dragonBallSlots');
-                if(dbSlots) {
-                    document.getElementById('dragonballContainer').classList.remove('hidden');
-                    const collected = window.playerState.dragonBalls || [];
-                    let slotsHtml = '';
-                    
-                    for(let i=1; i<=7; i++) {
-                        if (collected.includes(i)) {
-                            let starsHtml = ''; 
-                            for(let s=0; s<i; s++) {
-                                starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
-                            }
-                            slotsHtml += `
-                            <div class="w-8 h-8 sm:w-10 sm:h-10 dragonball-3d shadow-md shrink-0">
-                                <div class="flex flex-wrap items-center justify-center w-[70%] h-[70%] leading-none">${starsHtml}</div>
-                            </div>`;
-                        } else {
-                            slotsHtml += `
-                            <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-amber-900/50 border-2 border-amber-800/50 shadow-inner text-amber-700 font-black text-xs shrink-0">${i}</div>`;
-                        }
-                    }
-                    dbSlots.innerHTML = slotsHtml;
-                }
-            } else {
-                document.getElementById('dashboardSection').classList.add('hidden');
-                document.getElementById('adminSection').classList.remove('hidden');
+            // 권한에 따른 탭 노출만 관리 (Section을 직접 숨기지 않고 탭으로 이동하게 둠)
+            if (window.playerState.isAdmin) {
                 document.getElementById('tab-admin').classList.remove('hidden');
+                document.getElementById('todoPanel').classList.add('hidden'); // 마스터는 투두리스트 사용 불가
                 if(window.playerState.isGM) {
                     document.getElementById('gmOnlyPanels').classList.remove('hidden');
                     document.getElementById('gmResetPanel').classList.remove('hidden');
                     document.getElementById('dbAdminStatus').classList.remove('hidden');
                 }
+            } else {
+                document.getElementById('tab-admin').classList.add('hidden');
+                document.getElementById('todoPanel').classList.remove('hidden');
+            }
+            
+            // 모든 플레이어(마스터 포함) 대시보드 데이터 연동
+            const xp = window.playerState.xp || 0;
+            const lvInfo = getLevelInfo(xp); 
+            const exactLv = calculateExactLevel(xp);
+            
+            let face = STUDENT_GENDERS[localStorage.getItem('sambong_student_id')] === 'F' ? '👧' : '👦';
+            if (window.playerState.isAdmin) face = window.playerState.isGM ? '🐉' : '🏴‍☠️';
+            let overlays = '';
+            
+            if(window.playerState.equippedSkins) { 
+                SKIN_DATA.forEach(s => { 
+                    if(window.playerState.equippedSkins[s.id]) { 
+                        if(s.type === 'face' && !window.playerState.isAdmin) face = s.emoji; 
+                        if(s.type === 'overlay') overlays += `<span class="absolute ${s.overlayClass} pointer-events-none">${s.emoji}</span>`; 
+                    }
+                }); 
+            }
+            
+            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="text-[0.5em] absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':lvInfo.info.prop}</div>`;
+            document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
+            document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
+            document.getElementById('dashXp').innerText = xp.toLocaleString();
+            document.getElementById('dashBong').innerText = (window.playerState.bong||0).toFixed(1);
+
+            const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+            document.getElementById('dashShield').innerHTML = hp > 0 ? `🛡️<span class="text-[10px] bg-indigo-600 px-1 rounded absolute -top-1 -right-2 font-bold text-white border border-indigo-400 shadow">${hp}</span>` : '';
+            
+            document.getElementById('dashJobBadge').innerHTML = (window.playerState.jobs||[]).map(j => `
+                <div class="w-6 h-6 rounded-full bg-slate-900 border flex items-center justify-center ${j.color}">
+                    <i class="fa-solid ${j.icon} text-[10px]"></i>
+                </div>`).join('');
+
+            let prevMax = lvInfo.index > 0 ? LEVEL_DATA[lvInfo.index-1].max : 0;
+            let curMax = lvInfo.info.max === Infinity ? xp : lvInfo.info.max;
+            let progress = exactLv >= 100 ? 100 : ((xp - prevMax) / (curMax - prevMax)) * 100;
+            
+            document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
+            document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);
+
+            // 선택된 컨디션 UI 복원 (버튼 시각적 활성화만 수행, 저장은 안함)
+            if(window.playerState.condition && window.playerState.condition.emotion) {
+                window.selectEmotion(window.playerState.condition.emotion.id, false);
+                window.selectBody(window.playerState.condition.body.val, false);
+            }
+
+            // 투두 리스트
+            document.getElementById('todoContainer').innerHTML = QUEST_DATA.filter(q => q.type === 'daily').map(q => {
+                const done = window.playerState.quests && window.playerState.quests[q.id];
+                return `
+                <label class="flex items-center gap-2 p-2.5 bg-slate-900/60 rounded-xl border ${done ? 'border-sb-blue shadow' : 'border-slate-700'} cursor-pointer">
+                    <input type="checkbox" class="todo-checkbox hidden" ${done ? 'checked' : ''} onchange="window.${done ? 'cancelQuest' : 'attemptQuest'}('${q.id}', ${q.xp}, ${q.bong})">
+                    <div class="w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${done?'border-sb-blue bg-sb-blue':'border-slate-500'}">
+                        <i class="fa-solid fa-check text-white text-[10px] ${done?'opacity-100':'opacity-0'}"></i>
+                    </div>
+                    <div class="flex-grow min-w-0">
+                        <div class="text-xs font-bold ${done ? 'text-slate-500 line-through' : q.color} truncate">${q.name}</div>
+                    </div>
+                    <div class="shrink-0 bg-slate-800 px-1.5 py-0.5 rounded text-right">
+                        <span class="text-sb-blue text-[9px] font-bold block">+${q.xp}</span>
+                    </div>
+                </label>`;
+            }).join('');
+
+            // 보물상자 보관함
+            const dbSlots = document.getElementById('dragonBallSlots');
+            if(dbSlots) {
+                document.getElementById('dragonballContainer').classList.remove('hidden');
+                const collected = window.playerState.dragonBalls || [];
+                let slotsHtml = '';
+                
+                for(let i=1; i<=7; i++) {
+                    if (collected.includes(i)) {
+                        let starsHtml = ''; 
+                        for(let s=0; s<i; s++) {
+                            starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
+                        }
+                        slotsHtml += `
+                        <div class="w-8 h-8 sm:w-10 sm:h-10 dragonball-3d shadow-md shrink-0">
+                            <div class="flex flex-wrap items-center justify-center w-[70%] h-[70%] leading-none">${starsHtml}</div>
+                        </div>`;
+                    } else {
+                        slotsHtml += `
+                        <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-amber-900/50 border-2 border-amber-800/50 shadow-inner text-amber-700 font-black text-xs shrink-0">${i}</div>`;
+                    }
+                }
+                dbSlots.innerHTML = slotsHtml;
             }
 
             // 전체 퀘스트/상점 UI 렌더링 (퀘스트 탭)
@@ -1458,6 +1491,7 @@
                 document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue";
                 
                 updateUI(); 
+                window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); // 광장 초기 렌더링 강제 실행
                 window.switchTab(isAdmin ? 'admin' : 'dashboard');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
@@ -1869,30 +1903,29 @@
 
 
         // ==========================================
-        // ★ 11. 레이드 및 드래곤볼 로직 ★
+        // ★ 11. 레이드 및 공지, 드래곤볼 로직 ★
         // ==========================================
-        let npcDialogs = [
-            '"환영한다, 용사여. 모험의 첫 번째 시즌이 시작되었다!"', 
-            '"💡 매일 아침 8시 40분 이전에 출석의 축복을 받아라!"', 
-            '"💡 상점의 방패는 나의 공격을 막아주지."', 
-            '"주말 레이드 보스를 조심해라!"'
-        ]; 
-        let dialogIdx = 0;
-        
         window.talkToNPC = function() { 
-            dialogIdx = (dialogIdx + 1) % npcDialogs.length; 
             const el = document.getElementById('npcText'); 
             if(el) { 
                 el.style.opacity = 0; 
-                setTimeout(() => { el.innerText = npcDialogs[dialogIdx]; el.style.opacity = 1; }, 300); 
+                setTimeout(() => { 
+                    if (window.globalSettings && window.globalSettings.announcement) {
+                        el.innerText = `"[공지] ${window.globalSettings.announcement}"`;
+                    } else {
+                        el.innerText = '"(등록된 공지가 없습니다. 마스터에게 문의하세요.)"';
+                    }
+                    el.style.opacity = 1; 
+                }, 300); 
             } 
         };
         
         window.setAnnouncement = async function() { 
             if(!window.playerState.isAdmin) return; 
             const t = document.getElementById('gmAnnouncementInput').value.trim(); 
+            if (!t) return window.customAlert('공지 내용을 입력해주세요.');
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { announcement: t }, { merge: true }); 
-            window.customAlert('✅ 공지 등록!'); 
+            window.customAlert('✅ 공지 등록 완료!'); 
             document.getElementById('gmAnnouncementInput').value = ''; 
         };
 

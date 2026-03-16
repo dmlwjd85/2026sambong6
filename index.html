@@ -325,7 +325,7 @@
             <div class="mb-4 flex justify-between items-end">
                 <div>
                     <h2 class="text-xl sm:text-2xl font-display text-emerald-400"><i class="fa-solid fa-users"></i> 길드 광장</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">친구들의 상태(기분/레벨)를 실시간으로 확인합니다.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">친구들의 상태(기분/레벨/직업)를 실시간으로 확인합니다.</p>
                 </div>
             </div>
             <div class="glass-panel p-2 sm:p-4 rounded-2xl shadow-xl">
@@ -1060,6 +1060,19 @@
                 const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
                 const shieldHtml = hp > 0 ? `<div class="absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
+                // ★ 추가: 직업 뱃지 (광장 캐릭터 좌상단 렌더링)
+                let jobHtml = '';
+                if (displayData.jobs && displayData.jobs.length > 0) {
+                    const jobIcons = displayData.jobs.map(j => `
+                        <div class="w-5 h-5 rounded-full bg-slate-900 border flex items-center justify-center ${j.color} border-slate-600 shadow-sm" title="${j.name}">
+                            <i class="fa-solid ${j.icon} text-[9px]"></i>
+                        </div>
+                    `).join('');
+                    // 방패가 활성화되어 좌상단(top-left) 공간을 차지하면 겹치지 않게 여백 추가
+                    const topMargin = hp > 0 ? 'top-4' : 'top-1'; 
+                    jobHtml = `<div class="absolute ${topMargin} left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
+                }
+
                 // 컨디션 뱃지 (배터리 아이콘 적용)
                 let condHtml = '';
                 if (displayData.condition && displayData.condition.emotion) {
@@ -1091,7 +1104,7 @@
                     
                     return `
                     <div class="flex flex-col items-center p-3 rounded-xl border-2 w-full transition ${cGlow} ${cBorder} bg-slate-900 mx-auto z-10 relative">
-                        ${shieldHtml}${condHtml}
+                        ${shieldHtml}${jobHtml}${condHtml}
                         <div class="text-4xl sm:text-5xl avatar-legend mb-2 z-10 relative">
                             ${isA?'🏴‍☠️':'🐉'}<span class="absolute -bottom-1 -right-1 text-xl">${isA?'🌊':'🔥'}</span>${overlays}
                         </div>
@@ -1104,7 +1117,7 @@
 
                 return `
                 <div ${gmOnClick} class="flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
-                    ${shieldHtml}${condHtml}
+                    ${shieldHtml}${jobHtml}${condHtml}
                     <div class="text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
                         <div class="relative inline-block leading-none">${face}${overlays}</div>
                         <div class="text-[0.6em] leading-none animate-pulse">${lv.info.prop}</div>

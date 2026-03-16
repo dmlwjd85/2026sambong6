@@ -46,6 +46,7 @@
         .bg-theme-plaza { background-color: #170a2c; background-image: radial-gradient(circle at 50% 0%, #3b0764 0%, #170a2c 70%); }
         .bg-theme-quests { background-color: #022c22; background-image: radial-gradient(circle at 50% 0%, #065f46 0%, #022c22 70%); }
         .bg-theme-jobs { background-color: #2e1008; background-image: radial-gradient(circle at 50% 0%, #78350f 0%, #2e1008 70%); }
+        .bg-theme-lunch { background-color: #1e1b4b; background-image: radial-gradient(circle at 50% 0%, #312e81 0%, #1e1b4b 70%); } /* 추가된 밥줄 배경 */
         .bg-theme-admin { background-color: #220202; background-image: radial-gradient(circle at 50% 0%, #7f1d1d 0%, #220202 70%); }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -165,6 +166,7 @@
             <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">광장</button>
             <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
             <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
+            <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
             <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
         </div>
     </nav>
@@ -399,7 +401,31 @@
             <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3"></div>
         </section>
 
-        <!-- ★ 5. 마스터 관리자 탭 ★ -->
+        <!-- ★ 5. 새로 추가된 밥줄(점심) 탭 ★ -->
+        <section id="lunchSection" class="hidden">
+            <div class="mb-4">
+                <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> VIP 밥줄 (우선 배식)</h2>
+                <p class="text-[10px] sm:text-xs text-slate-300 mt-1">평일 기본 급식비(10B)는 접속 시 자동 차감됩니다!</p>
+                <p class="text-[10px] sm:text-xs text-slate-400">추가 식권을 비싸게 입찰할수록 밥을 먼저 먹으며, 금액이 같을 경우 <span class="text-sb-blue font-bold">레벨(XP)이 높은 사람</span>이 우선권을 가집니다.</p>
+            </div>
+            
+            <div class="glass-panel p-4 sm:p-5 rounded-2xl mb-6 border border-orange-500/30">
+                <h3 class="font-bold text-sm text-white mb-3">추가 식권 입찰</h3>
+                <div class="flex gap-2">
+                    <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-4 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
+                    <button onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition transform hover:scale-105">입찰</button>
+                </div>
+            </div>
+
+            <div class="glass-panel p-2 sm:p-4 rounded-2xl">
+                <h3 class="font-bold text-sm text-slate-300 mb-3 ml-2">오늘의 배식 순위</h3>
+                <div id="lunchQueueContainer" class="space-y-2">
+                    <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 6. 마스터 관리자 탭 ★ -->
         <section id="adminSection" class="hidden">
             <div class="mb-4 flex justify-between items-end">
                 <div>
@@ -518,7 +544,6 @@
             if (type === 'xp') {
                 osc.type = 'sine';
                 if (isPositive) {
-                    // XP 증가 (경쾌하게 올라가는 소리)
                     osc.frequency.setValueAtTime(400, now);
                     osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
                     gainNode.gain.setValueAtTime(0.3, now);
@@ -526,7 +551,6 @@
                     osc.start(now);
                     osc.stop(now + 0.2);
                 } else {
-                    // XP 감소 (낮게 떨어지는 소리)
                     osc.frequency.setValueAtTime(300, now);
                     osc.frequency.exponentialRampToValueAtTime(150, now + 0.15);
                     gainNode.gain.setValueAtTime(0.3, now);
@@ -536,7 +560,6 @@
                 }
             } else if (type === 'bong') {
                 if (isPositive) {
-                    // 자산 증가 (코인 짤랑 소리 - 높은 사각파)
                     osc.type = 'square';
                     osc.frequency.setValueAtTime(600, now);
                     osc.frequency.setValueAtTime(900, now + 0.05);
@@ -545,7 +568,6 @@
                     osc.start(now);
                     osc.stop(now + 0.15);
                 } else {
-                    // 자산 감소 (둔탁한 경고음 - 톱니파)
                     osc.type = 'sawtooth';
                     osc.frequency.setValueAtTime(150, now);
                     gainNode.gain.setValueAtTime(0.2, now);
@@ -575,7 +597,6 @@
             { val: 5, label: '최상', icon: 'fa-battery-full', color: 'text-emerald-500' }
         ];
 
-        // ⚔️ 무기 데이터 (레이드 데미지 보너스)
         const WEAPON_DATA = [
             { id: 'wp1', name: '나뭇가지', desc: '데미지 +10', bonus: 10, emoji: '🌿', border: 'border-amber-700', bg: 'bg-amber-900/40' },
             { id: 'wp2', name: '낡은 단검', desc: '데미지 +20', bonus: 20, emoji: '🗡️', border: 'border-slate-500', bg: 'bg-slate-700/40' },
@@ -667,7 +688,7 @@
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
-            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null,
+            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0},
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
@@ -711,7 +732,7 @@
         // ==========================================
         // ★ 2. 탭 및 스와이프 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'admin'];
+        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'admin'];
         let currentTabIndex = 0;
 
         window.switchTab = function(tabId) {
@@ -721,7 +742,7 @@
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -732,7 +753,11 @@
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
                 activeBtn.classList.remove('text-slate-400', 'border-transparent'); 
-                activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
+                if (tabId === 'lunch') {
+                    activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
+                } else {
+                    activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
+                }
             }
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
@@ -965,8 +990,8 @@
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
-                        checkWeekendTime(); 
-                        setInterval(checkWeekendTime, 60000);
+                        checkTimeEvents(); // 주말 및 밥줄 시간 체크 통합
+                        setInterval(checkTimeEvents, 60000);
                         
                         // 학생 데이터 동기화
                         if(unsubscribeGlobal) unsubscribeGlobal();
@@ -1000,6 +1025,7 @@
                             }
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
+                            window.renderLunchQueue(students); // 밥줄 현황 렌더링 추가
                         });
 
                         // 글로벌 셋팅 동기화
@@ -1061,6 +1087,26 @@
             }
         }
 
+        // ★ 시간 관련 통합 함수 (주말, 밥줄 오픈 체크)
+        function checkTimeEvents() {
+            checkWeekendTime();
+            
+            const now = new Date();
+            const h = now.getHours();
+            const m = now.getMinutes();
+            const isPast1205 = (h > 12) || (h === 12 && m >= 5);
+            
+            const lunchTab = document.getElementById('tab-lunch');
+            if (lunchTab) {
+                if (isPast1205 || (window.playerState && window.playerState.isAdmin)) {
+                    lunchTab.classList.remove('hidden');
+                } else {
+                    lunchTab.classList.add('hidden');
+                    if (currentTabIndex === TABS.indexOf('lunch')) window.switchTab('dashboard');
+                }
+            }
+        }
+
 
         // ==========================================
         // ★ 6. 광장 및 관리자 테이블 렌더링 ★
@@ -1116,7 +1162,6 @@
                 const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
                 const shieldHtml = hp > 0 ? `<div class="absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
-                // ★ 추가: 직업 뱃지 (광장 캐릭터 좌상단 렌더링)
                 let jobHtml = '';
                 if (displayData.jobs && displayData.jobs.length > 0) {
                     const jobIcons = displayData.jobs.map(j => `
@@ -1124,12 +1169,11 @@
                             <i class="fa-solid ${j.icon} text-[9px]"></i>
                         </div>
                     `).join('');
-                    // 방패가 활성화되어 좌상단(top-left) 공간을 차지하면 겹치지 않게 여백 추가
                     const topMargin = hp > 0 ? 'top-4' : 'top-1'; 
                     jobHtml = `<div class="absolute ${topMargin} left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
                 }
 
-                // 컨디션 뱃지 (배터리 아이콘 적용)
+                // 컨디션 뱃지
                 let condHtml = '';
                 if (displayData.condition && displayData.condition.emotion) {
                     const emo = displayData.condition.emotion.icon;
@@ -1278,6 +1322,57 @@
             }
         };
 
+        // ★ 추가: 밥줄 대기열 렌더링 함수
+        window.renderLunchQueue = function(studentsData) {
+            const container = document.getElementById('lunchQueueContainer');
+            if(!container) return;
+            
+            const now = new Date(); 
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            
+            let queue = studentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+            
+            // 정렬 규칙: 1. 오늘 입찰 금액 순서(내림차순) / 2. 동점이면 XP(레벨) 순서(내림차순)
+            queue.sort((a, b) => {
+                const aBid = (a.lunchBid && a.lunchBid.date === todayStr) ? a.lunchBid.amount : 0;
+                const bBid = (b.lunchBid && b.lunchBid.date === todayStr) ? b.lunchBid.amount : 0;
+                
+                if (bBid !== aBid) return bBid - aBid; 
+                return (b.xp || 0) - (a.xp || 0); 
+            });
+            
+            container.innerHTML = queue.map((s, idx) => {
+                const bidAmt = (s.lunchBid && s.lunchBid.date === todayStr) ? s.lunchBid.amount : 0;
+                const exactLv = calculateExactLevel(s.xp || 0);
+                let face = STUDENT_GENDERS[s.id] === 'F' ? '👧' : '👦';
+                
+                if (s.equippedSkins) {
+                    SKIN_DATA.forEach(sk => { 
+                        if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; 
+                    });
+                }
+                
+                const rankColor = idx === 0 ? 'text-yellow-400 font-black' : (idx < 3 ? 'text-orange-300 font-bold' : 'text-slate-300 font-bold');
+                const borderClass = idx === 0 ? 'border-yellow-500 bg-yellow-900/40 ring-1 ring-yellow-500' : 'border-slate-700 bg-slate-800/50';
+                const crown = idx === 0 ? '<i class="fa-solid fa-crown text-yellow-400 text-[10px] absolute -top-2 left-1/2 transform -translate-x-1/2"></i>' : '';
+                
+                return `
+                <div class="flex items-center justify-between p-3 rounded-xl border ${borderClass} relative">
+                    <div class="flex items-center gap-3">
+                        <div class="w-6 text-center text-lg ${rankColor}">${idx + 1}</div>
+                        <div class="text-3xl relative">${crown}${face}</div>
+                        <div>
+                            <div class="font-bold text-sm text-white">${STUDENT_NAMES[s.id]}</div>
+                            <div class="text-[10px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-600 text-right min-w-[60px]">
+                        <div class="text-orange-400 font-black text-xs">${bidAmt > 0 ? '+' : ''}${bidAmt} B</div>
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
 
         // ==========================================
         // ★ 7. 내 상태 UI 및 퀘스트/인벤토리 처리 ★
@@ -1288,6 +1383,7 @@
             if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
             if(!window.playerState.inventory) window.playerState.inventory = [];
+            if(!window.playerState.lunchBid) window.playerState.lunchBid = {date: '', amount: 0};
 
             // 권한에 따른 탭 노출만 관리
             if (window.playerState.isAdmin) {
@@ -1302,6 +1398,8 @@
                 document.getElementById('tab-admin').classList.add('hidden');
                 document.getElementById('todoPanel').classList.remove('hidden');
             }
+            
+            checkTimeEvents(); // UI 업데이트 시 시간 체크하여 밥줄 탭 등 노출 관리
             
             // 모든 플레이어(마스터 포함) 대시보드 데이터 연동
             const xp = window.playerState.xp || 0;
@@ -1321,7 +1419,6 @@
                 }); 
             }
 
-            // 아바타 카드 무기 장착 표시
             if(window.playerState.equippedWeapon) {
                 const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
                 if(wp) {
@@ -1350,7 +1447,7 @@
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);
 
-            // 무기고(인벤토리) 렌더링
+            // 무기고(인벤토리)
             const invPanel = document.getElementById('weaponSlots');
             if (invPanel) {
                 if (window.playerState.inventory.length === 0) {
@@ -1373,7 +1470,6 @@
                 }
             }
 
-            // 선택된 컨디션 UI 복원
             if(window.playerState.condition && window.playerState.condition.emotion) {
                 window.selectEmotion(window.playerState.condition.emotion.id, false);
                 window.selectBody(window.playerState.condition.body.val, false);
@@ -1397,7 +1493,7 @@
                 </label>`;
             }).join('');
 
-            // 보물상자 보관함
+            // 보물상자
             const dbSlots = document.getElementById('dragonBallSlots');
             if(dbSlots) {
                 document.getElementById('dragonballContainer').classList.remove('hidden');
@@ -1422,7 +1518,6 @@
                 dbSlots.innerHTML = slotsHtml;
             }
 
-            // 전체 퀘스트/상점 UI 렌더링
             const renderQuests = (quests, containerId) => {
                 const today = new Date().getDay();
                 document.getElementById(containerId).innerHTML = quests.map(q => {
@@ -1473,7 +1568,6 @@
             renderQuests(QUEST_DATA.filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
             renderQuests(QUEST_DATA.filter(q => q.type === 'locked'), 'specialQuestContainer');
 
-            // 직업 렌더링 갱신
             JOB_DATA.forEach(job => {
                 const card = document.getElementById(`job-card-${job.id}`);
                 if (card) {
@@ -1492,7 +1586,6 @@
                 }
             });
 
-            // 스킨 상점 갱신
             SKIN_DATA.forEach(skin => {
                 const item = document.getElementById(`skin-btn-${skin.id}`); 
                 const status = document.getElementById(`skin-status-${skin.id}`);
@@ -1533,7 +1626,7 @@
 
 
         // ==========================================
-        // ★ 8. 로그인 및 데이터 저장 로직 ★
+        // ★ 8. 로그인, 식권 구매 및 데이터 저장 로직 ★
         // ==========================================
         document.getElementById('btnLogin').onclick = () => {
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
@@ -1544,7 +1637,7 @@
                 xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
-                inventory: ['wp1'], equippedWeapon: 'wp1',
+                inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0},
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
             
@@ -1590,31 +1683,47 @@
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 영구 비밀번호로 설정됩니다.\n접속하시겠습니까?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0 };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0} };
                     await setDoc(docRef, data);
                 }
 
-                // 일일 퀘스트 초기화 로직
+                // ★ 일일 퀘스트 및 식권(점심 자동이체) 초기화 로직
+                let notifyLunchDeduction = false;
                 if (!isAdmin) {
                     const now = new Date(); 
                     const gameDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; 
+                    const isWeekday = now.getDay() >= 1 && now.getDay() <= 5;
+                    
+                    let shouldMerge = false;
+                    let updateData = {};
                     
                     if (data.lastDailyReset !== gameDateStr) {
                         const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
-                        let modified = false; 
                         let updatedQuests = { ...(data.quests || {}) };
                         
                         dailyQuestIds.forEach(qId => { 
                             if (updatedQuests[qId]) { 
-                                updatedQuests[qId] = false; modified = true; 
+                                updatedQuests[qId] = false;
                             } 
                         });
-                        
-                        if (modified || !data.lastDailyReset) { 
-                            data.quests = updatedQuests; 
-                            data.lastDailyReset = gameDateStr; 
-                            await setDoc(docRef, { quests: updatedQuests, lastDailyReset: gameDateStr }, { merge: true }); 
+                        updateData.quests = updatedQuests; 
+                        updateData.lastDailyReset = gameDateStr; 
+                        shouldMerge = true;
+                    }
+
+                    // 밥줄 초기화 및 평일 10B 차감 로직
+                    if (!data.lunchBid || data.lunchBid.date !== gameDateStr) {
+                        updateData.lunchBid = { date: gameDateStr, amount: 0 };
+                        shouldMerge = true;
+                        if (isWeekday) {
+                            updateData.bong = Math.max(0, (data.bong || 0) - 10);
+                            notifyLunchDeduction = true; // 접속 시 알림을 위해 플래그 설정
                         }
+                    }
+
+                    if (shouldMerge) {
+                        Object.assign(data, updateData);
+                        await setDoc(docRef, updateData, { merge: true });
                     }
                 }
 
@@ -1630,7 +1739,11 @@
                 document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue";
                 
                 updateUI(); 
-                window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); // 광장 초기 렌더링 강제 실행
+                window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
+                
+                if (notifyLunchDeduction && !isAutoLogin) {
+                    await window.customAlert(`🏫 등교 완료!\n\n오늘자 평일 기본 급식비(10 B)가 자동 이체되었습니다.\n맛있는 점심시간 되세요!`);
+                }
                 window.switchTab(isAdmin ? 'admin' : 'dashboard');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
@@ -1646,6 +1759,38 @@
             delete dataToSave.isAdmin;
             await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
         }
+
+        // ★ 식권 입찰 처리 로직
+        window.submitLunchBid = async function() {
+            if (window.playerState.isGuest) return window.customAlert("👀 게스트 모드입니다.");
+            if (window.playerState.isAdmin) return window.customAlert("마스터는 식권 경매에 참여할 수 없습니다.");
+            
+            const inputEl = document.getElementById('lunchBidInput');
+            const amt = parseInt(inputEl.value);
+            
+            if (isNaN(amt) || amt <= 0) return window.customAlert('정확한 금액을 입력하세요.');
+            if (window.playerState.bong < amt) return window.customAlert(`❌ 자산이 부족합니다. ${(amt - window.playerState.bong).toFixed(1)}B가 더 필요합니다.`);
+            
+            const ok = await window.customConfirm(`급식 우선 배식을 위해 추가 식권 ${amt}B를 결제하시겠습니까?\n(이미 입찰한 내역이 있다면 추가로 합산됩니다.)`);
+            if (ok) {
+                window.playerState.bong -= amt;
+                
+                const now = new Date(); 
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== todayStr) {
+                    window.playerState.lunchBid = { date: todayStr, amount: 0 };
+                }
+                window.playerState.lunchBid.amount += amt;
+                
+                updateUI();
+                await saveDataToCloud();
+                playSfx('bong', false); // 비용 지불 효과음
+                
+                await window.customAlert(`✅ 추가 식권 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 입찰하셨습니다.\n밥줄 탭에서 실시간 배식 순위를 확인하세요.`);
+                inputEl.value = '';
+            }
+        };
 
 
         // ==========================================
@@ -1899,7 +2044,7 @@
                         xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
                         condition: null, dragonBalls: [], earlyBirdCount: 0,
-                        inventory: [], equippedWeapon: null // 무기 초기화
+                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}
                     });
                 }
                 await batch.commit();
@@ -1959,7 +2104,6 @@
             if (!window.playerState.isAdmin) return; 
             if (window.playerState.isGMA && stuId !== '13') return window.customAlert('마스터 A는 석서영(13번) 학생만 수정 가능합니다.');
             
-            // ★ 추가된 웹 오디오 API 효과음 실행
             playSfx(type, amount > 0);
 
             const rect = btnElement.getBoundingClientRect(); 
@@ -2251,7 +2395,6 @@
             const p = window.currentRaidState.participants || [];
             rCount.innerText = p.length;
             
-            // ★ 추가: 기본 클릭 이벤트를 '참가'로 매번 초기화해줍니다.
             btn.onclick = () => window.joinRaid(); 
             
             if(s === 'waiting') { 
@@ -2264,7 +2407,6 @@
                 countDiv.classList.remove('hidden');
                 
                 if(p.includes(localStorage.getItem('sambong_student_id'))) { 
-                    // ★ 수정: 입장 대기중일 때 참가 취소 버튼으로 변신
                     btn.innerText = "❌ 참가 취소"; 
                     btn.disabled = false; 
                     btn.onclick = () => window.cancelRaidJoin();
@@ -2313,7 +2455,6 @@
             }
         };
 
-        // ★ 추가: 레이드 참가 취소 함수
         window.cancelRaidJoin = async function() {
             if(window.playerState.isGuest) return; 
             const mId = localStorage.getItem('sambong_student_id'); 
@@ -2324,7 +2465,6 @@
             const ok = await window.customConfirm("레이드 참가를 취소하시겠습니까?");
             if(!ok) return;
 
-            // 내 아이디를 제외한 배열로 덮어쓰기
             const np = st.participants.filter(id => id !== mId); 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { participants: np }, {merge: true});
         };
@@ -2521,7 +2661,6 @@
             
             if(st.participants[cT] !== mId) return;
             
-            // 모든 버튼 비활성화 (더블클릭 방지)
             for(let i=0; i<4; i++) { 
                 const b = document.getElementById(`raidOption_${i}`); 
                 if(b) b.disabled = true; 
@@ -2532,7 +2671,6 @@
             
             let d = 0, m = '', cb = st.combo || 0;
             
-            // ★ 무기 데미지 보너스 체크 ★
             let weaponBonus = 0;
             let weaponEmoji = '';
             if (window.playerState.equippedWeapon) {
@@ -2559,7 +2697,6 @@
                 setTimeout(() => document.getElementById('raidBattleModal').classList.remove('shake-screen'), 300); 
             }
 
-            // 무기 추가 데미지 적용
             if (weaponBonus > 0 && d > 0) {
                 d += weaponBonus;
                 m += ` (+${weaponBonus}${weaponEmoji})`;

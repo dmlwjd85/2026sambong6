@@ -414,28 +414,8 @@
                 <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">모든 데이터 전면 초기화 실행</button>
             </div>
 
-            <!-- 레이드 출제 패널 -->
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-purple-500 bg-slate-900/80">
-                <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 세팅</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
-                <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
-                <div class="flex gap-2">
-                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">임시저장</button>
-                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">로비 오픈</button>
-                    <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료</button>
-                </div>
-            </div>
-
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> NPC 공지</h3>
-                <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
-            </div>
-
+            <!-- ★ 일괄 처리 패널 (관리자 전용 패널들) 맨 위로 이동 ★ -->
             <div id="gmOnlyPanels" class="hidden space-y-4 mb-4">
-                <div class="glass-panel p-4 rounded-xl border border-purple-500/50 flex justify-between items-center">
-                    <div><h3 class="text-white font-bold text-sm">전담 레이드</h3><p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">1234</span></p></div>
-                    <div class="flex gap-1"><button onclick="window.setRaidPassword()" class="bg-purple-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button><button onclick="window.resetRaids()" class="bg-red-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">초기화</button></div>
-                </div>
-                
                 <div class="glass-panel p-4 rounded-xl border border-sb-gold/50">
                     <h3 class="text-white font-bold text-sm mb-3"><i class="fa-solid fa-wand-magic-sparkles text-sb-gold"></i> 일괄 처리</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -479,6 +459,27 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="glass-panel p-4 rounded-xl border border-purple-500/50 flex justify-between items-center">
+                    <div><h3 class="text-white font-bold text-sm">전담 레이드</h3><p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">1234</span></p></div>
+                    <div class="flex gap-1"><button onclick="window.setRaidPassword()" class="bg-purple-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button><button onclick="window.resetRaids()" class="bg-red-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">초기화</button></div>
+                </div>
+            </div>
+
+            <!-- 레이드 출제 패널 -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-purple-500 bg-slate-900/80">
+                <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 세팅</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
+                <div class="flex gap-2">
+                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">임시저장</button>
+                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">로비 오픈</button>
+                    <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료</button>
+                </div>
+            </div>
+
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> NPC 공지</h3>
+                <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
             </div>
 
             <div class="glass-panel p-2 sm:p-4 rounded-xl overflow-x-auto border border-sb-red/30 scrollbar-hide">
@@ -499,6 +500,61 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================
+        // ★ 웹 오디오 API 효과음 로직 추가 ★
+        // ==========================================
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSfx(type, isPositive) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            if (type === 'xp') {
+                osc.type = 'sine';
+                if (isPositive) {
+                    // XP 증가 (경쾌하게 올라가는 소리)
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.exponentialRampToValueAtTime(800, now + 0.1);
+                    gainNode.gain.setValueAtTime(0.3, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else {
+                    // XP 감소 (낮게 떨어지는 소리)
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(150, now + 0.15);
+                    gainNode.gain.setValueAtTime(0.3, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                }
+            } else if (type === 'bong') {
+                if (isPositive) {
+                    // 자산 증가 (코인 짤랑 소리 - 높은 사각파)
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(600, now);
+                    osc.frequency.setValueAtTime(900, now + 0.05);
+                    gainNode.gain.setValueAtTime(0.1, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } else {
+                    // 자산 감소 (둔탁한 경고음 - 톱니파)
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    gainNode.gain.setValueAtTime(0.2, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                }
+            }
+        }
 
         // ==========================================
         // ★ 1. 환경 설정 및 데이터 정의 ★
@@ -1903,6 +1959,9 @@
             if (!window.playerState.isAdmin) return; 
             if (window.playerState.isGMA && stuId !== '13') return window.customAlert('마스터 A는 석서영(13번) 학생만 수정 가능합니다.');
             
+            // ★ 추가된 웹 오디오 API 효과음 실행
+            playSfx(type, amount > 0);
+
             const rect = btnElement.getBoundingClientRect(); 
             const floater = document.createElement('div');
             

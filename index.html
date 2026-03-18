@@ -1875,6 +1875,13 @@
             let finalXp = xp; 
             let finalBong = bong; 
             let isEarlyBirdJackpot = false;
+            let buffAmount = 0;
+            
+            if (window.playerState.equippedWeapon) {
+                // 무기가 있으면 기본 경험치의 약 10% 추가 (최소 1)
+                buffAmount = Math.max(1, Math.floor(xp * 0.1));
+                finalXp += buffAmount;
+            }
             
             if (qId === 'q1') {
                 window.playerState.earlyBirdCount = (window.playerState.earlyBirdCount || 0) + 1;
@@ -1891,13 +1898,21 @@
             window.playerState.quests[qId] = true;
             const newLv = getLevelInfo(window.playerState.xp).index;
 
+            let alertMsg = "";
             if (isEarlyBirdJackpot) {
-                await window.customAlert(`🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`);
+                alertMsg += `🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!\n\n`;
+            }
+            if (buffAmount > 0) {
+                alertMsg += `🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!\n`;
             }
             if (newLv > oldLv) { 
                 const bonus = newLv * 3; 
                 window.playerState.bong += bonus; 
-                await window.customAlert(`🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`); 
+                alertMsg += `\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`; 
+            }
+            
+            if (alertMsg !== "") {
+                await window.customAlert(alertMsg.trim());
             }
             
             // 무기 드랍 체크

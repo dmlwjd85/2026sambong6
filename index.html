@@ -225,8 +225,8 @@
                 
                 <!-- 왼쪽 패널 (아바타 카드 & 무기고) -->
                 <div class="md:w-1/3 flex flex-col gap-4 sm:gap-6">
-                    <!-- 아바타 카드 -->
-                    <div class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad shadow-lg border border-slate-600">
+                    <!-- 아바타 카드 (테두리 효과 적용을 위해 id 부여) -->
+                    <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
                         <div id="dashAvatar" class="text-6xl sm:text-7xl mb-4 relative z-10 drop-shadow-xl avatar-bounce mt-4">👦</div>
@@ -342,6 +342,33 @@
 
         <!-- ★ 2. 광장 탭 (모바일 3열 최적화) ★ -->
         <section id="plazaSection" class="hidden">
+            <!-- ★ 마스터 전용 광장 일괄 컨트롤 (5, 1 단위) ★ -->
+            <div id="plazaGMControls" class="hidden mb-4 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sb-gold font-bold text-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> 반 전체 일괄 컨트롤</h3>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="flex flex-col gap-1.5">
+                        <span class="text-emerald-400 text-[10px] font-bold px-1">경험치 (XP)</span>
+                        <div class="flex gap-1">
+                            <button onclick="window.bulkAdd('xp', 5)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 X</button>
+                            <button onclick="window.bulkDeduct('xp', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 X</button>
+                            <button onclick="window.bulkAdd('xp', 1)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 X</button>
+                            <button onclick="window.bulkDeduct('xp', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 X</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <span class="text-yellow-400 text-[10px] font-bold px-1">자산 (B)</span>
+                        <div class="flex gap-1">
+                            <button onclick="window.bulkAdd('bong', 5)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 B</button>
+                            <button onclick="window.bulkDeduct('bong', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 B</button>
+                            <button onclick="window.bulkAdd('bong', 1)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 B</button>
+                            <button onclick="window.bulkDeduct('bong', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 B</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="mb-4 flex justify-between items-end">
                 <div>
                     <h2 class="text-xl sm:text-2xl font-display text-emerald-400"><i class="fa-solid fa-users"></i> 우리반 광장</h2>
@@ -457,53 +484,6 @@
                 <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
                 <p class="text-[10px] text-slate-300 mb-3">내일 새로운 마음으로 시작하기 위해 모든 학생의 XP, B, 아이템, 상태를 완전 0으로 돌립니다.</p>
                 <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
-            </div>
-
-            <!-- ★ 일괄 처리 패널 (관리자 전용 패널들) 맨 위로 이동 ★ -->
-            <div id="gmOnlyPanels" class="hidden space-y-4 mb-4">
-                <div class="glass-panel p-4 rounded-xl border border-sb-gold/50">
-                    <h3 class="text-white font-bold text-sm mb-3"><i class="fa-solid fa-wand-magic-sparkles text-sb-gold"></i> 전체 학생 관리</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- 세분화된 일괄 지급 5,10,30,50,100 -->
-                        <div class="bg-slate-800/50 p-2.5 rounded border border-emerald-500/30 text-center">
-                            <span class="text-emerald-400 text-[10px] font-bold mb-1.5 block">일괄 지급 (XP)</span>
-                            <div class="grid grid-cols-5 gap-1 mb-2">
-                                <button onclick="window.bulkAdd('xp', 5)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+5X</button>
-                                <button onclick="window.bulkAdd('xp', 10)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+10X</button>
-                                <button onclick="window.bulkAdd('xp', 30)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+30X</button>
-                                <button onclick="window.bulkAdd('xp', 50)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+50X</button>
-                                <button onclick="window.bulkAdd('xp', 100)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+100X</button>
-                            </div>
-                            <span class="text-emerald-400 text-[10px] font-bold mb-1.5 block">일괄 지급 (자산 B)</span>
-                            <div class="grid grid-cols-5 gap-1">
-                                <button onclick="window.bulkAdd('bong', 5)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+5B</button>
-                                <button onclick="window.bulkAdd('bong', 10)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+10B</button>
-                                <button onclick="window.bulkAdd('bong', 30)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+30B</button>
-                                <button onclick="window.bulkAdd('bong', 50)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+50B</button>
-                                <button onclick="window.bulkAdd('bong', 100)" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] py-1.5 rounded font-bold">+100B</button>
-                            </div>
-                        </div>
-                        <!-- 세분화된 일괄 차감 5,10,30,50,100 -->
-                        <div class="bg-slate-800/50 p-2.5 rounded border border-sb-red/30 text-center">
-                            <span class="text-sb-red text-[10px] font-bold mb-1.5 block">일괄 차감 (XP)</span>
-                            <div class="grid grid-cols-5 gap-1 mb-2">
-                                <button onclick="window.bulkDeduct('xp', 5)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-5X</button>
-                                <button onclick="window.bulkDeduct('xp', 10)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-10X</button>
-                                <button onclick="window.bulkDeduct('xp', 30)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-30X</button>
-                                <button onclick="window.bulkDeduct('xp', 50)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-50X</button>
-                                <button onclick="window.bulkDeduct('xp', 100)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-100X</button>
-                            </div>
-                            <span class="text-sb-red text-[10px] font-bold mb-1.5 block">일괄 차감 (자산 B)</span>
-                            <div class="grid grid-cols-5 gap-1">
-                                <button onclick="window.bulkDeduct('bong', 5)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-5B</button>
-                                <button onclick="window.bulkDeduct('bong', 10)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-10B</button>
-                                <button onclick="window.bulkDeduct('bong', 30)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-30B</button>
-                                <button onclick="window.bulkDeduct('bong', 50)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-50B</button>
-                                <button onclick="window.bulkDeduct('bong', 100)" class="bg-slate-700 hover:bg-red-800 text-white text-[9px] py-1.5 rounded font-bold">-100B</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <!-- 레이드 출제 패널 -->
@@ -659,24 +639,27 @@
         ];
 
         const SKIN_DATA = [
-            { id: 'f_ninja', type: 'face', name: '닌자', desc: '어둠의 암살자', price: 400, emoji: '🥷' },
-            { id: 'f_fairy', type: 'face', name: '요정', desc: '숲의 신비', price: 450, emoji: '🧚‍♀️' },
-            { id: 'f_astroM', type: 'face', name: '우주탐험가', desc: '미지의 세계', price: 450, emoji: '👨‍🚀' },
-            { id: 'f_vamp', type: 'face', name: '뱀파이어', desc: '밤의 지배자', price: 500, emoji: '🧛‍♂️' },
-            { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 500, emoji: '🧜‍♀️' },
-            { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 600, emoji: '🤴' },
-            { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 600, emoji: '👸' },
-            { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 150, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
-            { id: 'sk2', type: 'overlay', name: '선글라스', desc: '인싸 아이템', price: 200, emoji: '🕶️', overlayClass: 'top-[0.25em] left-[-0.05em] text-[1.1em]' },
-            { id: 'sk3', type: 'overlay', name: '귀걸이', desc: '매력 스탯', price: 300, emoji: '💎', overlayClass: 'bottom-[0.1em] right-[-0.2em] text-[0.5em]' },
-            { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 150, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
-            { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 150, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
-            { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 150, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
+            { id: 'f_ninja', type: 'face', name: '닌자', desc: '어둠의 암살자', price: 200, emoji: '🥷' },
+            { id: 'f_fairy', type: 'face', name: '요정', desc: '숲의 신비', price: 250, emoji: '🧚‍♀️' },
+            { id: 'f_astroM', type: 'face', name: '우주탐험가', desc: '미지의 세계', price: 250, emoji: '👨‍🚀' },
+            { id: 'f_vamp', type: 'face', name: '뱀파이어', desc: '밤의 지배자', price: 300, emoji: '🧛‍♂️' },
+            { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️' },
+            { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴' },
+            { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸' },
+            { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 50, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
+            { id: 'sk2', type: 'overlay', name: '선글라스', desc: '인싸 아이템', price: 100, emoji: '🕶️', overlayClass: 'top-[0.25em] left-[-0.05em] text-[1.1em]' },
+            { id: 'sk3', type: 'overlay', name: '귀걸이', desc: '매력 스탯', price: 100, emoji: '💎', overlayClass: 'bottom-[0.1em] right-[-0.2em] text-[0.5em]' },
+            { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 50, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
+            { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 50, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
+            { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 50, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
         ];
 
         const SHOP_DATA = [
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
+            { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 100, icon: 'fa-dice', iconColor: 'text-purple-400' },
+            { id: 's3', name: '자유시간', desc: '원하는 활동 하기', price: 150, icon: 'fa-face-laugh-squint', iconColor: 'text-yellow-400' },
+            { id: 's4', name: '체육시간', desc: '다같이 뛰놀기', price: 300, icon: 'fa-volleyball', iconColor: 'text-orange-400' },
             { id: 's7', name: '레전더리 타임', desc: '학급 전체 자유시간', price: 2000, icon: 'fa-crown', iconColor: 'text-sb-red' }
         ];
 
@@ -1181,11 +1164,11 @@
                     });
                 }
 
-                // 무기 장착 표시 (광장 캐릭터 하단)
+                // 무기 장착 표시 (광장 캐릭터 좌측)
                 if (displayData.equippedWeapon) {
                     const wp = WEAPON_DATA.find(w => w.id === displayData.equippedWeapon);
                     if (wp) {
-                        overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-6 text-[1.5em] z-30 drop-shadow-md">${wp.emoji}</span>`;
+                        overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md">${wp.emoji}</span>`;
                     }
                 }
                 
@@ -1420,13 +1403,16 @@
                 document.getElementById('tab-admin').classList.remove('hidden');
                 document.getElementById('todoPanel').classList.add('hidden'); 
                 if(window.playerState.isGM) {
-                    document.getElementById('gmOnlyPanels').classList.remove('hidden');
                     document.getElementById('gmResetPanel').classList.remove('hidden');
                     document.getElementById('dbAdminStatus').classList.remove('hidden');
+                    const plazaGM = document.getElementById('plazaGMControls');
+                    if(plazaGM) plazaGM.classList.remove('hidden');
                 }
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
                 document.getElementById('todoPanel').classList.remove('hidden');
+                const plazaGM = document.getElementById('plazaGMControls');
+                if(plazaGM) plazaGM.classList.add('hidden');
             }
             
             checkTimeEvents(); // UI 업데이트 시 시간 체크하여 밥줄 탭 등 노출 관리
@@ -1440,11 +1426,15 @@
             if (window.playerState.isAdmin) face = window.playerState.isGM ? '🐉' : '🏴‍☠️';
             let overlays = '';
             
+            let cardBorder = 'border-slate-600';
+            let cardGlow = 'shadow-lg';
+
             if(window.playerState.equippedSkins) { 
                 SKIN_DATA.forEach(s => { 
                     if(window.playerState.equippedSkins[s.id]) { 
                         if(s.type === 'face' && !window.playerState.isAdmin) face = s.emoji; 
                         if(s.type === 'overlay') overlays += `<span class="absolute ${s.overlayClass} pointer-events-none">${s.emoji}</span>`; 
+                        if(s.type === 'aura') { cardBorder = s.border; cardGlow = s.glow; }
                     }
                 }); 
             }
@@ -1452,8 +1442,13 @@
             if(window.playerState.equippedWeapon) {
                 const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
                 if(wp) {
-                    overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-10 text-3xl z-30 drop-shadow-lg animate-bounce">${wp.emoji}</span>`;
+                    overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-12 text-[0.6em] z-30 drop-shadow-lg animate-bounce">${wp.emoji}</span>`;
                 }
+            }
+            
+            const dashCard = document.getElementById('dashAvatarCard');
+            if (dashCard) {
+                dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             }
             
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="text-[0.5em] absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':lvInfo.info.prop}</div>`;

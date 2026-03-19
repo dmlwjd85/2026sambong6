@@ -46,7 +46,8 @@
         .bg-theme-plaza { background-color: #170a2c; background-image: radial-gradient(circle at 50% 0%, #3b0764 0%, #170a2c 70%); }
         .bg-theme-quests { background-color: #022c22; background-image: radial-gradient(circle at 50% 0%, #065f46 0%, #022c22 70%); }
         .bg-theme-jobs { background-color: #2e1008; background-image: radial-gradient(circle at 50% 0%, #78350f 0%, #2e1008 70%); }
-        .bg-theme-lunch { background-color: #1e1b4b; background-image: radial-gradient(circle at 50% 0%, #312e81 0%, #1e1b4b 70%); } /* 추가된 밥줄 배경 */
+        .bg-theme-lunch { background-color: #1e1b4b; background-image: radial-gradient(circle at 50% 0%, #312e81 0%, #1e1b4b 70%); }
+        .bg-theme-goldenbell { background-color: #3f2c00; background-image: radial-gradient(circle at 50% 0%, #713f12 0%, #3f2c00 70%); } /* 추가된 골든벨 배경 */
         .bg-theme-admin { background-color: #220202; background-image: radial-gradient(circle at 50% 0%, #7f1d1d 0%, #220202 70%); }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -167,6 +168,7 @@
             <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
             <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
             <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
+            <button id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-yellow-400">골든벨</button>
             <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
         </div>
     </nav>
@@ -471,7 +473,19 @@
             </div>
         </section>
 
-        <!-- ★ 6. 마스터 관리자 탭 ★ -->
+        <!-- ★ 6. 골든벨 탭 ★ -->
+        <section id="goldenbellSection" class="hidden">
+            <div class="mb-4">
+                <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-bell"></i> 도전! 삼봉 골든벨</h2>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">마스터가 출제한 문제를 풀고 채점해보세요.</p>
+            </div>
+            
+            <div id="gbStudentContainer" class="space-y-3 pb-8">
+                <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
+            </div>
+        </section>
+
+        <!-- ★ 7. 마스터 관리자 탭 ★ -->
         <section id="adminSection" class="hidden">
             <div class="mb-4 flex justify-between items-end">
                 <div>
@@ -484,6 +498,21 @@
                 <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
                 <p class="text-[10px] text-slate-300 mb-3">내일 새로운 마음으로 시작하기 위해 모든 학생의 XP, B, 아이템, 상태를 완전 0으로 돌립니다.</p>
                 <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
+            </div>
+
+            <!-- 골든벨 관리 패널 -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-yellow-500 bg-slate-900/80">
+                <div class="flex justify-between mb-3">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨 출제 관리</h3>
+                    <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
+                </div>
+                <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs">
+                    <!-- JS Rendering -->
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
+                    <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
+                </div>
             </div>
 
             <!-- 레이드 출제 패널 -->
@@ -627,6 +656,7 @@
             { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 50, bong: 7.0, icon: 'fa-hands-holding-child', color: 'text-pink-300' },
             { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 20, bong: 5.0, icon: 'fa-dumbbell', color: 'text-blue-300' },
             { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 20, bong: 5.0, icon: 'fa-person-snowboarding', color: 'text-emerald-300' },
+            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 20, bong: 5.0, icon: 'fa-child-reaching', color: 'text-orange-300' },
             { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 20, bong: 2.0, icon: 'fa-utensils', color: 'text-orange-300' },
             { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 30, bong: 3.0, icon: 'fa-broom', color: 'text-teal-300' },
             { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 50, bong: 2.0, icon: 'fa-calendar-check', color: 'text-white' },
@@ -646,15 +676,16 @@
             { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️' },
             { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴' },
             { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸' },
-            { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 50, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
+            { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 100, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
             { id: 'sk2', type: 'overlay', name: '선글라스', desc: '인싸 아이템', price: 100, emoji: '🕶️', overlayClass: 'top-[0.25em] left-[-0.05em] text-[1.1em]' },
             { id: 'sk3', type: 'overlay', name: '귀걸이', desc: '매력 스탯', price: 100, emoji: '💎', overlayClass: 'bottom-[0.1em] right-[-0.2em] text-[0.5em]' },
-            { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 50, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
-            { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 50, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
-            { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 50, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
+            { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 100, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
+            { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
+            { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
         ];
 
         const SHOP_DATA = [
+            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운을!', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
             { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 100, icon: 'fa-dice', iconColor: 'text-purple-400' },
@@ -695,9 +726,10 @@
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234' };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10 };
         
         let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
+        let unsubscribeGoldenBell = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
         window.currentRaidState = { 
@@ -708,6 +740,7 @@
         window.raidTimerInterval = null; 
         let isWeekend = false; 
         window.dragonBallState = null;
+        window.goldenbellState = null;
         let selectedEmotion = null; 
         let selectedBody = null;
 
@@ -732,7 +765,7 @@
         // ==========================================
         // ★ 2. 탭 및 스와이프 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'admin'];
+        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'admin'];
         let currentTabIndex = 0;
 
         window.switchTab = function(tabId) {
@@ -742,7 +775,7 @@
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -755,6 +788,8 @@
                 activeBtn.classList.remove('text-slate-400', 'border-transparent'); 
                 if (tabId === 'lunch') {
                     activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
+                } else if (tabId === 'goldenbell') {
+                    activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
                 } else {
                     activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
                 }
@@ -780,7 +815,7 @@
             let diffY = touchstartY - touchendY;
             
             if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
-                if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer')) return;
+                if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs')) return;
                 
                 let visibleTabs = TABS.filter(t => !document.getElementById('tab-' + t).classList.contains('hidden'));
                 let cIdx = visibleTabs.indexOf(TABS[currentTabIndex]);
@@ -905,6 +940,18 @@
                 </button>
             `).join('');
             
+            // 관리자용 골든벨 문제 인풋 생성
+            let gbHtml = '';
+            for(let i=0; i<10; i++) {
+                gbHtml += `
+                <div class="flex gap-2 mb-2 items-center">
+                    <span class="text-sb-gold font-bold text-xs w-6 text-center">Q${i+1}</span>
+                    <input type="text" id="gb_admin_q_${i}" placeholder="문제 내용 (빈칸은 출제안함)" class="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs">
+                    <input type="text" id="gb_admin_a_${i}" placeholder="정답" class="w-24 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs text-center font-bold">
+                </div>`;
+            }
+            document.getElementById('gbAdminInputs').innerHTML = gbHtml;
+
             // 관리자용 레이드 문제 인풋
             let html = '';
             for(let i=0; i<5; i++) {
@@ -1040,6 +1087,7 @@
                                 if (npcEl) {
                                     npcEl.innerText = window.globalSettings.announcement ? `"[공지] ${window.globalSettings.announcement}"` : '"(등록된 공지가 없습니다)"';
                                 }
+                                updateUI(); // 재고 상태 등 UI 업데이트 반영
                             }
                         });
 
@@ -1065,6 +1113,20 @@
                                     lastClaimTime: Date.now(), nextSpawnTime: Date.now() + 60000, 
                                     weekId: getWeekId(), spawnedThisWeek: [] 
                                 });
+                            }
+                        });
+
+                        // 골든벨 상태 동기화
+                        if(unsubscribeGoldenBell) unsubscribeGoldenBell();
+                        unsubscribeGoldenBell = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), snap => {
+                            if(snap.exists()) {
+                                window.goldenbellState = snap.data();
+                                window.renderGoldenBellStudent();
+                                const gbAdminStatus = document.getElementById('gbAdminStatus');
+                                if (gbAdminStatus) {
+                                    gbAdminStatus.innerText = window.goldenbellState.isOpen ? '진행중' : '대기중';
+                                    gbAdminStatus.className = window.goldenbellState.isOpen ? 'text-[10px] bg-sb-blue text-white px-2 py-0.5 rounded border border-blue-600' : 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
+                                }
                             }
                         });
 
@@ -1639,12 +1701,31 @@
 
             SHOP_DATA.forEach(shop => {
                 const item = document.getElementById(`shop-btn-${shop.id}`);
-                if (item) { 
-                    if (window.playerState.bong >= shop.price || window.playerState.isAdmin) { 
-                        item.classList.replace('unaffordable', 'affordable'); 
-                    } else { 
-                        item.classList.replace('affordable', 'unaffordable'); 
-                    } 
+                if (item) {
+                    // ★ 방패 재고량 표시 갱신 ★
+                    if (shop.id === 'item_shield') {
+                        const stock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                        let stockDiv = item.querySelector('.stock-display');
+                        if (!stockDiv) {
+                            stockDiv = document.createElement('div');
+                            stockDiv.className = 'stock-display text-[10px] font-bold mt-0.5';
+                            item.querySelector('.flex-grow').appendChild(stockDiv);
+                        }
+                        stockDiv.innerText = stock <= 0 ? '(품절)' : `(남은재고: ${stock}개)`;
+                        stockDiv.className = stock <= 0 ? 'stock-display text-[10px] font-bold mt-0.5 text-red-400' : 'stock-display text-[10px] font-bold mt-0.5 text-indigo-300';
+                        
+                        if ((window.playerState.bong >= shop.price || window.playerState.isAdmin) && stock > 0) { 
+                            item.classList.replace('unaffordable', 'affordable'); 
+                        } else { 
+                            item.classList.replace('affordable', 'unaffordable'); 
+                        } 
+                    } else {
+                        if (window.playerState.bong >= shop.price || window.playerState.isAdmin) { 
+                            item.classList.replace('unaffordable', 'affordable'); 
+                        } else { 
+                            item.classList.replace('affordable', 'unaffordable'); 
+                        } 
+                    }
                 }
             });
         }
@@ -2399,7 +2480,7 @@
             let html = '';
             st.questions.forEach((item, idx) => {
                 html += `
-                <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative">
+                <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative mb-3">
                     <div class="text-sb-gold font-black text-xs sm:text-sm mb-2"><span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span> ${item.q}</div>
                     <div class="flex gap-2 items-center relative">
                         <input type="text" id="gb_ans_${idx}" placeholder="정답을 여기에 입력하세요" class="flex-1 bg-slate-900/80 border border-slate-600 text-white px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none placeholder-slate-500 transition shadow-inner">

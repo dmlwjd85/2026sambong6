@@ -485,7 +485,7 @@
             <div class="mb-4 flex justify-between items-end">
                 <div>
                     <h2 class="text-xl sm:text-2xl font-display text-teal-400"><i class="fa-solid fa-building"></i> 학급 부동산 (자리표)</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">원하는 자리를 B로 영구 구매하세요! (1인 1자리)</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">원하는 자리를 B로 영구 구매하세요!</p>
                 </div>
                 <button id="btnEstateReset" onclick="window.masterResetEstate()" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-slate-500">전체 초기화</button>
             </div>
@@ -1110,7 +1110,8 @@
                                 window.estateState = snap.data(); 
                                 window.renderEstate(); 
                             } else {
-                                const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 100 + (Math.floor(i/4)*10) }));
+                                // ★ 업데이트: 초기 부동산 가격 500봉 고정
+                                const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500 }));
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
                             }
                         });
@@ -1748,7 +1749,7 @@
             });
 
             SHOP_DATA.forEach(shop => {
-                const item = document.getElementById(`shop-btn-${shop.id}`);
+                const item = document.getElementById('shop-btn-' + shop.id);
                 if (item) {
                     if (shop.id === 'item_shield') {
                         const stock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
@@ -1938,17 +1939,18 @@
         // ★ 9. 퀘스트, 아이템, 무기 및 부동산(자리표) 로직 ★
         // ==========================================
         
-        // ★ 업데이트: 부동산 자리표 구매
+        // ★ 업데이트: 부동산 자리표 구매 (가격 500봉 고정, 구매 한도 해제)
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
             if(!window.estateState || !window.estateState.seats[seatId]) return;
             
             const seat = window.estateState.seats[seatId];
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
-            if(window.estateState.seats.some(s => s.owner === window.playerState.id)) return window.customAlert('자리는 1인 1개만 소유 가능합니다.');
+            
+            // ★ 업데이트: 1인 1자리 제한 코드 삭제
             if(window.playerState.bong < price) return window.customAlert(`자산(B)이 부족합니다! (${price} B 필요)`);
 
-            const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 영구 구매하시겠습니까?`);
+            const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 구매하시겠습니까?`);
             if(!ok) return;
 
             window.playerState.bong -= price;
@@ -1964,7 +1966,8 @@
             const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?');
             if(!ok) return;
 
-            const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 100 + (Math.floor(i/4)*10) }));
+            // ★ 업데이트: 리셋 시에도 가격 500봉 고정
+            const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500 }));
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
             window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다.");
         };

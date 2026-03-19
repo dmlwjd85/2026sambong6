@@ -1935,13 +1935,48 @@
         window.buyItem = async function(id, name, price, isConsumable) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             
+            // ★ 랜덤박스 로직 추가 ★
+            if (id === 'item_random') {
+                if (window.playerState.bong < price && !window.playerState.isAdmin) return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                
+                const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능!)`);
+                if (ok) {
+                    if (!window.playerState.isAdmin) window.playerState.bong -= price;
+                    
+                    const result = Math.floor(Math.random() * 11) * 10;
+                    window.playerState.bong += result;
+                    playSfx('bong', result >= 50);
+
+                    // 화면에 크게 뜨는 재미있는 텍스트 이펙트
+                    const floater = document.createElement('div');
+                    floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center`;
+                    floater.innerHTML = `🎁<br>${result} B 당첨!`;
+                    document.body.appendChild(floater);
+                    setTimeout(() => floater.remove(), 2500);
+
+                    updateUI(); saveDataToCloud();
+                    
+                    if (result > price) {
+                        await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
+                    } else if (result === price) {
+                        await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
+                    } else {
+                        await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${result} B ] 획득!\n(손해: ${result - price} B)`);
+                    }
+                }
+                return;
+            }
+
             if (isConsumable) {
                 if (window.playerState.bong >= price || window.playerState.isAdmin) {
                     let cMsg = `[${name}] 아이템을 ${price}B에 살까요?`;
                     
                     if (id === 'item_shield') { 
+                        const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                        if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert("❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.");
+                        
                         const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0); 
-                        cMsg = `[${name}] 아이템을 ${price}B에 살까요?\n(현재 방패 내구도: ${hp})`; 
+                        cMsg = `[${name}] 아이템을 ${price}B에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`; 
                     }
                     
                     const ok = await window.customConfirm(cMsg);
@@ -1952,8 +1987,15 @@
                             const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0); 
                             window.playerState.shieldHP = hp + 100; 
                             window.playerState.hasShield = false; 
+                            
+                            // 방패 재고 깎기 연동
+                            const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
+
                             updateUI(); saveDataToCloud(); 
                             await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
+                        } else {
+                            updateUI(); saveDataToCloud();
                         }
                     }
                 } else { 
@@ -2058,6 +2100,10 @@
                         inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}
                     });
                 }
+                
+                // 글로벌 세팅 리셋 (방패 재고 10개 원복)
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
+
                 await batch.commit();
                 await window.customAlert("✅ 서버 대규모 초기화가 완료되었습니다! 내일부터 새로운 시즌을 시작하세요.");
             } catch(e) { window.customAlert("초기화 중 오류 발생: " + e.message); }
@@ -2307,6 +2353,99 @@
             window.customAlert('✅ 공지 등록 완료!'); 
             document.getElementById('gmAnnouncementInput').value = ''; 
         };
+
+        // ==========================================
+        // ★ 골든벨 전용 함수 ★
+        // ==========================================
+        window.saveAndOpenGoldenBell = async function() {
+            if(!window.playerState.isAdmin) return;
+            const qs = [];
+            for(let i=0; i<10; i++) {
+                const qText = document.getElementById(`gb_admin_q_${i}`).value.trim();
+                const aText = document.getElementById(`gb_admin_a_${i}`).value.trim();
+                // 문제가 입력된 칸만 저장
+                if (qText) {
+                    qs.push({ q: qText, a: aText, originalIndex: i });
+                }
+            }
+            if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
+            
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
+                isOpen: true, questions: qs 
+            }, {merge: true}); 
+            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)`);
+        };
+
+        window.closeGoldenBell = async function() {
+            if(!window.playerState.isAdmin) return;
+            const ok = await window.customConfirm("골든벨을 종료하고 초기화하시겠습니까?");
+            if(ok) {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
+                    isOpen: false, questions: [] 
+                }, {merge: true});
+            }
+        };
+
+        window.renderGoldenBellStudent = function() {
+            const container = document.getElementById('gbStudentContainer');
+            if(!container) return;
+            const st = window.goldenbellState;
+            
+            if (!st || !st.isOpen) {
+                container.innerHTML = '<div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">현재 진행 중인 골든벨이 없습니다.</div>';
+                return;
+            }
+
+            let html = '';
+            st.questions.forEach((item, idx) => {
+                html += `
+                <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative">
+                    <div class="text-sb-gold font-black text-xs sm:text-sm mb-2"><span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span> ${item.q}</div>
+                    <div class="flex gap-2 items-center relative">
+                        <input type="text" id="gb_ans_${idx}" placeholder="정답을 여기에 입력하세요" class="flex-1 bg-slate-900/80 border border-slate-600 text-white px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none placeholder-slate-500 transition shadow-inner">
+                        <div id="gb_res_${idx}" class="w-20 text-center text-sm absolute right-2 bg-slate-900 rounded pointer-events-none transition-all"></div>
+                    </div>
+                </div>`;
+            });
+            html += `<button onclick="window.submitGoldenBell()" class="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.5)] transition transform hover:scale-105 text-lg"><i class="fa-solid fa-check-double"></i> 제출 및 자동 채점하기</button>`;
+            container.innerHTML = html;
+        };
+
+        window.submitGoldenBell = async function() {
+            if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            const st = window.goldenbellState;
+            if(!st || !st.isOpen) return;
+
+            const ok = await window.customConfirm("작성한 답안을 제출하고 채점하시겠습니까?\n(오답은 빨간색으로 정답이 공개됩니다.)");
+            if(!ok) return;
+
+            let score = 0;
+            let total = st.questions.length;
+
+            st.questions.forEach((item, idx) => {
+                const inputEl = document.getElementById(`gb_ans_${idx}`);
+                const stuAns = inputEl.value.trim().replace(/\s+/g, ''); // 띄어쓰기 무시하고 비교
+                const realAns = item.a.replace(/\s+/g, '');
+                
+                const resultIcon = document.getElementById(`gb_res_${idx}`);
+                inputEl.disabled = true; // 채점 후 수정 불가
+                
+                if (stuAns.toLowerCase() === realAns.toLowerCase()) {
+                    score++;
+                    resultIcon.innerHTML = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
+                    inputEl.classList.replace('border-slate-600', 'border-emerald-500');
+                    inputEl.classList.add('bg-emerald-900/20');
+                } else {
+                    resultIcon.innerHTML = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
+                    inputEl.classList.replace('border-slate-600', 'border-sb-red');
+                    inputEl.classList.add('bg-red-900/20');
+                }
+            });
+
+            playSfx('xp', score >= (total / 2));
+            await window.customAlert(`🔔 골든벨 채점 완료!\n총 ${total}문제 중 [ ${score} ]문제를 맞혔습니다!`);
+        };
+
 
         async function checkWeekendTime() {
             try { 

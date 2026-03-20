@@ -219,6 +219,18 @@
         <button id="btnExitRaid" onclick="window.closeRaidModal()" class="hidden absolute top-4 right-4 bg-slate-800 hover:bg-sb-red text-white border px-4 py-2 rounded-lg font-bold z-50">돌아가기</button>
     </div>
 
+    <!-- ★ 퀘스트 기록 모달 ★ -->
+    <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
+        <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
+            <button onclick="document.getElementById('questHistoryModal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h3 class="text-xl font-display text-white mb-4"><i class="fa-solid fa-book-open text-sb-blue"></i> 내 퀘스트 기록</h3>
+            <div class="flex gap-2 mb-4">
+                <select id="qhMonthSelect" onchange="window.renderQuestHistory()" class="flex-1 bg-slate-800 text-white border border-slate-600 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-sb-blue"></select>
+            </div>
+            <div id="qhList" class="flex-1 overflow-y-auto scrollbar-hide space-y-2 pr-1"></div>
+        </div>
+    </div>
+
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
     <div id="swipeWrapper" class="pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
@@ -310,7 +322,10 @@
                     <div id="todoPanel" class="glass-panel p-5 rounded-3xl shadow-lg border-t-4 border-t-emerald-500 bg-slate-800/80 max-h-56 overflow-y-auto scrollbar-hide">
                         <h3 class="font-bold text-sm text-slate-300 mb-3 flex justify-between items-center">
                             <span><i class="fa-solid fa-list-check text-emerald-400 mr-1"></i> 오늘의 할 일</span>
-                            <span class="text-[9px] font-normal text-slate-400 bg-slate-900 px-2 py-1 rounded">터치하여 인증</span>
+                            <div class="flex gap-1.5 items-center">
+                                <button onclick="window.openQuestHistory()" class="text-[9px] bg-sb-blue/80 hover:bg-sb-blue text-white px-2 py-0.5 rounded shadow"><i class="fa-solid fa-book"></i> 월별 기록</button>
+                                <span class="text-[9px] font-normal text-slate-400 bg-slate-900 px-2 py-1 rounded">터치하여 인증</span>
+                            </div>
                         </h3>
                         <div id="todoContainer" class="space-y-2"></div>
                     </div>
@@ -730,7 +745,7 @@
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
-            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0},
+            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
@@ -1111,7 +1126,7 @@
                                 window.renderEstate(); 
                             } else {
                                 // ★ 업데이트: 초기 부동산 가격 500봉 고정
-                                const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500 }));
+                                const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
                             }
                         });
@@ -1490,7 +1505,15 @@
                         <div class="text-white text-[10px]">${ownerName}</div>
                     </div>`;
                 }
-                return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-3 text-center cursor-pointer transition group" onclick="window.buyEstateSeat(${seat.id}, ${seat.price})">
+                if(seat.locked) {
+                    const gmOnClick = window.playerState.isAdmin ? `onclick="window.toggleSeatLock(${seat.id})"` : '';
+                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center transition ${window.playerState.isAdmin?'cursor-pointer hover:border-red-500':''}" ${gmOnClick}>
+                        <div class="text-slate-500 font-bold text-xs mb-1"><i class="fa-solid fa-lock text-red-900"></i> 잠김</div>
+                        <div class="text-slate-600 text-[10px]">${seat.id + 1}번 자리</div>
+                    </div>`;
+                }
+                const clickAction = window.playerState.isAdmin ? `onclick="window.toggleSeatLock(${seat.id})"` : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
+                return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-3 text-center cursor-pointer transition group" ${clickAction}>
                     <div class="text-slate-300 font-bold text-xs mb-1 group-hover:text-white">${seat.id + 1}번 자리</div>
                     <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${seat.price} B</div>
                 </div>`;
@@ -1508,6 +1531,8 @@
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
             if(!window.playerState.inventory) window.playerState.inventory = [];
             if(!window.playerState.lunchBid) window.playerState.lunchBid = {date: '', amount: 0};
+            if(!window.playerState.questHistory) window.playerState.questHistory = [];
+            if(!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
 
             // 권한에 따른 탭 노출만 관리
             if (window.playerState.isAdmin) {
@@ -1791,7 +1816,7 @@
                 xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
-                inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0},
+                inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
             
@@ -1837,7 +1862,7 @@
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0} };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -1946,6 +1971,7 @@
             
             const seat = window.estateState.seats[seatId];
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
+            if(seat.locked) return window.customAlert('현재 잠겨있는 자리입니다.');
             
             // ★ 업데이트: 1인 1자리 제한 코드 삭제
             if(window.playerState.bong < price) return window.customAlert(`자산(B)이 부족합니다! (${price} B 필요)`);
@@ -1961,13 +1987,24 @@
             window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
         };
 
+        window.toggleSeatLock = async function(seatId) {
+            if(!window.playerState.isAdmin) return;
+            const seat = window.estateState.seats[seatId];
+            const msg = seat.locked ? `${seatId+1}번 자리 잠금을 해제할까요?` : `${seatId+1}번 자리를 학생이 구매할 수 없도록 잠글까요?`;
+            const ok = await window.customConfirm(msg);
+            if(ok) {
+                seat.locked = !seat.locked;
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+            }
+        };
+
         window.masterResetEstate = async function() {
             if(!window.playerState.isAdmin) return;
             const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?');
             if(!ok) return;
 
             // ★ 업데이트: 리셋 시에도 가격 500봉 고정
-            const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500 }));
+            const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
             window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다.");
         };
@@ -2059,6 +2096,22 @@
             if (buffAmount > 0) {
                 alertMsg += `🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!\n`;
             }
+
+            if(!window.playerState.questHistory) window.playerState.questHistory = [];
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const qInfo = QUEST_DATA.find(q => q.id === qId);
+            if(qInfo) {
+                window.playerState.questHistory.push({
+                    id: qId,
+                    name: qInfo.name,
+                    date: dateStr,
+                    timestamp: now.getTime(),
+                    xp: finalXp,
+                    bong: finalBong
+                });
+            }
+
             if (newLv > oldLv) { 
                 const bonus = newLv * 3; 
                 window.playerState.bong += bonus; 
@@ -2082,6 +2135,16 @@
                 if (qId === 'q1') {
                     window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
                 }
+
+                if (window.playerState.questHistory) {
+                    const now = new Date();
+                    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const idx = window.playerState.questHistory.map(q => q.id === qId && q.date === dateStr).lastIndexOf(true);
+                    if (idx !== -1) {
+                        window.playerState.questHistory.splice(idx, 1);
+                    }
+                }
+
                 window.playerState.xp = Math.max(0, window.playerState.xp - xp); 
                 window.playerState.bong = Math.max(0, window.playerState.bong - (bong + 0.5));
                 delete window.playerState.quests[qId]; 
@@ -2224,6 +2287,13 @@
             const code = await window.customPrompt(`전담 선생님 비밀번호를 입력하세요:`, "password");
             
             if (code === pw || code === "마스터J") { 
+                if (code !== "마스터J") {
+                    if (!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
+                    if (window.playerState.usedRaidPasswords.includes(code)) {
+                        return await window.customAlert("❌ 이미 사용한 비밀번호입니다.\n비밀번호 하나당 하나의 레이드만 열 수 있습니다.");
+                    }
+                    window.playerState.usedRaidPasswords.push(code);
+                }
                 await window.customAlert("🔓 퀘스트가 열렸어요!");
                 if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
                 window.playerState.unlockedQuests[qId] = true; 
@@ -2232,7 +2302,6 @@
                 await window.customAlert("❌ 비밀번호가 틀렸어요.");
             }
         };
-
 
         // ==========================================
         // ★ 10. 관리자 권한 도구 모음 (자동 경험치 포함) ★
@@ -2252,7 +2321,7 @@
                         xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
                         condition: null, dragonBalls: [], earlyBirdCount: 0,
-                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}
+                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: []
                     });
                 }
                 
@@ -2499,7 +2568,7 @@
                     uq[id] = false; 
                 });
                 
-                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { quests: qu, unlockedQuests: uq }, { merge: true });
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] }, { merge: true });
             });
             await batch.commit(); 
             window.customAlert("✅ 초기화 완료! 모든 전담레이드가 잠금 상태로 돌아갔습니다.");
@@ -2510,10 +2579,68 @@
             const p = await window.customPrompt("새 레이드 비밀번호:", "text");
             if (p) { 
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: p }, { merge: true }); 
-                window.customAlert("✅ 비번 변경 완료"); 
+                
+                // 전담 레이드 자동 초기화 연동
+                const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the']; 
+                const batch = writeBatch(db);
+                window.allStudentsData.forEach(stu => {
+                    let qu = { ...(stu.quests||{}) }; 
+                    let uq = { ...(stu.unlockedQuests||{}) }; 
+                    raidIds.forEach(id => { qu[id] = false; uq[id] = false; });
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] }, { merge: true });
+                });
+                await batch.commit(); 
+
+                window.customAlert("✅ 비번 변경 및 전담 레이드 자동 초기화 완료!"); 
             }
         };
 
+        window.openQuestHistory = function() {
+            if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            document.getElementById('questHistoryModal').classList.remove('hidden');
+            
+            const history = window.playerState.questHistory || [];
+            const select = document.getElementById('qhMonthSelect');
+            
+            const months = [...new Set(history.map(q => q.date.substring(0, 7)))].sort().reverse();
+            
+            if (months.length === 0) {
+                const now = new Date();
+                const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                select.innerHTML = `<option value="${currentMonth}">${currentMonth.split('-')[0]}년 ${currentMonth.split('-')[1]}월</option>`;
+            } else {
+                select.innerHTML = months.map(m => `<option value="${m}">${m.split('-')[0]}년 ${m.split('-')[1]}월</option>`).join('');
+            }
+            
+            window.renderQuestHistory();
+        };
+
+        window.renderQuestHistory = function() {
+            const select = document.getElementById('qhMonthSelect');
+            const list = document.getElementById('qhList');
+            const history = window.playerState.questHistory || [];
+            const selectedMonth = select.value;
+            
+            const filtered = history.filter(q => q.date.startsWith(selectedMonth)).sort((a, b) => b.timestamp - a.timestamp);
+            
+            if (filtered.length === 0) {
+                list.innerHTML = `<div class="text-center text-slate-500 py-10 text-xs font-bold glass-panel rounded-xl border border-slate-700">이 달에 완료한 퀘스트가 없습니다.</div>`;
+                return;
+            }
+            
+            list.innerHTML = filtered.map(q => `
+                <div class="flex items-center justify-between bg-slate-800/80 p-3 rounded-xl border border-slate-700 shadow-sm">
+                    <div>
+                        <div class="text-white font-bold text-sm mb-0.5">${q.name}</div>
+                        <div class="text-[10px] text-slate-400"><i class="fa-regular fa-clock"></i> ${q.date}</div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="text-sb-blue text-[10px] font-bold">+${q.xp} XP</div>
+                        <div class="text-sb-gold text-[10px] font-bold">+${q.bong.toFixed(1)} B</div>
+                    </div>
+                </div>
+            `).join('');
+        };
 
         // ==========================================
         // ★ 11. NPC 공지, 드래곤볼 로직 ★

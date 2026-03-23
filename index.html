@@ -525,6 +525,18 @@
                 <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
             </div>
 
+            <!-- ★ 실시간 일일 퀘스트 현황 보드 ★ -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-list-check text-emerald-400"></i> 실시간 퀘스트 현황 보드</h3>
+                    <p class="text-[9px] text-slate-400">일일 퀘스트 진행도</p>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" id="adminQuestBoard">
+                    <!-- JS Rendering -->
+                    <div class="text-slate-500 text-xs text-center col-span-full">데이터 로딩 중...</div>
+                </div>
+            </div>
+
             <!-- 골든벨 관리 패널 -->
             <div class="glass-panel p-4 rounded-xl mb-4 border border-yellow-500 bg-slate-900/80">
                 <div class="flex justify-between mb-3">
@@ -1066,7 +1078,7 @@
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         checkTimeEvents(); // 주말 및 밥줄 시간 체크 통합
-                        setInterval(checkTimeEvents, 60000);
+                        setInterval(checkTimeEvents, 60000); // ★ 버그 수정: 매 분마다 자정 경과 확인
                         
                         // 학생 데이터 동기화
                         if(unsubscribeGlobal) unsubscribeGlobal();
@@ -1097,6 +1109,7 @@
                             
                             if (window.playerState && window.playerState.isAdmin) {
                                 window.renderAdminTable(students);
+                                window.renderAdminQuestBoard(students); // ★ 퀘스트 보드 업데이트 연동
                             }
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
@@ -1197,7 +1210,7 @@
             }
         }
 
-        // ★ 시간 관련 통합 함수 (주말, 밥줄 오픈 체크)
+        // ★ 시간 관련 통합 함수 (주말, 밥줄 오픈 체크 및 자정 일일 퀘스트 자동 리셋 처리)
         function checkTimeEvents() {
             checkWeekendTime();
             
@@ -1220,6 +1233,40 @@
                     queueContainer.classList.remove('hidden');
                 } else {
                     queueContainer.classList.add('hidden');
+                }
+            }
+
+            // ★ 자정 갱신 버그 수정 (앱을 켜둔 상태에서 날짜가 바뀌면 퀘스트가 그대로 남아있는 현상 방지)
+            if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
+                const gameDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                if (window.playerState.lastDailyReset && window.playerState.lastDailyReset !== gameDateStr) {
+                    const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+                    let updatedQuests = { ...(window.playerState.quests || {}) };
+                    let isChanged = false;
+
+                    dailyQuestIds.forEach(qId => {
+                        if (updatedQuests[qId]) {
+                            updatedQuests[qId] = false;
+                            isChanged = true;
+                        }
+                    });
+
+                    window.playerState.lastDailyReset = gameDateStr;
+                    if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== gameDateStr) {
+                        window.playerState.lunchBid = { date: gameDateStr, amount: 0 };
+                        isChanged = true;
+                    }
+
+                    if (isChanged || window.playerState.lastDailyReset === gameDateStr) {
+                        window.playerState.quests = updatedQuests;
+                        saveDataToCloud();
+                        updateUI();
+                        // 새벽 시간 플레이어 안내
+                        if (isChanged) {
+                            window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
+                        }
+                    }
                 }
             }
         }
@@ -1411,6 +1458,40 @@
                     </tr>`;
                 }
             }
+        };
+
+        // ★ 새로 추가된 마스터용 일일 퀘스트 실시간 보드 렌더링 함수
+        window.renderAdminQuestBoard = function(studentsData) {
+            const board = document.getElementById('adminQuestBoard');
+            if(!board) return;
+            
+            const dailyQuests = QUEST_DATA.filter(q => q.type === 'daily');
+            const total = dailyQuests.length;
+
+            let html = '';
+            for(let i=1; i<=13; i++) {
+                const stu = studentsData.find(s => s.id === String(i));
+                if(stu) {
+                    let doneCount = 0;
+                    dailyQuests.forEach(q => {
+                        if(stu.quests && stu.quests[q.id]) doneCount++;
+                    });
+                    
+                    const isAllDone = doneCount === total;
+                    const borderCls = isAllDone ? 'border-emerald-500 bg-emerald-900/30' : 'border-slate-700 bg-slate-800/80';
+                    const textCls = isAllDone ? 'text-emerald-400 font-black' : 'text-slate-400';
+                    
+                    html += `
+                    <div class="p-2 rounded-lg border ${borderCls} flex justify-between items-center transition-all duration-300 shadow-sm">
+                        <span class="text-xs text-white font-bold w-12 truncate">${STUDENT_NAMES[i]}</span>
+                        <div class="w-full mx-2 bg-slate-900 rounded-full h-1.5 border border-slate-700 overflow-hidden">
+                            <div class="bg-emerald-400 h-full transition-all duration-500" style="width: ${(doneCount/total)*100}%"></div>
+                        </div>
+                        <span class="text-[10px] ${textCls} shrink-0 w-6 text-right">${doneCount}/${total}</span>
+                    </div>`;
+                }
+            }
+            board.innerHTML = html;
         };
 
         window.renderHallOfFame = function(students) {

@@ -1512,9 +1512,16 @@
                 const stu = studentsData.find(s => s.id === String(i));
                 if(stu) {
                     let doneCount = 0;
-                    dailyQuests.forEach(q => {
-                        if(stu.quests && stu.quests[q.id]) doneCount++;
-                    });
+                    // ★ 추가된 로직: 현재 날짜를 구합니다.
+                    const now = new Date();
+                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    
+                    // ★ 변경된 로직: 학생의 마지막 리셋 기록이 '오늘'일 때만 완료 카운트를 셉니다.
+                    if (stu.lastDailyReset === todayStr) {
+                        dailyQuests.forEach(q => {
+                            if(stu.quests && stu.quests[q.id]) doneCount++;
+                        });
+                    }
                     
                     const isAllDone = doneCount === total;
                     const borderCls = isAllDone ? 'border-emerald-500 bg-emerald-900/30' : 'border-slate-700 bg-slate-800/80';
@@ -2977,15 +2984,18 @@
                 const av = [1,2,3,4,5,6,7].filter(n => !sWeek.includes(n)); 
                 if (av.length === 0) return;
                 
-                setTimeout(() => {
-                    if(!window.dragonBallState.isActive) {
+                setTimeout(async () => {
+                    const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'));
+                    if(snap.exists() && !snap.data().isActive) {
+                        const randomNum = av[Math.floor(Math.random()*av.length)]; 
+                        
                         setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { 
                             isActive: true, 
-                            number: av[Math.floor(Math.random()*av.length)], 
+                            number: randomNum, 
                             posX: Math.floor(Math.random()*80)+10, 
                             posY: Math.floor(Math.random()*80)+10, 
                             weekId: cId, 
-                            spawnedThisWeek: [...sWeek, av[Math.floor(Math.random()*av.length)]] 
+                            spawnedThisWeek: [...sWeek, randomNum] 
                         }, { merge: true });
                     }
                 }, Math.random() * 2000);

@@ -560,6 +560,9 @@
                     <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
                     <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
                 </div>
+                <!-- ★ 실시간 골든벨 제출 현황판 추가 ★ -->
+                <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden">
+                </div>
             </div>
 
             <!-- 레이드 출제 패널 -->
@@ -598,6 +601,7 @@
 
     <!-- Firebase SDK 및 로직 -->
     <script type="module">
+        // 모듈 내에서 글로벌로 사용하기 위한 임포트
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -1214,6 +1218,7 @@
                             if(snap.exists()) {
                                 window.goldenbellState = snap.data();
                                 window.renderGoldenBellStudent();
+                                window.updateGoldenBellAdminUI();
                                 const gbAdminStatus = document.getElementById('gbAdminStatus');
                                 if (gbAdminStatus) {
                                     gbAdminStatus.innerText = window.goldenbellState.isOpen ? '진행중' : '대기중';
@@ -2799,6 +2804,58 @@
         // ==========================================
         // ★ 골든벨 전용 함수 ★
         // ==========================================
+        
+        // 추가: 마스터 UI 업데이트 함수
+        window.updateGoldenBellAdminUI = function() {
+            if(!window.playerState.isAdmin) return;
+            const st = window.goldenbellState;
+            const dash = document.getElementById('gbAdminDashboard');
+            
+            // 기존 인풋 유지 복원
+            if (st && st.questions && st.questions.length > 0) {
+                st.questions.forEach((item) => {
+                    const qInput = document.getElementById(`gb_admin_q_${item.originalIndex}`);
+                    const aInput = document.getElementById(`gb_admin_a_${item.originalIndex}`);
+                    if(qInput && aInput && st.isOpen) {
+                        qInput.value = item.q;
+                        aInput.value = item.a;
+                    }
+                });
+            }
+
+            if (st && st.isOpen) {
+                dash.classList.remove('hidden');
+                let html = '<h4 class="text-yellow-400 font-bold text-xs mb-2"><i class="fa-solid fa-chart-bar"></i> 실시간 제출 현황</h4>';
+                const subs = st.submissions || {};
+                const totalStudents = 13;
+                const submittedCount = Object.keys(subs).length;
+                html += `<div class="text-[10px] text-slate-300 mb-2">제출 인원: ${submittedCount} / ${totalStudents} 명</div>`;
+                
+                html += '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">';
+                for(let i=1; i<=13; i++) {
+                    const sId = String(i);
+                    const sName = STUDENT_NAMES[sId];
+                    if(subs[sId]) {
+                        const score = subs[sId].score;
+                        const total = st.questions.length;
+                        html += `<div class="bg-slate-800 border border-emerald-500 rounded p-1.5 text-center">
+                            <div class="text-[10px] text-white font-bold">${sName}</div>
+                            <div class="text-[10px] text-emerald-400">${score}/${total} 정답</div>
+                        </div>`;
+                    } else {
+                        html += `<div class="bg-slate-800/50 border border-slate-700 rounded p-1.5 text-center opacity-50">
+                            <div class="text-[10px] text-slate-400 font-bold">${sName}</div>
+                            <div class="text-[10px] text-slate-500">미제출</div>
+                        </div>`;
+                    }
+                }
+                html += '</div>';
+                dash.innerHTML = html;
+            } else {
+                dash.classList.add('hidden');
+            }
+        };
+
         window.saveAndOpenGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
             const qs = [];
@@ -2812,17 +2869,18 @@
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
             
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
-                isOpen: true, questions: qs 
+                isOpen: true, questions: qs, submissions: {}
             }, {merge: true}); 
             window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)`);
         };
 
         window.closeGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
-            const ok = await window.customConfirm("골든벨을 종료하고 초기화하시겠습니까?");
+            const ok = await window.customConfirm("골든벨을 종료하시겠습니까?\n(학생 화면에서 문제가 사라집니다)");
             if(ok) {
+                // 문제를 유지하기 위해 isOpen만 닫음
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
-                    isOpen: false, questions: [] 
+                    isOpen: false 
                 }, {merge: true});
             }
         };
@@ -2831,82 +2889,118 @@
             const container = document.getElementById('gbStudentContainer');
             if(!container) return;
             const st = window.goldenbellState;
+            const mId = localStorage.getItem('sambong_student_id');
             
             if (!st || !st.isOpen) {
                 container.innerHTML = '<div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">현재 진행 중인 골든벨이 없습니다.</div>';
                 return;
             }
 
+            const mySubmission = st.submissions && st.submissions[mId];
+
             let html = '';
             st.questions.forEach((item, idx) => {
+                let val = '';
+                let inputCls = 'bg-slate-900/80 border border-slate-600 text-white';
+                let resHtml = '';
+                let disabledAttr = '';
+
+                if (mySubmission) {
+                    val = mySubmission.answers[idx] || '';
+                    disabledAttr = 'disabled';
+                    const isCorrect = mySubmission.results[idx];
+                    if (isCorrect) {
+                        inputCls = 'bg-emerald-900/20 border-emerald-500 text-white';
+                        resHtml = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
+                    } else {
+                        inputCls = 'bg-red-900/20 border-sb-red text-white';
+                        resHtml = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
+                    }
+                }
+
                 html += `
                 <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative mb-3">
                     <div class="text-sb-gold font-black text-xs sm:text-sm mb-2"><span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span> ${item.q}</div>
                     <div class="flex gap-2 items-center relative">
-                        <input type="text" id="gb_ans_${idx}" placeholder="정답을 여기에 입력하세요" class="flex-1 bg-slate-900/80 border border-slate-600 text-white px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none placeholder-slate-500 transition shadow-inner">
-                        <div id="gb_res_${idx}" class="w-20 text-center text-sm absolute right-2 bg-slate-900 rounded pointer-events-none transition-all"></div>
+                        <input type="text" id="gb_ans_${idx}" value="${val}" ${disabledAttr} placeholder="정답을 여기에 입력하세요" class="flex-1 px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none transition shadow-inner ${inputCls}">
+                        <div id="gb_res_${idx}" class="w-20 text-center text-sm absolute right-2 bg-slate-900/50 rounded pointer-events-none transition-all">${resHtml}</div>
                     </div>
                 </div>`;
             });
-            html += `<button onclick="window.submitGoldenBell()" class="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.5)] transition transform hover:scale-105 text-lg"><i class="fa-solid fa-check-double"></i> 제출 및 자동 채점하기</button>`;
+
+            if (mySubmission) {
+                html += `<button disabled class="w-full mt-6 bg-slate-700 text-slate-400 font-black py-4 rounded-xl shadow-lg cursor-not-allowed text-lg"><i class="fa-solid fa-check"></i> 채점 완료 (보상 지급됨)</button>`;
+            } else {
+                html += `<button onclick="window.submitGoldenBell()" class="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.5)] transition transform hover:scale-105 text-lg"><i class="fa-solid fa-check-double"></i> 제출 및 자동 채점하기</button>`;
+            }
             container.innerHTML = html;
         };
 
         window.submitGoldenBell = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             const st = window.goldenbellState;
+            const mId = localStorage.getItem('sambong_student_id');
             if(!st || !st.isOpen) return;
+            if(st.submissions && st.submissions[mId]) return window.customAlert("이미 제출하셨습니다.");
 
             const ok = await window.customConfirm("작성한 답안을 제출하고 채점하시겠습니까?\n(오답은 빨간색으로 정답이 공개됩니다.)");
             if(!ok) return;
 
             let score = 0;
             let total = st.questions.length;
+            let myAnswers = [];
+            let myResults = [];
 
             st.questions.forEach((item, idx) => {
                 const inputEl = document.getElementById(`gb_ans_${idx}`);
-                const stuAns = inputEl.value.trim().replace(/\s+/g, '');
-                const realAns = item.a.replace(/\s+/g, '');
+                const stuAns = inputEl.value.trim();
+                myAnswers.push(stuAns);
                 
-                const resultIcon = document.getElementById(`gb_res_${idx}`);
-                inputEl.disabled = true; 
+                const cleanStuAns = stuAns.replace(/\s+/g, '').toLowerCase();
+                const cleanRealAns = item.a.replace(/\s+/g, '').toLowerCase();
                 
-                if (stuAns.toLowerCase() === realAns.toLowerCase()) {
+                if (cleanStuAns === cleanRealAns) {
                     score++;
-                    resultIcon.innerHTML = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
-                    inputEl.classList.replace('border-slate-600', 'border-emerald-500');
-                    inputEl.classList.add('bg-emerald-900/20');
+                    myResults.push(true);
                 } else {
-                    resultIcon.innerHTML = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
-                    inputEl.classList.replace('border-slate-600', 'border-sb-red');
-                    inputEl.classList.add('bg-red-900/20');
+                    myResults.push(false);
                 }
             });
 
-            // ★ 추가: 경험치 및 자산 보상 지급 (1문제당 5XP, 1B)
             const getXp = score * 5;
             const getBong = score * 1;
             
-            if (score > 0) {
-                window.playerState.xp += getXp;
-                window.playerState.bong += getBong;
-                updateUI();
-                saveDataToCloud();
-            }
+            // 빠른 반응을 위한 UI 업데이트
+            window.goldenbellState.submissions = window.goldenbellState.submissions || {};
+            window.goldenbellState.submissions[mId] = {
+                score: score,
+                answers: myAnswers,
+                results: myResults,
+                timestamp: Date.now()
+            };
+            window.renderGoldenBellStudent(); 
 
-            // ★ 추가: 제출 버튼 비활성화 (중복 방지)
-            const submitBtn = document.querySelector('button[onclick="window.submitGoldenBell()"]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fa-solid fa-check"></i> 채점 완료 (보상 지급됨)';
-                submitBtn.classList.replace('from-yellow-500', 'from-slate-700');
-                submitBtn.classList.replace('to-orange-500', 'to-slate-800');
-                submitBtn.classList.replace('text-slate-900', 'text-slate-400');
-                submitBtn.classList.remove('hover:scale-105');
-            }
+            try {
+                // 서버 상태 기록 (제출 기록)
+                const gbRef = doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state');
+                const newSubs = { ...st.submissions };
+                newSubs[mId] = window.goldenbellState.submissions[mId];
+                await setDoc(gbRef, { submissions: newSubs }, { merge: true });
 
-            playSfx('xp', score >= (total / 2));
-            await window.customAlert(`🔔 골든벨 채점 완료!\n총 ${total}문제 중 [ ${score} ]문제를 맞혔습니다!\n\n🎁 획득 보상: +${getXp} XP, +${getBong} B`);
+                // 보상 안전 지급
+                if (score > 0) {
+                    window.playerState.xp += getXp;
+                    window.playerState.bong += getBong;
+                    updateUI();
+                    await saveDataToCloud(); // 지급 누락 방지를 위해 명확한 비동기 대기
+                }
+
+                playSfx('xp', score >= (total / 2));
+                await window.customAlert(`🔔 골든벨 채점 완료!\n총 ${total}문제 중 [ ${score} ]문제를 맞혔습니다!\n\n🎁 획득 보상: +${getXp} XP, +${getBong} B`);
+            } catch (err) {
+                console.error("채점 저장 실패", err);
+                await window.customAlert("저장 중 오류가 발생했습니다. 마스터에게 문의하세요.");
+            }
         };
 
 
@@ -3273,111 +3367,103 @@
             if(window.playerState.isGuest) return; 
             const mId = localStorage.getItem('sambong_student_id'); 
             const st = window.currentRaidState;
+            if(!st || st.status !== 'recruiting') return;
             
-            if(!st || st.status !== 'recruiting' || st.participants.includes(mId) || st.participants.length >= 5) return;
+            if(st.participants.includes(mId)) return window.customAlert('이미 참여하셨습니다.');
+            if(st.participants.length >= 5) return window.customAlert('모집이 마감되었습니다.');
             
-            const np = [...st.participants, mId]; 
-            const up = { participants: np };
+            const np = [...st.participants, mId];
+            const updates = { participants: np };
             
-            if(np.length === 5) { 
-                up.status = 'playing'; 
-                up.startTime = Date.now(); 
-                up.logs = [...(st.logs||[]), `전투 시작!`]; 
-                document.getElementById('raidBossImage').innerText='👹'; 
-                document.getElementById('raidBossImage').style.transform='scale(1)'; 
+            if(np.length === 5) {
+                updates.status = 'playing';
+                updates.startTime = Date.now();
+                updates.logs = [...st.logs, `[시스템] 5명 모집 완료! 전투 시작!`, `[시스템] ${STUDENT_NAMES[np[0]]}의 턴!`];
+            } else {
+                updates.logs = [...st.logs, `[시스템] ${STUDENT_NAMES[mId]}님 참가! (${np.length}/5)`];
             }
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), up, {merge: true});
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updates, {merge: true});
         };
 
-        window.closeRaidModal = function() { 
-            document.getElementById('raidBattleModal').classList.add('hidden'); 
-            document.getElementById('btnExitRaid').classList.add('hidden'); 
-        };
-
-        window.submitRaidAnswer = async function(idx) {
-            const st = window.currentRaidState; 
-            if(!st || st.status !== 'playing') return; 
+        window.submitRaidAnswer = async function(ansIdx) {
+            if(window.playerState.isGuest || !window.currentRaidState) return;
+            const st = window.currentRaidState;
+            const mId = localStorage.getItem('sambong_student_id');
             
-            const mId = localStorage.getItem('sambong_student_id'); 
-            const cT = st.currentTurn; 
+            if(st.status !== 'playing' || st.participants[st.currentTurn] !== mId) return;
             
-            if(st.participants[cT] !== mId) return;
+            let timeTaken = (Date.now() - st.startTime) / 1000;
+            let isCorrect = false;
+            let logMsg = '';
+            let dmg = 0;
+            let nextHp = st.bossHP;
             
-            for(let i=0; i<4; i++) { 
-                const b = document.getElementById(`raidOption_${i}`); 
-                if(b) b.disabled = true; 
-            }
+            const q = st.questions[st.currentTurn];
             
-            const ans = st.questions[cT].answerIndex; 
-            const t = (Date.now() - st.startTime) / 1000; 
-            
-            let d = 0, m = '', cb = st.combo || 0;
-            
-            let weaponBonus = 0;
-            let weaponEmoji = '';
-            if (window.playerState.equippedWeapon) {
-                const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
-                if (wp) {
-                    weaponBonus = wp.bonus;
-                    weaponEmoji = wp.emoji;
-                }
-            }
-
-            if(idx === -1) { 
-                d = -50; m = `시간초과!`; cb = 0; weaponBonus = 0;
-            } else if(idx === -2) { 
-                d = -50; m = `이탈!`; cb = 0; weaponBonus = 0;
-            } else if(idx === ans) { 
-                if(t <= 10) { d = 250; m = `💥크리티컬!`; cb++; }
-                else if(t <= 20) { d = 150; m = `⚔️그레이트!`; cb++; }
-                else { d = 80; m = `굿!`; cb++; } 
-            } else { 
-                d = -50; m = `❌오답!`; cb = 0; weaponBonus = 0;
-                if(navigator.vibrate) navigator.vibrate([200,100,200]); 
+            // ansIdx === -1 : 타임아웃
+            // ansIdx === -2 : 도망
+            if(ansIdx >= 0 && q && ansIdx === q.answerIndex) {
+                isCorrect = true;
+                dmg = 100; // 기본 데미지
+                if(timeTaken <= 10) { dmg = 200; logMsg = `💥 [크리티컬!] ${STUDENT_NAMES[mId]}님이 정답을 빠르게 맞혀 200의 피해를 입혔습니다!`; }
+                else if(timeTaken <= 20) { dmg = 150; logMsg = `✨ [그레이트] ${STUDENT_NAMES[mId]}님이 정답을 맞혀 150의 피해를 입혔습니다!`; }
+                else { logMsg = `🗡️ [일반 공격] ${STUDENT_NAMES[mId]}님이 정답을 맞혀 100의 피해를 입혔습니다.`; }
                 
-                document.getElementById('raidBattleModal').classList.add('shake-screen'); 
-                setTimeout(() => document.getElementById('raidBattleModal').classList.remove('shake-screen'), 300); 
-            }
-
-            if (weaponBonus > 0 && d > 0) {
-                d += weaponBonus;
-                m += ` (+${weaponBonus}${weaponEmoji})`;
-            }
-            
-            let nH = Math.min(st.maxBossHP, st.bossHP - d); 
-            const l = [`[${STUDENT_NAMES[mId]}] -> ${m} (DMG: ${d})`, ...(st.logs||[])].slice(0,20); 
-            let nS = st.status, nT = cT + 1;
-            
-            if(nH <= 0) { 
-                nH = 0; 
-                nS = 'finished'; 
-                l.unshift(`보스 처치 성공!`); 
+                nextHp = Math.max(0, st.bossHP - dmg);
+            } else {
+                // 오답 또는 타임아웃/도망
+                let heal = 50;
+                nextHp = Math.min(st.maxBossHP, st.bossHP + heal);
+                if(ansIdx === -1) logMsg = `⏰ [시간 초과] ${STUDENT_NAMES[mId]}님이 공격하지 못해 보스가 50 회복했습니다!`;
+                else if(ansIdx === -2) logMsg = `🏃 [도망] ${STUDENT_NAMES[mId]}님이 겁에 질려 도망쳤습니다! 보스가 50 회복합니다!`;
+                else logMsg = `❌ [오답] ${STUDENT_NAMES[mId]}님의 공격이 빗나갔습니다! 보스가 50 회복했습니다!`;
                 
-                const b = writeBatch(db); 
-                st.participants.forEach(pId => { 
-                    const pD = window.allStudentsData.find(s => s.id === pId); 
-                    if(pD) {
-                        b.set(doc(db,'artifacts',appId,'public','data','students','student_'+pId), {
-                            xp: (pD.xp||0) + RAID_REWARD.xp, 
-                            bong: (pD.bong||0) + RAID_REWARD.bong
-                        }, {merge:true}); 
+                // 화면 흔들림 효과
+                document.getElementById('raidBattleModal').classList.add('shake-screen');
+                setTimeout(() => document.getElementById('raidBattleModal').classList.remove('shake-screen'), 300);
+            }
+            
+            let nextTurn = st.currentTurn + 1;
+            let nextStatus = 'playing';
+            let nextLogs = [...st.logs, logMsg];
+            
+            if(nextHp <= 0) {
+                nextStatus = 'finished';
+                nextLogs.push(`🏆 [승리!] 보스를 물리쳤습니다! 참가자 전원 경험치와 보상 획득!`);
+                
+                // 보상 지급 로직 (일괄 처리)
+                const batch = writeBatch(db);
+                st.participants.forEach(pId => {
+                    const pDoc = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + pId);
+                    const pData = window.allStudentsData.find(s => s.id === pId);
+                    if(pData) {
+                        batch.set(pDoc, { xp: (pData.xp || 0) + RAID_REWARD.xp, bong: (pData.bong || 0) + RAID_REWARD.bong }, {merge: true});
                     }
-                }); 
-                await b.commit();
-            } else if(nT >= 5) { 
-                nS = 'failed'; 
-                l.unshift(`레이드 실패...`); 
-            } else { 
-                l.unshift(`▶️ 다음: ${STUDENT_NAMES[st.participants[nT]]} 턴!`); 
+                });
+                await batch.commit();
+            } else if(nextTurn >= 5) {
+                nextStatus = 'failed';
+                nextLogs.push(`💀 [패배...] 모든 턴을 소모했습니다. 보스 토벌에 실패했습니다.`);
+            } else {
+                nextLogs.push(`[시스템] 다음은 ${STUDENT_NAMES[st.participants[nextTurn]]}의 턴!`);
             }
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { 
-                bossHP: nH, currentTurn: nT, combo: cb, logs: l, status: nS, startTime: Date.now() 
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                bossHP: nextHp,
+                currentTurn: nextTurn,
+                status: nextStatus,
+                startTime: Date.now(),
+                logs: nextLogs
             }, {merge: true});
         };
 
-        // 초기 시작
+        window.closeRaidModal = function() {
+            document.getElementById('raidBattleModal').classList.add('hidden');
+            document.getElementById('btnExitRaid').classList.add('hidden');
+        };
+
+        // 초기화 실행
         initApp();
     </script>
 </body>

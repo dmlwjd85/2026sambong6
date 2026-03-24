@@ -2883,8 +2883,30 @@
                 }
             });
 
+            // ★ 추가: 경험치 및 자산 보상 지급 (1문제당 5XP, 1B)
+            const getXp = score * 5;
+            const getBong = score * 1;
+            
+            if (score > 0) {
+                window.playerState.xp += getXp;
+                window.playerState.bong += getBong;
+                updateUI();
+                saveDataToCloud();
+            }
+
+            // ★ 추가: 제출 버튼 비활성화 (중복 방지)
+            const submitBtn = document.querySelector('button[onclick="window.submitGoldenBell()"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fa-solid fa-check"></i> 채점 완료 (보상 지급됨)';
+                submitBtn.classList.replace('from-yellow-500', 'from-slate-700');
+                submitBtn.classList.replace('to-orange-500', 'to-slate-800');
+                submitBtn.classList.replace('text-slate-900', 'text-slate-400');
+                submitBtn.classList.remove('hover:scale-105');
+            }
+
             playSfx('xp', score >= (total / 2));
-            await window.customAlert(`🔔 골든벨 채점 완료!\n총 ${total}문제 중 [ ${score} ]문제를 맞혔습니다!`);
+            await window.customAlert(`🔔 골든벨 채점 완료!\n총 ${total}문제 중 [ ${score} ]문제를 맞혔습니다!\n\n🎁 획득 보상: +${getXp} XP, +${getBong} B`);
         };
 
 

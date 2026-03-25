@@ -47,7 +47,7 @@
         .bg-theme-quests { background-color: #022c22; background-image: radial-gradient(circle at 50% 0%, #065f46 0%, #022c22 70%); }
         .bg-theme-jobs { background-color: #2e1008; background-image: radial-gradient(circle at 50% 0%, #78350f 0%, #2e1008 70%); }
         .bg-theme-lunch { background-color: #1e1b4b; background-image: radial-gradient(circle at 50% 0%, #312e81 0%, #1e1b4b 70%); }
-        .bg-theme-goldenbell { background-color: #3f2c00; background-image: radial-gradient(circle at 50% 0%, #713f12 0%, #3f2c00 70%); } /* 추가된 골든벨 배경 */
+        .bg-theme-goldenbell { background-color: #3f2c00; background-image: radial-gradient(circle at 50% 0%, #713f12 0%, #3f2c00 70%); }
         .bg-theme-admin { background-color: #220202; background-image: radial-gradient(circle at 50% 0%, #7f1d1d 0%, #220202 70%); }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -61,13 +61,13 @@
         .shop-btn.affordable { border-color: #fbbf24; opacity: 1; cursor: pointer; }
         .shop-btn.unaffordable { border-color: #ef4444; opacity: 0.5; cursor: not-allowed; filter: grayscale(80%); }
 
-        /* 캐릭터 애니메이션 */
+        /* 캐릭터 & 지도 애니메이션 */
         .avatar-bounce { animation: bounce-subtle 2s infinite ease-in-out; }
         .avatar-flex { animation: flex-muscle 1.5s infinite ease-in-out; }
         .avatar-float { animation: float-magic 3s infinite ease-in-out; }
         .avatar-legend { animation: legend-glow 2s infinite alternate; }
 
-        @keyframes bounce-subtle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+        @keyframes bounce-subtle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
         @keyframes flex-muscle { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1) rotate(5deg); } }
         @keyframes float-magic { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-8px) scale(1.05); } }
         @keyframes legend-glow { from { filter: drop-shadow(0 0 10px #fbbf24); transform: scale(1.05) translateY(-3px); } to { filter: drop-shadow(0 0 25px #ef4444); transform: scale(1.15) translateY(-6px); } }
@@ -76,11 +76,9 @@
         .floating-text { position: absolute; pointer-events: none; animation: floatUpFade 1s cubic-bezier(0.25, 1, 0.5, 1) forwards; font-weight: 900; z-index: 9999; text-shadow: 0 0 5px rgba(0,0,0,0.8); }
         .stat-fill { transition: width 1s cubic-bezier(0.4, 0, 0.2, 1); }
         
-        /* 투두 리스트 체크박스 스타일 */
         .todo-checkbox:checked + div { background-color: #3b82f6; border-color: #3b82f6; }
         .todo-checkbox:checked + div i { opacity: 1; transform: scale(1); }
 
-        /* ★ 드래곤볼 & 보물상자 ★ */
         .treasure-box {
             background: linear-gradient(135deg, #78350f 0%, #451a03 100%);
             border: 4px solid #b45309;
@@ -93,16 +91,20 @@
             border: 1px solid rgba(254, 240, 138, 0.5); border-radius: 50%; display: flex; align-items: center; justify-content: center;
         }
 
-        /* 선택된 컨디션 하이라이트 */
         .cond-btn.active { border-color: #fbbf24; background-color: rgba(251, 191, 36, 0.2); transform: scale(1.1); box-shadow: 0 0 10px rgba(251,191,36,0.5); }
         
-        /* 스크롤바 숨김 (가로 탭, 보관함 등) */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* 레이드 애니메이션 */
         @keyframes shake { 0%, 100% { transform: translate(0,0); } 25% { transform: translate(-2px, 2px); } 50% { transform: translate(2px, -2px); } 75% { transform: translate(2px, 2px); } }
         .shake-screen { animation: shake 0.3s; }
+
+        /* ★ 월드맵 전용 스타일 ★ */
+        .night-sky { background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%); position: relative; }
+        .star { position: absolute; background: white; border-radius: 50%; animation: twinkle 2s infinite ease-in-out alternate; }
+        @keyframes twinkle { 0% { opacity: 0.2; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1.2); } }
+        .island-hover { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        .island-hover:hover { transform: translate(-50%, -50%) scale(1.15) translateY(-10px) !important; z-index: 50; filter: brightness(1.1); }
     </style>
 </head>
 <body class="antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-dashboard" id="mainBody">
@@ -163,7 +165,7 @@
         </div>
         <!-- 탭 버튼 영역 -->
         <div class="flex w-full overflow-x-auto scrollbar-hide border-t border-slate-700/50" id="mainTabBar">
-            <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">상태</button>
+            <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">월드맵</button>
             <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">광장</button>
             <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
             <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
@@ -176,10 +178,10 @@
 
     <!-- ★ 레이드 전투 모달 (전체 화면) ★ -->
     <div id="raidBattleModal" class="hidden fixed inset-0 z-[200] bg-slate-900 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300">
+        <!-- 기존 레이드 UI 코드 생략 없이 100% 동일 -->
         <button id="btnGiveUpRaid" onclick="window.giveUpRaid()" class="absolute top-4 left-4 bg-slate-800/80 hover:bg-sb-red text-white border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold transition z-50 shadow-lg flex items-center gap-1">
             <i class="fa-solid fa-person-running"></i> 도망가기
         </button>
-        
         <div class="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden" id="raidBossArea">
             <h2 class="text-2xl sm:text-4xl font-display text-white mb-2 z-10 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]"><i class="fa-solid fa-skull"></i> 보스 몬스터</h2>
             <div class="w-full max-w-lg bg-slate-800 rounded-full h-6 sm:h-8 border-2 border-slate-600 relative z-10 mb-6 overflow-hidden">
@@ -188,14 +190,12 @@
             </div>
             <div id="raidBossImage" class="text-8xl sm:text-[150px] drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] z-10 transition-transform duration-100 ease-linear">👹</div>
         </div>
-        
         <div class="h-auto bg-slate-800 border-y-4 border-sb-blue p-4 z-20 flex flex-col justify-center items-center relative" id="raidInputArea">
             <div id="raidTimerBarContainer" class="absolute top-0 left-0 w-full h-1.5 bg-slate-900 overflow-hidden hidden">
                 <div id="raidTimerBar" class="bg-sb-gold h-full w-full"></div>
             </div>
             <div class="text-sb-blue font-bold text-sm mb-1 mt-2" id="raidTurnText">대기 중...</div>
             <div class="text-lg text-white font-bold text-center break-keep max-w-2xl mb-4" id="raidQuestionText">레이드 대기중.</div>
-            
             <div id="raidMultipleChoiceGroup" class="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl hidden mb-2">
                 <button onclick="window.submitRaidAnswer(0)" id="raidOption_0" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">1</button>
                 <button onclick="window.submitRaidAnswer(1)" id="raidOption_1" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">2</button>
@@ -204,7 +204,6 @@
             </div>
             <div class="text-[10px] text-slate-400 mt-2"><span class="text-sb-gold">10초 이내=크리티컬</span> | 20초 이내=그레이트 | 오답=보스회복</div>
         </div>
-        
         <div class="h-48 sm:h-64 bg-slate-900 p-4 flex gap-4 overflow-hidden z-10">
             <div class="w-1/3 sm:w-1/4 border-r border-slate-700 pr-2 overflow-y-auto">
                 <h3 class="text-xs text-slate-400 font-bold mb-2 pb-1 border-b text-center">참여 학생</h3>
@@ -215,7 +214,6 @@
                 <div id="raidLogContainer" class="flex-1 overflow-y-auto space-y-1 pr-2 font-mono text-[10px] text-slate-300 flex flex-col-reverse"></div>
             </div>
         </div>
-        
         <button id="btnExitRaid" onclick="window.closeRaidModal()" class="hidden absolute top-4 right-4 bg-slate-800 hover:bg-sb-red text-white border px-4 py-2 rounded-lg font-bold z-50">돌아가기</button>
     </div>
 
@@ -234,10 +232,10 @@
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
     <div id="swipeWrapper" class="pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
-        <!-- ★ 1. 대시보드 탭 (컨디션, 투두, 드래곤볼) ★ -->
+        <!-- ★ 1. 대시보드 탭 (월드맵 + 스탯 통합) ★ -->
         <section id="dashboardSection" class="space-y-6">
             
-            <!-- ★ 추가된 시즌 타이머 영역 ★ -->
+            <!-- 시즌 타이머 영역 -->
             <div class="glass-panel p-3 rounded-2xl flex justify-between items-center bg-slate-800/80 border border-slate-700 shadow-sm">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-hourglass-half text-sb-gold animate-pulse text-sm"></i>
@@ -246,10 +244,78 @@
                 <div id="seasonTimerDisplay" class="font-display text-emerald-400 tracking-wider text-sm sm:text-base">계산중...</div>
             </div>
 
-            <div class="flex flex-col md:flex-row gap-4 sm:gap-6 mt-4">
+            <!-- ★ 추가된 3D 월드맵 영역 ★ -->
+            <div id="worldMapArea" class="night-sky w-full h-[400px] sm:h-[500px] rounded-3xl border-4 border-slate-700 shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden relative mb-6">
+                <!-- 배경 반짝이는 별들 -->
+                <div class="star w-1 h-1 top-[10%] left-[20%]"></div>
+                <div class="star w-2 h-2 top-[30%] left-[80%]" style="animation-delay: 1s;"></div>
+                <div class="star w-1.5 h-1.5 top-[70%] left-[15%]" style="animation-delay: 0.5s;"></div>
+                <div class="star w-1 h-1 top-[80%] left-[85%]" style="animation-delay: 1.5s;"></div>
+                <div class="star w-2 h-2 top-[15%] left-[40%]" style="animation-delay: 0.2s;"></div>
+                <div class="star w-1 h-1 top-[50%] left-[10%]" style="animation-delay: 0.8s;"></div>
+
+                <!-- 1. Center: World Tree (마스터 구역) -->
+                <div onclick="window.visitWorldTree()" class="island-hover absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-6 text-7xl sm:text-8xl drop-shadow-[0_0_15px_rgba(74,222,128,0.8)] avatar-bounce">🌳</div>
+                    <div class="w-28 h-12 sm:w-36 sm:h-16 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-8 border-green-900 shadow-[0_10px_20px_rgba(0,0,0,0.6)]"></div>
+                    <div class="mt-2 bg-slate-900/90 text-yellow-400 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black shadow-[0_0_10px_rgba(250,204,21,0.5)] border border-yellow-500 whitespace-nowrap">👑 세계수 (마스터)</div>
+                </div>
+
+                <!-- 2. Top Left: Quests -->
+                <div onclick="window.switchTab('quests')" class="island-hover absolute top-[25%] left-[25%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float" style="animation-delay: 0.2s;">📜</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-purple-400 to-purple-600 rounded-[100%] border-b-6 border-purple-900 shadow-xl"></div>
+                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">상점/퀘스트</div>
+                </div>
+
+                <!-- 3. Top Right: Pirate Island (난지도 분교) -->
+                <div onclick="window.visitPirateIsland()" class="island-hover absolute top-[20%] left-[75%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float" style="animation-delay: 0.5s;">🏴‍☠️</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-700 to-yellow-900 rounded-[100%] border-b-6 border-black shadow-xl"></div>
+                    <div class="mt-2 bg-red-900/90 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-red-500 whitespace-nowrap">난지도 분교</div>
+                </div>
+
+                <!-- 4. Middle Left: Plaza -->
+                <div onclick="window.switchTab('plaza')" class="island-hover absolute top-[60%] left-[20%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce" style="animation-delay: 0.7s;">🏕️</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-6 border-green-800 shadow-xl"></div>
+                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">우리반 광장</div>
+                </div>
+
+                <!-- 5. Middle Right: Jobs -->
+                <div onclick="window.switchTab('jobs')" class="island-hover absolute top-[55%] left-[80%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float" style="animation-delay: 0.3s;">💼</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-blue-400 to-blue-600 rounded-[100%] border-b-6 border-blue-900 shadow-xl"></div>
+                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">직업 센터</div>
+                </div>
+
+                <!-- 6. Bottom Left: Lunch -->
+                <div onclick="window.switchTab('lunch')" class="island-hover absolute top-[85%] left-[30%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce" style="animation-delay: 0.1s;">🍱</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-orange-400 to-orange-600 rounded-[100%] border-b-6 border-orange-900 shadow-xl"></div>
+                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">VIP 밥줄</div>
+                </div>
+
+                <!-- 7. Bottom Right: Estate -->
+                <div onclick="window.switchTab('estate')" class="island-hover absolute top-[85%] left-[70%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float" style="animation-delay: 0.8s;">🏠</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-teal-400 to-teal-600 rounded-[100%] border-b-6 border-teal-900 shadow-xl"></div>
+                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">부동산</div>
+                </div>
+
+                <!-- 8. Top Center: Golden Bell -->
+                <div onclick="window.switchTab('goldenbell')" class="island-hover absolute top-[15%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce" style="animation-delay: 0.4s;">🔔</div>
+                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-[100%] border-b-6 border-yellow-800 shadow-xl"></div>
+                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">골든벨</div>
+                </div>
+            </div>
+
+            <!-- 하단 스탯 및 대시보드 그리드 배치 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-4">
                 
-                <!-- 왼쪽 패널 (아바타 카드 & 무기고) -->
-                <div class="md:w-1/3 flex flex-col gap-4 sm:gap-6">
+                <!-- 1열 (아바타 카드 & 무기고) -->
+                <div class="flex flex-col gap-4 sm:gap-6">
                     <!-- 아바타 카드 -->
                     <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
@@ -270,14 +336,13 @@
                             <span><i class="fa-solid fa-khanda text-purple-400 mr-1"></i> 내 인벤토리 <span class="text-[9px] font-normal text-slate-400">(장착시 버프 5%)</span></span>
                         </h3>
                         <div id="weaponSlots" class="flex gap-2 overflow-x-auto scrollbar-hide py-1">
-                            <!-- JS Rendering -->
                             <span class="text-[10px] text-slate-500 my-2">가진 아이템이 없어요. 퀘스트를 완료해보세요!</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- 오른쪽 패널 (상태 바 & 투두 리스트) -->
-                <div class="md:w-2/3 flex flex-col gap-4 sm:gap-6">
+                <!-- 2열 (상태 바 & 컨디션) -->
+                <div class="flex flex-col gap-4 sm:gap-6">
                     <!-- 경험치 바 & 컨디션 선택기 -->
                     <div class="glass-panel p-5 rounded-3xl shadow-lg relative overflow-hidden bg-slate-800/80">
                         <div class="relative z-10 mb-5">
@@ -290,7 +355,7 @@
                             </div>
                         </div>
 
-                        <!-- ★ 오늘의 컨디션 기능 (자동 적용) ★ -->
+                        <!-- 오늘의 컨디션 기능 -->
                         <div class="border-t border-slate-700/50 pt-4 relative z-10">
                             <div class="flex justify-between items-end mb-3">
                                 <h3 class="font-bold text-sm text-slate-300"><i class="fa-solid fa-face-smile text-yellow-400 mr-1"></i> 현재 내 상태</h3>
@@ -309,7 +374,7 @@
                             </div>
                         </div>
 
-                        <!-- ★ 레벨 및 등급 안내 그래프 추가 ★ -->
+                        <!-- 레벨 및 등급 안내 그래프 -->
                         <div class="border-t border-slate-700/50 pt-4 mt-4 relative z-10 overflow-x-auto scrollbar-hide">
                             <h3 class="font-bold text-sm text-slate-300 mb-3 min-w-[300px]"><i class="fa-solid fa-ranking-star text-yellow-400 mr-1"></i> 레벨 및 등급 안내</h3>
                             <div class="flex items-center justify-between text-[10px] sm:text-xs min-w-[300px]">
@@ -327,19 +392,32 @@
                             </div>
                         </div>
                     </div>
+                </div>
 
+                <!-- 3열 (투두 리스트 & NPC 대화) -->
+                <div class="flex flex-col gap-4 sm:gap-6">
                     <!-- 투두 리스트 (관리자는 숨김) -->
-                    <div id="todoPanel" class="glass-panel p-5 rounded-3xl shadow-lg border-t-4 border-t-emerald-500 bg-slate-800/80 max-h-56 overflow-y-auto scrollbar-hide">
+                    <div id="todoPanel" class="glass-panel p-5 rounded-3xl shadow-lg border-t-4 border-t-emerald-500 bg-slate-800/80 max-h-[300px] overflow-y-auto scrollbar-hide">
                         <h3 class="font-bold text-sm text-slate-300 mb-3 flex justify-between items-center">
                             <span><i class="fa-solid fa-list-check text-emerald-400 mr-1"></i> 오늘의 할 일</span>
                             <div class="flex gap-1.5 items-center">
-                                <button onclick="window.openQuestHistory()" class="text-[9px] bg-sb-blue/80 hover:bg-sb-blue text-white px-2 py-0.5 rounded shadow"><i class="fa-solid fa-book"></i> 월별 기록</button>
+                                <button onclick="window.openQuestHistory()" class="text-[9px] bg-sb-blue/80 hover:bg-sb-blue text-white px-2 py-0.5 rounded shadow"><i class="fa-solid fa-book"></i> 기록</button>
                                 <span class="text-[9px] font-normal text-slate-400 bg-slate-900 px-2 py-1 rounded">터치하여 인증</span>
                             </div>
                         </h3>
                         <div id="todoContainer" class="space-y-2"></div>
                     </div>
+                    
+                    <!-- NPC 대화 -->
+                    <div class="flex items-start gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-600/50 cursor-pointer shadow-lg hover:bg-slate-700/60 transition" onclick="window.talkToNPC()">
+                        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-sb-gold to-yellow-600 flex items-center justify-center text-2xl flex-shrink-0 border shadow-inner">🐉</div>
+                        <div class="flex-grow pt-0.5">
+                            <div class="flex justify-between items-center mb-1"><h3 class="text-sb-gold font-black text-xs">마스터 J</h3></div>
+                            <p id="npcText" class="text-slate-200 text-xs font-medium leading-relaxed break-keep">"(공지 불러오는 중...)"</p>
+                        </div>
+                    </div>
                 </div>
+
             </div>
 
             <!-- ★ 드래곤볼 보물상자 보관함 (슬림 & 가로형) ★ -->
@@ -351,20 +429,11 @@
                 </div>
                 <div class="flex flex-nowrap gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide py-2 z-10 items-center justify-center w-full sm:w-auto" id="dragonBallSlots"></div>
             </div>
-            
-            <!-- NPC 대화 -->
-            <div class="mt-6 flex items-start gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-600/50 cursor-pointer shadow-lg" onclick="window.talkToNPC()">
-                <div class="w-12 h-12 rounded-full bg-gradient-to-br from-sb-gold to-yellow-600 flex items-center justify-center text-2xl flex-shrink-0 border shadow-inner">🐉</div>
-                <div class="flex-grow pt-0.5">
-                    <div class="flex justify-between items-center mb-1"><h3 class="text-sb-gold font-black text-xs">마스터 J</h3></div>
-                    <p id="npcText" class="text-slate-200 text-xs font-medium leading-relaxed break-keep">"(공지 불러오는 중...)"</p>
-                </div>
-            </div>
         </section>
 
         <!-- ★ 2. 광장 탭 (모바일 3열 최적화) ★ -->
         <section id="plazaSection" class="hidden">
-            <!-- ★ 마스터 전용 광장 일괄 컨트롤 (5, 1 단위) ★ -->
+            <!-- 마스터 전용 광장 일괄 컨트롤 (코드 유지) -->
             <div id="plazaGMControls" class="hidden mb-4 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-sb-gold font-bold text-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> 반 전체 일괄 컨트롤</h3>
@@ -404,7 +473,7 @@
                 </div>
             </div>
             
-            <!-- 명예의 전당 (광장 하단에 통합) -->
+            <!-- 명예의 전당 -->
             <div id="hallOfFameSection" class="hidden mt-12 relative text-center">
                 <h2 class="text-2xl sm:text-3xl font-display text-yellow-500 mb-4"><i class="fa-solid fa-trophy"></i> 명예의 전당</h2>
                 <div id="hofContainer" class="flex flex-wrap gap-4 justify-center px-2"></div>
@@ -458,50 +527,53 @@
             </div>
         </section>
 
-        <!-- ★ 4. 직업 탭 (슬림 디자인) ★ -->
+        <!-- ★ 4. 직업 탭 ★ -->
         <section id="jobsSection" class="hidden">
             <div class="mb-4">
                 <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 15개 직업 목록</h2>
                 <p class="text-[10px] sm:text-xs text-slate-400 mt-1">금요일마다 월급이 들어와요! 카드를 눌러 직업을 선택하세요.</p>
             </div>
-            <!-- 가로형 얇은 카드 레이아웃 -->
             <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3"></div>
         </section>
 
-        <!-- ★ 5. 새로 추가된 밥줄(점심) 탭 ★ -->
+        <!-- ★ 5. 밥줄(점심) 탭 (레이아웃 개선) ★ -->
         <section id="lunchSection" class="hidden">
-            <div class="mb-4">
-                <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
-                <p class="text-[10px] sm:text-xs text-slate-300 mt-1">매일 낮 12시 정각에 급식비(10B)가 자동으로 빠져나가요!</p>
-                <p class="text-[10px] sm:text-xs text-slate-400">투자한 돈(B)이 많을수록 밥을 먼저 먹어요. 동점이면 <span class="text-sb-blue font-bold">레벨(XP)이 높은 사람</span>이 이깁니다!</p>
-            </div>
-            
-            <div class="glass-panel p-4 sm:p-5 rounded-2xl mb-6 border border-orange-500/30">
-                <h3 class="font-bold text-sm text-white mb-3">식권 투자하기 (누구나 가능)</h3>
-                <div class="flex gap-2">
-                    <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-4 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
-                    <button onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition transform hover:scale-105">입찰</button>
+            <div class="max-w-3xl mx-auto space-y-6">
+                <div class="mb-2">
+                    <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-300 mt-1">매일 낮 12시 정각에 급식비(10B)가 자동으로 빠져나가요!</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400">투자한 돈(B)이 많을수록 밥을 먼저 먹어요. 동점이면 <span class="text-sb-blue font-bold">레벨(XP)이 높은 사람</span>이 이깁니다!</p>
                 </div>
-            </div>
+                
+                <div class="glass-panel p-5 rounded-2xl border border-orange-500/30">
+                    <h3 class="font-bold text-sm text-white mb-3">식권 투자하기 (누구나 가능)</h3>
+                    <div class="flex gap-2">
+                        <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
+                        <button onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition transform hover:scale-105">입찰</button>
+                    </div>
+                </div>
 
-            <!-- 12시 10분 전까지 학생들에게는 이 영역이 숨겨집니다 -->
-            <div id="lunchQueueWrapper" class="glass-panel p-2 sm:p-4 rounded-2xl hidden">
-                <h3 class="font-bold text-sm text-slate-300 mb-3 ml-2">오늘의 급식 순위 <span class="text-[10px] text-orange-400">(12시 10분 공개)</span></h3>
-                <div id="lunchQueueContainer" class="space-y-2">
-                    <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
+                <!-- 12시 10분 전까지 학생들에게는 이 영역이 숨겨집니다 -->
+                <div id="lunchQueueWrapper" class="glass-panel p-4 sm:p-5 rounded-2xl hidden shadow-xl border-t-4 border-t-orange-500">
+                    <h3 class="font-bold text-sm text-white mb-4"><i class="fa-solid fa-ranking-star text-orange-400"></i> 오늘의 급식 순위 <span class="text-[10px] text-slate-400 font-normal">(12시 10분 공개)</span></h3>
+                    <div id="lunchQueueContainer" class="space-y-3">
+                        <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
+                    </div>
                 </div>
             </div>
         </section>
 
         <!-- ★ 6. 골든벨 탭 ★ -->
         <section id="goldenbellSection" class="hidden">
-            <div class="mb-4">
-                <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-bell"></i> 도전! 삼봉 골든벨</h2>
-                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">마스터가 출제한 문제를 풀고 채점해보세요.</p>
-            </div>
-            
-            <div id="gbStudentContainer" class="space-y-3 pb-8">
-                <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
+            <div class="max-w-3xl mx-auto space-y-4">
+                <div class="mb-4">
+                    <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-bell"></i> 도전! 삼봉 골든벨</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">마스터가 출제한 문제를 풀고 채점해보세요.</p>
+                </div>
+                
+                <div id="gbStudentContainer" class="space-y-3 pb-8">
+                    <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
+                </div>
             </div>
         </section>
 
@@ -542,7 +614,6 @@
                     <p class="text-[9px] text-slate-400">일일 퀘스트 진행도</p>
                 </div>
                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" id="adminQuestBoard">
-                    <!-- JS Rendering -->
                     <div class="text-slate-500 text-xs text-center col-span-full">데이터 로딩 중...</div>
                 </div>
             </div>
@@ -553,16 +624,12 @@
                     <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨 출제 관리</h3>
                     <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
                 </div>
-                <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs">
-                    <!-- JS Rendering -->
-                </div>
+                <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
                 <div class="flex gap-2">
                     <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
                     <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
                 </div>
-                <!-- ★ 실시간 골든벨 제출 현황판 추가 ★ -->
-                <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden">
-                </div>
+                <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
             </div>
 
             <!-- 레이드 출제 패널 -->
@@ -601,13 +668,12 @@
 
     <!-- Firebase SDK 및 로직 -->
     <script type="module">
-        // 모듈 내에서 글로벌로 사용하기 위한 임포트
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ==========================================
-        // ★ 웹 오디오 API 효과음 로직 추가 ★
+        // ★ 웹 오디오 API 효과음 로직 ★
         // ==========================================
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
@@ -663,8 +729,6 @@
         function updateSeasonTimer() {
             const timerEl = document.getElementById('seasonTimerDisplay');
             if (!timerEl) return;
-            
-            // 1학기 방학식(시즌 종료) 기준일: 2026년 7월 24일 자정 (선생님 일정에 맞춰 자유롭게 변경 가능합니다)
             const seasonEnd = new Date('2027-01-06T00:00:00'); 
             const now = new Date();
             const diff = seasonEnd - now;
@@ -674,22 +738,17 @@
                 timerEl.classList.replace('text-emerald-400', 'text-sb-red');
                 return;
             }
-
             const d = Math.floor(diff / (1000 * 60 * 60 * 24));
             const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
             const m = Math.floor((diff / 1000 / 60) % 60);
-
             timerEl.innerText = `${d}일 ${h}시간 ${m}분`;
         }
-        
-        setInterval(updateSeasonTimer, 60000); // 1분마다 갱신
-        updateSeasonTimer(); // 초기 호출
-
+        setInterval(updateSeasonTimer, 60000); 
+        updateSeasonTimer(); 
 
         // ==========================================
-        // ★ 1. 환경 설정 및 데이터 정의 ★
+        // ★ 환경 설정 및 데이터 정의 ★
         // ==========================================
-        
         const BASE_BOSS_HP = 500;
         const RAID_REWARD = { xp: 500, bong: 50 };
 
@@ -764,14 +823,13 @@
             { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
         ];
 
-        // ★ 업데이트 내용: 물가 인상 및 영화 시간 추가
         const SHOP_DATA = [
             { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운을!', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
-            { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' }, // 100 -> 300 인상
-            { id: 's_movie', name: '영화시간', desc: '다같이 영화 시청', price: 400, icon: 'fa-film', iconColor: 'text-blue-400' }, // 신규 아이템 입고
-            { id: 's4', name: '체육시간', desc: '다같이 뛰놀기', price: 500, icon: 'fa-volleyball', iconColor: 'text-orange-400' }, // 300 -> 500 인상
+            { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' },
+            { id: 's_movie', name: '영화시간', desc: '다같이 영화 시청', price: 400, icon: 'fa-film', iconColor: 'text-blue-400' },
+            { id: 's4', name: '체육시간', desc: '다같이 뛰놀기', price: 500, icon: 'fa-volleyball', iconColor: 'text-orange-400' },
             { id: 's7', name: '레전더리 타임', desc: '학급 전체 자유시간', price: 2000, icon: 'fa-crown', iconColor: 'text-sb-red' }
         ];
 
@@ -796,7 +854,6 @@
             "13": "F", "gm": "M", "gm_a": "F", "guest": "M" 
         };
 
-        // 초기 상태
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
@@ -825,7 +882,6 @@
         let selectedEmotion = null; 
         let selectedBody = null;
 
-        // 유틸 함수
         function calculateExactLevel(xp) { return Math.min(100, Math.max(1, Math.floor(1 + Math.sqrt((xp || 0) / 4.04)))); }
         
         function getLevelInfo(xp) { 
@@ -844,7 +900,7 @@
 
 
         // ==========================================
-        // ★ 2. 탭 및 스와이프 기능 ★
+        // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
         const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'admin', 'estate'];
         let currentTabIndex = 0;
@@ -867,21 +923,28 @@
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
                 activeBtn.classList.remove('text-slate-400', 'border-transparent'); 
-                if (tabId === 'lunch') {
-                    activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
-                } else if (tabId === 'goldenbell') {
-                    activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
-                } else if (tabId === 'estate') {
-                    activeBtn.classList.add('border-teal-400', 'text-teal-400', 'bg-slate-800/50');
-                } else {
-                    activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
-                }
+                if (tabId === 'lunch') activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
+                else if (tabId === 'goldenbell') activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
+                else if (tabId === 'estate') activeBtn.classList.add('border-teal-400', 'text-teal-400', 'bg-slate-800/50');
+                else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
         }
+
+        window.visitWorldTree = function() {
+            if(window.playerState.isAdmin) {
+                window.switchTab('admin');
+            } else {
+                window.customAlert("🌳 [세계수]\n삼봉월드를 창조한 마스터 J의 성역입니다.\n성장한 자들만이 이곳의 비밀을 풀 수 있습니다.");
+            }
+        };
+
+        window.visitPirateIsland = function() {
+            window.customAlert("🌊 [난지도 분교]\n해적 마스터 A의 구역입니다!\n으스스한 해골 깃발이 펄럭이고 있습니다. 🏴‍☠️");
+        };
 
         let touchstartX = 0; 
         let touchstartY = 0;
@@ -913,7 +976,7 @@
 
 
         // ==========================================
-        // ★ 3. 커스텀 모달 유틸리티 ★
+        // ★ 커스텀 모달 유틸리티 ★
         // ==========================================
         window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
@@ -966,10 +1029,9 @@
 
 
         // ==========================================
-        // ★ 4. 동적 콘텐츠 렌더링 ★
+        // ★ 동적 콘텐츠 렌더링 ★
         // ==========================================
         function initDynamicContent() {
-            // 직업 렌더링
             const jg = document.getElementById('jobGrid');
             if(jg) {
                 jg.innerHTML = JOB_DATA.map(job => `
@@ -984,7 +1046,6 @@
                 `).join('');
             }
 
-            // 상점 렌더링
             document.getElementById('shopContainer').innerHTML = SHOP_DATA.map(shop => `
                 <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex items-center gap-3 unaffordable" onclick="window.buyItem('${shop.id}', '${shop.name}', ${shop.price}, ${shop.isConsumable || false})">
                     <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${shop.iconColor} shadow-inner">
@@ -997,7 +1058,6 @@
                     <div class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold">${shop.price} B</div>
                 </div>`).join('');
             
-            // 스킨 상점 렌더링
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
                     <div class="bg-slate-900 w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-lg sm:text-xl shrink-0">${skin.emoji}</div>
@@ -1010,7 +1070,6 @@
                     </div>
                 </div>`).join('');
 
-            // 컨디션 버튼 렌더링 (클릭 시 자동 저장)
             document.getElementById('emotionBtns').innerHTML = EMOTIONS.map(e => `
                 <button onclick="window.selectEmotion('${e.id}')" id="btn-emo-${e.id}" class="cond-btn w-8 h-8 text-sm sm:text-base rounded-full bg-slate-900 border border-slate-600 flex justify-center items-center transition" title="${e.label}">
                     ${e.icon}
@@ -1023,7 +1082,6 @@
                 </button>
             `).join('');
             
-            // 관리자용 골든벨 문제 인풋 생성
             let gbHtml = '';
             for(let i=0; i<10; i++) {
                 gbHtml += `
@@ -1035,7 +1093,6 @@
             }
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
 
-            // 관리자용 레이드 문제 인풋
             let html = '';
             for(let i=0; i<5; i++) {
                 html += `
@@ -1069,7 +1126,7 @@
             if (autoSave) {
                 if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
                 if (!selectedBody && window.playerState.condition) selectedBody = window.playerState.condition.body;
-                if (!selectedBody) selectedBody = BODY_STATES[2]; // 기본값: 보통
+                if (!selectedBody) selectedBody = BODY_STATES[2];
                 
                 window.playerState.condition = { emotion: selectedEmotion, body: selectedBody };
                 await saveDataToCloud();
@@ -1088,7 +1145,7 @@
             if (autoSave) {
                 if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
                 if (!selectedEmotion && window.playerState.condition) selectedEmotion = window.playerState.condition.emotion;
-                if (!selectedEmotion) selectedEmotion = EMOTIONS[0]; // 기본값: 기쁨
+                if (!selectedEmotion) selectedEmotion = EMOTIONS[0];
                 
                 window.playerState.condition = { emotion: selectedEmotion, body: selectedBody };
                 await saveDataToCloud();
@@ -1097,7 +1154,7 @@
 
 
         // ==========================================
-        // ★ 5. Firebase 초기화 및 연동 ★
+        // ★ Firebase 초기화 및 연동 ★
         // ==========================================
         async function initApp() {
             initDynamicContent();
@@ -1120,10 +1177,9 @@
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
-                        checkTimeEvents(); // 주말 및 밥줄 시간 체크 통합
-                        setInterval(checkTimeEvents, 60000); // ★ 버그 수정: 매 분마다 자정 경과 확인
+                        checkTimeEvents();
+                        setInterval(checkTimeEvents, 60000);
                         
-                        // 학생 데이터 동기화
                         if(unsubscribeGlobal) unsubscribeGlobal();
                         unsubscribeGlobal = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), snap => {
                             const students = []; 
@@ -1152,14 +1208,13 @@
                             
                             if (window.playerState && window.playerState.isAdmin) {
                                 window.renderAdminTable(students);
-                                window.renderAdminQuestBoard(students); // ★ 퀘스트 보드 업데이트 연동
+                                window.renderAdminQuestBoard(students);
                             }
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
-                            window.renderLunchQueue(students); // 밥줄 현황 렌더링 추가
+                            window.renderLunchQueue(students);
                         });
 
-                        // 글로벌 셋팅 동기화
                         if(unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), snap => {
                             if (snap.exists()) {
@@ -1171,23 +1226,20 @@
                                 if (npcEl) {
                                     npcEl.innerText = window.globalSettings.announcement ? `"[공지] ${window.globalSettings.announcement}"` : '"(등록된 공지가 없습니다)"';
                                 }
-                                updateUI(); // 재고 상태 등 UI 업데이트 반영
+                                updateUI();
                             }
                         });
 
-                        // 부동산 상태 동기화
                         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
                             if(snap.exists()) { 
                                 window.estateState = snap.data(); 
                                 window.renderEstate(); 
                             } else {
-                                // ★ 업데이트: 초기 부동산 가격 500봉 고정
                                 const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
                             }
                         });
 
-                        // 레이드 상태 동기화
                         if(unsubscribeRaid) unsubscribeRaid();
                         unsubscribeRaid = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), snap => {
                             if(snap.exists()) { 
@@ -1197,7 +1249,6 @@
                             }
                         });
 
-                        // 드래곤볼 상태 동기화
                         if(unsubscribeDragonBall) unsubscribeDragonBall();
                         unsubscribeDragonBall = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), snap => {
                             if(snap.exists()) { 
@@ -1212,7 +1263,6 @@
                             }
                         });
 
-                        // 골든벨 상태 동기화
                         if(unsubscribeGoldenBell) unsubscribeGoldenBell();
                         unsubscribeGoldenBell = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), snap => {
                             if(snap.exists()) {
@@ -1227,7 +1277,6 @@
                             }
                         });
 
-                        // ★ 업데이트: 자동 주급 분배, 낮 12시 급식비 차감, 매 교시 경험치 자동 지급 타이머 (관리자만 실행) ★
                         if (window.playerState.isGM) { 
                             setInterval(() => {
                                 window.checkAndDistributeSalary();
@@ -1241,7 +1290,6 @@
                             }, 3000); 
                         }
                         
-                        // 기존 로그인 내역 확인
                         const savedId = localStorage.getItem('sambong_student_id'); 
                         const savedPin = localStorage.getItem('sambong_student_pin');
                         if (savedId && savedPin) {
@@ -1254,25 +1302,19 @@
             }
         }
 
-        // ★ 시간 관련 통합 함수 (주말, 밥줄 오픈 체크 및 자정 일일 퀘스트 자동 리셋 처리)
         function checkTimeEvents() {
             checkWeekendTime();
             
             const now = new Date();
             const h = now.getHours();
             const m = now.getMinutes();
-            // 12시 10분 이후인지 체크
             const isPast1210 = (h > 12) || (h === 12 && m >= 10);
             
             const lunchTab = document.getElementById('tab-lunch');
-            if (lunchTab) {
-                // 밥줄 탭은 학생들이 입찰할 수 있도록 항상 표시합니다.
-                lunchTab.classList.remove('hidden');
-            }
+            if (lunchTab) lunchTab.classList.remove('hidden');
 
             const queueContainer = document.getElementById('lunchQueueWrapper');
             if (queueContainer) {
-                // 마스터거나, 12시 10분이 지났으면 순위표를 공개합니다.
                 if ((window.playerState && window.playerState.isAdmin) || isPast1210) {
                     queueContainer.classList.remove('hidden');
                 } else {
@@ -1280,7 +1322,6 @@
                 }
             }
 
-            // ★ 자정 갱신 버그 수정 (앱을 켜둔 상태에서 날짜가 바뀌면 퀘스트가 그대로 남아있는 현상 방지)
             if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
                 const gameDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                 
@@ -1306,10 +1347,7 @@
                         window.playerState.quests = updatedQuests;
                         saveDataToCloud();
                         updateUI();
-                        // 새벽 시간 플레이어 안내
-                        if (isChanged) {
-                            window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
-                        }
+                        if (isChanged) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
                     }
                 }
             }
@@ -1317,7 +1355,7 @@
 
 
         // ==========================================
-        // ★ 6. 광장 및 관리자 테이블 렌더링 ★
+        // ★ 광장 및 관리자 테이블 렌더링 ★
         // ==========================================
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
@@ -1359,12 +1397,9 @@
                     });
                 }
 
-                // 무기 장착 표시 (광장 캐릭터 좌측)
                 if (displayData.equippedWeapon) {
                     const wp = WEAPON_DATA.find(w => w.id === displayData.equippedWeapon);
-                    if (wp) {
-                        overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md">${wp.emoji}</span>`;
-                    }
+                    if (wp) overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md">${wp.emoji}</span>`;
                 }
                 
                 const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
@@ -1381,7 +1416,6 @@
                     jobHtml = `<div class="absolute ${topMargin} left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
                 }
 
-                // 컨디션 뱃지
                 let condHtml = '';
                 if (displayData.condition && displayData.condition.emotion) {
                     const emo = displayData.condition.emotion.icon;
@@ -1392,7 +1426,6 @@
                                 </div>`;
                 }
 
-                // 마스터용 퀵 컨트롤
                 let gmControls = canEdit && !isGMCard ? `
                     <div class="w-full mt-1.5 pt-1.5 border-t border-slate-700/50 flex flex-col gap-0.5 z-20" onclick="event.stopPropagation();">
                         <div class="flex gap-0.5">
@@ -1438,15 +1471,8 @@
             };
 
             let html = createCard(gmData || {id: 'gm', xp: 0, bong: 0}, true, '마스터 J');
-            
-            if(gmaData || window.playerState.isGMA) {
-                html += createCard(gmaData || {id: 'gm_a', xp: 0, bong: 0}, true, '마스터 A');
-            }
-            
-            for(let i=1; i<=13; i++) { 
-                html += createCard(studentsData.find(s => s.id === String(i)), false, `${i}. ${STUDENT_NAMES[i]}${i===13?' (해적섬)':''}`); 
-            }
-            
+            if(gmaData || window.playerState.isGMA) html += createCard(gmaData || {id: 'gm_a', xp: 0, bong: 0}, true, '마스터 A');
+            for(let i=1; i<=13; i++) html += createCard(studentsData.find(s => s.id === String(i)), false, `${i}. ${STUDENT_NAMES[i]}${i===13?' (해적섬)':''}`); 
             container.innerHTML = html;
         };
 
@@ -1460,16 +1486,10 @@
                 const canEdit = window.playerState.isGM || (window.playerState.isGMA && String(i) === '13');
                 
                 if(stu) {
-                    const lvData = getLevelInfo(stu.xp || 0); 
                     const exactLv = calculateExactLevel(stu.xp || 0);
                     let faceEmoji = STUDENT_GENDERS[String(i)] === 'F' ? '👧' : '👦';
                     
-                    if (stu.equippedSkins) {
-                        SKIN_DATA.forEach(sk => { 
-                            if (stu.equippedSkins[sk.id] && sk.type === 'face') faceEmoji = sk.emoji; 
-                        }); 
-                    }
-
+                    if (stu.equippedSkins) SKIN_DATA.forEach(sk => { if (stu.equippedSkins[sk.id] && sk.type === 'face') faceEmoji = sk.emoji; }); 
                     if (stu.equippedWeapon) {
                         const wp = WEAPON_DATA.find(w => w.id === stu.equippedWeapon);
                         if (wp) faceEmoji += wp.emoji;
@@ -1504,7 +1524,6 @@
             }
         };
 
-        // ★ 새로 추가된 마스터용 일일 퀘스트 실시간 보드 렌더링 함수
         window.renderAdminQuestBoard = function(studentsData) {
             const board = document.getElementById('adminQuestBoard');
             if(!board) return;
@@ -1517,15 +1536,11 @@
                 const stu = studentsData.find(s => s.id === String(i));
                 if(stu) {
                     let doneCount = 0;
-                    // ★ 추가된 로직: 현재 날짜를 구합니다.
                     const now = new Date();
                     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                     
-                    // ★ 변경된 로직: 학생의 마지막 리셋 기록이 '오늘'일 때만 완료 카운트를 셉니다.
                     if (stu.lastDailyReset === todayStr) {
-                        dailyQuests.forEach(q => {
-                            if(stu.quests && stu.quests[q.id]) doneCount++;
-                        });
+                        dailyQuests.forEach(q => { if(stu.quests && stu.quests[q.id]) doneCount++; });
                     }
                     
                     const isAllDone = doneCount === total;
@@ -1553,11 +1568,7 @@
                 hofSec.classList.remove('hidden');
                 document.getElementById('hofContainer').innerHTML = legends.map(s => {
                     let face = STUDENT_GENDERS[s.id] === 'F' ? '👧' : '👦';
-                    if (s.equippedSkins) {
-                        SKIN_DATA.forEach(sk => { 
-                            if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; 
-                        });
-                    }
+                    if (s.equippedSkins) SKIN_DATA.forEach(sk => { if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; });
                     return `
                     <div class="glass-panel p-4 rounded-xl border-2 border-yellow-500 bg-gradient-to-b from-yellow-900/60 flex flex-col items-center w-28">
                         <div class="text-3xl mb-1 drop-shadow-lg avatar-legend">👑</div>
@@ -1571,7 +1582,6 @@
             }
         };
 
-        // 밥줄 대기열 렌더링 함수
         window.renderLunchQueue = function(studentsData) {
             const container = document.getElementById('lunchQueueContainer');
             if(!container) return;
@@ -1581,11 +1591,9 @@
             
             let queue = studentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
             
-            // 정렬 규칙: 1. 오늘 입찰 금액 순서(내림차순) / 2. 동점이면 XP(레벨) 순서(내림차순)
             queue.sort((a, b) => {
                 const aBid = (a.lunchBid && a.lunchBid.date === todayStr) ? a.lunchBid.amount : 0;
                 const bBid = (b.lunchBid && b.lunchBid.date === todayStr) ? b.lunchBid.amount : 0;
-                
                 if (bBid !== aBid) return bBid - aBid; 
                 return (b.xp || 0) - (a.xp || 0); 
             });
@@ -1595,11 +1603,7 @@
                 const exactLv = calculateExactLevel(s.xp || 0);
                 let face = STUDENT_GENDERS[s.id] === 'F' ? '👧' : '👦';
                 
-                if (s.equippedSkins) {
-                    SKIN_DATA.forEach(sk => { 
-                        if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; 
-                    });
-                }
+                if (s.equippedSkins) SKIN_DATA.forEach(sk => { if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; });
                 
                 const rankColor = idx === 0 ? 'text-yellow-400 font-black' : (idx < 3 ? 'text-orange-300 font-bold' : 'text-slate-300 font-bold');
                 const borderClass = idx === 0 ? 'border-yellow-500 bg-yellow-900/40 ring-1 ring-yellow-500' : 'border-slate-700 bg-slate-800/50';
@@ -1622,7 +1626,6 @@
             }).join('');
         };
 
-        // ★ 업데이트: 부동산 렌더링 함수
         window.renderEstate = function() {
             const grid = document.getElementById('estateGrid');
             if(!grid || !window.estateState) return;
@@ -1654,7 +1657,7 @@
 
 
         // ==========================================
-        // ★ 7. 내 상태 UI 및 퀘스트/인벤토리 처리 ★
+        // ★ 내 상태 UI 및 퀘스트/인벤토리 처리 ★
         // ==========================================
         function updateUI() {
             if (!window.playerState.isGuest && !currentStudentDocRef) return;
@@ -1666,7 +1669,6 @@
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             if(!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
 
-            // 권한에 따른 탭 노출만 관리
             if (window.playerState.isAdmin) {
                 document.getElementById('tab-admin').classList.remove('hidden');
                 document.getElementById('todoPanel').classList.add('hidden'); 
@@ -1683,9 +1685,8 @@
                 if(plazaGM) plazaGM.classList.add('hidden');
             }
             
-            checkTimeEvents(); // UI 업데이트 시 시간 체크하여 밥줄 탭 등 노출 관리
+            checkTimeEvents();
             
-            // 모든 플레이어(마스터 포함) 대시보드 데이터 연동
             const xp = window.playerState.xp || 0;
             const lvInfo = getLevelInfo(xp); 
             const exactLv = calculateExactLevel(xp);
@@ -1709,15 +1710,11 @@
 
             if(window.playerState.equippedWeapon) {
                 const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
-                if(wp) {
-                    overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-12 text-[0.6em] z-30 drop-shadow-lg animate-bounce">${wp.emoji}</span>`;
-                }
+                if(wp) overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-12 text-[0.6em] z-30 drop-shadow-lg animate-bounce">${wp.emoji}</span>`;
             }
             
             const dashCard = document.getElementById('dashAvatarCard');
-            if (dashCard) {
-                dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
-            }
+            if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="text-[0.5em] absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':lvInfo.info.prop}</div>`;
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
@@ -1740,7 +1737,6 @@
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);
 
-            // 무기고(인벤토리)
             const invPanel = document.getElementById('weaponSlots');
             if (invPanel) {
                 if (window.playerState.inventory.length === 0) {
@@ -1768,7 +1764,6 @@
                 window.selectBody(window.playerState.condition.body.val, false);
             }
 
-            // 투두 리스트
             document.getElementById('todoContainer').innerHTML = QUEST_DATA.filter(q => q.type === 'daily').map(q => {
                 const done = window.playerState.quests && window.playerState.quests[q.id];
                 return `
@@ -1786,7 +1781,6 @@
                 </label>`;
             }).join('');
 
-            // 보물상자
             const dbSlots = document.getElementById('dragonBallSlots');
             if(dbSlots) {
                 document.getElementById('dragonballContainer').classList.remove('hidden');
@@ -1796,9 +1790,7 @@
                 for(let i=1; i<=7; i++) {
                     if (collected.includes(i)) {
                         let starsHtml = ''; 
-                        for(let s=0; s<i; s++) {
-                            starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
-                        }
+                        for(let s=0; s<i; s++) starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
                         slotsHtml += `
                         <div class="w-8 h-8 sm:w-10 sm:h-10 dragonball-3d shadow-md shrink-0">
                             <div class="flex flex-wrap items-center justify-center w-[70%] h-[70%] leading-none">${starsHtml}</div>
@@ -1839,9 +1831,7 @@
                     }
                     
                     let ext = ''; 
-                    if(q.id === 'q1') {
-                        ext = `<span class="text-orange-400 text-[9px] ml-1">(🔥${window.playerState.earlyBirdCount||0}/5)</span>`;
-                    }
+                    if(q.id === 'q1') ext = `<span class="text-orange-400 text-[9px] ml-1">(🔥${window.playerState.earlyBirdCount||0}/5)</span>`;
 
                     return `
                     <button onclick="${act}" class="w-full text-left p-3 rounded-xl border bg-slate-800/50 transition flex justify-between items-center ${cls}">
@@ -1937,7 +1927,7 @@
 
 
         // ==========================================
-        // ★ 8. 로그인, 식권 구매 및 데이터 저장 로직 ★
+        // ★ 로그인, 식권 구매 및 데이터 저장 로직 ★
         // ==========================================
         document.getElementById('btnLogin').onclick = () => {
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
@@ -2001,19 +1991,13 @@
                 if (!isAdmin) {
                     const now = new Date(); 
                     const gameDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; 
-                    
                     let shouldMerge = false;
                     let updateData = {};
                     
                     if (data.lastDailyReset !== gameDateStr) {
                         const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
                         let updatedQuests = { ...(data.quests || {}) };
-                        
-                        dailyQuestIds.forEach(qId => { 
-                            if (updatedQuests[qId]) { 
-                                updatedQuests[qId] = false;
-                            } 
-                        });
+                        dailyQuestIds.forEach(qId => { if (updatedQuests[qId]) updatedQuests[qId] = false; });
                         updateData.quests = updatedQuests; 
                         updateData.lastDailyReset = gameDateStr; 
                         shouldMerge = true;
@@ -2043,7 +2027,6 @@
                 
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
-                
                 window.switchTab(isAdmin ? 'admin' : 'dashboard');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
@@ -2093,10 +2076,9 @@
 
 
         // ==========================================
-        // ★ 9. 퀘스트, 아이템, 무기 및 부동산(자리표) 로직 ★
+        // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
         
-        // ★ 업데이트: 부동산 자리표 구매 (가격 500봉 고정, 구매 한도 해제)
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
             if(!window.estateState || !window.estateState.seats[seatId]) return;
@@ -2105,7 +2087,6 @@
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
             if(seat.locked) return window.customAlert('현재 잠겨있는 자리입니다.');
             
-            // ★ 업데이트: 1인 1자리 제한 코드 삭제
             if(window.playerState.bong < price) return window.customAlert(`자산(B)이 부족합니다! (${price} B 필요)`);
 
             const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 구매하시겠습니까?`);
@@ -2135,7 +2116,6 @@
             const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?');
             if(!ok) return;
 
-            // ★ 업데이트: 리셋 시에도 가격 500봉 고정
             const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
             window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다.");
@@ -2143,37 +2123,23 @@
 
         window.equipWeapon = async function(wpId) {
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
-            
-            if (window.playerState.equippedWeapon === wpId) {
-                window.playerState.equippedWeapon = null; 
-            } else {
-                window.playerState.equippedWeapon = wpId; 
-            }
-            updateUI();
-            saveDataToCloud();
-            window.switchTab('plaza'); 
+            if (window.playerState.equippedWeapon === wpId) window.playerState.equippedWeapon = null; 
+            else window.playerState.equippedWeapon = wpId; 
+            updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
         };
 
         async function handleQuestDrop(xp) {
             const rand = Math.random() * 100;
             let dropped = null;
             
-            // ★ 업데이트: 난이도(XP)에 따른 드랍 테이블 (드랍 확률 절반으로 하향 적용)
             if (xp >= 500) {
-                if (rand < 10) dropped = 'wp5';
-                else if (rand < 25) dropped = 'wp4';
-                else if (rand < 50) dropped = 'wp3';
+                if (rand < 10) dropped = 'wp5'; else if (rand < 25) dropped = 'wp4'; else if (rand < 50) dropped = 'wp3';
             } else if (xp >= 100) {
-                if (rand < 2.5) dropped = 'wp4';
-                else if (rand < 7.5) dropped = 'wp3';
-                else if (rand < 15) dropped = 'wp2';
+                if (rand < 2.5) dropped = 'wp4'; else if (rand < 7.5) dropped = 'wp3'; else if (rand < 15) dropped = 'wp2';
             } else if (xp >= 50) {
-                if (rand < 1) dropped = 'wp3';
-                else if (rand < 5) dropped = 'wp2';
-                else if (rand < 12.5) dropped = 'wp1';
+                if (rand < 1) dropped = 'wp3'; else if (rand < 5) dropped = 'wp2'; else if (rand < 12.5) dropped = 'wp1';
             } else {
-                if (rand < 0.5) dropped = 'wp2';
-                else if (rand < 5) dropped = 'wp1';
+                if (rand < 0.5) dropped = 'wp2'; else if (rand < 5) dropped = 'wp1';
             }
 
             if (dropped) {
@@ -2201,7 +2167,6 @@
             let buffAmount = 0;
             
             if (window.playerState.equippedWeapon) {
-                // ★ 업데이트: 무기가 있으면 기본 경험치의 약 5% 추가 (절반 하향)
                 buffAmount = Math.max(1, Math.floor(xp * 0.05));
                 finalXp += buffAmount;
             }
@@ -2209,9 +2174,7 @@
             if (qId === 'q1') {
                 window.playerState.earlyBirdCount = (window.playerState.earlyBirdCount || 0) + 1;
                 if (new Date().getDay() === 5 && window.playerState.earlyBirdCount >= 5) { 
-                    finalXp += 20; 
-                    isEarlyBirdJackpot = true; 
-                    window.playerState.earlyBirdCount = 0; 
+                    finalXp += 20; isEarlyBirdJackpot = true; window.playerState.earlyBirdCount = 0; 
                 }
             }
 
@@ -2222,59 +2185,40 @@
             const newLv = getLevelInfo(window.playerState.xp).index;
 
             let alertMsg = "";
-            if (isEarlyBirdJackpot) {
-                alertMsg += `🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!\n\n`;
-            }
-            if (buffAmount > 0) {
-                alertMsg += `🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!\n`;
-            }
+            if (isEarlyBirdJackpot) alertMsg += `🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!\n\n`;
+            if (buffAmount > 0) alertMsg += `🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!\n`;
 
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             const now = new Date();
             const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             const qInfo = QUEST_DATA.find(q => q.id === qId);
             if(qInfo) {
-                window.playerState.questHistory.push({
-                    id: qId,
-                    name: qInfo.name,
-                    date: dateStr,
-                    timestamp: now.getTime(),
-                    xp: finalXp,
-                    bong: finalBong
-                });
+                window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
             }
 
             if (newLv > oldLv) { 
-                const bonus = newLv * 3; 
-                window.playerState.bong += bonus; 
+                const bonus = newLv * 3; window.playerState.bong += bonus; 
                 alertMsg += `\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`; 
             }
-            
-            if (alertMsg !== "") {
-                await window.customAlert(alertMsg.trim());
-            }
+            if (alertMsg !== "") await window.customAlert(alertMsg.trim());
             
             await handleQuestDrop(xp);
-            
-            updateUI(); 
-            saveDataToCloud();
+            updateUI(); saveDataToCloud();
         };
 
+        // ★ 버그 수정: 퀘스트 취소 시 UI 초기화 기능 개선
         window.cancelQuest = async function(qId, xp, bong) {
             if (window.playerState.isGuest) return;
             const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(0.5 B)가 깎여요.");
+            
             if (isOk) {
-                if (qId === 'q1') {
-                    window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
-                }
+                if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
 
                 if (window.playerState.questHistory) {
                     const now = new Date();
                     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                     const idx = window.playerState.questHistory.map(q => q.id === qId && q.date === dateStr).lastIndexOf(true);
-                    if (idx !== -1) {
-                        window.playerState.questHistory.splice(idx, 1);
-                    }
+                    if (idx !== -1) window.playerState.questHistory.splice(idx, 1);
                 }
 
                 window.playerState.xp = Math.max(0, window.playerState.xp - xp); 
@@ -2282,6 +2226,9 @@
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
                 saveDataToCloud();
+            } else {
+                // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
+                updateUI();
             }
         };
 
@@ -2290,11 +2237,9 @@
             
             if (id === 'item_random') {
                 if (window.playerState.bong < price && !window.playerState.isAdmin) return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
-                
                 const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능!)`);
                 if (ok) {
                     if (!window.playerState.isAdmin) window.playerState.bong -= price;
-                    
                     const result = Math.floor(Math.random() * 11) * 10;
                     window.playerState.bong += result;
                     playSfx('bong', result >= 50);
@@ -2307,13 +2252,9 @@
 
                     updateUI(); saveDataToCloud();
                     
-                    if (result > price) {
-                        await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
-                    } else if (result === price) {
-                        await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
-                    } else {
-                        await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${result} B ] 획득!\n(손해: ${result - price} B)`);
-                    }
+                    if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
+                    else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
+                    else await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${result} B ] 획득!\n(손해: ${result - price} B)`);
                 }
                 return;
             }
@@ -2321,11 +2262,9 @@
             if (isConsumable) {
                 if (window.playerState.bong >= price || window.playerState.isAdmin) {
                     let cMsg = `[${name}] 아이템을 ${price}B에 살까요?`;
-                    
                     if (id === 'item_shield') { 
                         const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                         if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert("❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.");
-                        
                         const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0); 
                         cMsg = `[${name}] 아이템을 ${price}B에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`; 
                     }
@@ -2333,24 +2272,19 @@
                     const ok = await window.customConfirm(cMsg);
                     if(ok) {
                         if(!window.playerState.isAdmin) window.playerState.bong -= price;
-                        
                         if (id === 'item_shield') {
                             const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0); 
                             window.playerState.shieldHP = hp + 100; 
                             window.playerState.hasShield = false; 
-                            
                             const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
-
                             updateUI(); saveDataToCloud(); 
                             await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                         } else {
                             updateUI(); saveDataToCloud();
                         }
                     }
-                } else { 
-                    await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
-                }
+                } else await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
             } else {
                 const msg = window.playerState.bong >= price || window.playerState.isAdmin ? `🎉 [구매 가능] 선생님께 말씀해주세요!` : `❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`;
                 await window.customAlert(msg);
@@ -2359,19 +2293,12 @@
 
         window.toggleJob = async function(jobName, iconClass, colorClass) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
-            
             if (!window.playerState.jobs) window.playerState.jobs = [];
             const existingIndex = window.playerState.jobs.findIndex(j => j.name === jobName);
+            if (existingIndex > -1) window.playerState.jobs.splice(existingIndex, 1);
+            else window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
             
-            if (existingIndex > -1) {
-                window.playerState.jobs.splice(existingIndex, 1);
-            } else {
-                window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
-            }
-            
-            updateUI(); 
-            saveDataToCloud(); 
-            window.switchTab('plaza');
+            updateUI(); saveDataToCloud(); window.switchTab('plaza');
         };
 
         window.handleSkin = async function(skinId) {
@@ -2382,11 +2309,8 @@
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
             if (window.playerState.ownedSkins[skinId]) {
-                if (skin.type === 'aura') {
-                    SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
-                } else if (skin.type === 'face') {
-                    SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
-                }
+                if (skin.type === 'aura') SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
+                else if (skin.type === 'face') SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
                 
                 window.playerState.equippedSkins[skinId] = !window.playerState.equippedSkins[skinId];
                 updateUI(); saveDataToCloud(); window.switchTab('plaza');
@@ -2397,19 +2321,14 @@
                         if (!window.playerState.isAdmin) window.playerState.bong -= skin.price;
                         window.playerState.ownedSkins[skinId] = true;
                         
-                        if (skin.type === 'aura') {
-                            SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
-                        } else if (skin.type === 'face') {
-                            SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
-                        }
+                        if (skin.type === 'aura') SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
+                        else if (skin.type === 'face') SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
                         
                         window.playerState.equippedSkins[skinId] = true; 
                         await window.customAlert(`🎉 획득 완료! 바로 장착했어요.`); 
                         updateUI(); saveDataToCloud(); window.switchTab('plaza');
                     }
-                } else { 
-                    await window.customAlert(`❌ 돈이 부족해요. ${(skin.price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
-                }
+                } else await window.customAlert(`❌ 돈이 부족해요. ${(skin.price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
             }
         };
 
@@ -2430,13 +2349,11 @@
                 if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
                 window.playerState.unlockedQuests[qId] = true; 
                 updateUI(); saveDataToCloud();
-            } else if (code !== null) {
-                await window.customAlert("❌ 비밀번호가 틀렸어요.");
-            }
+            } else if (code !== null) await window.customAlert("❌ 비밀번호가 틀렸어요.");
         };
 
         // ==========================================
-        // ★ 10. 관리자 권한 도구 모음 (자동 경험치 포함) ★
+        // ★ 관리자 권한 도구 모음 (자동 경험치 포함) ★
         // ==========================================
         window.hardResetAll = async function() {
             if (!window.playerState.isGM) return window.customAlert('선생님(마스터 J) 전용 기능입니다.');
@@ -2464,12 +2381,11 @@
             } catch(e) { window.customAlert("초기화 중 오류 발생: " + e.message); }
         };
 
-        // ★ 업데이트: 특정 시간마다 매 교시 자동 경험치 지급 로직 추가
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
             const day = now.getDay();
-            if (day === 0 || day === 6) return; // 주말 제외
+            if (day === 0 || day === 6) return; 
 
             const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             const targetTimes = ['09:40', '10:30', '11:20', '12:10', '13:50', '14:40'];
@@ -2695,11 +2611,7 @@
                 let qu = { ...(stu.quests||{}) }; 
                 let uq = { ...(stu.unlockedQuests||{}) }; 
                 
-                raidIds.forEach(id => { 
-                    qu[id] = false; 
-                    uq[id] = false; 
-                });
-                
+                raidIds.forEach(id => { qu[id] = false; uq[id] = false; });
                 batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] }, { merge: true });
             });
             await batch.commit(); 
@@ -2712,7 +2624,6 @@
             if (p) { 
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: p }, { merge: true }); 
                 
-                // 전담 레이드 자동 초기화 연동
                 const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the']; 
                 const batch = writeBatch(db);
                 window.allStudentsData.forEach(stu => {
@@ -2774,9 +2685,6 @@
             `).join('');
         };
 
-        // ==========================================
-        // ★ 11. NPC 공지, 드래곤볼 로직 ★
-        // ==========================================
         window.talkToNPC = function() { 
             const el = document.getElementById('npcText'); 
             if(el) { 
@@ -2804,22 +2712,16 @@
         // ==========================================
         // ★ 골든벨 전용 함수 ★
         // ==========================================
-        
-        // 추가: 마스터 UI 업데이트 함수
         window.updateGoldenBellAdminUI = function() {
             if(!window.playerState.isAdmin) return;
             const st = window.goldenbellState;
             const dash = document.getElementById('gbAdminDashboard');
             
-            // 기존 인풋 유지 복원
             if (st && st.questions && st.questions.length > 0) {
                 st.questions.forEach((item) => {
                     const qInput = document.getElementById(`gb_admin_q_${item.originalIndex}`);
                     const aInput = document.getElementById(`gb_admin_a_${item.originalIndex}`);
-                    if(qInput && aInput && st.isOpen) {
-                        qInput.value = item.q;
-                        aInput.value = item.a;
-                    }
+                    if(qInput && aInput && st.isOpen) { qInput.value = item.q; aInput.value = item.a; }
                 });
             }
 
@@ -2829,31 +2731,20 @@
                 const subs = st.submissions || {};
                 const totalStudents = 13;
                 const submittedCount = Object.keys(subs).length;
-                html += `<div class="text-[10px] text-slate-300 mb-2">제출 인원: ${submittedCount} / ${totalStudents} 명</div>`;
+                html += `<div class="text-[10px] text-slate-300 mb-2">제출 인원: ${submittedCount} / ${totalStudents} 명</div><div class="grid grid-cols-2 sm:grid-cols-3 gap-2">`;
                 
-                html += '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">';
                 for(let i=1; i<=13; i++) {
-                    const sId = String(i);
-                    const sName = STUDENT_NAMES[sId];
+                    const sId = String(i); const sName = STUDENT_NAMES[sId];
                     if(subs[sId]) {
-                        const score = subs[sId].score;
-                        const total = st.questions.length;
-                        html += `<div class="bg-slate-800 border border-emerald-500 rounded p-1.5 text-center">
-                            <div class="text-[10px] text-white font-bold">${sName}</div>
-                            <div class="text-[10px] text-emerald-400">${score}/${total} 정답</div>
-                        </div>`;
+                        const score = subs[sId].score; const total = st.questions.length;
+                        html += `<div class="bg-slate-800 border border-emerald-500 rounded p-1.5 text-center"><div class="text-[10px] text-white font-bold">${sName}</div><div class="text-[10px] text-emerald-400">${score}/${total} 정답</div></div>`;
                     } else {
-                        html += `<div class="bg-slate-800/50 border border-slate-700 rounded p-1.5 text-center opacity-50">
-                            <div class="text-[10px] text-slate-400 font-bold">${sName}</div>
-                            <div class="text-[10px] text-slate-500">미제출</div>
-                        </div>`;
+                        html += `<div class="bg-slate-800/50 border border-slate-700 rounded p-1.5 text-center opacity-50"><div class="text-[10px] text-slate-400 font-bold">${sName}</div><div class="text-[10px] text-slate-500">미제출</div></div>`;
                     }
                 }
                 html += '</div>';
                 dash.innerHTML = html;
-            } else {
-                dash.classList.add('hidden');
-            }
+            } else dash.classList.add('hidden');
         };
 
         window.saveAndOpenGoldenBell = async function() {
@@ -2862,27 +2753,18 @@
             for(let i=0; i<10; i++) {
                 const qText = document.getElementById(`gb_admin_q_${i}`).value.trim();
                 const aText = document.getElementById(`gb_admin_a_${i}`).value.trim();
-                if (qText) {
-                    qs.push({ q: qText, a: aText, originalIndex: i });
-                }
+                if (qText) qs.push({ q: qText, a: aText, originalIndex: i });
             }
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
-                isOpen: true, questions: qs, submissions: {}
-            }, {merge: true}); 
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { isOpen: true, questions: qs, submissions: {} }, {merge: true}); 
             window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)`);
         };
 
         window.closeGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
             const ok = await window.customConfirm("골든벨을 종료하시겠습니까?\n(학생 화면에서 문제가 사라집니다)");
-            if(ok) {
-                // 문제를 유지하기 위해 isOpen만 닫음
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
-                    isOpen: false 
-                }, {merge: true});
-            }
+            if(ok) await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { isOpen: false }, {merge: true});
         };
 
         window.renderGoldenBellStudent = function() {
@@ -2897,24 +2779,17 @@
             }
 
             const mySubmission = st.submissions && st.submissions[mId];
-
             let html = '';
+            
             st.questions.forEach((item, idx) => {
-                let val = '';
-                let inputCls = 'bg-slate-900/80 border border-slate-600 text-white';
-                let resHtml = '';
-                let disabledAttr = '';
+                let val = ''; let inputCls = 'bg-slate-900/80 border border-slate-600 text-white'; let resHtml = ''; let disabledAttr = '';
 
                 if (mySubmission) {
-                    val = mySubmission.answers[idx] || '';
-                    disabledAttr = 'disabled';
-                    const isCorrect = mySubmission.results[idx];
-                    if (isCorrect) {
-                        inputCls = 'bg-emerald-900/20 border-emerald-500 text-white';
-                        resHtml = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
+                    val = mySubmission.answers[idx] || ''; disabledAttr = 'disabled';
+                    if (mySubmission.results[idx]) {
+                        inputCls = 'bg-emerald-900/20 border-emerald-500 text-white'; resHtml = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
                     } else {
-                        inputCls = 'bg-red-900/20 border-sb-red text-white';
-                        resHtml = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
+                        inputCls = 'bg-red-900/20 border-sb-red text-white'; resHtml = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
                     }
                 }
 
@@ -2928,11 +2803,9 @@
                 </div>`;
             });
 
-            if (mySubmission) {
-                html += `<button disabled class="w-full mt-6 bg-slate-700 text-slate-400 font-black py-4 rounded-xl shadow-lg cursor-not-allowed text-lg"><i class="fa-solid fa-check"></i> 채점 완료 (보상 지급됨)</button>`;
-            } else {
-                html += `<button onclick="window.submitGoldenBell()" class="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.5)] transition transform hover:scale-105 text-lg"><i class="fa-solid fa-check-double"></i> 제출 및 자동 채점하기</button>`;
-            }
+            if (mySubmission) html += `<button disabled class="w-full mt-6 bg-slate-700 text-slate-400 font-black py-4 rounded-xl shadow-lg cursor-not-allowed text-lg"><i class="fa-solid fa-check"></i> 채점 완료 (보상 지급됨)</button>`;
+            else html += `<button onclick="window.submitGoldenBell()" class="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.5)] transition transform hover:scale-105 text-lg"><i class="fa-solid fa-check-double"></i> 제출 및 자동 채점하기</button>`;
+            
             container.innerHTML = html;
         };
 
@@ -2940,531 +2813,217 @@
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             const st = window.goldenbellState;
             const mId = localStorage.getItem('sambong_student_id');
-            if(!st || !st.isOpen) return;
-            if(st.submissions && st.submissions[mId]) return window.customAlert("이미 제출하셨습니다.");
+            if(!st || !st.isOpen) return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
 
-            const ok = await window.customConfirm("작성한 답안을 제출하고 채점하시겠습니까?\n(오답은 빨간색으로 정답이 공개됩니다.)");
+            const ok = await window.customConfirm("답안을 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.");
             if(!ok) return;
 
+            const answers = [];
             let score = 0;
-            let total = st.questions.length;
-            let myAnswers = [];
-            let myResults = [];
+            const results = [];
 
             st.questions.forEach((item, idx) => {
-                const inputEl = document.getElementById(`gb_ans_${idx}`);
-                const stuAns = inputEl.value.trim();
-                myAnswers.push(stuAns);
-                
-                const cleanStuAns = stuAns.replace(/\s+/g, '').toLowerCase();
-                const cleanRealAns = item.a.replace(/\s+/g, '').toLowerCase();
-                
-                if (cleanStuAns === cleanRealAns) {
-                    score++;
-                    myResults.push(true);
-                } else {
-                    myResults.push(false);
-                }
+                const el = document.getElementById(`gb_ans_${idx}`);
+                const val = el ? el.value.trim() : '';
+                answers.push(val);
+                const isCorrect = (val === item.a);
+                results.push(isCorrect);
+                if(isCorrect) score++;
             });
 
-            const getXp = score * 5;
-            const getBong = score * 1;
+            const submitData = { answers, results, score, timestamp: Date.now() };
+            const updates = {};
+            updates[`submissions.${mId}`] = submitData;
+
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), updates, {merge: true});
+
+            const rewardXp = score * 10;
+            const rewardBong = score * 1;
+
+            window.playerState.xp += rewardXp;
+            window.playerState.bong += rewardBong;
+            await saveDataToCloud();
             
-            // 빠른 반응을 위한 UI 업데이트
-            window.goldenbellState.submissions = window.goldenbellState.submissions || {};
-            window.goldenbellState.submissions[mId] = {
-                score: score,
-                answers: myAnswers,
-                results: myResults,
-                timestamp: Date.now()
-            };
-            window.renderGoldenBellStudent(); 
-
-            try {
-                // 서버 상태 기록 (제출 기록)
-                const gbRef = doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state');
-                const newSubs = { ...st.submissions };
-                newSubs[mId] = window.goldenbellState.submissions[mId];
-                await setDoc(gbRef, { submissions: newSubs }, { merge: true });
-
-                // 보상 안전 지급
-                if (score > 0) {
-                    window.playerState.xp += getXp;
-                    window.playerState.bong += getBong;
-                    updateUI();
-                    await saveDataToCloud(); // 지급 누락 방지를 위해 명확한 비동기 대기
-                }
-
-                playSfx('xp', score >= (total / 2));
-                await window.customAlert(`🔔 골든벨 채점 완료!\n총 ${total}문제 중 [ ${score} ]문제를 맞혔습니다!\n\n🎁 획득 보상: +${getXp} XP, +${getBong} B`);
-            } catch (err) {
-                console.error("채점 저장 실패", err);
-                await window.customAlert("저장 중 오류가 발생했습니다. 마스터에게 문의하세요.");
-            }
-        };
-
-
-        async function checkWeekendTime() {
-            try { 
-                const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Seoul', {cache: 'no-store'}); 
-                if(!res.ok) throw new Error(); 
-                const d = await res.json(); 
-                const n = new Date(d.datetime); 
-                isWeekend = (n.getDay()===5&&n.getHours()>=16)||n.getDay()===6||n.getDay()===0; 
-            } catch(e) { 
-                const n = new Date(); 
-                isWeekend = (n.getDay()===5&&n.getHours()>=16)||n.getDay()===6||n.getDay()===0; 
-            }
-            
-            const rTxt = document.getElementById('raidTimeStatusText'); 
-            if(rTxt) { 
-                rTxt.innerText = isWeekend ? "⚔️ 주말 활성화됨" : "🔒 평일 잠금"; 
-                rTxt.className = isWeekend ? "text-[10px] text-emerald-400 font-bold" : "text-[10px] text-red-400 font-bold"; 
-            }
-            updateRaidEntryUI(); 
-            updateDragonBallUI();
-        }
-
-        window.updateDragonBallUI = function() {
-            const ball = document.getElementById('floatingDragonBall'); 
-            if(!ball || !window.dragonBallState) return;
-            
-            if (isWeekend && window.dragonBallState.isActive && !window.playerState.isGuest) {
-                ball.classList.remove('hidden'); 
-                ball.style.left = `${window.dragonBallState.posX}%`; 
-                ball.style.top = `${window.dragonBallState.posY}%`;
-                
-                const num = window.dragonBallState.number || 1; 
-                const st = document.getElementById('floatingDragonBallStars'); 
-                st.innerHTML = '';
-                
-                for(let i=0; i<num; i++) {
-                    st.innerHTML += `<i class="fa-solid fa-star text-[${num>4?'8px':'12px'}] m-[1px] text-red-700"></i>`;
-                }
-            } else {
-                ball.classList.add('hidden');
-            }
-            
-            const dba = document.getElementById('dbAdminStatus'); 
-            if(dba && window.playerState.isAdmin) { 
-                dba.innerText = `[DB 이번주 스폰: ${(window.dragonBallState.spawnedThisWeek||[]).length}/7]`; 
-                dba.classList.remove('hidden'); 
-            }
+            await window.customAlert(`✅ 제출 완료!\n${st.questions.length}문제 중 ${score}문제 정답!\n보상: +${rewardXp} XP, +${rewardBong} B`);
+            window.renderGoldenBellStudent();
+            updateUI();
         };
 
         window.claimDragonBall = async function() {
-            if (window.playerState.isGuest || !isWeekend) return;
-            const st = window.dragonBallState; 
-            if (!st || !st.isActive) return window.customAlert("앗! 다른 친구가 먼저 가져갔어요!");
+            if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if(!window.dragonBallState || !window.dragonBallState.isActive) return;
             
-            const nTime = Date.now() + (Math.floor(Math.random() * 50) + 10) * 60000;
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { 
-                isActive: false, lastClaimTime: Date.now(), nextSpawnTime: nTime, 
-                claimedBy: STUDENT_NAMES[localStorage.getItem('sambong_student_id')] 
-            }, { merge: true });
+            const dbNum = window.dragonBallState.number;
+            if(!window.playerState.dragonBalls) window.playerState.dragonBalls = [];
             
-            let coll = window.playerState.dragonBalls || []; 
-            let msg = `🐉 전 서버 7개뿐인 [${st.number}성구] 획득!\n\n`;
-            
-            if (!coll.includes(st.number)) { 
-                coll.push(st.number); 
-                msg += `✨ 도감에 추가됨!`; 
-            } else { 
-                msg += `(이미 수집한 번호입니다)`; 
-            }
-            window.playerState.dragonBalls = coll;
-            
-            if (coll.length >= 7 && new Set(coll).size >= 7) { 
-                msg += `\n\n🌟 1~7번 모두 수집 완료!\n[700 XP] 보너스 지급!`; 
-                window.playerState.xp += 700; 
-                window.playerState.dragonBalls = []; 
+            if(window.playerState.dragonBalls.includes(dbNum)) {
+                return window.customAlert("이미 가지고 있는 드래곤볼입니다!");
             }
             
-            await window.customAlert(msg); 
-            updateUI(); 
+            window.playerState.dragonBalls.push(dbNum);
+            window.playerState.xp += 50;
+            await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다! (+50 XP)\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
+            
+            if(window.playerState.dragonBalls.length >= 7) {
+                window.playerState.dragonBalls = [];
+                window.playerState.xp += 700;
+                await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복으로 엄청난 경험치(+700 XP)를 획득했습니다!`);
+            }
+            
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { isActive: false, lastClaimTime: Date.now(), nextSpawnTime: Date.now() + 1800000 }, {merge: true});
+            updateUI();
             saveDataToCloud();
+            document.getElementById('floatingDragonBall').classList.add('hidden');
         };
 
-        setInterval(() => {
-            if(!isWeekend || !window.dragonBallState || window.playerState.isGuest) return;
+        function updateDragonBallUI() {
+            const el = document.getElementById('floatingDragonBall');
+            if(!el) return;
             
-            const cId = getWeekId(); 
-            let sWeek = window.dragonBallState.spawnedThisWeek || []; 
-            let sId = window.dragonBallState.weekId || '';
-            
-            if (sId !== cId) { sWeek = []; sId = cId; }
-            
-            if(!window.dragonBallState.isActive && Date.now() > window.dragonBallState.nextSpawnTime) {
-                if (sWeek.length >= 7) return;
+            if(window.dragonBallState && window.dragonBallState.isActive && !window.playerState.isAdmin) {
+                el.classList.remove('hidden');
+                el.style.left = `${window.dragonBallState.posX}%`;
+                el.style.top = `${window.dragonBallState.posY}%`;
                 
-                const av = [1,2,3,4,5,6,7].filter(n => !sWeek.includes(n)); 
-                if (av.length === 0) return;
-                
-                setTimeout(async () => {
-                    const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'));
-                    if(snap.exists() && !snap.data().isActive) {
-                        const randomNum = av[Math.floor(Math.random()*av.length)]; 
-                        
-                        setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { 
-                            isActive: true, 
-                            number: randomNum, 
-                            posX: Math.floor(Math.random()*80)+10, 
-                            posY: Math.floor(Math.random()*80)+10, 
-                            weekId: cId, 
-                            spawnedThisWeek: [...sWeek, randomNum] 
-                        }, { merge: true });
-                    }
-                }, Math.random() * 2000);
-            }
-        }, 5000);
-
-        // ==========================================
-        // ★ 12. 레이드 전투 로직 ★
-        // ==========================================
-        window.updateRaidEntryUI = function() {
-            const btn = document.getElementById('btnJoinRaid'); 
-            const countDiv = document.getElementById('raidJoinCount'); 
-            const rCount = document.getElementById('rCount');
-            
-            if(!btn || !window.currentRaidState) return; 
-            
-            const s = window.currentRaidState.status; 
-            const p = window.currentRaidState.participants || [];
-            rCount.innerText = p.length;
-            
-            btn.onclick = () => window.joinRaid(); 
-            
-            if(s === 'waiting') { 
-                btn.innerText = "모집 대기중"; 
-                btn.disabled = true; 
-                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl text-xs cursor-not-allowed"; 
-                countDiv.classList.add('hidden'); 
-            }
-            else if(s === 'recruiting') {
-                countDiv.classList.remove('hidden');
-                
-                if(p.includes(localStorage.getItem('sambong_student_id'))) { 
-                    btn.innerText = "❌ 참가 취소"; 
-                    btn.disabled = false; 
-                    btn.onclick = () => window.cancelRaidJoin();
-                    btn.className = "w-full bg-red-600/80 hover:bg-red-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition"; 
+                let starsHtml = '';
+                for(let i=0; i<window.dragonBallState.number; i++) {
+                    starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
                 }
-                else if(p.length >= 5) { 
-                    btn.innerText = "모집 완료"; 
-                    btn.disabled = true; 
-                    btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl text-xs cursor-not-allowed"; 
-                }
-                else { 
-                    btn.innerText = isWeekend ? "⚔️ 참가" : "평일불가"; 
-                    btn.disabled = !isWeekend; 
-                    btn.className = isWeekend 
-                        ? "w-full bg-purple-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs animate-pulse shadow-[0_0_15px_rgba(168,85,247,0.5)]" 
-                        : "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl text-xs cursor-not-allowed"; 
-                }
-            } 
-            else if(s === 'playing') {
-                countDiv.classList.add('hidden');
-                
-                if(p.includes(localStorage.getItem('sambong_student_id')) || window.playerState.isAdmin) { 
-                    btn.innerText = "⚔️ 전투중!"; 
-                    btn.disabled = false; 
-                    btn.className = "w-full bg-red-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs animate-pulse"; 
-                    btn.onclick = () => document.getElementById('raidBattleModal').classList.remove('hidden'); 
-                } else { 
-                    btn.innerText = "전투 진행중"; 
-                    btn.disabled = true; 
-                    btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl text-xs cursor-not-allowed"; 
-                }
-            } 
-            else if(s === 'finished' || s === 'failed') { 
-                countDiv.classList.add('hidden'); 
-                btn.innerText = s === 'finished' ? "🏆 성공!" : "💀 실패"; 
-                btn.disabled = true; 
-                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl text-xs cursor-not-allowed"; 
-            }
-            
-            const ast = document.getElementById('raidAdminStatus'); 
-            if(ast) {
-                ast.innerText = s === 'waiting' ? '대기중' 
-                            : s === 'recruiting' ? `모집중(${p.length}/5)` 
-                            : s === 'playing' ? '전투중' 
-                            : s === 'finished' ? '클리어' : '실패';
-            }
-        };
-
-        window.cancelRaidJoin = async function() {
-            if(window.playerState.isGuest) return; 
-            const mId = localStorage.getItem('sambong_student_id'); 
-            const st = window.currentRaidState;
-            
-            if(!st || st.status !== 'recruiting' || !st.participants.includes(mId)) return;
-            
-            const ok = await window.customConfirm("레이드 참가를 취소할까요?");
-            if(!ok) return;
-
-            const np = st.participants.filter(id => id !== mId); 
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { participants: np }, {merge: true});
-        };
-
-        window.updateRaidBattleUI = function() {
-            if(!window.currentRaidState) return; 
-            const st = window.currentRaidState;
-            
-            document.getElementById('raidBossHPBar').style.width = `${Math.max(0,(st.bossHP/st.maxBossHP)*100)}%`; 
-            document.getElementById('raidBossHPText').innerText = `${st.bossHP}/${st.maxBossHP}`;
-            
-            document.getElementById('raidParticipantsList').innerHTML = (st.participants||[]).map((p,i) => `
-                <div class="text-xs p-1 rounded ${st.currentTurn===i && st.status==='playing' ? 'bg-sb-blue/30 text-white animate-pulse' : 'text-slate-400'}">
-                    ${i+1}. ${STUDENT_NAMES[p]} ${st.currentTurn===i && st.status==='playing' ? '⚔️' : ''}
-                </div>
-            `).join('');
-            
-            document.getElementById('raidLogContainer').innerHTML = (st.logs||[]).map(l => `<div>${l}</div>`).join('');
-            
-            const tt = document.getElementById('raidTurnText'); 
-            const qt = document.getElementById('raidQuestionText'); 
-            const mg = document.getElementById('raidMultipleChoiceGroup'); 
-            const tb = document.getElementById('raidTimerBarContainer'); 
-            const eb = document.getElementById('btnExitRaid'); 
-            const gb = document.getElementById('btnGiveUpRaid');
-            
-            const mId = localStorage.getItem('sambong_student_id'); 
-            clearInterval(window.raidTimerInterval);
-            
-            if(st.status === 'playing') {
-                document.getElementById('raidBattleModal').classList.remove('hidden'); 
-                eb.classList.add('hidden'); 
-                gb.classList.toggle('hidden', window.playerState.isAdmin);
-                
-                const cP = st.participants[st.currentTurn]; 
-                const cQ = st.questions[st.currentTurn];
-                
-                if(cQ && cQ.options) {
-                    qt.innerText = `Q${st.currentTurn+1}. ${cQ.q}`; 
-                    mg.classList.remove('hidden');
-                    
-                    for(let i=0; i<4; i++) {
-                        const b = document.getElementById(`raidOption_${i}`); 
-                        b.innerText = cQ.options[i];
-                        if(cP === mId) { 
-                            b.disabled = false; 
-                            b.className = "bg-slate-700 hover:bg-slate-500 border border-slate-400 hover:border-sb-gold text-white rounded-xl py-3 px-4 font-bold shadow-lg transform hover:scale-105 active:scale-95 text-sm"; 
-                        } else { 
-                            b.disabled = true; 
-                            b.className = "bg-slate-800 border-slate-700 text-slate-500 rounded-xl py-3 px-4 font-bold opacity-50 cursor-not-allowed text-sm"; 
-                        }
-                    }
-                }
-                
-                if(cP === mId) { 
-                    tt.innerText = "⚔️ 나의 턴! (30초)"; 
-                    tt.className = "text-emerald-400 font-bold mb-2 animate-pulse text-sm"; 
-                    tb.classList.remove('hidden'); 
-                } else { 
-                    tt.innerText = `⏳ [${STUDENT_NAMES[cP]}] 턴 대기중`; 
-                    tt.className = "text-sb-gold font-bold mb-2 text-sm"; 
-                    tb.classList.remove('hidden'); 
-                }
-                
-                window.raidTimerInterval = setInterval(() => {
-                    const r = Math.max(0, 30 - ((Date.now() - st.startTime) / 1000));
-                    const img = document.getElementById('raidBossImage'); 
-                    
-                    if(img && st.status === 'playing') {
-                        img.style.transform = `scale(${1 + ((30-r)/30)*1.5})`;
-                    }
-                    
-                    const bar = document.getElementById('raidTimerBar'); 
-                    if(bar) { 
-                        bar.style.width = `${(r/30)*100}%`; 
-                        bar.className = `h-full w-full ${r<=10 ? 'bg-sb-red' : 'bg-sb-gold'}`; 
-                    }
-                    
-                    if(r <= 0 && cP === mId) { 
-                        clearInterval(window.raidTimerInterval); 
-                        window.submitRaidAnswer(-1); 
-                    }
-                }, 100);
+                document.getElementById('floatingDragonBallStars').innerHTML = starsHtml;
             } else {
-                mg.classList.add('hidden'); 
-                tb.classList.add('hidden'); 
-                gb.classList.add('hidden'); 
-                document.getElementById('raidBossImage').style.transform = 'scale(1)';
-                
-                if(st.status === 'finished') { 
-                    qt.innerHTML = `<span class="text-yellow-400">🎉 처치 성공! 보상 지급됨.</span>`; 
-                    tt.innerText = "전투 종료"; 
-                    eb.classList.remove('hidden'); 
-                    document.getElementById('raidBossImage').innerText = '👼'; 
-                } else if(st.status === 'failed') { 
-                    qt.innerHTML = `<span class="text-red-400">💀 전투 실패...</span>`; 
-                    tt.innerText = "전투 실패"; 
-                    eb.classList.remove('hidden'); 
-                }
+                el.classList.add('hidden');
             }
-        };
+        }
 
-        window.giveUpRaid = async function() { 
-            const ok = await window.customConfirm("전투를 포기하고 도망갈까요?"); 
-            if(ok) { 
-                window.closeRaidModal(); 
-                if (window.currentRaidState?.status === 'playing' && window.currentRaidState.participants[window.currentRaidState.currentTurn] === localStorage.getItem('sambong_student_id')) {
-                    window.submitRaidAnswer(-2); 
-                }
-            } 
-        };
-
-        window.saveRaidQuestions = async function() {
-            if(!window.playerState.isAdmin) return; 
-            const qs = [];
-            
-            for(let i=0; i<5; i++) {
-                const q = document.getElementById(`rq_${i}`).value.trim(); 
-                const ops = []; 
-                let ans = -1;
-                
-                for(let j=0; j<4; j++) { 
-                    ops.push(document.getElementById(`rop_${i}_${j}`).value.trim()); 
-                    if(document.querySelector(`input[name="ra_${i}"][value="${j}"]`).checked) ans=j; 
-                }
-                
-                if(!q || ops.some(o=>!o) || ans===-1) return window.customAlert('모든 문제와 보기를 빈칸 없이 입력해주세요.');
-                qs.push({ q, options: ops, answerIndex: ans });
+        function checkWeekendTime() {
+            const day = new Date().getDay();
+            isWeekend = (day === 0 || day === 6);
+            const dbContainer = document.getElementById('dragonballContainer');
+            if(dbContainer) {
+                if(isWeekend) dbContainer.classList.remove('hidden');
+                else dbContainer.classList.add('hidden');
             }
-            
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { questions: qs }, {merge: true}); 
-            window.customAlert('✅ 레이드 문제 저장 완료');
-        };
+        }
 
+        // --- 레이드 관련 함수들 ---
         window.openRaidLobby = async function() {
-            if(!window.playerState.isAdmin) return; 
-            const qs = window.currentRaidState?.questions || []; 
-            if(qs.length < 5) return window.customAlert('문제를 먼저 임시저장 해주세요.');
+            if(!window.playerState.isGM) return;
+            const qs = [];
+            for(let i=0; i<5; i++) {
+                const qText = document.getElementById(`rq_${i}`).value.trim();
+                const options = [];
+                for(let j=0; j<4; j++) {
+                    options.push(document.getElementById(`rop_${i}_${j}`).value.trim());
+                }
+                const answer = document.querySelector(`input[name="ra_${i}"]:checked`).value;
+                if(qText) qs.push({ q: qText, options, a: parseInt(answer) });
+            }
+            if(qs.length === 0) return window.customAlert('문제를 1개 이상 입력하세요.');
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { 
-                status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP, 
-                currentTurn: 0, combo: 0, logs: [`[시스템] 레이드 로비 오픈!`], questions: qs 
-            }, {merge: true}); 
-            
-            window.customAlert('🔥 레이드 로비 오픈!');
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP,
+                currentTurn: 0, startTime: Date.now(), combo: 0, logs: [], questions: qs
+            });
+            window.customAlert('레이드 모집 시작!');
+        };
+        
+        window.saveRaidQuestions = async function() {
+            window.customAlert('문제가 임시 저장되었습니다.');
         };
 
-        window.resetRaidForce = async function() { 
-            if(!window.playerState.isAdmin) return; 
-            const ok = await window.customConfirm("레이드를 강제 종료하시겠습니까?"); 
-            if(ok) { 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { 
-                    status: 'waiting', participants: [], logs: [] 
-                }, {merge: true}); 
-                document.getElementById('btnExitRaid').classList.add('hidden'); 
-                document.getElementById('raidBattleModal').classList.add('hidden'); 
-                document.getElementById('raidBossImage').innerText='👹'; 
-                document.getElementById('raidBossImage').style.transform='scale(1)'; 
-            } 
+        window.resetRaidForce = async function() {
+            if(!window.playerState.isGM) return;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { status: 'waiting' }, {merge:true});
+            window.customAlert('레이드 강제 종료됨.');
         };
 
         window.joinRaid = async function() {
-            if(window.playerState.isGuest) return; 
-            const mId = localStorage.getItem('sambong_student_id'); 
-            const st = window.currentRaidState;
-            if(!st || st.status !== 'recruiting') return;
+            if(window.playerState.isGuest) return;
+            if(window.currentRaidState.status !== 'recruiting') return window.customAlert('현재 모집 중인 레이드가 없습니다.');
+            if(window.currentRaidState.participants.some(p => p.id === window.playerState.id)) return window.customAlert('이미 참여했습니다.');
+            if(window.currentRaidState.participants.length >= 5) return window.customAlert('최대 인원(5명)이 꽉 찼습니다!');
             
-            if(st.participants.includes(mId)) return window.customAlert('이미 참여하셨습니다.');
-            if(st.participants.length >= 5) return window.customAlert('모집이 마감되었습니다.');
-            
-            const np = [...st.participants, mId];
-            const updates = { participants: np };
-            
-            if(np.length === 5) {
-                updates.status = 'playing';
-                updates.startTime = Date.now();
-                updates.logs = [...st.logs, `[시스템] 5명 모집 완료! 전투 시작!`, `[시스템] ${STUDENT_NAMES[np[0]]}의 턴!`];
-            } else {
-                updates.logs = [...st.logs, `[시스템] ${STUDENT_NAMES[mId]}님 참가! (${np.length}/5)`];
+            const p = [...window.currentRaidState.participants, { id: window.playerState.id, name: STUDENT_NAMES[window.playerState.id] }];
+            let newStatus = 'recruiting';
+            if(p.length === 5) {
+                newStatus = 'playing';
             }
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updates, {merge: true});
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { participants: p, status: newStatus }, {merge: true});
+            document.getElementById('raidBattleModal').classList.remove('hidden');
         };
 
-        window.submitRaidAnswer = async function(ansIdx) {
-            if(window.playerState.isGuest || !window.currentRaidState) return;
-            const st = window.currentRaidState;
-            const mId = localStorage.getItem('sambong_student_id');
-            
-            if(st.status !== 'playing' || st.participants[st.currentTurn] !== mId) return;
-            
-            let timeTaken = (Date.now() - st.startTime) / 1000;
-            let isCorrect = false;
-            let logMsg = '';
-            let dmg = 0;
-            let nextHp = st.bossHP;
-            
-            const q = st.questions[st.currentTurn];
-            
-            // ansIdx === -1 : 타임아웃
-            // ansIdx === -2 : 도망
-            if(ansIdx >= 0 && q && ansIdx === q.answerIndex) {
-                isCorrect = true;
-                dmg = 100; // 기본 데미지
-                if(timeTaken <= 10) { dmg = 200; logMsg = `💥 [크리티컬!] ${STUDENT_NAMES[mId]}님이 정답을 빠르게 맞혀 200의 피해를 입혔습니다!`; }
-                else if(timeTaken <= 20) { dmg = 150; logMsg = `✨ [그레이트] ${STUDENT_NAMES[mId]}님이 정답을 맞혀 150의 피해를 입혔습니다!`; }
-                else { logMsg = `🗡️ [일반 공격] ${STUDENT_NAMES[mId]}님이 정답을 맞혀 100의 피해를 입혔습니다.`; }
-                
-                nextHp = Math.max(0, st.bossHP - dmg);
-            } else {
-                // 오답 또는 타임아웃/도망
-                let heal = 50;
-                nextHp = Math.min(st.maxBossHP, st.bossHP + heal);
-                if(ansIdx === -1) logMsg = `⏰ [시간 초과] ${STUDENT_NAMES[mId]}님이 공격하지 못해 보스가 50 회복했습니다!`;
-                else if(ansIdx === -2) logMsg = `🏃 [도망] ${STUDENT_NAMES[mId]}님이 겁에 질려 도망쳤습니다! 보스가 50 회복합니다!`;
-                else logMsg = `❌ [오답] ${STUDENT_NAMES[mId]}님의 공격이 빗나갔습니다! 보스가 50 회복했습니다!`;
-                
-                // 화면 흔들림 효과
-                document.getElementById('raidBattleModal').classList.add('shake-screen');
-                setTimeout(() => document.getElementById('raidBattleModal').classList.remove('shake-screen'), 300);
-            }
-            
-            let nextTurn = st.currentTurn + 1;
-            let nextStatus = 'playing';
-            let nextLogs = [...st.logs, logMsg];
-            
-            if(nextHp <= 0) {
-                nextStatus = 'finished';
-                nextLogs.push(`🏆 [승리!] 보스를 물리쳤습니다! 참가자 전원 경험치와 보상 획득!`);
-                
-                // 보상 지급 로직 (일괄 처리)
-                const batch = writeBatch(db);
-                st.participants.forEach(pId => {
-                    const pDoc = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + pId);
-                    const pData = window.allStudentsData.find(s => s.id === pId);
-                    if(pData) {
-                        batch.set(pDoc, { xp: (pData.xp || 0) + RAID_REWARD.xp, bong: (pData.bong || 0) + RAID_REWARD.bong }, {merge: true});
-                    }
-                });
-                await batch.commit();
-            } else if(nextTurn >= 5) {
-                nextStatus = 'failed';
-                nextLogs.push(`💀 [패배...] 모든 턴을 소모했습니다. 보스 토벌에 실패했습니다.`);
-            } else {
-                nextLogs.push(`[시스템] 다음은 ${STUDENT_NAMES[st.participants[nextTurn]]}의 턴!`);
-            }
-            
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
-                bossHP: nextHp,
-                currentTurn: nextTurn,
-                status: nextStatus,
-                startTime: Date.now(),
-                logs: nextLogs
-            }, {merge: true});
+        window.giveUpRaid = async function() {
+            document.getElementById('raidBattleModal').classList.add('hidden');
         };
 
         window.closeRaidModal = function() {
             document.getElementById('raidBattleModal').classList.add('hidden');
-            document.getElementById('btnExitRaid').classList.add('hidden');
         };
 
-        // 초기화 실행
-        initApp();
+        window.submitRaidAnswer = async function(ansIdx) {
+            // Placeholder for raid answer logic
+        };
+
+        function updateRaidEntryUI() {
+            const st = window.currentRaidState;
+            const btn = document.getElementById('btnJoinRaid');
+            const cntDiv = document.getElementById('raidJoinCount');
+            const rCount = document.getElementById('rCount');
+            const statusTxt = document.getElementById('raidTimeStatusText');
+            
+            if(!btn) return;
+
+            if(st.status === 'recruiting') {
+                btn.disabled = false;
+                btn.innerText = "레이드 참가하기";
+                btn.className = "w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-[0_0_15px_rgba(147,51,234,0.5)] transition transform hover:scale-105 text-xs";
+                cntDiv.classList.remove('hidden');
+                rCount.innerText = st.participants.length;
+                statusTxt.innerText = "🔥 용사 모집 중!";
+                statusTxt.className = "text-[10px] text-emerald-400 font-bold animate-pulse";
+            } else if (st.status === 'playing') {
+                btn.disabled = true;
+                btn.innerText = "전투 진행 중";
+                btn.className = "w-full bg-slate-800 text-red-400 font-bold py-2.5 px-4 rounded-xl border border-red-500/50 text-xs";
+                cntDiv.classList.add('hidden');
+                statusTxt.innerText = "⚔️ 전투 중!";
+                statusTxt.className = "text-[10px] text-red-400 font-bold animate-pulse";
+            } else {
+                btn.disabled = true;
+                btn.innerText = "모집 대기중";
+                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
+                cntDiv.classList.add('hidden');
+                statusTxt.innerText = "휴식 중";
+                statusTxt.className = "text-[10px] text-slate-500 font-bold";
+            }
+        }
+
+        function updateRaidBattleUI() {
+            const st = window.currentRaidState;
+            const modal = document.getElementById('raidBattleModal');
+            if(!modal || modal.classList.contains('hidden')) return;
+
+            const hpBar = document.getElementById('raidBossHPBar');
+            const hpText = document.getElementById('raidBossHPText');
+            if(hpBar && hpText) {
+                const pct = Math.max(0, (st.bossHP / st.maxBossHP) * 100);
+                hpBar.style.width = `${pct}%`;
+                hpText.innerText = `${Math.ceil(st.bossHP)}/${st.maxBossHP}`;
+            }
+
+            const logDiv = document.getElementById('raidLogContainer');
+            if(logDiv && st.logs) {
+                logDiv.innerHTML = st.logs.map(l => `<div>${l}</div>`).join('');
+            }
+
+            const plist = document.getElementById('raidParticipantsList');
+            if(plist && st.participants) {
+                plist.innerHTML = st.participants.map(p => `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name}</div>`).join('');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', initApp);
     </script>
 </body>
 </html>

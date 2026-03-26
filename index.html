@@ -1465,7 +1465,13 @@
                     </div>
                     <div class="text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv} ${lv.info.name}</div>
                     <div class="font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
-                    <div class="text-[9px] sm:text-[10px] text-sb-blue mt-1 font-black">${(displayData.xp || 0).toLocaleString()} XP</div>
+                    
+                    <!-- XP 및 B 동시 표기 -->
+                    <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
+                        <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
+                        <span class="text-[9px] sm:text-[10px] text-sb-gold font-black">${(displayData.bong || 0).toFixed(1)}B</span>
+                    </div>
+
                     ${gmControls}
                 </div>`;
             };
@@ -2129,22 +2135,38 @@
         };
 
         async function handleQuestDrop(xp) {
+            // 기본 드랍 확률 배율 (아이템이 없으면 3배, 1개면 1배, 2개 이상이면 0.5배)
+            let dropMultiplier = 1.0;
+            if (!window.playerState.inventory) window.playerState.inventory = [];
+            const invenCount = window.playerState.inventory.length;
+            
+            if (invenCount === 0) dropMultiplier = 3.0;
+            else if (invenCount === 1) dropMultiplier = 1.0;
+            else dropMultiplier = 0.5;
+
             const rand = Math.random() * 100;
             let dropped = null;
             
+            // 아주 낮은 기본 드랍율 설정
             if (xp >= 500) {
-                if (rand < 10) dropped = 'wp5'; else if (rand < 25) dropped = 'wp4'; else if (rand < 50) dropped = 'wp3';
+                if (rand < 2 * dropMultiplier) dropped = 'wp5'; 
+                else if (rand < 5 * dropMultiplier) dropped = 'wp4'; 
+                else if (rand < 10 * dropMultiplier) dropped = 'wp3';
             } else if (xp >= 100) {
-                if (rand < 2.5) dropped = 'wp4'; else if (rand < 7.5) dropped = 'wp3'; else if (rand < 15) dropped = 'wp2';
+                if (rand < 0.5 * dropMultiplier) dropped = 'wp4'; 
+                else if (rand < 2 * dropMultiplier) dropped = 'wp3'; 
+                else if (rand < 5 * dropMultiplier) dropped = 'wp2';
             } else if (xp >= 50) {
-                if (rand < 1) dropped = 'wp3'; else if (rand < 5) dropped = 'wp2'; else if (rand < 12.5) dropped = 'wp1';
+                if (rand < 0.2 * dropMultiplier) dropped = 'wp3'; 
+                else if (rand < 1 * dropMultiplier) dropped = 'wp2'; 
+                else if (rand < 3 * dropMultiplier) dropped = 'wp1';
             } else {
-                if (rand < 0.5) dropped = 'wp2'; else if (rand < 5) dropped = 'wp1';
+                if (rand < 0.1 * dropMultiplier) dropped = 'wp2'; 
+                else if (rand < 1.5 * dropMultiplier) dropped = 'wp1';
             }
 
             if (dropped) {
                 const wp = WEAPON_DATA.find(w => w.id === dropped);
-                if (!window.playerState.inventory) window.playerState.inventory = [];
                 
                 if (window.playerState.inventory.includes(dropped)) {
                     const comp = 10;

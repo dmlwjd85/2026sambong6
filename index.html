@@ -230,6 +230,17 @@
         </div>
     </div>
 
+    <!-- ★ 식단표 모달 ★ -->
+    <div id="lunchMenuModal" class="hidden fixed inset-0 z-[260] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
+        <div class="glass-panel p-5 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col relative border-t-4 border-t-emerald-500 shadow-2xl overflow-hidden">
+            <button onclick="window.closeLunchMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h3 id="lunchMenuModalTitle" class="text-lg sm:text-xl font-display text-white mb-3 pr-8"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
+            <div id="lunchMenuModalBody" class="flex-1 overflow-auto rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+                <div class="text-center text-slate-400 text-xs font-bold py-10">불러오는 중...</div>
+            </div>
+        </div>
+    </div>
+
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
     <div id="swipeWrapper" class="pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
@@ -562,6 +573,36 @@
                         <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
                     </div>
                 </div>
+
+                <!-- 식단표(마스터 첨부) -->
+                <div class="glass-panel p-4 sm:p-5 rounded-2xl shadow-xl border-t-4 border-t-emerald-500 bg-slate-900/60">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
+                        <span id="lunchMenuUpdatedText" class="text-[9px] text-slate-400 font-bold"></span>
+                    </div>
+                    <div id="lunchMenuStudentRow" class="flex gap-2">
+                        <button id="btnOpenLunchMenu" onclick="window.openLunchMenu()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg transition text-xs hidden">
+                            식단표 보기
+                        </button>
+                        <div id="lunchMenuEmptyText" class="flex-1 text-center text-[10px] text-slate-400 font-bold bg-slate-800/60 border border-slate-700 rounded-xl py-3 hidden">
+                            아직 첨부된 식단표가 없어요.
+                        </div>
+                    </div>
+
+                    <div id="lunchMenuAdminPanel" class="hidden mt-4 pt-4 border-t border-slate-700/60 space-y-2">
+                        <div class="text-[10px] text-slate-300 font-bold">마스터 전용: 식단표 링크를 붙여넣어 저장하세요. (이미지/PDF/웹 링크)</div>
+                        <input type="text" id="lunchMenuTitleInput" placeholder="식단표 제목 (예: 3월 4주 식단)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold">
+                        <input type="text" id="lunchMenuUrlInput" placeholder="식단표 URL (https://...)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold">
+                        <input type="file" id="lunchMenuFileInput" accept=".pdf,image/*" class="hidden">
+                        <button onclick="window.pickLunchMenuFile()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded text-xs">
+                            파일 업로드로 첨부 (PDF/이미지)
+                        </button>
+                        <div class="flex gap-2">
+                            <button onclick="window.saveLunchMenu()" class="flex-1 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 rounded text-xs">저장</button>
+                            <button onclick="window.clearLunchMenu()" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-2 px-3 rounded text-xs border border-red-900">삭제</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -674,6 +715,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // ==========================================
         // ★ 웹 오디오 API 효과음 로직 ★
@@ -873,7 +915,7 @@
         window.gmaData = null; 
         window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '' };
         
-        let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
+        let db, auth, storage, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let unsubscribeGoldenBell = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
@@ -1184,6 +1226,7 @@
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app); 
                 db = getFirestore(app);
+                storage = getStorage(app);
                 
                 await signInAnonymously(auth);
 
@@ -1914,6 +1957,9 @@
             renderQuests(QUEST_DATA.filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
             renderQuests(QUEST_DATA.filter(q => q.type === 'locked'), 'specialQuestContainer');
 
+            // 밥줄 탭: 식단표 UI 갱신
+            renderLunchMenuUI();
+
             JOB_DATA.forEach(job => {
                 const card = document.getElementById(`job-card-${job.id}`);
                 if (card) {
@@ -2135,6 +2181,129 @@
                 await window.customAlert(`✅ 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
                 inputEl.value = '';
             }
+        };
+
+        function renderLunchMenuUI() {
+            const openBtn = document.getElementById('btnOpenLunchMenu');
+            const emptyText = document.getElementById('lunchMenuEmptyText');
+            const adminPanel = document.getElementById('lunchMenuAdminPanel');
+            const updatedText = document.getElementById('lunchMenuUpdatedText');
+            const titleInput = document.getElementById('lunchMenuTitleInput');
+            const urlInput = document.getElementById('lunchMenuUrlInput');
+
+            const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '';
+            const url = window.globalSettings && window.globalSettings.lunchMenuUrl ? String(window.globalSettings.lunchMenuUrl) : '';
+            const updatedAt = window.globalSettings && window.globalSettings.lunchMenuUpdatedAt ? window.globalSettings.lunchMenuUpdatedAt : 0;
+
+            const hasUrl = !!url;
+            if(openBtn) openBtn.classList.toggle('hidden', !hasUrl);
+            if(emptyText) emptyText.classList.toggle('hidden', hasUrl);
+            if(adminPanel) adminPanel.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
+
+            if(updatedText) {
+                if(updatedAt) {
+                    const d = new Date(updatedAt);
+                    updatedText.innerText = `업데이트: ${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                } else {
+                    updatedText.innerText = '';
+                }
+            }
+
+            // 관리자 입력칸은 비어있을 때만 자동 채움 (작성중 방해 방지)
+            if(window.playerState && window.playerState.isAdmin) {
+                if(titleInput && (titleInput.value || '') === '' && title) titleInput.value = title;
+                if(urlInput && (urlInput.value || '') === '' && url) urlInput.value = url;
+            }
+        }
+
+        window.openLunchMenu = function() {
+            const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '식단표';
+            const url = window.globalSettings && window.globalSettings.lunchMenuUrl ? String(window.globalSettings.lunchMenuUrl) : '';
+            if(!url) return window.customAlert('첨부된 식단표가 없습니다.');
+
+            const modal = document.getElementById('lunchMenuModal');
+            const body = document.getElementById('lunchMenuModalBody');
+            const titleEl = document.getElementById('lunchMenuModalTitle');
+            if(titleEl) titleEl.innerText = `식단표 · ${title}`;
+            if(body) {
+                const safeUrl = url.replace(/"/g, '&quot;');
+                const lower = url.toLowerCase();
+                if(lower.endsWith('.pdf')) {
+                    body.innerHTML = `<embed src="${safeUrl}" type="application/pdf" class="w-full h-[70vh] rounded-xl" />`;
+                } else if(lower.match(/\\.(png|jpg|jpeg|gif|webp)$/)) {
+                    body.innerHTML = `<img src="${safeUrl}" class="w-full h-auto rounded-xl border border-slate-700" />`;
+                } else {
+                    body.innerHTML = `<iframe src="${safeUrl}" class="w-full h-[70vh] rounded-xl border border-slate-700" referrerpolicy="no-referrer"></iframe>`;
+                }
+            }
+            if(modal) modal.classList.remove('hidden');
+        };
+
+        window.closeLunchMenu = function() {
+            const modal = document.getElementById('lunchMenuModal');
+            if(modal) modal.classList.add('hidden');
+        };
+
+        window.saveLunchMenu = async function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const title = (document.getElementById('lunchMenuTitleInput')?.value || '').trim();
+            const url = (document.getElementById('lunchMenuUrlInput')?.value || '').trim();
+            if(!url) return window.customAlert('URL을 입력해주세요.');
+
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                lunchMenuTitle: title || '식단표',
+                lunchMenuUrl: url,
+                lunchMenuUpdatedAt: Date.now()
+            }, { merge: true });
+            window.customAlert('✅ 식단표가 저장되었습니다.');
+        };
+
+        window.clearLunchMenu = async function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('식단표 첨부를 삭제할까요?');
+            if(!ok) return;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                lunchMenuTitle: '',
+                lunchMenuUrl: '',
+                lunchMenuUpdatedAt: Date.now()
+            }, { merge: true });
+            window.customAlert('✅ 식단표가 삭제되었습니다.');
+        };
+
+        window.pickLunchMenuFile = function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const input = document.getElementById('lunchMenuFileInput');
+            if(!input) return;
+            input.value = '';
+            input.onchange = async () => {
+                const file = input.files && input.files[0] ? input.files[0] : null;
+                if(!file) return;
+                await window.uploadLunchMenuFile(file);
+            };
+            input.click();
+        };
+
+        window.uploadLunchMenuFile = async function(file) {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            if(!storage) return window.customAlert('Storage가 초기화되지 않았습니다.');
+            if(!file) return;
+
+            const maxBytes = 15 * 1024 * 1024;
+            if(file.size > maxBytes) return window.customAlert('파일이 너무 큽니다. (최대 15MB)');
+
+            const safeName = (file.name || 'menu').replace(/[^\w.\-() ]+/g, '_');
+            const path = `uploads/${appId}/lunch-menu/${Date.now()}_${safeName}`;
+            const refObj = storageRef(storage, path);
+
+            await window.customAlert(`⬆️ 업로드 시작: ${file.name}\n잠시만 기다려주세요.`);
+            await uploadBytes(refObj, file, { contentType: file.type || undefined });
+            const url = await getDownloadURL(refObj);
+
+            const urlInput = document.getElementById('lunchMenuUrlInput');
+            if(urlInput) urlInput.value = url;
+
+            // 업로드 후 바로 저장까지
+            await window.saveLunchMenu();
         };
 
 

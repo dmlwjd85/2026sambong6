@@ -1088,7 +1088,12 @@
                 </button>
             `).join('');
             
-            let gbHtml = '';
+            let gbHtml = `
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-yellow-400 font-bold text-xs w-20 shrink-0">필요 정답</span>
+                    <input type="number" id="gb_admin_winCorrectCount" min="1" step="1" value="5" class="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs">
+                </div>
+            `;
             for(let i=0; i<10; i++) {
                 gbHtml += `
                 <div class="flex gap-2 mb-2 items-center">
@@ -2785,9 +2790,22 @@
                 if (qText) qs.push({ q: qText, a: aText, originalIndex: i });
             }
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
+
+            const winEl = document.getElementById('gb_admin_winCorrectCount');
+            let winCorrectCount = winEl ? parseInt(winEl.value) : 0;
+            if (isNaN(winCorrectCount) || winCorrectCount <= 0) {
+                winCorrectCount = Math.ceil(qs.length * 0.6);
+            }
+            winCorrectCount = Math.max(1, Math.min(winCorrectCount, qs.length));
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { isOpen: true, questions: qs, submissions: {} }, {merge: true}); 
-            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)`);
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
+                isOpen: true, 
+                questions: qs, 
+                winCorrectCount: winCorrectCount,
+                monsterMaxHP: 1000,
+                submissions: {} 
+            }, {merge: true}); 
+            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제) (필요 정답: ${winCorrectCount})`);
         };
 
         window.closeGoldenBell = async function() {
@@ -2807,35 +2825,208 @@
                 return;
             }
 
+            const totalQuestions = st.questions.length;
+            let winCorrectCount = st.winCorrectCount || Math.ceil(totalQuestions / 2);
+            winCorrectCount = Math.max(1, Math.min(parseInt(winCorrectCount) || 1, totalQuestions));
+
+            const monsterMaxHP = st.monsterMaxHP || 1000;
+            const damagePerCorrect = winCorrectCount > 0 ? (monsterMaxHP / winCorrectCount) : monsterMaxHP;
+
             const mySubmission = st.submissions && st.submissions[mId];
-            let html = '';
+            const myAnswers = mySubmission && Array.isArray(mySubmission.answers) ? mySubmission.answers : [];
+            const myResults = mySubmission && Array.isArray(mySubmission.results) ? mySubmission.results : [];
+            const myScore = mySubmission && typeof mySubmission.score === 'number'
+                ? mySubmission.score
+                : (myResults || []).filter(r => r === true).length;
+            const myMonsterHP = mySubmission && typeof mySubmission.monsterHP === 'number'
+                ? mySubmission.monsterHP
+                : Math.max(0, Math.round(monsterMaxHP - myScore * damagePerCorrect));
+            const hpRatio = monsterMaxHP > 0 ? (myMonsterHP / monsterMaxHP) : 0;
+            const myDefeated = !!(mySubmission && mySubmission.defeated) || myScore >= winCorrectCount;
+            const rewardsGiven = !!(mySubmission && mySubmission.rewardsGiven);
+            window._gbLocalDefeated = myDefeated;
+
+            let html = `
+                <div class="glass-panel p-4 rounded-2xl border border-yellow-500/50 mb-4 bg-slate-900/60">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-ghost text-yellow-400"></i>
+                            <div class="text-white font-bold text-sm">몬스터 잡기 (골든벨)</div>
+                        </div>
+                        <div class="text-[10px] text-slate-300 font-bold">
+                            필요한 정답: ${winCorrectCount} / ${totalQuestions}
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-center mb-2">
+                        <div id="gbMonsterImg" class="text-5xl sm:text-6xl drop-shadow-[0_0_18px_rgba(234,179,8,0.35)] transition-transform duration-200" style="transform: scale(${Math.max(0.6, 0.6 + hpRatio * 0.8)})">👾</div>
+                    </div>
+                    <div class="w-full bg-slate-800 border border-slate-700 rounded-full h-4 overflow-hidden shadow-inner">
+                        <div class="bg-yellow-500 h-full stat-fill w-full" id="gbMonsterHPBar" style="width:${Math.max(0, Math.min(100, (myMonsterHP/monsterMaxHP)*100))}%"></div>
+                    </div>
+                    <div class="flex items-center justify-between mt-2 text-[10px] text-slate-300 font-bold">
+                        <div id="gbMonsterHPText">${myMonsterHP}/${monsterMaxHP} HP</div>
+                        <div>${myDefeated ? '✅ 격파!' : '진행 중'}</div>
+                    </div>
+                    <div class="text-[9px] text-slate-400 mt-2">
+                        정답을 맞힐 때마다 몬스터 HP가 줄어듭니다.
+                    </div>
+                </div>
+            `;
             
             st.questions.forEach((item, idx) => {
-                let val = ''; let inputCls = 'bg-slate-900/80 border border-slate-600 text-white'; let resHtml = ''; let disabledAttr = '';
+                const answered = mySubmission && myResults && myResults[idx] !== undefined;
+                const correct = myResults[idx] === true;
+                const disabled = answered || myDefeated;
 
-                if (mySubmission) {
-                    val = mySubmission.answers[idx] || ''; disabledAttr = 'disabled';
-                    if (mySubmission.results[idx]) {
-                        inputCls = 'bg-emerald-900/20 border-emerald-500 text-white'; resHtml = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
+                const val = myAnswers[idx] || '';
+                let inputCls = 'bg-slate-900/80 border border-slate-600 text-white';
+                let resHtml = '';
+                
+                if(answered) {
+                    if(correct) {
+                        inputCls = 'bg-emerald-900/20 border-emerald-500 text-white';
+                        resHtml = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
                     } else {
-                        inputCls = 'bg-red-900/20 border-sb-red text-white'; resHtml = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
+                        inputCls = 'bg-red-900/20 border-sb-red text-white';
+                        resHtml = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
                     }
                 }
 
                 html += `
                 <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative mb-3">
-                    <div class="text-sb-gold font-black text-xs sm:text-sm mb-2"><span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span> ${item.q}</div>
+                    <div class="text-sb-gold font-black text-xs sm:text-sm mb-2">
+                        <span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span> ${item.q}
+                    </div>
                     <div class="flex gap-2 items-center relative">
-                        <input type="text" id="gb_ans_${idx}" value="${val}" ${disabledAttr} placeholder="정답을 여기에 입력하세요" class="flex-1 px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none transition shadow-inner ${inputCls}">
-                        <div id="gb_res_${idx}" class="w-20 text-center text-sm absolute right-2 bg-slate-900/50 rounded pointer-events-none transition-all">${resHtml}</div>
+                        <input type="text"
+                            id="gb_ans_${idx}"
+                            value="${val}"
+                            ${disabled ? 'disabled' : ''}
+                            placeholder="정답을 여기에 입력하세요"
+                            class="flex-1 px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none transition shadow-inner ${inputCls}">
+                        <div id="gb_res_${idx}" class="w-20 text-center text-sm absolute right-2 bg-slate-900/50 rounded pointer-events-none transition-all">
+                            ${resHtml}
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <button
+                            onclick="window.submitGoldenBellAnswer(${idx})"
+                            ${disabled ? 'disabled' : ''}
+                            class="w-full py-2.5 rounded-xl font-black text-xs transition
+                                ${disabled
+                                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 shadow-[0_0_15px_rgba(234,179,8,0.5)]'}">
+                            ${disabled ? '제출완료' : '제출 / 공격'}
+                        </button>
                     </div>
                 </div>`;
             });
 
-            if (mySubmission) html += `<button disabled class="w-full mt-6 bg-slate-700 text-slate-400 font-black py-4 rounded-xl shadow-lg cursor-not-allowed text-lg"><i class="fa-solid fa-check"></i> 채점 완료 (보상 지급됨)</button>`;
-            else html += `<button onclick="window.submitGoldenBell()" class="w-full mt-6 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 font-black py-4 rounded-xl shadow-[0_0_15px_rgba(234,179,8,0.5)] transition transform hover:scale-105 text-lg"><i class="fa-solid fa-check-double"></i> 제출 및 자동 채점하기</button>`;
-            
+            if(myDefeated) {
+                html += `
+                    <div class="mt-6 bg-emerald-900/30 border border-emerald-500/50 p-4 rounded-2xl text-center">
+                        <div class="text-white font-black text-sm">✅ 몬스터 격파!</div>
+                        <div class="text-[10px] text-slate-300 font-bold mt-1">
+                            정답 ${myScore}개로 보상 ${rewardsGiven ? '지급 완료' : '지급 예정'}
+                        </div>
+                    </div>`;
+            } else {
+                html += `
+                    <div class="mt-6 text-center text-[10px] text-slate-400 font-bold">
+                        필요한 정답(${winCorrectCount})에 도달할 때까지 몬스터 HP가 줄어듭니다.
+                    </div>`;
+            }
+
             container.innerHTML = html;
+        };
+
+        window.submitGoldenBellAnswer = async function(ansIdx) {
+            if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if(window._gbAnswerSubmitting) return;
+
+            const st = window.goldenbellState;
+            const mId = localStorage.getItem('sambong_student_id');
+            if(!st || !st.isOpen) return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
+
+            const totalQuestions = st.questions.length;
+            let winCorrectCount = st.winCorrectCount || Math.ceil(totalQuestions / 2);
+            winCorrectCount = Math.max(1, Math.min(parseInt(winCorrectCount) || 1, totalQuestions));
+
+            const monsterMaxHP = st.monsterMaxHP || 1000;
+            const damagePerCorrect = winCorrectCount > 0 ? (monsterMaxHP / winCorrectCount) : monsterMaxHP;
+
+            const mySubmission = st.submissions && st.submissions[mId] ? st.submissions[mId] : null;
+            const myResults = mySubmission && Array.isArray(mySubmission.results) ? mySubmission.results : [];
+            const myAnswers = mySubmission && Array.isArray(mySubmission.answers) ? mySubmission.answers : [];
+            const myScore = mySubmission && typeof mySubmission.score === 'number'
+                ? mySubmission.score
+                : (myResults || []).filter(r => r === true).length;
+
+            if(window._gbLocalDefeated || (mySubmission && (mySubmission.defeated || mySubmission.rewardsGiven))) {
+                return window.customAlert('이미 몬스터를 격파했습니다.');
+            }
+
+            if(ansIdx === undefined || ansIdx === null) return;
+            if(ansIdx < 0 || ansIdx >= totalQuestions) return;
+
+            const alreadyAnswered = myResults && myResults[ansIdx] !== undefined;
+            if(alreadyAnswered) return window.customAlert('이미 제출된 문제입니다.');
+
+            const el = document.getElementById(`gb_ans_${ansIdx}`);
+            const val = el ? (el.value || '').trim() : '';
+            if(!val) return window.customAlert('정답을 입력해주세요.');
+
+            const item = st.questions[ansIdx];
+            if(!item) return;
+
+            const isCorrect = (val === item.a);
+            const newScore = myScore + (isCorrect ? 1 : 0);
+            const newMonsterHP = Math.max(0, Math.round(monsterMaxHP - newScore * damagePerCorrect));
+            const defeated = newScore >= winCorrectCount;
+
+            window._gbAnswerSubmitting = true;
+            try {
+                // answers/results를 배열로 유지해야 렌더링이 정상 동작합니다.
+                const answers = (myAnswers && Array.isArray(myAnswers)) ? myAnswers.slice() : Array(totalQuestions).fill('');
+                const results = (myResults && Array.isArray(myResults)) ? myResults.slice() : Array(totalQuestions).fill(undefined);
+                answers[ansIdx] = val;
+                results[ansIdx] = isCorrect;
+
+                const updates = {};
+                updates[`submissions.${mId}.answers`] = answers;
+                updates[`submissions.${mId}.results`] = results;
+                updates[`submissions.${mId}.score`] = newScore;
+                updates[`submissions.${mId}.monsterHP`] = newMonsterHP;
+
+                if(defeated) {
+                    updates[`submissions.${mId}.defeated`] = true;
+                    updates[`submissions.${mId}.defeatedAt`] = Date.now();
+                }
+
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), updates, {merge: true});
+
+                // 격파 순간 보상 지급 (중복 지급 방지: rewardsGiven 플래그)
+                if(defeated && !(mySubmission && mySubmission.rewardsGiven)) {
+                    const rewardXp = newScore * 10;
+                    const rewardBong = newScore * 1;
+
+                    window.playerState.xp += rewardXp;
+                    window.playerState.bong += rewardBong;
+                    await saveDataToCloud();
+                    updateUI();
+
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
+                        [`submissions.${mId}.rewardsGiven`]: true,
+                        [`submissions.${mId}.rewardXp`]: rewardXp,
+                        [`submissions.${mId}.rewardBong`]: rewardBong
+                    }, {merge: true});
+
+                    window._gbLocalDefeated = true;
+                    await window.customAlert(`✅ 몬스터 격파!\n정답 ${newScore}개\n보상: +${rewardXp} XP, +${rewardBong} B`);
+                }
+            } finally {
+                window._gbAnswerSubmitting = false;
+            }
         };
 
         window.submitGoldenBell = async function() {

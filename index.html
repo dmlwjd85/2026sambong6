@@ -195,6 +195,7 @@
                 <div id="raidTimerBar" class="bg-sb-gold h-full w-full"></div>
             </div>
             <div class="text-sb-blue font-bold text-sm mb-1 mt-2" id="raidTurnText">대기 중...</div>
+            <div id="raidSpectatorLabel" class="hidden text-[10px] text-amber-200 font-bold mb-1">[관전 모드]</div>
             <div class="text-lg text-white font-bold text-center break-keep max-w-2xl mb-4" id="raidQuestionText">레이드 대기중.</div>
             <div id="raidMultipleChoiceGroup" class="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl hidden mb-2">
                 <button onclick="window.submitRaidAnswer(0)" id="raidOption_0" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">1</button>
@@ -494,6 +495,7 @@
                             </div>
                             <div class="w-full sm:w-auto text-center shrink-0">
                                 <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed" disabled>모집 대기중</button>
+                                <button id="btnSpectateRaid" onclick="window.spectateRaid()" class="hidden w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-pointer">관전하기</button>
                                 <div id="raidJoinCount" class="text-[10px] text-purple-300 mt-1 font-bold hidden">모집: <span id="rCount">0</span>/5 명</div>
                             </div>
                         </div>
@@ -670,7 +672,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // ==========================================
         // ★ 웹 오디오 API 효과음 로직 ★
@@ -751,6 +753,10 @@
         // ==========================================
         const BASE_BOSS_HP = 500;
         const RAID_REWARD = { xp: 500, bong: 50 };
+        const RAID_TURN_MS = 20000;
+        const RAID_CRITICAL_MS = 10000;
+        const RAID_SUCCESS_REWARD_XP = 150;
+        const RAID_SUCCESS_REWARD_BONG = 30;
 
         const EMOTIONS = [
             { id: 'e1', icon: '😄', label: '기쁨', color: 'text-yellow-400' }, { id: 'e2', icon: '😊', label: '평온', color: 'text-emerald-400' },
@@ -2420,8 +2426,9 @@
                     
                     for (const stu of window.allStudentsData) {
                         if (stu.id === 'gm' || stu.id === 'gm_a') continue;
+                        // 다른 클라이언트(퀘스트 제출 등) 업데이트와 충돌해 XP가 튀는 현상을 막기 위해 원자적 증가 사용
                         batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), {
-                            xp: (stu.xp || 0) + 5
+                            xp: increment(5)
                         }, { merge: true });
                         count++;
                     }
@@ -2928,6 +2935,159 @@
         }
 
         // --- 레이드 관련 함수들 ---
+        function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+        function getRaidTurnStartTime(st) {
+            return st.turnStartTime || st.startTime || Date.now();
+        }
+
+        function raidIsMyParticipant(st) {
+            if(!st || !Array.isArray(st.participants)) return false;
+            return st.participants.some(p => p.id === window.playerState.id);
+        }
+
+        function getRaidBaseDamage(st) {
+            const mhp = st.maxBossHP || BASE_BOSS_HP;
+            const len = (st.questions && st.questions.length) ? st.questions.length : 1;
+            return Math.max(10, Math.round(mhp / len));
+        }
+
+        function getRaidSpeedTier(elapsedMs) {
+            if(elapsedMs <= RAID_CRITICAL_MS) return { label: '크리티컬', mul: 2 };
+            if(elapsedMs <= RAID_TURN_MS) return { label: '그레이트', mul: 1 };
+            return { label: '늦게', mul: 0.5 };
+        }
+
+        function renderRaidTimerUI() {
+            const modal = document.getElementById('raidBattleModal');
+            if(!modal || modal.classList.contains('hidden')) return;
+            const st = window.currentRaidState;
+            if(!st || st.status !== 'playing') return;
+
+            const container = document.getElementById('raidTimerBarContainer');
+            const bar = document.getElementById('raidTimerBar');
+            const bossImg = document.getElementById('raidBossImage');
+            const turnText = document.getElementById('raidTurnText');
+            if(!container || !bar) return;
+
+            container.classList.remove('hidden');
+            const elapsed = Math.max(0, Date.now() - getRaidTurnStartTime(st));
+            const remaining = Math.max(0, RAID_TURN_MS - elapsed);
+            const pct = (remaining / RAID_TURN_MS) * 100;
+            bar.style.width = `${pct}%`;
+
+            // 타이머 숫자가 줄어들수록 보스가 점점 커지게
+            if(bossImg) {
+                const elapsedRatio = clamp(elapsed / RAID_TURN_MS, 0, 1);
+                const scale = 1 + elapsedRatio * 0.9; // 최대 1.9배
+                bossImg.style.transform = `scale(${scale})`;
+            }
+
+            if(turnText) {
+                const sec = Math.max(0, Math.ceil(remaining / 1000));
+                // 숫자 타이머 UI (레이드 턴 진행 중에는 여기서 갱신)
+                const turn = st.currentTurn || 0;
+                const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
+                const shown = questionsLen > 0 ? `${turn + 1}/${questionsLen}` : `${turn + 1}`;
+                turnText.innerText = `${shown} | ${sec}s`;
+            }
+        }
+
+        async function tryAdvanceRaidTurn() {
+            if(window._raidResolving) return;
+            const st = window.currentRaidState;
+            if(!st || st.status !== 'playing') return;
+
+            const turn = st.currentTurn || 0;
+            if(st.turnResolvedFor === turn) return;
+
+            const participants = st.participants || [];
+            const turnSubsAll = st.turnSubmissions || {};
+            const turnSubs = turnSubsAll[turn] || {};
+
+            const elapsed = Date.now() - getRaidTurnStartTime(st);
+            const timeUp = elapsed >= RAID_TURN_MS;
+            const allAnswered = participants.length > 0 && Object.keys(turnSubs).length >= participants.length;
+
+            if(!timeUp && !allAnswered) return;
+
+            window._raidResolving = true;
+            try {
+                const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
+                const nextTurn = turn + 1;
+                const isLast = questionsLen > 0 ? nextTurn >= questionsLen : true;
+
+                const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
+                if(timeUp && !allAnswered) newLogs.push(`⏱️ ${turn + 1}턴 시간초과`);
+                if(isLast) newLogs.push('✅ 레이드 완료!');
+
+                if(isLast) {
+                    const raidResult = (st.bossHP || 0) <= 0 ? 'success' : 'fail';
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                        status: 'waiting',
+                        currentTurn: 0,
+                        turnStartTime: 0,
+                        turnResolvedFor: turn,
+                        turnSubmissions: {},
+                        raidResult: raidResult,
+                        completedAt: Date.now(),
+                        completionSessionId: st.startTime || null,
+                        rewardsGivenFor: null,
+                        logs: newLogs
+                    }, { merge: true });
+                } else {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                        currentTurn: nextTurn,
+                        turnStartTime: Date.now(),
+                        turnResolvedFor: turn,
+                        logs: newLogs,
+                        [`turnSubmissions.${nextTurn}`]: {}
+                    }, { merge: true });
+                }
+            } finally {
+                window._raidResolving = false;
+            }
+        }
+
+        window.maybeDistributeRaidRewards = async function(st) {
+            if(!window.playerState.isGM) return;
+            if(!st || st.status !== 'waiting' || st.raidResult !== 'success') return;
+
+            const sessionId = st.completionSessionId || st.startTime || st.completedAt;
+            if(!sessionId) return;
+            if(st.rewardsGivenFor === sessionId) return;
+            if(window._raidRewardingFor === sessionId) return;
+
+            window._raidRewardingFor = sessionId;
+            try {
+                // 먼저 보상 플래그를 박아 중복 지급 가능성을 줄임
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                    rewardsGivenFor: sessionId,
+                    rewardsGivenAt: Date.now()
+                }, { merge: true });
+
+                const participants = Array.isArray(st.participants) ? st.participants : [];
+                const batch = writeBatch(db);
+                participants.forEach(p => {
+                    const id = p && p.id !== undefined ? String(p.id) : null;
+                    if(!id) return;
+                    // 참여자에게만 지급(관전자는 participants에 없음)
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + id), {
+                        xp: increment(RAID_SUCCESS_REWARD_XP),
+                        bong: increment(RAID_SUCCESS_REWARD_BONG)
+                    }, { merge: true });
+                });
+                await batch.commit();
+
+                // GM만 간단 알림
+                window.customAlert(`✅ 보스 격파 보상 지급 완료!\n참여자 +${RAID_SUCCESS_REWARD_XP}XP, +${RAID_SUCCESS_REWARD_BONG}B`);
+            } catch(e) {
+                console.error('raid reward distribution failed', e);
+            } finally {
+                window._raidRewardingFor = null;
+            }
+        };
+
         window.openRaidLobby = async function() {
             if(!window.playerState.isGM) return;
             const qs = [];
@@ -2944,7 +3104,9 @@
             
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                 status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP,
-                currentTurn: 0, startTime: Date.now(), combo: 0, logs: [], questions: qs
+                currentTurn: 0, startTime: Date.now(), combo: 0, logs: [], questions: qs,
+                turnStartTime: 0, turnResolvedFor: null, turnSubmissions: {},
+                raidResult: null, completedAt: 0, completionSessionId: null, rewardsGivenFor: null
             });
             window.customAlert('레이드 모집 시작!');
         };
@@ -2955,7 +3117,13 @@
 
         window.resetRaidForce = async function() {
             if(!window.playerState.isGM) return;
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { status: 'waiting' }, {merge:true});
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                status: 'waiting',
+                raidResult: null,
+                completedAt: 0,
+                completionSessionId: null,
+                rewardsGivenFor: null
+            }, {merge:true});
             window.customAlert('레이드 강제 종료됨.');
         };
 
@@ -2967,11 +3135,14 @@
             
             const p = [...window.currentRaidState.participants, { id: window.playerState.id, name: STUDENT_NAMES[window.playerState.id] }];
             let newStatus = 'recruiting';
+            let playingInit = null;
             if(p.length === 5) {
                 newStatus = 'playing';
+                playingInit = { turnStartTime: Date.now(), turnResolvedFor: null, turnSubmissions: { 0: {} } };
             }
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { participants: p, status: newStatus }, {merge: true});
+            window._raidSpectateActive = false;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), { participants: p, status: newStatus, ...(playingInit || {}) }, {merge: true});
             document.getElementById('raidBattleModal').classList.remove('hidden');
         };
 
@@ -2983,8 +3154,119 @@
             document.getElementById('raidBattleModal').classList.add('hidden');
         };
 
+        window.spectateRaid = function() {
+            if(window.playerState.isGuest) return;
+            const st = window.currentRaidState;
+            if(!st || st.status !== 'playing') return window.customAlert('전투 중일 때만 관전할 수 있어요.');
+            if(raidIsMyParticipant(st)) return window.customAlert('이미 참여자입니다.');
+
+            window._raidSpectateActive = true;
+            const modal = document.getElementById('raidBattleModal');
+            if(modal) modal.classList.remove('hidden');
+            updateRaidBattleUI();
+            renderRaidTimerUI();
+        };
+
         window.submitRaidAnswer = async function(ansIdx) {
-            // Placeholder for raid answer logic
+            if(window.playerState.isGuest) return;
+            const st = window.currentRaidState;
+            if(!st || st.status !== 'playing') return;
+            if(!raidIsMyParticipant(st)) return window.customAlert('관전 중이라 제출할 수 없습니다.');
+            if(!Array.isArray(st.questions) || st.questions.length === 0) return;
+
+            const turn = st.currentTurn || 0;
+            const q = st.questions[turn];
+            if(!q) return;
+
+            const myId = window.playerState.id;
+            const turnSubsAll = st.turnSubmissions || {};
+            const turnSubs = turnSubsAll[turn] || {};
+            if(turnSubs[myId] !== undefined) return; // 이미 제출한 경우 무시
+
+            const ansNumber = parseInt(ansIdx);
+            const correctIdx = q.a;
+            const isCorrect = ansNumber === correctIdx;
+
+            const elapsed = Math.max(0, Date.now() - getRaidTurnStartTime(st));
+            const tier = getRaidSpeedTier(elapsed);
+
+            const base = getRaidBaseDamage(st);
+            const combo = st.combo || 0;
+
+            let bossHP = st.bossHP || 0;
+            // 장착 무기 등급에 따른 보너스 데미지(정답 시에만 적용)
+            let weaponBonus = 0;
+            let weaponMul = 1;
+            if(window.playerState.equippedWeapon) {
+                const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
+                if(wp) {
+                    weaponBonus = wp.bonus || 0;
+                    weaponMul = 1 + (weaponBonus / 200);
+                }
+            }
+
+            if(isCorrect) {
+                const newCombo = combo + 1;
+                // 빠를수록 크리티컬이 터질 확률이 올라감
+                const criticalChance = elapsed <= RAID_CRITICAL_MS ? 0.65
+                    : (elapsed <= RAID_TURN_MS ? 0.35 : 0.15);
+                const isCritical = Math.random() < criticalChance;
+
+                // 조합이 쌓이면 안정적으로 데미지 증가
+                const comboMul = 1 + Math.min(0.6, combo * 0.07);
+                const normalTierMul = tier.label === '그레이트' ? 1.05 : 1.0;
+                const criticalMul = 2.2;
+
+                const damage = Math.round(base * comboMul * weaponMul * normalTierMul * (isCritical ? criticalMul : 1));
+                bossHP = clamp(bossHP - damage, 0, st.maxBossHP || BASE_BOSS_HP);
+
+                const pName = (st.participants || []).find(p => p.id === myId)?.name || STUDENT_NAMES[myId] || myId;
+                const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
+                newLogs.push(`${pName}: 정답${isCritical ? ' (크리티컬!)' : ''} -${damage}${weaponBonus ? ` (무기 +${weaponBonus})` : ''}`);
+
+                // 여러 참가자가 동시에 제출해도 turnSubmissions가 덮어써지지 않게
+                // dot-notation으로 해당 턴/해당 학생만 업데이트
+                const updatePayload = {
+                    bossHP: bossHP,
+                    combo: newCombo,
+                    logs: newLogs,
+                    [`turnSubmissions.${turn}.${myId}`]: ansNumber
+                };
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });
+
+                // 보스가 0이 되면 즉시 종료 처리
+                if(bossHP <= 0) {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                        status: 'waiting',
+                        currentTurn: 0,
+                        turnStartTime: 0,
+                        turnResolvedFor: turn,
+                        turnSubmissions: {},
+                        raidResult: 'success',
+                        completedAt: Date.now(),
+                        completionSessionId: st.startTime || null,
+                        rewardsGivenFor: null,
+                        logs: [...newLogs, '💥 보스 격파!']
+                    }, { merge: true });
+                }
+            } else {
+                const newCombo = 0;
+                // 오답은 보스 체력을 소량 회복
+                const heal = Math.round(base * 0.12);
+                bossHP = clamp(bossHP + heal, 0, st.maxBossHP || BASE_BOSS_HP);
+
+                const pName = (st.participants || []).find(p => p.id === myId)?.name || STUDENT_NAMES[myId] || myId;
+                const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
+                newLogs.push(`${pName}: 오답 +${heal}`);
+
+                const updatePayload = {
+                    bossHP: bossHP,
+                    combo: newCombo,
+                    logs: newLogs,
+                    [`turnSubmissions.${turn}.${myId}`]: ansNumber
+                };
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });
+            }
         };
 
         function updateRaidEntryUI() {
@@ -2993,6 +3275,7 @@
             const cntDiv = document.getElementById('raidJoinCount');
             const rCount = document.getElementById('rCount');
             const statusTxt = document.getElementById('raidTimeStatusText');
+            const spectateBtn = document.getElementById('btnSpectateRaid');
             
             if(!btn) return;
 
@@ -3019,12 +3302,81 @@
                 statusTxt.innerText = "휴식 중";
                 statusTxt.className = "text-[10px] text-slate-500 font-bold";
             }
+
+            // 관전 UI 제어 + 레이드 타이머 구동
+            const canSpectate = st.status === 'playing' && window.playerState && !window.playerState.isGuest && !raidIsMyParticipant(st);
+            if(spectateBtn) {
+                if(canSpectate) {
+                    spectateBtn.classList.remove('hidden');
+                    spectateBtn.disabled = false;
+                } else {
+                    spectateBtn.classList.add('hidden');
+                    spectateBtn.disabled = true;
+                }
+            }
+
+            // 레이드가 시작되면 자동 관전 모드 (비참여자)
+            const modal = document.getElementById('raidBattleModal');
+            if(canSpectate && modal && modal.classList.contains('hidden')) {
+                window._raidSpectateActive = true;
+                modal.classList.remove('hidden');
+            }
+            if(st.status !== 'playing' && window._raidSpectateActive) {
+                if(modal && !modal.classList.contains('hidden')) modal.classList.add('hidden');
+                window._raidSpectateActive = false;
+            }
+
+            // 기존 문서에 turnStartTime이 없으면(이미 시작된 레이드) 1회 보정
+            if(st.status === 'playing' && !st.turnStartTime) {
+                const key = st.startTime || 0;
+                if(window._raidTurnStartInitKey !== key) {
+                    window._raidTurnStartInitKey = key;
+                    (async () => {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                            turnStartTime: Date.now(),
+                            turnResolvedFor: null,
+                            turnSubmissions: st.turnSubmissions || {}
+                        }, { merge: true });
+                    })().catch(e => console.error('raid turn init failed', e));
+                }
+            }
+
+            // 턴 타이머(시간초과/모든 제출일 때 진행) 구동
+            if(st.status === 'playing') {
+                if(!window.raidTimerInterval) {
+                    window.raidTimerInterval = setInterval(() => {
+                        const st2 = window.currentRaidState;
+                        if(!st2 || st2.status !== 'playing') {
+                            if(window.raidTimerInterval) clearInterval(window.raidTimerInterval);
+                            window.raidTimerInterval = null;
+                            return;
+                        }
+                        renderRaidTimerUI();
+                        void tryAdvanceRaidTurn();
+                    }, 500);
+                }
+            } else {
+                if(window.raidTimerInterval) clearInterval(window.raidTimerInterval);
+                window.raidTimerInterval = null;
+                window._raidTurnStartInitKey = null;
+            }
+
+            // 보상 지급 처리 (레이드 종료 시 1회)
+            if(st.status === 'waiting' && st.raidResult === 'success') {
+                void window.maybeDistributeRaidRewards(st);
+            }
         }
 
         function updateRaidBattleUI() {
             const st = window.currentRaidState;
             const modal = document.getElementById('raidBattleModal');
             if(!modal || modal.classList.contains('hidden')) return;
+
+            const giveUpBtn = document.getElementById('btnGiveUpRaid');
+            const exitBtn = document.getElementById('btnExitRaid');
+            const spectatorLabel = document.getElementById('raidSpectatorLabel');
+            const optGroup = document.getElementById('raidMultipleChoiceGroup');
+            const timerContainer = document.getElementById('raidTimerBarContainer');
 
             const hpBar = document.getElementById('raidBossHPBar');
             const hpText = document.getElementById('raidBossHPText');
@@ -3043,6 +3395,64 @@
             if(plist && st.participants) {
                 plist.innerHTML = st.participants.map(p => `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name}</div>`).join('');
             }
+
+            const isParticipant = raidIsMyParticipant(st);
+            const isSpectator = st.status === 'playing' && !isParticipant;
+
+            if(giveUpBtn) giveUpBtn.classList.toggle('hidden', !isParticipant);
+            if(exitBtn) exitBtn.classList.remove('hidden');
+            if(spectatorLabel) spectatorLabel.classList.toggle('hidden', !isSpectator);
+
+            const turnText = document.getElementById('raidTurnText');
+            const qText = document.getElementById('raidQuestionText');
+
+            if(st.status !== 'playing') {
+                if(optGroup) optGroup.classList.add('hidden');
+                if(timerContainer) timerContainer.classList.add('hidden');
+                if(turnText) {
+                    if(st.status === 'recruiting') turnText.innerText = '용사 모집 중';
+                    else if(st.raidResult === 'success') turnText.innerText = '보스 격파!';
+                    else if(st.raidResult === 'fail') turnText.innerText = '도전 실패';
+                    else turnText.innerText = '휴식 중';
+                }
+                if(qText) {
+                    if(st.status === 'recruiting') qText.innerText = '레이드 대기중.';
+                    else if(st.raidResult === 'success') qText.innerText = '✅ 보스 격파! 보상이 지급되었습니다.';
+                    else if(st.raidResult === 'fail') qText.innerText = '☠️ 전투 종료! 보스가 쓰러지지 않았습니다.';
+                    else qText.innerText = '전투가 종료되었습니다.';
+                }
+                renderRaidTimerUI();
+                return;
+            }
+
+            // playing: 현재 턴 문제/보기 렌더링
+            const turn = st.currentTurn || 0;
+            const q = (st.questions && st.questions[turn]) ? st.questions[turn] : null;
+            const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
+
+            if(turnText) turnText.innerText = `${turn + 1}/${questionsLen}턴`;
+            if(qText) qText.innerText = q ? q.q : '문제를 불러오는 중...';
+
+            if(optGroup) optGroup.classList.remove('hidden');
+            if(timerContainer) timerContainer.classList.remove('hidden');
+
+            // 내 제출 이력 있으면 버튼 비활성화(중복 제출 방지)
+            const myId = window.playerState.id;
+            const turnSubsAll = st.turnSubmissions || {};
+            const myAns = (turnSubsAll[turn] || {})[myId];
+            const shouldDisableOptions = isSpectator || myAns !== undefined;
+
+            for(let j = 0; j < 4; j++) {
+                const b = document.getElementById(`raidOption_${j}`);
+                if(!b) continue;
+                const optionText = q && q.options ? (q.options[j] || (j + 1)) : (j + 1);
+                b.innerText = optionText;
+                b.disabled = shouldDisableOptions;
+                b.classList.toggle('opacity-50', b.disabled);
+                b.classList.toggle('cursor-not-allowed', b.disabled);
+            }
+
+            renderRaidTimerUI();
         }
 
         document.addEventListener('DOMContentLoaded', initApp);

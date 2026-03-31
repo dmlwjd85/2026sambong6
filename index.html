@@ -3660,20 +3660,30 @@
                 }, { merge: true });
 
                 const participants = Array.isArray(st.participants) ? st.participants : [];
+                const dmgBy = (st && st.damageBy && typeof st.damageBy === 'object') ? st.damageBy : {};
+                const maxHp = st.maxBossHP || BASE_BOSS_HP;
+
                 const batch = writeBatch(db);
                 participants.forEach(p => {
                     const id = p && p.id !== undefined ? String(p.id) : null;
                     if(!id) return;
-                    // 참여자에게만 지급(관전자는 participants에 없음)
+                    // 보스에게 준 데미지에 비례 보상(최대 100XP/20B)
+                    const dmg = Number(dmgBy[id]) || 0;
+                    const ratio = maxHp > 0 ? (dmg / maxHp) : 0;
+                    const rewardXp = Math.max(0, Math.min(100, Math.floor(ratio * 100)));
+                    // 봉은 소수 1자리 사용중이므로 0.1 단위 반올림
+                    const rewardBong = Math.max(0, Math.min(20, Math.round(ratio * 20 * 10) / 10));
+
+                    if(rewardXp <= 0 && rewardBong <= 0) return;
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + id), {
-                        xp: increment(RAID_SUCCESS_REWARD_XP),
-                        bong: increment(RAID_SUCCESS_REWARD_BONG)
+                        xp: increment(rewardXp),
+                        bong: increment(rewardBong)
                     }, { merge: true });
                 });
                 await batch.commit();
 
                 // GM만 간단 알림
-                window.customAlert(`✅ 보스 격파 보상 지급 완료!\n참여자 +${RAID_SUCCESS_REWARD_XP}XP, +${RAID_SUCCESS_REWARD_BONG}B`);
+                window.customAlert(`✅ 보스 격파 보상 지급 완료!\n(개인 데미지 비례 / 최대 100XP, 20B)`);
             } catch(e) {
                 console.error('raid reward distribution failed', e);
             } finally {
@@ -3701,7 +3711,8 @@
                 startTime: Date.now(), combo: 0, logs: [], questions: qs,
                 turnStartTime: 0, turnResolvedFor: null, turnSubmissions: {},
                 raidResult: null, completedAt: 0, completionSessionId: null, rewardsGivenFor: null,
-                lastLogAnnouncedFor: null
+                lastLogAnnouncedFor: null,
+                damageBy: {}
             });
             window.customAlert('레이드 모집 시작!');
         };
@@ -3897,6 +3908,7 @@
                     bossHP: bossHP,
                     combo: newCombo,
                     logs: newLogs,
+                    [`damageBy.${myId}`]: increment(damage),
                     [`turnSubmissions.${turn}.${myId}`]: ansNumber
                 };
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });

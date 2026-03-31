@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>2026 삼봉 월드: 시즌 1</title>
 
-    <meta name="theme-color" content="#0f172a">
+    <meta name="theme-color" content="#fce7f3">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="삼봉월드">
@@ -14,7 +14,7 @@
     <script>
         const manifest = {
             "name": "2026 삼봉 월드 플레이어 가이드", "short_name": "삼봉월드", "start_url": window.location.pathname,
-            "display": "standalone", "background_color": "#0f172a", "theme_color": "#0f172a",
+            "display": "standalone", "background_color": "#fdf2f8", "theme_color": "#fce7f3",
             "icons": [{"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%' y='50%' font-size='65' dominant-baseline='central' text-anchor='middle'>👑</text></svg>", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable"}]
         };
         const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
@@ -38,17 +38,22 @@
     </script>
 
     <style>
-        body { color: #f8fafc; overflow-x: hidden; transition: background 0.5s ease-in-out; }
+        body { color: #fdf4ff; overflow-x: hidden; transition: background 0.5s ease-in-out; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
-        /* ★ 탭별 테마 배경 ★ */
-        .bg-theme-dashboard { background-color: #020617; background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #020617 70%); }
-        .bg-theme-plaza { background-color: #170a2c; background-image: radial-gradient(circle at 50% 0%, #3b0764 0%, #170a2c 70%); }
-        .bg-theme-quests { background-color: #022c22; background-image: radial-gradient(circle at 50% 0%, #065f46 0%, #022c22 70%); }
-        .bg-theme-jobs { background-color: #2e1008; background-image: radial-gradient(circle at 50% 0%, #78350f 0%, #2e1008 70%); }
-        .bg-theme-lunch { background-color: #1e1b4b; background-image: radial-gradient(circle at 50% 0%, #312e81 0%, #1e1b4b 70%); }
-        .bg-theme-goldenbell { background-color: #3f2c00; background-image: radial-gradient(circle at 50% 0%, #713f12 0%, #3f2c00 70%); }
-        .bg-theme-admin { background-color: #220202; background-image: radial-gradient(circle at 50% 0%, #7f1d1d 0%, #220202 70%); }
+        /* ★ 4월 봄·벚꽃 테마 (탭별 배경) ★ */
+        .bg-theme-dashboard { background-color: #1a0a14; background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(251, 207, 232, 0.35) 0%, rgba(15, 23, 42, 0.9) 45%, #0f172a 100%); }
+        .bg-theme-plaza { background-color: #1e1030; background-image: radial-gradient(circle at 80% 10%, rgba(244, 114, 182, 0.25) 0%, #1a1035 55%, #0f172a 100%); }
+        .bg-theme-quests { background-color: #0c1f1a; background-image: radial-gradient(circle at 20% 0%, rgba(167, 243, 208, 0.2) 0%, #052e26 50%, #0f172a 100%); }
+        .bg-theme-jobs { background-color: #1f1408; background-image: radial-gradient(circle at 50% 0%, rgba(253, 230, 138, 0.18) 0%, #29200f 60%, #0f172a 100%); }
+        .bg-theme-lunch { background-color: #151528; background-image: radial-gradient(circle at 70% 20%, rgba(196, 181, 253, 0.22) 0%, #1e1b3a 55%, #0f172a 100%); }
+        .bg-theme-goldenbell { background-color: #2a1a08; background-image: radial-gradient(circle at 50% 0%, rgba(252, 211, 77, 0.2) 0%, #422006 55%, #0f172a 100%); }
+        .bg-theme-admin { background-color: #1f0a12; background-image: radial-gradient(circle at 30% 0%, rgba(251, 113, 133, 0.15) 0%, #3f0f18 55%, #0f172a 100%); }
+
+        /* 봄 벚꽃 낙하 장식 (가벼운 시각 효과) */
+        .sakura-petals { pointer-events: none; position: fixed; inset: 0; z-index: 1; overflow: hidden; }
+        .sakura-petals span { position: absolute; top: -10%; width: 8px; height: 12px; background: linear-gradient(135deg, #fbcfe8 40%, #f9a8d4 100%); border-radius: 50% 50% 50% 0; opacity: 0.45; animation: sakura-fall linear infinite; }
+        @keyframes sakura-fall { 0% { transform: translate(0, 0) rotate(0deg); } 100% { transform: translate(20px, 110vh) rotate(360deg); } }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -100,25 +105,51 @@
         .shake-screen { animation: shake 0.3s; }
 
         /* ★ 월드맵 전용 스타일 ★ */
-        .night-sky { background: linear-gradient(180deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%); position: relative; }
+        .night-sky { background: linear-gradient(180deg, #1e1b2e 0%, #2d1f3d 40%, #3b2f4a 100%); position: relative; }
+
+        /* 미스테리 주사위 굴림 애니메이션 */
+        @keyframes dice-spin-shake { 0%, 100% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-18deg) scale(1.08); } 50% { transform: rotate(14deg) scale(1.05); } 75% { transform: rotate(-10deg) scale(1.1); } }
+        .dice-roll-stage { animation: dice-spin-shake 0.12s ease-in-out infinite; }
         .star { position: absolute; background: white; border-radius: 50%; animation: twinkle 2s infinite ease-in-out alternate; }
         @keyframes twinkle { 0% { opacity: 0.2; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1.2); } }
         .island-hover { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
         .island-hover:hover { transform: translate(-50%, -50%) scale(1.15) translateY(-10px) !important; z-index: 50; filter: brightness(1.1); }
+
+        /* 월드맵: 큰 이모지가 아래 이름표를 덮지 않도록 레이어 분리 */
+        #worldMapArea .worldmap-emoji { z-index: 5; }
+        #worldMapArea .worldmap-mound { position: relative; z-index: 10; }
+        #worldMapArea .worldmap-label {
+            position: relative;
+            z-index: 30;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.25);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+        }
     </style>
 </head>
-<body class="antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-dashboard" id="mainBody">
+<body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-dashboard relative" id="mainBody">
+
+    <!-- 봄 벚꽃·꽃잎 배경 (장식) -->
+    <div class="sakura-petals" aria-hidden="true">
+        <span style="left:3%;animation-duration:16s;animation-delay:0s;"></span>
+        <span style="left:12%;animation-duration:13s;animation-delay:2s;"></span>
+        <span style="left:22%;animation-duration:15s;animation-delay:1s;"></span>
+        <span style="left:38%;animation-duration:14s;animation-delay:3s;"></span>
+        <span style="left:55%;animation-duration:17s;animation-delay:0.5s;"></span>
+        <span style="left:68%;animation-duration:12s;animation-delay:2.5s;"></span>
+        <span style="left:82%;animation-duration:15s;animation-delay:1.5s;"></span>
+        <span style="left:92%;animation-duration:18s;animation-delay:0.2s;"></span>
+    </div>
 
     <!-- ★ 로그인 화면 ★ -->
-    <div id="loginOverlay" class="fixed inset-0 bg-[#020617] z-[100] flex flex-col items-center justify-center px-4 transition-opacity duration-500 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')]">
+    <div id="loginOverlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center px-4 transition-opacity duration-500 bg-gradient-to-b from-pink-950/95 via-fuchsia-950/90 to-slate-950 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDIwNSwgMjMwLCAwLjA4KSIvPjwvc3ZnPg==')]">
         <div class="text-center mb-8 relative">
-            <div class="absolute inset-0 bg-sb-blue/20 blur-[100px] rounded-full"></div>
-            <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-sb-gold mb-4 animate-bounce relative z-10"></i>
-            <h1 class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_15px_rgba(251,191,36,0.5)] relative z-10">SAMBONG WORLD</h1>
-            <p class="text-sm sm:text-base text-emerald-400 mt-2 font-bold tracking-widest relative z-10">[시즌 1 : 모험의 시작]</p>
+            <div class="absolute inset-0 bg-pink-400/15 blur-[100px] rounded-full"></div>
+            <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-pink-200 mb-4 animate-bounce relative z-10"></i>
+            <h1 class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(251,182,206,0.6)] relative z-10">SAMBONG WORLD</h1>
+            <p class="text-sm sm:text-base text-pink-200/90 mt-2 font-bold tracking-widest relative z-10">🌸 [시즌 1 : 봄맞이 모험]</p>
         </div>
 
-        <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-sb-blue relative z-10">
+        <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-pink-400/80 relative z-10">
             <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-6">삼봉월드 로그인</h2>
             <div class="space-y-4">
                 <select id="loginId" class="w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold appearance-none">
@@ -242,7 +273,7 @@
     </div>
 
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
-    <div id="swipeWrapper" class="pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
+    <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
         <!-- ★ 1. 대시보드 탭 (월드맵 + 스탯 통합) ★ -->
         <section id="dashboardSection" class="space-y-6">
@@ -268,58 +299,58 @@
 
                 <!-- 1. Center: World Tree (마스터 구역) -->
                 <div onclick="window.visitWorldTree()" class="island-hover absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-6 text-7xl sm:text-8xl drop-shadow-[0_0_15px_rgba(74,222,128,0.8)] avatar-bounce">🌳</div>
-                    <div class="w-28 h-12 sm:w-36 sm:h-16 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-8 border-green-900 shadow-[0_10px_20px_rgba(0,0,0,0.6)]"></div>
-                    <div class="mt-2 bg-slate-900/90 text-yellow-400 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black shadow-[0_0_10px_rgba(250,204,21,0.5)] border border-yellow-500 whitespace-nowrap">👑 세계수 (마스터)</div>
+                    <div class="worldmap-emoji absolute bottom-6 text-7xl sm:text-8xl drop-shadow-[0_0_15px_rgba(74,222,128,0.8)] avatar-bounce pointer-events-none">🌳</div>
+                    <div class="worldmap-mound w-28 h-12 sm:w-36 sm:h-16 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-8 border-green-900 shadow-[0_10px_20px_rgba(0,0,0,0.6)]"></div>
+                    <div class="worldmap-label mt-2 bg-slate-900/95 text-yellow-400 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black border border-yellow-500 whitespace-nowrap">👑 세계수 (마스터)</div>
                 </div>
 
                 <!-- 2. Top Left: Quests -->
                 <div onclick="window.switchTab('quests')" class="island-hover absolute top-[25%] left-[25%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float" style="animation-delay: 0.2s;">📜</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-purple-400 to-purple-600 rounded-[100%] border-b-6 border-purple-900 shadow-xl"></div>
-                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">상점/퀘스트</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.2s;">📜</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-purple-400 to-purple-600 rounded-[100%] border-b-6 border-purple-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">상점/퀘스트</div>
                 </div>
 
                 <!-- 3. Top Right: Pirate Island (난지도 분교) -->
                 <div onclick="window.visitPirateIsland()" class="island-hover absolute top-[20%] left-[75%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float" style="animation-delay: 0.5s;">🏴‍☠️</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-700 to-yellow-900 rounded-[100%] border-b-6 border-black shadow-xl"></div>
-                    <div class="mt-2 bg-red-900/90 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-red-500 whitespace-nowrap">난지도 분교</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float pointer-events-none" style="animation-delay: 0.5s;">🏴‍☠️</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-700 to-yellow-900 rounded-[100%] border-b-6 border-black shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-red-950/95 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-red-500 whitespace-nowrap">난지도 분교</div>
                 </div>
 
                 <!-- 4. Middle Left: Plaza -->
                 <div onclick="window.switchTab('plaza')" class="island-hover absolute top-[60%] left-[20%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce" style="animation-delay: 0.7s;">🏕️</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-6 border-green-800 shadow-xl"></div>
-                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">우리반 광장</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.7s;">🏕️</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-6 border-green-800 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">우리반 광장</div>
                 </div>
 
                 <!-- 5. Middle Right: Jobs -->
                 <div onclick="window.switchTab('jobs')" class="island-hover absolute top-[55%] left-[80%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float" style="animation-delay: 0.3s;">💼</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-blue-400 to-blue-600 rounded-[100%] border-b-6 border-blue-900 shadow-xl"></div>
-                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">직업 센터</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.3s;">💼</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-blue-400 to-blue-600 rounded-[100%] border-b-6 border-blue-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">직업 센터</div>
                 </div>
 
                 <!-- 6. Bottom Left: Lunch -->
                 <div onclick="window.switchTab('lunch')" class="island-hover absolute top-[85%] left-[30%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce" style="animation-delay: 0.1s;">🍱</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-orange-400 to-orange-600 rounded-[100%] border-b-6 border-orange-900 shadow-xl"></div>
-                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">VIP 밥줄</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.1s;">🍱</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-orange-400 to-orange-600 rounded-[100%] border-b-6 border-orange-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">VIP 밥줄</div>
                 </div>
 
                 <!-- 7. Bottom Right: Estate -->
                 <div onclick="window.switchTab('estate')" class="island-hover absolute top-[85%] left-[70%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float" style="animation-delay: 0.8s;">🏠</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-teal-400 to-teal-600 rounded-[100%] border-b-6 border-teal-900 shadow-xl"></div>
-                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">부동산</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.8s;">🏠</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-teal-400 to-teal-600 rounded-[100%] border-b-6 border-teal-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">부동산</div>
                 </div>
 
                 <!-- 8. Top Center: Golden Bell -->
                 <div onclick="window.switchTab('goldenbell')" class="island-hover absolute top-[15%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce" style="animation-delay: 0.4s;">🔔</div>
-                    <div class="w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-[100%] border-b-6 border-yellow-800 shadow-xl"></div>
-                    <div class="mt-2 bg-white/90 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black shadow border border-slate-200 whitespace-nowrap">골든벨</div>
+                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.4s;">🔔</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-[100%] border-b-6 border-yellow-800 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">골든벨</div>
                 </div>
             </div>
 
@@ -633,6 +664,11 @@
             <div class="glass-panel p-3 sm:p-5 rounded-3xl shadow-xl border-t-4 border-t-teal-500 max-w-2xl mx-auto bg-slate-900/80">
                 <div class="w-full text-center bg-slate-800 text-slate-400 font-bold py-2 mb-4 rounded-xl border border-slate-600 tracking-widest text-xs">칠판 (앞)</div>
                 <div class="grid grid-cols-4 gap-2 sm:gap-4" id="estateGrid"><div class="text-center text-slate-500 text-xs py-10 col-span-4">로딩 중...</div></div>
+                <div class="mt-4 pt-4 border-t border-teal-700/50">
+                    <h3 class="text-[10px] sm:text-xs font-bold text-teal-300/90 mb-2"><i class="fa-solid fa-clock-rotate-left"></i> 자리 구매 기록 (삭제 방지·감사 로그)</h3>
+                    <p class="text-[9px] text-slate-500 mb-2">전체 초기화 시에도 아래 기록은 서버에 보존됩니다.</p>
+                    <div id="estatePurchaseLog" class="max-h-36 overflow-y-auto text-[9px] sm:text-[10px] text-slate-400 space-y-1 pr-1"></div>
+                </div>
             </div>
         </section>
 
@@ -674,6 +710,9 @@
                     <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
                     <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
                 </div>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
+                </div>
                 <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
             </div>
 
@@ -685,6 +724,9 @@
                     <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
                     <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
                     <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
+                </div>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
                 </div>
             </div>
 
@@ -907,6 +949,12 @@
             "13": "F", "gm": "M", "gm_a": "F", "guest": "M" 
         };
 
+        /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */
+        const DICE_UNICODE_FACES = ['\u2680','\u2681','\u2682','\u2683','\u2684','\u2685'];
+
+        /** 석서영(학번 13) 부동산 복구용 자리 인덱스(0부터). 8번 자리 = 인덱스 7. */
+        const ESTATE_RESTORE_SEOK_SEAT_INDEX = 7;
+
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
@@ -1080,22 +1128,24 @@
             document.getElementById('bpNo').onclick = () => { r(null); d.remove(); };
         });
 
-        // 1~6 숫자 선택 (주사위/선택형 UI)
+        // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
         window.customPick1to6 = (m) => new Promise(r => {
             const d = document.createElement('div');
             d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
-                <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-xl font-display text-white">선택</h3>
+                <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>
                     <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <div class="grid grid-cols-3 gap-2">
+                    <p class="text-[10px] text-pink-200/90">1~6 면을 눌러 예측 번호를 고르세요</p>
+                    <div class="grid grid-cols-3 gap-3">
                         ${[1,2,3,4,5,6].map(n => `
-                            <button data-pick="${n}" class="bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-600">
-                                🎲 ${n}
+                            <button type="button" data-pick="${n}" class="bg-slate-800/90 hover:bg-pink-900/60 border-2 border-pink-500/35 hover:border-pink-300 rounded-2xl py-3 sm:py-4 flex flex-col items-center justify-center transition shadow-inner active:scale-95">
+                                <span class="text-4xl sm:text-5xl leading-none select-none" style="font-family: Georgia, 'Times New Roman', serif">${DICE_UNICODE_FACES[n - 1]}</span>
+                                <span class="text-[10px] text-slate-400 mt-1 font-bold">${n}</span>
                             </button>
                         `).join('')}
                     </div>
-                    <button id="pickCancel" class="bg-slate-700 text-white font-bold py-2 w-full rounded mt-2">취소</button>
+                    <button type="button" id="pickCancel" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 w-full rounded-xl">취소</button>
                 </div>`;
             document.body.appendChild(d);
             d.querySelectorAll('button[data-pick]').forEach(btn => {
@@ -1107,6 +1157,35 @@
             });
             document.getElementById('pickCancel').onclick = () => { d.remove(); r(null); };
         });
+
+        /** 미스테리 박스: 결과 숫자가 나올 때까지 주사위 면이 빠르게 바뀌는 연출 */
+        window.runDiceRollAnimation = function(finalRoll) {
+            return new Promise(function(resolve) {
+                const face = Math.max(1, Math.min(6, parseInt(finalRoll, 10) || 1));
+                const overlay = document.createElement('div');
+                overlay.className = 'fixed inset-0 z-[305] flex items-center justify-center bg-black/78 px-4';
+                overlay.innerHTML = `
+                    <div class="bg-slate-900 p-6 sm:p-8 rounded-3xl border-2 border-pink-400/45 text-center shadow-2xl max-w-xs w-full">
+                        <p class="text-pink-200 text-xs font-bold mb-4">주사위 굴리는 중...</p>
+                        <div id="diceRollFace" class="dice-roll-stage text-7xl sm:text-8xl leading-none select-none text-pink-100" style="font-family: Georgia, 'Times New Roman', serif">${DICE_UNICODE_FACES[0]}</div>
+                        <p class="text-slate-500 text-[10px] mt-4">잠시만 기다려 주세요</p>
+                    </div>`;
+                document.body.appendChild(overlay);
+                const faceEl = overlay.querySelector('#diceRollFace');
+                let ticks = 0;
+                const maxTicks = 30;
+                const timer = setInterval(function() {
+                    ticks++;
+                    const show = ticks < maxTicks ? (Math.floor(Math.random() * 6) + 1) : face;
+                    faceEl.textContent = DICE_UNICODE_FACES[show - 1];
+                    if (ticks >= maxTicks) {
+                        clearInterval(timer);
+                        faceEl.classList.remove('dice-roll-stage');
+                        setTimeout(function() { overlay.remove(); resolve(); }, 480);
+                    }
+                }, 52);
+            });
+        };
 
 
         // ==========================================
@@ -1320,10 +1399,14 @@
                         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
                             if(snap.exists()) { 
                                 window.estateState = snap.data(); 
+                                if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
+                                window.ensureEstateSeokRestore();
                                 window.renderEstate(); 
                             } else {
                                 const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
-                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
+                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+                                const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
+                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: ph });
                             }
                         });
 
@@ -1396,7 +1479,8 @@
                             if(snap.exists()) {
                                 window.goldenbellState = snap.data();
                                 if (window.playerState && window.playerState.isAdmin) {
-                                    window.renderGoldenBellMasterLive();
+                                    if(window._gbPreviewStudent) window.renderGoldenBellStudent();
+                                    else window.renderGoldenBellMasterLive();
                                     window.updateGoldenBellAdminUI();
                                 } else {
                                     window.renderGoldenBellStudent();
@@ -1776,6 +1860,23 @@
             if(!grid || !window.estateState) return;
 
             document.getElementById('btnEstateReset').style.display = window.playerState.isAdmin ? 'block' : 'none';
+
+            const logEl = document.getElementById('estatePurchaseLog');
+            if (logEl) {
+                const hist = Array.isArray(window.estateState.purchaseHistory) ? [...window.estateState.purchaseHistory].reverse() : [];
+                if (hist.length === 0) {
+                    logEl.innerHTML = '<div class="text-slate-600">아직 기록이 없습니다.</div>';
+                } else {
+                    logEl.innerHTML = hist.slice(0, 50).map(h => {
+                        if (!h) return '';
+                        const name = STUDENT_NAMES[h.studentId] || h.studentId;
+                        const note = h.note ? ' · ' + h.note : '';
+                        const t = h.at ? new Date(h.at).toLocaleString('ko-KR') : '';
+                        const sn = typeof h.seatId === 'number' ? (h.seatId + 1) : '?';
+                        return '<div class="border-b border-slate-700/40 pb-0.5">' + t + ' — ' + name + ' · ' + sn + '번 자리 · ' + (h.price != null ? h.price : '?') + 'B' + note + '</div>';
+                    }).join('');
+                }
+            }
 
             grid.innerHTML = window.estateState.seats.map(seat => {
                 if(seat.owner) {
@@ -2381,6 +2482,23 @@
         // ==========================================
         // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
+
+        /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구하고, 구매 기록에 남깁니다. (다른 자리를 이미 사도 복구 가능) */
+        window.ensureEstateSeokRestore = async function() {
+            if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
+            const idx = ESTATE_RESTORE_SEOK_SEAT_INDEX;
+            const seat = window.estateState.seats[idx];
+            if (!seat || seat.locked || seat.owner) return;
+            seat.owner = '13';
+            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
+            window.estateState.purchaseHistory.push({
+                studentId: '13', seatId: idx, price: seat.price || 500, at: Date.now(),
+                note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
+            });
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+            } catch (e) { console.warn('ensureEstateSeokRestore', e); }
+        };
         
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
@@ -2399,6 +2517,13 @@
             await saveDataToCloud();
             
             seat.owner = window.playerState.id;
+            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
+            window.estateState.purchaseHistory.push({
+                studentId: String(window.playerState.id),
+                seatId: seatId,
+                price: price,
+                at: Date.now()
+            });
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
             window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
         };
@@ -2416,12 +2541,22 @@
 
         window.masterResetEstate = async function() {
             if(!window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?');
+            const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?\n\n※ 자리 구매 기록(감사 로그)은 삭제되지 않습니다.\n※ 석서영 학생 지정 자리는 규칙에 따라 다시 부여됩니다.');
             if(!ok) return;
 
+            const prevHistory = (window.estateState && Array.isArray(window.estateState.purchaseHistory))
+                ? [...window.estateState.purchaseHistory] : [];
             const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats });
-            window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다.");
+            initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+            prevHistory.push({
+                studentId: '13',
+                seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,
+                price: 500,
+                at: Date.now(),
+                note: '전체 초기화 후 석서영 자리 복구'
+            });
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: prevHistory });
+            window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록은 보존되었습니다.)");
         };
 
         window.equipWeapon = async function(wpId) {
@@ -2596,6 +2731,8 @@
                 if (!window.playerState.isAdmin) window.playerState.bong -= bet;
 
                 const roll = Math.floor(Math.random() * 6) + 1;
+                await window.runDiceRollAnimation(roll);
+
                 const win = roll === pick;
                 const payout = win ? bet * 5 : 0;
                 if (payout > 0) window.playerState.bong += payout;
@@ -3200,6 +3337,35 @@
             window.customAlert('✅ 골든벨 문제가 저장되었습니다. (새로고침해도 유지)');
         };
 
+        // 선생님 테스트용: 학생 화면 미리보기 토글
+        window.toggleGoldenBellPreview = function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            window._gbPreviewStudent = !window._gbPreviewStudent;
+            if(window._gbPreviewStudent) window.renderGoldenBellStudent();
+            else window.renderGoldenBellMasterLive();
+            window.customAlert(window._gbPreviewStudent ? '👀 학생 화면 미리보기 ON' : '📊 학생 화면 미리보기 OFF');
+        };
+
+        // 선생님 테스트용: 인원 부족해도 즉시 전투 시작
+        window.forceStartRaidTest = async function() {
+            if(!window.playerState || !window.playerState.isGM) return;
+            const st = window.currentRaidState;
+            if(!st || (st.status !== 'recruiting' && st.status !== 'playing')) return window.customAlert('먼저 레이드를 시작(모집)해주세요.');
+            const participants = Array.isArray(st.participants) ? st.participants : [];
+            if(participants.length < 1) return window.customAlert('참여자가 1명 이상 필요합니다. (선생님도 참여 버튼으로 들어갈 수 있어요)');
+
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                status: 'playing',
+                currentTurn: st.currentTurn || 0,
+                currentActorIndex: st.currentActorIndex || 0,
+                turnStartTime: Date.now(),
+                turnResolvedFor: null,
+                [`turnSubmissions.${st.currentTurn || 0}`]: (st.turnSubmissions && st.turnSubmissions[st.currentTurn || 0]) ? st.turnSubmissions[st.currentTurn || 0] : {}
+            }, { merge: true });
+
+            window.customAlert('✅ 테스트 전투 시작! (인원 부족 무시)');
+        };
+
         window.closeGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
             const ok = await window.customConfirm("골든벨을 종료하시겠습니까?\n(학생 화면에서 문제가 사라집니다)");
@@ -3266,7 +3432,7 @@
             `;
             
             st.questions.forEach((item, idx) => {
-                const answered = mySubmission && myResults && myResults[idx] !== undefined;
+                const answered = mySubmission && myResults && myResults[idx] !== undefined && myResults[idx] !== null;
                 const correct = myResults[idx] === true;
                 const disabled = answered || myDefeated;
 
@@ -3361,7 +3527,7 @@
             if(ansIdx === undefined || ansIdx === null) return;
             if(ansIdx < 0 || ansIdx >= totalQuestions) return;
 
-            const alreadyAnswered = myResults && myResults[ansIdx] !== undefined;
+            const alreadyAnswered = myResults && myResults[ansIdx] !== undefined && myResults[ansIdx] !== null;
             if(alreadyAnswered) return window.customAlert('이미 제출된 문제입니다.');
 
             const el = document.getElementById(`gb_ans_${ansIdx}`);
@@ -3385,7 +3551,8 @@
             try {
                 // answers/results를 배열로 유지해야 렌더링이 정상 동작합니다.
                 const answers = (myAnswers && Array.isArray(myAnswers)) ? myAnswers.slice() : Array(totalQuestions).fill('');
-                const results = (myResults && Array.isArray(myResults)) ? myResults.slice() : Array(totalQuestions).fill(undefined);
+                // Firestore는 undefined를 저장할 수 없어 null로 미제출 상태를 유지합니다.
+                const results = (myResults && Array.isArray(myResults)) ? myResults.slice() : Array(totalQuestions).fill(null);
                 answers[ansIdx] = val;
                 results[ansIdx] = isCorrect;
 
@@ -3404,8 +3571,11 @@
 
                 // 격파 순간 보상 지급 (중복 지급 방지: rewardsGiven 플래그)
                 if(defeated && !(mySubmission && mySubmission.rewardsGiven)) {
-                    const rewardXp = newScore * 10;
-                    const rewardBong = newScore * 1;
+                    // 몬스터에게 입힌 데미지(=줄인 HP)에 비례 보상 (최대 100XP / 20B)
+                    const dealtDamage = Math.max(0, Math.round(monsterMaxHP - newMonsterHP));
+                    const ratio = monsterMaxHP > 0 ? (dealtDamage / monsterMaxHP) : 0;
+                    const rewardXp = Math.max(0, Math.min(100, Math.floor(ratio * 100)));
+                    const rewardBong = Math.max(0, Math.min(20, Math.round(ratio * 20 * 10) / 10));
 
                     window.playerState.xp += rewardXp;
                     window.playerState.bong += rewardBong;
@@ -3419,7 +3589,7 @@
                     }, {merge: true});
 
                     window._gbLocalDefeated = true;
-                    await window.customAlert(`✅ 몬스터 격파!\n정답 ${newScore}개\n보상: +${rewardXp} XP, +${rewardBong} B`);
+                    await window.customAlert(`✅ 몬스터 격파!\n입힌 데미지: ${dealtDamage}\n보상: +${rewardXp} XP, +${rewardBong} B`);
                 }
             } finally {
                 window._gbAnswerSubmitting = false;

@@ -115,9 +115,9 @@
         .island-hover { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
         .island-hover:hover { transform: translate(-50%, -50%) scale(1.15) translateY(-10px) !important; z-index: 50; filter: brightness(1.1); }
 
-        /* 월드맵: 큰 이모지가 아래 이름표를 덮지 않도록 레이어 분리 */
-        #worldMapArea .worldmap-emoji { z-index: 5; }
-        #worldMapArea .worldmap-mound { position: relative; z-index: 10; }
+        /* 월드맵: 도형(뒤) → 이모지(앞) → 이름표(맨 앞) */
+        #worldMapArea .worldmap-mound { position: relative; z-index: 5; }
+        #worldMapArea .worldmap-emoji { z-index: 20; }
         #worldMapArea .worldmap-label {
             position: relative;
             z-index: 30;
@@ -299,56 +299,56 @@
 
                 <!-- 1. Center: World Tree (마스터 구역) -->
                 <div onclick="window.visitWorldTree()" class="island-hover absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-6 text-7xl sm:text-8xl drop-shadow-[0_0_15px_rgba(74,222,128,0.8)] avatar-bounce pointer-events-none">🌳</div>
+                    <div class="worldmap-emoji absolute bottom-10 text-7xl sm:text-8xl drop-shadow-[0_0_15px_rgba(74,222,128,0.8)] avatar-bounce pointer-events-none">🌳</div>
                     <div class="worldmap-mound w-28 h-12 sm:w-36 sm:h-16 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-8 border-green-900 shadow-[0_10px_20px_rgba(0,0,0,0.6)]"></div>
                     <div class="worldmap-label mt-2 bg-slate-900/95 text-yellow-400 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black border border-yellow-500 whitespace-nowrap">👑 세계수 (마스터)</div>
                 </div>
 
                 <!-- 2. Top Left: Quests -->
                 <div onclick="window.switchTab('quests')" class="island-hover absolute top-[25%] left-[25%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.2s;">📜</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.2s;">📜</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-purple-400 to-purple-600 rounded-[100%] border-b-6 border-purple-900 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">상점/퀘스트</div>
                 </div>
 
                 <!-- 3. Top Right: Pirate Island (난지도 분교) -->
                 <div onclick="window.visitPirateIsland()" class="island-hover absolute top-[20%] left-[75%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float pointer-events-none" style="animation-delay: 0.5s;">🏴‍☠️</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float pointer-events-none" style="animation-delay: 0.5s;">🏴‍☠️</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-700 to-yellow-900 rounded-[100%] border-b-6 border-black shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-red-950/95 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-red-500 whitespace-nowrap">난지도 분교</div>
                 </div>
 
                 <!-- 4. Middle Left: Plaza -->
                 <div onclick="window.switchTab('plaza')" class="island-hover absolute top-[60%] left-[20%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.7s;">🏕️</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.7s;">🏕️</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-6 border-green-800 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">우리반 광장</div>
                 </div>
 
                 <!-- 5. Middle Right: Jobs -->
                 <div onclick="window.switchTab('jobs')" class="island-hover absolute top-[55%] left-[80%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.3s;">💼</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.3s;">💼</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-blue-400 to-blue-600 rounded-[100%] border-b-6 border-blue-900 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">직업 센터</div>
                 </div>
 
                 <!-- 6. Bottom Left: Lunch -->
                 <div onclick="window.switchTab('lunch')" class="island-hover absolute top-[85%] left-[30%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.1s;">🍱</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.1s;">🍱</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-orange-400 to-orange-600 rounded-[100%] border-b-6 border-orange-900 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">VIP 밥줄</div>
                 </div>
 
                 <!-- 7. Bottom Right: Estate -->
                 <div onclick="window.switchTab('estate')" class="island-hover absolute top-[85%] left-[70%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.8s;">🏠</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.8s;">🏠</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-teal-400 to-teal-600 rounded-[100%] border-b-6 border-teal-900 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">부동산</div>
                 </div>
 
                 <!-- 8. Top Center: Golden Bell -->
                 <div onclick="window.switchTab('goldenbell')" class="island-hover absolute top-[15%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-4 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.4s;">🔔</div>
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.4s;">🔔</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-[100%] border-b-6 border-yellow-800 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">골든벨</div>
                 </div>

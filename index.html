@@ -124,6 +124,31 @@
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.25);
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
         }
+        /* 커스텀 세계수 SVG: 웅장한 실루엣·마법 기운 */
+        #worldMapArea .worldmap-worldtree-wrap {
+            width: 5.75rem;
+            height: 7.25rem;
+        }
+        @media (min-width: 640px) {
+            #worldMapArea .worldmap-worldtree-wrap {
+                width: 7.5rem;
+                height: 9.25rem;
+            }
+        }
+        #worldMapArea .worldmap-worldtree-svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            filter: drop-shadow(0 0 18px rgba(16, 185, 129, 0.55)) drop-shadow(0 0 36px rgba(52, 211, 153, 0.35)) drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+        }
+        @keyframes worldtree-breathe {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.045); }
+        }
+        #worldMapArea .worldmap-worldtree-breathe {
+            animation: worldtree-breathe 4.5s ease-in-out infinite;
+            transform-origin: 50% 85%;
+        }
     </style>
 </head>
 <body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-dashboard relative" id="mainBody">
@@ -297,9 +322,78 @@
                 <div class="star w-2 h-2 top-[15%] left-[40%]" style="animation-delay: 0.2s;"></div>
                 <div class="star w-1 h-1 top-[50%] left-[10%]" style="animation-delay: 0.8s;"></div>
 
-                <!-- 1. Center: World Tree (마스터 구역) -->
+                <!-- 1. Center: World Tree (마스터 구역) — 다층 수관·거대 기둥·뿌리 커스텀 SVG -->
                 <div onclick="window.visitWorldTree()" class="island-hover absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-10 text-7xl sm:text-8xl drop-shadow-[0_0_15px_rgba(74,222,128,0.8)] avatar-bounce pointer-events-none">🌳</div>
+                    <div class="worldmap-emoji worldmap-worldtree-wrap absolute bottom-10 flex items-center justify-center pointer-events-none">
+                        <svg class="worldmap-worldtree-svg worldmap-worldtree-breathe" viewBox="0 0 220 280" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <defs>
+                                <linearGradient id="wt-trunk" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:#2d1f0f"/>
+                                    <stop offset="35%" style="stop-color:#4a3720"/>
+                                    <stop offset="65%" style="stop-color:#5c4328"/>
+                                    <stop offset="100%" style="stop-color:#3d2a14"/>
+                                </linearGradient>
+                                <linearGradient id="wt-trunk-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#6b5340;stop-opacity:0.5"/>
+                                    <stop offset="100%" style="stop-color:#2d1f0f;stop-opacity:0"/>
+                                </linearGradient>
+                                <radialGradient id="wt-canopy-back" cx="45%" cy="40%" r="65%">
+                                    <stop offset="0%" style="stop-color:#064e3b"/>
+                                    <stop offset="45%" style="stop-color:#065f46"/>
+                                    <stop offset="100%" style="stop-color:#022c22"/>
+                                </radialGradient>
+                                <radialGradient id="wt-canopy-mid" cx="55%" cy="38%" r="55%">
+                                    <stop offset="0%" style="stop-color:#059669"/>
+                                    <stop offset="50%" style="stop-color:#047857"/>
+                                    <stop offset="100%" style="stop-color:#064e3b"/>
+                                </radialGradient>
+                                <radialGradient id="wt-canopy-top" cx="50%" cy="32%" r="45%">
+                                    <stop offset="0%" style="stop-color:#34d399"/>
+                                    <stop offset="40%" style="stop-color:#10b981"/>
+                                    <stop offset="100%" style="stop-color:#047857"/>
+                                </radialGradient>
+                                <radialGradient id="wt-glow-orb" cx="50%" cy="50%" r="50%">
+                                    <stop offset="0%" style="stop-color:#a7f3d0;stop-opacity:0.85"/>
+                                    <stop offset="70%" style="stop-color:#34d399;stop-opacity:0.25"/>
+                                    <stop offset="100%" style="stop-color:#059669;stop-opacity:0"/>
+                                </radialGradient>
+                                <filter id="wt-soft" x="-15%" y="-15%" width="130%" height="130%">
+                                    <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="b"/>
+                                    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                                </filter>
+                            </defs>
+                            <!-- 뿌리 -->
+                            <path fill="url(#wt-trunk)" d="M52 258c18-8 32-4 58 2 26-6 40-10 58 2-4 12-22 18-38 14-14 8-32 8-46 0-16 4-34-2-38-14z" opacity="0.95"/>
+                            <path fill="#3d2a14" d="M78 262c10-4 22-2 32 2 10-4 22-6 32-2-8 6-18 8-32 6-14 2-24 0-32-6z"/>
+                            <!-- 외곽 수관 (뒤) -->
+                            <ellipse cx="110" cy="118" rx="92" ry="78" fill="url(#wt-canopy-back)" opacity="0.92"/>
+                            <ellipse cx="72" cy="132" rx="58" ry="52" fill="#065f46" opacity="0.85"/>
+                            <ellipse cx="148" cy="128" rx="54" ry="50" fill="#047857" opacity="0.88"/>
+                            <!-- 중층 수관 -->
+                            <ellipse cx="110" cy="105" rx="78" ry="64" fill="url(#wt-canopy-mid)" filter="url(#wt-soft)"/>
+                            <ellipse cx="95" cy="98" rx="42" ry="36" fill="#10b981" opacity="0.55"/>
+                            <ellipse cx="128" cy="102" rx="38" ry="34" fill="#059669" opacity="0.5"/>
+                            <!-- 상단 수관 (빛 받는 면) -->
+                            <ellipse cx="110" cy="72" rx="52" ry="44" fill="url(#wt-canopy-top)"/>
+                            <ellipse cx="102" cy="58" rx="28" ry="24" fill="#6ee7b7" opacity="0.35"/>
+                            <!-- 거대 기둥 -->
+                            <path fill="url(#wt-trunk)" d="M88 118 Q82 175 78 248 L92 256 Q98 200 102 165 Q106 200 112 256 L126 248 Q122 175 116 118 Q110 108 102 108 Q94 108 88 118z"/>
+                            <path fill="url(#wt-trunk-lit)" d="M94 118 Q98 130 100 155 Q96 195 90 248 L96 252 Q100 190 102 155 Q104 190 108 252 L114 248 Q108 195 104 155 Q106 130 110 118 Q106 112 102 112 Q98 112 94 118z" opacity="0.7"/>
+                            <!-- 굵은 가지 -->
+                            <path fill="#4a3720" d="M88 140 Q62 125 48 118 Q58 132 85 152 Z"/>
+                            <path fill="#4a3720" d="M132 138 Q158 120 172 112 Q162 128 138 150 Z"/>
+                            <path fill="#5c4328" d="M98 155 Q88 168 72 178 Q92 172 102 162 Z"/>
+                            <path fill="#5c4328" d="M118 158 Q132 172 152 182 Q130 176 122 165 Z"/>
+                            <!-- 중심 마나 결정 (세계수 상징) -->
+                            <circle cx="110" cy="48" r="10" fill="url(#wt-glow-orb)"/>
+                            <circle cx="110" cy="48" r="4" fill="#ecfdf5" opacity="0.95"/>
+                            <!-- 잎사귀 하이라이트 점 -->
+                            <circle cx="68" cy="88" r="3" fill="#a7f3d0" opacity="0.5"/>
+                            <circle cx="152" cy="92" r="2.5" fill="#d1fae5" opacity="0.45"/>
+                            <circle cx="130" cy="62" r="2" fill="#ecfdf5" opacity="0.4"/>
+                            <circle cx="85" cy="68" r="2" fill="#6ee7b7" opacity="0.35"/>
+                        </svg>
+                    </div>
                     <div class="worldmap-mound w-28 h-12 sm:w-36 sm:h-16 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-8 border-green-900 shadow-[0_10px_20px_rgba(0,0,0,0.6)]"></div>
                     <div class="worldmap-label mt-2 bg-slate-900/95 text-yellow-400 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black border border-yellow-500 whitespace-nowrap">👑 세계수 (마스터)</div>
                 </div>

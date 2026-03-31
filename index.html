@@ -338,7 +338,7 @@
                         <div class="flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
                             <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">XP</div><div id="dashXp" class="font-display text-lg text-white">0</div></div>
                             <div class="w-px bg-slate-700"></div>
-                            <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">자산 (B)</div><div id="dashBong" class="font-display text-lg text-sb-gold">0.0</div></div>
+                            <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">자산 (B)</div><div id="dashBong" class="font-display text-lg text-sb-gold transition-colors">0.0</div></div>
                         </div>
                     </div>
                     
@@ -543,7 +543,7 @@
         <!-- ★ 4. 직업 탭 ★ -->
         <section id="jobsSection" class="hidden">
             <div class="mb-4">
-                <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 15개 직업 목록</h2>
+                <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 직업 목록</h2>
                 <p class="text-[10px] sm:text-xs text-slate-400 mt-1">금요일마다 월급이 들어와요! 카드를 눌러 직업을 선택하세요.</p>
             </div>
             <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3"></div>
@@ -554,7 +554,8 @@
             <div class="max-w-3xl mx-auto space-y-6">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-300 mt-1">매일 낮 12시 정각에 급식비(10B)가 자동으로 빠져나가요!</p>
+                    <p class="text-[10px] sm:text-xs text-slate-300 mt-1">평일 낮 12시 이후 접속 시, 점심값(10B)이 자동으로 차감돼요. 잔액이 부족하면 <span class="text-red-400 font-bold">마이너스</span>까지 표시됩니다.</p>
+                    <p id="lunchInvestLockHint" class="hidden text-[10px] text-red-400 font-bold mt-2">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
                     <p class="text-[10px] sm:text-xs text-slate-400">투자한 돈(B)이 많을수록 밥을 먼저 먹어요. 동점이면 <span class="text-sb-blue font-bold">레벨(XP)이 높은 사람</span>이 이깁니다!</p>
                 </div>
                 
@@ -562,7 +563,7 @@
                     <h3 class="font-bold text-sm text-white mb-3">식권 투자하기 (누구나 가능)</h3>
                     <div class="flex gap-2">
                         <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
-                        <button onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition transform hover:scale-105">입찰</button>
+                        <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition transform hover:scale-105 disabled:opacity-40 disabled:pointer-events-none">입찰</button>
                     </div>
                 </div>
 
@@ -838,6 +839,7 @@
             { id: 'job11', name: '생명의 수호자', sub: '(식물/환기)', icon: 'fa-leaf', color: 'text-emerald-500', pay: 5, desc: '화분 물주기, 환기' },
             { id: 'job12', name: '편의점 매니저', sub: '(비품 관리)', icon: 'fa-store', color: 'text-orange-400', pay: 6, desc: '상점 및 비품 정리' }
             ,{ id: 'job_book', name: '마법서 관리관', sub: '(교과서 세팅)', icon: 'fa-book-skull', color: 'text-purple-300', pay: 6, desc: '선생님 교과서/자료 세팅 도우미' }
+            ,{ id: 'job_newbie', name: '뉴비 매니저', sub: '(전담 마크)', icon: 'fa-hand-holding-heart', color: 'text-pink-300', pay: 6, desc: '도움이 필요한 친구 전담 도우미' }
         ];
 
         const QUEST_DATA = [
@@ -908,7 +910,7 @@
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
-            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
+            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
@@ -1076,6 +1078,34 @@
             document.getElementById('pIn').focus();
             document.getElementById('bpYes').onclick = () => { r(document.getElementById('pIn').value); d.remove(); }; 
             document.getElementById('bpNo').onclick = () => { r(null); d.remove(); };
+        });
+
+        // 1~6 숫자 선택 (주사위/선택형 UI)
+        window.customPick1to6 = (m) => new Promise(r => {
+            const d = document.createElement('div');
+            d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.innerHTML = `
+                <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-xl font-display text-white">선택</h3>
+                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <div class="grid grid-cols-3 gap-2">
+                        ${[1,2,3,4,5,6].map(n => `
+                            <button data-pick="${n}" class="bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-600">
+                                🎲 ${n}
+                            </button>
+                        `).join('')}
+                    </div>
+                    <button id="pickCancel" class="bg-slate-700 text-white font-bold py-2 w-full rounded mt-2">취소</button>
+                </div>`;
+            document.body.appendChild(d);
+            d.querySelectorAll('button[data-pick]').forEach(btn => {
+                btn.onclick = () => {
+                    const v = parseInt(btn.getAttribute('data-pick'), 10);
+                    d.remove();
+                    r(v);
+                };
+            });
+            document.getElementById('pickCancel').onclick = () => { d.remove(); r(null); };
         });
 
 
@@ -1382,12 +1412,10 @@
                         if (window.playerState.isGM) { 
                             setInterval(() => {
                                 window.checkAndDistributeSalary();
-                                window.checkAndDeductLunch();
                                 window.checkAndDistributeClassXP();
                             }, 60000); 
                             setTimeout(() => {
                                 window.checkAndDistributeSalary();
-                                window.checkAndDeductLunch();
                                 window.checkAndDistributeClassXP();
                             }, 3000); 
                         }
@@ -1452,6 +1480,11 @@
                         if (isChanged) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
                     }
                 }
+            }
+
+            // 평일 점심값 차감(학생 본인 클라이언트, 12시 이후 1회) — 마스터 접속 여부와 무관
+            if (window.playerState && !window.playerState.isGuest && currentStudentDocRef) {
+                void window.applyPersonalLunchDeductionIfNeeded();
             }
         }
 
@@ -1575,7 +1608,7 @@
                     <!-- XP 및 B 동시 표기 -->
                     <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
-                        <span class="text-[9px] sm:text-[10px] text-sb-gold font-black">${(displayData.bong || 0).toFixed(1)}B</span>
+                        <span class="text-[9px] sm:text-[10px] font-black ${(Number(displayData.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}">${(Number(displayData.bong)||0).toFixed(1)}B</span>
                     </div>
 
                     ${gmControls}
@@ -1625,8 +1658,8 @@
                         <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${STUDENT_NAMES[i]}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 text-sb-gold font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'bong', '${STUDENT_NAMES[i]}', ${stu.bong || 0})">
-                            ${(stu.bong||0).toFixed(1)} B
+                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${STUDENT_NAMES[i]}', ${stu.bong || 0})">
+                            ${(Number(stu.bong)||0).toFixed(1)} B
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
                             ${canEdit ? `<div class="flex gap-1"><button onclick="window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button onclick="window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
@@ -1832,7 +1865,13 @@
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
             document.getElementById('dashXp').innerText = xp.toLocaleString();
-            document.getElementById('dashBong').innerText = (window.playerState.bong||0).toFixed(1);
+            const dashBongEl = document.getElementById('dashBong');
+            if (dashBongEl) {
+                const bBal = Number(window.playerState.bong) || 0;
+                dashBongEl.innerText = bBal.toFixed(1);
+                dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
+                dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
+            }
 
             const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
             document.getElementById('dashShield').innerHTML = hp > 0 ? `🛡️<span class="text-[10px] bg-indigo-600 px-1 rounded absolute -top-1 -right-2 font-bold text-white border border-indigo-400 shadow">${hp}</span>` : '';
@@ -1895,6 +1934,8 @@
 
             const dbSlots = document.getElementById('dragonBallSlots');
             if(dbSlots) {
+                const dbBox = document.getElementById('dragonballContainer');
+                if (dbBox) dbBox.classList.remove('hidden');
                 const collected = window.playerState.dragonBalls || [];
                 let slotsHtml = '';
                 
@@ -2037,6 +2078,27 @@
                     }
                 }
             });
+
+            updateLunchInvestLockUI();
+        }
+
+        // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가
+        function updateLunchInvestLockUI() {
+            const hint = document.getElementById('lunchInvestLockHint');
+            const btn = document.getElementById('lunchBidSubmitBtn');
+            const input = document.getElementById('lunchBidInput');
+            if (!hint || !btn || !input || !window.playerState) return;
+            if (window.playerState.isGuest || window.playerState.isAdmin) {
+                hint.classList.add('hidden');
+                btn.disabled = false;
+                input.disabled = false;
+                return;
+            }
+            const bal = Number(window.playerState.bong) || 0;
+            const locked = bal <= 10;
+            hint.classList.toggle('hidden', !locked);
+            btn.disabled = locked;
+            input.disabled = locked;
         }
 
 
@@ -2098,7 +2160,7 @@
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [] };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -2141,6 +2203,7 @@
                 
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
+                void window.applyPersonalLunchDeductionIfNeeded();
                 window.switchTab(isAdmin ? 'admin' : 'dashboard');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
@@ -2161,6 +2224,9 @@
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (window.playerState.isAdmin) return window.customAlert("선생님은 식권 경매에 참여할 수 없습니다.");
             
+            const bal = Number(window.playerState.bong) || 0;
+            if (bal <= 10) return window.customAlert("보유 삼봉이 10B 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.");
+
             const inputEl = document.getElementById('lunchBidInput');
             const amt = parseInt(inputEl.value);
             
@@ -2475,7 +2541,7 @@
                 }
 
                 window.playerState.xp = Math.max(0, window.playerState.xp - xp); 
-                window.playerState.bong = Math.max(0, window.playerState.bong - (bong + 0.5));
+                window.playerState.bong = (Number(window.playerState.bong) || 0) - (bong + 0.5);
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
                 saveDataToCloud();
@@ -2521,10 +2587,8 @@
                     return await window.customAlert(`❌ 돈이 부족해요. ${(bet - (window.playerState.bong || 0)).toFixed(1)}B가 더 필요해요.`);
                 }
 
-                const pickStr = await window.customPrompt(`1~6 중에 하나를 선택하세요. (맞추면 ${bet * 5}B)`, "number");
-                if (pickStr === null) return;
-                const pick = Math.floor(parseFloat(pickStr));
-                if (!Number.isFinite(pick) || pick < 1 || pick > 6) return await window.customAlert('선택은 1~6 숫자여야 합니다.');
+                const pick = await window.customPick1to6(`1~6 중에 하나를 선택하세요. (맞추면 ${bet * 5}B)`);
+                if (pick === null) return;
 
                 const ok = await window.customConfirm(`🎲 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${bet}B\n- 성공 보상: ${bet * 5}B`);
                 if(!ok) return;
@@ -2661,7 +2725,7 @@
                         xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
                         condition: null, dragonBalls: [], earlyBirdCount: 0,
-                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: []
+                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: []
                     });
                 }
                 
@@ -2749,36 +2813,28 @@
             }
         };
 
-        window.checkAndDeductLunch = async function() {
-            if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
-            const now = new Date(); 
-            const day = now.getDay(); 
-            const hours = now.getHours(); 
-            
-            const isWeekday = day >= 1 && day <= 5;
-            const isPast1200 = hours >= 12;
-            
-            if (isWeekday && isPast1200) {
-                const todayStr = `LUNCH_${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}`;
-                
-                if (window.globalSettings.lastLunchDeduction !== todayStr) {
-                    const batch = writeBatch(db); 
-                    let count = 0;
-                    
-                    for (const stu of window.allStudentsData) {
-                        if (stu.id === 'gm' || stu.id === 'gm_a') continue;
-                        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { 
-                            bong: Math.max(0, (stu.bong || 0) - 10) 
-                        }, { merge: true }); 
-                        count++; 
-                    }
-                    
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { lastLunchDeduction: todayStr }, {merge: true});
-                    await batch.commit(); 
-                    window.customAlert(`🍱 낮 12시 정각! 평일 기본 급식비(10B) 자동 차감 완료! (${count}명)`);
-                }
-            }
+        // 평일 12시(정오) 이후, 학생 계정당 하루 1회 점심값 10B 차감 (잔액 부족 시 마이너스 허용)
+        window.applyPersonalLunchDeductionIfNeeded = async function() {
+            if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef) return;
+            if (window.playerState.isAdmin) return;
+
+            const now = new Date();
+            const day = now.getDay();
+            if (day < 1 || day > 5) return;
+            if (now.getHours() < 12) return;
+
+            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if (window.playerState.lastLunchDeductDate === todayYmd) return;
+
+            window.playerState.bong = (Number(window.playerState.bong) || 0) - 10;
+            window.playerState.lastLunchDeductDate = todayYmd;
+            await saveDataToCloud();
+            updateUI();
+            await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
         };
+
+        // 이전 버전 호환용 (일괄 차감). 현재는 applyPersonalLunchDeductionIfNeeded 로 개별 처리합니다.
+        window.checkAndDeductLunch = async function() {};
 
         window.plazaClickXP = async function(stuId, element) { 
             if (!window.playerState.isAdmin || stuId === 'gm' || stuId === 'gm_a') return; 
@@ -2816,7 +2872,10 @@
                     else { dAmt -= hp; updates.shieldHP = 0; } 
                 }
                 
-                if (dAmt > 0) updates[type] = Math.max(0, (stu[type] || 0) - dAmt);
+                if (dAmt > 0) {
+                    const nextV = (stu[type] || 0) - dAmt;
+                    updates[type] = (type === 'bong') ? nextV : Math.max(0, nextV);
+                }
             } else { 
                 updates[type] = (stu[type] || 0) + amount; 
             }
@@ -2860,7 +2919,8 @@
                     else { dAmt -= hp; updates.shieldHP = 0; pCount++; } 
                 }
                 if (dAmt > 0) { 
-                    updates[type] = Math.max(0, (stu[type] || 0) - dAmt); 
+                    const nextV = (stu[type] || 0) - dAmt;
+                    updates[type] = (type === 'bong') ? nextV : Math.max(0, nextV); 
                     aCount++; 
                 } 
                 
@@ -2875,8 +2935,11 @@
             if (window.playerState.isGMA && stuId !== '13') return;
             
             const input = await window.customPrompt(`[${stuName}] 새로운 값 입력 (현재: ${currentVal}):`, "number");
-            if (input !== null && !isNaN(parseFloat(input)) && parseFloat(input) >= 0) {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { [type]: type === 'bong' ? parseFloat(parseFloat(input).toFixed(1)) : Math.floor(input) }, { merge: true });
+            if (input !== null && !isNaN(parseFloat(input))) {
+                const raw = parseFloat(input);
+                if (type === 'xp' && raw < 0) return await window.customAlert('경험치는 0 이상만 입력할 수 있어요.');
+                const val = type === 'bong' ? parseFloat(raw.toFixed(1)) : Math.floor(raw);
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { [type]: val }, { merge: true });
             }
         };
 
@@ -3441,11 +3504,7 @@
         function checkWeekendTime() {
             const day = new Date().getDay();
             isWeekend = (day === 0 || day === 6);
-            const dbContainer = document.getElementById('dragonballContainer');
-            if(dbContainer) {
-                if(isWeekend) dbContainer.classList.remove('hidden');
-                else dbContainer.classList.add('hidden');
-            }
+            // 드래곤볼 '보관함'은 주중에도 항상 보이게 하고(수집 현황), 주말 여부는 이벤트 스폰 등 다른 로직에서만 사용합니다.
         }
 
         // --- 레이드 관련 함수들 ---

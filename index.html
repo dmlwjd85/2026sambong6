@@ -737,7 +737,7 @@
             <div class="max-w-3xl mx-auto space-y-4">
                 <div class="mb-4">
                     <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-bell"></i> 도전! 삼봉 골든벨</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">마스터가 출제한 문제를 풀고 채점해보세요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">문제를 푼 뒤 <strong class="text-yellow-200/90">최종 제출 및 채점</strong> 한 번으로 채점·보상이 적용됩니다.</p>
                 </div>
                 
                 <div id="gbStudentContainer" class="space-y-3 pb-8">
@@ -851,7 +851,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // ==========================================
@@ -1337,17 +1337,18 @@
             `).join('');
             
             let gbHtml = `
-                <div class="flex items-center gap-2 mb-3">
-                    <span class="text-yellow-400 font-bold text-xs w-20 shrink-0">필요 정답</span>
-                    <input type="number" id="gb_admin_winCorrectCount" min="1" step="1" value="5" class="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs">
-                </div>
+                <p class="text-[10px] text-slate-400 mb-2">각 문항마다 정답 시 지급할 XP·봉(B)을 입력하세요. (학생은 모든 문제 입력 후 한 번에 제출·채점됩니다.)</p>
             `;
             for(let i=0; i<10; i++) {
                 gbHtml += `
-                <div class="flex gap-2 mb-2 items-center">
-                    <span class="text-sb-gold font-bold text-xs w-6 text-center">Q${i+1}</span>
-                    <input type="text" id="gb_admin_q_${i}" placeholder="문제 내용 (빈칸은 출제안함)" class="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs">
-                    <input type="text" id="gb_admin_a_${i}" placeholder="정답" class="w-24 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs text-center font-bold">
+                <div class="flex flex-wrap gap-1 sm:gap-2 mb-2 items-center">
+                    <span class="text-sb-gold font-bold text-xs w-6 text-center shrink-0">Q${i+1}</span>
+                    <input type="text" id="gb_admin_q_${i}" placeholder="문제 (빈칸은 출제안함)" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs">
+                    <input type="text" id="gb_admin_a_${i}" placeholder="정답" class="w-20 sm:w-24 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs text-center font-bold shrink-0">
+                    <span class="text-[10px] text-slate-500 shrink-0">XP</span>
+                    <input type="number" id="gb_admin_xp_${i}" min="0" step="1" value="10" title="이 문항 정답 시 지급 XP" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
+                    <span class="text-[10px] text-slate-500 shrink-0">B</span>
+                    <input type="number" id="gb_admin_bong_${i}" min="0" step="0.1" value="1" title="이 문항 정답 시 지급 봉" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
                 </div>`;
             }
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
@@ -1541,16 +1542,16 @@
                             if(!snap.exists()) return;
                             const d = snap.data();
                             const qs = Array.isArray(d.questions) ? d.questions : [];
-                            if(d.winCorrectCount !== undefined) {
-                                const wEl = document.getElementById('gb_admin_winCorrectCount');
-                                if(wEl && (wEl.value || '') === '') wEl.value = d.winCorrectCount;
-                            }
                             for(let i=0; i<10; i++) {
                                 const qi = qs.find(x => x.originalIndex === i) || qs[i] || {};
                                 const qEl = document.getElementById(`gb_admin_q_${i}`);
                                 const aEl = document.getElementById(`gb_admin_a_${i}`);
+                                const xpEl = document.getElementById(`gb_admin_xp_${i}`);
+                                const bongEl = document.getElementById(`gb_admin_bong_${i}`);
                                 if(qEl && (qEl.value || '') === '') qEl.value = qi.q || '';
                                 if(aEl && (aEl.value || '') === '') aEl.value = qi.a || '';
+                                if(xpEl && (xpEl.value || '') === '') xpEl.value = (qi.rewardXp != null && qi.rewardXp !== '') ? qi.rewardXp : 10;
+                                if(bongEl && (bongEl.value || '') === '') bongEl.value = (qi.rewardBong != null && qi.rewardBong !== '') ? qi.rewardBong : 1;
                             }
                         });
 
@@ -2971,34 +2972,40 @@
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
             const day = now.getDay();
-            if (day === 0 || day === 6) return; 
+            if (day === 0 || day === 6) return;
 
             const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
             const targetTimes = ['09:40', '10:30', '11:20', '12:10', '13:50', '14:40'];
-            
-            if (targetTimes.includes(timeStr)) {
-                const todayKey = `${now.getFullYear()}_${now.getMonth()+1}_${now.getDate()}_${timeStr}`;
-                if (window.globalSettings.lastAutoXpTime !== todayKey) {
-                    const batch = writeBatch(db);
-                    let count = 0;
-                    
-                    for (const stu of window.allStudentsData) {
-                        if (stu.id === 'gm' || stu.id === 'gm_a') continue;
-                        // 다른 클라이언트(퀘스트 제출 등) 업데이트와 충돌해 XP가 튀는 현상을 막기 위해 원자적 증가 사용
-                        batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), {
-                            xp: increment(5)
-                        }, { merge: true });
-                        count++;
+            if (!targetTimes.includes(timeStr)) return;
+
+            const todayKey = `${now.getFullYear()}_${now.getMonth()+1}_${now.getDate()}_${timeStr}`;
+            const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+            const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+
+            let granted = false;
+            try {
+                granted = await runTransaction(db, async (transaction) => {
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const last = settingsSnap.exists() ? settingsSnap.data().lastAutoXpTime : null;
+                    if (last === todayKey) return false;
+
+                    for (const stu of stuList) {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
+                        transaction.set(ref, { xp: increment(5) }, { merge: true });
                     }
-                    
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { 
+                    transaction.set(settingsRef, {
                         lastAutoXpTime: todayKey,
                         announcement: `[${timeStr}] 수업 종료! 모든 학생에게 경험치 +5XP가 자동 지급되었습니다! 🎉`
-                    }, {merge: true});
-                    
-                    await batch.commit();
-                    window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${count}명에게 경험치 +5 자동 지급을 완료했습니다.`);
-                }
+                    }, { merge: true });
+                    return true;
+                });
+            } catch (e) {
+                console.warn('checkAndDistributeClassXP', e);
+                return;
+            }
+
+            if (granted) {
+                window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${stuList.length}명에게 경험치 +5 자동 지급을 완료했습니다.`);
             }
         };
 
@@ -3298,6 +3305,73 @@
         // ==========================================
         // ★ 골든벨 전용 함수 ★
         // ==========================================
+        /** 마스터 화면·답안 표시용 HTML 이스케이프 */
+        function escapeHtmlGb(s) {
+            if (s == null || s === undefined) return '';
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        /** 실시간 제출 답안 표 (문항별 제출 내용·O/X·합계) */
+        function buildGoldenBellMasterAnswerTableHtml(st) {
+            const subs = st.submissions || {};
+            const qs = st.questions || [];
+            const n = qs.length;
+            const subsKeys = Object.keys(subs);
+            const submittedCount = subsKeys.filter(k => {
+                const s = subs[k];
+                return s && (s.finalized || s.rewardsGiven);
+            }).length;
+
+            let thead = '<thead><tr><th class="sticky left-0 z-10 bg-slate-800 p-1.5 text-[9px] border border-slate-600 min-w-[52px]">학생</th>';
+            for (let i = 0; i < n; i++) {
+                thead += `<th class="p-1.5 text-[9px] border border-slate-600 min-w-[76px]">Q${i + 1}</th>`;
+            }
+            thead += '<th class="p-1.5 text-[9px] border border-slate-600 min-w-[64px]">합계</th></tr></thead>';
+
+            let body = '<tbody>';
+            for (let i = 1; i <= 13; i++) {
+                const id = String(i);
+                const name = STUDENT_NAMES[id];
+                const s = subs[id];
+                body += `<tr><td class="sticky left-0 z-10 bg-slate-900/95 p-1.5 text-[9px] font-bold border border-slate-600">${escapeHtmlGb(name)}</td>`;
+                if (!s || !Array.isArray(s.answers)) {
+                    for (let j = 0; j < n; j++) {
+                        body += `<td class="p-1.5 text-[9px] text-slate-500 border border-slate-600 align-top">—</td>`;
+                    }
+                    body += `<td class="p-1.5 text-[9px] text-slate-500 border border-slate-600">미제출</td></tr>`;
+                    continue;
+                }
+                const results = Array.isArray(s.results) ? s.results : [];
+                let correct = 0;
+                for (let j = 0; j < n; j++) {
+                    const ans = (s.answers[j] != null) ? String(s.answers[j]) : '';
+                    const ok = results[j] === true;
+                    if (ok) correct++;
+                    const mark = ok ? '<span class="text-emerald-400 font-black">O</span>' : (results[j] === false ? '<span class="text-rose-400 font-black">X</span>' : '<span class="text-slate-500">—</span>');
+                    const shortAns = ans.length > 14 ? ans.slice(0, 12) + '…' : ans;
+                    const titleAttr = escapeHtmlGb(ans).replace(/"/g, '&quot;');
+                    body += `<td class="p-1 text-[8px] border border-slate-600 align-top leading-tight" title="${titleAttr}"><div class="text-slate-200 break-all">${escapeHtmlGb(shortAns)}</div><div class="mt-0.5">${mark}</div></td>`;
+                }
+                const fin = !!(s.finalized || s.rewardsGiven);
+                const rxp = s.rewardXpTotal;
+                const rb = s.rewardBongTotal;
+                const sumHtml = fin && rxp != null && rb != null
+                    ? `<div class="text-emerald-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-yellow-200/90">+${rxp}XP</div><div class="text-[8px] text-amber-200/90">+${rb}B</div>`
+                    : `<div class="text-slate-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-slate-500">${fin ? '완료' : '작성중'}</div>`;
+                body += `<td class="p-1.5 text-[9px] border border-slate-600 align-top">${sumHtml}</td></tr>`;
+            }
+            body += '</tbody>';
+
+            return `<div class="text-[10px] text-slate-300 mb-2">최종 제출·채점 완료: ${submittedCount} / 13 (실시간 반영)</div>
+                <div class="overflow-x-auto max-h-[52vh] overflow-y-auto rounded-lg border border-slate-600/80">
+                <table class="w-full border-collapse">${thead}${body}</table>
+                </div>`;
+        }
+
         window.updateGoldenBellAdminUI = function() {
             if(!window.playerState.isAdmin) return;
             const st = window.goldenbellState;
@@ -3307,35 +3381,28 @@
                 st.questions.forEach((item) => {
                     const qInput = document.getElementById(`gb_admin_q_${item.originalIndex}`);
                     const aInput = document.getElementById(`gb_admin_a_${item.originalIndex}`);
+                    const xpInput = document.getElementById(`gb_admin_xp_${item.originalIndex}`);
+                    const bongInput = document.getElementById(`gb_admin_bong_${item.originalIndex}`);
                     // 진행 중 스냅샷이 관리자 입력칸을 덮어써서 "작성 중 초기화"되는 문제 방지
-                    // - 포커스가 있는 입력칸은 절대 덮어쓰지 않음
-                    // - 값이 비어있는 경우에만 상태값으로 자동 채움
                     if(qInput && aInput && st.isOpen) {
                         if(document.activeElement !== qInput && (qInput.value || '') === '') qInput.value = item.q;
                         if(document.activeElement !== aInput && (aInput.value || '') === '') aInput.value = item.a;
+                    }
+                    if (xpInput && bongInput && st.isOpen) {
+                        const defXp = (item.rewardXp != null && item.rewardXp !== '') ? item.rewardXp : 10;
+                        const defB = (item.rewardBong != null && item.rewardBong !== '') ? item.rewardBong : 1;
+                        if(document.activeElement !== xpInput && (xpInput.value || '') === '') xpInput.value = defXp;
+                        if(document.activeElement !== bongInput && (bongInput.value || '') === '') bongInput.value = defB;
                     }
                 });
             }
 
             if (st && st.isOpen) {
                 dash.classList.remove('hidden');
-                let html = '<h4 class="text-yellow-400 font-bold text-xs mb-2"><i class="fa-solid fa-chart-bar"></i> 실시간 제출 현황</h4>';
-                const subs = st.submissions || {};
-                const totalStudents = 13;
-                const submittedCount = Object.keys(subs).length;
-                html += `<div class="text-[10px] text-slate-300 mb-2">제출 인원: ${submittedCount} / ${totalStudents} 명</div><div class="grid grid-cols-2 sm:grid-cols-3 gap-2">`;
-                
-                for(let i=1; i<=13; i++) {
-                    const sId = String(i); const sName = STUDENT_NAMES[sId];
-                    if(subs[sId]) {
-                        const score = subs[sId].score; const total = st.questions.length;
-                        html += `<div class="bg-slate-800 border border-emerald-500 rounded p-1.5 text-center"><div class="text-[10px] text-white font-bold">${sName}</div><div class="text-[10px] text-emerald-400">${score}/${total} 정답</div></div>`;
-                    } else {
-                        html += `<div class="bg-slate-800/50 border border-slate-700 rounded p-1.5 text-center opacity-50"><div class="text-[10px] text-slate-400 font-bold">${sName}</div><div class="text-[10px] text-slate-500">미제출</div></div>`;
-                    }
-                }
-                html += '</div>';
-                dash.innerHTML = html;
+                dash.innerHTML = `
+                    <h4 class="text-yellow-400 font-bold text-xs mb-2"><i class="fa-solid fa-table"></i> 실시간 답안·채점 현황</h4>
+                    ${buildGoldenBellMasterAnswerTableHtml(st)}
+                `;
             } else dash.classList.add('hidden');
         };
 
@@ -3347,40 +3414,17 @@
 
             if(!st || !st.isOpen) return;
 
-            const subs = st.submissions || {};
             const total = st.questions ? st.questions.length : 0;
-            const winCorrect = st.winCorrectCount || Math.ceil(Math.max(1, total) / 2);
-
             let html = `
-                <div class="glass-panel p-4 rounded-2xl border border-yellow-500/50 mb-4 bg-slate-900/60">
-                    <div class="flex items-center justify-between mb-2">
-                        <div class="text-white font-bold text-sm"><i class="fa-solid fa-chart-simple text-yellow-400"></i> 골든벨 실시간 정답 현황</div>
-                        <div class="text-[10px] text-slate-300 font-bold">필요 정답: ${winCorrect} / ${total}</div>
+                <div class="glass-panel p-4 rounded-2xl border border-yellow-500/50 mb-3 bg-slate-900/60">
+                    <div class="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                        <div class="text-white font-bold text-sm"><i class="fa-solid fa-table text-yellow-400"></i> 골든벨 실시간 답안</div>
+                        <div class="text-[10px] text-slate-400">총 ${total}문항 · 학생이 최종 제출하면 문항별로 O/X·합계가 갱신됩니다.</div>
                     </div>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        ${Array.from({length: 13}, (_, i) => String(i+1)).map(id => {
-                            const name = STUDENT_NAMES[id];
-                            const s = subs[id];
-                            if(!s) {
-                                return `<div class="bg-slate-800/50 border border-slate-700 rounded p-2 text-center opacity-70">
-                                    <div class="text-[10px] text-slate-300 font-bold">${name}</div>
-                                    <div class="text-[10px] text-slate-500">미제출</div>
-                                </div>`;
-                            }
-                            const score = s.score || 0;
-                            const defeated = !!s.defeated || score >= winCorrect;
-                            const b = defeated ? 'border-emerald-500 bg-emerald-900/20' : 'border-yellow-500/40 bg-slate-800';
-                            return `<div class="${b} border rounded p-2 text-center">
-                                <div class="text-[10px] text-white font-bold">${name}</div>
-                                <div class="text-[10px] ${defeated ? 'text-emerald-400' : 'text-yellow-300'} font-black">${score}/${total}</div>
-                                <div class="text-[9px] text-slate-400">${defeated ? '✅ 격파' : '진행중'}</div>
-                            </div>`;
-                        }).join('')}
-                    </div>
+                    ${buildGoldenBellMasterAnswerTableHtml(st)}
                 </div>
             `;
 
-            // 마스터는 골든벨 탭에서 위 현황을 우선 표시(학생 입력 UI 대신)
             container.innerHTML = html;
         };
 
@@ -3390,25 +3434,23 @@
             for(let i=0; i<10; i++) {
                 const qText = document.getElementById(`gb_admin_q_${i}`).value.trim();
                 const aText = document.getElementById(`gb_admin_a_${i}`).value.trim();
-                if (qText) qs.push({ q: qText, a: aText, originalIndex: i });
+                if (!qText) continue;
+                const xpEl = document.getElementById(`gb_admin_xp_${i}`);
+                const bongEl = document.getElementById(`gb_admin_bong_${i}`);
+                let rewardXp = xpEl ? parseInt(xpEl.value, 10) : 10;
+                if (isNaN(rewardXp) || rewardXp < 0) rewardXp = 10;
+                let rewardBong = bongEl ? parseFloat(bongEl.value) : 1;
+                if (isNaN(rewardBong) || rewardBong < 0) rewardBong = 1;
+                qs.push({ q: qText, a: aText, originalIndex: i, rewardXp, rewardBong });
             }
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
-
-            const winEl = document.getElementById('gb_admin_winCorrectCount');
-            let winCorrectCount = winEl ? parseInt(winEl.value) : 0;
-            if (isNaN(winCorrectCount) || winCorrectCount <= 0) {
-                winCorrectCount = Math.ceil(qs.length * 0.6);
-            }
-            winCorrectCount = Math.max(1, Math.min(winCorrectCount, qs.length));
             
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
                 isOpen: true, 
                 questions: qs, 
-                winCorrectCount: winCorrectCount,
-                monsterMaxHP: 1000,
                 submissions: {} 
             }, {merge: true}); 
-            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제) (필요 정답: ${winCorrectCount})`);
+            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제) 문항별 XP·봉은 출제 시 입력한 값으로 채점됩니다.`);
         };
 
         window.saveGoldenBellDraft = async function() {
@@ -3417,15 +3459,18 @@
             for(let i=0; i<10; i++) {
                 const qText = document.getElementById(`gb_admin_q_${i}`).value.trim();
                 const aText = document.getElementById(`gb_admin_a_${i}`).value.trim();
-                if (qText) qs.push({ q: qText, a: aText, originalIndex: i });
+                if (!qText) continue;
+                const xpEl = document.getElementById(`gb_admin_xp_${i}`);
+                const bongEl = document.getElementById(`gb_admin_bong_${i}`);
+                let rewardXp = xpEl ? parseInt(xpEl.value, 10) : 10;
+                if (isNaN(rewardXp) || rewardXp < 0) rewardXp = 10;
+                let rewardBong = bongEl ? parseFloat(bongEl.value) : 1;
+                if (isNaN(rewardBong) || rewardBong < 0) rewardBong = 1;
+                qs.push({ q: qText, a: aText, originalIndex: i, rewardXp, rewardBong });
             }
-            const winEl = document.getElementById('gb_admin_winCorrectCount');
-            let winCorrectCount = winEl ? parseInt(winEl.value) : 0;
-            if (isNaN(winCorrectCount) || winCorrectCount <= 0) winCorrectCount = Math.ceil(Math.max(1, qs.length) * 0.6);
 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'draft'), {
                 questions: qs,
-                winCorrectCount: winCorrectCount,
                 updatedAt: Date.now()
             }, { merge: true });
             window.customAlert('✅ 골든벨 문제가 저장되었습니다. (새로고침해도 유지)');
@@ -3478,256 +3523,143 @@
             }
 
             const totalQuestions = st.questions.length;
-            let winCorrectCount = st.winCorrectCount || Math.ceil(totalQuestions / 2);
-            winCorrectCount = Math.max(1, Math.min(parseInt(winCorrectCount) || 1, totalQuestions));
-
-            const monsterMaxHP = st.monsterMaxHP || 1000;
-            const damagePerCorrect = winCorrectCount > 0 ? (monsterMaxHP / winCorrectCount) : monsterMaxHP;
-
             const mySubmission = st.submissions && st.submissions[mId];
             const myAnswers = mySubmission && Array.isArray(mySubmission.answers) ? mySubmission.answers : [];
             const myResults = mySubmission && Array.isArray(mySubmission.results) ? mySubmission.results : [];
+            const locked = !!(mySubmission && (mySubmission.finalized || mySubmission.rewardsGiven));
             const myScore = mySubmission && typeof mySubmission.score === 'number'
                 ? mySubmission.score
                 : (myResults || []).filter(r => r === true).length;
-            const myMonsterHP = mySubmission && typeof mySubmission.monsterHP === 'number'
-                ? mySubmission.monsterHP
-                : Math.max(0, Math.round(monsterMaxHP - myScore * damagePerCorrect));
-            const hpRatio = monsterMaxHP > 0 ? (myMonsterHP / monsterMaxHP) : 0;
-            const myDefeated = !!(mySubmission && mySubmission.defeated) || myScore >= winCorrectCount;
-            const rewardsGiven = !!(mySubmission && mySubmission.rewardsGiven);
-            window._gbLocalDefeated = myDefeated;
+            const rxTotal = mySubmission && mySubmission.rewardXpTotal != null ? mySubmission.rewardXpTotal : null;
+            const rbTotal = mySubmission && mySubmission.rewardBongTotal != null ? mySubmission.rewardBongTotal : null;
 
             let html = `
-                <div class="glass-panel p-4 rounded-2xl border border-yellow-500/50 mb-4 bg-slate-900/60">
-                    <div class="flex items-center justify-between mb-2">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-ghost text-yellow-400"></i>
-                            <div class="text-white font-bold text-sm">몬스터 잡기 (골든벨)</div>
-                        </div>
-                        <div class="text-[10px] text-slate-300 font-bold">
-                            필요한 정답: ${winCorrectCount} / ${totalQuestions}
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-center mb-2">
-                        <div id="gbMonsterImg" class="text-5xl sm:text-6xl drop-shadow-[0_0_18px_rgba(234,179,8,0.35)] transition-transform duration-200" style="transform: scale(${Math.max(0.6, 0.6 + hpRatio * 0.8)})">👾</div>
-                    </div>
-                    <div class="w-full bg-slate-800 border border-slate-700 rounded-full h-4 overflow-hidden shadow-inner">
-                        <div class="bg-yellow-500 h-full stat-fill w-full" id="gbMonsterHPBar" style="width:${Math.max(0, Math.min(100, (myMonsterHP/monsterMaxHP)*100))}%"></div>
-                    </div>
-                    <div class="flex items-center justify-between mt-2 text-[10px] text-slate-300 font-bold">
-                        <div id="gbMonsterHPText">${myMonsterHP}/${monsterMaxHP} HP</div>
-                        <div>${myDefeated ? '✅ 격파!' : '진행 중'}</div>
-                    </div>
-                    <div class="text-[9px] text-slate-400 mt-2">
-                        정답을 맞힐 때마다 몬스터 HP가 줄어듭니다.
-                    </div>
+                <div class="glass-panel p-3 rounded-2xl border border-yellow-500/40 mb-4 bg-slate-900/50">
+                    <div class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨</div>
+                    <p class="text-[10px] text-slate-400 leading-relaxed">모든 문항에 답을 입력한 뒤 하단 <strong class="text-yellow-200">최종 제출 및 채점</strong>을 누르면 한 번에 채점·보상이 적용됩니다.</p>
                 </div>
             `;
             
             st.questions.forEach((item, idx) => {
-                const answered = mySubmission && myResults && myResults[idx] !== undefined && myResults[idx] !== null;
-                const correct = myResults[idx] === true;
-                const disabled = answered || myDefeated;
-
-                const val = myAnswers[idx] || '';
+                const val = (myAnswers[idx] != null) ? String(myAnswers[idx]) : '';
+                const defRx = (item.rewardXp != null && !isNaN(Number(item.rewardXp))) ? Number(item.rewardXp) : 10;
+                const defB = (item.rewardBong != null && !isNaN(Number(item.rewardBong))) ? Number(item.rewardBong) : 1;
                 let inputCls = 'bg-slate-900/80 border border-slate-600 text-white';
                 let resHtml = '';
-                
-                if(answered) {
-                    if(correct) {
+                if (locked && myResults[idx] !== undefined && myResults[idx] !== null) {
+                    const correct = myResults[idx] === true;
+                    if (correct) {
                         inputCls = 'bg-emerald-900/20 border-emerald-500 text-white';
-                        resHtml = '<span class="text-emerald-400 font-black text-lg drop-shadow-md">O 정답!</span>';
+                        resHtml = `<span class="text-emerald-400 font-black text-sm">O</span> <span class="text-[10px] text-emerald-300/90">(+${defRx}XP · +${defB}B)</span>`;
                     } else {
                         inputCls = 'bg-red-900/20 border-sb-red text-white';
-                        resHtml = `<span class="text-sb-red font-bold text-xs">X (정답: ${item.a})</span>`;
+                        resHtml = `<span class="text-rose-400 font-bold text-sm">X</span> <span class="text-[10px] text-slate-400">(정답: ${escapeHtmlGb(item.a)})</span>`;
                     }
                 }
 
                 html += `
                 <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative mb-3">
                     <div class="text-sb-gold font-black text-xs sm:text-sm mb-2">
-                        <span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span> ${item.q}
+                        <span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span>
+                        <span class="text-white/95">${escapeHtmlGb(item.q)}</span>
                     </div>
-                    <div class="flex gap-2 items-center relative">
+                    <p class="text-[9px] text-slate-500 mb-2">이 문항 정답 시: ${defRx} XP · ${defB} B</p>
+                    <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
                         <input type="text"
                             id="gb_ans_${idx}"
-                            value="${val}"
-                            ${disabled ? 'disabled' : ''}
-                            placeholder="정답을 여기에 입력하세요"
+                            value="${escapeHtmlGb(val)}"
+                            ${locked ? 'disabled' : ''}
+                            placeholder="정답 입력"
                             class="flex-1 px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none transition shadow-inner ${inputCls}">
-                        <div id="gb_res_${idx}" class="w-20 text-center text-sm absolute right-2 bg-slate-900/50 rounded pointer-events-none transition-all">
-                            ${resHtml}
-                        </div>
-                    </div>
-                    <div class="mt-3">
-                        <button
-                            onclick="window.submitGoldenBellAnswer(${idx})"
-                            ${disabled ? 'disabled' : ''}
-                            class="w-full py-2.5 rounded-xl font-black text-xs transition
-                                ${disabled
-                                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                                    : 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 shadow-[0_0_15px_rgba(234,179,8,0.5)]'}">
-                            ${disabled ? '제출완료' : '제출 / 공격'}
-                        </button>
+                        ${locked ? `<div class="text-right sm:text-left sm:min-w-[140px] shrink-0">${resHtml}</div>` : ''}
                     </div>
                 </div>`;
             });
 
-            if(myDefeated) {
+            if (locked) {
                 html += `
-                    <div class="mt-6 bg-emerald-900/30 border border-emerald-500/50 p-4 rounded-2xl text-center">
-                        <div class="text-white font-black text-sm">✅ 몬스터 격파!</div>
-                        <div class="text-[10px] text-slate-300 font-bold mt-1">
-                            정답 ${myScore}개로 보상 ${rewardsGiven ? '지급 완료' : '지급 예정'}
-                        </div>
+                    <div class="mt-4 bg-emerald-900/25 border border-emerald-500/50 p-4 rounded-2xl text-center">
+                        <div class="text-white font-black text-sm">✅ 채점 완료</div>
+                        <div class="text-[11px] text-slate-200 font-bold mt-2">정답 ${myScore} / ${totalQuestions}문항</div>
+                        <div class="text-[10px] text-yellow-200 mt-1">획득: +${rxTotal != null ? rxTotal : '—'} XP · +${rbTotal != null ? rbTotal : '—'} B</div>
                     </div>`;
             } else {
                 html += `
-                    <div class="mt-6 text-center text-[10px] text-slate-400 font-bold">
-                        필요한 정답(${winCorrectCount})에 도달할 때까지 몬스터 HP가 줄어듭니다.
+                    <div class="mt-4">
+                        <button type="button" onclick="window.submitGoldenBellAll()"
+                            class="w-full py-3.5 rounded-2xl font-black text-sm bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 shadow-[0_0_18px_rgba(234,179,8,0.45)]">
+                            최종 제출 및 채점
+                        </button>
+                        <p class="text-[9px] text-slate-500 text-center mt-2">제출 후에는 수정할 수 없습니다.</p>
                     </div>`;
             }
 
             container.innerHTML = html;
         };
 
-        window.submitGoldenBellAnswer = async function(ansIdx) {
+        /** 골든벨: 모든 문항 한 번에 채점·보상 (문항별 XP·봉 합산) */
+        window.submitGoldenBellAll = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
-            if(window._gbAnswerSubmitting) return;
+            if(window._gbFinalSubmitting) return;
 
             const st = window.goldenbellState;
             const mId = localStorage.getItem('sambong_student_id');
             if(!st || !st.isOpen) return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
 
-            const totalQuestions = st.questions.length;
-            let winCorrectCount = st.winCorrectCount || Math.ceil(totalQuestions / 2);
-            winCorrectCount = Math.max(1, Math.min(parseInt(winCorrectCount) || 1, totalQuestions));
-
-            const monsterMaxHP = st.monsterMaxHP || 1000;
-            const damagePerCorrect = winCorrectCount > 0 ? (monsterMaxHP / winCorrectCount) : monsterMaxHP;
-
-            const mySubmission = st.submissions && st.submissions[mId] ? st.submissions[mId] : null;
-            const myResults = mySubmission && Array.isArray(mySubmission.results) ? mySubmission.results : [];
-            const myAnswers = mySubmission && Array.isArray(mySubmission.answers) ? mySubmission.answers : [];
-            const myScore = mySubmission && typeof mySubmission.score === 'number'
-                ? mySubmission.score
-                : (myResults || []).filter(r => r === true).length;
-
-            if(window._gbLocalDefeated || (mySubmission && (mySubmission.defeated || mySubmission.rewardsGiven))) {
-                return window.customAlert('이미 몬스터를 격파했습니다.');
+            const prev = st.submissions && st.submissions[mId];
+            if (prev && (prev.finalized || prev.rewardsGiven)) {
+                return window.customAlert('이미 최종 제출하여 채점이 완료되었습니다.');
             }
 
-            if(ansIdx === undefined || ansIdx === null) return;
-            if(ansIdx < 0 || ansIdx >= totalQuestions) return;
-
-            const alreadyAnswered = myResults && myResults[ansIdx] !== undefined && myResults[ansIdx] !== null;
-            if(alreadyAnswered) return window.customAlert('이미 제출된 문제입니다.');
-
-            const el = document.getElementById(`gb_ans_${ansIdx}`);
-            const val = el ? (el.value || '').trim() : '';
-            if(!val) return window.customAlert('정답을 입력해주세요.');
-
-            // 제출/공격 누르면 즉시 입력칸과 버튼을 비활성화 (채점/데미지 반영 전 중복 방지)
-            if(el) el.disabled = true;
-            const btn = document.querySelector(`button[onclick="window.submitGoldenBellAnswer(${ansIdx})"]`);
-            if(btn) btn.disabled = true;
-
-            const item = st.questions[ansIdx];
-            if(!item) return;
-
-            const isCorrect = (val === item.a);
-            const newScore = myScore + (isCorrect ? 1 : 0);
-            const newMonsterHP = Math.max(0, Math.round(monsterMaxHP - newScore * damagePerCorrect));
-            const defeated = newScore >= winCorrectCount;
-
-            window._gbAnswerSubmitting = true;
-            try {
-                // answers/results를 배열로 유지해야 렌더링이 정상 동작합니다.
-                const answers = (myAnswers && Array.isArray(myAnswers)) ? myAnswers.slice() : Array(totalQuestions).fill('');
-                // Firestore는 undefined를 저장할 수 없어 null로 미제출 상태를 유지합니다.
-                const results = (myResults && Array.isArray(myResults)) ? myResults.slice() : Array(totalQuestions).fill(null);
-                answers[ansIdx] = val;
-                results[ansIdx] = isCorrect;
-
-                const updates = {};
-                updates[`submissions.${mId}.answers`] = answers;
-                updates[`submissions.${mId}.results`] = results;
-                updates[`submissions.${mId}.score`] = newScore;
-                updates[`submissions.${mId}.monsterHP`] = newMonsterHP;
-
-                if(defeated) {
-                    updates[`submissions.${mId}.defeated`] = true;
-                    updates[`submissions.${mId}.defeatedAt`] = Date.now();
-                }
-
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), updates, {merge: true});
-
-                // 격파 순간 보상 지급 (중복 지급 방지: rewardsGiven 플래그)
-                if(defeated && !(mySubmission && mySubmission.rewardsGiven)) {
-                    // 몬스터에게 입힌 데미지(=줄인 HP)에 비례 보상 (최대 100XP / 20B)
-                    const dealtDamage = Math.max(0, Math.round(monsterMaxHP - newMonsterHP));
-                    const ratio = monsterMaxHP > 0 ? (dealtDamage / monsterMaxHP) : 0;
-                    const rewardXp = Math.max(0, Math.min(100, Math.floor(ratio * 100)));
-                    const rewardBong = Math.max(0, Math.min(20, Math.round(ratio * 20 * 10) / 10));
-
-                    window.playerState.xp += rewardXp;
-                    window.playerState.bong += rewardBong;
-                    await saveDataToCloud();
-                    updateUI();
-
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
-                        [`submissions.${mId}.rewardsGiven`]: true,
-                        [`submissions.${mId}.rewardXp`]: rewardXp,
-                        [`submissions.${mId}.rewardBong`]: rewardBong
-                    }, {merge: true});
-
-                    window._gbLocalDefeated = true;
-                    await window.customAlert(`✅ 몬스터 격파!\n입힌 데미지: ${dealtDamage}\n보상: +${rewardXp} XP, +${rewardBong} B`);
-                }
-            } finally {
-                window._gbAnswerSubmitting = false;
-            }
-        };
-
-        window.submitGoldenBell = async function() {
-            if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
-            const st = window.goldenbellState;
-            const mId = localStorage.getItem('sambong_student_id');
-            if(!st || !st.isOpen) return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
-
-            const ok = await window.customConfirm("답안을 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.");
+            const ok = await window.customConfirm("답안을 최종 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.");
             if(!ok) return;
 
+            const totalQuestions = st.questions.length;
             const answers = [];
-            let score = 0;
             const results = [];
+            let rewardXp = 0;
+            let rewardBong = 0;
+            let score = 0;
 
             st.questions.forEach((item, idx) => {
                 const el = document.getElementById(`gb_ans_${idx}`);
-                const val = el ? el.value.trim() : '';
+                const val = el ? (el.value || '').trim() : '';
                 answers.push(val);
                 const isCorrect = (val === item.a);
                 results.push(isCorrect);
-                if(isCorrect) score++;
+                if (isCorrect) {
+                    score++;
+                    const rx = (typeof item.rewardXp === 'number' && !isNaN(item.rewardXp)) ? item.rewardXp : 10;
+                    const rb = (typeof item.rewardBong === 'number' && !isNaN(item.rewardBong)) ? item.rewardBong : 1;
+                    rewardXp += rx;
+                    rewardBong += rb;
+                }
             });
 
-            const submitData = { answers, results, score, timestamp: Date.now() };
-            const updates = {};
-            updates[`submissions.${mId}`] = submitData;
+            window._gbFinalSubmitting = true;
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
+                    [`submissions.${mId}`]: {
+                        answers,
+                        results,
+                        score,
+                        finalized: true,
+                        submittedAt: Date.now(),
+                        rewardsGiven: true,
+                        rewardXpTotal: rewardXp,
+                        rewardBongTotal: rewardBong
+                    }
+                }, { merge: true });
 
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), updates, {merge: true});
-
-            const rewardXp = score * 10;
-            const rewardBong = score * 1;
-
-            window.playerState.xp += rewardXp;
-            window.playerState.bong += rewardBong;
-            await saveDataToCloud();
-            
-            await window.customAlert(`✅ 제출 완료!\n${st.questions.length}문제 중 ${score}문제 정답!\n보상: +${rewardXp} XP, +${rewardBong} B`);
-            window.renderGoldenBellStudent();
-            updateUI();
+                window.playerState.xp += rewardXp;
+                window.playerState.bong += rewardBong;
+                await saveDataToCloud();
+                updateUI();
+                await window.customAlert(`✅ 채점 완료!\n정답 ${score} / ${totalQuestions}문항\n보상: +${rewardXp} XP, +${rewardBong} B`);
+                window.renderGoldenBellStudent();
+            } finally {
+                window._gbFinalSubmitting = false;
+            }
         };
 
         window.claimDragonBall = async function() {

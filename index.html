@@ -719,10 +719,11 @@
                         <div class="text-[10px] text-slate-300 font-bold">마스터 전용: 식단표 링크를 붙여넣어 저장하세요. (이미지/PDF/웹 링크)</div>
                         <input type="text" id="lunchMenuTitleInput" placeholder="식단표 제목 (예: 3월 4주 식단)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold">
                         <input type="text" id="lunchMenuUrlInput" placeholder="식단표 URL (https://...)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold">
-                        <input type="file" id="lunchMenuFileInput" accept=".pdf,image/*" class="hidden">
-                        <button onclick="window.pickLunchMenuFile()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded text-xs">
+                        <input type="file" id="lunchMenuFileInput" accept="application/pdf,image/*,.pdf" class="hidden">
+                        <button type="button" id="lunchMenuUploadBtn" onclick="window.pickLunchMenuFile()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded text-xs disabled:opacity-40 disabled:pointer-events-none">
                             파일 업로드로 첨부 (PDF/이미지)
                         </button>
+                        <p id="lunchMenuUploadStatus" class="text-[10px] text-amber-300 font-bold min-h-[1.1rem]" aria-live="polite"></p>
                         <div class="flex gap-2">
                             <button onclick="window.saveLunchMenu()" class="flex-1 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 rounded text-xs">저장</button>
                             <button onclick="window.clearLunchMenu()" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-2 px-3 rounded text-xs border border-red-900">삭제</button>
@@ -2511,8 +2512,9 @@
             if(modal) modal.classList.add('hidden');
         };
 
-        window.saveLunchMenu = async function() {
+        window.saveLunchMenu = async function(options) {
             if(!window.playerState || !window.playerState.isAdmin) return;
+            const skipSuccessAlert = options && options.skipSuccessAlert;
             const title = (document.getElementById('lunchMenuTitleInput')?.value || '').trim();
             const url = (document.getElementById('lunchMenuUrlInput')?.value || '').trim();
             if(!url) return window.customAlert('URL을 입력해주세요.');
@@ -2522,7 +2524,7 @@
                 lunchMenuUrl: url,
                 lunchMenuUpdatedAt: Date.now()
             }, { merge: true });
-            window.customAlert('✅ 식단표가 저장되었습니다.');
+            if (!skipSuccessAlert) await window.customAlert('✅ 식단표가 저장되었습니다.');
         };
 
         window.clearLunchMenu = async function() {
@@ -2539,38 +2541,78 @@
 
         window.pickLunchMenuFile = function() {
             if(!window.playerState || !window.playerState.isAdmin) return;
+            if (window._lunchMenuUploading) return;
             const input = document.getElementById('lunchMenuFileInput');
             if(!input) return;
             input.value = '';
             input.onchange = async () => {
                 const file = input.files && input.files[0] ? input.files[0] : null;
                 if(!file) return;
-                await window.uploadLunchMenuFile(file);
+                try {
+                    await window.uploadLunchMenuFile(file);
+                } catch (e) {
+                    console.error('pickLunchMenuFile', e);
+                }
             };
             input.click();
         };
 
+        /** 식단표 파일 업로드: 확인창으로 업로드를 막지 않고, 진행 문구·에러 처리·PDF contentType 보정 */
         window.uploadLunchMenuFile = async function(file) {
             if(!window.playerState || !window.playerState.isAdmin) return;
-            if(!storage) return window.customAlert('Storage가 초기화되지 않았습니다.');
+            if(!storage) {
+                await window.customAlert('Storage가 초기화되지 않았습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.');
+                return;
+            }
             if(!file) return;
+            if (window._lunchMenuUploading) return;
 
             const maxBytes = 15 * 1024 * 1024;
-            if(file.size > maxBytes) return window.customAlert('파일이 너무 큽니다. (최대 15MB)');
+            if(file.size > maxBytes) {
+                await window.customAlert('파일이 너무 큽니다. (최대 15MB)');
+                return;
+            }
 
             const safeName = (file.name || 'menu').replace(/[^\w.\-() ]+/g, '_');
             const path = `uploads/${appId}/lunch-menu/${Date.now()}_${safeName}`;
             const refObj = storageRef(storage, path);
 
-            await window.customAlert(`⬆️ 업로드 시작: ${file.name}\n잠시만 기다려주세요.`);
-            await uploadBytes(refObj, file, { contentType: file.type || undefined });
-            const url = await getDownloadURL(refObj);
+            const statusEl = document.getElementById('lunchMenuUploadStatus');
+            const uploadBtn = document.getElementById('lunchMenuUploadBtn');
+            window._lunchMenuUploading = true;
+            if (uploadBtn) uploadBtn.disabled = true;
+            if (statusEl) statusEl.textContent = '업로드 중… 잠시만 기다려 주세요.';
 
-            const urlInput = document.getElementById('lunchMenuUrlInput');
-            if(urlInput) urlInput.value = url;
+            const lower = (file.name || '').toLowerCase();
+            let contentType = (file.type || '').trim();
+            if (!contentType) {
+                if (lower.endsWith('.pdf')) contentType = 'application/pdf';
+                else if (lower.endsWith('.png')) contentType = 'image/png';
+                else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
+                else if (lower.endsWith('.webp')) contentType = 'image/webp';
+                else if (lower.endsWith('.gif')) contentType = 'image/gif';
+            }
 
-            // 업로드 후 바로 저장까지
-            await window.saveLunchMenu();
+            try {
+                const meta = contentType ? { contentType } : undefined;
+                await uploadBytes(refObj, file, meta);
+                const url = await getDownloadURL(refObj);
+
+                const urlInput = document.getElementById('lunchMenuUrlInput');
+                if(urlInput) urlInput.value = url;
+
+                await window.saveLunchMenu({ skipSuccessAlert: true });
+                await window.customAlert('✅ 파일 업로드 및 식단표 저장이 완료되었습니다.');
+            } catch (e) {
+                console.error('uploadLunchMenuFile', e);
+                const code = e && e.code ? String(e.code) : '';
+                const msg = e && e.message ? String(e.message) : String(e);
+                await window.customAlert('업로드 또는 저장에 실패했습니다.\n' + (code ? '[' + code + '] ' : '') + msg);
+            } finally {
+                window._lunchMenuUploading = false;
+                if (uploadBtn) uploadBtn.disabled = false;
+                if (statusEl) statusEl.textContent = '';
+            }
         };
 
 

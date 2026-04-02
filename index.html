@@ -297,6 +297,14 @@
         </div>
     </div>
 
+    <!-- 식단표 이미지 전체 화면 확대(라이트박스) -->
+    <div id="lunchMenuLightbox" class="hidden fixed inset-0 z-[270] bg-black/95 flex items-center justify-center p-3" role="dialog" aria-modal="true" onclick="window.closeLunchMenuLightbox()">
+        <button type="button" onclick="event.stopPropagation(); window.closeLunchMenuLightbox();" class="absolute top-4 right-4 text-white/90 hover:text-white z-10 p-2 rounded-lg bg-black/40" aria-label="닫기"><i class="fa-solid fa-xmark text-2xl"></i></button>
+        <div class="max-w-full max-h-full flex items-center justify-center" onclick="event.stopPropagation()">
+            <img id="lunchMenuLightboxImg" src="" alt="식단표 확대 보기" class="max-w-full max-h-[92vh] object-contain select-none" />
+        </div>
+    </div>
+
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
     <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
@@ -706,6 +714,17 @@
                         <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
                         <span id="lunchMenuUpdatedText" class="text-[9px] text-slate-400 font-bold"></span>
                     </div>
+                    <!-- 썸네일: 이미지는 미리보기, PDF는 아이콘(클릭 시 모달에서 확인) -->
+                    <div id="lunchMenuThumbWrap" class="hidden mb-2 rounded-xl overflow-hidden border border-emerald-600/50 shadow-lg">
+                        <button type="button" id="lunchMenuThumbBtn" onclick="window.openLunchMenu()" class="relative w-full block group text-left focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <img id="lunchMenuThumbImg" src="" alt="식단표 미리보기" class="hidden w-full h-36 sm:h-40 object-cover bg-slate-800" loading="lazy" decoding="async" />
+                            <div id="lunchMenuThumbPdf" class="hidden flex flex-col items-center justify-center gap-2 h-32 sm:h-36 bg-gradient-to-br from-slate-800 to-slate-900">
+                                <i class="fa-solid fa-file-pdf text-5xl text-red-400"></i>
+                                <span class="text-[11px] font-bold text-slate-300">PDF 식단표</span>
+                            </div>
+                            <div class="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[10px] sm:text-xs font-bold py-1.5 text-center">탭하여 크게 보기</div>
+                        </button>
+                    </div>
                     <div id="lunchMenuStudentRow" class="flex gap-2">
                         <button id="btnOpenLunchMenu" onclick="window.openLunchMenu()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg transition text-xs hidden">
                             식단표 보기
@@ -1079,6 +1098,32 @@
         let selectedBody = null;
 
         function calculateExactLevel(xp) { return Math.min(100, Math.max(1, Math.floor(1 + Math.sqrt((xp || 0) / 4.04)))); }
+
+        /** 봉(B) 값을 소수 1자리로 맞춤 (마이너스 잔액·점심 차감 등 일관 표시) */
+        function normalizeBongValue(v) {
+            const n = Number(v);
+            if (!Number.isFinite(n)) return 0;
+            return Math.round(n * 10) / 10;
+        }
+
+        /**
+         * 식단표 URL이 PDF / 이미지 / 기타(iframe) 중 무엇인지 판별.
+         * Firebase Storage URL처럼 쿼리스트링·퍼센트 인코딩이 붙은 경우도 처리합니다.
+         */
+        function getLunchMenuResourceType(url) {
+            if (!url || typeof url !== 'string') return 'other';
+            let pathOnly = url.split(/[?#]/)[0];
+            try { pathOnly = decodeURIComponent(pathOnly); } catch (e) {}
+            const lower = pathOnly.toLowerCase();
+            if (/\.pdf$/i.test(lower)) return 'pdf';
+            if (/\.(png|jpe?g|gif|webp)$/i.test(lower)) return 'image';
+            return 'other';
+        }
+
+        /** HTML 속성값(쌍따옴표) 안전 이스케이프 */
+        function escapeHtmlAttr(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        }
         
         function getLevelInfo(xp) { 
             for(let i=0; i<LEVEL_DATA.length; i++) { 
@@ -1464,6 +1509,7 @@
                                     window.playerState = { 
                                         ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a') 
                                     }; 
+                                    if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
                                     updateUI(); 
                                 }
                             }
@@ -2388,6 +2434,7 @@
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
                 localStorage.setItem('sambong_student_id', studentId); 
                 localStorage.setItem('sambong_student_pin', pin);
                 currentStudentDocRef = docRef;
@@ -2414,6 +2461,9 @@
             delete dataToSave.isGM; 
             delete dataToSave.isGMA; 
             delete dataToSave.isAdmin;
+            if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
+                dataToSave.bong = normalizeBongValue(dataToSave.bong);
+            }
             await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
         }
 
@@ -2458,15 +2508,50 @@
             const updatedText = document.getElementById('lunchMenuUpdatedText');
             const titleInput = document.getElementById('lunchMenuTitleInput');
             const urlInput = document.getElementById('lunchMenuUrlInput');
+            const thumbWrap = document.getElementById('lunchMenuThumbWrap');
+            const thumbImg = document.getElementById('lunchMenuThumbImg');
+            const thumbPdf = document.getElementById('lunchMenuThumbPdf');
 
             const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '';
             const url = window.globalSettings && window.globalSettings.lunchMenuUrl ? String(window.globalSettings.lunchMenuUrl) : '';
             const updatedAt = window.globalSettings && window.globalSettings.lunchMenuUpdatedAt ? window.globalSettings.lunchMenuUpdatedAt : 0;
 
             const hasUrl = !!url;
+            const resType = hasUrl ? getLunchMenuResourceType(url) : 'other';
             if(openBtn) openBtn.classList.toggle('hidden', !hasUrl);
             if(emptyText) emptyText.classList.toggle('hidden', hasUrl);
             if(adminPanel) adminPanel.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
+
+            if (thumbWrap && thumbImg && thumbPdf) {
+                thumbWrap.classList.toggle('hidden', !hasUrl);
+                if (hasUrl) {
+                    if (resType === 'image') {
+                        thumbImg.classList.remove('hidden');
+                        thumbImg.src = url;
+                        thumbPdf.classList.add('hidden');
+                    } else if (resType === 'pdf') {
+                        thumbImg.classList.add('hidden');
+                        thumbImg.removeAttribute('src');
+                        thumbPdf.classList.remove('hidden');
+                        const pdfIcon = thumbPdf.querySelector('i');
+                        const pdfLabel = thumbPdf.querySelector('span');
+                        if (pdfIcon) { pdfIcon.className = 'fa-solid fa-file-pdf text-5xl text-red-400'; }
+                        if (pdfLabel) pdfLabel.textContent = 'PDF 식단표';
+                    } else {
+                        thumbImg.classList.add('hidden');
+                        thumbImg.removeAttribute('src');
+                        thumbPdf.classList.remove('hidden');
+                        const pdfIcon = thumbPdf.querySelector('i');
+                        const pdfLabel = thumbPdf.querySelector('span');
+                        if (pdfIcon) { pdfIcon.className = 'fa-solid fa-link text-5xl text-emerald-400'; }
+                        if (pdfLabel) pdfLabel.textContent = '웹·링크 식단표';
+                    }
+                } else {
+                    thumbImg.classList.add('hidden');
+                    thumbImg.removeAttribute('src');
+                    thumbPdf.classList.add('hidden');
+                }
+            }
 
             if(updatedText) {
                 if(updatedAt) {
@@ -2478,11 +2563,27 @@
             }
 
             // 관리자 입력칸은 비어있을 때만 자동 채움 (작성중 방해 방지)
-            if(window.playerState && window.playerState.isAdmin) {
+            // 파일 업로드 중에는 스냅샷으로 인한 덮어쓰기·빈 값 동기화 충돌 방지
+            if(window.playerState && window.playerState.isAdmin && !window._lunchMenuUploading) {
                 if(titleInput && (titleInput.value || '') === '' && title) titleInput.value = title;
                 if(urlInput && (urlInput.value || '') === '' && url) urlInput.value = url;
             }
         }
+
+        window.openLunchMenuLightbox = function(src) {
+            const lb = document.getElementById('lunchMenuLightbox');
+            const im = document.getElementById('lunchMenuLightboxImg');
+            if (!lb || !im || !src) return;
+            im.src = src;
+            lb.classList.remove('hidden');
+        };
+
+        window.closeLunchMenuLightbox = function() {
+            const lb = document.getElementById('lunchMenuLightbox');
+            const im = document.getElementById('lunchMenuLightboxImg');
+            if (lb) lb.classList.add('hidden');
+            if (im) { im.src = ''; }
+        };
 
         window.openLunchMenu = function() {
             const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '식단표';
@@ -2494,36 +2595,70 @@
             const titleEl = document.getElementById('lunchMenuModalTitle');
             if(titleEl) titleEl.innerText = `식단표 · ${title}`;
             if(body) {
-                const safeUrl = url.replace(/"/g, '&quot;');
-                const lower = url.toLowerCase();
-                if(lower.endsWith('.pdf')) {
-                    body.innerHTML = `<embed src="${safeUrl}" type="application/pdf" class="w-full h-[70vh] rounded-xl" />`;
-                } else if(lower.match(/\\.(png|jpg|jpeg|gif|webp)$/)) {
-                    body.innerHTML = `<img src="${safeUrl}" class="w-full h-auto rounded-xl border border-slate-700" />`;
+                const attrUrl = escapeHtmlAttr(url);
+                const kind = getLunchMenuResourceType(url);
+                if (kind === 'pdf') {
+                    body.innerHTML = `<embed src="${attrUrl}" type="application/pdf" class="w-full h-[70vh] rounded-xl" />`;
+                } else if (kind === 'image') {
+                    body.textContent = '';
+                    const wrap = document.createElement('div');
+                    wrap.className = 'space-y-2';
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'block w-full rounded-xl overflow-hidden border border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500';
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.alt = '식단표';
+                    img.className = 'w-full max-h-[65vh] object-contain bg-slate-950';
+                    img.decoding = 'async';
+                    btn.appendChild(img);
+                    btn.addEventListener('click', function() { window.openLunchMenuLightbox(url); });
+                    wrap.appendChild(btn);
+                    const hint = document.createElement('p');
+                    hint.className = 'text-center text-[10px] text-slate-400 font-bold';
+                    hint.textContent = '이미지를 탭하면 전체 화면으로 확대됩니다.';
+                    wrap.appendChild(hint);
+                    body.appendChild(wrap);
                 } else {
-                    body.innerHTML = `<iframe src="${safeUrl}" class="w-full h-[70vh] rounded-xl border border-slate-700" referrerpolicy="no-referrer"></iframe>`;
+                    body.innerHTML = `<iframe src="${attrUrl}" class="w-full h-[70vh] rounded-xl border border-slate-700" referrerpolicy="no-referrer"></iframe>`;
                 }
             }
             if(modal) modal.classList.remove('hidden');
         };
 
         window.closeLunchMenu = function() {
+            window.closeLunchMenuLightbox();
             const modal = document.getElementById('lunchMenuModal');
             if(modal) modal.classList.add('hidden');
         };
 
         window.saveLunchMenu = async function(options) {
             if(!window.playerState || !window.playerState.isAdmin) return;
-            const skipSuccessAlert = options && options.skipSuccessAlert;
-            const title = (document.getElementById('lunchMenuTitleInput')?.value || '').trim();
-            const url = (document.getElementById('lunchMenuUrlInput')?.value || '').trim();
-            if(!url) return window.customAlert('URL을 입력해주세요.');
+            const opts = options || {};
+            const skipSuccessAlert = !!opts.skipSuccessAlert;
+            const titleEl = document.getElementById('lunchMenuTitleInput');
+            const urlEl = document.getElementById('lunchMenuUrlInput');
+            let title = (titleEl?.value || '').trim();
+            let url = (urlEl?.value || '').trim();
+            // 파일 업로드 직후에는 입력칸이 비어 있거나 스냅샷 타이밍과 겹칠 수 있어 URL을 직접 넘김
+            if (Object.prototype.hasOwnProperty.call(opts, 'urlOverride')) {
+                url = String(opts.urlOverride || '').trim();
+            }
+            if (Object.prototype.hasOwnProperty.call(opts, 'titleOverride')) {
+                title = String(opts.titleOverride || '').trim();
+            }
+            if(!url) {
+                await window.customAlert('URL을 입력해주세요.');
+                return;
+            }
 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                 lunchMenuTitle: title || '식단표',
                 lunchMenuUrl: url,
                 lunchMenuUpdatedAt: Date.now()
             }, { merge: true });
+            if (urlEl) urlEl.value = url;
+            if (titleEl && title) titleEl.value = title;
             if (!skipSuccessAlert) await window.customAlert('✅ 식단표가 저장되었습니다.');
         };
 
@@ -2594,14 +2729,28 @@
             }
 
             try {
+                if (auth && auth.currentUser) {
+                    await auth.currentUser.getIdToken();
+                }
+
                 const meta = contentType ? { contentType } : undefined;
-                await uploadBytes(refObj, file, meta);
-                const url = await getDownloadURL(refObj);
+                const uploadPromise = uploadBytes(refObj, file, meta);
+                const timeoutMs = 120000;
+                let uploadTimeoutId = null;
+                const timeoutPromise = new Promise((_, reject) => {
+                    uploadTimeoutId = setTimeout(() => reject(new Error('업로드 시간 초과(' + (timeoutMs / 1000) + '초). 네트워크 또는 Storage 규칙을 확인해 주세요.')), timeoutMs);
+                });
+                try {
+                    await Promise.race([uploadPromise, timeoutPromise]);
+                } finally {
+                    if (uploadTimeoutId) clearTimeout(uploadTimeoutId);
+                }
 
-                const urlInput = document.getElementById('lunchMenuUrlInput');
-                if(urlInput) urlInput.value = url;
+                const downloadUrl = await getDownloadURL(refObj);
+                const urlStr = String(downloadUrl || '').trim();
+                if (!urlStr) throw new Error('다운로드 URL을 가져오지 못했습니다.');
 
-                await window.saveLunchMenu({ skipSuccessAlert: true });
+                await window.saveLunchMenu({ skipSuccessAlert: true, urlOverride: urlStr });
                 await window.customAlert('✅ 파일 업로드 및 식단표 저장이 완료되었습니다.');
             } catch (e) {
                 console.error('uploadLunchMenuFile', e);
@@ -2704,12 +2853,12 @@
         };
 
         async function handleQuestDrop(xp) {
-            // 기본 드랍 확률 배율 (아이템이 없으면 3배, 1개면 1배, 2개 이상이면 0.5배)
+            // 기본 드랍 확률 배율 (무기 인벤 0개면 가중↑, 1개면 기본, 2개 이상이면 감쇠)
             let dropMultiplier = 1.0;
             if (!window.playerState.inventory) window.playerState.inventory = [];
             const invenCount = window.playerState.inventory.length;
             
-            if (invenCount === 0) dropMultiplier = 3.0;
+            if (invenCount === 0) dropMultiplier = 6.0;
             else if (invenCount === 1) dropMultiplier = 1.0;
             else dropMultiplier = 0.5;
 
@@ -3106,7 +3255,7 @@
             const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             if (window.playerState.lastLunchDeductDate === todayYmd) return;
 
-            window.playerState.bong = (Number(window.playerState.bong) || 0) - 10;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - 10);
             window.playerState.lastLunchDeductDate = todayYmd;
             await saveDataToCloud();
             updateUI();

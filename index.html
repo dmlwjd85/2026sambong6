@@ -871,7 +871,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // ==========================================
         // ★ 웹 오디오 API 효과음 로직 ★
@@ -1477,8 +1477,11 @@
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app); 
                 db = getFirestore(app);
-                storage = getStorage(app);
+                // 기본 버킷을 gs:// 로 명시 (일부 환경에서 업로드가 0%에서 멈추는 현상 완화)
+                const gsBucket = firebaseConfig.storageBucket ? `gs://${firebaseConfig.storageBucket}` : undefined;
+                storage = gsBucket ? getStorage(app, gsBucket) : getStorage(app);
                 
+                await auth.authStateReady();
                 await signInAnonymously(auth);
 
                 onAuthStateChanged(auth, user => {
@@ -2685,7 +2688,22 @@
             input.click();
         };
 
-        /** 식단표 파일 업로드: Storage 경로는 Firestore와 같은 artifacts/{appId}/public/... 트리에 맞춤(규칙 허용). 재개 가능 업로드로 진행률 표시. */
+        /** 업로드 직전: Auth 준비 완료 + 익명 로그인 보장(Storage 쓰기 토큰) */
+        async function ensureFirebaseAuthForUpload() {
+            if (!auth) throw new Error('Firebase Auth가 없습니다.');
+            await auth.authStateReady();
+            if (!auth.currentUser) {
+                try {
+                    await signInAnonymously(auth);
+                } catch (e) {
+                    const m = e && e.message ? String(e.message) : String(e);
+                    throw new Error('익명 로그인 실패: Firebase 콘솔 → Authentication → 로그인 방법에서 「익명」을 켜 주세요.\n(' + m + ')');
+                }
+            }
+            if (auth.currentUser) await auth.currentUser.getIdToken(true);
+        }
+
+        /** 식단표 파일 업로드: uploadBytes 단일 요청(재개 업로드 0% 정지 이슈 회피). 경로는 artifacts/{appId}/public/... */
         window.uploadLunchMenuFile = async function(file) {
             if(!window.playerState || !window.playerState.isAdmin) return;
             if(!storage) {
@@ -2702,7 +2720,7 @@
             }
 
             const safeName = (file.name || 'menu').replace(/[^\w.\-() ]+/g, '_');
-            // Firestore 데이터와 동일한 appId 하위 public 경로 — Storage 보안 규칙에서 자주 허용되는 패턴
+            // Firestore 데이터와 동일한 appId 하위 public 경로 — Storage 규칙과 맞춤
             const path = `artifacts/${appId}/public/data/lunch-menu/${Date.now()}_${safeName}`;
             const refObj = storageRef(storage, path);
 
@@ -2719,31 +2737,16 @@
                 else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
                 else if (lower.endsWith('.webp')) contentType = 'image/webp';
                 else if (lower.endsWith('.gif')) contentType = 'image/gif';
+                else contentType = 'application/octet-stream';
             }
 
             try {
-                if (auth) {
-                    if (!auth.currentUser) {
-                        await signInAnonymously(auth);
-                    }
-                    if (auth.currentUser) await auth.currentUser.getIdToken(true);
-                }
+                if (statusEl) statusEl.textContent = '인증 확인 중…';
+                await ensureFirebaseAuthForUpload();
+                if (statusEl) statusEl.textContent = '업로드 중… (완료될 때까지 잠시만 기다려 주세요)';
 
-                const meta = contentType ? { contentType } : undefined;
-                const task = uploadBytesResumable(refObj, file, meta);
-
-                await new Promise((resolve, reject) => {
-                    task.on('state_changed',
-                        (snap) => {
-                            if (statusEl) {
-                                const p = snap.totalBytes ? Math.min(100, Math.round(100 * snap.bytesTransferred / snap.totalBytes)) : 0;
-                                statusEl.textContent = '업로드 중… ' + p + '%';
-                            }
-                        },
-                        (err) => reject(err),
-                        () => resolve()
-                    );
-                });
+                const meta = { contentType: contentType || 'application/octet-stream' };
+                await uploadBytes(refObj, file, meta);
 
                 const downloadUrl = await getDownloadURL(refObj);
                 const urlStr = String(downloadUrl || '').trim();
@@ -2760,8 +2763,11 @@
                 const code = e && e.code ? String(e.code) : '';
                 const msg = e && e.message ? String(e.message) : String(e);
                 let hint = '';
-                if (code === 'storage/unauthorized' || /permission|unauthorized/i.test(msg)) {
-                    hint = '\n\n※ Firebase 콘솔 → Storage → 규칙에서 로그인(익명 포함) 사용자의 `artifacts/' + appId + '/public/...` 경로 쓰기를 허용했는지 확인해 주세요.';
+                if (code === 'storage/unauthorized' || code === 'storage/permission-denied' || /permission|unauthorized|403/i.test(msg)) {
+                    hint = '\n\n※ [필요 조치] Firebase 콘솔 → Storage → 규칙에 인증된 사용자(익명 포함)의 쓰기를 허용해 주세요. 예:\n'
+                        + 'match /artifacts/' + appId + '/public/{path=**} { allow read: if true; allow write: if request.auth != null; }';
+                } else if (/auth\/|익명|anonymous|ADMIN_ONLY/i.test(msg) || code === 'auth/admin-restricted-operation') {
+                    hint = '\n\n※ [필요 조치] Firebase 콘솔 → Authentication → 로그인 방법 → 「익명」 사용을 켜 주세요.';
                 }
                 await window.customAlert('업로드 또는 저장에 실패했습니다.\n' + (code ? '[' + code + '] ' : '') + msg + hint);
             } finally {

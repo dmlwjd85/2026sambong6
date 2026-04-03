@@ -800,14 +800,15 @@
                 <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
             </div>
 
-            <!-- ★ 실시간 일일 퀘스트 현황 보드 ★ -->
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
-                <div class="flex justify-between items-center mb-3">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-list-check text-emerald-400"></i> 실시간 퀘스트 현황 보드</h3>
-                    <p class="text-[9px] text-slate-400">일일 퀘스트 진행도</p>
+            <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->
+            <div class="glass-panel p-2 sm:p-3 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
+                <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+                    <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
+                    <span id="adminQuestSummary" class="text-[9px] text-emerald-300/90 font-bold tabular-nums shrink-0">—</span>
                 </div>
-                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2" id="adminQuestBoard">
-                    <div class="text-slate-500 text-xs text-center col-span-full">데이터 로딩 중...</div>
+                <p class="text-[8px] text-slate-500 mb-1.5 leading-tight">행: 학생 · 열: 오늘 일일 퀘스트 완료(✓). 가로 스크롤로 전체 열 확인.</p>
+                <div id="adminQuestBoard" class="overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
+                    <div class="text-slate-500 text-[9px] text-center py-6">데이터 로딩 중…</div>
                 </div>
             </div>
 
@@ -1899,38 +1900,75 @@
 
         window.renderAdminQuestBoard = function(studentsData) {
             const board = document.getElementById('adminQuestBoard');
+            const summaryEl = document.getElementById('adminQuestSummary');
             if(!board) return;
             
             const dailyQuests = QUEST_DATA.filter(q => q.type === 'daily');
             const total = dailyQuests.length;
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-            let html = '';
-            for(let i=1; i<=13; i++) {
+            // 열별 오늘 완료 인원 수(한 줄 요약 배지용)
+            const colDone = dailyQuests.map(() => 0);
+            let sumDoneAll = 0;
+            let allClearStudents = 0;
+
+            const headCells = dailyQuests.map((q, qi) => 
+                `<th class="p-0.5 sm:p-1 text-center font-normal border-b border-slate-700/90 bg-slate-900/95 min-w-[1.65rem]" title="${q.name} · ${q.desc}">
+                    <i class="fa-solid ${q.icon} ${q.color} text-[9px] sm:text-[10px]"></i>
+                </th>`
+            ).join('');
+
+            let bodyRows = '';
+            for (let i = 1; i <= 13; i++) {
                 const stu = studentsData.find(s => s.id === String(i));
-                if(stu) {
-                    let doneCount = 0;
-                    const now = new Date();
-                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    
-                    if (stu.lastDailyReset === todayStr) {
-                        dailyQuests.forEach(q => { if(stu.quests && stu.quests[q.id]) doneCount++; });
+                const resetOk = stu && stu.lastDailyReset === todayStr;
+                let rowDone = 0;
+                const cells = dailyQuests.map((q, qi) => {
+                    const ok = !!(resetOk && stu.quests && stu.quests[q.id]);
+                    if (ok) {
+                        rowDone++;
+                        colDone[qi]++;
                     }
-                    
-                    const isAllDone = doneCount === total;
-                    const borderCls = isAllDone ? 'border-emerald-500 bg-emerald-900/30' : 'border-slate-700 bg-slate-800/80';
-                    const textCls = isAllDone ? 'text-emerald-400 font-black' : 'text-slate-400';
-                    
-                    html += `
-                    <div class="p-2 rounded-lg border ${borderCls} flex justify-between items-center transition-all duration-300 shadow-sm">
-                        <span class="text-xs text-white font-bold w-12 truncate">${STUDENT_NAMES[i]}</span>
-                        <div class="w-full mx-2 bg-slate-900 rounded-full h-1.5 border border-slate-700 overflow-hidden">
-                            <div class="bg-emerald-400 h-full transition-all duration-500" style="width: ${(doneCount/total)*100}%"></div>
-                        </div>
-                        <span class="text-[10px] ${textCls} shrink-0 w-6 text-right">${doneCount}/${total}</span>
-                    </div>`;
-                }
+                    return `<td class="p-0.5 text-center border-b border-slate-800/80 ${ok ? 'text-emerald-400' : 'text-slate-600'}"><span class="font-black">${ok ? '✓' : '·'}</span></td>`;
+                }).join('');
+                sumDoneAll += rowDone;
+                if (stu && rowDone === total && total > 0) allClearStudents++;
+
+                const shortName = `${i}`;
+                const rowBg = rowDone === total && total > 0 ? 'bg-emerald-950/35' : '';
+                bodyRows += `
+                <tr class="${rowBg}">
+                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[i] || ''}">${shortName}. ${STUDENT_NAMES[i] || '-'}</td>
+                    ${cells}
+                    <td class="p-0.5 text-center border-b border-slate-800/80 text-[8px] sm:text-[9px] tabular-nums text-slate-400 font-bold whitespace-nowrap">${rowDone}/${total}</td>
+                </tr>`;
             }
-            board.innerHTML = html;
+
+            const avg = sumDoneAll / 13;
+            const badgeLine = dailyQuests.map((q, qi) => 
+                `<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-800/90 border border-slate-600/60 text-[8px] text-slate-300 shrink-0" title="${q.name}"><i class="fa-solid ${q.icon} ${q.color} text-[7px]"></i>${colDone[qi]}</span>`
+            ).join('');
+
+            board.innerHTML = `
+                <table class="w-full min-w-[280px] text-[8px] sm:text-[9px] border-collapse">
+                    <thead>
+                        <tr>
+                            <th class="sticky left-0 z-[2] p-0.5 sm:p-1 text-left text-slate-400 font-bold border-b border-r border-slate-700 bg-slate-900/98 w-[4.5rem] sm:w-auto">이름</th>
+                            ${headCells}
+                            <th class="p-0.5 sm:p-1 text-center text-slate-500 font-bold border-b border-slate-700 bg-slate-900/95 whitespace-nowrap">합</th>
+                        </tr>
+                    </thead>
+                    <tbody>${bodyRows}</tbody>
+                </table>
+                <div class="flex flex-nowrap gap-1 overflow-x-auto px-1 py-1 border-t border-slate-700/60 bg-slate-900/40 max-w-full">
+                    <span class="text-[8px] text-slate-500 font-bold shrink-0 self-center">열별 완료</span>
+                    ${badgeLine}
+                </div>`;
+
+            if (summaryEl) {
+                summaryEl.innerHTML = `평균 <span class="text-emerald-300">${avg.toFixed(1)}</span>/${total} · 전원완료 <span class="text-yellow-300">${allClearStudents}</span>명`;
+            }
         };
 
         window.renderHallOfFame = function(students) {

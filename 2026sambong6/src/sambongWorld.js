@@ -224,7 +224,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
-            bankSavings: 0, bankLastInterestMonth: '', dailyAllClearBonusDate: '',
+            bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
@@ -256,6 +256,26 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const n = Number(v);
             if (!Number.isFinite(n)) return 0;
             return Math.round(n * 10) / 10;
+        }
+
+        /** 로컬 기준 오늘 날짜 YYYY-MM-DD */
+        function getLocalDateStr(d = new Date()) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        /** 적금 가입일(YYYY-MM-DD)부터 오늘까지 경과 일수(가입 당일=0, 30 이상이면 만기) */
+        function bankCalendarDaysElapsed(startDateStr) {
+            if (!startDateStr || typeof startDateStr !== 'string') return 0;
+            const parts = startDateStr.split('-');
+            if (parts.length !== 3) return 0;
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10) - 1;
+            const day = parseInt(parts[2], 10);
+            if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(day)) return 0;
+            const start = new Date(y, m, day);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            return Math.max(0, Math.floor((today - start) / 86400000));
         }
 
         /**
@@ -1246,37 +1266,123 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             window.switchTab('bank');
         };
 
-        /** 월 1회: 저축액에 교사 설정 이자율(월 %) 적용 */
-        window.applyBankMonthlyInterest = function() {
-            if (!window.playerState || window.playerState.isGuest) return false;
-            if (!window.playerState.bankLastInterestMonth) window.playerState.bankLastInterestMonth = '';
-            const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-            if (rate <= 0) return false;
-            let savings = Number(window.playerState.bankSavings) || 0;
-            if (savings <= 0) return false;
-            const now = new Date();
-            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            if (window.playerState.bankLastInterestMonth === monthKey) return false;
-            const interest = Math.round(savings * (rate / 100) * 10) / 10;
-            window.playerState.bankLastInterestMonth = monthKey;
-            if (interest > 0) {
-                window.playerState.bankSavings = normalizeBongValue(savings + interest);
-                return true;
+        /** 레거시 필드 → 일반예금으로 이전 후 불필요 키 정리 */
+        function migrateBankPlayerFields() {
+            if (!window.playerState) return false;
+            let touched = false;
+            if (window.playerState.bankRegularSavings == null || window.playerState.bankRegularSavings === undefined) {
+                window.playerState.bankRegularSavings = Number(window.playerState.bankSavings) || 0;
+                touched = true;
             }
-            return false;
-        };
+            if (!Array.isArray(window.playerState.bankTermDeposits)) {
+                window.playerState.bankTermDeposits = [];
+                touched = true;
+            }
+            if (window.playerState.bankDailyBonusLastDate == null || window.playerState.bankDailyBonusLastDate === undefined) {
+                window.playerState.bankDailyBonusLastDate = '';
+                touched = true;
+            }
+            if (Object.prototype.hasOwnProperty.call(window.playerState, 'bankSavings')) {
+                delete window.playerState.bankSavings;
+                touched = true;
+            }
+            if (Object.prototype.hasOwnProperty.call(window.playerState, 'bankLastInterestMonth')) {
+                delete window.playerState.bankLastInterestMonth;
+                touched = true;
+            }
+            return touched;
+        }
+
+        /**
+         * 적금 만기(가입일 기준 30일 경과): 만기 시점의 마스터 설정 이자율(%)로 이자를 반올림하여 원금+이자를 지갑으로 지급.
+         * @returns {{ changed: boolean, msgs: string[] }}
+         */
+        function applyBankTermDepositMaturity() {
+            const out = { changed: false, msgs: [] };
+            if (!window.playerState || window.playerState.isGuest) return out;
+            const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
+            const arr = window.playerState.bankTermDeposits || [];
+            const left = [];
+            for (const td of arr) {
+                if (!td || td.amount == null || !td.startDate) continue;
+                const elapsed = bankCalendarDaysElapsed(td.startDate);
+                if (elapsed >= 30) {
+                    const principal = Number(td.amount) || 0;
+                    const interest = Math.round(principal * (rate / 100));
+                    const total = normalizeBongValue(principal + interest);
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + total);
+                    out.changed = true;
+                    out.msgs.push(`원금 ${principal.toFixed(1)} B + 이자 ${interest} B → 지갑 ${total.toFixed(1)} B`);
+                } else {
+                    left.push(td);
+                }
+            }
+            if (out.changed) window.playerState.bankTermDeposits = left;
+            return out;
+        }
+
+        /** 일반예금 100B 이상: 날짜가 바뀐 뒤 첫 처리에서 지갑으로 1B (자정 기준 = 로컬 날짜 변경) */
+        function applyBankRegularDailyBonus() {
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return false;
+            const reg = Number(window.playerState.bankRegularSavings) || 0;
+            if (reg < 100) return false;
+            const today = getLocalDateStr();
+            if (window.playerState.bankDailyBonusLastDate === today) return false;
+            window.playerState.bankDailyBonusLastDate = today;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + 1);
+            return true;
+        }
 
         window.updateBankPanel = function() {
             const w = document.getElementById('bankWalletDisplay');
-            const s = document.getElementById('bankSavingsDisplay');
+            const s = document.getElementById('bankRegularDisplay');
             const r = document.getElementById('bankRateDisplay');
+            const dailyLine = document.getElementById('bankDailyBonusLine');
+            const termList = document.getElementById('bankTermDepositsList');
             if (!w || !s || !r) return;
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
             w.textContent = `${(window.playerState.bong != null ? Number(window.playerState.bong) : 0).toFixed(1)} B`;
-            s.textContent = `${(Number(window.playerState.bankSavings) || 0).toFixed(1)} B`;
+            s.textContent = `${(Number(window.playerState.bankRegularSavings) || 0).toFixed(1)} B`;
             r.textContent = `${rate.toFixed(1)}`;
+            if (dailyLine) {
+                const reg = Number(window.playerState.bankRegularSavings) || 0;
+                const today = getLocalDateStr();
+                const got = window.playerState.bankDailyBonusLastDate === today;
+                if (reg < 100) {
+                    dailyLine.textContent = '일반예금 100 B 이상이면, 날짜가 바뀐 뒤 첫 접속 시 매일 1 B가 지갑으로 지급됩니다.';
+                } else if (got) {
+                    dailyLine.textContent = '오늘 일일 보너스(1 B)를 이미 받았습니다.';
+                } else {
+                    dailyLine.textContent = '일일 보너스(1 B): 이번 접속에서 지급 처리됩니다.';
+                }
+            }
+            if (termList) {
+                const arr = window.playerState.bankTermDeposits || [];
+                if (arr.length === 0) {
+                    termList.innerHTML = '<p class="text-[10px] text-slate-500 py-1">아직 가입한 적금이 없습니다. 아래에서 보물상자 적금을 만들 수 있어요.</p>';
+                } else {
+                    termList.innerHTML = arr.map((td, idx) => {
+                        const elapsed = bankCalendarDaysElapsed(td.startDate);
+                        const daysShow = Math.min(30, elapsed);
+                        const interestPrev = Math.round((Number(td.amount) || 0) * (rate / 100));
+                        const sid = String(td.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        return `<div class="border border-amber-600/35 rounded-xl p-3 bg-slate-900/60 mb-2 text-left">
+                            <div class="flex justify-between items-start gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${(Number(td.amount) || 0).toFixed(1)} B</span></div>
+                                    <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
+                                    <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${interestPrev} B · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
+                                </div>
+                                <button type="button" onclick="window.earlyWithdrawTermDeposit('${sid}')" class="text-[10px] shrink-0 bg-red-900/50 hover:bg-red-800 text-red-100 px-2 py-1 rounded border border-red-800/80">중도해지</button>
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
+            }
         };
 
+        /** 일반예금 입금 */
         window.depositBank = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankDepositInput');
@@ -1284,27 +1390,28 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
             const amt = Math.round(raw * 10) / 10;
             if (window.playerState.bong < amt && !window.playerState.isAdmin) return window.customAlert('보유 삼봉이 부족합니다.');
-            const ok = await window.customConfirm(`삼봉 은행에 ${amt} B를 저축할까요?`);
+            const ok = await window.customConfirm(`일반예금 통장에 ${amt} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
             if (!ok) return;
             if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue(window.playerState.bong - amt);
-            window.playerState.bankSavings = normalizeBongValue((Number(window.playerState.bankSavings) || 0) + amt);
+            window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
             await saveDataToCloud();
-            window.customAlert(`🏦 ${amt} B를 저축했습니다.`);
+            window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
         };
 
+        /** 일반예금 출금 */
         window.withdrawBank = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankWithdrawInput');
             const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
             if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
             const amt = Math.round(raw * 10) / 10;
-            const sav = Number(window.playerState.bankSavings) || 0;
-            if (sav < amt) return window.customAlert('저축 잔액이 부족합니다.');
-            const ok = await window.customConfirm(`저축에서 ${amt} B를 찾을까요?`);
+            const sav = Number(window.playerState.bankRegularSavings) || 0;
+            if (sav < amt) return window.customAlert('일반예금 잔액이 부족합니다.');
+            const ok = await window.customConfirm(`일반예금에서 ${amt} B를 찾을까요?`);
             if (!ok) return;
-            window.playerState.bankSavings = normalizeBongValue(sav - amt);
+            window.playerState.bankRegularSavings = normalizeBongValue(sav - amt);
             window.playerState.bong = normalizeBongValue(window.playerState.bong + amt);
             if (inp) inp.value = '';
             updateUI();
@@ -1312,14 +1419,62 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             window.customAlert(`💵 ${amt} B를 찾았습니다.`);
         };
 
+        /** 적금(보물상자) 가입 — 안내 후 확인 */
+        window.openTermDeposit = async function() {
+            if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            await window.customAlert(
+                '📦 적금(보물상자) 안내\n\n' +
+                '· 넣은 금액은 30일 동안 보물상자에 잠깁니다.\n' +
+                '· 30일이 지나 만기되면, 그때 마스터가 설정한 이자율(%)을 원금에 적용한 이자(반올림)와 함께 지갑으로 돌아옵니다.\n' +
+                '· 이자율이 바뀌면, 만기 처리 시점의 이율이 적용됩니다.\n' +
+                '· 중도 해지 시 원금만 돌려받고 이자는 없습니다.\n' +
+                '· 일반예금과 적금은 따로 관리됩니다.'
+            );
+            const ok = await window.customConfirm('위 내용을 확인했고, 적금에 가입할까요?');
+            if (!ok) return;
+            const inp = document.getElementById('bankTermDepositInput');
+            const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
+            if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
+            const amt = Math.round(raw * 10) / 10;
+            if (window.playerState.bong < amt && !window.playerState.isAdmin) return window.customAlert('보유 삼봉이 부족합니다.');
+            if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
+            if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue(window.playerState.bong - amt);
+            const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+            window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
+            if (inp) inp.value = '';
+            updateUI();
+            await saveDataToCloud();
+            await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
+        };
+
+        /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음 */
+        window.earlyWithdrawTermDeposit = async function(termId) {
+            if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const arr = window.playerState.bankTermDeposits || [];
+            const idx = arr.findIndex(t => String(t.id) === String(termId));
+            if (idx < 0) return window.customAlert('해당 적금을 찾을 수 없어요.');
+            const td = arr[idx];
+            const ok = await window.customConfirm(
+                `중도 해지 시 이자는 지급되지 않고 원금 ${(Number(td.amount) || 0).toFixed(1)} B만 지갑으로 돌아갑니다.\n해지할까요?`
+            );
+            if (!ok) return;
+            const principal = Number(td.amount) || 0;
+            arr.splice(idx, 1);
+            window.playerState.bankTermDeposits = arr;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
+            updateUI();
+            await saveDataToCloud();
+            await window.customAlert(`💰 원금 ${principal.toFixed(1)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+        };
+
         window.saveBankInterestRate = async function() {
             if (!window.playerState.isGM) return window.customAlert('마스터 J만 저장할 수 있습니다.');
             const el = document.getElementById('gmBankInterestRate');
             const v = el ? parseFloat(el.value) : NaN;
-            if (!Number.isFinite(v) || v < 0 || v > 100) return window.customAlert('0~100 사이의 월 이자율(%)을 입력하세요.');
+            if (!Number.isFinite(v) || v < 0 || v > 100) return window.customAlert('0~100 사이의 이자율(%)을 입력하세요.');
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { bankInterestPercent: v }, { merge: true });
-                await window.customAlert(`삼봉 은행 월 이자율 ${v}% 로 저장했습니다.\n(매월 1회, 저축액에 이자가 붙습니다.)`);
+                await window.customAlert(`적금 만기 이자율을 ${v}% 로 저장했습니다.\n(적금이 30일 만기될 때 이 비율이 적용됩니다.)`);
             } catch (e) {
                 window.customAlert('저장 실패: ' + e.message);
             }
@@ -1338,11 +1493,28 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             if(!window.playerState.lunchBid) window.playerState.lunchBid = {date: '', amount: 0};
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             if(!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
-            if (window.playerState.bankSavings == null || window.playerState.bankSavings === undefined) window.playerState.bankSavings = 0;
-
-            let bankInterestNeedSave = false;
-            if (!window.playerState.isGuest && currentStudentDocRef && window.applyBankMonthlyInterest()) {
-                bankInterestNeedSave = true;
+            const bankMigrateTouched = migrateBankPlayerFields();
+            let bankProcessingNeedSave = bankMigrateTouched;
+            if (!window.playerState.isGuest && currentStudentDocRef) {
+                const termRes = applyBankTermDepositMaturity();
+                if (termRes.changed) {
+                    bankProcessingNeedSave = true;
+                    if (termRes.msgs.length > 0) {
+                        setTimeout(() => {
+                            void window.customAlert(
+                                '🎁 적금 만기!\n\n' +
+                                termRes.msgs.join('\n') +
+                                '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
+                            );
+                        }, 80);
+                    }
+                }
+                if (applyBankRegularDailyBonus()) {
+                    bankProcessingNeedSave = true;
+                    setTimeout(() => {
+                        void window.customAlert('🏦 일반예금 보너스: 100 B 이상 유지로 오늘 1 B가 지갑에 들어왔습니다!');
+                    }, 120);
+                }
             }
 
             if (window.playerState.isAdmin) {
@@ -1619,7 +1791,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             updateLunchInvestLockUI();
             window.updateBankPanel();
-            if (bankInterestNeedSave) saveDataToCloud();
+            if (bankProcessingNeedSave) saveDataToCloud();
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가
@@ -1655,7 +1827,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
                 inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
-                bankSavings: 0, bankLastInterestMonth: '', dailyAllClearBonusDate: '',
+                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
             
@@ -1720,7 +1892,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [] };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '' };
                     await setDoc(docRef, data);
                 }
 
@@ -2511,7 +2683,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
                         condition: null, dragonBalls: [], earlyBirdCount: 0,
                         inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
-                        bankSavings: 0, bankLastInterestMonth: '', dailyAllClearBonusDate: ''
+                        bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: ''
                     });
                 }
                 

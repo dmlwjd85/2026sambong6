@@ -663,24 +663,38 @@
             </div>
         </section>
 
-        <!-- ★ 삼봉 은행 탭 ★ -->
+        <!-- ★ 삼봉 은행 탭 (일반예금 / 적금 분리) ★ -->
         <section id="bankSection" class="hidden">
-            <div class="max-w-lg mx-auto space-y-4 px-1">
+            <div class="max-w-lg mx-auto space-y-4 px-1 pb-8">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-sky-400"><i class="fa-solid fa-building-columns"></i> 삼봉 은행</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">보유 삼봉을 저축하고, 매월 이자를 받으세요. 이자율은 마스터가 설정합니다.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">일반예금은 이자 없음 · 100 B 이상 유지 시 매일 1 B(날짜가 바뀐 뒤 첫 접속). 적금은 30일 보물상자 잠금 후 만기 이자(반올림) 지급.</p>
                 </div>
-                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-sky-500/40 space-y-3">
+                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-sky-500/40 space-y-2">
                     <div class="flex justify-between text-sm"><span class="text-slate-400">지갑(삼봉)</span><span id="bankWalletDisplay" class="font-bold text-sb-gold">0.0 B</span></div>
-                    <div class="flex justify-between text-sm"><span class="text-slate-400">저축 잔액</span><span id="bankSavingsDisplay" class="font-bold text-sky-300">0.0 B</span></div>
-                    <div class="flex justify-between text-xs border-t border-slate-700 pt-2"><span class="text-slate-500">적용 월 이자율</span><span class="text-slate-300"><span id="bankRateDisplay">0</span>%</span></div>
+                    <div class="flex justify-between text-sm"><span class="text-slate-400">일반예금 잔액</span><span id="bankRegularDisplay" class="font-bold text-sky-300">0.0 B</span></div>
+                    <div class="flex justify-between text-xs border-t border-slate-700 pt-2"><span class="text-slate-500">적금 만기 이자율 (마스터 설정)</span><span class="text-slate-300"><span id="bankRateDisplay">0</span>%</span></div>
+                    <p id="bankDailyBonusLine" class="text-[9px] sm:text-[10px] text-emerald-300/90 leading-snug border-t border-slate-700/80 pt-2"></p>
+                </div>
+                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3">
+                    <h3 class="text-sky-200 font-bold text-sm"><i class="fa-solid fa-piggy-bank"></i> 일반예금</h3>
+                    <p class="text-[9px] text-slate-500">이자 없음. 입·출금 자유.</p>
                     <div class="flex gap-2 flex-wrap items-center">
-                        <input type="number" id="bankDepositInput" min="0" step="0.1" placeholder="저축할 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
-                        <button type="button" onclick="window.depositBank()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">저축</button>
+                        <input type="number" id="bankDepositInput" min="0" step="0.1" placeholder="넣을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <button type="button" onclick="window.depositBank()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center">
                         <input type="number" id="bankWithdrawInput" min="0" step="0.1" placeholder="찾을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="window.withdrawBank()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">출금</button>
+                    </div>
+                </div>
+                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/40 space-y-3">
+                    <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-box-open"></i> 적금 (보물상자)</h3>
+                    <p class="text-[9px] text-slate-500">건당 30일 잠금 · 만기 시 이자 지급 · 중도 해지는 원금만</p>
+                    <div id="bankTermDepositsList" class="min-h-[2rem]"></div>
+                    <div class="flex gap-2 flex-wrap items-end pt-1">
+                        <input type="number" id="bankTermDepositInput" min="0" step="0.1" placeholder="적금 넣을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <button type="button" onclick="window.openTermDeposit()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">적금 가입</button>
                     </div>
                 </div>
             </div>
@@ -743,10 +757,10 @@
                 <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
             </div>
 
-            <!-- 삼봉 은행 이자율 (마스터 J) -->
+            <!-- 삼봉 은행 이자율 (마스터 J) — 적금 30일 만기 시 적용 -->
             <div id="bankInterestAdminPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-sky-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 삼봉 은행 월 이자율 (%)</h3>
-                <p class="text-[9px] text-slate-400 mb-2">학생 저축액에 매달 1회 이자가 붙습니다. (첫 접속 시 자동 반영)</p>
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 적금 만기 이자율 (%)</h3>
+                <p class="text-[9px] text-slate-400 mb-2">적금 보물상자가 30일 만기될 때, 원금에 대해 이 비율(%)만큼 이자가 반올림되어 지급됩니다. 이율 변경 시 이후 만기분부터 변경된 비율이 적용됩니다.</p>
                 <div class="flex flex-wrap gap-2 items-center">
                     <input type="number" id="gmBankInterestRate" min="0" max="100" step="0.1" placeholder="예: 3" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
                     <button type="button" onclick="window.saveBankInterestRate()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>

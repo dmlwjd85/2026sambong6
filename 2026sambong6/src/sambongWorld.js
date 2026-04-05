@@ -1655,6 +1655,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
                 inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
+                bankSavings: 0, bankLastInterestMonth: '', dailyAllClearBonusDate: '',
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
             

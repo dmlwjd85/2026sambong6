@@ -1,0 +1,742 @@
+﻿<!DOCTYPE html>
+<html lang="ko" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2026 삼봉 월드: 시즌 1</title>
+    <meta name="theme-color" content="#fce7f3">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="삼봉월드">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%' y='50%' font-size='65' dominant-baseline='central' text-anchor='middle'>👑</text></svg>">
+    <script>
+        const manifest = {
+            "name": "2026 삼봉 월드 플레이어 가이드", "short_name": "삼봉월드", "start_url": window.location.pathname,
+            "display": "standalone", "background_color": "#fdf2f8", "theme_color": "#fce7f3",
+            "icons": [{"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%' y='50%' font-size='65' dominant-baseline='central' text-anchor='middle'>👑</text></svg>", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable"}]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const manifestUrl = URL.createObjectURL(manifestBlob);
+        document.write(`<link rel="manifest" href="${manifestUrl}">`);
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-dashboard relative" id="mainBody">
+    <!-- 봄 벚꽃·꽃잎 배경 (장식) -->
+    <div class="sakura-petals" aria-hidden="true">
+        <span style="left:3%;animation-duration:16s;animation-delay:0s;"></span>
+        <span style="left:12%;animation-duration:13s;animation-delay:2s;"></span>
+        <span style="left:22%;animation-duration:15s;animation-delay:1s;"></span>
+        <span style="left:38%;animation-duration:14s;animation-delay:3s;"></span>
+        <span style="left:55%;animation-duration:17s;animation-delay:0.5s;"></span>
+        <span style="left:68%;animation-duration:12s;animation-delay:2.5s;"></span>
+        <span style="left:82%;animation-duration:15s;animation-delay:1.5s;"></span>
+        <span style="left:92%;animation-duration:18s;animation-delay:0.2s;"></span>
+    </div>
+
+    <!-- ★ 로그인 화면 ★ -->
+    <div id="loginOverlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center px-4 transition-opacity duration-500 bg-gradient-to-b from-pink-950/95 via-fuchsia-950/90 to-slate-950 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDIwNSwgMjMwLCAwLjA4KSIvPjwvc3ZnPg==')]">
+        <div class="text-center mb-8 relative">
+            <div class="absolute inset-0 bg-pink-400/15 blur-[100px] rounded-full"></div>
+            <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-pink-200 mb-4 animate-bounce relative z-10"></i>
+            <h1 class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(251,182,206,0.6)] relative z-10">SAMBONG WORLD</h1>
+            <p class="text-sm sm:text-base text-pink-200/90 mt-2 font-bold tracking-widest relative z-10">🌸 [시즌 1 : 봄맞이 모험]</p>
+        </div>
+
+        <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-pink-400/80 relative z-10">
+            <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-6">삼봉월드 로그인</h2>
+            <div class="space-y-4">
+                <select id="loginId" class="w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold appearance-none">
+                    <option value="" disabled selected>내 이름(학번) 선택</option>
+                    <option disabled>─── 6학년 1반 ───</option>
+                    <option value="1">1. 김단엘</option><option value="2">2. 김라희</option><option value="3">3. 김민지</option>
+                    <option value="4">4. 김정훈</option><option value="5">5. 박문경</option><option value="6">6. 박소윤</option>
+                    <option value="7">7. 박하율</option><option value="8">8. 박현수</option><option value="9">9. 백시율</option>
+                    <option value="10">10. 임은영</option><option value="11">11. 조이담</option><option value="12">12. 황훈태</option>
+                    <option value="13" class="text-cyan-300">13. 석서영 (해적섬)</option>
+                    <option disabled>─── 관리자 ───</option>
+                    <option value="gm" class="text-sb-gold">👑 마스터 J (담임교사)</option>
+                    <option value="gm_a" class="text-cyan-400">🏴‍☠️ 마스터 A (해적섬 두목)</option>
+                </select>
+                <input type="password" id="loginPin" placeholder="비밀번호(PIN) 4자리" class="w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold text-center tracking-[0.5em]" maxlength="4" pattern="[0-9]*" inputmode="numeric">
+                <p class="text-[10px] sm:text-xs text-slate-500 text-center"><i class="fa-solid fa-circle-info"></i> 처음 입력한 번호가 영구 비밀번호가 됩니다.</p>
+                <button id="btnLogin" class="w-full bg-gradient-to-r from-sb-blue to-cyan-500 hover:from-blue-500 text-white font-bold py-3 rounded-xl shadow-lg transition transform hover:scale-105">접속하기</button>
+                <div class="mt-4 pt-4 border-t border-slate-700/50">
+                    <button onclick="window.loginAsGuest()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2 rounded-xl transition text-xs sm:text-sm"><i class="fa-solid fa-eye"></i> 게스트로 구경하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★ 떠다니는 3D 드래곤볼 ★ -->
+    <div id="floatingDragonBall" onclick="window.claimDragonBall()" class="hidden dragonball-3d fixed z-[9999] cursor-pointer hover:scale-125 transition-transform duration-200 animate-bounce" style="width: 50px; height: 50px;">
+        <div id="floatingDragonBallStars" class="flex flex-wrap items-center justify-center text-red-700 leading-none drop-shadow-md" style="width: 70%; height: 70%;"></div>
+    </div>
+
+    <!-- ★ 탑 네비게이션 & 스와이프 탭 바 ★ -->
+    <nav class="fixed top-0 w-full z-50 glass-panel border-b border-slate-700/50 bg-slate-900/90">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 flex items-center justify-between h-14">
+            <div class="flex items-center gap-2 cursor-pointer">
+                <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md"></i>
+                <span class="font-display text-lg text-white tracking-widest">SAMBONG <span class="text-emerald-400">S1</span></span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <div id="saveStatus" class="hidden text-[10px] sm:text-xs text-slate-300 items-center gap-1.5 bg-slate-800/80 px-2 py-1 rounded-full border border-slate-600">
+                    <span id="playerNameDisplay" class="font-bold text-white truncate max-w-[60px] sm:max-w-none"></span>
+                    <i class="fa-solid fa-cloud text-sb-blue" id="cloudIcon"></i>
+                </div>
+                <button onclick="window.logout()" class="text-[10px] sm:text-xs bg-slate-700 hover:bg-slate-600 text-white px-2.5 py-1.5 rounded-lg transition"><i class="fa-solid fa-right-from-bracket"></i></button>
+            </div>
+        </div>
+        <!-- 탭 버튼 영역 -->
+        <div class="flex w-full overflow-x-auto scrollbar-hide border-t border-slate-700/50" id="mainTabBar">
+            <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">월드맵</button>
+            <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">광장</button>
+            <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
+            <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
+            <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
+            <button id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-yellow-400">골든벨</button>
+            <button id="tab-estate" onclick="window.switchTab('estate')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-teal-400">부동산</button>
+            <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
+        </div>
+    </nav>
+
+    <!-- ★ 레이드 전투 모달 (전체 화면) ★ -->
+    <div id="raidBattleModal" class="hidden fixed inset-0 z-[200] bg-slate-900 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300">
+        <!-- 기존 레이드 UI 코드 생략 없이 100% 동일 -->
+        <button id="btnGiveUpRaid" onclick="window.giveUpRaid()" class="absolute top-4 left-4 bg-slate-800/80 hover:bg-sb-red text-white border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold transition z-50 shadow-lg flex items-center gap-1">
+            <i class="fa-solid fa-person-running"></i> 도망가기
+        </button>
+        <div class="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden" id="raidBossArea">
+            <h2 class="text-2xl sm:text-4xl font-display text-white mb-2 z-10 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]"><i class="fa-solid fa-skull"></i> 보스 몬스터</h2>
+            <div class="w-full max-w-lg bg-slate-800 rounded-full h-6 sm:h-8 border-2 border-slate-600 relative z-10 mb-6 overflow-hidden">
+                <div id="raidBossHPBar" class="bg-gradient-to-r from-red-600 to-red-400 h-full stat-fill w-full"></div>
+                <div class="absolute inset-0 flex items-center justify-center text-white font-black text-sm drop-shadow-md" id="raidBossHPText">1000/1000</div>
+            </div>
+            <div id="raidBossImage" class="text-8xl sm:text-[150px] drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] z-10 transition-transform duration-100 ease-linear">👹</div>
+        </div>
+        <div class="h-auto bg-slate-800 border-y-4 border-sb-blue p-4 z-20 flex flex-col justify-center items-center relative" id="raidInputArea">
+            <div id="raidTimerBarContainer" class="absolute top-0 left-0 w-full h-1.5 bg-slate-900 overflow-hidden hidden">
+                <div id="raidTimerBar" class="bg-sb-gold h-full w-full"></div>
+            </div>
+            <div class="text-sb-blue font-bold text-sm mb-1 mt-2" id="raidTurnText">대기 중...</div>
+            <div id="raidSpectatorLabel" class="hidden text-[10px] text-amber-200 font-bold mb-1">[관전 모드]</div>
+            <div class="text-lg text-white font-bold text-center break-keep max-w-2xl mb-4" id="raidQuestionText">레이드 대기중.</div>
+            <div id="raidMultipleChoiceGroup" class="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-2xl hidden mb-2">
+                <button onclick="window.submitRaidAnswer(0)" id="raidOption_0" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">1</button>
+                <button onclick="window.submitRaidAnswer(1)" id="raidOption_1" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">2</button>
+                <button onclick="window.submitRaidAnswer(2)" id="raidOption_2" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">3</button>
+                <button onclick="window.submitRaidAnswer(3)" id="raidOption_3" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">4</button>
+            </div>
+            <div class="text-[10px] text-slate-400 mt-2"><span class="text-sb-gold">10초 이내=크리티컬</span> | 20초 이내=그레이트 | 오답=보스회복</div>
+        </div>
+        <div class="h-48 sm:h-64 bg-slate-900 p-4 flex gap-4 overflow-hidden z-10">
+            <div class="w-1/3 sm:w-1/4 border-r border-slate-700 pr-2 overflow-y-auto">
+                <h3 class="text-xs text-slate-400 font-bold mb-2 pb-1 border-b text-center">참여 학생</h3>
+                <div id="raidParticipantsList" class="flex flex-col gap-2"></div>
+            </div>
+            <div class="flex-1 flex flex-col">
+                <h3 class="text-xs text-slate-400 font-bold mb-2 pb-1 border-b">전투 기록</h3>
+                <div id="raidLogContainer" class="flex-1 overflow-y-auto space-y-1 pr-2 font-mono text-[10px] text-slate-300 flex flex-col-reverse"></div>
+            </div>
+        </div>
+        <button id="btnExitRaid" onclick="window.closeRaidModal()" class="hidden absolute top-4 right-4 bg-slate-800 hover:bg-sb-red text-white border px-4 py-2 rounded-lg font-bold z-50">돌아가기</button>
+    </div>
+
+    <!-- ★ 퀘스트 기록 모달 ★ -->
+    <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
+        <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
+            <button onclick="document.getElementById('questHistoryModal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h3 class="text-xl font-display text-white mb-4"><i class="fa-solid fa-book-open text-sb-blue"></i> 내 퀘스트 기록</h3>
+            <div class="flex gap-2 mb-4">
+                <select id="qhMonthSelect" onchange="window.renderQuestHistory()" class="flex-1 bg-slate-800 text-white border border-slate-600 rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-sb-blue"></select>
+            </div>
+            <div id="qhList" class="flex-1 overflow-y-auto scrollbar-hide space-y-2 pr-1"></div>
+        </div>
+    </div>
+
+    <!-- ★ 식단표 모달 ★ -->
+    <div id="lunchMenuModal" class="hidden fixed inset-0 z-[260] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
+        <div class="glass-panel p-5 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col relative border-t-4 border-t-emerald-500 shadow-2xl overflow-hidden">
+            <button onclick="window.closeLunchMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            <h3 id="lunchMenuModalTitle" class="text-lg sm:text-xl font-display text-white mb-3 pr-8"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
+            <div id="lunchMenuModalBody" class="flex-1 overflow-auto rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+                <div class="text-center text-slate-400 text-xs font-bold py-10">불러오는 중...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 식단표 이미지 전체 화면 확대(라이트박스) -->
+    <div id="lunchMenuLightbox" class="hidden fixed inset-0 z-[270] bg-black/95 flex items-center justify-center p-3" role="dialog" aria-modal="true" onclick="window.closeLunchMenuLightbox()">
+        <button type="button" onclick="event.stopPropagation(); window.closeLunchMenuLightbox();" class="absolute top-4 right-4 text-white/90 hover:text-white z-10 p-2 rounded-lg bg-black/40" aria-label="닫기"><i class="fa-solid fa-xmark text-2xl"></i></button>
+        <div class="max-w-full max-h-full flex items-center justify-center" onclick="event.stopPropagation()">
+            <img id="lunchMenuLightboxImg" src="" alt="식단표 확대 보기" class="max-w-full max-h-[92vh] object-contain select-none" />
+        </div>
+    </div>
+
+    <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
+    <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
+
+        <!-- ★ 1. 대시보드 탭 (월드맵 + 스탯 통합) ★ -->
+        <section id="dashboardSection" class="space-y-6">
+            
+            <!-- 시즌 타이머 영역 -->
+            <div class="glass-panel p-3 rounded-2xl flex justify-between items-center bg-slate-800/80 border border-slate-700 shadow-sm">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-hourglass-half text-sb-gold animate-pulse text-sm"></i>
+                    <span class="text-xs font-bold text-slate-300">시즌 1 종료까지</span>
+                </div>
+                <div id="seasonTimerDisplay" class="font-display text-emerald-400 tracking-wider text-sm sm:text-base">계산중...</div>
+            </div>
+
+            <!-- ★ 추가된 3D 월드맵 영역 ★ -->
+            <div id="worldMapArea" class="night-sky w-full h-[400px] sm:h-[500px] rounded-3xl border-4 border-slate-700 shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden relative mb-6">
+                <!-- 배경 반짝이는 별들 -->
+                <div class="star w-1 h-1 top-[10%] left-[20%]"></div>
+                <div class="star w-2 h-2 top-[30%] left-[80%]" style="animation-delay: 1s;"></div>
+                <div class="star w-1.5 h-1.5 top-[70%] left-[15%]" style="animation-delay: 0.5s;"></div>
+                <div class="star w-1 h-1 top-[80%] left-[85%]" style="animation-delay: 1.5s;"></div>
+                <div class="star w-2 h-2 top-[15%] left-[40%]" style="animation-delay: 0.2s;"></div>
+                <div class="star w-1 h-1 top-[50%] left-[10%]" style="animation-delay: 0.8s;"></div>
+
+                <!-- 1. Center: World Tree (마스터 구역) — 다층 수관·거대 기둥·뿌리 커스텀 SVG -->
+                <div onclick="window.visitWorldTree()" class="island-hover absolute top-[50%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji worldmap-worldtree-wrap absolute bottom-10 flex items-center justify-center pointer-events-none">
+                        <svg class="worldmap-worldtree-svg worldmap-worldtree-breathe" viewBox="0 0 220 280" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                            <defs>
+                                <linearGradient id="wt-trunk" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:#2d1f0f"/>
+                                    <stop offset="35%" style="stop-color:#4a3720"/>
+                                    <stop offset="65%" style="stop-color:#5c4328"/>
+                                    <stop offset="100%" style="stop-color:#3d2a14"/>
+                                </linearGradient>
+                                <linearGradient id="wt-trunk-lit" x1="50%" y1="0%" x2="50%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#6b5340;stop-opacity:0.5"/>
+                                    <stop offset="100%" style="stop-color:#2d1f0f;stop-opacity:0"/>
+                                </linearGradient>
+                                <radialGradient id="wt-canopy-back" cx="45%" cy="40%" r="65%">
+                                    <stop offset="0%" style="stop-color:#064e3b"/>
+                                    <stop offset="45%" style="stop-color:#065f46"/>
+                                    <stop offset="100%" style="stop-color:#022c22"/>
+                                </radialGradient>
+                                <radialGradient id="wt-canopy-mid" cx="55%" cy="38%" r="55%">
+                                    <stop offset="0%" style="stop-color:#059669"/>
+                                    <stop offset="50%" style="stop-color:#047857"/>
+                                    <stop offset="100%" style="stop-color:#064e3b"/>
+                                </radialGradient>
+                                <radialGradient id="wt-canopy-top" cx="50%" cy="32%" r="45%">
+                                    <stop offset="0%" style="stop-color:#34d399"/>
+                                    <stop offset="40%" style="stop-color:#10b981"/>
+                                    <stop offset="100%" style="stop-color:#047857"/>
+                                </radialGradient>
+                                <radialGradient id="wt-glow-orb" cx="50%" cy="50%" r="50%">
+                                    <stop offset="0%" style="stop-color:#a7f3d0;stop-opacity:0.85"/>
+                                    <stop offset="70%" style="stop-color:#34d399;stop-opacity:0.25"/>
+                                    <stop offset="100%" style="stop-color:#059669;stop-opacity:0"/>
+                                </radialGradient>
+                                <filter id="wt-soft" x="-15%" y="-15%" width="130%" height="130%">
+                                    <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="b"/>
+                                    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                                </filter>
+                            </defs>
+                            <!-- 뿌리 -->
+                            <path fill="url(#wt-trunk)" d="M52 258c18-8 32-4 58 2 26-6 40-10 58 2-4 12-22 18-38 14-14 8-32 8-46 0-16 4-34-2-38-14z" opacity="0.95"/>
+                            <path fill="#3d2a14" d="M78 262c10-4 22-2 32 2 10-4 22-6 32-2-8 6-18 8-32 6-14 2-24 0-32-6z"/>
+                            <!-- 외곽 수관 (뒤) -->
+                            <ellipse cx="110" cy="118" rx="92" ry="78" fill="url(#wt-canopy-back)" opacity="0.92"/>
+                            <ellipse cx="72" cy="132" rx="58" ry="52" fill="#065f46" opacity="0.85"/>
+                            <ellipse cx="148" cy="128" rx="54" ry="50" fill="#047857" opacity="0.88"/>
+                            <!-- 중층 수관 -->
+                            <ellipse cx="110" cy="105" rx="78" ry="64" fill="url(#wt-canopy-mid)" filter="url(#wt-soft)"/>
+                            <ellipse cx="95" cy="98" rx="42" ry="36" fill="#10b981" opacity="0.55"/>
+                            <ellipse cx="128" cy="102" rx="38" ry="34" fill="#059669" opacity="0.5"/>
+                            <!-- 상단 수관 (빛 받는 면) -->
+                            <ellipse cx="110" cy="72" rx="52" ry="44" fill="url(#wt-canopy-top)"/>
+                            <ellipse cx="102" cy="58" rx="28" ry="24" fill="#6ee7b7" opacity="0.35"/>
+                            <!-- 거대 기둥 -->
+                            <path fill="url(#wt-trunk)" d="M88 118 Q82 175 78 248 L92 256 Q98 200 102 165 Q106 200 112 256 L126 248 Q122 175 116 118 Q110 108 102 108 Q94 108 88 118z"/>
+                            <path fill="url(#wt-trunk-lit)" d="M94 118 Q98 130 100 155 Q96 195 90 248 L96 252 Q100 190 102 155 Q104 190 108 252 L114 248 Q108 195 104 155 Q106 130 110 118 Q106 112 102 112 Q98 112 94 118z" opacity="0.7"/>
+                            <!-- 굵은 가지 -->
+                            <path fill="#4a3720" d="M88 140 Q62 125 48 118 Q58 132 85 152 Z"/>
+                            <path fill="#4a3720" d="M132 138 Q158 120 172 112 Q162 128 138 150 Z"/>
+                            <path fill="#5c4328" d="M98 155 Q88 168 72 178 Q92 172 102 162 Z"/>
+                            <path fill="#5c4328" d="M118 158 Q132 172 152 182 Q130 176 122 165 Z"/>
+                            <!-- 중심 마나 결정 (세계수 상징) -->
+                            <circle cx="110" cy="48" r="10" fill="url(#wt-glow-orb)"/>
+                            <circle cx="110" cy="48" r="4" fill="#ecfdf5" opacity="0.95"/>
+                            <!-- 잎사귀 하이라이트 점 -->
+                            <circle cx="68" cy="88" r="3" fill="#a7f3d0" opacity="0.5"/>
+                            <circle cx="152" cy="92" r="2.5" fill="#d1fae5" opacity="0.45"/>
+                            <circle cx="130" cy="62" r="2" fill="#ecfdf5" opacity="0.4"/>
+                            <circle cx="85" cy="68" r="2" fill="#6ee7b7" opacity="0.35"/>
+                        </svg>
+                    </div>
+                    <div class="worldmap-mound w-28 h-12 sm:w-36 sm:h-16 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-8 border-green-900 shadow-[0_10px_20px_rgba(0,0,0,0.6)]"></div>
+                    <div class="worldmap-label mt-2 bg-slate-900/95 text-yellow-400 px-4 py-1.5 rounded-full text-xs sm:text-sm font-black border border-yellow-500 whitespace-nowrap">👑 세계수 (마스터)</div>
+                </div>
+
+                <!-- 2. Top Left: Quests -->
+                <div onclick="window.switchTab('quests')" class="island-hover absolute top-[25%] left-[25%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.2s;">📜</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-purple-400 to-purple-600 rounded-[100%] border-b-6 border-purple-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">상점/퀘스트</div>
+                </div>
+
+                <!-- 3. Top Right: Pirate Island (난지도 분교) -->
+                <div onclick="window.visitPirateIsland()" class="island-hover absolute top-[20%] left-[75%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float pointer-events-none" style="animation-delay: 0.5s;">🏴‍☠️</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-700 to-yellow-900 rounded-[100%] border-b-6 border-black shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-red-950/95 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-red-500 whitespace-nowrap">난지도 분교</div>
+                </div>
+
+                <!-- 4. Middle Left: Plaza -->
+                <div onclick="window.switchTab('plaza')" class="island-hover absolute top-[60%] left-[20%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.7s;">🏕️</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-green-400 to-green-600 rounded-[100%] border-b-6 border-green-800 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">우리반 광장</div>
+                </div>
+
+                <!-- 5. Middle Right: Jobs -->
+                <div onclick="window.switchTab('jobs')" class="island-hover absolute top-[55%] left-[80%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.3s;">💼</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-blue-400 to-blue-600 rounded-[100%] border-b-6 border-blue-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">직업 센터</div>
+                </div>
+
+                <!-- 6. Bottom Left: Lunch -->
+                <div onclick="window.switchTab('lunch')" class="island-hover absolute top-[85%] left-[30%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-bounce pointer-events-none" style="animation-delay: 0.1s;">🍱</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-orange-400 to-orange-600 rounded-[100%] border-b-6 border-orange-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">VIP 밥줄</div>
+                </div>
+
+                <!-- 7. Bottom Right: Estate -->
+                <div onclick="window.switchTab('estate')" class="island-hover absolute top-[85%] left-[70%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.8s;">🏠</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-teal-400 to-teal-600 rounded-[100%] border-b-6 border-teal-900 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">부동산</div>
+                </div>
+
+                <!-- 8. Top Center: Golden Bell -->
+                <div onclick="window.switchTab('goldenbell')" class="island-hover absolute top-[15%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.4s;">🔔</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-[100%] border-b-6 border-yellow-800 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">골든벨</div>
+                </div>
+            </div>
+
+            <!-- 하단 스탯 및 대시보드 그리드 배치 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-4">
+                
+                <!-- 1열 (아바타 카드 & 무기고) -->
+                <div class="flex flex-col gap-4 sm:gap-6">
+                    <!-- 아바타 카드 -->
+                    <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
+                        <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
+                        <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
+                        <div id="dashAvatar" class="text-6xl sm:text-7xl mb-4 relative z-10 drop-shadow-xl avatar-bounce mt-4">👦</div>
+                        <h3 id="dashName" class="text-2xl font-display text-white mt-2 z-10 tracking-wider">이름</h3>
+                        <div id="dashLevelName" class="text-xs font-bold text-sb-blue mb-4 z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
+                        <div class="flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
+                            <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">XP</div><div id="dashXp" class="font-display text-lg text-white">0</div></div>
+                            <div class="w-px bg-slate-700"></div>
+                            <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">자산 (B)</div><div id="dashBong" class="font-display text-lg text-sb-gold transition-colors">0.0</div></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 내 무기고 (인벤토리) -->
+                    <div class="glass-panel rounded-3xl p-4 shadow-lg border-t-4 border-t-purple-500 bg-slate-800/80">
+                        <h3 class="font-bold text-sm text-slate-300 mb-2 flex justify-between items-center">
+                            <span><i class="fa-solid fa-khanda text-purple-400 mr-1"></i> 내 인벤토리 <span class="text-[9px] font-normal text-slate-400">(장착시 버프 5%)</span></span>
+                        </h3>
+                        <div id="weaponSlots" class="flex gap-2 overflow-x-auto scrollbar-hide py-1">
+                            <span class="text-[10px] text-slate-500 my-2">가진 아이템이 없어요. 퀘스트를 완료해보세요!</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2열 (상태 바 & 컨디션) -->
+                <div class="flex flex-col gap-4 sm:gap-6">
+                    <!-- 경험치 바 & 컨디션 선택기 -->
+                    <div class="glass-panel p-5 rounded-3xl shadow-lg relative overflow-hidden bg-slate-800/80">
+                        <div class="relative z-10 mb-5">
+                            <div class="flex justify-between items-center text-xs font-bold mb-2">
+                                <span class="text-emerald-400"><i class="fa-solid fa-star"></i> 다음 레벨까지</span>
+                                <span class="text-white bg-slate-900 px-2 py-0.5 rounded text-[10px]" id="expText">0%</span>
+                            </div>
+                            <div class="w-full bg-slate-900 rounded-full h-4 border border-slate-700 p-0.5 shadow-inner">
+                                <div id="expBar" class="bg-emerald-400 h-full rounded-full w-0 stat-fill shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+                            </div>
+                        </div>
+
+                        <!-- 오늘의 컨디션 기능 -->
+                        <div class="border-t border-slate-700/50 pt-4 relative z-10">
+                            <div class="flex justify-between items-end mb-3">
+                                <h3 class="font-bold text-sm text-slate-300"><i class="fa-solid fa-face-smile text-yellow-400 mr-1"></i> 현재 내 상태</h3>
+                                <span class="text-[9px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">터치 시 자동 적용</span>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-[10px] text-slate-400 mb-1.5 font-bold">기분</div>
+                                    <div class="flex flex-wrap gap-1.5" id="emotionBtns"></div>
+                                </div>
+                                <div>
+                                    <div class="text-[10px] text-slate-400 mb-1.5 font-bold">체력</div>
+                                    <div class="flex flex-wrap gap-1.5" id="bodyBtns"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 레벨 및 등급 안내 그래프 -->
+                        <div class="border-t border-slate-700/50 pt-4 mt-4 relative z-10 overflow-x-auto scrollbar-hide">
+                            <h3 class="font-bold text-sm text-slate-300 mb-3 min-w-[300px]"><i class="fa-solid fa-ranking-star text-yellow-400 mr-1"></i> 레벨 및 등급 안내</h3>
+                            <div class="flex items-center justify-between text-[10px] sm:text-xs min-w-[300px]">
+                                <div class="flex flex-col items-center"><span class="text-2xl mb-1">🥚</span><span class="text-slate-400 font-bold">새내기</span><span class="text-[8px] text-slate-500">~1,499</span></div>
+                                <div class="h-px bg-slate-700 flex-1 mx-1"></div>
+                                <div class="flex flex-col items-center"><span class="text-2xl mb-1">🐣</span><span class="text-sb-green font-bold">초보</span><span class="text-[8px] text-slate-500">1,500~</span></div>
+                                <div class="h-px bg-slate-700 flex-1 mx-1"></div>
+                                <div class="flex flex-col items-center"><span class="text-2xl mb-1">🐥</span><span class="text-blue-400 font-bold">중수</span><span class="text-[8px] text-slate-500">4,500~</span></div>
+                                <div class="h-px bg-slate-700 flex-1 mx-1"></div>
+                                <div class="flex flex-col items-center"><span class="text-2xl mb-1">🦅</span><span class="text-yellow-500 font-bold">고수</span><span class="text-[8px] text-slate-500">10,000~</span></div>
+                                <div class="h-px bg-slate-700 flex-1 mx-1"></div>
+                                <div class="flex flex-col items-center"><span class="text-2xl mb-1">☄️</span><span class="text-purple-400 font-bold">수호자</span><span class="text-[8px] text-slate-500">22,000~</span></div>
+                                <div class="h-px bg-slate-700 flex-1 mx-1"></div>
+                                <div class="flex flex-col items-center"><span class="text-2xl mb-1">🐦‍🔥</span><span class="text-sb-red font-bold">전설</span><span class="text-[8px] text-slate-500">40,000~</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3열 (투두 리스트 & NPC 대화) -->
+                <div class="flex flex-col gap-4 sm:gap-6">
+                    <!-- 투두 리스트 (관리자는 숨김) -->
+                    <div id="todoPanel" class="glass-panel p-5 rounded-3xl shadow-lg border-t-4 border-t-emerald-500 bg-slate-800/80 max-h-[300px] overflow-y-auto scrollbar-hide">
+                        <h3 class="font-bold text-sm text-slate-300 mb-3 flex justify-between items-center">
+                            <span><i class="fa-solid fa-list-check text-emerald-400 mr-1"></i> 오늘의 할 일</span>
+                            <div class="flex gap-1.5 items-center">
+                                <button onclick="window.openQuestHistory()" class="text-[9px] bg-sb-blue/80 hover:bg-sb-blue text-white px-2 py-0.5 rounded shadow"><i class="fa-solid fa-book"></i> 기록</button>
+                                <span class="text-[9px] font-normal text-slate-400 bg-slate-900 px-2 py-1 rounded">터치하여 인증</span>
+                            </div>
+                        </h3>
+                        <div id="todoContainer" class="space-y-2"></div>
+                    </div>
+                    
+                    <!-- NPC 대화 -->
+                    <div class="flex items-start gap-3 bg-slate-800/60 p-4 rounded-2xl border border-slate-600/50 cursor-pointer shadow-lg hover:bg-slate-700/60 transition" onclick="window.talkToNPC()">
+                        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-sb-gold to-yellow-600 flex items-center justify-center text-2xl flex-shrink-0 border shadow-inner">🐉</div>
+                        <div class="flex-grow pt-0.5">
+                            <div class="flex justify-between items-center mb-1"><h3 class="text-sb-gold font-black text-xs">마스터 J</h3></div>
+                            <p id="npcText" class="text-slate-200 text-xs font-medium leading-relaxed break-keep">"(공지 불러오는 중...)"</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ★ 드래곤볼 보물상자 보관함 (슬림 & 가로형) ★ -->
+            <div id="dragonballContainer" class="treasure-box p-3 sm:p-4 mt-6 hidden relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                <div class="z-10 shrink-0 text-center sm:text-left">
+                    <h3 class="font-black text-sm text-yellow-500 mb-1"><i class="fa-solid fa-dragon"></i> 주말 한정 드래곤볼 보관함</h3>
+                    <p class="text-[9px] sm:text-[10px] text-yellow-200/70">전 서버 주말 단 7개 스폰! 다 모으면 <span class="text-white font-bold">700XP</span></p>
+                </div>
+                <div class="flex flex-nowrap gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide py-2 z-10 items-center justify-center w-full sm:w-auto" id="dragonBallSlots"></div>
+            </div>
+        </section>
+
+        <!-- ★ 2. 광장 탭 (모바일 3열 최적화) ★ -->
+        <section id="plazaSection" class="hidden">
+            <!-- 마스터 전용 광장 일괄 컨트롤 (코드 유지) -->
+            <div id="plazaGMControls" class="hidden mb-4 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sb-gold font-bold text-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> 반 전체 일괄 컨트롤</h3>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="flex flex-col gap-1.5">
+                        <span class="text-emerald-400 text-[10px] font-bold px-1">경험치 (XP)</span>
+                        <div class="flex gap-1">
+                            <button onclick="window.bulkAdd('xp', 5)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 X</button>
+                            <button onclick="window.bulkDeduct('xp', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 X</button>
+                            <button onclick="window.bulkAdd('xp', 1)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 X</button>
+                            <button onclick="window.bulkDeduct('xp', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 X</button>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <span class="text-yellow-400 text-[10px] font-bold px-1">자산 (B)</span>
+                        <div class="flex gap-1">
+                            <button onclick="window.bulkAdd('bong', 5)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 B</button>
+                            <button onclick="window.bulkDeduct('bong', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 B</button>
+                            <button onclick="window.bulkAdd('bong', 1)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 B</button>
+                            <button onclick="window.bulkDeduct('bong', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 B</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4 flex justify-between items-end">
+                <div>
+                    <h2 class="text-xl sm:text-2xl font-display text-emerald-400"><i class="fa-solid fa-users"></i> 우리반 광장</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">친구들의 상태를 한눈에 확인해봐요.</p>
+                </div>
+            </div>
+            <div class="glass-panel p-2 sm:p-4 rounded-2xl shadow-xl">
+                <!-- Grid: 모바일 3칸, 태블릿 4칸, 데스크탑 5칸 -->
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 sm:gap-3 w-full" id="plazaContainer">
+                    <div class="text-slate-500 text-xs p-4">데이터 로딩 중...</div>
+                </div>
+            </div>
+            
+            <!-- 명예의 전당 -->
+            <div id="hallOfFameSection" class="hidden mt-12 relative text-center">
+                <h2 class="text-2xl sm:text-3xl font-display text-yellow-500 mb-4"><i class="fa-solid fa-trophy"></i> 명예의 전당</h2>
+                <div id="hofContainer" class="flex flex-wrap gap-4 justify-center px-2"></div>
+            </div>
+        </section>
+
+        <!-- ★ 3. 퀘스트/상점 탭 ★ -->
+        <section id="questsSection" class="hidden space-y-6">
+            <div class="grid lg:grid-cols-2 gap-6">
+                <!-- Quests -->
+                <div class="space-y-4">
+                    <!-- 레이드 -->
+                    <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-4 rounded-2xl border border-purple-500 shadow-lg">
+                        <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <div class="flex-1">
+                                <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 주말 협동 레이드</h3>
+                                <div class="text-[10px] text-yellow-500 font-bold" id="raidTimeStatusText">상태 확인 중...</div>
+                            </div>
+                            <div class="w-full sm:w-auto text-center shrink-0">
+                                <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed" disabled>모집 대기중</button>
+                                <button id="btnSpectateRaid" onclick="window.spectateRaid()" class="hidden w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-pointer">관전하기</button>
+                                <div id="raidJoinCount" class="text-[10px] text-purple-300 mt-1 font-bold hidden">모집: <span id="rCount">0</span>/5 명</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <h3 class="font-bold text-sm text-slate-300 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
+                        <div id="dailyQuestContainer" class="space-y-2"></div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <h3 class="font-bold text-sm text-yellow-400 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
+                        <div id="weeklyQuestContainer" class="space-y-2"></div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl">
+                        <h3 class="font-bold text-sm text-purple-400 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
+                        <div id="specialQuestContainer" class="space-y-2"></div>
+                    </div>
+                </div>
+
+                <!-- Shop -->
+                <div class="space-y-4" id="shopArea">
+                    <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-pink-500">
+                        <h3 class="font-bold text-sm text-pink-400 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
+                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto scrollbar-hide"></div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-sb-gold">
+                        <h3 class="font-bold text-sm text-sb-gold mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
+                        <div id="shopContainer" class="grid grid-cols-1 gap-3"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 4. 직업 탭 ★ -->
+        <section id="jobsSection" class="hidden">
+            <div class="mb-4">
+                <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 직업 목록</h2>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">금요일마다 월급이 들어와요! 카드를 눌러 직업을 선택하세요.</p>
+            </div>
+            <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3"></div>
+        </section>
+
+        <!-- ★ 5. 밥줄(점심) 탭 (레이아웃 개선) ★ -->
+        <section id="lunchSection" class="hidden">
+            <div class="max-w-3xl mx-auto space-y-6">
+                <div class="mb-2">
+                    <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-300 mt-1">평일 낮 12시 이후 접속 시, 점심값(10B)이 자동으로 차감돼요. 잔액이 부족하면 <span class="text-red-400 font-bold">마이너스</span>까지 표시됩니다.</p>
+                    <p id="lunchInvestLockHint" class="hidden text-[10px] text-red-400 font-bold mt-2">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400">투자한 돈(B)이 많을수록 밥을 먼저 먹어요. 동점이면 <span class="text-sb-blue font-bold">레벨(XP)이 높은 사람</span>이 이깁니다!</p>
+                </div>
+                
+                <div class="glass-panel p-5 rounded-2xl border border-orange-500/30">
+                    <h3 class="font-bold text-sm text-white mb-3">식권 투자하기 (누구나 가능)</h3>
+                    <div class="flex gap-2">
+                        <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
+                        <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition transform hover:scale-105 disabled:opacity-40 disabled:pointer-events-none">입찰</button>
+                    </div>
+                </div>
+
+                <!-- 12시 10분 전까지 학생들에게는 이 영역이 숨겨집니다 -->
+                <div id="lunchQueueWrapper" class="glass-panel p-4 sm:p-5 rounded-2xl hidden shadow-xl border-t-4 border-t-orange-500">
+                    <h3 class="font-bold text-sm text-white mb-4"><i class="fa-solid fa-ranking-star text-orange-400"></i> 오늘의 급식 순위 <span class="text-[10px] text-slate-400 font-normal">(12시 10분 공개)</span></h3>
+                    <div id="lunchQueueContainer" class="space-y-3">
+                        <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
+                    </div>
+                </div>
+
+                <!-- 식단표(마스터 첨부) -->
+                <div class="glass-panel p-4 sm:p-5 rounded-2xl shadow-xl border-t-4 border-t-emerald-500 bg-slate-900/60">
+                    <div class="flex items-center justify-between gap-3 mb-3">
+                        <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
+                        <span id="lunchMenuUpdatedText" class="text-[9px] text-slate-400 font-bold"></span>
+                    </div>
+                    <!-- 썸네일: 이미지는 미리보기, PDF는 아이콘(클릭 시 모달에서 확인) -->
+                    <div id="lunchMenuThumbWrap" class="hidden mb-2 rounded-xl overflow-hidden border border-emerald-600/50 shadow-lg">
+                        <button type="button" id="lunchMenuThumbBtn" onclick="window.openLunchMenu()" class="relative w-full block group text-left focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <img id="lunchMenuThumbImg" src="" alt="식단표 미리보기" class="hidden w-full h-36 sm:h-40 object-cover bg-slate-800" loading="lazy" decoding="async" />
+                            <div id="lunchMenuThumbPdf" class="hidden flex flex-col items-center justify-center gap-2 h-32 sm:h-36 bg-gradient-to-br from-slate-800 to-slate-900">
+                                <i class="fa-solid fa-file-pdf text-5xl text-red-400"></i>
+                                <span class="text-[11px] font-bold text-slate-300">PDF 식단표</span>
+                            </div>
+                            <div class="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[10px] sm:text-xs font-bold py-1.5 text-center">탭하여 크게 보기</div>
+                        </button>
+                    </div>
+                    <div id="lunchMenuStudentRow" class="flex gap-2">
+                        <button id="btnOpenLunchMenu" onclick="window.openLunchMenu()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg transition text-xs hidden">
+                            식단표 보기
+                        </button>
+                        <div id="lunchMenuEmptyText" class="flex-1 text-center text-[10px] text-slate-400 font-bold bg-slate-800/60 border border-slate-700 rounded-xl py-3 hidden">
+                            아직 첨부된 식단표가 없어요.
+                        </div>
+                    </div>
+
+                    <div id="lunchMenuAdminPanel" class="hidden mt-4 pt-4 border-t border-slate-700/60 space-y-2">
+                        <div class="text-[10px] text-slate-300 font-bold">마스터 전용: 아래에서 PDF 또는 이미지 파일을 업로드하세요. 제목만 바꿀 때는 저장을 누르면 됩니다.</div>
+                        <input type="text" id="lunchMenuTitleInput" placeholder="식단표 제목 (예: 3월 4주 식단)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold">
+                        <input type="file" id="lunchMenuFileInput" accept="application/pdf,image/*,.pdf" class="hidden">
+                        <button type="button" id="lunchMenuUploadBtn" onclick="window.pickLunchMenuFile()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded text-xs disabled:opacity-40 disabled:pointer-events-none">
+                            파일 업로드로 첨부 (PDF/이미지)
+                        </button>
+                        <p id="lunchMenuUploadStatus" class="text-[10px] text-amber-300 font-bold min-h-[1.1rem]" aria-live="polite"></p>
+                        <div class="flex gap-2">
+                            <button onclick="window.saveLunchMenu()" class="flex-1 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 rounded text-xs">저장</button>
+                            <button onclick="window.clearLunchMenu()" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-2 px-3 rounded text-xs border border-red-900">삭제</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 6. 골든벨 탭 ★ -->
+        <section id="goldenbellSection" class="hidden">
+            <div class="max-w-3xl mx-auto space-y-4">
+                <div class="mb-4">
+                    <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-bell"></i> 도전! 삼봉 골든벨</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">문제를 푼 뒤 <strong class="text-yellow-200/90">최종 제출 및 채점</strong> 한 번으로 채점·보상이 적용됩니다.</p>
+                </div>
+                
+                <div id="gbStudentContainer" class="space-y-3 pb-8">
+                    <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 7. 부동산(자리표) 탭 ★ -->
+        <section id="estateSection" class="hidden">
+            <div class="mb-4 flex justify-between items-end">
+                <div>
+                    <h2 class="text-xl sm:text-2xl font-display text-teal-400"><i class="fa-solid fa-building"></i> 학급 부동산 (자리표)</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">원하는 자리를 B로 영구 구매하세요!</p>
+                </div>
+                <button id="btnEstateReset" onclick="window.masterResetEstate()" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-slate-500">전체 초기화</button>
+            </div>
+            <div class="glass-panel p-3 sm:p-5 rounded-3xl shadow-xl border-t-4 border-t-teal-500 max-w-2xl mx-auto bg-slate-900/80">
+                <div class="w-full text-center bg-slate-800 text-slate-400 font-bold py-2 mb-4 rounded-xl border border-slate-600 tracking-widest text-xs">칠판 (앞)</div>
+                <div class="grid grid-cols-4 gap-2 sm:gap-4" id="estateGrid"><div class="text-center text-slate-500 text-xs py-10 col-span-4">로딩 중...</div></div>
+                <div class="mt-4 pt-4 border-t border-teal-700/50">
+                    <h3 class="text-[10px] sm:text-xs font-bold text-teal-300/90 mb-2"><i class="fa-solid fa-clock-rotate-left"></i> 자리 구매 기록 (삭제 방지·감사 로그)</h3>
+                    <p class="text-[9px] text-slate-500 mb-2">전체 초기화 시에도 아래 기록은 서버에 보존됩니다.</p>
+                    <div id="estatePurchaseLog" class="max-h-36 overflow-y-auto text-[9px] sm:text-[10px] text-slate-400 space-y-1 pr-1"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 8. 마스터 관리자 탭 ★ -->
+        <section id="adminSection" class="hidden">
+            <div class="mb-4 flex justify-between items-end">
+                <div>
+                    <h2 class="text-2xl font-display text-sb-red"><i class="fa-solid fa-gear"></i> 선생님 설정 창 <span id="dbAdminStatus" class="text-[10px] text-orange-400 font-sans hidden"></span></h2>
+                </div>
+            </div>
+
+            <!-- ★ 완전 초기화 버튼 (위험 구역) ★ -->
+            <div id="gmResetPanel" class="hidden bg-red-900/30 border border-red-500/50 p-4 rounded-xl mb-6 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
+                <p class="text-[10px] text-slate-300 mb-3">내일 새로운 마음으로 시작하기 위해 모든 학생의 XP, B, 아이템, 상태를 완전 0으로 돌립니다.</p>
+                <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
+            </div>
+
+            <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->
+            <div class="glass-panel p-2 sm:p-3 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
+                <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+                    <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
+                    <span id="adminQuestSummary" class="text-[9px] text-emerald-300/90 font-bold tabular-nums shrink-0">—</span>
+                </div>
+                <p class="text-[8px] text-slate-500 mb-1.5 leading-tight">행: 학생 · 열: 오늘 일일 퀘스트 완료(✓). 가로 스크롤로 전체 열 확인.</p>
+                <div id="adminQuestBoard" class="overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
+                    <div class="text-slate-500 text-[9px] text-center py-6">데이터 로딩 중…</div>
+                </div>
+            </div>
+
+            <!-- 골든벨 관리 패널 -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-yellow-500 bg-slate-900/80">
+                <div class="flex justify-between mb-3">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨 출제 관리</h3>
+                    <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
+                </div>
+                <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
+                <div class="flex gap-2">
+                    <button onclick="window.saveGoldenBellDraft()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
+                    <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
+                    <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
+                </div>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
+                </div>
+                <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
+            </div>
+
+            <!-- 레이드 출제 패널 -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-purple-500 bg-slate-900/80">
+                <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
+                <div class="flex gap-2">
+                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
+                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
+                    <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
+                </div>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
+                </div>
+            </div>
+
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> 전체 공지사항</h3>
+                <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
+            </div>
+
+            <div class="glass-panel p-2 sm:p-4 rounded-xl overflow-x-auto border border-sb-red/30 scrollbar-hide">
+                <table class="w-full text-left text-[10px] sm:text-xs text-slate-300 min-w-[600px]">
+                    <thead class="bg-slate-800 text-slate-400 border-b border-slate-600"><tr><th class="p-2">학생 <i class="fa-solid fa-pen"></i></th><th class="p-2">캐릭터(상태)</th><th class="p-2">XP <i class="fa-solid fa-pen"></i></th><th class="p-2">자산(B) <i class="fa-solid fa-pen"></i></th><th class="p-2 text-center text-emerald-400">⚡ 퀵 컨트롤</th></tr></thead>
+                    <tbody id="adminTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="glass-panel p-4 rounded-xl mt-4 border border-purple-500/50 flex justify-between items-center">
+                <div><h3 class="text-white font-bold text-sm">전담 레이드</h3><p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">1234</span></p></div>
+                <div class="flex gap-1"><button onclick="window.setRaidPassword()" class="bg-purple-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button><button onclick="window.resetRaids()" class="bg-red-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">초기화</button></div>
+            </div>
+        </section>
+        
+        <footer class="text-center text-slate-500 py-6 border-t border-slate-800 mt-10">
+            <p class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
+        </footer>
+    </div>
+
+    <script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

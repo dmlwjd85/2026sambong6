@@ -1,6 +1,9 @@
 # 삼봉 FC는 하위 폴더 `sambong-FC`에서 별도 Git 저장소로 관리합니다.
 sambong-FC/
 
+# 침묵의 가나다(Silent Sorting)는 하위 폴더 `Silent Sorting`에서 별도 Git 저장소로 관리합니다.
+Silent Sorting/
+
 # 올인원 홈노트 Vite 빌드 산출물·의존성
 All-in-One-Home/node_modules/
 All-in-One-Home/dist/

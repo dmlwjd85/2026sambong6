@@ -1,7 +1,8 @@
 # 삼봉 FC는 하위 폴더 `sambong-FC`에서 별도 Git 저장소로 관리합니다.
 sambong-FC/
 
-# 침묵의 가나다(sisort)는 하위 폴더 `sisort`에서 별도 Git 저장소로 관리합니다.
+# 침묵의 가나다(SiSort)는 하위 폴더 `SiSort`에서 별도 Git 저장소로 관리합니다.
+SiSort/
 sisort/
 
 # 올인원 홈노트 Vite 빌드 산출물·의존성

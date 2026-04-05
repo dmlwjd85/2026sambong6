@@ -1675,7 +1675,26 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         };
 
         async function attemptLogin(studentId, pin, isAutoLogin) {
-            if (!db || !auth.currentUser) return;
+            // Firebase 미초기화(구버전 번들 등) 시 안내
+            if (!auth || !db) {
+                if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
+                return;
+            }
+            try {
+                await auth.authStateReady();
+                if (!auth.currentUser) await signInAnonymously(auth);
+            } catch (e) {
+                if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
+                return;
+            }
+            if (!auth.currentUser) {
+                if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                return;
+            }
+            if (!studentId) {
+                if (!isAutoLogin) await window.customAlert('이름(학번)을 선택해 주세요.');
+                return;
+            }
             const isGM = (studentId === 'gm'); 
             const isGMA = (studentId === 'gm_a'); 
             const isAdmin = isGM || isGMA;
@@ -3891,5 +3910,12 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }
 
             renderRaidTimerUI();
+        }
+
+        // Firebase 초기화: 모듈 스크립트는 defer라 DOMContentLoaded 이후에도 실행될 수 있어 readyState로 분기
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            void initApp();
         }
 

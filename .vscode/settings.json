@@ -1,0 +1,4 @@
+{
+  // 워크스페이스가 c:\Project 전체일 때 Go Live가 sisort/index.html 을 루트로 서빙합니다.
+  "liveServer.settings.root": "sisort"
+}

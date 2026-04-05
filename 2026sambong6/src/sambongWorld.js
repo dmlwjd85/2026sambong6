@@ -5,11 +5,13 @@ import {
     doc,
     setDoc,
     getDoc,
+    updateDoc,
     collection,
     onSnapshot,
     writeBatch,
     increment,
     runTransaction,
+    arrayUnion,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -223,7 +225,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
-            condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
@@ -277,6 +279,46 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             return Math.max(0, Math.floor((today - start) / 86400000));
         }
+
+        /** 로컬 기준 주말(토·일) 여부 */
+        function isLocalWeekend(d = new Date()) {
+            const day = d.getDay();
+            return day === 0 || day === 6;
+        }
+
+        /**
+         * 이번 주말을 대표하는 토요일 날짜 키 (YYYY-MM-DD). 평일이면 null.
+         * 일요일은 직전 토요일과 같은 키.
+         */
+        function getWeekendSaturdayKey(d = new Date()) {
+            const day = d.getDay();
+            const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            if (day === 6) return getLocalDateStr(x);
+            if (day === 0) {
+                x.setDate(x.getDate() - 1);
+                return getLocalDateStr(x);
+            }
+            return null;
+        }
+
+        /** 탭 세션 시작 시각 기준 1시간 경과 시 새로고침(로컬 조작·새로고침 악용 완화) */
+        function initSessionRefreshGuard() {
+            const KEY = 'sambong_sess_start';
+            let start = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+            if (!start || Number.isNaN(start)) {
+                start = Date.now();
+                sessionStorage.setItem(KEY, String(start));
+            }
+            setInterval(() => {
+                const s = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+                if (!s || Number.isNaN(s)) return;
+                if (Date.now() - s >= 60 * 60 * 1000) {
+                    sessionStorage.setItem(KEY, String(Date.now()));
+                    location.reload();
+                }
+            }, 30000);
+        }
+        initSessionRefreshGuard();
 
         /**
          * 식단표 URL이 PDF / 이미지 / 기타(iframe) 중 무엇인지 판별.
@@ -663,6 +705,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     if (user) {
                         checkTimeEvents();
                         setInterval(checkTimeEvents, 60000);
+                        setInterval(() => { void tryDragonBallSpawnTick(); }, 45000);
+                        void tryDragonBallSpawnTick();
                         
                         if(unsubscribeGlobal) unsubscribeGlobal();
                         unsubscribeGlobal = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), snap => {
@@ -789,11 +833,12 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                             if(snap.exists()) { 
                                 window.dragonBallState = snap.data(); 
                                 updateDragonBallUI(); 
+                                void tryDragonBallSpawnTick();
                             } else {
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { 
                                     isActive: false, number: 1, posX: 50, posY: 50, 
-                                    lastClaimTime: Date.now(), nextSpawnTime: Date.now() + 60000, 
-                                    weekId: getWeekId(), spawnedThisWeek: [] 
+                                    lastClaimTime: Date.now(), nextSpawnTime: Date.now(),
+                                    weekendKey: '', spawnedStarsThisWeekend: []
                                 });
                             }
                         });
@@ -1383,17 +1428,18 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }
         };
 
-        /** 일반예금 입금 */
+        /** 일반예금 입금 (마스터·학생 동일하게 지갑에서 차감) */
         window.depositBank = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankDepositInput');
             const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
             if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
             const amt = Math.round(raw * 10) / 10;
-            if (window.playerState.bong < amt && !window.playerState.isAdmin) return window.customAlert('보유 삼봉이 부족합니다.');
+            const wallet = Number(window.playerState.bong) || 0;
+            if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${wallet.toFixed(1)} B)`);
             const ok = await window.customConfirm(`일반예금 통장에 ${amt} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
             if (!ok) return;
-            if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue(window.playerState.bong - amt);
+            window.playerState.bong = normalizeBongValue(wallet - amt);
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
@@ -1437,9 +1483,10 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
             if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
             const amt = Math.round(raw * 10) / 10;
-            if (window.playerState.bong < amt && !window.playerState.isAdmin) return window.customAlert('보유 삼봉이 부족합니다.');
+            const w0 = Number(window.playerState.bong) || 0;
+            if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${w0.toFixed(1)} B)`);
             if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
-            if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue(window.playerState.bong - amt);
+            window.playerState.bong = normalizeBongValue(w0 - amt);
             const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
             window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
             if (inp) inp.value = '';
@@ -1515,6 +1562,13 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     setTimeout(() => {
                         void window.customAlert('🏦 일반예금 보너스: 100 B 이상 유지로 오늘 1 B가 지갑에 들어왔습니다!');
                     }, 120);
+                }
+                // 새 주말(토요일 기준 키)이 되면 드래곤볼 수집 상태 초기화
+                const satKey = getWeekendSaturdayKey();
+                if (satKey && window.playerState.dragonBallWeekendKey !== satKey) {
+                    window.playerState.dragonBallWeekendKey = satKey;
+                    window.playerState.dragonBalls = [];
+                    bankProcessingNeedSave = true;
                 }
             }
 
@@ -1828,6 +1882,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
                 inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
+                dragonBalls: [], dragonBallWeekendKey: '',
                 bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
@@ -1893,7 +1948,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '' };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '' };
                     await setDoc(docRef, data);
                 }
 
@@ -2682,7 +2737,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                         pin: stu.pin || '',
                         xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
-                        condition: null, dragonBalls: [], earlyBirdCount: 0,
+                        condition: null, dragonBalls: [], dragonBallWeekendKey: '', earlyBirdCount: 0,
                         inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
                         bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: ''
                     });
@@ -3389,9 +3444,71 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }
         };
 
+        /**
+         * 주말(토·일)에만: 서버 상태 기준으로 아직 이번 주말에 등장하지 않은 성구(1~7) 중 하나를 스폰.
+         * 클레임 시 spawnedStarsThisWeekend에 누적되어 같은 주말 동안 같은 성구는 다시 뜨지 않음.
+         */
+        async function tryDragonBallSpawnTick() {
+            if (!db) return;
+            const dragonBallRef = doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state');
+            const satKey = getWeekendSaturdayKey();
+
+            if (!satKey) {
+                const st = window.dragonBallState;
+                if (st && st.isActive) {
+                    try {
+                        await setDoc(dragonBallRef, { isActive: false }, { merge: true });
+                    } catch (e) {
+                        console.error('dragonball weekday despawn', e);
+                    }
+                }
+                return;
+            }
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(dragonBallRef);
+                    const st = snap.exists() ? snap.data() : {};
+                    const now = Date.now();
+                    if (st.isActive) return;
+                    if (now < (st.nextSpawnTime || 0)) return;
+
+                    let weekendKey = st.weekendKey || '';
+                    let spawned = Array.isArray(st.spawnedStarsThisWeekend) ? [...st.spawnedStarsThisWeekend] : [];
+                    if (weekendKey !== satKey) {
+                        weekendKey = satKey;
+                        spawned = [];
+                    }
+
+                    const pool = [1, 2, 3, 4, 5, 6, 7].filter((n) => !spawned.includes(n));
+                    if (pool.length === 0) return;
+
+                    const number = pool[Math.floor(Math.random() * pool.length)];
+                    const posX = 8 + Math.random() * 84;
+                    const posY = 8 + Math.random() * 84;
+
+                    transaction.set(
+                        dragonBallRef,
+                        {
+                            isActive: true,
+                            number,
+                            posX,
+                            posY,
+                            weekendKey,
+                            spawnedStarsThisWeekend: spawned,
+                        },
+                        { merge: true }
+                    );
+                });
+            } catch (e) {
+                console.error('tryDragonBallSpawnTick', e);
+            }
+        }
+
         window.claimDragonBall = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if(!window.dragonBallState || !window.dragonBallState.isActive) return;
+            if (!isLocalWeekend()) return window.customAlert('드래곤볼은 주말(토·일)에만 수집할 수 있어요!');
             
             const dbNum = window.dragonBallState.number;
             if(!window.playerState.dragonBalls) window.playerState.dragonBalls = [];
@@ -3410,17 +3527,38 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복으로 엄청난 경험치(+700 XP)를 획득했습니다!`);
             }
             
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { isActive: false, lastClaimTime: Date.now(), nextSpawnTime: Date.now() + 1800000 }, {merge: true});
+            const dragonBallRef = doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state');
+            try {
+                await updateDoc(dragonBallRef, {
+                    isActive: false,
+                    lastClaimTime: Date.now(),
+                    nextSpawnTime: Date.now() + 30 * 60 * 1000,
+                    spawnedStarsThisWeekend: arrayUnion(dbNum),
+                });
+            } catch (e) {
+                await setDoc(
+                    dragonBallRef,
+                    {
+                        isActive: false,
+                        lastClaimTime: Date.now(),
+                        nextSpawnTime: Date.now() + 30 * 60 * 1000,
+                        spawnedStarsThisWeekend: arrayUnion(dbNum),
+                    },
+                    { merge: true }
+                );
+            }
             updateUI();
             saveDataToCloud();
-            document.getElementById('floatingDragonBall').classList.add('hidden');
+            const el = document.getElementById('floatingDragonBall');
+            if (el) el.classList.add('hidden');
         };
 
         function updateDragonBallUI() {
             const el = document.getElementById('floatingDragonBall');
             if(!el) return;
             
-            if(window.dragonBallState && window.dragonBallState.isActive && !window.playerState.isAdmin) {
+            const showFloat = window.dragonBallState && window.dragonBallState.isActive && !window.playerState.isAdmin && isLocalWeekend();
+            if(showFloat) {
                 el.classList.remove('hidden');
                 el.style.left = `${window.dragonBallState.posX}%`;
                 el.style.top = `${window.dragonBallState.posY}%`;
@@ -3429,7 +3567,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 for(let i=0; i<window.dragonBallState.number; i++) {
                     starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
                 }
-                document.getElementById('floatingDragonBallStars').innerHTML = starsHtml;
+                const starWrap = document.getElementById('floatingDragonBallStars');
+                if (starWrap) starWrap.innerHTML = starsHtml;
             } else {
                 el.classList.add('hidden');
             }

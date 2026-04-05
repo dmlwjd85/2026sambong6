@@ -1363,7 +1363,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 } else {
                     termList.innerHTML = arr.map((td, idx) => {
                         const elapsed = bankCalendarDaysElapsed(td.startDate);
-                        const daysShow = Math.min(30, elapsed);
+                        // 가입 당일=1일째 … 30일째 만기 (경과 일수+1, 상한 30)
+                        const daysShow = Math.min(30, elapsed + 1);
                         const interestPrev = Math.round((Number(td.amount) || 0) * (rate / 100));
                         const sid = String(td.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                         return `<div class="border border-amber-600/35 rounded-xl p-3 bg-slate-900/60 mb-2 text-left">

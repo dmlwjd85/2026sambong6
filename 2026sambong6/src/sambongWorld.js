@@ -172,6 +172,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
         const SHOP_DATA = [
             { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운을!', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
+            { id: 'item_xp_pack', name: '경험치 팩', desc: '20B로 즉시 100 XP 획득', price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
             { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 투자금의 5배!', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
@@ -208,10 +209,22 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         /** 석서영(학번 13) 부동산 복구용 자리 인덱스(0부터). 8번 자리 = 인덱스 7. */
         const ESTATE_RESTORE_SEOK_SEAT_INDEX = 7;
 
+        /** 화면에서 제거할 자리(표시 번호 1, 13, 16 → 0부터 인덱스 0, 12, 15) */
+        const ESTATE_HIDDEN_SEAT_IDS = [0, 12, 15];
+
+        /** 부동산 초기 16칸 (1·13·16번 자리는 사용 안 함) */
+        function buildInitialEstateSeats() {
+            return Array.from({ length: 16 }, (_, i) => {
+                const hide = ESTATE_HIDDEN_SEAT_IDS.includes(i);
+                return { id: i, owner: null, price: 500, locked: hide, hidden: hide };
+            });
+        }
+
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            bankSavings: 0, bankLastInterestMonth: '', dailyAllClearBonusDate: '',
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
@@ -282,7 +295,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'admin', 'estate'];
+        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'admin'];
         let currentTabIndex = 0;
 
         window.switchTab = function(tabId) {
@@ -292,7 +305,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -306,10 +319,12 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 if (tabId === 'lunch') activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
                 else if (tabId === 'goldenbell') activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
                 else if (tabId === 'estate') activeBtn.classList.add('border-teal-400', 'text-teal-400', 'bg-slate-800/50');
+                else if (tabId === 'bank') activeBtn.classList.add('border-sky-400', 'text-sky-400', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
+            if (window.updateBankPanel) window.updateBankPanel();
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
         }
@@ -676,6 +691,10 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                                 if (npcEl) {
                                     npcEl.innerText = window.globalSettings.announcement ? `"[공지] ${window.globalSettings.announcement}"` : '"(등록된 공지가 없습니다)"';
                                 }
+                                const rateEl = document.getElementById('gmBankInterestRate');
+                                if (rateEl && window.globalSettings.bankInterestPercent != null) {
+                                    rateEl.value = String(window.globalSettings.bankInterestPercent);
+                                }
                                 updateUI();
                             }
                         });
@@ -687,8 +706,9 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                                 window.ensureEstateSeokRestore();
                                 window.renderEstate(); 
                             } else {
-                                const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
+                                const initialSeats = buildInitialEstateSeats();
                                 initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
                                 const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: ph });
                             }
@@ -1199,7 +1219,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 }
             }
 
-            grid.innerHTML = window.estateState.seats.map(seat => {
+            grid.innerHTML = window.estateState.seats.filter(seat => !ESTATE_HIDDEN_SEAT_IDS.includes(seat.id)).map(seat => {
                 if(seat.owner) {
                     const ownerName = STUDENT_NAMES[seat.owner] || "학생";
                     return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)]">
@@ -1222,6 +1242,89 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }).join('');
         };
 
+        window.visitBank = function() {
+            window.switchTab('bank');
+        };
+
+        /** 월 1회: 저축액에 교사 설정 이자율(월 %) 적용 */
+        window.applyBankMonthlyInterest = function() {
+            if (!window.playerState || window.playerState.isGuest) return false;
+            if (!window.playerState.bankLastInterestMonth) window.playerState.bankLastInterestMonth = '';
+            const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
+            if (rate <= 0) return false;
+            let savings = Number(window.playerState.bankSavings) || 0;
+            if (savings <= 0) return false;
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+            if (window.playerState.bankLastInterestMonth === monthKey) return false;
+            const interest = Math.round(savings * (rate / 100) * 10) / 10;
+            window.playerState.bankLastInterestMonth = monthKey;
+            if (interest > 0) {
+                window.playerState.bankSavings = normalizeBongValue(savings + interest);
+                return true;
+            }
+            return false;
+        };
+
+        window.updateBankPanel = function() {
+            const w = document.getElementById('bankWalletDisplay');
+            const s = document.getElementById('bankSavingsDisplay');
+            const r = document.getElementById('bankRateDisplay');
+            if (!w || !s || !r) return;
+            const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
+            w.textContent = `${(window.playerState.bong != null ? Number(window.playerState.bong) : 0).toFixed(1)} B`;
+            s.textContent = `${(Number(window.playerState.bankSavings) || 0).toFixed(1)} B`;
+            r.textContent = `${rate.toFixed(1)}`;
+        };
+
+        window.depositBank = async function() {
+            if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const inp = document.getElementById('bankDepositInput');
+            const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
+            if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
+            const amt = Math.round(raw * 10) / 10;
+            if (window.playerState.bong < amt && !window.playerState.isAdmin) return window.customAlert('보유 삼봉이 부족합니다.');
+            const ok = await window.customConfirm(`삼봉 은행에 ${amt} B를 저축할까요?`);
+            if (!ok) return;
+            if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue(window.playerState.bong - amt);
+            window.playerState.bankSavings = normalizeBongValue((Number(window.playerState.bankSavings) || 0) + amt);
+            if (inp) inp.value = '';
+            updateUI();
+            await saveDataToCloud();
+            window.customAlert(`🏦 ${amt} B를 저축했습니다.`);
+        };
+
+        window.withdrawBank = async function() {
+            if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const inp = document.getElementById('bankWithdrawInput');
+            const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
+            if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
+            const amt = Math.round(raw * 10) / 10;
+            const sav = Number(window.playerState.bankSavings) || 0;
+            if (sav < amt) return window.customAlert('저축 잔액이 부족합니다.');
+            const ok = await window.customConfirm(`저축에서 ${amt} B를 찾을까요?`);
+            if (!ok) return;
+            window.playerState.bankSavings = normalizeBongValue(sav - amt);
+            window.playerState.bong = normalizeBongValue(window.playerState.bong + amt);
+            if (inp) inp.value = '';
+            updateUI();
+            await saveDataToCloud();
+            window.customAlert(`💵 ${amt} B를 찾았습니다.`);
+        };
+
+        window.saveBankInterestRate = async function() {
+            if (!window.playerState.isGM) return window.customAlert('마스터 J만 저장할 수 있습니다.');
+            const el = document.getElementById('gmBankInterestRate');
+            const v = el ? parseFloat(el.value) : NaN;
+            if (!Number.isFinite(v) || v < 0 || v > 100) return window.customAlert('0~100 사이의 월 이자율(%)을 입력하세요.');
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { bankInterestPercent: v }, { merge: true });
+                await window.customAlert(`삼봉 은행 월 이자율 ${v}% 로 저장했습니다.\n(매월 1회, 저축액에 이자가 붙습니다.)`);
+            } catch (e) {
+                window.customAlert('저장 실패: ' + e.message);
+            }
+        };
+
 
         // ==========================================
         // ★ 내 상태 UI 및 퀘스트/인벤토리 처리 ★
@@ -1235,6 +1338,12 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             if(!window.playerState.lunchBid) window.playerState.lunchBid = {date: '', amount: 0};
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             if(!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
+            if (window.playerState.bankSavings == null || window.playerState.bankSavings === undefined) window.playerState.bankSavings = 0;
+
+            let bankInterestNeedSave = false;
+            if (!window.playerState.isGuest && currentStudentDocRef && window.applyBankMonthlyInterest()) {
+                bankInterestNeedSave = true;
+            }
 
             if (window.playerState.isAdmin) {
                 document.getElementById('tab-admin').classList.remove('hidden');
@@ -1244,12 +1353,19 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     document.getElementById('dbAdminStatus').classList.remove('hidden');
                     const plazaGM = document.getElementById('plazaGMControls');
                     if(plazaGM) plazaGM.classList.remove('hidden');
+                    const bankRatePanel = document.getElementById('bankInterestAdminPanel');
+                    if (bankRatePanel) bankRatePanel.classList.remove('hidden');
+                } else {
+                    const bankRatePanel = document.getElementById('bankInterestAdminPanel');
+                    if (bankRatePanel) bankRatePanel.classList.add('hidden');
                 }
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
                 document.getElementById('todoPanel').classList.remove('hidden');
                 const plazaGM = document.getElementById('plazaGMControls');
                 if(plazaGM) plazaGM.classList.add('hidden');
+                const bankRatePanel = document.getElementById('bankInterestAdminPanel');
+                if (bankRatePanel) bankRatePanel.classList.add('hidden');
             }
             
             checkTimeEvents();
@@ -1502,6 +1618,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             });
 
             updateLunchInvestLockUI();
+            window.updateBankPanel();
+            if (bankInterestNeedSave) saveDataToCloud();
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가
@@ -1978,6 +2096,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
+            if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             if(!window.estateState || !window.estateState.seats[seatId]) return;
             
             const seat = window.estateState.seats[seatId];
@@ -2006,6 +2125,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
         window.toggleSeatLock = async function(seatId) {
             if(!window.playerState.isAdmin) return;
+            if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             const seat = window.estateState.seats[seatId];
             const msg = seat.locked ? `${seatId+1}번 자리 잠금을 해제할까요?` : `${seatId+1}번 자리를 학생이 구매할 수 없도록 잠글까요?`;
             const ok = await window.customConfirm(msg);
@@ -2022,8 +2142,9 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             const prevHistory = (window.estateState && Array.isArray(window.estateState.purchaseHistory))
                 ? [...window.estateState.purchaseHistory] : [];
-            const initialSeats = Array.from({length: 16}, (_, i) => ({ id: i, owner: null, price: 500, locked: false }));
+            const initialSeats = buildInitialEstateSeats();
             initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+            initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
             prevHistory.push({
                 studentId: '13',
                 seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,
@@ -2112,9 +2233,24 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             window.playerState.xp += finalXp; 
             window.playerState.bong += finalBong; 
             window.playerState.quests[qId] = true;
+
+            // 일일 퀘스트를 모두 완료한 날 1회 보너스 (50 XP, 10 B)
+            const dailyIdsAll = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+            const allDailyDone = dailyIdsAll.length > 0 && dailyIdsAll.every(id => window.playerState.quests[id]);
+            const nowBonus = new Date();
+            const todayStrBonus = `${nowBonus.getFullYear()}-${String(nowBonus.getMonth() + 1).padStart(2, '0')}-${String(nowBonus.getDate()).padStart(2, '0')}`;
+            let dailyAllClearMsg = '';
+            if (allDailyDone && window.playerState.dailyAllClearBonusDate !== todayStrBonus) {
+                window.playerState.dailyAllClearBonusDate = todayStrBonus;
+                window.playerState.xp += 50;
+                window.playerState.bong = normalizeBongValue(window.playerState.bong + 10);
+                dailyAllClearMsg = `🌟 [일일 퀘스트 전부 완료!]\n보너스 경험치 +50 XP · 삼봉 +10 B\n\n`;
+            }
+
             const newLv = getLevelInfo(window.playerState.xp).index;
 
             let alertMsg = "";
+            if (dailyAllClearMsg) alertMsg += dailyAllClearMsg;
             if (isEarlyBirdJackpot) alertMsg += `🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!\n\n`;
             if (buffAmount > 0) alertMsg += `🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!\n`;
 
@@ -2225,6 +2361,22 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
                 if(win) return await window.customAlert(`🎉 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${payout} B\n(순이익: +${payout - bet} B)`);
                 return await window.customAlert(`💦 실패!\n선택: ${pick}\n주사위: ${roll}\n손해: -${bet} B`);
+            }
+
+            if (id === 'item_xp_pack') {
+                const packPrice = 20;
+                const gainXp = 100;
+                if (window.playerState.bong < packPrice && !window.playerState.isAdmin) {
+                    return await window.customAlert(`❌ 돈이 부족해요. ${(packPrice - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                }
+                const ok = await window.customConfirm(`[경험치 팩]\n${packPrice}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                if (!ok) return;
+                if (!window.playerState.isAdmin) window.playerState.bong -= packPrice;
+                window.playerState.xp += gainXp;
+                playSfx('xp', true);
+                updateUI();
+                await saveDataToCloud();
+                return await window.customAlert(`⚡ 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
             if (isConsumable) {
@@ -2338,7 +2490,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                         xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
                         condition: null, dragonBalls: [], earlyBirdCount: 0,
-                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: []
+                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+                        bankSavings: 0, bankLastInterestMonth: '', dailyAllClearBonusDate: ''
                     });
                 }
                 

@@ -13,6 +13,8 @@
         .bg-theme-lunch { background-color: #151528; background-image: radial-gradient(circle at 70% 20%, rgba(196, 181, 253, 0.22) 0%, #1e1b3a 55%, #0f172a 100%); }
         .bg-theme-goldenbell { background-color: #2a1a08; background-image: radial-gradient(circle at 50% 0%, rgba(252, 211, 77, 0.2) 0%, #422006 55%, #0f172a 100%); }
         .bg-theme-admin { background-color: #1f0a12; background-image: radial-gradient(circle at 30% 0%, rgba(251, 113, 133, 0.15) 0%, #3f0f18 55%, #0f172a 100%); }
+        .bg-theme-estate { background-color: #0f172a; background-image: radial-gradient(circle at 40% 10%, rgba(45, 212, 191, 0.12) 0%, #0f172a 55%, #020617 100%); }
+        .bg-theme-bank { background-color: #0c1424; background-image: radial-gradient(ellipse 100% 60% at 50% -15%, rgba(56, 189, 248, 0.2) 0%, rgba(15, 23, 42, 0.95) 50%, #020617 100%); }
 
         /* 봄 벚꽃 낙하 장식 (가벼운 시각 효과) */
         .sakura-petals { pointer-events: none; position: fixed; inset: 0; z-index: 1; overflow: hidden; }

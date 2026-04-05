@@ -98,6 +98,7 @@
             <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
             <button id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-yellow-400">골든벨</button>
             <button id="tab-estate" onclick="window.switchTab('estate')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-teal-400">부동산</button>
+            <button id="tab-bank" onclick="window.switchTab('bank')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-sky-400">은행</button>
             <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
         </div>
     </nav>
@@ -323,6 +324,13 @@
                     <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-[0_0_15px_rgba(251,191,36,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.4s;">🔔</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-400 to-yellow-600 rounded-[100%] border-b-6 border-yellow-800 shadow-xl"></div>
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">골든벨</div>
+                </div>
+
+                <!-- 9. Bottom Center: Bank -->
+                <div onclick="window.visitBank()" class="island-hover absolute top-[92%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
+                    <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_12px_rgba(56,189,248,0.7)] avatar-float pointer-events-none" style="animation-delay: 0.35s;">🏦</div>
+                    <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-sky-500 to-sky-800 rounded-[100%] border-b-4 border-sky-950 shadow-xl"></div>
+                    <div class="worldmap-label mt-1 bg-slate-900/95 text-sky-300 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-sky-500/80 whitespace-nowrap">삼봉 은행</div>
                 </div>
             </div>
 
@@ -655,19 +663,35 @@
             </div>
         </section>
 
+        <!-- ★ 삼봉 은행 탭 ★ -->
+        <section id="bankSection" class="hidden">
+            <div class="max-w-lg mx-auto space-y-4 px-1">
+                <div class="mb-2">
+                    <h2 class="text-xl sm:text-2xl font-display text-sky-400"><i class="fa-solid fa-building-columns"></i> 삼봉 은행</h2>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">보유 삼봉을 저축하고, 매월 이자를 받으세요. 이자율은 마스터가 설정합니다.</p>
+                </div>
+                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-sky-500/40 space-y-3">
+                    <div class="flex justify-between text-sm"><span class="text-slate-400">지갑(삼봉)</span><span id="bankWalletDisplay" class="font-bold text-sb-gold">0.0 B</span></div>
+                    <div class="flex justify-between text-sm"><span class="text-slate-400">저축 잔액</span><span id="bankSavingsDisplay" class="font-bold text-sky-300">0.0 B</span></div>
+                    <div class="flex justify-between text-xs border-t border-slate-700 pt-2"><span class="text-slate-500">적용 월 이자율</span><span class="text-slate-300"><span id="bankRateDisplay">0</span>%</span></div>
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <input type="number" id="bankDepositInput" min="0" step="0.1" placeholder="저축할 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <button type="button" onclick="window.depositBank()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">저축</button>
+                    </div>
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <input type="number" id="bankWithdrawInput" min="0" step="0.1" placeholder="찾을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <button type="button" onclick="window.withdrawBank()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">출금</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <!-- ★ 8. 마스터 관리자 탭 ★ -->
         <section id="adminSection" class="hidden">
             <div class="mb-4 flex justify-between items-end">
                 <div>
                     <h2 class="text-2xl font-display text-sb-red"><i class="fa-solid fa-gear"></i> 선생님 설정 창 <span id="dbAdminStatus" class="text-[10px] text-orange-400 font-sans hidden"></span></h2>
                 </div>
-            </div>
-
-            <!-- ★ 완전 초기화 버튼 (위험 구역) ★ -->
-            <div id="gmResetPanel" class="hidden bg-red-900/30 border border-red-500/50 p-4 rounded-xl mb-6 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-                <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
-                <p class="text-[10px] text-slate-300 mb-3">내일 새로운 마음으로 시작하기 위해 모든 학생의 XP, B, 아이템, 상태를 완전 0으로 돌립니다.</p>
-                <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
             </div>
 
             <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->
@@ -719,6 +743,16 @@
                 <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
             </div>
 
+            <!-- 삼봉 은행 이자율 (마스터 J) -->
+            <div id="bankInterestAdminPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-sky-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 삼봉 은행 월 이자율 (%)</h3>
+                <p class="text-[9px] text-slate-400 mb-2">학생 저축액에 매달 1회 이자가 붙습니다. (첫 접속 시 자동 반영)</p>
+                <div class="flex flex-wrap gap-2 items-center">
+                    <input type="number" id="gmBankInterestRate" min="0" max="100" step="0.1" placeholder="예: 3" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
+                    <button type="button" onclick="window.saveBankInterestRate()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
+                </div>
+            </div>
+
             <div class="glass-panel p-2 sm:p-4 rounded-xl overflow-x-auto border border-sb-red/30 scrollbar-hide">
                 <table class="w-full text-left text-[10px] sm:text-xs text-slate-300 min-w-[600px]">
                     <thead class="bg-slate-800 text-slate-400 border-b border-slate-600"><tr><th class="p-2">학생 <i class="fa-solid fa-pen"></i></th><th class="p-2">캐릭터(상태)</th><th class="p-2">XP <i class="fa-solid fa-pen"></i></th><th class="p-2">자산(B) <i class="fa-solid fa-pen"></i></th><th class="p-2 text-center text-emerald-400">⚡ 퀵 컨트롤</th></tr></thead>
@@ -729,6 +763,13 @@
             <div class="glass-panel p-4 rounded-xl mt-4 border border-purple-500/50 flex justify-between items-center">
                 <div><h3 class="text-white font-bold text-sm">전담 레이드</h3><p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">1234</span></p></div>
                 <div class="flex gap-1"><button onclick="window.setRaidPassword()" class="bg-purple-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button><button onclick="window.resetRaids()" class="bg-red-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">초기화</button></div>
+            </div>
+
+            <!-- ★ 완전 초기화 (맨 아래·위험) ★ -->
+            <div id="gmResetPanel" class="hidden bg-red-900/30 border border-red-500/50 p-4 rounded-xl mt-8 mb-2 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
+                <p class="text-[10px] text-slate-300 mb-3">내일 새로운 마음으로 시작하기 위해 모든 학생의 XP, B, 아이템, 상태를 완전 0으로 돌립니다.</p>
+                <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
             </div>
         </section>
         

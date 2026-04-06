@@ -69,11 +69,6 @@
         </div>
     </div>
 
-    <!-- ★ 떠다니는 3D 드래곤볼 ★ -->
-    <div id="floatingDragonBall" onclick="window.claimDragonBall()" class="hidden dragonball-3d fixed z-[9999] cursor-pointer hover:scale-125 transition-transform duration-200 animate-bounce" style="width: 50px; height: 50px;">
-        <div id="floatingDragonBallStars" class="flex flex-wrap items-center justify-center text-red-700 leading-none drop-shadow-md" style="width: 70%; height: 70%;"></div>
-    </div>
-
     <!-- ★ 탑 네비게이션 & 스와이프 탭 바 ★ -->
     <nav class="fixed top-0 w-full z-50 glass-panel border-b border-slate-700/50 bg-slate-900/90">
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex items-center justify-between h-14">
@@ -353,13 +348,13 @@
                         </div>
                     </div>
                     
-                    <!-- 내 무기고 (인벤토리) -->
+                    <!-- 내 무기고 (종류별 컬렉션) -->
                     <div class="glass-panel rounded-3xl p-4 shadow-lg border-t-4 border-t-purple-500 bg-slate-800/80">
                         <h3 class="font-bold text-sm text-slate-300 mb-2 flex justify-between items-center">
-                            <span><i class="fa-solid fa-khanda text-purple-400 mr-1"></i> 내 인벤토리 <span class="text-[9px] font-normal text-slate-400">(장착시 버프 5%)</span></span>
+                            <span><i class="fa-solid fa-khanda text-purple-400 mr-1"></i> 무기 컬렉션 <span class="text-[9px] font-normal text-slate-400">(종류별 보관 · 장착 시 XP 버프 5%)</span></span>
                         </h3>
-                        <div id="weaponSlots" class="flex gap-2 overflow-x-auto scrollbar-hide py-1">
-                            <span class="text-[10px] text-slate-500 my-2">가진 아이템이 없어요. 퀘스트를 완료해보세요!</span>
+                        <div id="weaponSlots" class="grid grid-cols-5 gap-1.5 sm:gap-2 py-1">
+                            <span class="text-[10px] text-slate-500 col-span-5">퀘스트 완료 시 무기가 추가됩니다.</span>
                         </div>
                     </div>
                 </div>
@@ -443,14 +438,22 @@
 
             </div>
 
-            <!-- ★ 드래곤볼 보물상자 보관함 (슬림 & 가로형) ★ -->
-            <div id="dragonballContainer" class="treasure-box p-3 sm:p-4 mt-6 hidden relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4">
+            <!-- ★ 드래곤볼 보물상자 보관함 (슬림 & 가로형) — 스폰 수집은 아래 버튼 영역 ★ -->
+            <div id="dragonballContainer" class="treasure-box p-3 sm:p-4 mt-6 hidden relative overflow-hidden flex flex-col gap-3">
                 <div class="absolute top-0 right-0 w-32 h-32 bg-yellow-500/10 rounded-full blur-3xl pointer-events-none"></div>
-                <div class="z-10 shrink-0 text-center sm:text-left">
-                    <h3 class="font-black text-sm text-yellow-500 mb-1"><i class="fa-solid fa-dragon"></i> 주말 한정 드래곤볼 보관함</h3>
-                    <p class="text-[9px] sm:text-[10px] text-yellow-200/70">전 서버 주말 단 7개 스폰! 다 모으면 <span class="text-white font-bold">700XP</span></p>
+                <div class="z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div class="shrink-0 text-center sm:text-left">
+                        <h3 class="font-black text-sm text-yellow-500 mb-1"><i class="fa-solid fa-dragon"></i> 주말 한정 드래곤볼 보관함</h3>
+                        <p class="text-[9px] sm:text-[10px] text-yellow-200/70">전 서버 주말 단 7개 스폰! 다 모으면 <span class="text-white font-bold">700XP</span></p>
+                    </div>
+                    <div class="flex flex-nowrap gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide py-2 z-10 items-center justify-center w-full sm:w-auto" id="dragonBallSlots"></div>
                 </div>
-                <div class="flex flex-nowrap gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide py-2 z-10 items-center justify-center w-full sm:w-auto" id="dragonBallSlots"></div>
+                <div id="dragonBallCatchZone" class="hidden z-10 rounded-2xl border-2 border-amber-500/60 bg-amber-950/40 p-3 text-center">
+                    <p class="text-[10px] text-amber-200/90 mb-2 font-bold">이번에 등장한 드래곤볼을 탭하면 수집합니다 (주말 한정)</p>
+                    <button type="button" id="dragonBallCatchBtn" onclick="window.claimDragonBall()" class="mx-auto dragonball-3d w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center cursor-pointer hover:scale-110 transition-transform animate-bounce shadow-lg border-2 border-amber-400/80" aria-label="드래곤볼 수집">
+                        <span id="dragonBallCatchStars" class="flex flex-wrap items-center justify-center text-red-700 leading-none w-[70%] h-[70%]"></span>
+                    </button>
+                </div>
             </div>
         </section>
 
@@ -684,8 +687,9 @@
                         <button type="button" onclick="window.depositBank()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center">
-                        <input type="number" id="bankWithdrawInput" min="0" step="0.1" placeholder="찾을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <input type="number" id="bankWithdrawInput" min="0" step="0.1" placeholder="출금할 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="window.withdrawBank()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">출금</button>
+                        <button type="button" onclick="window.withdrawBankAll()" class="bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold py-2 px-3 rounded-xl text-[10px] shrink-0 border border-slate-500">전액 출금</button>
                     </div>
                 </div>
                 <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/40 space-y-3">

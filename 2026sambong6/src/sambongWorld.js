@@ -1456,7 +1456,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const amt = Math.round(raw * 10) / 10;
             const sav = Number(window.playerState.bankRegularSavings) || 0;
             if (sav < amt) return window.customAlert('일반예금 잔액이 부족합니다.');
-            const ok = await window.customConfirm(`일반예금에서 ${amt} B를 찾을까요?`);
+            const ok = await window.customConfirm(`일반예금에서 ${amt} B를 지갑으로 출금할까요?`);
             if (!ok) return;
             window.playerState.bankRegularSavings = normalizeBongValue(sav - amt);
             window.playerState.bong = normalizeBongValue(window.playerState.bong + amt);
@@ -1464,6 +1464,22 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             updateUI();
             await saveDataToCloud();
             window.customAlert(`💵 ${amt} B를 찾았습니다.`);
+        };
+
+        /** 일반예금 전액을 지갑으로 출금 */
+        window.withdrawBankAll = async function() {
+            if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const sav = Number(window.playerState.bankRegularSavings) || 0;
+            if (sav <= 0) return window.customAlert('일반예금에 출금할 잔액이 없습니다.');
+            const ok = await window.customConfirm(`일반예금 ${sav.toFixed(1)} B를 전부 지갑으로 출금할까요?`);
+            if (!ok) return;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sav);
+            window.playerState.bankRegularSavings = 0;
+            const inp = document.getElementById('bankWithdrawInput');
+            if (inp) inp.value = '';
+            updateUI();
+            await saveDataToCloud();
+            await window.customAlert(`💵 ${sav.toFixed(1)} B를 모두 찾았습니다.`);
         };
 
         /** 적금(보물상자) 가입 — 안내 후 확인 */
@@ -1655,24 +1671,35 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             const invPanel = document.getElementById('weaponSlots');
             if (invPanel) {
-                if (window.playerState.inventory.length === 0) {
-                    invPanel.innerHTML = '<span class="text-[10px] text-slate-500 my-2">보유한 무기가 없습니다. 퀘스트를 완료해 획득해보세요!</span>';
-                } else {
-                    invPanel.innerHTML = window.playerState.inventory.map(wpId => {
-                        const wp = WEAPON_DATA.find(w => w.id === wpId);
-                        if(!wp) return '';
-                        const isEquipped = window.playerState.equippedWeapon === wpId;
-                        const borderCls = isEquipped ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105' : `${wp.border} ${wp.bg}`;
-                        
-                        return `
-                        <div onclick="window.equipWeapon('${wpId}')" class="cursor-pointer border-2 rounded-xl p-2 flex flex-col items-center justify-center min-w-[65px] transition transform hover:scale-105 ${borderCls} relative shrink-0">
-                            ${isEquipped ? '<div class="absolute -top-2 -right-1 bg-sb-gold text-slate-900 text-[8px] font-black px-1 rounded shadow-md z-10">E</div>' : ''}
-                            <div class="text-2xl mb-1">${wp.emoji}</div>
-                            <div class="text-[9px] font-bold text-white whitespace-nowrap">${wp.name}</div>
-                            <div class="text-[8px] text-emerald-400 font-bold">+${wp.bonus} DMG</div>
+                const inv = window.playerState.inventory || [];
+                const counts = {};
+                inv.forEach((id) => {
+                    counts[id] = (counts[id] || 0) + 1;
+                });
+                invPanel.innerHTML = WEAPON_DATA.map((wp) => {
+                    const n = counts[wp.id] || 0;
+                    const isEquipped = window.playerState.equippedWeapon === wp.id;
+                    const borderCls =
+                        n === 0
+                            ? 'opacity-40 border-slate-700 bg-slate-900/50'
+                            : isEquipped
+                              ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
+                              : `${wp.border} ${wp.bg}`;
+                    const click = n > 0 ? `onclick="window.equipWeapon('${wp.id}')"` : '';
+                    const cursor = n > 0 ? 'cursor-pointer hover:scale-105' : 'cursor-default';
+                    return `
+                        <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
+                            ${isEquipped && n > 0 ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
+                            <div class="text-lg sm:text-2xl mb-0.5 leading-none">${wp.emoji}</div>
+                            <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${wp.name}</div>
+                            <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">×${n}</div>
+                            ${
+                                n > 0
+                                    ? `<div class="text-[7px] text-emerald-400 font-bold">+${wp.bonus}</div>`
+                                    : '<div class="text-[7px] text-slate-600">미보유</div>'
+                            }
                         </div>`;
-                    }).join('');
-                }
+                }).join('');
             }
 
             if(window.playerState.condition && window.playerState.condition.emotion) {
@@ -2444,14 +2471,18 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             if (dropped) {
                 const wp = WEAPON_DATA.find(w => w.id === dropped);
-                
-                if (window.playerState.inventory.includes(dropped)) {
+                const hadSame = (window.playerState.inventory || []).filter((id) => id === dropped).length;
+                window.playerState.inventory.push(dropped);
+                if (hadSame > 0) {
                     const comp = 10;
-                    window.playerState.bong += comp;
-                    await window.customAlert(`🎁 [${wp.emoji} ${wp.name}] 무기를 또 발견했어요!\n이미 가지고 있어서 ${comp} B로 바꿔서 드려요.`);
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + comp);
+                    await window.customAlert(
+                        `🎁 [${wp.emoji} ${wp.name}] 중복 획득!\n컬렉션에 추가되었고, 보너스로 ${comp} B를 드려요.`
+                    );
                 } else {
-                    window.playerState.inventory.push(dropped);
-                    await window.customAlert(`🎉 [무기 획득!]\n새로운 무기 [${wp.emoji} ${wp.name}] (데미지 +${wp.bonus}) 을(를) 얻었어요!\n상태 탭의 인벤토리에서 장착해보세요.`);
+                    await window.customAlert(
+                        `🎉 [무기 획득!]\n[${wp.emoji} ${wp.name}] (데미지 +${wp.bonus}) 이 컬렉션에 추가되었어요!\n같은 종류를 탭하면 장착합니다.`
+                    );
                 }
             }
         }
@@ -3549,28 +3580,29 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }
             updateUI();
             saveDataToCloud();
-            const el = document.getElementById('floatingDragonBall');
-            if (el) el.classList.add('hidden');
+            updateDragonBallUI();
         };
 
         function updateDragonBallUI() {
-            const el = document.getElementById('floatingDragonBall');
-            if(!el) return;
-            
-            const showFloat = window.dragonBallState && window.dragonBallState.isActive && !window.playerState.isAdmin && isLocalWeekend();
-            if(showFloat) {
-                el.classList.remove('hidden');
-                el.style.left = `${window.dragonBallState.posX}%`;
-                el.style.top = `${window.dragonBallState.posY}%`;
-                
-                let starsHtml = '';
-                for(let i=0; i<window.dragonBallState.number; i++) {
-                    starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
+            const zone = document.getElementById('dragonBallCatchZone');
+            const stars = document.getElementById('dragonBallCatchStars');
+            if (!zone) return;
+            const showCatch =
+                window.dragonBallState &&
+                window.dragonBallState.isActive &&
+                !window.playerState.isAdmin &&
+                isLocalWeekend();
+            if (showCatch) {
+                zone.classList.remove('hidden');
+                if (stars && window.dragonBallState) {
+                    let starsHtml = '';
+                    for (let i = 0; i < window.dragonBallState.number; i++) {
+                        starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
+                    }
+                    stars.innerHTML = starsHtml;
                 }
-                const starWrap = document.getElementById('floatingDragonBallStars');
-                if (starWrap) starWrap.innerHTML = starsHtml;
             } else {
-                el.classList.add('hidden');
+                zone.classList.add('hidden');
             }
         }
 

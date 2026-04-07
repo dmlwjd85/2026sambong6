@@ -147,12 +147,16 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 20, bong: 5.0, icon: 'fa-child-reaching', color: 'text-orange-300' },
             { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 20, bong: 2.0, icon: 'fa-utensils', color: 'text-orange-300' },
             { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 30, bong: 3.0, icon: 'fa-broom', color: 'text-teal-300' },
+            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 10, bong: 0.5, icon: 'fa-tooth', color: 'text-cyan-200' },
+            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 25, bong: 5.5, icon: 'fa-person-snowboarding', color: 'text-emerald-400' },
+            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 25, bong: 6.0, icon: 'fa-fire', color: 'text-orange-400' },
             { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 50, bong: 2.0, icon: 'fa-calendar-check', color: 'text-white' },
             { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-flask', color: 'text-purple-300' },
             { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-hammer', color: 'text-purple-300' },
             { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-language', color: 'text-purple-300' },
             { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-music', color: 'text-purple-300' },
             { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-masks-theater', color: 'text-purple-300' },
+            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-person-chalkboard', color: 'text-amber-300' },
             { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-scroll', color: 'text-red-300' }
         ];
 
@@ -278,6 +282,25 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const now = new Date();
             const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             return Math.max(0, Math.floor((today - start) / 86400000));
+        }
+
+        /** YYYY-MM-DD 두 날짜 사이의 달력 일수(같은 날=0, 익일=1) */
+        function bankDaysBetweenLocalDateStr(earlierStr, laterStr) {
+            if (!earlierStr || !laterStr || typeof earlierStr !== 'string' || typeof laterStr !== 'string') return 0;
+            const pe = earlierStr.split('-').map(Number);
+            const pl = laterStr.split('-').map(Number);
+            if (pe.length !== 3 || pl.length !== 3) return 0;
+            const d1 = new Date(pe[0], pe[1] - 1, pe[2]);
+            const d2 = new Date(pl[0], pl[1] - 1, pl[2]);
+            return Math.max(0, Math.floor((d2 - d1) / 86400000));
+        }
+
+        /** 일반예금 + 적금 원금 합계 (주기 보너스 기준) */
+        function getBankTotalDeposits() {
+            if (!window.playerState) return 0;
+            const reg = Number(window.playerState.bankRegularSavings) || 0;
+            const termSum = (window.playerState.bankTermDeposits || []).reduce((s, t) => s + (Number(t && t.amount) || 0), 0);
+            return reg + termSum;
         }
 
         /** 로컬 기준 주말(토·일) 여부 */
@@ -1366,13 +1389,17 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             return out;
         }
 
-        /** 일반예금 100B 이상: 날짜가 바뀐 뒤 첫 처리에서 지갑으로 1B (자정 기준 = 로컬 날짜 변경) */
+        /** 일반예금+적금 원금 합 100 B 이상: 마지막 지급일 기준 3일마다 지갑으로 1 B */
         function applyBankRegularDailyBonus() {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return false;
-            const reg = Number(window.playerState.bankRegularSavings) || 0;
-            if (reg < 100) return false;
+            const total = getBankTotalDeposits();
+            if (total < 100) return false;
             const today = getLocalDateStr();
-            if (window.playerState.bankDailyBonusLastDate === today) return false;
+            const last = window.playerState.bankDailyBonusLastDate || '';
+            if (last) {
+                const diff = bankDaysBetweenLocalDateStr(last, today);
+                if (diff < 3) return false;
+            }
             window.playerState.bankDailyBonusLastDate = today;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + 1);
             return true;
@@ -1390,15 +1417,21 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             s.textContent = `${(Number(window.playerState.bankRegularSavings) || 0).toFixed(1)} B`;
             r.textContent = `${rate.toFixed(1)}`;
             if (dailyLine) {
-                const reg = Number(window.playerState.bankRegularSavings) || 0;
+                const total = getBankTotalDeposits();
                 const today = getLocalDateStr();
-                const got = window.playerState.bankDailyBonusLastDate === today;
-                if (reg < 100) {
-                    dailyLine.textContent = '일반예금 100 B 이상이면, 날짜가 바뀐 뒤 첫 접속 시 매일 1 B가 지갑으로 지급됩니다.';
-                } else if (got) {
-                    dailyLine.textContent = '오늘 일일 보너스(1 B)를 이미 받았습니다.';
+                const last = window.playerState.bankDailyBonusLastDate || '';
+                const gotToday = last === today;
+                if (total < 100) {
+                    dailyLine.textContent = '일반예금+적금 원금 합계 100 B 이상이면, 마지막 지급일 기준 3일마다 1 B가 지갑으로 지급됩니다.';
+                } else if (gotToday) {
+                    dailyLine.textContent = '오늘 주기 보너스(1 B)를 이미 받았습니다.';
                 } else {
-                    dailyLine.textContent = '일일 보너스(1 B): 이번 접속에서 지급 처리됩니다.';
+                    const diff = last ? bankDaysBetweenLocalDateStr(last, today) : 999;
+                    if (!last || diff >= 3) {
+                        dailyLine.textContent = '주기 보너스(1 B): 이번 접속에서 지급 처리됩니다.';
+                    } else {
+                        dailyLine.textContent = `다음 주기 보너스까지 약 ${3 - diff}일 남았습니다. (3일마다 1 B)`;
+                    }
                 }
             }
             if (termList) {
@@ -1576,7 +1609,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 if (applyBankRegularDailyBonus()) {
                     bankProcessingNeedSave = true;
                     setTimeout(() => {
-                        void window.customAlert('🏦 일반예금 보너스: 100 B 이상 유지로 오늘 1 B가 지갑에 들어왔습니다!');
+                        void window.customAlert('🏦 예금 주기 보너스: 일반+적금 원금 합 100 B 이상 유지로 이번 주기 1 B가 지갑에 들어왔습니다! (3일마다 지급)');
                     }, 120);
                 }
                 // 새 주말(토요일 기준 키)이 되면 드래곤볼 수집 상태 초기화
@@ -3010,7 +3043,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const ok = await window.customConfirm("모든 학생의 '전담 레이드' 상태를 초기화합니다."); 
             if(!ok) return;
             
-            const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the']; 
+            const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher']; 
             const batch = writeBatch(db);
             
             window.allStudentsData.forEach(stu => {
@@ -3030,7 +3063,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             if (p) { 
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: p }, { merge: true }); 
                 
-                const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the']; 
+                const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher']; 
                 const batch = writeBatch(db);
                 window.allStudentsData.forEach(stu => {
                     let qu = { ...(stu.quests||{}) }; 

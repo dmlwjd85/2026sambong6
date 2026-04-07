@@ -148,7 +148,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 20, bong: 2.0, icon: 'fa-utensils', color: 'text-orange-300' },
             { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 30, bong: 3.0, icon: 'fa-broom', color: 'text-teal-300' },
             { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 10, bong: 0.5, icon: 'fa-tooth', color: 'text-cyan-200' },
-            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 25, bong: 5.5, icon: 'fa-person-snowboarding', color: 'text-emerald-400' },
+            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 25, bong: 5.5, icon: 'fa-gauge-high', color: 'text-emerald-400' },
             { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 25, bong: 6.0, icon: 'fa-fire', color: 'text-orange-400' },
             { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 50, bong: 2.0, icon: 'fa-calendar-check', color: 'text-white' },
             { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-flask', color: 'text-purple-300' },

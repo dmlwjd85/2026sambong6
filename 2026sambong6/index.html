@@ -22,7 +22,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
-<body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-dashboard relative" id="mainBody">
+<body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
     <!-- 봄 벚꽃·꽃잎 배경 (장식) -->
     <div class="sakura-petals" aria-hidden="true">
         <span style="left:3%;animation-duration:16s;animation-delay:0s;"></span>
@@ -86,8 +86,8 @@
         </div>
         <!-- 탭 버튼 영역 -->
         <div class="flex w-full overflow-x-auto scrollbar-hide border-t border-slate-700/50" id="mainTabBar">
-            <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">월드맵</button>
-            <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">광장</button>
+            <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">월드맵</button>
+            <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">광장</button>
             <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
             <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
             <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
@@ -175,7 +175,7 @@
     <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
 
         <!-- ★ 1. 대시보드 탭 (월드맵 + 스탯 통합) ★ -->
-        <section id="dashboardSection" class="space-y-6">
+        <section id="dashboardSection" class="hidden space-y-6">
             
             <!-- 시즌 타이머 영역 -->
             <div class="glass-panel p-3 rounded-2xl flex justify-between items-center bg-slate-800/80 border border-slate-700 shadow-sm">
@@ -458,7 +458,7 @@
         </section>
 
         <!-- ★ 2. 광장 탭 (모바일 3열 최적화) ★ -->
-        <section id="plazaSection" class="hidden">
+        <section id="plazaSection">
             <!-- 마스터 전용 광장 일괄 컨트롤 (코드 유지) -->
             <div id="plazaGMControls" class="hidden mb-4 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
                 <div class="flex items-center justify-between mb-3">

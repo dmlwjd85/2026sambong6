@@ -381,7 +381,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
         const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'admin'];
-        let currentTabIndex = 0;
+        /** 기본 탭: 광장(plaza) */
+        let currentTabIndex = 1;
 
         window.switchTab = function(tabId) {
             TABS.forEach(t => {
@@ -1952,7 +1953,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             document.getElementById('cloudIcon').className = "fa-solid fa-eye-slash text-slate-400";
             
             updateUI(); 
-            window.switchTab('dashboard');
+            window.switchTab('plaza');
         };
         
         window.logout = async function() { 
@@ -2051,7 +2052,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
                 void window.applyPersonalLunchDeductionIfNeeded();
-                window.switchTab(isAdmin ? 'admin' : 'dashboard');
+                window.switchTab(isAdmin ? 'admin' : 'plaza');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
             }

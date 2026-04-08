@@ -885,17 +885,6 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                             }
                         });
 
-                        if (window.playerState.isGM) { 
-                            setInterval(() => {
-                                window.checkAndDistributeSalary();
-                                window.checkAndDistributeClassXP();
-                            }, 60000); 
-                            setTimeout(() => {
-                                window.checkAndDistributeSalary();
-                                window.checkAndDistributeClassXP();
-                            }, 3000); 
-                        }
-                        
                         const savedId = localStorage.getItem('sambong_student_id'); 
                         const savedPin = localStorage.getItem('sambong_student_pin');
                         if (savedId && savedPin) {
@@ -961,6 +950,15 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             // 평일 점심값 차감(학생 본인 클라이언트, 12시 이후 1회) — 마스터 접속 여부와 무관
             if (window.playerState && !window.playerState.isGuest && currentStudentDocRef) {
                 void window.applyPersonalLunchDeductionIfNeeded();
+            }
+
+            // 주급: 금요 15:00~ 직전 금요 분 기준 — 로그인 역할과 무관하게 누군가 앱을 켜면 트랜잭션 1회로 정산
+            if (typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
+                void window.checkAndDistributeSalary();
+            }
+            // 수업 종료 XP: 마스터 J 접속 시에만(기존 설계 유지)
+            if (window.playerState && window.playerState.isGM && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
+                void window.checkAndDistributeClassXP();
             }
         }
 
@@ -2542,8 +2540,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }
 
             const oldLv = getLevelInfo(window.playerState.xp).index;
-            window.playerState.xp += finalXp; 
-            window.playerState.bong += finalBong; 
+            window.playerState.xp += finalXp;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(finalBong));
             window.playerState.quests[qId] = true;
 
             // 일일 퀘스트를 모두 완료한 날 1회 보너스 (50 XP, 10 B)
@@ -2574,12 +2572,14 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
             }
 
-            if (newLv > oldLv) { 
-                const bonus = newLv * 3; window.playerState.bong += bonus; 
-                alertMsg += `\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`; 
+            if (newLv > oldLv) {
+                const bonus = newLv * 3;
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + bonus);
+                alertMsg += `\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`;
             }
+            window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
             if (alertMsg !== "") await window.customAlert(alertMsg.trim());
-            
+
             await handleQuestDrop(xp);
             updateUI(); saveDataToCloud();
         };
@@ -2599,8 +2599,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     if (idx !== -1) window.playerState.questHistory.splice(idx, 1);
                 }
 
-                window.playerState.xp = Math.max(0, window.playerState.xp - xp); 
-                window.playerState.bong = (Number(window.playerState.bong) || 0) - (bong + 0.5);
+                window.playerState.xp = Math.max(0, window.playerState.xp - xp);
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - (Number(bong) + 0.5));
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
                 saveDataToCloud();
@@ -2856,44 +2856,56 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         };
 
         window.checkAndDistributeSalary = async function() {
-            if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
-            const now = new Date(); 
-            const day = now.getDay(); 
-            const hours = now.getHours(); 
-            const minutes = now.getMinutes();
-            
-            let isPast = (day===5 && (hours>14 || (hours===14 && minutes>=40))) || day===6 || day===0;
-            
-            if (isPast) {
-                let dDate = new Date(now); 
-                if(day===6) dDate.setDate(now.getDate()-1); 
-                else if(day===0) dDate.setDate(now.getDate()-2);
-                
-                const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth()+1).padStart(2,'0')}_${String(dDate.getDate()).padStart(2,'0')}`;
-                
-                if (window.globalSettings.lastSalaryWeek !== wId) {
-                    const batch = writeBatch(db); 
+            if (!db || !window.allStudentsData || window.allStudentsData.length === 0) return;
+            const now = new Date();
+            const day = now.getDay();
+            const hours = now.getHours();
+
+            /** 금요일 오후 3시(15:00) 이후부터 해당 주 주급 창구 오픈. 토·일은 직전 금요일분 정산. */
+            const isFridayPayWindow = day === 5 && hours >= 15;
+            const isPast = isFridayPayWindow || day === 6 || day === 0;
+            if (!isPast) return;
+
+            let dDate = new Date(now);
+            if (day === 6) dDate.setDate(now.getDate() - 1);
+            else if (day === 0) dDate.setDate(now.getDate() - 2);
+
+            const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
+
+            const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+            const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+
+            try {
+                const paidCount = await runTransaction(db, async (transaction) => {
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const last = settingsSnap.exists() ? settingsSnap.data().lastSalaryWeek : null;
+                    if (last === wId) return null;
+
                     let count = 0;
-                    
-                    for (const stu of window.allStudentsData) {
-                        if (stu.id === 'gm' || stu.id === 'gm_a') continue;
-                        let pay = 0; 
+                    for (const stu of stuList) {
+                        let pay = 0;
                         if (stu.jobs) {
-                            stu.jobs.forEach(j => { 
-                                const ji = JOB_DATA.find(jd => jd.name === j.name); 
-                                if(ji) pay += ji.pay; 
+                            stu.jobs.forEach(j => {
+                                const ji = JOB_DATA.find(jd => jd.name === j.name);
+                                if (ji) pay += ji.pay;
                             });
                         }
-                        if (pay > 0) { 
-                            batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { bong: (stu.bong || 0) + pay }, { merge: true }); 
-                            count++; 
+                        if (pay > 0) {
+                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
+                            transaction.set(ref, { bong: increment(pay) }, { merge: true });
+                            count++;
                         }
                     }
-                    
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { lastSalaryWeek: wId }, {merge: true});
-                    await batch.commit(); 
-                    window.customAlert(`💰 자동 주급 정산 완료! (${count}명 지급)`);
+
+                    transaction.set(settingsRef, { lastSalaryWeek: wId }, { merge: true });
+                    return count;
+                });
+
+                if (paidCount != null && window.playerState && window.playerState.isGM) {
+                    window.customAlert(`💰 자동 주급 정산 완료! (${paidCount}명 지급)\n(금요 15:00 이후 · 서버 트랜잭션 1회)`);
                 }
+            } catch (e) {
+                console.warn('checkAndDistributeSalary', e);
             }
         };
 

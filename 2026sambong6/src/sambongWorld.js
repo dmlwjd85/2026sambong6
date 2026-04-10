@@ -3072,44 +3072,66 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         };
 
         window.quickReward = async function(type, amount, stuId, btnElement) {
-            if (!window.playerState.isAdmin) return; 
-            if (window.playerState.isGMA && stuId !== '13') return window.customAlert('마스터 A는 석서영(13번) 학생만 수정 가능합니다.');
-            
+            if (!window.playerState.isAdmin) return;
+            const sid = String(stuId);
+            if (window.playerState.isGMA && sid !== '13') return window.customAlert('마스터 A는 석서영(13번) 학생만 수정 가능합니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+
             playSfx(type, amount > 0);
 
-            const rect = btnElement.getBoundingClientRect(); 
+            const rect = btnElement.getBoundingClientRect();
             const floater = document.createElement('div');
-            
+
             floater.className = `floating-text ${amount > 0 ? (type === 'xp' ? 'text-sb-blue' : 'text-yellow-400') : 'text-sb-red'}`;
-            floater.innerHTML = `${amount>0?'+':''}${amount}<span class="text-[10px]">${type==='xp'?'XP':'B'}</span>`;
-            floater.style.left = `${rect.left + (rect.width/2) - 15 + window.scrollX}px`; 
+            floater.innerHTML = `${amount > 0 ? '+' : ''}${amount}<span class="text-[10px]">${type === 'xp' ? 'XP' : 'B'}</span>`;
+            floater.style.left = `${rect.left + (rect.width / 2) - 15 + window.scrollX}px`;
             floater.style.top = `${rect.top + window.scrollY - 10}px`;
-            document.body.appendChild(floater); 
+            document.body.appendChild(floater);
             setTimeout(() => floater.remove(), 1000);
 
-            const stu = window.allStudentsData.find(s => s.id === stuId); 
-            if (!stu) return;
-            
-            let updates = {};
-            if (amount < 0) {
-                let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0); 
-                if (stu.hasShield) updates.hasShield = false; 
-                
-                let dAmt = Math.abs(amount);
-                if (hp > 0) { 
-                    if (hp >= dAmt) { updates.shieldHP = hp - dAmt; dAmt = 0; } 
-                    else { dAmt -= hp; updates.shieldHP = 0; } 
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+            try {
+                const snap = await getDoc(ref);
+                if (!snap.exists) {
+                    return await window.customAlert('해당 학생 문서를 불러올 수 없습니다. 새로고침 후 다시 시도해 주세요.');
                 }
-                
-                if (dAmt > 0) {
-                    const nextV = (stu[type] || 0) - dAmt;
-                    updates[type] = (type === 'bong') ? nextV : Math.max(0, nextV);
+                /** 광장 스냅샷과 무관하게 서버 최신값 기준으로 합산(유실·미저장 방지) */
+                const stu = { id: sid, ...snap.data() };
+
+                let updates = {};
+                if (amount < 0) {
+                    let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
+                    if (stu.hasShield) updates.hasShield = false;
+
+                    let dAmt = Math.abs(amount);
+                    if (hp > 0) {
+                        if (hp >= dAmt) {
+                            updates.shieldHP = hp - dAmt;
+                            dAmt = 0;
+                        } else {
+                            dAmt -= hp;
+                            updates.shieldHP = 0;
+                        }
+                    }
+
+                    if (dAmt > 0) {
+                        const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
+                        const nextV = cur - dAmt;
+                        updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
+                    }
+                } else if (type === 'xp') {
+                    updates.xp = Math.floor((Number(stu.xp) || 0) + amount);
+                } else {
+                    updates.bong = normalizeBongValue((Number(stu.bong) || 0) + amount);
                 }
-            } else { 
-                updates[type] = (stu[type] || 0) + amount; 
+
+                if (Object.keys(updates).length === 0) return;
+
+                await setDoc(ref, updates, { merge: true });
+            } catch (e) {
+                console.error('quickReward', e);
+                await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
             }
-            
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), updates, { merge: true });
         };
 
         window.bulkAdd = async function(type, amount) {

@@ -3092,51 +3092,50 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
             try {
-                /** 트랜잭션으로 최신 문서 읽기·쓰기를 묶어 경쟁·미반영 방지 (단일 HTML·Vite 공통) */
-                let missingDoc = false;
-                await runTransaction(db, async (transaction) => {
-                    const snap = await transaction.get(ref);
-                    const prev = snap.data();
-                    if (prev == null) {
-                        missingDoc = true;
-                        return;
-                    }
-                    const stu = { id: sid, ...prev };
-
-                    let updates = {};
-                    if (amount < 0) {
-                        let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
-                        if (stu.hasShield) updates.hasShield = false;
-
-                        let dAmt = Math.abs(amount);
-                        if (hp > 0) {
-                            if (hp >= dAmt) {
-                                updates.shieldHP = hp - dAmt;
-                                dAmt = 0;
-                            } else {
-                                dAmt -= hp;
-                                updates.shieldHP = 0;
-                            }
-                        }
-
-                        if (dAmt > 0) {
-                            const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
-                            const nextV = cur - dAmt;
-                            updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
-                        }
-                    } else if (type === 'xp') {
-                        updates.xp = Math.floor((Number(stu.xp) || 0) + amount);
-                    } else {
-                        updates.bong = normalizeBongValue((Number(stu.bong) || 0) + amount);
-                    }
-
-                    if (Object.keys(updates).length === 0) return;
-
-                    transaction.set(ref, updates, { merge: true });
-                });
-                if (missingDoc) {
-                    return await window.customAlert('해당 학생 문서를 불러올 수 없습니다. 새로고침 후 다시 시도해 주세요.');
+                /**
+                 * 예전 단순 로직 복원: runTransaction·increment는 규칙에서 막히거나 FieldValue를 거부하는 경우가 있어 실패했음.
+                 * getDoc 후 setDoc(merge)만 사용 — ID는 문자열로 통일, 서버에 없으면 메모리 스냅샷으로 보조.
+                 */
+                const snap = await getDoc(ref);
+                let stu = snap.data();
+                if (stu == null && window.allStudentsData && window.allStudentsData.length) {
+                    const row = window.allStudentsData.find((s) => String(s.id) === sid);
+                    if (row) stu = { ...row };
                 }
+                if (stu == null) {
+                    return await window.customAlert('해당 학생 데이터를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.');
+                }
+
+                let updates = {};
+                if (amount < 0) {
+                    let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
+                    if (stu.hasShield) updates.hasShield = false;
+
+                    let dAmt = Math.abs(amount);
+                    if (hp > 0) {
+                        if (hp >= dAmt) {
+                            updates.shieldHP = hp - dAmt;
+                            dAmt = 0;
+                        } else {
+                            dAmt -= hp;
+                            updates.shieldHP = 0;
+                        }
+                    }
+
+                    if (dAmt > 0) {
+                        const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
+                        const nextV = cur - dAmt;
+                        updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
+                    }
+                } else if (type === 'xp') {
+                    updates.xp = Math.floor((Number(stu.xp) || 0) + amount);
+                } else {
+                    updates.bong = normalizeBongValue((Number(stu.bong) || 0) + amount);
+                }
+
+                if (Object.keys(updates).length === 0) return;
+
+                await setDoc(ref, updates, { merge: true });
             } catch (e) {
                 console.error('quickReward', e);
                 await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -3150,12 +3149,13 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             if (!ok) return;
 
             const batch = writeBatch(db);
-            const delta = type === 'xp' ? Math.floor(Number(amount) || 0) : Number(amount) || 0;
+            const amt = type === 'xp' ? Math.floor(Number(amount) || 0) : Number(amount) || 0;
             window.allStudentsData.forEach((stu) => {
                 if (stu.id === 'gm' || stu.id === 'gm_a') return;
-                const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + String(stu.id));
-                /** 클라이언트 스냅샷 대신 서버 원자 증가(새로고침 후 유지) */
-                batch.set(r, { [type]: increment(delta) }, { merge: true });
+                const idStr = String(stu.id);
+                const cur = Number(stu[type]) || 0;
+                const next = type === 'xp' ? Math.floor(cur + amt) : normalizeBongValue(cur + amt);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + idStr), { [type]: next }, { merge: true });
             });
             try {
                 await batch.commit();

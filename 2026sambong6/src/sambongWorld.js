@@ -9,6 +9,8 @@ import {
     updateDoc,
     collection,
     onSnapshot,
+    getDocs,
+    getDocsFromServer,
     writeBatch,
     increment,
     runTransaction,
@@ -23,6 +25,92 @@ async function readStudentDocPreferServer(ref) {
     } catch (e) {
         return await getDoc(ref);
     }
+}
+
+/**
+ * 광장 일괄 지급 등 배치 저장 직후, 스냅샷보다 먼저 화면에 반영하기 위해 학생 컬렉션을 서버 기준으로 다시 읽습니다.
+ * (onSnapshot과 로직을 맞춤 — 문서 id 기준 id 필드 복구)
+ */
+async function refreshStudentsCacheFromServer() {
+    if (!db) return;
+    const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+    let snap;
+    try {
+        snap = await getDocsFromServer(colRef);
+    } catch (e) {
+        console.warn('refreshStudentsCacheFromServer getDocsFromServer', e);
+        snap = await getDocs(colRef);
+    }
+    const students = [];
+    let gmD = null;
+    let gmaD = null;
+    snap.forEach((d) => {
+        const row = d.data();
+        if (d.id === 'student_gm') {
+            gmD = { ...row, id: 'gm' };
+        } else if (d.id === 'student_gm_a') {
+            gmaD = { ...row, id: 'gm_a' };
+        } else {
+            students.push({ ...row, id: String(d.id.replace('student_', '')) });
+        }
+    });
+    window.allStudentsData = students;
+    window.gmData = gmD;
+    window.gmaData = gmaD;
+
+    const myId = localStorage.getItem('sambong_student_id');
+    if (myId && window.playerState && !window.playerState.isGuest) {
+        const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
+        if (myData) {
+            window.playerState = {
+                ...myData,
+                isGuest: false,
+                isGM: myId === 'gm',
+                isGMA: myId === 'gm_a',
+                isAdmin: myId === 'gm' || myId === 'gm_a',
+            };
+            if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+            _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
+            updateUI();
+        }
+    }
+
+    if (window.playerState && window.playerState.isAdmin) {
+        window.renderAdminTable(students);
+        window.renderAdminQuestBoard(students);
+    }
+    window.renderPlaza(students, gmD, gmaD);
+    window.renderHallOfFame(students);
+    window.renderLunchQueue(students);
+}
+
+/** quickReward 직후 단일 학생 문서를 캐시에 반영해 광장 카드 수치가 즉시 바뀌게 함 */
+function mergeStudentDocIntoPlazaCache(sid, raw) {
+    if (!raw) return;
+    const id = String(sid);
+    const row = {
+        ...raw,
+        bong: raw.bong != null ? normalizeBongValue(raw.bong) : raw.bong,
+    };
+    if (id === 'gm') {
+        window.gmData = { ...window.gmData, ...row, id: 'gm' };
+        return;
+    }
+    if (id === 'gm_a') {
+        window.gmaData = { ...window.gmaData, ...row, id: 'gm_a' };
+        return;
+    }
+    const list = window.allStudentsData;
+    if (!list || !list.length) return;
+    const i = list.findIndex((s) => String(s.id) === id);
+    if (i < 0) return;
+    list[i] = { ...list[i], ...row, id: String(list[i].id) };
+}
+
+function redrawPlazaGrantsUi() {
+    if (!window.playerState || !window.playerState.isAdmin) return;
+    window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
+    if (window.renderAdminTable) window.renderAdminTable(window.allStudentsData);
 }
 
 // ==========================================
@@ -1101,16 +1189,16 @@ async function readStudentDocPreferServer(ref) {
                 let gmControls = canEdit && !isGMCard ? `
                     <div class="w-full mt-1.5 pt-1.5 border-t border-slate-700/50 flex flex-col gap-0.5 z-20" onclick="event.stopPropagation();">
                         <div class="flex gap-0.5">
-                            <button onclick="window.quickReward('xp', 1, '${targetId}', this)" class="flex-1 bg-sb-blue/10 text-sb-blue text-[9px] font-bold py-1 rounded">+1X</button>
-                            <button onclick="window.quickReward('xp', 5, '${targetId}', this)" class="flex-1 bg-sb-blue/20 text-sb-blue text-[9px] font-bold py-1 rounded">+5X</button>
-                            <button onclick="window.quickReward('xp', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1X</button>
-                            <button onclick="window.quickReward('xp', -5, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-5X</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="flex-1 bg-sb-blue/10 text-sb-blue text-[9px] font-bold py-1 rounded">+1X</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="flex-1 bg-sb-blue/20 text-sb-blue text-[9px] font-bold py-1 rounded">+5X</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1X</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-5X</button>
                         </div>
                         <div class="flex gap-0.5">
-                            <button onclick="window.quickReward('bong', 1, '${targetId}', this)" class="flex-1 bg-sb-gold/10 text-sb-gold text-[9px] font-bold py-1 rounded">+1B</button>
-                            <button onclick="window.quickReward('bong', 2, '${targetId}', this)" class="flex-1 bg-sb-gold/20 text-sb-gold text-[9px] font-bold py-1 rounded">+2B</button>
-                            <button onclick="window.quickReward('bong', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1B</button>
-                            <button onclick="window.quickReward('bong', -2, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-2B</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="flex-1 bg-sb-gold/10 text-sb-gold text-[9px] font-bold py-1 rounded">+1B</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${targetId}', this)" class="flex-1 bg-sb-gold/20 text-sb-gold text-[9px] font-bold py-1 rounded">+2B</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1B</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -2, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-2B</button>
                         </div>
                     </div>` : '';
 
@@ -1199,7 +1287,7 @@ async function readStudentDocPreferServer(ref) {
                             ${(Number(stu.bong)||0).toFixed(1)} B
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
-                            ${canEdit ? `<div class="flex gap-1"><button onclick="window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button onclick="window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
+                            ${canEdit ? `<div class="flex gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
                         </td>
                     </tr>`;
                 }
@@ -2163,7 +2251,8 @@ async function readStudentDocPreferServer(ref) {
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
                 void window.applyPersonalLunchDeductionIfNeeded();
-                window.switchTab(isAdmin ? 'admin' : 'plaza');
+                /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 상단 패널) */
+                window.switchTab('plaza');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
             }
@@ -3121,14 +3210,27 @@ async function readStudentDocPreferServer(ref) {
         window.plazaClickXP = async function(stuId, element) {
             if (!window.playerState.isAdmin || stuId === 'gm' || stuId === 'gm_a') return;
             if (window.playerState.isGMA && String(stuId) !== '13') return;
-            window.quickReward('xp', 2, stuId, element);
+            await window.quickReward('xp', 2, stuId, element);
         };
 
         window.quickReward = async function(type, amount, stuId, btnElement) {
-            if (!window.playerState.isAdmin) return;
+            if (!window.playerState || window.playerState.isGuest) {
+                await window.customAlert('로그인 후 마스터 계정으로 사용할 수 있어요.');
+                return;
+            }
+            if (!window.playerState.isAdmin) {
+                await window.customAlert('마스터 J / 마스터 A만 광장에서 지급할 수 있어요.');
+                return;
+            }
             const sid = String(stuId);
-            if (window.playerState.isGMA && sid !== '13') return window.customAlert('마스터 A는 석서영(13번) 학생만 수정 가능합니다.');
-            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            if (window.playerState.isGMA && sid !== '13') {
+                await window.customAlert('마스터 A는 석서영(13번) 학생만 수정 가능합니다.');
+                return;
+            }
+            if (!db) {
+                await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+                return;
+            }
 
             playSfx(type, amount > 0);
 
@@ -3155,6 +3257,9 @@ async function readStudentDocPreferServer(ref) {
                     } else {
                         await setDoc(ref, { bong: increment(Number(amount)) }, { merge: true });
                     }
+                    const snapAfter = await readStudentDocPreferServer(ref);
+                    mergeStudentDocIntoPlazaCache(sid, snapAfter.data());
+                    redrawPlazaGrantsUi();
                     return;
                 }
 
@@ -3192,6 +3297,9 @@ async function readStudentDocPreferServer(ref) {
                 if (Object.keys(updates).length === 0) return;
 
                 await setDoc(ref, updates, { merge: true });
+                const snapNeg = await readStudentDocPreferServer(ref);
+                mergeStudentDocIntoPlazaCache(sid, snapNeg.data());
+                redrawPlazaGrantsUi();
             } catch (e) {
                 console.error('quickReward', e);
                 await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -3219,6 +3327,7 @@ async function readStudentDocPreferServer(ref) {
                     }
                 });
                 await batch.commit();
+                await refreshStudentsCacheFromServer();
                 window.customAlert('✅ 일괄 지급 완료!');
             } catch (e) {
                 console.error('bulkAdd', e);
@@ -3254,7 +3363,8 @@ async function readStudentDocPreferServer(ref) {
                 
                 batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), updates, { merge: true });
             });
-            await batch.commit(); 
+            await batch.commit();
+            await refreshStudentsCacheFromServer();
             window.customAlert(`💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`);
         };
 

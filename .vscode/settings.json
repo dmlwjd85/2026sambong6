@@ -1,4 +1,4 @@
 {
-  // 워크스페이스가 c:\Project 전체일 때 Go Live가 sisort/index.html 을 루트로 서빙합니다.
-  "liveServer.settings.root": "sisort"
+  // 빌드 후(sisort/dist)를 열면 GitHub Pages와 동일한 상대 경로(./)로 동작합니다. 개발은 sisort에서 npm run dev 권장.
+  "liveServer.settings.root": "sisort/dist"
 }

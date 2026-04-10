@@ -1,18 +1,7 @@
 ﻿import { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import {
-    getFirestore,
-    collection,
-    doc,
-    setDoc,
-    addDoc,
-    onSnapshot,
-    query,
-    serverTimestamp,
-    deleteDoc,
-    updateDoc,
-} from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot, serverTimestamp, deleteDoc, updateDoc } from 'firebase/firestore';
 import {
     Home,
     Calendar as CalendarIcon,
@@ -53,30 +42,24 @@ import {
     Gift,
 } from 'lucide-react';
 
-const fallbackConfig = {
-    apiKey: 'AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8',
-    authDomain: 'sambong-world-2026.firebaseapp.com',
-    projectId: 'sambong-world-2026',
-    storageBucket: 'sambong-world-2026.firebasestorage.app',
-    messagingSenderId: '',
-    appId: '1:728320769100:web:7510c9a77cca6b87a788e9',
-    measurementId: 'G-H1RGMJHGTV',
-};
+        const fallbackConfig = {
+            apiKey: "AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8",
+            authDomain: "sambong-world-2026.firebaseapp.com",
+            projectId: "sambong-world-2026",
+            storageBucket: "sambong-world-2026.firebasestorage.app",
+            messagingSenderId: "",
+            appId: "1:728320769100:web:7510c9a77cca6b87a788e9",
+            measurementId: "G-H1RGMJHGTV"
+        };
 
-const firebaseConfig =
-    import.meta.env.VITE_FIREBASE_CONFIG != null && String(import.meta.env.VITE_FIREBASE_CONFIG).trim() !== ''
-        ? JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG)
-        : fallbackConfig;
-const appId =
-    import.meta.env.VITE_APP_ID != null && String(import.meta.env.VITE_APP_ID).trim() !== ''
-        ? import.meta.env.VITE_APP_ID
-        : 'home-note-app';
+        const firebaseConfig = import.meta.env.VITE_FIREBASE_CONFIG ? JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG) : fallbackConfig;
+        const appId = import.meta.env.VITE_APP_ID || 'home-note-app';
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-/** Finnhub API 키 (앱 내 고정) */
+        /** Finnhub API 키 (앱 내 고정) */
         const FINNHUB_API_KEY = 'd7782dhr01qp6afkis3gd7782dhr01qp6afkis40';
 
         /** 단기 목표: 월 키 목록 생성 (YYYY-MM) */
@@ -488,7 +471,7 @@ const db = getFirestore(app);
             };
         };
 
-        const App = () => {
+export default function App() {
             // Auth & Security States (로컬스토리지 활용으로 자동 로그인)
             const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('isAuth') === 'true');
             const [loginSelectedUser, setLoginSelectedUser] = useState(() => localStorage.getItem('loginUser') || null);
@@ -3434,6 +3417,6 @@ const db = getFirestore(app);
                     )}
                 </div>
             );
-};
+}
 
-export default App;
+

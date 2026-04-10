@@ -104,10 +104,6 @@ z-index: 20; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
 @keyframes effShake { 0%, 100% { transform: translateX(0) translateY(0); } 25% { transform: translateX(-1px) translateY(1px); } 50% { transform: translateX(1px) translateY(-1px); } 75% { transform: translateX(-1px) translateY(-1px); } }
 
 .item-slot-mini .item-icon { font-size: 1.1rem; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5)); z-index: 2; position: relative; }
-.item-slot-mini .item-face-thumb { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; position: relative; z-index: 2; }
-.item-slot-mini.item-slot-face-below { position: relative; left: auto; top: auto; right: auto; bottom: auto; transform: none; z-index: 15; width: 32px; height: 32px; }
-.item-slot-mini.item-slot-face-below .item-label { bottom: -12px; font-size: 9px; }
-.sim-fm-log { color: #c9d1d9; text-shadow: 0 0 1px rgba(56, 255, 142, 0.15); }
 .item-slot-mini .item-label {
 position: absolute; bottom: -14px; font-size: 10px; font-weight: 900;
 color: inherit; opacity: 0.9; text-shadow: 0 1px 2px rgba(0,0,0,0.8);
@@ -228,7 +224,6 @@ input[type="number"] { -moz-appearance: textfield; }
 <button onclick="window.switchTab('tabAchievements')" id="btnTabAchievements" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 flex-shrink-0"><i class="fa-solid fa-medal mr-1 text-yellow-300"></i>도전과제</button>
 <button onclick="window.switchTab('tabRank')" id="btnTabRank" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 flex-shrink-0"><i class="fa-solid fa-trophy mr-1 text-yellow-400"></i>명예의전당</button>
 <button onclick="window.switchTab('tabCompare')" id="btnTabCompare" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 flex-shrink-0"><i class="fa-solid fa-code-compare mr-1 text-pink-400"></i>선수비교</button>
-<button onclick="window.switchTab('tabSim')" id="btnTabSim" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 flex-shrink-0"><i class="fa-solid fa-futbol mr-1 text-amber-400"></i>모의경기</button>
 <button onclick="window.switchTab('tabGuide')" id="btnTabGuide" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 flex-shrink-0"><i class="fa-solid fa-circle-info mr-1 text-cyan-400"></i>이용안내</button>
 <button onclick="window.switchTab('tabMaster')" id="btnTabMaster" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 hidden flex-shrink-0"><i class="fa-solid fa-chart-line mr-1 text-fut-rare"></i>현황판(마스터)</button>
 <button onclick="window.switchTab('tabMasterStats')" id="btnTabMasterStats" class="nav-tab pb-1 pt-2 px-1.5 sm:px-2 hidden flex-shrink-0"><i class="fa-solid fa-list-ol mr-1 text-emerald-400"></i>스탯현황</button>
@@ -272,7 +267,7 @@ input[type="number"] { -moz-appearance: textfield; }
 <div id="cardAuraWrapper" class="mx-auto w-fit transition-all duration-500 z-10 relative">
 <div id="detailFutCard" class="fut-card w-[300px] h-[460px] p-5 flex flex-col relative shadow-2xl z-10 mx-auto transition-all duration-300">
 
-<div class="flex justify-between items-start z-10 w-full min-h-[155px]">
+<div class="flex justify-between items-start z-10 w-full h-[155px]">
 <div class="flex flex-col items-center justify-start relative text-current mt-2 w-1/3">
 <span class="font-oswald text-[4.2rem] font-bold leading-none -ml-1 drop-shadow-md" id="detailOvr">86</span>
 <div class="flex flex-col items-center gap-1 hover:opacity-70 transition cursor-pointer mt-1 w-full" id="btnChangePos">
@@ -282,14 +277,8 @@ input[type="number"] { -moz-appearance: textfield; }
 <img src="https://flagcdn.com/w40/kr.png" alt="KR" class="w-8 h-auto mt-2 shadow-sm border border-black/20 rounded-sm">
 </div>
 
-<div class="relative w-2/3 h-full flex flex-col items-center justify-center -mt-2 pr-2">
-<div class="flex flex-col items-center justify-center relative z-10 mb-1 w-full">
-<div class="flex items-center justify-center min-h-[5rem] w-full relative z-[12]" id="detailAvatar"></div>
-<div class="mt-1 flex justify-center w-full shrink-0" title="얼굴 프레임">
-<div class="item-slot-mini item-slot-face-below" id="slotFace"></div>
-</div>
-<div id="facePhotoControls" class="hidden w-full max-w-[200px] mx-auto mt-0.5"></div>
-</div>
+<div class="relative w-2/3 h-full flex items-center justify-center -mt-2 pr-2">
+<div class="text-[5rem] drop-shadow-xl relative z-10 mb-2" id="detailAvatar">👦</div>
 <div class="item-slot-mini" id="slotHead" style="top: -5px; left: 50%; transform: translateX(-50%);"></div>
 <div class="item-slot-mini" id="slotHandL" style="top: 35px; left: 10px;"></div>
 <div class="item-slot-mini" id="slotHandR" style="top: 35px; right: 10px;"></div>
@@ -343,10 +332,6 @@ input[type="number"] { -moz-appearance: textfield; }
 </div>
 
 <div id="gmControls" class="hidden mt-4 bg-slate-900/80 p-4 rounded-xl border border-emerald-800/50 relative z-30">
-<div class="mb-3 pb-3 border-b border-amber-800/40 flex flex-wrap items-center justify-between gap-2">
-<span class="text-[11px] font-bold text-amber-300 leading-snug"><i class="fa-solid fa-arrow-rotate-left mr-1"></i>선택 선수 레벨 롤백 (마스터)</span>
-<button type="button" onclick="window.gmRollbackLevel()" class="bg-amber-900/50 hover:bg-amber-800 text-amber-100 text-xs py-2 px-3 rounded border border-amber-600/50 font-bold transition whitespace-nowrap">레벨 -1 (한 단계)</button>
-</div>
 <h3 class="text-sm font-bold text-emerald-400 mb-3 border-b border-emerald-800/50 pb-1"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> 코치 스태프 권한: 활동 기록 추가</h3>
 <div class="grid grid-cols-2 gap-2 mb-2">
 <button onclick="window.addActivity('matches')" class="bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 rounded border border-slate-600 transition shadow">경기 출전 (+50 EXP)</button>
@@ -396,27 +381,27 @@ input[type="number"] { -moz-appearance: textfield; }
 <div class="grid grid-cols-2 gap-1.5">
 <div class="flex shadow">
 <button onclick="window.addActivity('matches')" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-1.5 rounded-l border border-slate-600 transition">경기 출전</button>
-<button onclick="window.undoActivity('matches')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (활동 EXP+1 페널티)</span></button>
+<button onclick="window.undoActivity('matches')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (-1 EXP)</span></button>
 </div>
 <div class="flex shadow">
 <button onclick="window.addActivity('training')" class="flex-1 bg-emerald-900/40 hover:bg-emerald-800 text-emerald-300 text-[10px] font-bold py-1.5 rounded-l border border-emerald-700/50 transition">개인 훈련</button>
-<button onclick="window.undoActivity('training')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (활동 EXP+1 페널티)</span></button>
+<button onclick="window.undoActivity('training')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (-1 EXP)</span></button>
 </div>
 <div class="flex shadow">
 <button onclick="window.addActivity('goals')" class="flex-1 bg-yellow-900/40 hover:bg-yellow-800 text-yellow-300 text-[10px] font-bold py-1.5 rounded-l border border-yellow-700/50 transition">골 ⚽</button>
-<button onclick="window.undoActivity('goals')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (활동 EXP+1 페널티)</span></button>
+<button onclick="window.undoActivity('goals')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (-1 EXP)</span></button>
 </div>
 <div class="flex shadow">
 <button onclick="window.addActivity('assists')" class="flex-1 bg-blue-900/40 hover:bg-blue-800 text-blue-300 text-[10px] font-bold py-1.5 rounded-l border border-blue-700/50 transition">어시스트 👟</button>
-<button onclick="window.undoActivity('assists')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (활동 EXP+1 페널티)</span></button>
+<button onclick="window.undoActivity('assists')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (-1 EXP)</span></button>
 </div>
 <div class="flex shadow">
 <button onclick="window.addActivity('keypass')" class="flex-1 bg-purple-900/40 hover:bg-purple-800 text-purple-300 text-[10px] font-bold py-1.5 rounded-l border border-purple-700/50 transition">킬패스 🎯</button>
-<button onclick="window.undoActivity('keypass')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (활동 EXP+1 페널티)</span></button>
+<button onclick="window.undoActivity('keypass')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (-1 EXP)</span></button>
 </div>
 <div class="flex shadow">
 <button onclick="window.addActivity('saves')" class="flex-1 bg-orange-900/40 hover:bg-orange-800 text-orange-300 text-[10px] font-bold py-1.5 rounded-l border border-orange-700/50 transition">세이브 🧤</button>
-<button onclick="window.undoActivity('saves')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (활동 EXP+1 페널티)</span></button>
+<button onclick="window.undoActivity('saves')" class="w-7 bg-red-900/50 hover:bg-red-800 text-red-200 text-[10px] font-bold py-1.5 rounded-r border-y border-r border-red-700/50 transition has-tooltip relative flex justify-center items-center"><i class="fa-solid fa-rotate-left"></i><span class="tooltip text-[10px]">실수 취소 (-1 EXP)</span></button>
 </div>
 </div>
 </div>
@@ -591,57 +576,6 @@ input[type="number"] { -moz-appearance: textfield; }
 </div>
 </div>
 
-<div id="tabSim" class="hidden space-y-6">
-<div class="glass-panel p-4 sm:p-8 rounded-3xl border-t-4 border-t-amber-500 relative overflow-hidden">
-<div class="absolute -top-24 -right-10 w-72 h-72 bg-amber-600/15 rounded-full blur-3xl pointer-events-none"></div>
-<div class="relative z-10">
-<h3 class="text-2xl sm:text-3xl font-display text-amber-400 mb-2 flex items-center gap-3">
-<i class="fa-solid fa-clipboard-list"></i> 모의 풋살 시뮬레이션
-</h3>
-<p class="text-sm text-slate-300 mb-4 break-keep leading-relaxed">
-<span class="text-amber-200/90 font-bold">5vs5 풋살</span> · 시뮬레이터 시간 <span class="text-amber-300 font-bold">전반 20분 + 후반 20분</span>이며, 실제 시청은 <span class="text-amber-200 font-bold">전·후반 각 2분</span> 길이로 비례 압축되어 재생됩니다. 팀은 <span class="text-emerald-300">라커룸 카드</span>에서 본인이 팀 A/B를 선택해 구성합니다(팀당 최대 5명, 경기에는 OVR 상위 5명 출전).
-</p>
-
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
-<div class="rounded-2xl border border-red-900/50 bg-red-950/30 p-4">
-<div class="flex items-center justify-between mb-2 border-b border-red-800/40 pb-2">
-<span class="font-display text-red-400 text-lg">팀 A</span>
-<input type="text" id="simTeamAName" maxlength="20" class="w-40 sm:w-48 bg-slate-900/80 border border-red-700/50 rounded-lg px-2 py-1 text-sm text-white" placeholder="팀 이름" value="삼봉 레드"/>
-</div>
-<p class="text-[10px] text-slate-500 mb-2" id="simCountA">대기 중…</p>
-<div id="simRosterPreviewA" class="text-xs text-slate-200 space-y-1 min-h-[6.5rem]"></div>
-</div>
-<div class="rounded-2xl border border-blue-900/50 bg-blue-950/30 p-4">
-<div class="flex items-center justify-between mb-2 border-b border-blue-800/40 pb-2">
-<span class="font-display text-blue-400 text-lg">팀 B</span>
-<input type="text" id="simTeamBName" maxlength="20" class="w-40 sm:w-48 bg-slate-900/80 border border-blue-700/50 rounded-lg px-2 py-1 text-sm text-white" placeholder="팀 이름" value="삼봉 블루"/>
-</div>
-<p class="text-[10px] text-slate-500 mb-2" id="simCountB">대기 중…</p>
-<div id="simRosterPreviewB" class="text-xs text-slate-200 space-y-1 min-h-[6.5rem]"></div>
-</div>
-</div>
-
-<div id="simClockWrap" class="hidden mb-3 flex justify-center">
-<div id="simMatchClock" class="font-mono text-xl sm:text-2xl text-amber-300 bg-black/70 px-6 py-2.5 rounded-xl border border-amber-600/50 shadow-lg tracking-widest">전반 00:00</div>
-</div>
-
-<div class="flex flex-wrap gap-2 mb-4">
-<button type="button" id="btnSimStart" onclick="window.runSimMatch()" class="bg-amber-600 hover:bg-amber-500 text-white text-sm font-bold px-5 py-2 rounded-lg shadow-lg">경기 시작</button>
-<button type="button" onclick="window.simClearLog()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-3 py-2 rounded-lg border border-slate-600">중계 지우기</button>
-</div>
-
-<div id="simScoreBar" class="hidden mb-3 flex flex-wrap items-center justify-center gap-4 font-display text-2xl sm:text-3xl text-white bg-black/40 rounded-xl py-3 px-4 border border-amber-700/40">
-<span id="simScoreAName" class="text-red-400"></span>
-<span id="simScoreNums" class="text-fut-gold">0 - 0</span>
-<span id="simScoreBName" class="text-blue-400"></span>
-</div>
-
-<div id="simMatchLog" class="sim-match-log-panel rounded-xl border border-slate-700 bg-[#0a1628] p-3 min-h-[280px] max-h-[min(55vh,520px)] overflow-y-auto custom-scrollbar shadow-inner flex flex-col items-stretch gap-2"></div>
-<p class="text-[10px] text-slate-500 mt-2">※ 모의 결과는 서버 기록에 반영되지 않으며, 재미용 시뮬레이션입니다.</p>
-</div>
-</div>
-</div>
-
 <!-- 🛠️ 탭 3: 꾸미기 상점 & 제련소 -->
 <div id="tabShop" class="hidden space-y-6">
 <div class="glass-panel p-6 sm:p-8 rounded-3xl border-t-4 border-t-purple-500 relative overflow-hidden">
@@ -792,8 +726,7 @@ input[type="number"] { -moz-appearance: textfield; }
 <script type="module">
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, getDocs, deleteDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, writeBatch, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // AI 캔버스 환경과 깃허브 등 외부 환경을 자동 감지
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-futsal-ultimate'; 
@@ -953,27 +886,9 @@ const SHOP_ITEMS = [
 { id: 'footR_tier1', name: '강철 발목 보호대 [우]', type: 'footR', price: 150, icon: '🧦', desc: '[1종 집중형] 정확한 가로채기 타이밍.', baseStats: {int: 1}, baseGrowth: {int: 15} },
 { id: 'footR_tier1_alt', name: '터프 태클 풋살화 [우]', type: 'footR', price: 150, icon: '🥾', desc: '[1종 집중형] 끈질긴 대인 수비 전용.', baseStats: {def: 1}, baseGrowth: {def: 15} },
 { id: 'footR_tier2', name: '팬텀 드리블러 풋살화 [우]', type: 'footR', price: 300, icon: '👟', desc: '[2종 복합형] 보이지 않는 발놀림.', baseStats: {dri: 1, pac: 1}, baseGrowth: {dri: 10, pac: 10} },
-
-// 얼굴 프레임: 장착 시 선수 카드/라커 아바타에 레전드·컨셉 이미지 표시 (스탯 보너스 없음) — 위키 URL은 Commons 직접 경로(404 방지)
-{ id: 'face_legend_buffon', name: '레전드 얼굴: 부폰 (GK)', type: 'face', price: 300, icon: '🥅', desc: '[골키퍼] 이탈리아 전설 골키퍼 잔루이지 부폰.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/5f/Gianluigi_Buffon_%282014%29.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_neuer', name: '레전드 얼굴: 노이어 (GK)', type: 'face', price: 320, icon: '🧤', desc: '[골키퍼] 스위퍼 키퍼의 대명사, 마누엘 노이어.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/85/Manuel_Neuer%2C_Germany_national_football_team_%2804%29.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_maldini', name: '레전드 얼굴: 말디니 (DF)', type: 'face', price: 400, icon: '🛡️', desc: '[수비] 밀란의 영원한 캡틴, 파올로 말디니.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/3/38/Paolo_Maldini_2009.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_beckenbauer', name: '레전드 얼굴: 베켄바워 (DF)', type: 'face', price: 450, icon: '👑', desc: '[수비] 프리 키퍼의 창시자, 프란츠 베켄바워.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/56/Franz_Beckenbauer_%281975%29.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_modric', name: '레전드 얼굴: 모드리치 (MF)', type: 'face', price: 350, icon: '⚡', desc: '[미드] 발롱도르 미드필더, 루카 모드리치.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/5/55/Luka_Modri%C4%87_in_2018.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_iniesta', name: '레전드 얼굴: 이니에스타 (MF)', type: 'face', price: 380, icon: '🎻', desc: '[미드] 바르사의 마에스트로, 안드레스 이니에스타.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/Andres_Iniesta_2018.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_zidane', name: '레전드 얼굴: 지단 (MF)', type: 'face', price: 420, icon: '✨', desc: '[미드] 우아한 플레이메이커, 지네딘 지단.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/a0/Zinedine_Zidane_2018.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_pele', name: '레전드 얼굴: 펠레 (FW)', type: 'face', price: 390, icon: '⚽', desc: '[공격] 브라질의 황제, 펠레.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/88/Pele_celebrating_1970_%28cropped%29.jpg', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_ronaldo', name: '레전드 얼굴: 호나우두 (FW)', type: 'face', price: 480, icon: '🔥', desc: '[공격] 엘 프레노메노, 호나우두.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/dc/Ronaldo_%28brazil%29_%28cropped%29.JPG', baseStats: {}, baseGrowth: {} },
-{ id: 'face_legend_messi', name: '레전드 얼굴: 메시 (FW)', type: 'face', price: 500, icon: '🐐', desc: '[공격] 아르헨티나의 전설, 리오넬 메시.', faceImageUrl: 'https://upload.wikimedia.org/wikipedia/commons/b/b4/Lionel-Messi-Argentina-2022-FIFA-World-Cup_%28cropped%29.jpg', baseStats: {}, baseGrowth: {} },
-
-{ id: 'face_idol_rose', name: '스포트라이트 얼굴: 로즈 무대', type: 'face', price: 350, icon: '💗', desc: '[컨셉] 핑크 스포트라이트·로맨틱 무대 (여학생 추천).', faceImageUrl: 'https://api.dicebear.com/9.x/lorelei/png?seed=SambongStageRose&size=256&radius=50&scale=96&backgroundType=gradientLinear&backgroundRotation=0,180,360&backgroundColor=ffb7d5,ffc9e6,ffe0ec', baseStats: {}, baseGrowth: {} },
-{ id: 'face_idol_sky', name: '스포트라이트 얼굴: 스카이 무대', type: 'face', price: 380, icon: '💙', desc: '[컨셉] 시원한 블루·실버 무대 라이트.', faceImageUrl: 'https://api.dicebear.com/9.x/lorelei/png?seed=SambongStageSky&size=256&radius=50&scale=96&backgroundType=gradientLinear&backgroundRotation=0,180,360&backgroundColor=a8d8ff,c7e3ff,e0f2fe', baseStats: {}, baseGrowth: {} },
-{ id: 'face_idol_peach', name: '스포트라이트 얼굴: 피치 글로우', type: 'face', price: 400, icon: '🍑', desc: '[컨셉] 코랄·피치 톤 스포트라이트.', faceImageUrl: 'https://api.dicebear.com/9.x/lorelei/png?seed=SambongStagePeach&size=256&radius=50&scale=96&backgroundType=gradientLinear&backgroundRotation=0,180,360&backgroundColor=ffd6ba,ffe4d6,fff0e6', baseStats: {}, baseGrowth: {} },
-{ id: 'face_idol_mint', name: '스포트라이트 얼굴: 민트 쉬머', type: 'face', price: 320, icon: '💚', desc: '[컨셉] 청량 민트·민트 그린 무대.', faceImageUrl: 'https://api.dicebear.com/9.x/lorelei/png?seed=SambongStageMint&size=256&radius=50&scale=96&backgroundType=gradientLinear&backgroundRotation=0,180,360&backgroundColor=9fe5d7,b8f2e6,d1faf0', baseStats: {}, baseGrowth: {} },
-{ id: 'face_idol_lilac', name: '스포트라이트 얼굴: 라일락 드림', type: 'face', price: 420, icon: '💜', desc: '[컨셉] 라일락·라벤더 드림 무대.', faceImageUrl: 'https://api.dicebear.com/9.x/lorelei/png?seed=SambongStageLilac&size=256&radius=50&scale=96&backgroundType=gradientLinear&backgroundRotation=0,180,360&backgroundColor=d9c9ff,e9d5ff,f3e8ff', baseStats: {}, baseGrowth: {} },
 ];
 
-window.playerState = { id: '', isGM: false, isGuest: false, name: '', inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null, equipFace: null };
+window.playerState = { id: '', isGM: false, isGuest: false, name: '', inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null };
 window.allPlayersData = [];
 window.checkedInPlayers = new Set();
 window.selectedPlayerId = null;
@@ -981,7 +896,7 @@ window.targetTeamCount = 2;
 window.compareTargetId = null;
 window.currentSortKey = 'ovr';
 
-let db, auth, storage;
+let db, auth;
 
 const isVisible = (id) => {
 const el = document.getElementById(id);
@@ -1052,22 +967,6 @@ return { name: '챌린저 (CHALLENGER)', class: 'tier-badge-challenger', cardCla
 const getWeeklyWage = (ovr) => { return Math.max(50, Math.min(200, Math.floor(50 + ((ovr - 50) / 49) * 150))); };
 const getExpNeeded = (level) => Math.floor(40 + ((Number(level) || 1) * 3));
 
-/** 기록 취소 등: 차감분만큼 EXP에서 빼고, 부족하면 레벨을 내리며 이전 구간 필요치를 보충함 (processExp와 역연산) */
-function applyExpLoss(p, totalDeduct, updatesObj) {
-let lv = Number(p.level) || 1;
-let ex = Number(p.exp) || 0;
-let d = Number(totalDeduct) || 0;
-ex -= d;
-while (ex < 0 && lv > 1) {
-lv--;
-ex += getExpNeeded(lv);
-}
-if (lv < 1) lv = 1;
-if (ex < 0) ex = 0;
-updatesObj.level = lv;
-updatesObj.exp = ex;
-}
-
 function getWeekNumber(d) {
 d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
@@ -1085,37 +984,10 @@ if(pos === 'Pivo') return 'bg-red-500'; if(pos === 'Ala') return 'bg-emerald-500
 if(pos === 'Fixo') return 'bg-blue-500'; if(pos === 'Goleiro') return 'bg-orange-500'; 
 return 'bg-yellow-500';
 };
-function escapeAttr(u) {
-return String(u).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-/** 장착한 얼굴 아이템 → 업로드 사진 → 이모지 순으로 표시용 URL */
-function getPortraitUrl(p) {
-const fid = p.equipFace;
-if (fid) {
-const it = SHOP_ITEMS.find(x => x.id === fid && x.type === 'face' && x.faceImageUrl);
-if (it && String(it.faceImageUrl).trim()) return String(it.faceImageUrl).trim();
-}
-return (p.facePhotoUrl || '').trim();
-}
-function getAvatarHtml(p, variant) {
-const url = getPortraitUrl(p);
-const boxes = {
-locker: { img: 'w-14 h-14 min-w-[3.5rem] min-h-[3.5rem]', emoji: 'text-3xl mt-4 mb-1 drop-shadow-md inline-flex items-center justify-center' },
-detail: { img: 'w-[5rem] h-[5rem] min-w-[5rem] min-h-[5rem]', emoji: 'text-[5rem] drop-shadow-xl relative z-10 mb-2 inline-flex items-center justify-center leading-none' },
-sm: { img: 'w-8 h-8 min-w-[2rem] min-h-[2rem]', emoji: 'text-base sm:text-lg inline-flex items-center justify-center' },
-md: { img: 'w-10 h-10 min-w-[2.5rem] min-h-[2.5rem]', emoji: 'text-2xl inline-flex items-center justify-center' },
-xl: { img: 'w-16 h-16 min-w-[4rem] min-h-[4rem]', emoji: 'text-4xl drop-shadow-md mb-2 inline-flex items-center justify-center' }
-};
-const b = boxes[variant] || boxes.md;
-if (url) {
-return `<img src="${escapeAttr(url)}" alt="" class="rounded-full object-cover border-2 border-white/25 shadow-md ${b.img}" loading="lazy" decoding="async"/>`;
-}
-const emoji = (p.gender || GENDER_MAP[p.name]) === 'F' ? '👧' : '👦';
-return `<span class="${b.emoji}">${emoji}</span>`;
-}
+const getAvatar = (p) => (p.gender || GENDER_MAP[p.name]) === 'F' ? '👧' : '👦';
 
 window.switchTab = (tabId) => {
-['tabWorkspace', 'tabTips', 'tabShop', 'tabAchievements', 'tabRank', 'tabCompare', 'tabSim', 'tabGuide', 'tabMaster', 'tabMasterStats'].forEach(id => {
+['tabWorkspace', 'tabTips', 'tabShop', 'tabAchievements', 'tabRank', 'tabCompare', 'tabGuide', 'tabMaster', 'tabMasterStats'].forEach(id => {
 document.getElementById(id)?.classList.add('hidden');
 document.getElementById('btn' + id.charAt(0).toUpperCase() + id.slice(1))?.classList.remove('active');
 });
@@ -1148,7 +1020,6 @@ if(tabId === 'tabShop') window.renderShop();
 if(tabId === 'tabAchievements') window.renderAchievements();
 if(tabId === 'tabRank') renderLeaderboard();
 if(tabId === 'tabCompare') window.renderCompareList();
-if(tabId === 'tabSim') window.renderSimMatchTab();
 if(tabId === 'tabMaster') renderMasterDashboard();
 if(tabId === 'tabMasterStats') window.renderMasterStats();
 };
@@ -1188,27 +1059,14 @@ const ovr = getOVR(p); const tier = getTierInfo(ovr);
 let borderClass = 'border-slate-700';
 if(ovr >= 90) borderClass = 'border-purple-500'; else if (ovr >= 80) borderClass = 'border-fut-gold'; else if (ovr >= 70) borderClass = 'border-gray-300';
 const posText = POS_KR[p.pos] ? POS_KR[p.pos].split('(')[0] : '미정';
-const st = p.simTeam;
-const canSimEdit = !window.playerState.isGuest && (window.playerState.isGM || window.playerState.id === p.id);
-let simRow = '';
-if (canSimEdit) {
-simRow = `<div class="w-full mt-1 pt-1 border-t border-slate-700/60" onclick="event.stopPropagation()"><div class="flex gap-0.5 justify-center items-center">
-<button type="button" class="text-[9px] px-1.5 py-0.5 rounded font-bold ${st === 'A' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-300'} border border-slate-600" onclick="window.setPlayerSimTeam('${p.id}','A')">A</button>
-<button type="button" class="text-[9px] px-1.5 py-0.5 rounded font-bold ${st === 'B' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'} border border-slate-600" onclick="window.setPlayerSimTeam('${p.id}','B')">B</button>
-<button type="button" class="text-[8px] px-1 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-700" onclick="window.setPlayerSimTeam('${p.id}',null)">해제</button>
-</div><p class="text-[7px] text-center text-slate-500 mt-0.5 leading-tight">모의경기 팀</p></div>`;
-} else if (st === 'A' || st === 'B') {
-simRow = `<div class="mt-0.5 text-[9px] font-bold ${st === 'A' ? 'text-red-400' : 'text-blue-400'}" onclick="event.stopPropagation()">모의 ${st}</div>`;
-}
 
 html += `
                      <div class="mini-card flex flex-col items-center p-2 rounded-xl bg-pitch-panel border-2 ${borderClass} cursor-pointer ${isSelected ? 'selected' : ''} ${isChecked ? 'checked-in' : 'checked-out'}" onclick="window.selectPlayer('${p.id}')">
                          <input type="checkbox" class="locker-checkbox absolute top-1.5 left-1.5 w-5 h-5 shadow-lg z-10" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); window.toggleCheck('${p.id}')">
                          <div class="absolute top-1 right-1 ${tier.class} text-[9px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">${tier.name.split(' ')[0]}</div>
-                         <div class="flex items-center justify-center min-h-[3.5rem]">${getAvatarHtml(p, 'locker')}</div>
+                         <div class="text-3xl mt-4 mb-1 drop-shadow-md">${getAvatar(p)}</div>
                          <div class="font-oswald text-xl font-bold leading-none text-white">${ovr}</div>
                          <div class="flex items-center gap-1 mt-1"><span class="text-[10px] font-bold ${getPosColor(p.pos)}">${posText}</span><span class="text-xs font-bold text-slate-300 truncate max-w-[50px]">${p.name}</span></div>
-                         ${simRow}
                      </div>`;
 } else {
 html += `<div class="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-800 bg-slate-900/50 opacity-50"><i class="fa-solid fa-user-lock text-xl text-slate-700 mb-2"></i><span class="text-[10px] text-slate-600">${name}</span></div>`;
@@ -1221,41 +1079,6 @@ window.toggleCheck = (pId) => {
 if(window.playerState.isGuest) return window.customAlert("게스트 모드에서는 출석 체크를 할 수 없습니다.");
 if(window.checkedInPlayers.has(pId)) window.checkedInPlayers.delete(pId); else window.checkedInPlayers.add(pId);
 window.renderLockerRoom(); renderActivePool();
-};
-
-/** 라커룸에서 모의경기 팀 A/B 지정 (Firestore simTeam, 팀당 최대 5명) */
-window.setPlayerSimTeam = async (pId, team) => {
-try {
-checkAuthReady();
-if (window.playerState.isGuest) return window.customAlert('게스트는 모의경기 팀을 설정할 수 없습니다.');
-const target = window.allPlayersData.find((x) => x.id === pId);
-if (!target) return;
-const canEdit = window.playerState.isGM || window.playerState.id === pId;
-if (!canEdit) return window.customAlert('본인 또는 감독만 팀을 변경할 수 있습니다.');
-if (team === 'A' || team === 'B') {
-const n = (window.allPlayersData || []).filter((x) => x.id !== pId && x.simTeam === team).length;
-if (n >= 5) return window.customAlert('해당 팀은 이미 5명입니다. 다른 팀을 선택하거나 해제 후 다시 시도하세요.');
-}
-const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', 'player_' + getSafeDocId(pId));
-const payload = { updatedAt: new Date().toISOString() };
-if (team === 'A' || team === 'B') payload.simTeam = team;
-else payload.simTeam = deleteField();
-await setDoc(docRef, payload, { merge: true });
-const idx = window.allPlayersData.findIndex((x) => x.id === pId);
-if (idx >= 0) {
-if (team === 'A' || team === 'B') window.allPlayersData[idx] = { ...window.allPlayersData[idx], simTeam: team };
-else {
-const copy = { ...window.allPlayersData[idx] };
-delete copy.simTeam;
-window.allPlayersData[idx] = copy;
-}
-}
-window.renderLockerRoom();
-if (isVisible('tabSim')) window.renderSimMatchTab();
-} catch (e) {
-console.error(e);
-window.customAlert('모의경기 팀 설정 저장에 실패했습니다.');
-}
 };
 
 window.selectPlayer = (pId) => {
@@ -1293,7 +1116,7 @@ document.getElementById('shopWalletLabel') && (document.getElementById('shopWall
 let html = '';
 SHOP_ITEMS.forEach(item => {
 const isOwned = inventory.includes(item.id);
-const isEquipped = p ? (p.equipHead === item.id || p.equipHandL === item.id || p.equipHandR === item.id || p.equipFootL === item.id || p.equipFootR === item.id || p.equipFace === item.id) : false;
+const isEquipped = p ? (p.equipHead === item.id || p.equipHandL === item.id || p.equipHandR === item.id || p.equipFootL === item.id || p.equipFootR === item.id) : false;
 const level = Number(itemLevels[item.id]) || 0;
 const enhData = ENHANCE_LEVELS[level] || ENHANCE_LEVELS[0];
 const nextEnhData = ENHANCE_LEVELS[level + 1];
@@ -1304,7 +1127,7 @@ let growthHtml = '';
 for (const [k, v] of Object.entries(item.baseGrowth || {})) { growthHtml += `<span class="inline-block bg-purple-900/50 text-purple-300 border border-purple-500/50 text-[9px] px-1 rounded mr-1 mb-1">성장 +${Math.floor(v * enhData.growthMult)}%</span>`; }
 
 let btnHtml = ''; let enhanceBtnHtml = '';
-if(isOwned && nextEnhData && !window.playerState.isGuest && item.type !== 'face') {
+if(isOwned && nextEnhData && !window.playerState.isGuest) {
 const canEnhance = bong >= item.price;
 enhanceBtnHtml = `
                      <div class="mt-2 pt-2 border-t border-slate-700 w-full">
@@ -1312,7 +1135,7 @@ enhanceBtnHtml = `
                              <span class="relative z-10 flex items-center justify-center gap-2"><i class="fa-solid fa-hammer ${canEnhance ? 'animate-bounce' : ''}"></i> 강화 도전 (${item.price} B) - 성공률 ${nextEnhData.chance}%</span>
                          </button>
                      </div>`;
-} else if (isOwned && !nextEnhData && item.type !== 'face') {
+} else if (isOwned && !nextEnhData) {
 enhanceBtnHtml = `<div class="mt-2 pt-2 border-t border-slate-700 w-full text-center text-[10px] font-bold text-red-400">MAX LEVEL 도달</div>`;
 }
 
@@ -1335,17 +1158,13 @@ btnHtml = `<button onclick="window.purchaseItem('${item.id}')" class="w-full mt-
 }
 }
 
-const slotKo = { 'head':'머리', 'handL':'왼손', 'handR':'오른손', 'footL':'왼발', 'footR':'오른발', 'face':'얼굴' }[item.type] || '기타';
-
-let previewInner = item.faceImageUrl
-? `<img src="${escapeAttr(item.faceImageUrl)}" alt="" class="w-full h-full object-cover rounded-lg"/>`
-: `<span class="z-10 relative drop-shadow-md">${item.icon}</span>`;
+const slotKo = { 'head':'머리', 'handL':'왼손', 'handR':'오른손', 'footL':'왼발', 'footR':'오른발' }[item.type];
 
 html += `
                  <div class="bg-slate-900/80 border ${isOwned ? 'border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.2)]' : 'border-slate-700'} rounded-xl p-4 flex flex-col justify-between hover:border-purple-400 transition duration-300">
                      <div class="flex items-start gap-4">
-                         <div class="text-4xl w-16 h-16 bg-slate-800 flex items-center justify-center rounded-lg shadow-inner flex-shrink-0 relative border overflow-hidden ${isOwned ? 'border-purple-500' : 'border-slate-600'} ${isOwned && item.type !== 'face' ? enhData.css : ''}">
-                             ${previewInner}
+                         <div class="text-4xl w-16 h-16 bg-slate-800 flex items-center justify-center rounded-lg shadow-inner flex-shrink-0 relative border ${isOwned ? 'border-purple-500' : 'border-slate-600'} ${isOwned ? enhData.css : ''}">
+                             <span class="z-10 relative drop-shadow-md">${item.icon}</span>
                              <div class="absolute -top-2 -left-2 bg-slate-700 text-white text-[8px] px-1.5 py-0.5 rounded border border-slate-500 z-20">${slotKo}</div>
                              ${isOwned && level > 0 ? `<div class="absolute -bottom-2 -right-2 bg-black text-[9px] font-bold px-1.5 py-0.5 rounded border border-current z-20 ${enhData.color}">${enhData.text}</div>` : ''}
                          </div>
@@ -1381,26 +1200,7 @@ if(badge) { badge.innerText = tier.name; badge.className = `px-2 py-1 rounded bo
 const card = document.getElementById('detailFutCard');
 if(card) { card.className = `fut-card w-[300px] h-[460px] p-5 flex flex-col relative shadow-2xl z-10 mx-auto transition-all duration-300 ${tier.cardClass}`; }
 
-const detailAv = document.getElementById('detailAvatar');
-if (detailAv) detailAv.innerHTML = getAvatarHtml(p, 'detail');
-const fc = document.getElementById('facePhotoControls');
-if (fc) {
-if (isMe && !isGM && !window.playerState.isGuest) {
-fc.classList.remove('hidden');
-fc.innerHTML = `
-<input type="file" id="facePhotoInput" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" />
-<div class="flex flex-wrap justify-center gap-1.5">
-<button type="button" class="text-[10px] font-bold px-2 py-1 rounded bg-emerald-800/80 hover:bg-emerald-700 text-emerald-200 border border-emerald-600/50" onclick="document.getElementById('facePhotoInput').click()">얼굴 사진 올리기</button>
-${(p.facePhotoUrl || '').trim() ? `<button type="button" class="text-[10px] font-bold px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 border border-slate-600" onclick="window.clearFacePhoto()">사진 삭제</button>` : ''}
-</div>
-<p class="text-[9px] text-slate-500 text-center mt-1 leading-tight">본인만 등록 가능 · JPG·PNG·WebP·GIF, 최대 2MB</p>`;
-const inp = document.getElementById('facePhotoInput');
-if (inp) inp.onchange = (e) => window.uploadFacePhoto(e);
-} else {
-fc.classList.add('hidden');
-fc.innerHTML = '';
-}
-}
+document.getElementById('detailAvatar') && (document.getElementById('detailAvatar').innerText = getAvatar(p));
 document.getElementById('detailName') && (document.getElementById('detailName').innerText = p.name);
 document.getElementById('detailAge') && (document.getElementById('detailAge').innerText = Number(p.age) || 13);
 document.getElementById('detailOvr') && (document.getElementById('detailOvr').innerText = ovr);
@@ -1475,30 +1275,25 @@ drawRadarChart(p, bonus.flat);
 
 const equipSlots = [
 { id: 'slotHead', equip: p.equipHead, empty: '🧢', label: '머리' }, { id: 'slotHandL', equip: p.equipHandL, empty: '🧤', label: '왼손' },
-{ id: 'slotHandR', equip: p.equipHandR, empty: '📿', label: '오른손' }, { id: 'slotFootL', equip: p.equipFootL, empty: '👟', label: '왼발' }, { id: 'slotFootR', equip: p.equipFootR, empty: '🥾', label: '오른발' },
-{ id: 'slotFace', equip: p.equipFace, empty: '😶', label: '얼굴' }
+{ id: 'slotHandR', equip: p.equipHandR, empty: '📿', label: '오른손' }, { id: 'slotFootL', equip: p.equipFootL, empty: '👟', label: '왼발' }, { id: 'slotFootR', equip: p.equipFootR, empty: '🥾', label: '오른발' }
 ];
 
 equipSlots.forEach(slot => {
 const el = document.getElementById(slot.id);
-if (!el) return;
-if (slot.equip) {
+if(el) {
+if(slot.equip) {
 const item = SHOP_ITEMS.find(x => x.id === slot.equip);
 const level = (p.itemLevels && typeof p.itemLevels === 'object' && !Array.isArray(p.itemLevels) && p.itemLevels[slot.equip]) ? Number(p.itemLevels[slot.equip]) : 0;
 const enhData = ENHANCE_LEVELS[level] || ENHANCE_LEVELS[0];
 
-if (item) {
-if (item.type === 'face' && item.faceImageUrl) {
-el.innerHTML = `<img src="${escapeAttr(item.faceImageUrl)}" alt="" class="item-face-thumb"/><span class="item-label">${slot.label}</span>`;
-el.className = 'item-slot-mini equipped eff-0';
-} else {
+if(item) {
 el.innerHTML = `<span class="item-icon">${item.icon}</span><span class="item-label">${slot.label}</span>${level>0?`<span class="absolute -top-1 -right-1 text-[8px] font-bold ${enhData.color} z-10">${enhData.text}</span>`:''}`;
 el.className = `item-slot-mini equipped ${enhData.css}`;
-}
 }
 } else {
 el.innerHTML = `<span class="opacity-30 text-lg">${slot.empty}</span><span class="item-label">${slot.label}</span>`;
 el.className = 'item-slot-mini';
+}
 }
 });
 
@@ -1657,10 +1452,10 @@ else if(type === 'keypass' && (Number(p.keypass) || 0) > 0) { expDeduct += 15; u
 else if(type === 'saves' && (Number(p.saves) || 0) > 0) { expDeduct += 15; updates.saves = Number(p.saves) - 1; updates.bong = Math.max(0, (Number(p.bong)||0) - 2); }
 else return window.customAlert("❌ 차감할 해당 기록이 없습니다.");
 
-if(!await window.customConfirm("방금 입력한 기록을 취소하시겠습니까?\n(해당 활동으로 받은 경험치와 같은 양이 차감되고, 1 EXP 페널티가 추가됩니다.\n부족 시 레벨이 함께 내려갑니다.)")) return;
+if(!await window.customConfirm("방금 입력한 기록을 취소하시겠습니까?\n(경험치 1이 추가 페널티로 차감됩니다.)")) return;
 
 animateFloatText(`-${expDeduct} EXP`, 'text-red-400', 'confettiOrigin');
-applyExpLoss(p, expDeduct, updates);
+updates.exp = Math.max(0, (Number(p.exp) || 0) - expDeduct);
 await setDoc(docRef, updates, { merge: true });
 } catch (e) { console.error("undoActivity Error:", e); window.customAlert(`서버 에러:\n${e.message}`); }
 };
@@ -1708,7 +1503,6 @@ const pId = window.playerState.isGM ? window.selectedPlayerId : window.playerSta
 const p = window.allPlayersData.find(x => x.id === pId);
 const item = SHOP_ITEMS.find(x => x.id === itemId);
 if(!p || !item) return;
-if (item.type === 'face') return window.customAlert('얼굴 프레임 아이템은 강화할 수 없습니다.');
 
 const cost = item.price;
 if(!window.playerState.isGM && (Number(p.bong) || 0) < cost) return window.customAlert(`자산이 부족합니다. (필요 자산: ${cost} B)`);
@@ -1759,7 +1553,7 @@ if(!p) return;
 
 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', 'player_' + getSafeDocId(p.id));
 let updates = {};
-const fieldMap = { 'head':'equipHead', 'handL':'equipHandL', 'handR':'equipHandR', 'footL':'equipFootL', 'footR':'equipFootR', 'face':'equipFace' };
+const fieldMap = { 'head':'equipHead', 'handL':'equipHandL', 'handR':'equipHandR', 'footL':'equipFootL', 'footR':'equipFootR' };
 const field = fieldMap[type];
 if(field) { updates[field] = p[field] === itemId ? null : itemId; }
 
@@ -1787,7 +1581,6 @@ const newItemLevels = { ...safeItemLevels }; delete newItemLevels[itemId]; updat
 
 if(p.equipHead === itemId) updates.equipHead = null; if(p.equipHandL === itemId) updates.equipHandL = null;
 if(p.equipHandR === itemId) updates.equipHandR = null; if(p.equipFootL === itemId) updates.equipFootL = null; if(p.equipFootR === itemId) updates.equipFootR = null;
-if(p.equipFace === itemId) updates.equipFace = null;
 
 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', 'player_' + getSafeDocId(p.id));
 await setDoc(docRef, updates, { merge: true });
@@ -1866,68 +1659,6 @@ batch.set(docRef, updatesObj, { merge: true });
 });
 await batch.commit(); triggerConfetti(); window.customAlert(`✅ 모든 학생에게 성공적으로 지급되었습니다!`);
 } catch (e) { console.error("giveAll Error:", e); window.customAlert(`지급 에러:\n${e.message}`); }
-};
-
-window.gmRollbackLevel = async () => {
-try {
-checkAuthReady();
-if(!window.playerState.isGM || !window.selectedPlayerId) return;
-const p = window.allPlayersData.find(x => x.id === window.selectedPlayerId);
-if(!p) return;
-const L = Number(p.level) || 1;
-if(L <= 1) return window.customAlert("더 이상 내릴 레벨이 없습니다.");
-if(!await window.customConfirm(`[${p.name}] 선수의 레벨을 ${L} → ${L - 1}로 한 단계 롤백하시겠습니까?\n(경험치 바는 낮아진 레벨 구간 상한에 맞게 조정됩니다.)`)) return;
-const newLv = L - 1;
-const cap = Math.max(0, getExpNeeded(newLv) - 1);
-const newExp = Math.min(Number(p.exp) || 0, cap);
-const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', 'player_' + getSafeDocId(p.id));
-await setDoc(docRef, { level: newLv, exp: newExp }, { merge: true });
-window.customAlert(`레벨이 ${newLv}로 조정되었습니다.`);
-} catch (e) { console.error("gmRollbackLevel Error:", e); window.customAlert(`레벨 롤백 에러:\n${e.message}`); }
-};
-
-window.uploadFacePhoto = async (ev) => {
-try {
-checkAuthReady();
-if (!storage) return window.customAlert('스토리지가 준비되지 않았습니다. 잠시 후 다시 시도하세요.');
-const file = ev.target?.files?.[0];
-if (!file) return;
-if (!file.type.startsWith('image/')) return window.customAlert('이미지 파일(JPG·PNG·WebP·GIF)만 올릴 수 있습니다.');
-if (file.size > 2 * 1024 * 1024) return window.customAlert('파일 크기는 2MB 이하여야 합니다.');
-const pId = window.playerState.id;
-if (!pId || window.playerState.isGM || window.playerState.isGuest) return;
-const safeId = getSafeDocId(pId);
-const path = `artifacts/${appId}/public/player_avatars/${safeId}/face`;
-const sref = ref(storage, path);
-await uploadBytes(sref, file, { contentType: file.type || 'image/jpeg' });
-const url = await getDownloadURL(sref);
-const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', 'player_' + safeId);
-await setDoc(docRef, { facePhotoUrl: url, updatedAt: new Date().toISOString() }, { merge: true });
-window.customAlert('프로필 사진이 저장되었습니다.');
-ev.target.value = '';
-} catch (e) {
-console.error('uploadFacePhoto', e);
-window.customAlert(`업로드 실패:\n${e.message}\n\nFirebase Console → Storage 규칙에서 인증된 사용자의 쓰기를 허용했는지 확인하세요.`);
-}
-};
-
-window.clearFacePhoto = async () => {
-try {
-checkAuthReady();
-if (!storage) return window.customAlert('스토리지가 준비되지 않았습니다.');
-if (!await window.customConfirm('등록한 얼굴 사진을 삭제하고 기본 이모지로 돌아갈까요?')) return;
-const pId = window.playerState.id;
-if (!pId || window.playerState.isGM || window.playerState.isGuest) return;
-const safeId = getSafeDocId(pId);
-const path = `artifacts/${appId}/public/player_avatars/${safeId}/face`;
-try { await deleteObject(ref(storage, path)); } catch (err) { }
-const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', 'player_' + safeId);
-await setDoc(docRef, { facePhotoUrl: deleteField(), updatedAt: new Date().toISOString() }, { merge: true });
-window.customAlert('사진이 삭제되었습니다.');
-} catch (e) {
-console.error('clearFacePhoto', e);
-window.customAlert(`삭제 실패:\n${e.message}`);
-}
 };
 
 window.resetAllLevels = async () => {
@@ -2109,7 +1840,7 @@ const base = Number(p[key])||60; const bonus = b[key]||0; const total = Math.min
 const isHighlight = window.currentSortKey === key;
 return `<td class="py-3 text-center font-oswald text-sm sm:text-base ${isHighlight ? 'text-white font-bold bg-slate-800/50' : 'text-slate-300'}">${total} ${bonus>0 ? `<span class="text-[9px] text-emerald-400 ml-0.5 absolute mt-0.5">+${bonus}</span>`:''}</td>`;
 };
-statsHtml += `<tr class="hover:bg-slate-800/80 transition cursor-pointer" onclick="window.switchTab('tabWorkspace'); window.selectPlayer('${p.id}')"><td class="py-3 pl-4 text-left font-bold text-white flex items-center gap-2 whitespace-nowrap"><span class="inline-flex items-center justify-center align-middle">${getAvatarHtml(p, 'sm')}</span><span>${p.name}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[12px] font-bold text-emerald-400 px-1.5 py-0.5 leading-none">${ageVal}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[10px] font-bold ${getPosColor(p.pos)} border border-slate-600 px-1.5 py-0.5 rounded leading-none">${posText}</span></td><td class="py-3 text-center font-oswald text-base sm:text-lg ${window.currentSortKey==='ovr' ? 'text-white bg-slate-800/50' : 'text-fut-gold'} font-bold">${ovr}</td>${getCell('pac')}${getCell('sho')}${getCell('pas')}${getCell('dri')}${getCell('def')}${getCell('phy')}${getCell('ref')}${getCell('int')}${getCell('pst')}${getCell('dis')}${getCell('cmp')}${getCell('wrk')}</tr>`;
+statsHtml += `<tr class="hover:bg-slate-800/80 transition cursor-pointer" onclick="window.switchTab('tabWorkspace'); window.selectPlayer('${p.id}')"><td class="py-3 pl-4 text-left font-bold text-white flex items-center gap-2 whitespace-nowrap"><span class="text-base sm:text-lg">${getAvatar(p)}</span><span>${p.name}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[12px] font-bold text-emerald-400 px-1.5 py-0.5 leading-none">${ageVal}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[10px] font-bold ${getPosColor(p.pos)} border border-slate-600 px-1.5 py-0.5 rounded leading-none">${posText}</span></td><td class="py-3 text-center font-oswald text-base sm:text-lg ${window.currentSortKey==='ovr' ? 'text-white bg-slate-800/50' : 'text-fut-gold'} font-bold">${ovr}</td>${getCell('pac')}${getCell('sho')}${getCell('pas')}${getCell('dri')}${getCell('def')}${getCell('phy')}${getCell('ref')}${getCell('int')}${getCell('pst')}${getCell('dis')}${getCell('cmp')}${getCell('wrk')}</tr>`;
 });
 statsTbody.innerHTML = statsHtml;
 };
@@ -2131,7 +1862,7 @@ else {
 const medals = ['🥇', '🥈', '🥉'];
 sorted.forEach((p, idx) => {
 const tier = getTierInfo(getOVR(p)); const posText = POS_KR[p.pos] ? POS_KR[p.pos].split('(')[0] : '미정';
-listHtml += `<div class="flex items-center justify-between bg-slate-800/50 p-2 rounded-lg mb-1 border border-slate-700"><div class="flex items-center gap-2"><span class="text-lg w-6 text-center">${medals[idx]}</span><span class="inline-flex items-center justify-center">${getAvatarHtml(p, 'md')}</span><div><p class="text-sm font-bold text-white leading-none">${p.name}</p><div class="flex items-center gap-1 mt-1"><span class="text-[8px] ${tier.class} px-1 rounded border leading-none py-0.5">${tier.name.split(' ')[0]}</span><span class="text-[9px] ${cat.color} font-bold">${posText}</span></div></div></div><div class="font-oswald text-xl font-bold ${cat.color} bg-black/30 px-3 py-1 rounded-lg border ${cat.border}">${Number(p[cat.id])||0}</div></div>`;
+listHtml += `<div class="flex items-center justify-between bg-slate-800/50 p-2 rounded-lg mb-1 border border-slate-700"><div class="flex items-center gap-2"><span class="text-lg w-6 text-center">${medals[idx]}</span><span class="text-2xl">${getAvatar(p)}</span><div><p class="text-sm font-bold text-white leading-none">${p.name}</p><div class="flex items-center gap-1 mt-1"><span class="text-[8px] ${tier.class} px-1 rounded border leading-none py-0.5">${tier.name.split(' ')[0]}</span><span class="text-[9px] ${cat.color} font-bold">${posText}</span></div></div></div><div class="font-oswald text-xl font-bold ${cat.color} bg-black/30 px-3 py-1 rounded-lg border ${cat.border}">${Number(p[cat.id])||0}</div></div>`;
 });
 }
 html += `<div class="bg-slate-900/60 rounded-2xl border border-slate-700 overflow-hidden shadow-lg hover:border-slate-500 transition duration-300"><div class="bg-slate-800 p-3 border-b border-slate-700 flex items-center justify-between"><h4 class="font-display text-lg text-white flex items-center gap-2"><span class="text-2xl">${cat.icon}</span> ${cat.name}</h4></div><div class="p-3">${listHtml}</div></div>`;
@@ -2155,7 +1886,7 @@ return getOVR(b) - getOVR(a);
 players.forEach(p => {
 const ovr = getOVR(p); const tier = getTierInfo(ovr); const posText = POS_KR[p.pos] ? POS_KR[p.pos].split('(')[0] : '미정';
 const ageVal = Number(p.age) || 13;
-html += `<tr class="hover:bg-slate-800/80 transition cursor-pointer" onclick="window.switchTab('tabWorkspace'); window.selectPlayer('${p.id}')"><td class="py-3 pl-4 text-left font-bold text-white flex items-center gap-2 whitespace-nowrap"><span class="inline-flex items-center justify-center">${getAvatarHtml(p, 'sm')}</span><span>${p.name}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[12px] font-bold text-emerald-400 px-1.5 py-0.5 leading-none">${ageVal}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[10px] font-bold ${getPosColor(p.pos)} border border-slate-600 px-1.5 py-0.5 rounded leading-none">${posText}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[10px] font-bold ${tier.class} border px-1.5 py-0.5 rounded shadow-sm">${tier.name.split(' ')[0]}</span></td><td class="py-3 text-center font-oswald text-base text-fut-gold font-bold">${ovr}</td><td class="py-3 text-center text-slate-300">${Number(p.matches)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.goals)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.assists)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.saves)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.training)||0}</td><td class="py-3 text-center font-oswald text-orange-400 text-sm">${Number(p.exp)||0}</td><td class="py-3 pr-4 text-right font-oswald text-emerald-400 font-bold text-sm">${Number(p.bong)||0} B</td><td class="py-3 px-2 text-center"><button onclick="event.stopPropagation(); window.deletePlayer('${p.id}', '${p.name}')" class="text-red-400 hover:text-white transition bg-red-900/40 hover:bg-red-600 px-2 py-1 rounded text-[10px] border border-red-800/50"><i class="fa-solid fa-trash"></i> 삭제</button></td></tr>`;
+html += `<tr class="hover:bg-slate-800/80 transition cursor-pointer" onclick="window.switchTab('tabWorkspace'); window.selectPlayer('${p.id}')"><td class="py-3 pl-4 text-left font-bold text-white flex items-center gap-2 whitespace-nowrap"><span class="text-lg">${getAvatar(p)}</span><span>${p.name}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[12px] font-bold text-emerald-400 px-1.5 py-0.5 leading-none">${ageVal}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[10px] font-bold ${getPosColor(p.pos)} border border-slate-600 px-1.5 py-0.5 rounded leading-none">${posText}</span></td><td class="py-3 text-center whitespace-nowrap"><span class="text-[10px] font-bold ${tier.class} border px-1.5 py-0.5 rounded shadow-sm">${tier.name.split(' ')[0]}</span></td><td class="py-3 text-center font-oswald text-base text-fut-gold font-bold">${ovr}</td><td class="py-3 text-center text-slate-300">${Number(p.matches)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.goals)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.assists)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.saves)||0}</td><td class="py-3 text-center text-slate-300">${Number(p.training)||0}</td><td class="py-3 text-center font-oswald text-orange-400 text-sm">${Number(p.exp)||0}</td><td class="py-3 pr-4 text-right font-oswald text-emerald-400 font-bold text-sm">${Number(p.bong)||0} B</td><td class="py-3 px-2 text-center"><button onclick="event.stopPropagation(); window.deletePlayer('${p.id}', '${p.name}')" class="text-red-400 hover:text-white transition bg-red-900/40 hover:bg-red-600 px-2 py-1 rounded text-[10px] border border-red-800/50"><i class="fa-solid fa-trash"></i> 삭제</button></td></tr>`;
 });
 tbody.innerHTML = html;
 }
@@ -2166,7 +1897,7 @@ let html = ''; const myId = window.selectedPlayerId; const players = [...window.
 players.forEach(p => {
 if(p.id === myId) return; 
 const ovr = getOVR(p); const posText = POS_KR[p.pos] ? POS_KR[p.pos].split('(')[0] : '미정';
-html += `<div class="flex items-center justify-between p-3 rounded-xl cursor-pointer transition ${window.compareTargetId === p.id ? 'bg-pink-900/40 border-pink-500' : 'bg-slate-800 hover:bg-slate-700 border-slate-600'} border" onclick="window.selectCompareTarget('${p.id}')"><div class="flex items-center gap-3"><div class="flex items-center justify-center">${getAvatarHtml(p, 'md')}</div><div><div class="font-bold text-white text-sm">${p.name}</div><div class="text-[10px] font-bold ${getPosColor(p.pos)}">${posText}</div></div></div><div class="font-oswald text-lg text-fut-gold font-bold">${ovr}</div></div>`;
+html += `<div class="flex items-center justify-between p-3 rounded-xl cursor-pointer transition ${window.compareTargetId === p.id ? 'bg-pink-900/40 border-pink-500' : 'bg-slate-800 hover:bg-slate-700 border-slate-600'} border" onclick="window.selectCompareTarget('${p.id}')"><div class="flex items-center gap-3"><div class="text-2xl">${getAvatar(p)}</div><div><div class="font-bold text-white text-sm">${p.name}</div><div class="text-[10px] font-bold ${getPosColor(p.pos)}">${posText}</div></div></div><div class="font-oswald text-lg text-fut-gold font-bold">${ovr}</div></div>`;
 });
 listContainer.innerHTML = html; window.renderCompareView();
 };
@@ -2195,7 +1926,7 @@ const myW = (myVal / 99) * 100; const tgW = (tgVal / 99) * 100;
 statRows += `<div class="mb-2.5"><div class="flex justify-between items-center text-[10px] sm:text-xs font-bold mb-1 px-1"><span class="${myColor} font-oswald text-sm sm:text-base drop-shadow-sm">${myVal}</span><span class="text-slate-400 font-sans tracking-tight">${s.label.split(' ')[0]}</span><span class="${tgColor} font-oswald text-sm sm:text-base drop-shadow-sm">${tgVal}</span></div><div class="flex gap-1 h-2 sm:h-2.5"><div class="flex-1 bg-slate-800 rounded-l-full overflow-hidden flex justify-end shadow-inner"><div class="${myVal > tgVal ? 'bg-emerald-500' : 'bg-slate-500'} h-full transition-all duration-700 ease-out" style="width: ${myW}%"></div></div><div class="flex-1 bg-slate-800 rounded-r-full overflow-hidden shadow-inner"><div class="${tgVal > myVal ? 'bg-pink-500' : 'bg-slate-500'} h-full transition-all duration-700 ease-out" style="width: ${tgW}%"></div></div></div></div>`;
 });
 
-view.innerHTML = `<div class="flex justify-between items-center mb-6 px-4"><div class="flex flex-col items-center"><span class="inline-flex items-center justify-center mb-2">${getAvatarHtml(myP, 'xl')}</span><span class="font-bold text-white text-sm sm:text-base">${myP.name}</span><span class="font-oswald text-2xl text-emerald-400 mt-1">${myOvr}</span></div><div class="font-display text-2xl text-slate-500 px-4">VS</div><div class="flex flex-col items-center"><span class="inline-flex items-center justify-center mb-2">${getAvatarHtml(tgP, 'xl')}</span><span class="font-bold text-white text-sm sm:text-base">${tgP.name}</span><span class="font-oswald text-2xl text-pink-400 mt-1">${tgOvr}</span></div></div><div class="flex-1 bg-slate-900/50 p-4 sm:p-5 rounded-xl border border-slate-700 shadow-inner overflow-y-auto custom-scrollbar">${statRows}</div>`;
+view.innerHTML = `<div class="flex justify-between items-center mb-6 px-4"><div class="flex flex-col items-center"><span class="text-4xl drop-shadow-md mb-2">${getAvatar(myP)}</span><span class="font-bold text-white text-sm sm:text-base">${myP.name}</span><span class="font-oswald text-2xl text-emerald-400 mt-1">${myOvr}</span></div><div class="font-display text-2xl text-slate-500 px-4">VS</div><div class="flex flex-col items-center"><span class="text-4xl drop-shadow-md mb-2">${getAvatar(tgP)}</span><span class="font-bold text-white text-sm sm:text-base">${tgP.name}</span><span class="font-oswald text-2xl text-pink-400 mt-1">${tgOvr}</span></div></div><div class="flex-1 bg-slate-900/50 p-4 sm:p-5 rounded-xl border border-slate-700 shadow-inner overflow-y-auto custom-scrollbar">${statRows}</div>`;
 };
 
 window.renderAchievements = () => {
@@ -2267,277 +1998,6 @@ window.targetTeamCount = Math.max(2, Math.min(6, window.targetTeamCount + change
 document.getElementById('targetTeamCount') && (document.getElementById('targetTeamCount').innerText = window.targetTeamCount);
 };
 
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-
-/** 모의경기: 팀별 라커 소속 인원 수 */
-function countSimTeam(team) {
-return (window.allPlayersData || []).filter((p) => p.simTeam === team).length;
-}
-/** 출전 5인: OVR 상위 5명 */
-function getSimMatchRoster(team) {
-return (window.allPlayersData || [])
-.filter((p) => p.simTeam === team)
-.sort((a, b) => getOVR(b) - getOVR(a))
-.slice(0, 5);
-}
-
-/** 모의경기 탭: 라커 simTeam 기준 로스터 미리보기 */
-window.renderSimMatchTab = () => {
-const na = countSimTeam('A');
-const nb = countSimTeam('B');
-const ca = document.getElementById('simCountA');
-const cb = document.getElementById('simCountB');
-if (ca) ca.textContent = `소속 ${na}명 · 출전 OVR 상위 5명`;
-if (cb) cb.textContent = `소속 ${nb}명 · 출전 OVR 상위 5명`;
-const rosterA = getSimMatchRoster('A');
-const rosterB = getSimMatchRoster('B');
-const elA = document.getElementById('simRosterPreviewA');
-const elB = document.getElementById('simRosterPreviewB');
-const line = (p) => {
-const pt = POS_KR[p.pos] ? POS_KR[p.pos].split('(')[0] : '미정';
-return `<div class="flex justify-between gap-2 border-b border-white/5 pb-0.5"><span class="truncate">${p.name}</span><span class="text-fut-gold shrink-0">${getOVR(p)}</span><span class="text-slate-500 text-[10px] shrink-0">${pt}</span></div>`;
-};
-if (elA) elA.innerHTML = rosterA.length ? rosterA.map(line).join('') : '<span class="text-slate-500">팀 A 소속 없음 — 라커룸에서 A를 눌러주세요.</span>';
-if (elB) elB.innerHTML = rosterB.length ? rosterB.map(line).join('') : '<span class="text-slate-500">팀 B 소속 없음 — 라커룸에서 B를 눌러주세요.</span>';
-};
-
-/** 중계 문장을 자동 줄바꿈 (캔버스 폭 기준) */
-function wrapSimBroadcastLines(ctx, text, maxWidth) {
-const lines = [];
-let line = '';
-for (let i = 0; i < text.length; i++) {
-const ch = text[i];
-const test = line + ch;
-if (ctx.measureText(test).width > maxWidth && line.length > 0) {
-lines.push(line);
-line = ch;
-} else {
-line = test;
-}
-}
-if (line.length) lines.push(line);
-return lines.length ? lines : [''];
-}
-
-/** 중계 한 줄을 방송용 이미지(img)로 렌더링 */
-function simBroadcastTextToImage(text) {
-return new Promise((resolve) => {
-const logBox = document.getElementById('simMatchLog');
-const maxCssW = Math.min(720, Math.max(260, (logBox?.clientWidth || 560) - 8));
-const pad = 14;
-const lineHeight = 22;
-const fontSize = 14;
-const dpr = Math.min(2, typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
-
-const canvas = document.createElement('canvas');
-const ctx = canvas.getContext('2d');
-if (!ctx) {
-const fallback = document.createElement('div');
-fallback.className = 'text-slate-200 text-xs p-2 rounded-lg bg-slate-900/90 border border-amber-800/40';
-fallback.textContent = text;
-resolve(fallback);
-return;
-}
-
-ctx.font = `600 ${fontSize}px "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif`;
-const innerW = maxCssW - pad * 2 - 6;
-const lines = wrapSimBroadcastLines(ctx, text, innerW);
-const isGoal = text.includes('⚽');
-const isTitle = text.includes('━━');
-const isHalftime = text.includes('하프타임') || text.includes('[휴식]');
-
-const cssH = pad * 2 + lines.length * lineHeight + 6;
-const cssW = maxCssW;
-
-canvas.width = Math.floor(cssW * dpr);
-canvas.height = Math.floor(cssH * dpr);
-ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-const grd = ctx.createLinearGradient(0, 0, cssW, cssH);
-if (isGoal) {
-grd.addColorStop(0, '#14532d');
-grd.addColorStop(1, '#052e16');
-} else if (isTitle) {
-grd.addColorStop(0, '#1e293b');
-grd.addColorStop(1, '#0f172a');
-} else if (isHalftime) {
-grd.addColorStop(0, '#312e81');
-grd.addColorStop(1, '#1e1b4b');
-} else {
-grd.addColorStop(0, '#132447');
-grd.addColorStop(1, '#0a1628');
-}
-ctx.fillStyle = grd;
-if (typeof ctx.roundRect === 'function') {
-ctx.beginPath();
-ctx.roundRect(0, 0, cssW, cssH, 10);
-ctx.fill();
-} else {
-ctx.fillRect(0, 0, cssW, cssH);
-}
-
-ctx.fillStyle = isGoal ? '#fbbf24' : isHalftime ? '#a5b4fc' : '#e8c271';
-ctx.fillRect(0, 0, 5, cssH);
-
-ctx.fillStyle = isGoal ? '#fef9c3' : '#f1f5f9';
-ctx.font = `600 ${fontSize}px "Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif`;
-ctx.textBaseline = 'top';
-lines.forEach((ln, i) => {
-ctx.fillText(ln, pad + 8, pad + i * lineHeight);
-});
-
-const img = new Image();
-img.className = 'sim-broadcast-img w-full h-auto rounded-lg shadow-md border border-amber-900/30 select-none';
-img.alt = text;
-img.draggable = false;
-img.src = canvas.toDataURL('image/png');
-if (img.complete) resolve(img);
-else {
-img.onload = () => resolve(img);
-img.onerror = () => resolve(img);
-}
-});
-}
-
-window.simClearLog = () => {
-const log = document.getElementById('simMatchLog');
-if (log) log.innerHTML = '';
-document.getElementById('simScoreBar')?.classList.add('hidden');
-document.getElementById('simClockWrap')?.classList.add('hidden');
-};
-
-/** 풋살 5vs5 · 시뮬 전·후반 각 20분을 실제 시청 전·후반 각 2분에 비례 압축 중계 */
-window.runSimMatch = async () => {
-if (countSimTeam('A') < 5 || countSimTeam('B') < 5) {
-return window.customAlert('팀 A·팀 B 각각 라커룸에서 5명이 소속되어야 합니다. (경기 출전은 OVR 상위 5명)');
-}
-const plA = getSimMatchRoster('A');
-const plB = getSimMatchRoster('B');
-if (plA.length !== 5 || plB.length !== 5) return window.customAlert('출전 선수를 구성할 수 없습니다.');
-
-const teamAName = (document.getElementById('simTeamAName')?.value || '').trim() || '팀 A';
-const teamBName = (document.getElementById('simTeamBName')?.value || '').trim() || '팀 B';
-
-const btn = document.getElementById('btnSimStart');
-if (btn) { btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed'); }
-
-const logEl = document.getElementById('simMatchLog');
-const scoreBar = document.getElementById('simScoreBar');
-const scoreNums = document.getElementById('simScoreNums');
-const nameAEl = document.getElementById('simScoreAName');
-const nameBEl = document.getElementById('simScoreBName');
-const clockWrap = document.getElementById('simClockWrap');
-if (logEl) logEl.innerHTML = '';
-if (scoreBar) scoreBar.classList.remove('hidden');
-if (clockWrap) clockWrap.classList.remove('hidden');
-if (nameAEl) nameAEl.textContent = teamAName;
-if (nameBEl) nameBEl.textContent = teamBName;
-let sa = 0;
-let sb = 0;
-const updScore = () => { if (scoreNums) scoreNums.textContent = `${sa} - ${sb}`; };
-updScore();
-
-const strA = plA.reduce((s, p) => s + getOVR(p), 0);
-const strB = plB.reduce((s, p) => s + getOVR(p), 0);
-const ratio = strA + strB > 0 ? strA / (strA + strB) : 0.5;
-
-/** 시뮬레이터 한 하프 길이(초): 20분 */
-const SIM_HALF_SEC = 20 * 60;
-/** 실제로 한 하프를 보는 시간(ms): 2분 → 시뮬 1초당 실제 경과 */
-const MS_PER_SIM_SEC = (2 * 60 * 1000) / SIM_HALF_SEC;
-/** 하프당 중계 이벤트 기대치 유지(구 2분하프·초당 0.16과 동일 스케일) */
-const SIM_EVENT_PROB_PER_SEC = (120 * 0.16) / SIM_HALF_SEC;
-
-const setMatchClock = (halfIdx, simSec) => {
-const el = document.getElementById('simMatchClock');
-const halfLabel = halfIdx === 0 ? '전반' : '후반';
-const m = Math.floor(simSec / 60);
-const s = simSec % 60;
-if (el) el.textContent = `${halfLabel} ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
-
-const append = async (line) => {
-if (!logEl) return;
-const node = await simBroadcastTextToImage(line);
-logEl.appendChild(node);
-logEl.scrollTo({ top: logEl.scrollHeight, behavior: 'smooth' });
-await sleep(42);
-};
-
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const gkOf = (arr) => arr.find((p) => p.pos === 'Goleiro') || arr[0];
-
-const trySecondEvent = async (halfIdx, simSec) => {
-const halfLabel = halfIdx === 0 ? '전반' : '후반';
-const mm = String(Math.floor(simSec / 60)).padStart(2, '0');
-const ss = String(simSec % 60).padStart(2, '0');
-const prefix = `[${halfLabel} ${mm}:${ss}]`;
-if (Math.random() > SIM_EVENT_PROB_PER_SEC) return;
-const attackA = Math.random() < ratio + (Math.random() * 0.08 - 0.04);
-const atk = attackA ? plA : plB;
-const def = attackA ? plB : plA;
-const atkName = attackA ? teamAName : teamBName;
-const defName = attackA ? teamBName : teamAName;
-const r = Math.random();
-
-if (r < 0.28) {
-const p1 = pick(atk);
-const p2 = pick(atk);
-if (p1.id === p2.id) {
-await append(`${prefix} ${atkName}: ${p1.name}이(가) 공을 끌고 전진합니다.`);
-} else {
-await append(`${prefix} ${atkName}: ${p1.name} → ${p2.name}. 패스로 지역을 넓힙니다.`);
-}
-} else if (r < 0.48) {
-const p = pick(atk);
-await append(`${prefix} ${atkName}: ${p.name}이(가) 좁은 공간에서 드리블 돌파를 노립니다.`);
-} else if (r < 0.68) {
-const p = pick(atk);
-const gk = gkOf(def);
-const shot = getOVR(p) + Math.random() * 15;
-const save = getOVR(gk) * 1.08 + Math.random() * 12;
-const bias = (attackA ? strA - strB : strB - strA) * 0.018;
-if (shot + bias > save + 7) {
-if (attackA) sa++; else sb++;
-updScore();
-await append(`${prefix} ⚽ 골! ${atkName} — ${p.name}의 슛이 골망을 흔듭니다! (${sa}-${sb})`);
-} else {
-await append(`${prefix} ${defName} ${gk.name}, 선방! ${p.name}의 슛을 막아냅니다.`);
-}
-} else if (r < 0.88) {
-await append(`${prefix} ${atkName}: 터치라인 근처 킥인. 패스 템포를 유지합니다.`);
-} else {
-await append(`${prefix} ${defName}: 피벗 앞 압박으로 공간을 좁힙니다.`);
-}
-};
-
-try {
-await append(`━━ ${teamAName} vs ${teamBName} · 모의 풋살 (5vs5, 시뮬 전·후반 각 20분 — 시청은 각 2분 비례) ━━`);
-await append(`[감독 모드] 전력 요약: ${teamAName} 출전 OVR 합 ${strA}  |  ${teamBName} 출전 OVR 합 ${strB}`);
-await append(`[전반 00:00] 킥오프 — 좁은 풋살 코트에서 공이 굴러갑니다.`);
-
-for (let halfIdx = 0; halfIdx < 2; halfIdx++) {
-setMatchClock(halfIdx, 0);
-for (let simSec = 0; simSec < SIM_HALF_SEC; simSec++) {
-setMatchClock(halfIdx, simSec);
-await trySecondEvent(halfIdx, simSec);
-await sleep(SIM_SEC_REAL_MS);
-}
-setMatchClock(halfIdx, SIM_HALF_SEC);
-const hl = halfIdx === 0 ? '전반' : '후반';
-await append(`[${hl} 02:00] ${hl} 종료 휘슬`);
-if (halfIdx === 0) {
-await append(`[휴식] 하프타임 — 전술을 가다듬습니다.`);
-}
-}
-
-await append(`━━ 최종 스코어 ${teamAName} ${sa} : ${sb} ${teamBName} ━━`);
-await append(`(모의 시뮬레이션 종료 · 서버 기록·EXP 미반영)`);
-} finally {
-if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
-}
-};
-
 window.generateBalancedTeams = () => {
 const resultEl = document.getElementById('teamResult');
 if(window.checkedInPlayers.size < window.targetTeamCount) { window.customAlert(`선택된 선수가 ${window.targetTeamCount}명보다 적습니다.`); return; }
@@ -2591,7 +2051,7 @@ teams.forEach((team, idx) => {
 const avgOvr = Math.round(team.totalOvr / team.players.length);
 let pList = team.players.map(p => {
 const posColor = getPosColor(p.pos); const posText = POS_KR[p.pos] ? POS_KR[p.pos].split('(')[0] : '미정';
-return `<div class="flex justify-between items-center text-sm py-1 border-b border-slate-700/50 last:border-0"><span class="flex items-center gap-2"><span class="inline-flex w-8 justify-center">${getAvatarHtml(p, 'sm')}</span> <span class="text-white font-bold">${p.name}</span></span> <div class="flex items-center gap-2"><span class="text-[9px] ${posColor} border border-slate-700 px-1 rounded font-bold">${posText}</span><span class="font-oswald text-fut-gold">${getOVR(p)}</span></div></div>`;
+return `<div class="flex justify-between items-center text-sm py-1 border-b border-slate-700/50 last:border-0"><span class="flex items-center gap-2"><span class="text-lg w-5 text-center">${getAvatar(p)}</span> <span class="text-white font-bold">${p.name}</span></span> <div class="flex items-center gap-2"><span class="text-[9px] ${posColor} border border-slate-700 px-1 rounded font-bold">${posText}</span><span class="font-oswald text-fut-gold">${getOVR(p)}</span></div></div>`;
 }).join('');
 
 html += `<div class="bg-slate-900/80 p-4 rounded-xl border-t-4 border-emerald-500 shadow-lg"><div class="flex justify-between items-center mb-3 pb-2 border-b border-emerald-900/50"><h4 class="font-display text-emerald-400 text-lg">TEAM ${idx + 1}</h4><span class="text-xs bg-emerald-900/50 text-emerald-300 px-2 py-1 rounded font-bold shadow-inner">평균 OVR ${avgOvr}</span></div><div class="space-y-1">${pList}</div></div>`;
@@ -2687,7 +2147,7 @@ const baseData = {
 name: name, pos: '미정', age: age, gender: gender,
 pac: r(), sho: r(), pas: r(), dri: r(), def: r(), phy: r(), ref: r(), int: r(), pst: r(), dis: r(), cmp: r(), wrk: r(),
 level: 1, exp: 0, goals: 0, assists: 0, matches: 0, training: 0, saves: 0, keypass: 0, bong: 0, lastWageWeek: '',
-inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null, equipFace: null,
+inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null,
 updatedAt: new Date().toISOString()
 };
 
@@ -2793,8 +2253,10 @@ const baseData = {
 name: isGM ? (pId==='gm1'?'감독 J':'수석코치 J') : pId, pin, pos: isGM ? 'Fixo' : '미정', 
 pac: r(), sho: r(), pas: r(), dri: r(), def: r(), phy: r(), ref: r(), int: r(), pst: r(), dis: r(), cmp: r(), wrk: r(),
 level: 1, exp: 0, goals: 0, assists: 0, matches: 0, training: 0, saves: 0, keypass: 0, bong: 0, lastWageWeek: '',
+age: 13,
+inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null,
 age: (pId === '신무호' || pId === '신무호') ? 12 : 13,
-inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null, equipFace: null, equipAvatar: null,
+inventory: [], itemLevels: {}, equipHead: null, equipHandL: null, equipHandR: null, equipFootL: null, equipFootR: null, equipAvatar: null,
 updatedAt: new Date().toISOString()
 };
 await setDoc(docRef, baseData, { merge: true });
@@ -2843,15 +2305,13 @@ window.switchTab('tabWorkspace');
 if(window.selectedPlayerId && window.allPlayersData.length > 0) window.selectPlayer(window.selectedPlayerId);
 }
 
-// 🔔 초기 공지 팝업: 본문이 비어 있거나 공백만 있으면 표시하지 않음
+// 🔔 초기 공지사항 팝업 띄우기 로직 추가
 if(!isGuest && !window.hasShownAnnouncement) {
 const annRef = doc(db, 'artifacts', appId, 'public', 'data', 'config', 'announcement');
 getDoc(annRef).then(snap => {
-const raw = snap.exists() ? snap.data().text : '';
-const annText = typeof raw === 'string' ? raw.trim() : '';
-if (annText) {
+if(snap.exists() && snap.data().text) {
 setTimeout(() => {
-window.customAlert(`📢 [감독님 공지사항]\n\n${annText}`);
+window.customAlert(`📢 [감독님 공지사항]\n\n${snap.data().text}`);
 }, 800);
 window.hasShownAnnouncement = true;
 }
@@ -2884,7 +2344,6 @@ measurementId: "G-H1RGMJHGTV"
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 auth = getAuth(app);
 db = getFirestore(app);
-storage = getStorage(app);
 
 const initAuth = async () => {
 try {
@@ -2991,7 +2450,6 @@ if(isVisible('tabAchievements')) window.renderAchievements();
 if(isVisible('tabRank')) renderLeaderboard();
 if(isVisible('tabMaster')) renderMasterDashboard();
 if(isVisible('tabCompare')) window.renderCompareList();
-if(isVisible('tabSim')) window.renderSimMatchTab();
 if(isVisible('tabMasterStats')) window.renderMasterStats();
 }, (error) => console.error("Players Listen Error:", error));
 

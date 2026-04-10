@@ -3148,42 +3148,83 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             }
         };
 
+        /** 전담 레이드 퀘스트 ID (비번 변경·초기화 시 동일 목록 사용) */
+        const RAID_QUEST_IDS = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher'];
+
+        /** 학생 목록이 비어 있으면 writeBatch가 0건이라 commit 시 오류가 날 수 있음 */
+        function getRaidResetStudentList() {
+            return Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
+        }
+
+        async function applyRaidResetToAllStudents() {
+            const list = getRaidResetStudentList();
+            if (list.length === 0) {
+                throw new Error('학생 목록이 비어 있어 배치를 만들 수 없습니다.');
+            }
+            const batch = writeBatch(db);
+            list.forEach((stu) => {
+                let qu = { ...(stu.quests || {}) };
+                let uq = { ...(stu.unlockedQuests || {}) };
+                RAID_QUEST_IDS.forEach((id) => {
+                    qu[id] = false;
+                    uq[id] = false;
+                });
+                batch.set(
+                    doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id),
+                    { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] },
+                    { merge: true }
+                );
+            });
+            await batch.commit();
+            return { count: list.length };
+        }
+
         window.resetRaids = async function() {
             if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
-            const ok = await window.customConfirm("모든 학생의 '전담 레이드' 상태를 초기화합니다."); 
-            if(!ok) return;
-            
-            const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher']; 
-            const batch = writeBatch(db);
-            
-            window.allStudentsData.forEach(stu => {
-                let qu = { ...(stu.quests||{}) }; 
-                let uq = { ...(stu.unlockedQuests||{}) }; 
-                
-                raidIds.forEach(id => { qu[id] = false; uq[id] = false; });
-                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] }, { merge: true });
-            });
-            await batch.commit(); 
-            window.customAlert("✅ 초기화 완료! 모든 전담레이드가 잠금 상태로 돌아갔습니다.");
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+            const ok = await window.customConfirm("모든 학생의 '전담 레이드' 상태를 초기화합니다.");
+            if (!ok) return;
+
+            const list = getRaidResetStudentList();
+            if (list.length === 0) {
+                return window.customAlert('학생 목록이 아직 불러와지지 않았습니다.\n광장이 보일 때까지 기다린 뒤 다시 눌러 주세요.');
+            }
+
+            try {
+                const r = await applyRaidResetToAllStudents();
+                await window.customAlert(`✅ 초기화 완료! (${r.count}명) 전담 레이드가 잠금으로 돌아갔습니다.`);
+            } catch (e) {
+                console.error('resetRaids', e);
+                await window.customAlert('초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.setRaidPassword = async function() {
             if (!window.playerState.isGM) return;
-            const p = await window.customPrompt("새 레이드 비밀번호:", "text");
-            if (p) { 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: p }, { merge: true }); 
-                
-                const raidIds = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher']; 
-                const batch = writeBatch(db);
-                window.allStudentsData.forEach(stu => {
-                    let qu = { ...(stu.quests||{}) }; 
-                    let uq = { ...(stu.unlockedQuests||{}) }; 
-                    raidIds.forEach(id => { qu[id] = false; uq[id] = false; });
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] }, { merge: true });
-                });
-                await batch.commit(); 
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+            const p = await window.customPrompt('새 레이드 비밀번호:', 'text');
+            if (p === null || String(p).trim() === '') return;
 
-                window.customAlert("✅ 비번 변경 및 전담 레이드 자동 초기화 완료!"); 
+            const list = getRaidResetStudentList();
+            if (list.length === 0) {
+                const go = await window.customConfirm(
+                    '학생 목록이 아직 없습니다. 비밀번호만 먼저 저장할까요?\n(나중에 광장 로드 후 [초기화]로 레이드 상태를 맞출 수 있어요.)'
+                );
+                if (!go) return;
+            }
+
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(p) }, { merge: true });
+
+                if (list.length > 0) {
+                    const r = await applyRaidResetToAllStudents();
+                    await window.customAlert(`✅ 비밀번호 변경 및 전담 레이드 초기화 완료! (${r.count}명 반영)`);
+                } else {
+                    await window.customAlert('✅ 비밀번호만 저장했습니다.\n학생 목록이 로드된 뒤 [초기화] 버튼으로 레이드 잠금을 맞춰 주세요.');
+                }
+            } catch (e) {
+                console.error('setRaidPassword', e);
+                await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
             }
         };
 

@@ -342,6 +342,13 @@ function redrawPlazaGrantsUi() {
         /** Firestore artifacts 세그먼트 — 콘솔 실제 경로와 다르면 로드 전 window.__app_id 로 지정 */
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
+        /** 광장 지급·퀘스트 저장 등 쓰기 전 익명 로그인 보장 — 미인증 시 Firestore 규칙에서 거부될 수 있음 */
+        async function ensureAnonAuthReady() {
+            if (!auth) throw new Error('Firebase 인증이 초기화되지 않았습니다.');
+            await auth.authStateReady();
+            if (!auth.currentUser) await signInAnonymously(auth);
+        }
+
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
 
@@ -2271,7 +2278,10 @@ function redrawPlazaGrantsUi() {
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;
             try {
+                await ensureAnonAuthReady();
                 await setDoc(currentStudentDocRef, dataToSave, { merge: true });
+            } catch (e) {
+                console.warn('saveDataToCloud', e);
             } finally {
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1000);
             }
@@ -2806,21 +2816,33 @@ function redrawPlazaGrantsUi() {
             if (!db || !currentStudentDocRef) return;
 
             try {
-                /** 퀘스트 보상은 서버에서 increment로 합산 — 마스터 지급·스냅샷과 덮어쓰기 충돌 방지 */
-                await setDoc(
-                    currentStudentDocRef,
-                    {
-                        xp: increment(xpDelta),
-                        bong: increment(bongDelta),
-                        quests: window.playerState.quests,
-                        earlyBirdCount: window.playerState.earlyBirdCount,
-                        lastDailyReset: window.playerState.lastDailyReset,
-                        dailyAllClearBonusDate: window.playerState.dailyAllClearBonusDate,
-                        questHistory: window.playerState.questHistory,
-                        inventory: window.playerState.inventory,
-                    },
-                    { merge: true }
-                );
+                await ensureAnonAuthReady();
+                /** increment 대신 트랜잭션으로 서버 수치(숫자)에 델타 합산 — 비숫자 필드·규칙 오류 완화 */
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(currentStudentDocRef);
+                    const d = snap.exists() ? snap.data() : {};
+                    let sx = Number(d.xp);
+                    if (!Number.isFinite(sx)) sx = 0;
+                    let sb = Number(d.bong);
+                    if (!Number.isFinite(sb)) sb = 0;
+                    sb = normalizeBongValue(sb);
+                    sx = Math.floor(sx + xpDelta);
+                    sb = normalizeBongValue(sb + bongDelta);
+                    transaction.set(
+                        currentStudentDocRef,
+                        {
+                            xp: sx,
+                            bong: sb,
+                            quests: window.playerState.quests,
+                            earlyBirdCount: window.playerState.earlyBirdCount,
+                            lastDailyReset: window.playerState.lastDailyReset,
+                            dailyAllClearBonusDate: window.playerState.dailyAllClearBonusDate,
+                            questHistory: window.playerState.questHistory,
+                            inventory: window.playerState.inventory,
+                        },
+                        { merge: true }
+                    );
+                });
             } catch (e) {
                 console.error('attemptQuest persist', e);
                 try {
@@ -3247,62 +3269,66 @@ function redrawPlazaGrantsUi() {
 
             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
             try {
+                await ensureAnonAuthReady();
                 /**
-                 * 양수 지급: increment로 서버 원자 연산(읽기·합산 캐시 오류로 새로고침 시 되돌아가는 현상 방지).
-                 * 음수(차감)·방패: 기존처럼 서버 문서 읽은 뒤 merge.
+                 * increment()는 DB에 xp/bong이 문자열 등 비숫자면 서버에서 실패할 수 있어,
+                 * 트랜잭션으로 숫자로 읽은 뒤 절대값을 merge 저장합니다.
                  */
-                if (amount > 0) {
-                    if (type === 'xp') {
-                        await setDoc(ref, { xp: increment(Math.floor(amount)) }, { merge: true });
-                    } else {
-                        await setDoc(ref, { bong: increment(Number(amount)) }, { merge: true });
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(ref);
+                    const stu = snap.exists() ? snap.data() : {};
+                    let xp = Number(stu.xp);
+                    if (!Number.isFinite(xp)) xp = 0;
+                    let bong = Number(stu.bong);
+                    if (!Number.isFinite(bong)) bong = 0;
+                    bong = normalizeBongValue(bong);
+
+                    if (amount > 0) {
+                        if (type === 'xp') {
+                            transaction.set(ref, { xp: Math.floor(xp + Math.floor(amount)) }, { merge: true });
+                        } else {
+                            transaction.set(ref, { bong: normalizeBongValue(bong + Number(amount)) }, { merge: true });
+                        }
+                        return;
                     }
-                    const snapAfter = await readStudentDocPreferServer(ref);
-                    mergeStudentDocIntoPlazaCache(sid, snapAfter.data());
-                    redrawPlazaGrantsUi();
-                    return;
-                }
 
-                const snap = await readStudentDocPreferServer(ref);
-                let stu = snap.data();
-                if (stu == null && window.allStudentsData && window.allStudentsData.length) {
-                    const row = window.allStudentsData.find((s) => String(s.id) === sid);
-                    if (row) stu = { ...row };
-                }
-                if (stu == null) {
-                    return await window.customAlert('해당 학생 데이터를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.');
-                }
+                    let updates = {};
+                    let hp = (Number(stu.shieldHP) || 0) + (stu.hasShield ? 100 : 0);
+                    if (stu.hasShield) updates.hasShield = false;
 
-                let updates = {};
-                let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
-                if (stu.hasShield) updates.hasShield = false;
-
-                let dAmt = Math.abs(amount);
-                if (hp > 0) {
-                    if (hp >= dAmt) {
-                        updates.shieldHP = hp - dAmt;
-                        dAmt = 0;
-                    } else {
-                        dAmt -= hp;
-                        updates.shieldHP = 0;
+                    let dAmt = Math.abs(amount);
+                    if (hp > 0) {
+                        if (hp >= dAmt) {
+                            updates.shieldHP = hp - dAmt;
+                            dAmt = 0;
+                        } else {
+                            dAmt -= hp;
+                            updates.shieldHP = 0;
+                        }
                     }
-                }
 
-                if (dAmt > 0) {
-                    const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
-                    const nextV = cur - dAmt;
-                    updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
-                }
+                    if (dAmt > 0) {
+                        const cur = type === 'bong' ? bong : xp;
+                        const nextV = cur - dAmt;
+                        updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, Math.floor(nextV));
+                    }
 
-                if (Object.keys(updates).length === 0) return;
+                    if (Object.keys(updates).length === 0) return;
 
-                await setDoc(ref, updates, { merge: true });
-                const snapNeg = await readStudentDocPreferServer(ref);
-                mergeStudentDocIntoPlazaCache(sid, snapNeg.data());
+                    transaction.set(ref, updates, { merge: true });
+                });
+
+                const snapAfter = await readStudentDocPreferServer(ref);
+                mergeStudentDocIntoPlazaCache(sid, snapAfter.data());
                 redrawPlazaGrantsUi();
             } catch (e) {
                 console.error('quickReward', e);
-                await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+                const code = e && e.code ? String(e.code) : '';
+                const hint =
+                    code === 'permission-denied' || /permission|insufficient/i.test(String(e && e.message))
+                        ? '\n\n※ Firebase 콘솔 → Firestore → 규칙에서 익명 인증 사용자의 쓰기를 허용했는지 확인해 주세요.'
+                        : '';
+                await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)) + hint);
             }
         };
 
@@ -3314,18 +3340,30 @@ function redrawPlazaGrantsUi() {
 
             const amt = type === 'xp' ? Math.floor(Number(amount) || 0) : Number(amount) || 0;
             if (amt === 0) return;
-            const batch = writeBatch(db);
-            const list = window.allStudentsData.filter((s) => s.id !== 'gm' && s.id !== 'gm_a');
             try {
-                list.forEach((stu) => {
-                    const idStr = String(stu.id);
-                    const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + idStr);
+                await ensureAnonAuthReady();
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                const serverSnap = await getDocsFromServer(colRef);
+                const batch = writeBatch(db);
+                let n = 0;
+                serverSnap.forEach((docSnap) => {
+                    const did = docSnap.id;
+                    if (did === 'student_gm' || did === 'student_gm_a') return;
+                    const d = docSnap.data() || {};
+                    let xp = Number(d.xp);
+                    if (!Number.isFinite(xp)) xp = 0;
+                    let bong = Number(d.bong);
+                    if (!Number.isFinite(bong)) bong = 0;
+                    bong = normalizeBongValue(bong);
+                    const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', did);
                     if (type === 'xp') {
-                        batch.set(r, { xp: increment(amt) }, { merge: true });
+                        batch.set(r, { xp: Math.floor(xp + amt) }, { merge: true });
                     } else {
-                        batch.set(r, { bong: increment(amt) }, { merge: true });
+                        batch.set(r, { bong: normalizeBongValue(bong + amt) }, { merge: true });
                     }
+                    n++;
                 });
+                if (n === 0) return await window.customAlert('학생 문서를 찾지 못했습니다. 새로고침 후 다시 시도해 주세요.');
                 await batch.commit();
                 await refreshStudentsCacheFromServer();
                 window.customAlert('✅ 일괄 지급 완료!');
@@ -3337,35 +3375,61 @@ function redrawPlazaGrantsUi() {
 
         window.bulkDeduct = async function(type, amount) {
             if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const ok = await window.customConfirm(`모든 학생의 ${type==='xp'?'XP':'B'}를 ${amount} 차감합니까?\n⚠️ 방패 보유자는 방패가 깎입니다.`); 
             if(!ok) return;
             
-            let pCount = 0, aCount = 0; 
-            const batch = writeBatch(db);
-            
-            window.allStudentsData.forEach(stu => {
-                if (stu.id === 'gm' || stu.id === 'gm_a') return;
-                
-                let updates = {}; 
-                let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0); 
-                if (stu.hasShield) updates.hasShield = false; 
-                
-                let dAmt = amount;
-                if (hp > 0) { 
-                    if (hp >= dAmt) { updates.shieldHP = hp - dAmt; dAmt = 0; pCount++; } 
-                    else { dAmt -= hp; updates.shieldHP = 0; pCount++; } 
-                }
-                if (dAmt > 0) { 
-                    const nextV = (stu[type] || 0) - dAmt;
-                    updates[type] = (type === 'bong') ? nextV : Math.max(0, nextV); 
-                    aCount++; 
-                } 
-                
-                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), updates, { merge: true });
-            });
-            await batch.commit();
-            await refreshStudentsCacheFromServer();
-            window.customAlert(`💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`);
+            let pCount = 0, aCount = 0;
+            try {
+                await ensureAnonAuthReady();
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                const serverSnap = await getDocsFromServer(colRef);
+                const batch = writeBatch(db);
+
+                serverSnap.forEach((docSnap) => {
+                    const did = docSnap.id;
+                    if (did === 'student_gm' || did === 'student_gm_a') return;
+                    const stu = docSnap.data() || {};
+                    let xp = Number(stu.xp);
+                    if (!Number.isFinite(xp)) xp = 0;
+                    let bong = Number(stu.bong);
+                    if (!Number.isFinite(bong)) bong = 0;
+                    bong = normalizeBongValue(bong);
+
+                    let updates = {};
+                    let hp = (Number(stu.shieldHP) || 0) + (stu.hasShield ? 100 : 0);
+                    if (stu.hasShield) updates.hasShield = false;
+
+                    let dAmt = amount;
+                    if (hp > 0) {
+                        if (hp >= dAmt) {
+                            updates.shieldHP = hp - dAmt;
+                            dAmt = 0;
+                            pCount++;
+                        } else {
+                            dAmt -= hp;
+                            updates.shieldHP = 0;
+                            pCount++;
+                        }
+                    }
+                    if (dAmt > 0) {
+                        const cur = type === 'bong' ? bong : xp;
+                        const nextV = cur - dAmt;
+                        updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, Math.floor(nextV));
+                        aCount++;
+                    }
+
+                    if (Object.keys(updates).length === 0) return;
+
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', did), updates, { merge: true });
+                });
+                await batch.commit();
+                await refreshStudentsCacheFromServer();
+                window.customAlert(`💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`);
+            } catch (e) {
+                console.error('bulkDeduct', e);
+                await window.customAlert('일괄 차감 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.editStudentStat = async function(stuId, type, stuName, currentVal) {

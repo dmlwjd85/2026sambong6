@@ -5,6 +5,7 @@ import {
     doc,
     setDoc,
     getDoc,
+    getDocFromServer,
     updateDoc,
     collection,
     onSnapshot,
@@ -14,6 +15,15 @@ import {
     arrayUnion,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+/** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
+async function readStudentDocPreferServer(ref) {
+    try {
+        return await getDocFromServer(ref);
+    } catch (e) {
+        return await getDoc(ref);
+    }
+}
 
 // ==========================================
         // ★ 웹 오디오 API 효과음 로직 ★
@@ -3112,11 +3122,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
             try {
-                /**
-                 * 예전 단순 로직 복원: runTransaction·increment는 규칙에서 막히거나 FieldValue를 거부하는 경우가 있어 실패했음.
-                 * getDoc 후 setDoc(merge)만 사용 — ID는 문자열로 통일, 서버에 없으면 메모리 스냅샷으로 보조.
-                 */
-                const snap = await getDoc(ref);
+                /** getDoc(캐시)만 쓰면 서버보다 낮은 XP로 merge되어 지급이 유실될 수 있어 서버 읽기 우선 */
+                const snap = await readStudentDocPreferServer(ref);
                 let stu = snap.data();
                 if (stu == null && window.allStudentsData && window.allStudentsData.length) {
                     const row = window.allStudentsData.find((s) => String(s.id) === sid);
@@ -3168,16 +3175,21 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const ok = await window.customConfirm(`모든 학생에게 +${amount} ${ type === 'xp' ? 'XP' : 'B' } 지급하시겠습니까?`);
             if (!ok) return;
 
-            const batch = writeBatch(db);
             const amt = type === 'xp' ? Math.floor(Number(amount) || 0) : Number(amount) || 0;
-            window.allStudentsData.forEach((stu) => {
-                if (stu.id === 'gm' || stu.id === 'gm_a') return;
-                const idStr = String(stu.id);
-                const cur = Number(stu[type]) || 0;
-                const next = type === 'xp' ? Math.floor(cur + amt) : normalizeBongValue(cur + amt);
-                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + idStr), { [type]: next }, { merge: true });
-            });
+            const batch = writeBatch(db);
+            const list = window.allStudentsData.filter((s) => s.id !== 'gm' && s.id !== 'gm_a');
             try {
+                for (const stu of list) {
+                    const idStr = String(stu.id);
+                    const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + idStr);
+                    const snap = await readStudentDocPreferServer(r);
+                    let row = snap.data();
+                    if (row == null && stu) row = { ...stu };
+                    if (row == null) continue;
+                    const cur = Number(row[type]) || 0;
+                    const next = type === 'xp' ? Math.floor(cur + amt) : normalizeBongValue(cur + amt);
+                    batch.set(r, { [type]: next }, { merge: true });
+                }
                 await batch.commit();
                 window.customAlert('✅ 일괄 지급 완료!');
             } catch (e) {

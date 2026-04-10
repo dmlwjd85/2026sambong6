@@ -2774,9 +2774,6 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (window.playerState.quests[qId]) return;
 
-            const xp0 = Math.floor(Number(window.playerState.xp) || 0);
-            const bong0 = normalizeBongValue(Number(window.playerState.bong) || 0);
-
             let finalXp = xp; 
             let finalBong = bong; 
             let isEarlyBirdJackpot = false;
@@ -2842,10 +2839,6 @@ function redrawPlazaGrantsUi() {
 
             await handleQuestDrop(xp);
 
-            const xpDelta = Math.floor(Number(window.playerState.xp) || 0) - xp0;
-            const bongEnd = normalizeBongValue(Number(window.playerState.bong) || 0);
-            const bongDelta = Math.round((bongEnd - bong0) * 10) / 10;
-
             updateUI();
 
             if (!db || !currentStudentDocRef) return;
@@ -2856,37 +2849,11 @@ function redrawPlazaGrantsUi() {
                     await window.customAlert('인증에 실패해 퀘스트 진행을 서버에 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.');
                     return;
                 }
-                /** 서버 최신 1회 읽기 → 숫자 보정 → merge 저장(동일 필드 구조 유지) */
-                const snapQ = await readStudentDocPreferServer(currentStudentDocRef);
-                const d = snapQ.exists() ? snapQ.data() : {};
-                let sx = Number(d.xp);
-                if (!Number.isFinite(sx)) sx = 0;
-                let sb = Number(d.bong);
-                if (!Number.isFinite(sb)) sb = 0;
-                sb = normalizeBongValue(sb);
-                sx = Math.floor(sx + xpDelta);
-                sb = normalizeBongValue(sb + bongDelta);
-                await setDoc(
-                    currentStudentDocRef,
-                    {
-                        xp: sx,
-                        bong: sb,
-                        quests: window.playerState.quests,
-                        earlyBirdCount: window.playerState.earlyBirdCount,
-                        lastDailyReset: window.playerState.lastDailyReset,
-                        dailyAllClearBonusDate: window.playerState.dailyAllClearBonusDate,
-                        questHistory: window.playerState.questHistory,
-                        inventory: window.playerState.inventory,
-                    },
-                    { merge: true }
-                );
+                /** 퀘스트 직후 playerState가 이미 최종값이므로 전체 merge 저장(서버 재읽기·델타 계산 없음 — 실패 알림 오판 방지) */
+                await saveDataToCloud();
             } catch (e) {
                 console.error('attemptQuest persist', e);
-                try {
-                    await saveDataToCloud();
-                } catch (e2) {
-                    await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e2 && e2.message ? e2.message : String(e2)));
-                }
+                await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -3311,12 +3278,14 @@ function redrawPlazaGrantsUi() {
                     await window.customAlert('인증에 실패했습니다. 네트워크 확인 후 새로고침해 주세요.');
                     return;
                 }
-                /**
-                 * 서버 문서 1회 읽기(getDocFromServer 우선) → xp/bong 숫자 보정 → setDoc(merge).
-                 * 트랜잭션은 일부 환경에서 실패해 제거(데이터 스키마·방패 로직은 동일).
-                 */
-                const snapIn = await readStudentDocPreferServer(ref);
-                let stu = snapIn.exists() ? snapIn.data() : null;
+                /** 베이스: 서버 읽기 실패해도 광장 캐시로 진행(쓰기만 성공하면 됨) */
+                let stu = null;
+                try {
+                    const snapIn = await readStudentDocPreferServer(ref);
+                    if (snapIn.exists()) stu = snapIn.data();
+                } catch (eRead) {
+                    console.warn('quickReward 초기 읽기', eRead);
+                }
                 if (stu == null && window.allStudentsData && window.allStudentsData.length) {
                     const row = window.allStudentsData.find((s) => String(s.id) === sid);
                     if (row) stu = { ...row };
@@ -3332,11 +3301,18 @@ function redrawPlazaGrantsUi() {
                 if (!Number.isFinite(bong)) bong = 0;
                 bong = normalizeBongValue(bong);
 
+                /** setDoc 성공 후 서버 재조회는 실패해도 저장은 된 것이므로 하지 않음(잘못된 실패 알림 원인) */
+                let mergedForCache = { ...stu };
+
                 if (amount > 0) {
                     if (type === 'xp') {
-                        await setDoc(ref, { xp: Math.floor(xp + Math.floor(amount)) }, { merge: true });
+                        const nx = Math.floor(xp + Math.floor(amount));
+                        await setDoc(ref, { xp: nx }, { merge: true });
+                        mergedForCache = { ...stu, xp: nx };
                     } else {
-                        await setDoc(ref, { bong: normalizeBongValue(bong + Number(amount)) }, { merge: true });
+                        const nb = normalizeBongValue(bong + Number(amount));
+                        await setDoc(ref, { bong: nb }, { merge: true });
+                        mergedForCache = { ...stu, bong: nb };
                     }
                 } else {
                     let updates = {};
@@ -3363,10 +3339,10 @@ function redrawPlazaGrantsUi() {
                     if (Object.keys(updates).length === 0) return;
 
                     await setDoc(ref, updates, { merge: true });
+                    mergedForCache = { ...stu, ...updates };
                 }
 
-                const snapAfter = await readStudentDocPreferServer(ref);
-                mergeStudentDocIntoPlazaCache(sid, snapAfter.data());
+                mergeStudentDocIntoPlazaCache(sid, mergedForCache);
                 redrawPlazaGrantsUi();
             } catch (e) {
                 console.error('quickReward', e);
@@ -3391,7 +3367,13 @@ function redrawPlazaGrantsUi() {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
-                const serverSnap = await getDocsFromServer(colRef);
+                let serverSnap;
+                try {
+                    serverSnap = await getDocsFromServer(colRef);
+                } catch (eSrv) {
+                    console.warn('bulkAdd getDocsFromServer', eSrv);
+                    serverSnap = await getDocs(colRef);
+                }
                 const batch = writeBatch(db);
                 let n = 0;
                 serverSnap.forEach((docSnap) => {
@@ -3413,7 +3395,18 @@ function redrawPlazaGrantsUi() {
                 });
                 if (n === 0) return await window.customAlert('학생 문서를 찾지 못했습니다. 새로고침 후 다시 시도해 주세요.');
                 await batch.commit();
-                await refreshStudentsCacheFromServer();
+                try {
+                    await refreshStudentsCacheFromServer();
+                } catch (eRef) {
+                    console.warn('bulkAdd refreshStudentsCacheFromServer', eRef);
+                    (window.allStudentsData || []).forEach((stu) => {
+                        if (stu.id === 'gm' || stu.id === 'gm_a') return;
+                        if (type === 'xp') stu.xp = Math.floor((Number(stu.xp) || 0) + amt);
+                        else stu.bong = normalizeBongValue((Number(stu.bong) || 0) + amt);
+                    });
+                    window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
+                    if (window.renderAdminTable) window.renderAdminTable(window.allStudentsData);
+                }
                 window.customAlert('✅ 일괄 지급 완료!');
             } catch (e) {
                 console.error('bulkAdd', e);
@@ -3432,7 +3425,13 @@ function redrawPlazaGrantsUi() {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
-                const serverSnap = await getDocsFromServer(colRef);
+                let serverSnap;
+                try {
+                    serverSnap = await getDocsFromServer(colRef);
+                } catch (eSrv) {
+                    console.warn('bulkDeduct getDocsFromServer', eSrv);
+                    serverSnap = await getDocs(colRef);
+                }
                 const batch = writeBatch(db);
 
                 serverSnap.forEach((docSnap) => {
@@ -3473,7 +3472,11 @@ function redrawPlazaGrantsUi() {
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', did), updates, { merge: true });
                 });
                 await batch.commit();
-                await refreshStudentsCacheFromServer();
+                try {
+                    await refreshStudentsCacheFromServer();
+                } catch (eRef) {
+                    console.warn('bulkDeduct refreshStudentsCacheFromServer', eRef);
+                }
                 window.customAlert(`💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`);
             } catch (e) {
                 console.error('bulkDeduct', e);

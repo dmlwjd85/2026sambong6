@@ -1170,7 +1170,17 @@ function redrawPlazaGrantsUi() {
                 const isMe = (window.playerState.isAdmin && isGMCard && data.id === localStorage.getItem('sambong_student_id')) || 
                              (!window.playerState.isAdmin && !isGMCard && data.id === localStorage.getItem('sambong_student_id'));
                              
-                const displayData = isMe ? { ...data, ...window.playerState } : data;
+                /** 스냅샷 행(data)을 우선 — 로컬 playerState가 서버 최신(xp·퀘스트 등)을 덮어씌워 동기화가 막히지 않게 함 */
+                const displayData = isMe && data
+                    ? {
+                        ...window.playerState,
+                        ...data,
+                        isGM: window.playerState.isGM,
+                        isGMA: window.playerState.isGMA,
+                        isAdmin: window.playerState.isAdmin,
+                        isGuest: window.playerState.isGuest,
+                    }
+                    : data;
                 const lv = getLevelInfo(displayData.xp || 0);
                 const exactLv = calculateExactLevel(displayData.xp || 0);
 
@@ -1770,8 +1780,10 @@ function redrawPlazaGrantsUi() {
         // ★ 내 상태 UI 및 퀘스트/인벤토리 처리 ★
         // ==========================================
         function updateUI() {
-            if (!window.playerState.isGuest && !currentStudentDocRef) return;
-            
+            /** docRef 없다고 전체 UI를 건너뛰면, 스냅샷이 playerState만 갱신한 뒤 대시보드·퀘스트가 영원히 옛값으로 남음(실시간 동기화 깨짐) */
+            if (!window.playerState) return;
+            const canRunBankSideEffects = !window.playerState.isGuest && currentStudentDocRef;
+
             if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
             if(!window.playerState.inventory) window.playerState.inventory = [];
@@ -1780,7 +1792,7 @@ function redrawPlazaGrantsUi() {
             if(!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
             const bankMigrateTouched = migrateBankPlayerFields();
             let bankProcessingNeedSave = bankMigrateTouched;
-            if (!window.playerState.isGuest && currentStudentDocRef) {
+            if (canRunBankSideEffects) {
                 const termRes = applyBankTermDepositMaturity();
                 if (termRes.changed) {
                     bankProcessingNeedSave = true;

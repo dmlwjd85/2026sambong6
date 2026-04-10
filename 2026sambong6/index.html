@@ -371,6 +371,8 @@
                             <div class="w-full bg-slate-900 rounded-full h-4 border border-slate-700 p-0.5 shadow-inner">
                                 <div id="expBar" class="bg-emerald-400 h-full rounded-full w-0 stat-fill shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
                             </div>
+                            <p id="xpSyncHint" class="hidden mt-2 text-[9px] text-sky-300/95 leading-snug bg-sky-950/40 border border-sky-800/60 rounded-lg px-2 py-1.5"></p>
+                            <p class="mt-2 text-[9px] text-slate-500 leading-snug">※ XP는 퀘스트·골든벨·드래곤볼 등 본인 활동 외에도, 평일 수업 종료 자동 지급(담임 화면 접속 시)이 합쳐져 올라갈 수 있어요.</p>
                         </div>
 
                         <!-- 오늘의 컨디션 기능 -->
@@ -547,8 +549,10 @@
                         <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto scrollbar-hide"></div>
                     </div>
                     <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-sb-gold">
-                        <h3 class="font-bold text-sm text-sb-gold mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
+                        <h3 class="font-bold text-sm text-sb-gold mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
+                        <p class="text-[9px] text-slate-500 mb-3">위쪽은 즉시 사용, 아래는 삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목이에요.</p>
                         <div id="shopContainer" class="grid grid-cols-1 gap-3"></div>
+                        <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
                     </div>
                 </div>
             </div>

@@ -243,6 +243,40 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         let unsubscribeGoldenBell = null;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
+        /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
+        let _prevXpFromSnapshot = null;
+
+        /** 학급 상점(s1 등) ID */
+        function isClassShopId(id) {
+            return id === 's1' || id === 's2' || id === 's_movie' || id === 's4' || id === 's7';
+        }
+
+        /** XP 동기화 힌트(학생용, 알림 스팸 방지) */
+        function showXpSyncHintFromServer(delta) {
+            if (window.playerState && window.playerState.isAdmin) return;
+            const el = document.getElementById('xpSyncHint');
+            if (!el) return;
+            el.textContent = `서버에서 XP가 +${delta} 반영됐어요. (수업 자동 지급·다른 기기·퀘스트 저장 등)`;
+            el.classList.remove('hidden');
+            clearTimeout(window._xpSyncHintTimer);
+            window._xpSyncHintTimer = setTimeout(() => el.classList.add('hidden'), 10000);
+        }
+
+        function buildShopCardHtml(shop) {
+            const safeName = String(shop.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            return `
+                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex items-center gap-3 unaffordable" onclick="window.buyItem('${shop.id}', '${safeName}', ${shop.price}, ${shop.isConsumable || false})">
+                    <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${shop.iconColor} shadow-inner">
+                        <i class="fa-solid ${shop.icon}"></i>
+                    </div>
+                    <div class="flex-grow min-w-0">
+                        <div class="font-bold text-sm">${shop.name}</div>
+                        <div class="text-[10px] text-slate-400">${shop.desc}</div>
+                    </div>
+                    <div class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${shop.price} B</div>
+                </div>`;
+        }
+
         window.currentRaidState = { 
             status: 'waiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP, 
             currentTurn: 0, startTime: 0, combo: 0, logs: [], questions: [] 
@@ -586,17 +620,14 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 `).join('');
             }
 
-            document.getElementById('shopContainer').innerHTML = SHOP_DATA.map(shop => `
-                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex items-center gap-3 unaffordable" onclick="window.buyItem('${shop.id}', '${shop.name}', ${shop.price}, ${shop.isConsumable || false})">
-                    <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${shop.iconColor} shadow-inner">
-                        <i class="fa-solid ${shop.icon}"></i>
-                    </div>
-                    <div class="flex-grow">
-                        <div class="font-bold text-sm">${shop.name}</div>
-                        <div class="text-[10px] text-slate-400">${shop.desc}</div>
-                    </div>
-                    <div class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold">${shop.price} B</div>
-                </div>`).join('');
+            const shopInstant = SHOP_DATA.filter((s) => s.isConsumable);
+            const shopClass = SHOP_DATA.filter((s) => !s.isConsumable);
+            document.getElementById('shopContainer').innerHTML = `
+                <div class="text-[10px] text-slate-400 font-bold mb-2 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>바로 적용되는 아이템</div>
+                ${shopInstant.map((shop) => buildShopCardHtml(shop)).join('')}
+                <div class="text-[10px] text-slate-400 font-bold mb-2 mt-4 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-school text-pink-400 mr-1"></i>학급 특별 활동 <span class="font-normal text-slate-500">(삼봉 결제 · 선생님과 일정 조율)</span></div>
+                ${shopClass.map((shop) => buildShopCardHtml(shop)).join('')}
+            `;
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
@@ -750,12 +781,22 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                             const myId = localStorage.getItem('sambong_student_id');
                             if (myId && !window.playerState.isGuest) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find(s => s.id === myId));
-                                if (myData) { 
-                                    window.playerState = { 
-                                        ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a') 
-                                    }; 
+                                if (myData) {
+                                    const nx = Number(myData.xp) || 0;
+                                    if (
+                                        _prevXpFromSnapshot != null &&
+                                        !window._suppressXpSyncToast &&
+                                        nx > _prevXpFromSnapshot
+                                    ) {
+                                        showXpSyncHintFromServer(nx - _prevXpFromSnapshot);
+                                    }
+                                    _prevXpFromSnapshot = nx;
+
+                                    window.playerState = {
+                                        ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a')
+                                    };
                                     if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
-                                    updateUI(); 
+                                    updateUI();
                                 }
                             }
                             
@@ -1903,6 +1944,23 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 }
             });
 
+            const logEl = document.getElementById('classPurchaseLog');
+            if (logEl && window.playerState && !window.playerState.isGuest) {
+                const arr = window.playerState.classEventPurchases;
+                if (arr && arr.length > 0) {
+                    const lines = arr.slice(-5).reverse().map((entry) => {
+                        const d = entry.at ? new Date(entry.at) : null;
+                        const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
+                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}</span><span class="text-slate-500 shrink-0">${ds} · ${entry.price}B</span></div>`;
+                    });
+                    logEl.innerHTML = '<div class="text-[10px] text-slate-500 font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
+                    logEl.classList.remove('hidden');
+                } else {
+                    logEl.innerHTML = '';
+                    logEl.classList.add('hidden');
+                }
+            }
+
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (bankProcessingNeedSave) saveDataToCloud();
@@ -1952,6 +2010,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             document.getElementById('playerNameDisplay').innerText = "손님"; 
             document.getElementById('cloudIcon').className = "fa-solid fa-eye-slash text-slate-400";
             
+            _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
             updateUI(); 
             window.switchTab('plaza');
         };
@@ -2007,7 +2066,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '' };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -2038,7 +2097,11 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
                 if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+                _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
+                window._suppressXpSyncToast = true;
+                setTimeout(() => { window._suppressXpSyncToast = false; }, 1200);
                 localStorage.setItem('sambong_student_id', studentId); 
                 localStorage.setItem('sambong_student_pin', pin);
                 currentStudentDocRef = docRef;
@@ -2060,15 +2123,21 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
         async function saveDataToCloud() {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
-            const dataToSave = { ...window.playerState }; 
-            delete dataToSave.isGuest; 
-            delete dataToSave.isGM; 
-            delete dataToSave.isGMA; 
+            const dataToSave = { ...window.playerState };
+            delete dataToSave.isGuest;
+            delete dataToSave.isGM;
+            delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }
-            await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
+            /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
+            window._suppressXpSyncToast = true;
+            try {
+                await setDoc(currentStudentDocRef, dataToSave, { merge: true });
+            } finally {
+                setTimeout(() => { window._suppressXpSyncToast = false; }, 1000);
+            }
         }
 
         window.submitLunchBid = async function() {
@@ -2618,9 +2687,9 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 if (window.playerState.bong < price && !window.playerState.isAdmin) return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
                 const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능!)`);
                 if (ok) {
-                    if (!window.playerState.isAdmin) window.playerState.bong -= price;
+                    if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                     const result = Math.floor(Math.random() * 11) * 10;
-                    window.playerState.bong += result;
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + result);
                     playSfx('bong', result >= 50);
 
                     const floater = document.createElement('div');
@@ -2653,14 +2722,14 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 const ok = await window.customConfirm(`🎲 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${bet}B\n- 성공 보상: ${bet * 5}B`);
                 if(!ok) return;
 
-                if (!window.playerState.isAdmin) window.playerState.bong -= bet;
+                if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - bet);
 
                 const roll = Math.floor(Math.random() * 6) + 1;
                 await window.runDiceRollAnimation(roll);
 
                 const win = roll === pick;
                 const payout = win ? bet * 5 : 0;
-                if (payout > 0) window.playerState.bong += payout;
+                if (payout > 0) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payout);
 
                 playSfx('bong', win);
                 updateUI(); 
@@ -2684,12 +2753,38 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 }
                 const ok = await window.customConfirm(`[경험치 팩]\n${packPrice}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
                 if (!ok) return;
-                if (!window.playerState.isAdmin) window.playerState.bong -= packPrice;
+                if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - packPrice);
                 window.playerState.xp += gainXp;
                 playSfx('xp', true);
                 updateUI();
                 await saveDataToCloud();
                 return await window.customAlert(`⚡ 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
+            }
+
+            if (isClassShopId(id)) {
+                const shop = SHOP_DATA.find((s) => s.id === id);
+                if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
+                const price = Number(shop.price) || 0;
+                if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < price) {
+                    return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+                }
+                const ok = await window.customConfirm(
+                    `[${shop.name}] ${price}B를 내고 학급 활동 예약을 할까요?\n` +
+                    '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.'
+                );
+                if (!ok) return;
+                if (!window.playerState.isAdmin) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
+                }
+                if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
+                window.playerState.classEventPurchases.push({ id: shop.id, name: shop.name, price, at: Date.now() });
+                if (window.playerState.classEventPurchases.length > 25) {
+                    window.playerState.classEventPurchases = window.playerState.classEventPurchases.slice(-25);
+                }
+                playSfx('bong', true);
+                updateUI();
+                await saveDataToCloud();
+                return await window.customAlert(`✅ [${shop.name}] 구매가 기록되었습니다!\n선생님께 일정을 요청해 주세요.\n(아래 '최근 학급 활동 예약'에 남습니다)`);
             }
 
             if (isConsumable) {
@@ -2804,7 +2899,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                         ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
                         condition: null, dragonBalls: [], dragonBallWeekendKey: '', earlyBirdCount: 0,
                         inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
-                        bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: ''
+                        bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
+                        classEventPurchases: []
                     });
                 }
                 
@@ -2815,6 +2911,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             } catch(e) { window.customAlert("초기화 중 오류 발생: " + e.message); }
         };
 
+        /** 평일 수업 종료 시각(타임테이블)마다 전 학생 문서에 XP+5. 담임 화면이 켜진 경우에만 트랜잭션 1회 실행. (특정 학번만 아님 — 전원 동일 규칙) */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
@@ -3511,7 +3608,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 }, { merge: true });
 
                 window.playerState.xp += rewardXp;
-                window.playerState.bong += rewardBong;
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(rewardBong));
                 await saveDataToCloud();
                 updateUI();
                 await window.customAlert(`✅ 채점 완료!\n정답 ${score} / ${totalQuestions}문항\n보상: +${rewardXp} XP, +${rewardBong} B`);

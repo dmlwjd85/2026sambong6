@@ -3065,10 +3065,10 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         // 이전 버전 호환용 (일괄 차감). 현재는 applyPersonalLunchDeductionIfNeeded 로 개별 처리합니다.
         window.checkAndDeductLunch = async function() {};
 
-        window.plazaClickXP = async function(stuId, element) { 
-            if (!window.playerState.isAdmin || stuId === 'gm' || stuId === 'gm_a') return; 
-            if (window.playerState.isGMA && stuId !== '13') return; 
-            window.quickReward('xp', 2, stuId, element); 
+        window.plazaClickXP = async function(stuId, element) {
+            if (!window.playerState.isAdmin || stuId === 'gm' || stuId === 'gm_a') return;
+            if (window.playerState.isGMA && String(stuId) !== '13') return;
+            window.quickReward('xp', 2, stuId, element);
         };
 
         window.quickReward = async function(type, amount, stuId, btnElement) {
@@ -3079,55 +3079,64 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
             playSfx(type, amount > 0);
 
-            const rect = btnElement.getBoundingClientRect();
-            const floater = document.createElement('div');
-
-            floater.className = `floating-text ${amount > 0 ? (type === 'xp' ? 'text-sb-blue' : 'text-yellow-400') : 'text-sb-red'}`;
-            floater.innerHTML = `${amount > 0 ? '+' : ''}${amount}<span class="text-[10px]">${type === 'xp' ? 'XP' : 'B'}</span>`;
-            floater.style.left = `${rect.left + (rect.width / 2) - 15 + window.scrollX}px`;
-            floater.style.top = `${rect.top + window.scrollY - 10}px`;
-            document.body.appendChild(floater);
-            setTimeout(() => floater.remove(), 1000);
+            if (btnElement && typeof btnElement.getBoundingClientRect === 'function') {
+                const rect = btnElement.getBoundingClientRect();
+                const floater = document.createElement('div');
+                floater.className = `floating-text ${amount > 0 ? (type === 'xp' ? 'text-sb-blue' : 'text-yellow-400') : 'text-sb-red'}`;
+                floater.innerHTML = `${amount > 0 ? '+' : ''}${amount}<span class="text-[10px]">${type === 'xp' ? 'XP' : 'B'}</span>`;
+                floater.style.left = `${rect.left + (rect.width / 2) - 15 + window.scrollX}px`;
+                floater.style.top = `${rect.top + window.scrollY - 10}px`;
+                document.body.appendChild(floater);
+                setTimeout(() => floater.remove(), 1000);
+            }
 
             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
             try {
-                const snap = await getDoc(ref);
-                if (!snap.exists) {
+                /** 트랜잭션으로 최신 문서 읽기·쓰기를 묶어 경쟁·미반영 방지 (단일 HTML·Vite 공통) */
+                let missingDoc = false;
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(ref);
+                    const prev = snap.data();
+                    if (prev == null) {
+                        missingDoc = true;
+                        return;
+                    }
+                    const stu = { id: sid, ...prev };
+
+                    let updates = {};
+                    if (amount < 0) {
+                        let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
+                        if (stu.hasShield) updates.hasShield = false;
+
+                        let dAmt = Math.abs(amount);
+                        if (hp > 0) {
+                            if (hp >= dAmt) {
+                                updates.shieldHP = hp - dAmt;
+                                dAmt = 0;
+                            } else {
+                                dAmt -= hp;
+                                updates.shieldHP = 0;
+                            }
+                        }
+
+                        if (dAmt > 0) {
+                            const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
+                            const nextV = cur - dAmt;
+                            updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
+                        }
+                    } else if (type === 'xp') {
+                        updates.xp = Math.floor((Number(stu.xp) || 0) + amount);
+                    } else {
+                        updates.bong = normalizeBongValue((Number(stu.bong) || 0) + amount);
+                    }
+
+                    if (Object.keys(updates).length === 0) return;
+
+                    transaction.set(ref, updates, { merge: true });
+                });
+                if (missingDoc) {
                     return await window.customAlert('해당 학생 문서를 불러올 수 없습니다. 새로고침 후 다시 시도해 주세요.');
                 }
-                /** 광장 스냅샷과 무관하게 서버 최신값 기준으로 합산(유실·미저장 방지) */
-                const stu = { id: sid, ...snap.data() };
-
-                let updates = {};
-                if (amount < 0) {
-                    let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
-                    if (stu.hasShield) updates.hasShield = false;
-
-                    let dAmt = Math.abs(amount);
-                    if (hp > 0) {
-                        if (hp >= dAmt) {
-                            updates.shieldHP = hp - dAmt;
-                            dAmt = 0;
-                        } else {
-                            dAmt -= hp;
-                            updates.shieldHP = 0;
-                        }
-                    }
-
-                    if (dAmt > 0) {
-                        const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
-                        const nextV = cur - dAmt;
-                        updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
-                    }
-                } else if (type === 'xp') {
-                    updates.xp = Math.floor((Number(stu.xp) || 0) + amount);
-                } else {
-                    updates.bong = normalizeBongValue((Number(stu.bong) || 0) + amount);
-                }
-
-                if (Object.keys(updates).length === 0) return;
-
-                await setDoc(ref, updates, { merge: true });
             } catch (e) {
                 console.error('quickReward', e);
                 await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -3136,17 +3145,25 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
         window.bulkAdd = async function(type, amount) {
             if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
-            const ok = await window.customConfirm(`모든 학생에게 +${amount} ${type==='xp'?'XP':'B'} 지급하시겠습니까?`); 
-            if(!ok) return;
-            
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const ok = await window.customConfirm(`모든 학생에게 +${amount} ${ type === 'xp' ? 'XP' : 'B' } 지급하시겠습니까?`);
+            if (!ok) return;
+
             const batch = writeBatch(db);
-            window.allStudentsData.forEach(stu => { 
-                if (stu.id !== 'gm' && stu.id !== 'gm_a') {
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id), { [type]: (stu[type] || 0) + amount }, { merge: true }); 
-                }
+            const delta = type === 'xp' ? Math.floor(Number(amount) || 0) : Number(amount) || 0;
+            window.allStudentsData.forEach((stu) => {
+                if (stu.id === 'gm' || stu.id === 'gm_a') return;
+                const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + String(stu.id));
+                /** 클라이언트 스냅샷 대신 서버 원자 증가(새로고침 후 유지) */
+                batch.set(r, { [type]: increment(delta) }, { merge: true });
             });
-            await batch.commit(); 
-            window.customAlert("✅ 일괄 지급 완료!");
+            try {
+                await batch.commit();
+                window.customAlert('✅ 일괄 지급 완료!');
+            } catch (e) {
+                console.error('bulkAdd', e);
+                await window.customAlert('일괄 지급 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.bulkDeduct = async function(type, amount) {

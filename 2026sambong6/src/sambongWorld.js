@@ -342,16 +342,31 @@ function redrawPlazaGrantsUi() {
         /** Firestore artifacts 세그먼트 — 콘솔 실제 경로와 다르면 로드 전 window.__app_id 로 지정 */
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
-        /** 광장 지급·퀘스트 저장 등 쓰기 전 익명 로그인 보장 — 실패 시 false (예외로 저장 흐름 깨지지 않게) */
+        /**
+         * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
+         * authStateReady + 익명 로그인 후 getIdToken()으로 토큰을 확실히 받은 뒤에만 true.
+         */
         async function ensureAnonAuthReady() {
             if (!auth) return false;
-            try {
+            const tryOnce = async () => {
                 await auth.authStateReady();
                 if (!auth.currentUser) await signInAnonymously(auth);
-                return !!auth.currentUser;
+                const u = auth.currentUser;
+                if (!u) return false;
+                await u.getIdToken();
+                return true;
+            };
+            try {
+                return await tryOnce();
             } catch (e) {
                 console.warn('ensureAnonAuthReady', e);
-                return false;
+                try {
+                    await new Promise((r) => setTimeout(r, 450));
+                    return await tryOnce();
+                } catch (e2) {
+                    console.warn('ensureAnonAuthReady 재시도 실패', e2);
+                    return false;
+                }
             }
         }
 
@@ -867,6 +882,10 @@ function redrawPlazaGrantsUi() {
                 
                 await auth.authStateReady();
                 await signInAnonymously(auth);
+                /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
+                if (auth.currentUser) {
+                    await auth.currentUser.getIdToken();
+                }
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
@@ -2178,6 +2197,12 @@ function redrawPlazaGrantsUi() {
             }
             if (!auth.currentUser) {
                 if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                return;
+            }
+            try {
+                await auth.currentUser.getIdToken();
+            } catch (e) {
+                if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
                 return;
             }
             if (!studentId) {

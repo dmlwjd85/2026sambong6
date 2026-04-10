@@ -1347,17 +1347,24 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                 }
             }
 
-            grid.innerHTML = window.estateState.seats.filter(seat => !ESTATE_HIDDEN_SEAT_IDS.includes(seat.id)).map(seat => {
-                if(seat.owner) {
-                    const ownerName = STUDENT_NAMES[seat.owner] || "학생";
+            grid.innerHTML = window.estateState.seats.map((seat) => {
+                if (ESTATE_HIDDEN_SEAT_IDS.includes(seat.id)) {
+                    return `<div class="bg-slate-900/40 border border-dashed border-slate-600/60 rounded-xl p-3 text-center opacity-50 pointer-events-none select-none grayscale">
+                        <div class="text-slate-500 font-bold text-[10px] mb-1"><i class="fa-solid fa-xmark text-slate-600"></i> 비활성</div>
+                        <div class="text-slate-500 text-[10px]">${seat.id + 1}번 자리</div>
+                        <div class="text-[9px] text-slate-600 mt-1">배치 없음</div>
+                    </div>`;
+                }
+                if (seat.owner) {
+                    const ownerName = STUDENT_NAMES[seat.owner] || '학생';
                     return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)]">
                         <div class="text-teal-400 font-bold text-xs mb-1">판매완료</div>
                         <div class="text-white text-[10px]">${ownerName}</div>
                     </div>`;
                 }
-                if(seat.locked) {
+                if (seat.locked) {
                     const gmOnClick = window.playerState.isAdmin ? `onclick="window.toggleSeatLock(${seat.id})"` : '';
-                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center transition ${window.playerState.isAdmin?'cursor-pointer hover:border-red-500':''}" ${gmOnClick}>
+                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center transition ${window.playerState.isAdmin ? 'cursor-pointer hover:border-red-500' : ''}" ${gmOnClick}>
                         <div class="text-slate-500 font-bold text-xs mb-1"><i class="fa-solid fa-lock text-red-900"></i> 잠김</div>
                         <div class="text-slate-600 text-[10px]">${seat.id + 1}번 자리</div>
                     </div>`;
@@ -3151,32 +3158,27 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         /** 전담 레이드 퀘스트 ID (비번 변경·초기화 시 동일 목록 사용) */
         const RAID_QUEST_IDS = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher'];
 
-        /** 학생 목록이 비어 있으면 writeBatch가 0건이라 commit 시 오류가 날 수 있음 */
-        function getRaidResetStudentList() {
-            return Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-        }
-
+        /**
+         * 1~13번 학생 문서에 전담 레이드 필드만 병합 반영. 광장 스냅샷과 무관하게 항상 13건 배치.
+         * (merge: true로 기존 일일 퀘스트 등 다른 quests 키는 유지)
+         */
         async function applyRaidResetToAllStudents() {
-            const list = getRaidResetStudentList();
-            if (list.length === 0) {
-                throw new Error('학생 목록이 비어 있어 배치를 만들 수 없습니다.');
-            }
             const batch = writeBatch(db);
-            list.forEach((stu) => {
-                let qu = { ...(stu.quests || {}) };
-                let uq = { ...(stu.unlockedQuests || {}) };
-                RAID_QUEST_IDS.forEach((id) => {
-                    qu[id] = false;
-                    uq[id] = false;
-                });
+            const qPatch = {};
+            const uqPatch = {};
+            RAID_QUEST_IDS.forEach((id) => {
+                qPatch[id] = false;
+                uqPatch[id] = false;
+            });
+            for (let i = 1; i <= 13; i++) {
                 batch.set(
-                    doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id),
-                    { quests: qu, unlockedQuests: uq, usedRaidPasswords: [] },
+                    doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + i),
+                    { quests: qPatch, unlockedQuests: uqPatch, usedRaidPasswords: [] },
                     { merge: true }
                 );
-            });
+            }
             await batch.commit();
-            return { count: list.length };
+            return { count: 13 };
         }
 
         window.resetRaids = async function() {
@@ -3184,11 +3186,6 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
             const ok = await window.customConfirm("모든 학생의 '전담 레이드' 상태를 초기화합니다.");
             if (!ok) return;
-
-            const list = getRaidResetStudentList();
-            if (list.length === 0) {
-                return window.customAlert('학생 목록이 아직 불러와지지 않았습니다.\n광장이 보일 때까지 기다린 뒤 다시 눌러 주세요.');
-            }
 
             try {
                 const r = await applyRaidResetToAllStudents();
@@ -3205,23 +3202,10 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             const p = await window.customPrompt('새 레이드 비밀번호:', 'text');
             if (p === null || String(p).trim() === '') return;
 
-            const list = getRaidResetStudentList();
-            if (list.length === 0) {
-                const go = await window.customConfirm(
-                    '학생 목록이 아직 없습니다. 비밀번호만 먼저 저장할까요?\n(나중에 광장 로드 후 [초기화]로 레이드 상태를 맞출 수 있어요.)'
-                );
-                if (!go) return;
-            }
-
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(p) }, { merge: true });
-
-                if (list.length > 0) {
-                    const r = await applyRaidResetToAllStudents();
-                    await window.customAlert(`✅ 비밀번호 변경 및 전담 레이드 초기화 완료! (${r.count}명 반영)`);
-                } else {
-                    await window.customAlert('✅ 비밀번호만 저장했습니다.\n학생 목록이 로드된 뒤 [초기화] 버튼으로 레이드 잠금을 맞춰 주세요.');
-                }
+                const r = await applyRaidResetToAllStudents();
+                await window.customAlert(`✅ 비밀번호 변경 및 전담 레이드 초기화 완료! (학생 ${r.count}명 반영)`);
             } catch (e) {
                 console.error('setRaidPassword', e);
                 await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));

@@ -1083,6 +1083,8 @@
         
         let db, auth, storage, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let unsubscribeGoldenBell = null;
+        /** 서버 XP가 로컬보다 커진 뒤에는 진행 중인 클라우드 저장을 버림(마스터 지급 덮어쓰기 방지) */
+        let _cloudWriteEpoch = 0;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
         window.currentRaidState = { 
@@ -1495,10 +1497,15 @@
                             const students = []; 
                             let gmD = null, gmaD = null;
                             
-                            snap.forEach(d => { 
-                                if(d.id === 'student_gm') { gmD = {id:'gm', ...d.data()}; }
-                                else if(d.id === 'student_gm_a') { gmaD = {id:'gm_a', ...d.data()}; }
-                                else { students.push({id: d.id.replace('student_',''), ...d.data()}); }
+                            snap.forEach((d) => {
+                                const row = d.data();
+                                if (d.id === 'student_gm') {
+                                    gmD = { ...row, id: 'gm' };
+                                } else if (d.id === 'student_gm_a') {
+                                    gmaD = { ...row, id: 'gm_a' };
+                                } else {
+                                    students.push({ ...row, id: String(d.id.replace('student_', '')) });
+                                }
                             });
                             
                             window.allStudentsData = students; 
@@ -1507,13 +1514,18 @@
                             
                             const myId = localStorage.getItem('sambong_student_id');
                             if (myId && !window.playerState.isGuest) {
-                                const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find(s => s.id === myId));
-                                if (myData) { 
-                                    window.playerState = { 
-                                        ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a') 
-                                    }; 
+                                const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
+                                if (myData) {
+                                    const nx = Number(myData.xp) || 0;
+                                    const px = Number(window.playerState.xp) || 0;
+                                    if (nx > px) {
+                                        _cloudWriteEpoch++;
+                                    }
+                                    window.playerState = {
+                                        ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a')
+                                    };
                                     if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
-                                    updateUI(); 
+                                    updateUI();
                                 }
                             }
                             
@@ -2496,15 +2508,19 @@
 
         async function saveDataToCloud() {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
-            const dataToSave = { ...window.playerState }; 
-            delete dataToSave.isGuest; 
-            delete dataToSave.isGM; 
-            delete dataToSave.isGMA; 
+            const epochAtStart = _cloudWriteEpoch;
+            const dataToSave = { ...window.playerState };
+            delete dataToSave.isGuest;
+            delete dataToSave.isGM;
+            delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }
-            await setDoc(currentStudentDocRef, dataToSave, { merge: true }); 
+            if (epochAtStart !== _cloudWriteEpoch) {
+                return;
+            }
+            await setDoc(currentStudentDocRef, dataToSave, { merge: true });
         }
 
         window.submitLunchBid = async function() {

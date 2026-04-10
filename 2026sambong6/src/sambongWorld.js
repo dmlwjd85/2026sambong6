@@ -246,6 +246,9 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
 
+        /** 서버 스냅샷이 끼어든 뒤에는 이전에 시작된 saveDataToCloud 쓰기를 버림(마스터 지급 등 덮어쓰기 방지) */
+        let _cloudWriteEpoch = 0;
+
         /** 학급 상점(s1 등) ID */
         function isClassShopId(id) {
             return id === 's1' || id === 's2' || id === 's_movie' || id === 's4' || id === 's7';
@@ -768,10 +771,16 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                             const students = []; 
                             let gmD = null, gmaD = null;
                             
-                            snap.forEach(d => { 
-                                if(d.id === 'student_gm') { gmD = {id:'gm', ...d.data()}; }
-                                else if(d.id === 'student_gm_a') { gmaD = {id:'gm_a', ...d.data()}; }
-                                else { students.push({id: d.id.replace('student_',''), ...d.data()}); }
+                            snap.forEach((d) => {
+                                const row = d.data();
+                                if (d.id === 'student_gm') {
+                                    gmD = { ...row, id: 'gm' };
+                                } else if (d.id === 'student_gm_a') {
+                                    gmaD = { ...row, id: 'gm_a' };
+                                } else {
+                                    /** 문서 id를 신뢰 — row.id가 있으면 숫자/문자 섞여 find 실패·덮어쓰기 유발 */
+                                    students.push({ ...row, id: String(d.id.replace('student_', '')) });
+                                }
                             });
                             
                             window.allStudentsData = students; 
@@ -780,9 +789,15 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
                             
                             const myId = localStorage.getItem('sambong_student_id');
                             if (myId && !window.playerState.isGuest) {
-                                const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find(s => s.id === myId));
+                                const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     const nx = Number(myData.xp) || 0;
+                                    const px = Number(window.playerState.xp) || 0;
+                                    /** 마스터 지급·수업 자동 XP 등으로 서버 XP가 로컬보다 커지면, 늦게 도착하는 setDoc(merge)가 지급분을 덮지 않도록 저장 세대 무효화 */
+                                    if (nx > px) {
+                                        _cloudWriteEpoch++;
+                                    }
+
                                     if (
                                         _prevXpFromSnapshot != null &&
                                         !window._suppressXpSyncToast &&
@@ -2153,6 +2168,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 
         async function saveDataToCloud() {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
+            const epochAtStart = _cloudWriteEpoch;
             const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
@@ -2160,6 +2176,10 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
             delete dataToSave.isAdmin;
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
+            }
+            /** 스냅샷이 먼저 들어와 서버 XP·봉이 갱신된 경우, 낡은 병합 쓰기로 지급분을 지우지 않음 */
+            if (epochAtStart !== _cloudWriteEpoch) {
+                return;
             }
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;

@@ -3122,7 +3122,19 @@ async function readStudentDocPreferServer(ref) {
 
             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
             try {
-                /** getDoc(캐시)만 쓰면 서버보다 낮은 XP로 merge되어 지급이 유실될 수 있어 서버 읽기 우선 */
+                /**
+                 * 양수 지급: increment로 서버 원자 연산(읽기·합산 캐시 오류로 새로고침 시 되돌아가는 현상 방지).
+                 * 음수(차감)·방패: 기존처럼 서버 문서 읽은 뒤 merge.
+                 */
+                if (amount > 0) {
+                    if (type === 'xp') {
+                        await setDoc(ref, { xp: increment(Math.floor(amount)) }, { merge: true });
+                    } else {
+                        await setDoc(ref, { bong: increment(Number(amount)) }, { merge: true });
+                    }
+                    return;
+                }
+
                 const snap = await readStudentDocPreferServer(ref);
                 let stu = snap.data();
                 if (stu == null && window.allStudentsData && window.allStudentsData.length) {
@@ -3134,30 +3146,24 @@ async function readStudentDocPreferServer(ref) {
                 }
 
                 let updates = {};
-                if (amount < 0) {
-                    let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
-                    if (stu.hasShield) updates.hasShield = false;
+                let hp = (stu.shieldHP || 0) + (stu.hasShield ? 100 : 0);
+                if (stu.hasShield) updates.hasShield = false;
 
-                    let dAmt = Math.abs(amount);
-                    if (hp > 0) {
-                        if (hp >= dAmt) {
-                            updates.shieldHP = hp - dAmt;
-                            dAmt = 0;
-                        } else {
-                            dAmt -= hp;
-                            updates.shieldHP = 0;
-                        }
+                let dAmt = Math.abs(amount);
+                if (hp > 0) {
+                    if (hp >= dAmt) {
+                        updates.shieldHP = hp - dAmt;
+                        dAmt = 0;
+                    } else {
+                        dAmt -= hp;
+                        updates.shieldHP = 0;
                     }
+                }
 
-                    if (dAmt > 0) {
-                        const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
-                        const nextV = cur - dAmt;
-                        updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
-                    }
-                } else if (type === 'xp') {
-                    updates.xp = Math.floor((Number(stu.xp) || 0) + amount);
-                } else {
-                    updates.bong = normalizeBongValue((Number(stu.bong) || 0) + amount);
+                if (dAmt > 0) {
+                    const cur = type === 'bong' ? Number(stu.bong) || 0 : Number(stu.xp) || 0;
+                    const nextV = cur - dAmt;
+                    updates[type] = type === 'bong' ? normalizeBongValue(nextV) : Math.max(0, nextV);
                 }
 
                 if (Object.keys(updates).length === 0) return;
@@ -3176,20 +3182,19 @@ async function readStudentDocPreferServer(ref) {
             if (!ok) return;
 
             const amt = type === 'xp' ? Math.floor(Number(amount) || 0) : Number(amount) || 0;
+            if (amt === 0) return;
             const batch = writeBatch(db);
             const list = window.allStudentsData.filter((s) => s.id !== 'gm' && s.id !== 'gm_a');
             try {
-                for (const stu of list) {
+                list.forEach((stu) => {
                     const idStr = String(stu.id);
                     const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + idStr);
-                    const snap = await readStudentDocPreferServer(r);
-                    let row = snap.data();
-                    if (row == null && stu) row = { ...stu };
-                    if (row == null) continue;
-                    const cur = Number(row[type]) || 0;
-                    const next = type === 'xp' ? Math.floor(cur + amt) : normalizeBongValue(cur + amt);
-                    batch.set(r, { [type]: next }, { merge: true });
-                }
+                    if (type === 'xp') {
+                        batch.set(r, { xp: increment(amt) }, { merge: true });
+                    } else {
+                        batch.set(r, { bong: increment(amt) }, { merge: true });
+                    }
+                });
                 await batch.commit();
                 window.customAlert('✅ 일괄 지급 완료!');
             } catch (e) {

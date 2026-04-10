@@ -251,13 +251,11 @@ async function readStudentDocPreferServer(ref) {
         
         let db, auth, storage, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let unsubscribeGoldenBell = null;
+        /** Firestore artifacts 세그먼트 — 콘솔 실제 경로와 다르면 로드 전 window.__app_id 로 지정 */
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
-
-        /** 서버 스냅샷이 끼어든 뒤에는 이전에 시작된 saveDataToCloud 쓰기를 버림(마스터 지급 등 덮어쓰기 방지) */
-        let _cloudWriteEpoch = 0;
 
         /** 학급 상점(s1 등) ID */
         function isClassShopId(id) {
@@ -802,11 +800,6 @@ async function readStudentDocPreferServer(ref) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     const nx = Number(myData.xp) || 0;
-                                    const px = Number(window.playerState.xp) || 0;
-                                    /** 마스터 지급·수업 자동 XP 등으로 서버 XP가 로컬보다 커지면, 늦게 도착하는 setDoc(merge)가 지급분을 덮지 않도록 저장 세대 무효화 */
-                                    if (nx > px) {
-                                        _cloudWriteEpoch++;
-                                    }
 
                                     if (
                                         _prevXpFromSnapshot != null &&
@@ -2178,7 +2171,6 @@ async function readStudentDocPreferServer(ref) {
 
         async function saveDataToCloud() {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
-            const epochAtStart = _cloudWriteEpoch;
             const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
@@ -2186,10 +2178,6 @@ async function readStudentDocPreferServer(ref) {
             delete dataToSave.isAdmin;
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
-            }
-            /** 스냅샷이 먼저 들어와 서버 XP·봉이 갱신된 경우, 낡은 병합 쓰기로 지급분을 지우지 않음 */
-            if (epochAtStart !== _cloudWriteEpoch) {
-                return;
             }
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;
@@ -2652,6 +2640,9 @@ async function readStudentDocPreferServer(ref) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (window.playerState.quests[qId]) return;
 
+            const xp0 = Math.floor(Number(window.playerState.xp) || 0);
+            const bong0 = normalizeBongValue(Number(window.playerState.bong) || 0);
+
             let finalXp = xp; 
             let finalBong = bong; 
             let isEarlyBirdJackpot = false;
@@ -2716,7 +2707,39 @@ async function readStudentDocPreferServer(ref) {
             if (alertMsg !== "") await window.customAlert(alertMsg.trim());
 
             await handleQuestDrop(xp);
-            updateUI(); saveDataToCloud();
+
+            const xpDelta = Math.floor(Number(window.playerState.xp) || 0) - xp0;
+            const bongEnd = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const bongDelta = Math.round((bongEnd - bong0) * 10) / 10;
+
+            updateUI();
+
+            if (!db || !currentStudentDocRef) return;
+
+            try {
+                /** 퀘스트 보상은 서버에서 increment로 합산 — 마스터 지급·스냅샷과 덮어쓰기 충돌 방지 */
+                await setDoc(
+                    currentStudentDocRef,
+                    {
+                        xp: increment(xpDelta),
+                        bong: increment(bongDelta),
+                        quests: window.playerState.quests,
+                        earlyBirdCount: window.playerState.earlyBirdCount,
+                        lastDailyReset: window.playerState.lastDailyReset,
+                        dailyAllClearBonusDate: window.playerState.dailyAllClearBonusDate,
+                        questHistory: window.playerState.questHistory,
+                        inventory: window.playerState.inventory,
+                    },
+                    { merge: true }
+                );
+            } catch (e) {
+                console.error('attemptQuest persist', e);
+                try {
+                    await saveDataToCloud();
+                } catch (e2) {
+                    await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e2 && e2.message ? e2.message : String(e2)));
+                }
+            }
         };
 
         // ★ 버그 수정: 퀘스트 취소 시 UI 초기화 기능 개선

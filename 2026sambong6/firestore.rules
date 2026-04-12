@@ -1,12 +1,36 @@
 rules_version = '2';
+// sambong-world-2026 단일 Firestore — 삼봉 월드(artifacts) + ncgame(loginByName, users) 통합 규칙
 // Firebase 콘솔 → Firestore → 규칙에 붙여넣거나: firebase deploy --only firestore
-// 익명 로그인(request.auth != null) 사용자가 artifacts/.../public 하위에 읽기·쓰기 가능해야
-// 광장 지급(타 학생 문서)·퀘스트 저장이 동작합니다.
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    // --- 삼봉 월드 (sambongWorld.js) ---
     match /artifacts/{appId}/public/{document=**} {
       allow read: if true;
       allow write: if request.auth != null;
+    }
+
+    // --- ncgame ---
+    match /loginByName/{name} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /ncgameHofByPack/{packId}/entries/{uid} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.packId == packId;
+      allow delete: if false;
     }
   }
 }

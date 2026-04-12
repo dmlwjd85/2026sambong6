@@ -14,3 +14,6 @@ All-in-One-Home/dist/
 
 # 다른 저장소로 관리하는 클론(실수로 루트에 추가 방지)
 bgw/
+
+# ncgame은 하위 폴더 `ncgame`에서 별도 Git 저장소로 관리합니다.
+ncgame/

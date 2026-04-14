@@ -485,6 +485,19 @@ function redrawPlazaGrantsUi() {
             return null;
         }
 
+        /** 평일 등 주말 키가 null일 때, 직전 토요일 날짜 키 (복구 저장·표시용) */
+        function getLastSaturdayDateKey(d = new Date()) {
+            const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const day = x.getDay();
+            if (day === 6) return getLocalDateStr(x);
+            if (day === 0) {
+                x.setDate(x.getDate() - 1);
+                return getLocalDateStr(x);
+            }
+            x.setDate(x.getDate() - (day + 1));
+            return getLocalDateStr(x);
+        }
+
         /** 탭 세션 시작 시각 기준 1시간 경과 시 새로고침(로컬 조작·새로고침 악용 완화) */
         function initSessionRefreshGuard() {
             const KEY = 'sambong_sess_start';
@@ -1775,6 +1788,89 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        /**
+         * 마스터 J 전용: 오류로 비워진 드래곤볼 보관함을 Firestore에 복구합니다.
+         * 학번·성구는 쉼표로 구분; 기존 보관함과 합쳐 중복 제거 후 저장합니다.
+         */
+        window.restoreDragonBallsAdmin = async function () {
+            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const idsEl = document.getElementById('dragonBallRecoveryStudentIds');
+            const ballsEl = document.getElementById('dragonBallRecoveryBallNums');
+            const rawIds = idsEl && idsEl.value ? idsEl.value : '';
+            const rawBalls = ballsEl && ballsEl.value ? ballsEl.value : '';
+            const idTokens = rawIds.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+            const ballTokens = rawBalls.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+            if (idTokens.length === 0) return window.customAlert('학번을 하나 이상 입력하세요. (쉼표로 구분)');
+            if (ballTokens.length === 0) return window.customAlert('복구할 성구 번호(1~7)를 하나 이상 입력하세요.');
+            const balls = [];
+            for (const t of ballTokens) {
+                const n = parseInt(t, 10);
+                if (!Number.isFinite(n) || n < 1 || n > 7) {
+                    return window.customAlert(`성구 번호는 1~7만 가능합니다. 잘못된 값: ${t}`);
+                }
+                if (!balls.includes(n)) balls.push(n);
+            }
+            balls.sort((a, b) => a - b);
+            const weekendKey = getWeekendSaturdayKey() || getLastSaturdayDateKey();
+            const ok = await window.customConfirm(
+                `다음 학생 ${idTokens.length}명의 보관함에 성구 [${balls.join(', ')}]를 합산 반영하고,\n주말 키를 "${weekendKey}" 로 맞춥니다.\n(기존에 있던 성구와 합쳐 중복은 제거됩니다.)\n계속할까요?`
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                let okCount = 0;
+                const errors = [];
+                for (const sid of idTokens) {
+                    if (sid === 'gm' || sid === 'gm_a') {
+                        errors.push(`${sid}: 마스터 계정은 제외`);
+                        continue;
+                    }
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                    let existing = [];
+                    try {
+                        const snap = await readStudentDocPreferServer(ref);
+                        if (snap.exists()) {
+                            const d = snap.data() || {};
+                            existing = Array.isArray(d.dragonBalls)
+                                ? d.dragonBalls.map((x) => Number(x)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 7)
+                                : [];
+                        }
+                    } catch (e) {
+                        errors.push(`${sid}: 읽기 실패`);
+                        continue;
+                    }
+                    const merged = [...new Set([...existing, ...balls])].filter((n) => n >= 1 && n <= 7).sort((a, b) => a - b);
+                    try {
+                        await setDoc(ref, { dragonBalls: merged, dragonBallWeekendKey: weekendKey }, { merge: true });
+                        okCount++;
+                        const myId = localStorage.getItem('sambong_student_id');
+                        if (myId === sid && window.playerState && !window.playerState.isGuest) {
+                            window.playerState.dragonBalls = merged;
+                            window.playerState.dragonBallWeekendKey = weekendKey;
+                        }
+                        const list = window.allStudentsData;
+                        if (list && list.length) {
+                            const i = list.findIndex((s) => String(s.id) === String(sid));
+                            if (i >= 0) {
+                                list[i].dragonBalls = merged;
+                                list[i].dragonBallWeekendKey = weekendKey;
+                            }
+                        }
+                    } catch (e) {
+                        errors.push(`${sid}: ${e && e.message ? e.message : String(e)}`);
+                    }
+                }
+                updateUI();
+                let msg = `처리 완료: ${okCount}명`;
+                if (errors.length) msg += '\n\n' + errors.join('\n');
+                await window.customAlert(msg);
+            } catch (e) {
+                console.error('restoreDragonBallsAdmin', e);
+                await window.customAlert('복구 중 오류: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
 
         // ==========================================
         // ★ 내 상태 UI 및 퀘스트/인벤토리 처리 ★
@@ -1812,12 +1908,21 @@ function redrawPlazaGrantsUi() {
                         void window.customAlert('🏦 예금 주기 보너스: 일반+적금 원금 합 100 B 이상 유지로 이번 주기 1 B가 지갑에 들어왔습니다! (3일마다 지급)');
                     }, 120);
                 }
-                // 새 주말(토요일 기준 키)이 되면 드래곤볼 수집 상태 초기화
+                /**
+                 * 새 주말(토요일 키가 바뀜)일 때만 보관함 초기화.
+                 * dragonBallWeekendKey가 비어 있던 계정은 첫 주말 접속 시 키만 채우고 비우지 않음(기존 버그로 수집분이 날아가던 현상 방지).
+                 */
                 const satKey = getWeekendSaturdayKey();
-                if (satKey && window.playerState.dragonBallWeekendKey !== satKey) {
-                    window.playerState.dragonBallWeekendKey = satKey;
-                    window.playerState.dragonBalls = [];
-                    bankProcessingNeedSave = true;
+                if (satKey) {
+                    const prevKey = window.playerState.dragonBallWeekendKey || '';
+                    if (prevKey && prevKey !== satKey) {
+                        window.playerState.dragonBallWeekendKey = satKey;
+                        window.playerState.dragonBalls = [];
+                        bankProcessingNeedSave = true;
+                    } else if (!prevKey) {
+                        window.playerState.dragonBallWeekendKey = satKey;
+                        bankProcessingNeedSave = true;
+                    }
                 }
             }
 
@@ -1831,9 +1936,13 @@ function redrawPlazaGrantsUi() {
                     if(plazaGM) plazaGM.classList.remove('hidden');
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.remove('hidden');
+                    const dbRec = document.getElementById('dragonBallRecoveryPanel');
+                    if (dbRec) dbRec.classList.remove('hidden');
                 } else {
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.add('hidden');
+                    const dbRec = document.getElementById('dragonBallRecoveryPanel');
+                    if (dbRec) dbRec.classList.add('hidden');
                 }
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
@@ -1842,6 +1951,8 @@ function redrawPlazaGrantsUi() {
                 if(plazaGM) plazaGM.classList.add('hidden');
                 const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                 if (bankRatePanel) bankRatePanel.classList.add('hidden');
+                const dbRec = document.getElementById('dragonBallRecoveryPanel');
+                if (dbRec) dbRec.classList.add('hidden');
             }
             
             checkTimeEvents();

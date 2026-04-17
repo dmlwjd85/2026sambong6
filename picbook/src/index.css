@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 한국어/감성 계열 기본 폰트 스택(로컬 폰트 우선) */
+:root {
+  --pb-font: ui-serif, Georgia, 'Times New Roman', serif;
+  --pb-font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--pb-font-sans);
+}
+
+/* 스크롤바가 튀는 느낌을 줄이기 위한 기본값 */
+* {
+  box-sizing: border-box;
+}

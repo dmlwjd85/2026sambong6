@@ -12,6 +12,9 @@ All-in-One-Home/dist/
 2026sambong6/node_modules/
 2026sambong6/dist/
 
+picbook/node_modules/
+picbook/dist/
+
 # 다른 저장소로 관리하는 클론(실수로 루트에 추가 방지)
 bgw/
 

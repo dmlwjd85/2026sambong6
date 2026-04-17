@@ -1,0 +1,57 @@
+# PicBook(Vite) 빌드 후 GitHub Pages에 배포합니다.
+# 동일 저장소의 Pages는 한 번에 하나의 정적 사이트만 게시되므로, 이 워크플로가 성공하면
+# https://dmlwjd85.github.io/2026sambong6/ 에 픽북 앱이 올라가며, 이전에 배포된 2026sambong6 빌드는 대체됩니다.
+# (게임과 픽북을 동시에 노출하려면 저장소/워크플로를 분리하거나 서브패스 병합 빌드를 쓰세요.)
+name: Deploy PicBook to GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'picbook/**'
+      - '.github/workflows/deploy-picbook-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-picbook
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: picbook/package-lock.json
+
+      - name: npm install 및 빌드
+        working-directory: picbook
+        env:
+          VITE_GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VITE_GEMINI_IMAGE_MODEL: ${{ secrets.GEMINI_IMAGE_MODEL }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+          npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: picbook/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

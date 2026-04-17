@@ -5,6 +5,9 @@ name: Deploy 2026sambong6 to GitHub Pages
 on:
     push:
         branches: [main, master]
+        paths:
+            - '2026sambong6/**'
+            - '.github/workflows/deploy-2026sambong6-pages.yml'
     workflow_dispatch:
 
 permissions:

@@ -140,6 +140,22 @@
         <button id="btnExitRaid" onclick="window.closeRaidModal()" class="hidden absolute top-4 right-4 bg-slate-800 hover:bg-sb-red text-white border px-4 py-2 rounded-lg font-bold z-50">돌아가기</button>
     </div>
 
+    <!-- ★ 마스터 스피드 퀴즈 모달 (선착순 정답 1명 보상) ★ -->
+    <div id="masterQuizModal" class="hidden fixed inset-0 z-[262] bg-black/75 backdrop-blur-sm flex items-center justify-center px-3 py-6 transition-all duration-300">
+        <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-lg w-full border-t-4 border-t-cyan-400 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div class="flex items-start justify-between gap-2 mb-3">
+                <h3 class="text-lg sm:text-xl font-display text-white pr-6"><i class="fa-solid fa-bolt text-cyan-400"></i> 마스터 스피드 퀴즈</h3>
+                <button type="button" onclick="window.dismissMasterQuizModal()" class="shrink-0 text-slate-400 hover:text-white text-xs font-bold">잠시 숨기기</button>
+            </div>
+            <p class="text-[10px] text-slate-400 mb-3">가장 먼저 정답을 맞힌 한 명에게만 보상이 지급됩니다.</p>
+            <div id="masterQuizQuestionBlock" class="text-sm sm:text-base text-white font-bold leading-relaxed whitespace-pre-wrap break-words mb-2"></div>
+            <div id="masterQuizRewardHint" class="text-[10px] text-cyan-200/90 font-bold mb-3"></div>
+            <input type="text" id="masterQuizAnswerInput" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();window.submitMasterQuizAnswer();}" class="w-full bg-slate-900 border border-cyan-600/50 text-white px-3 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-cyan-500 mb-2" placeholder="정답 입력 후 제출" />
+            <p id="masterQuizFeedback" class="text-[10px] font-bold min-h-[1.25rem] mb-2"></p>
+            <button type="button" id="masterQuizSubmitBtn" onclick="window.submitMasterQuizAnswer()" class="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg">제출</button>
+        </div>
+    </div>
+
     <!-- ★ 퀘스트 기록 모달 ★ -->
     <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
         <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
@@ -745,6 +761,33 @@
                     <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
                 </div>
                 <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
+            </div>
+
+            <!-- 마스터 스피드 퀴즈 (선착순 1명) -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-cyan-500/60 bg-slate-900/80">
+                <div class="flex justify-between mb-3">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bolt text-cyan-400"></i> 스피드 퀴즈 (선착순)</h3>
+                    <span id="mqAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
+                </div>
+                <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">문제를 내면 학생 화면에 팝업이 뜹니다. 정답을 <strong class="text-cyan-200">가장 먼저</strong> 제출한 학생 1명에게만 아래 XP·봉이 지급됩니다.</p>
+                <label class="block text-[10px] text-slate-300 mb-1">문제</label>
+                <textarea id="mq_adminQuestion" rows="2" class="w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs mb-2" placeholder="문제 내용"></textarea>
+                <div class="flex flex-col sm:flex-row gap-2 mb-2">
+                    <label class="flex-1 text-[10px] text-slate-300">정답 (앞뒤 공백·연속 공백·영문 대소문자 무시)
+                        <input type="text" id="mq_adminAnswer" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs" autocomplete="off" />
+                    </label>
+                    <label class="w-full sm:w-24 text-[10px] text-slate-300">보상 XP
+                        <input type="number" id="mq_adminXp" min="0" step="1" value="50" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs" />
+                    </label>
+                    <label class="w-full sm:w-24 text-[10px] text-slate-300">보상 B
+                        <input type="number" id="mq_adminBong" min="0" step="0.1" value="3" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs" />
+                    </label>
+                </div>
+                <div id="mqWinnerLine" class="text-[10px] text-emerald-300 font-bold mb-2 min-h-[1.25rem]"></div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="window.publishMasterQuiz()" class="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">문제 내보내기 (팝업 오픈)</button>
+                    <button type="button" onclick="window.closeMasterQuizSession()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료</button>
+                </div>
             </div>
 
             <!-- 레이드 출제 패널 -->

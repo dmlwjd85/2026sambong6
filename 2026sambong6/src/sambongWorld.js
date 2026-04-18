@@ -339,6 +339,7 @@ function redrawPlazaGrantsUi() {
         
         let db, auth, storage, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let unsubscribeGoldenBell = null;
+        let unsubscribeMasterQuiz = null;
         /** Firestore artifacts 세그먼트 — 콘솔 실제 경로와 다르면 로드 전 window.__app_id 로 지정 */
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
@@ -413,6 +414,7 @@ function redrawPlazaGrantsUi() {
         let isWeekend = false; 
         window.dragonBallState = null;
         window.goldenbellState = null;
+        window.masterQuizState = null;
         let selectedEmotion = null; 
         let selectedBody = null;
 
@@ -425,9 +427,59 @@ function redrawPlazaGrantsUi() {
             return Math.round(n * 10) / 10;
         }
 
+        /** 골든벨·스피드 퀴즈 공통: 앞뒤 공백 제거, 연속 공백 축소, 영문 소문자 통일 */
+        function normalizeQuizAnswer(s) {
+            if (s == null || s === undefined) return '';
+            return String(s).trim().replace(/\s+/g, ' ').toLowerCase();
+        }
+
         /** 로컬 기준 오늘 날짜 YYYY-MM-DD */
         function getLocalDateStr(d = new Date()) {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        /**
+         * 일일 퀘스트 완료 플래그·밥줄(lunchBid)을 로컬 달력 날짜와 맞춤.
+         * 학생 컬렉션 onSnapshot이 서버의 어제 데이터로 playerState를 덮을 때(자정 직후 저장 레이스) 초기화가 무효화되지 않도록,
+         * 스냅샷 직후에도 동일 규칙을 다시 적용한다.
+         * @param {{ silent?: boolean }} opts silent: true면 알림 없음(스냅샷·백그라운드 동기화용)
+         * @returns {{ needSave: boolean, alertNewDay: boolean }}
+         */
+        function applyDailyQuestResetIfNewDay(opts = {}) {
+            const silent = opts.silent === true;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+                return { needSave: false, alertNewDay: false };
+            }
+            const gameDateStr = getLocalDateStr();
+            if (!window.playerState.lastDailyReset) {
+                window.playerState.lastDailyReset = gameDateStr;
+                return { needSave: true, alertNewDay: false };
+            }
+            if (window.playerState.lastDailyReset === gameDateStr) {
+                return { needSave: false, alertNewDay: false };
+            }
+
+            const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+            const updatedQuests = { ...(window.playerState.quests || {}) };
+            let hadCompletedDaily = false;
+            dailyQuestIds.forEach((qId) => {
+                if (updatedQuests[qId]) {
+                    hadCompletedDaily = true;
+                    updatedQuests[qId] = false;
+                }
+            });
+            window.playerState.quests = updatedQuests;
+            window.playerState.lastDailyReset = gameDateStr;
+
+            let lunchReset = false;
+            if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== gameDateStr) {
+                window.playerState.lunchBid = { date: gameDateStr, amount: 0 };
+                lunchReset = true;
+            }
+            return {
+                needSave: true,
+                alertNewDay: !silent && (hadCompletedDaily || lunchReset),
+            };
         }
 
         /** 적금 가입일(YYYY-MM-DD)부터 오늘까지 경과 일수(가입 당일=0, 30 이상이면 만기) */
@@ -947,7 +999,20 @@ function redrawPlazaGrantsUi() {
                                         ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a')
                                     };
                                     if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
-                                    updateUI();
+                                    /** 스냅샷이 어제 quests·lastDailyReset을 다시 주면 자정 초기화가 덮어씌워지는 문제 보정(학생만, 알림 없음) */
+                                    if (myId !== 'gm' && myId !== 'gm_a' && !window.playerState.isAdmin) {
+                                        const dq = applyDailyQuestResetIfNewDay({ silent: true });
+                                        if (dq.needSave) {
+                                            if (!currentStudentDocRef) {
+                                                currentStudentDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + myId);
+                                            }
+                                            void saveDataToCloud().then(() => updateUI());
+                                        } else {
+                                            updateUI();
+                                        }
+                                    } else {
+                                        updateUI();
+                                    }
                                 }
                             }
                             
@@ -1078,6 +1143,17 @@ function redrawPlazaGrantsUi() {
                             }
                         });
 
+                        if (unsubscribeMasterQuiz) unsubscribeMasterQuiz();
+                        unsubscribeMasterQuiz = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'masterquiz', 'state'), (snap) => {
+                            if (snap.exists()) {
+                                window.masterQuizState = snap.data();
+                            } else {
+                                window.masterQuizState = { isOpen: false };
+                            }
+                            if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
+                            if (typeof window.updateMasterQuizAdminUI === 'function') window.updateMasterQuizAdminUI();
+                        });
+
                         const savedId = localStorage.getItem('sambong_student_id'); 
                         const savedPin = localStorage.getItem('sambong_student_pin');
                         if (savedId && savedPin) {
@@ -1111,35 +1187,11 @@ function redrawPlazaGrantsUi() {
             }
 
             if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
-                const gameDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-                if (!window.playerState.lastDailyReset) {
-                    window.playerState.lastDailyReset = gameDateStr;
-                    void saveDataToCloud().then(() => updateUI());
-                } else if (window.playerState.lastDailyReset !== gameDateStr) {
-                    const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
-                    let updatedQuests = { ...(window.playerState.quests || {}) };
-                    let isChanged = false;
-
-                    dailyQuestIds.forEach(qId => {
-                        if (updatedQuests[qId]) {
-                            updatedQuests[qId] = false;
-                            isChanged = true;
-                        }
-                    });
-
-                    window.playerState.lastDailyReset = gameDateStr;
-                    if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== gameDateStr) {
-                        window.playerState.lunchBid = { date: gameDateStr, amount: 0 };
-                        isChanged = true;
-                    }
-
-                    if (isChanged || window.playerState.lastDailyReset === gameDateStr) {
-                        window.playerState.quests = updatedQuests;
-                        saveDataToCloud();
-                        updateUI();
-                        if (isChanged) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
-                    }
+                const r = applyDailyQuestResetIfNewDay({ silent: false });
+                if (r.needSave) {
+                    saveDataToCloud();
+                    updateUI();
+                    if (r.alertNewDay) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
                 }
             }
 
@@ -2361,47 +2413,20 @@ function redrawPlazaGrantsUi() {
                     await setDoc(docRef, data);
                 }
 
-                if (!isAdmin) {
-                    const now = new Date(); 
-                    const gameDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; 
-                    let shouldMerge = false;
-                    let updateData = {};
-                    
-                    if (!data.lastDailyReset) {
-                        /** 레거시 계정: 날짜 키만 맞추고 당일 완료한 일일퀘(quests)는 지우지 않음(새로고침 유실 방지) */
-                        updateData.lastDailyReset = gameDateStr;
-                        shouldMerge = true;
-                    } else if (data.lastDailyReset !== gameDateStr) {
-                        const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
-                        let updatedQuests = { ...(data.quests || {}) };
-                        dailyQuestIds.forEach((qId) => {
-                            if (updatedQuests[qId]) updatedQuests[qId] = false;
-                        });
-                        updateData.quests = updatedQuests;
-                        updateData.lastDailyReset = gameDateStr;
-                        shouldMerge = true;
-                    }
-
-                    if (!data.lunchBid || data.lunchBid.date !== gameDateStr) {
-                        updateData.lunchBid = { date: gameDateStr, amount: 0 };
-                        shouldMerge = true;
-                    }
-
-                    if (shouldMerge) {
-                        Object.assign(data, updateData);
-                        await setDoc(docRef, updateData, { merge: true });
-                    }
-                }
-
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                localStorage.setItem('sambong_student_id', studentId);
+                localStorage.setItem('sambong_student_pin', pin);
+                currentStudentDocRef = docRef;
+                /** 로그인 직후에도 checkTimeEvents·스냅샷과 동일한 일일 퀘스트 달력 동기화 */
+                if (!isAdmin) {
+                    const dq = applyDailyQuestResetIfNewDay({ silent: true });
+                    if (dq.needSave) await saveDataToCloud();
+                }
                 if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
                 if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
                 _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
                 window._suppressXpSyncToast = true;
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1200);
-                localStorage.setItem('sambong_student_id', studentId); 
-                localStorage.setItem('sambong_student_pin', pin);
-                currentStudentDocRef = docRef;
                 
                 document.getElementById('loginOverlay').style.opacity = '0'; 
                 setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
@@ -3760,6 +3785,243 @@ function redrawPlazaGrantsUi() {
         };
 
         // ==========================================
+        // ★ 마스터 스피드 퀴즈 (선착순 1명, Firestore 트랜잭션) ★
+        // ==========================================
+        window.updateMasterQuizAdminUI = function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const st = window.masterQuizState;
+            const status = document.getElementById('mqAdminStatus');
+            const line = document.getElementById('mqWinnerLine');
+            if (status) {
+                if (st && st.isOpen) {
+                    const done = !!st.winnerId;
+                    status.innerText = done ? '정답자 확정' : '진행중';
+                    status.className = done
+                        ? 'text-[10px] bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-700'
+                        : 'text-[10px] bg-cyan-900/50 text-cyan-100 px-2 py-0.5 rounded border border-cyan-700';
+                } else {
+                    status.innerText = '대기중';
+                    status.className = 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
+                }
+            }
+            if (line) {
+                if (st && st.isOpen && st.winnerId) {
+                    const wid = String(st.winnerId);
+                    const wn = st.winnerName || STUDENT_NAMES[wid] || wid;
+                    line.textContent = `선착순 정답: ${wn} (${wid}번)`;
+                } else {
+                    line.textContent = '';
+                }
+            }
+        };
+
+        window.syncMasterQuizModal = function () {
+            const modal = document.getElementById('masterQuizModal');
+            const qBlock = document.getElementById('masterQuizQuestionBlock');
+            const hint = document.getElementById('masterQuizRewardHint');
+            const input = document.getElementById('masterQuizAnswerInput');
+            const feedback = document.getElementById('masterQuizFeedback');
+            const submitBtn = document.getElementById('masterQuizSubmitBtn');
+            if (!modal || !window.playerState) return;
+
+            if (window.playerState.isGuest || window.playerState.isAdmin) {
+                modal.classList.add('hidden');
+                return;
+            }
+
+            const st = window.masterQuizState;
+            if (!st || !st.isOpen) {
+                modal.classList.add('hidden');
+                return;
+            }
+
+            const sid = st.sessionId != null ? String(st.sessionId) : '';
+            if (sid && sessionStorage.getItem('mq_dismissedSession') === sid && !st.winnerId) {
+                modal.classList.add('hidden');
+                return;
+            }
+
+            modal.classList.remove('hidden');
+
+            if (qBlock) qBlock.textContent = st.question || '';
+            if (hint) {
+                const rx = Math.max(0, Math.floor(Number(st.rewardXp) || 0));
+                const rb = Math.max(0, Number(st.rewardBong) || 0);
+                hint.textContent = `보상(선착순 1명): +${rx} XP · +${rb} B`;
+            }
+
+            const myId = localStorage.getItem('sambong_student_id');
+            const wid = st.winnerId ? String(st.winnerId) : '';
+
+            if (wid) {
+                if (input) input.disabled = true;
+                if (submitBtn) submitBtn.disabled = true;
+                if (feedback) {
+                    if (String(myId) === wid) {
+                        feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-emerald-300';
+                        feedback.textContent = '🎉 선착순 정답! 보상이 지급되었습니다.';
+                    } else {
+                        const wname = st.winnerName || STUDENT_NAMES[wid] || wid;
+                        feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-amber-200';
+                        feedback.textContent = `${wname} 학생이 먼저 정답을 맞췄어요.`;
+                    }
+                }
+            } else {
+                if (input) input.disabled = false;
+                if (submitBtn) submitBtn.disabled = false;
+                if (feedback) {
+                    feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-slate-500';
+                    feedback.textContent = '';
+                }
+            }
+        };
+
+        window.dismissMasterQuizModal = function () {
+            const st = window.masterQuizState;
+            if (st && st.sessionId != null) {
+                sessionStorage.setItem('mq_dismissedSession', String(st.sessionId));
+            }
+            const modal = document.getElementById('masterQuizModal');
+            if (modal) modal.classList.add('hidden');
+        };
+
+        window.publishMasterQuiz = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const qEl = document.getElementById('mq_adminQuestion');
+            const aEl = document.getElementById('mq_adminAnswer');
+            const xpEl = document.getElementById('mq_adminXp');
+            const bEl = document.getElementById('mq_adminBong');
+            const q = qEl && qEl.value ? qEl.value.trim() : '';
+            const a = aEl && aEl.value ? aEl.value.trim() : '';
+            if (!q) return window.customAlert('문제를 입력해주세요.');
+            if (!a) return window.customAlert('정답을 입력해주세요.');
+            let xp = xpEl ? parseInt(xpEl.value, 10) : 0;
+            let bong = bEl ? parseFloat(bEl.value) : 0;
+            if (!Number.isFinite(xp) || xp < 0) xp = 0;
+            if (!Number.isFinite(bong) || bong < 0) bong = 0;
+            const sessionId = Date.now();
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(
+                    doc(db, 'artifacts', appId, 'public', 'data', 'masterquiz', 'state'),
+                    {
+                        isOpen: true,
+                        sessionId,
+                        question: q,
+                        answer: a,
+                        rewardXp: xp,
+                        rewardBong: normalizeBongValue(bong),
+                        winnerId: null,
+                        winnerName: null,
+                        winnerAt: null,
+                        openedAt: sessionId,
+                    },
+                    { merge: true }
+                );
+                sessionStorage.removeItem('mq_dismissedSession');
+                await window.customAlert('학생 화면에 스피드 퀴즈 팝업이 열렸습니다.');
+            } catch (e) {
+                console.error('publishMasterQuiz', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.closeMasterQuizSession = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'masterquiz', 'state'), { isOpen: false }, { merge: true });
+                await window.customAlert('스피드 퀴즈를 종료했습니다.');
+            } catch (e) {
+                console.error('closeMasterQuizSession', e);
+                await window.customAlert('종료 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.submitMasterQuizAnswer = async function () {
+            if (window._mqSubmitting) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            const st = window.masterQuizState;
+            if (!st || !st.isOpen) return window.customAlert('진행 중인 퀴즈가 없어요.');
+            if (st.winnerId) return window.customAlert('이미 선착순이 끝났어요.');
+
+            const myId = localStorage.getItem('sambong_student_id');
+            if (!myId || myId === 'gm' || myId === 'gm_a') return;
+
+            const inputEl = document.getElementById('masterQuizAnswerInput');
+            const raw = inputEl ? inputEl.value : '';
+            const feedback = document.getElementById('masterQuizFeedback');
+
+            window._mqSubmitting = true;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                await runTransaction(db, async (transaction) => {
+                    const qRef = doc(db, 'artifacts', appId, 'public', 'data', 'masterquiz', 'state');
+                    const sRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + myId);
+                    const qSnap = await transaction.get(qRef);
+                    if (!qSnap.exists()) throw new Error('no_quiz');
+                    const d = qSnap.data() || {};
+                    if (!d.isOpen) throw new Error('closed');
+                    if (d.winnerId) throw new Error('taken');
+                    const expected = normalizeQuizAnswer(d.answer);
+                    const got = normalizeQuizAnswer(raw);
+                    if (got === '' || got !== expected) throw new Error('wrong');
+
+                    const sSnap = await transaction.get(sRef);
+                    const cur = sSnap.exists() ? sSnap.data() : {};
+                    const rx = Math.max(0, Math.floor(Number(d.rewardXp) || 0));
+                    const rb = Math.max(0, Number(d.rewardBong) || 0);
+                    const newXp = (Number(cur.xp) || 0) + rx;
+                    const newBong = normalizeBongValue((Number(cur.bong) || 0) + rb);
+                    const wname = STUDENT_NAMES[String(myId)] || String(myId);
+                    transaction.set(
+                        qRef,
+                        {
+                            winnerId: String(myId),
+                            winnerName: wname,
+                            winnerAt: Date.now(),
+                        },
+                        { merge: true }
+                    );
+                    transaction.set(sRef, { xp: newXp, bong: newBong }, { merge: true });
+                });
+
+                if (feedback) {
+                    feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-emerald-300';
+                    feedback.textContent = '🎉 정답! 선착순으로 보상이 지급되었습니다.';
+                }
+                const input = document.getElementById('masterQuizAnswerInput');
+                if (input) input.disabled = true;
+                const submitBtn = document.getElementById('masterQuizSubmitBtn');
+                if (submitBtn) submitBtn.disabled = true;
+
+                await window.customAlert('🎉 선착순 정답! 보상이 반영되었습니다.');
+            } catch (e) {
+                const msg = e && e.message ? String(e.message) : String(e);
+                if (msg === 'wrong') {
+                    if (feedback) {
+                        feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-rose-300';
+                        feedback.textContent = '틀렸어요. 다시 생각해 보세요!';
+                    }
+                } else if (msg === 'taken' || msg === 'no_quiz' || msg === 'closed') {
+                    await window.customAlert('이미 다른 친구가 먼저 맞췄거나 퀴즈가 끝났어요.');
+                    window.syncMasterQuizModal();
+                } else {
+                    console.error('submitMasterQuizAnswer', e);
+                    await window.customAlert('제출 처리 중 오류: ' + msg);
+                }
+            } finally {
+                window._mqSubmitting = false;
+            }
+        };
+
+        // ==========================================
         // ★ 골든벨 전용 함수 ★
         // ==========================================
         /** 마스터 화면·답안 표시용 HTML 이스케이프 */
@@ -4082,7 +4344,7 @@ function redrawPlazaGrantsUi() {
                 const el = document.getElementById(`gb_ans_${idx}`);
                 const val = el ? (el.value || '').trim() : '';
                 answers.push(val);
-                const isCorrect = (val === item.a);
+                const isCorrect = normalizeQuizAnswer(val) === normalizeQuizAnswer(String(item.a));
                 results.push(isCorrect);
                 if (isCorrect) {
                     score++;
@@ -4486,6 +4748,7 @@ function redrawPlazaGrantsUi() {
 
         window.joinRaid = async function() {
             if(window.playerState.isGuest) return;
+            if (!isLocalWeekend()) return window.customAlert('주말(토·일)에만 레이드에 참여할 수 있어요!');
             const st = window.currentRaidState;
             if(!st) return;
             const canJoin = (st.status === 'recruiting') || (st.status === 'playing' && (st.participants || []).length < 5);
@@ -4572,6 +4835,7 @@ function redrawPlazaGrantsUi() {
 
         window.spectateRaid = function() {
             if(window.playerState.isGuest) return;
+            if (!isLocalWeekend()) return window.customAlert('주말(토·일)에만 관전할 수 있어요!');
             const st = window.currentRaidState;
             if(!st || st.status !== 'playing') return window.customAlert('전투 중일 때만 관전할 수 있어요.');
             if(raidIsMyParticipant(st)) return window.customAlert('이미 참여자입니다.');
@@ -4696,14 +4960,38 @@ function redrawPlazaGrantsUi() {
             
             if(!btn) return;
 
+            if (!st || !st.status) {
+                btn.disabled = true;
+                btn.innerText = "모집 대기중";
+                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
+                if (cntDiv) cntDiv.classList.add('hidden');
+                if (statusTxt) {
+                    statusTxt.innerText = "상태 확인 중...";
+                    statusTxt.className = "text-[10px] text-slate-500 font-bold";
+                }
+                return;
+            }
+
+            const weekendOk = isLocalWeekend();
+
             if(st.status === 'recruiting') {
-                btn.disabled = false;
-                btn.innerText = "레이드 참가하기";
-                btn.className = "w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-[0_0_15px_rgba(147,51,234,0.5)] transition transform hover:scale-105 text-xs";
-                cntDiv.classList.remove('hidden');
-                rCount.innerText = st.participants.length;
-                statusTxt.innerText = "🔥 용사 모집 중!";
-                statusTxt.className = "text-[10px] text-emerald-400 font-bold animate-pulse";
+                if (!weekendOk) {
+                    btn.disabled = true;
+                    btn.innerText = "주말에만 참여";
+                    btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
+                    cntDiv.classList.remove('hidden');
+                    rCount.innerText = (st.participants && st.participants.length) ? st.participants.length : 0;
+                    statusTxt.innerText = "📅 주말(토·일)에만 참여 가능 (모집 준비 중)";
+                    statusTxt.className = "text-[10px] text-amber-300 font-bold";
+                } else {
+                    btn.disabled = false;
+                    btn.innerText = "레이드 참가하기";
+                    btn.className = "w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-[0_0_15px_rgba(147,51,234,0.5)] transition transform hover:scale-105 text-xs";
+                    cntDiv.classList.remove('hidden');
+                    rCount.innerText = st.participants.length;
+                    statusTxt.innerText = "🔥 용사 모집 중!";
+                    statusTxt.className = "text-[10px] text-emerald-400 font-bold animate-pulse";
+                }
             } else if (st.status === 'playing') {
                 btn.disabled = true;
                 btn.innerText = "전투 진행 중";
@@ -4720,8 +5008,8 @@ function redrawPlazaGrantsUi() {
                 statusTxt.className = "text-[10px] text-slate-500 font-bold";
             }
 
-            // 관전 UI 제어 + 레이드 타이머 구동
-            const canSpectate = st.status === 'playing' && window.playerState && !window.playerState.isGuest && !raidIsMyParticipant(st);
+            // 관전 UI 제어 + 레이드 타이머 구동 (주말 협동 레이드: 관전도 주말에만)
+            const canSpectate = weekendOk && st.status === 'playing' && window.playerState && !window.playerState.isGuest && !raidIsMyParticipant(st);
             if(spectateBtn) {
                 if(canSpectate) {
                     spectateBtn.classList.remove('hidden');
@@ -4732,7 +5020,7 @@ function redrawPlazaGrantsUi() {
                 }
             }
 
-            // 레이드가 시작되면 자동 관전 모드 (비참여자)
+            // 레이드가 시작되면 자동 관전 모드 (비참여자, 주말만)
             const modal = document.getElementById('raidBattleModal');
             if(canSpectate && modal && modal.classList.contains('hidden')) {
                 window._raidSpectateActive = true;

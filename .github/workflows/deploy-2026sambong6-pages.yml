@@ -1,5 +1,6 @@
 # 2026sambong6(Vite) 빌드 후 GitHub Pages(https://dmlwjd85.github.io/2026sambong6/) 배포
 # 저장소: GitHub → Settings → Pages → Build and deployment: GitHub Actions
+# 운영 메모: 2026-04-18 황훈태(학번 12) 성구 2·5·6·7 Firestore 복구 완료
 name: Deploy 2026sambong6 to GitHub Pages
 
 on:

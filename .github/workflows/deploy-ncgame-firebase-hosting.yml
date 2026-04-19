@@ -1,0 +1,50 @@
+# ncgame → Firebase Hosting (https://sambong-world-2026.web.app)
+#
+# 중요: GitHub는 저장소 루트의 .github/workflows 만 로드합니다.
+# ncgame/.github/workflows/ 에만 두면 워크플로가 실행되지 않아 배포가 안 됩니다.
+#
+# 필수 시크릿: 저장소 Settings → Secrets and variables → Actions
+#   FIREBASE_TOKEN — 로컬에서 `firebase login:ci` 로 발급한 토큰
+#
+name: Deploy ncgame Firebase Hosting
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'ncgame/**'
+      - '.github/workflows/deploy-ncgame-firebase-hosting.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-hosting-ncgame
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: ncgame
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ncgame/package-lock.json
+
+      - name: 설치 및 프로덕션 빌드
+        run: npm ci && npm run build
+        env:
+          VITE_BASE_PATH: /
+
+      - name: Firebase Hosting 배포
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: npx firebase deploy --only hosting --project sambong-world-2026 --non-interactive

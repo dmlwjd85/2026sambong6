@@ -3785,18 +3785,24 @@ function redrawPlazaGrantsUi() {
         };
 
         // ==========================================
-        // ★ 마스터 스피드 퀴즈 (선착순 1명, Firestore 트랜잭션) ★
+        // ★ 마스터 스피드 퀴즈 (선착순 N명, Firestore 트랜잭션) ★
         // ==========================================
         window.updateMasterQuizAdminUI = function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
             const st = window.masterQuizState;
             const status = document.getElementById('mqAdminStatus');
             const line = document.getElementById('mqWinnerLine');
+
+            const maxW = Math.max(1, Math.floor(Number(st && st.maxWinners) || 1));
+            const winners = (st && st.winners && typeof st.winners === 'object') ? st.winners : {};
+            const winnerIds = Object.keys(winners);
+            const count = (st && Number.isFinite(Number(st.winnersCount))) ? Number(st.winnersCount) : winnerIds.length;
+            const isFull = count >= maxW;
+
             if (status) {
                 if (st && st.isOpen) {
-                    const done = !!st.winnerId;
-                    status.innerText = done ? '정답자 확정' : '진행중';
-                    status.className = done
+                    status.innerText = isFull ? `마감 (${count}/${maxW})` : `진행중 (${count}/${maxW})`;
+                    status.className = isFull
                         ? 'text-[10px] bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-700'
                         : 'text-[10px] bg-cyan-900/50 text-cyan-100 px-2 py-0.5 rounded border border-cyan-700';
                 } else {
@@ -3804,11 +3810,23 @@ function redrawPlazaGrantsUi() {
                     status.className = 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
                 }
             }
+
             if (line) {
-                if (st && st.isOpen && st.winnerId) {
-                    const wid = String(st.winnerId);
-                    const wn = st.winnerName || STUDENT_NAMES[wid] || wid;
-                    line.textContent = `선착순 정답: ${wn} (${wid}번)`;
+                if (st && (st.isOpen || winnerIds.length > 0)) {
+                    if (winnerIds.length === 0) {
+                        line.textContent = '';
+                    } else {
+                        const ordered = winnerIds
+                            .map((id) => ({ id, at: Number(winners[id] && winners[id].at) || 0 }))
+                            .sort((a, b) => a.at - b.at)
+                            .slice(0, maxW);
+                        const names = ordered.map((x, idx) => {
+                            const w = winners[x.id] || {};
+                            const n = w.name || STUDENT_NAMES[String(x.id)] || String(x.id);
+                            return `${idx + 1}. ${n}(${x.id})`;
+                        });
+                        line.textContent = `정답자: ${names.join(' · ')}`;
+                    }
                 } else {
                     line.textContent = '';
                 }
@@ -3836,7 +3854,13 @@ function redrawPlazaGrantsUi() {
             }
 
             const sid = st.sessionId != null ? String(st.sessionId) : '';
-            if (sid && sessionStorage.getItem('mq_dismissedSession') === sid && !st.winnerId) {
+            const maxW = Math.max(1, Math.floor(Number(st.maxWinners) || 1));
+            const winners = (st.winners && typeof st.winners === 'object') ? st.winners : {};
+            const winnerIds = Object.keys(winners);
+            const count = Number.isFinite(Number(st.winnersCount)) ? Number(st.winnersCount) : winnerIds.length;
+            const isFull = count >= maxW;
+
+            if (sid && sessionStorage.getItem('mq_dismissedSession') === sid && !isFull) {
                 modal.classList.add('hidden');
                 return;
             }
@@ -3847,23 +3871,22 @@ function redrawPlazaGrantsUi() {
             if (hint) {
                 const rx = Math.max(0, Math.floor(Number(st.rewardXp) || 0));
                 const rb = Math.max(0, Number(st.rewardBong) || 0);
-                hint.textContent = `보상(선착순 1명): +${rx} XP · +${rb} B`;
+                hint.textContent = `보상(선착순 ${maxW}명): +${rx} XP · +${rb} B`;
             }
 
             const myId = localStorage.getItem('sambong_student_id');
-            const wid = st.winnerId ? String(st.winnerId) : '';
+            const iWon = !!(myId && winners && winners[String(myId)]);
 
-            if (wid) {
+            if (iWon || isFull) {
                 if (input) input.disabled = true;
                 if (submitBtn) submitBtn.disabled = true;
                 if (feedback) {
-                    if (String(myId) === wid) {
+                    if (iWon) {
                         feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-emerald-300';
-                        feedback.textContent = '🎉 선착순 정답! 보상이 지급되었습니다.';
+                        feedback.textContent = '🎉 정답! 선착순 보상이 지급되었습니다.';
                     } else {
-                        const wname = st.winnerName || STUDENT_NAMES[wid] || wid;
                         feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-amber-200';
-                        feedback.textContent = `${wname} 학생이 먼저 정답을 맞췄어요.`;
+                        feedback.textContent = '이미 정원이 차서 마감되었어요.';
                     }
                 }
             } else {
@@ -3890,12 +3913,16 @@ function redrawPlazaGrantsUi() {
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const qEl = document.getElementById('mq_adminQuestion');
             const aEl = document.getElementById('mq_adminAnswer');
+            const maxEl = document.getElementById('mq_adminMaxWinners');
             const xpEl = document.getElementById('mq_adminXp');
             const bEl = document.getElementById('mq_adminBong');
             const q = qEl && qEl.value ? qEl.value.trim() : '';
             const a = aEl && aEl.value ? aEl.value.trim() : '';
             if (!q) return window.customAlert('문제를 입력해주세요.');
             if (!a) return window.customAlert('정답을 입력해주세요.');
+            let maxWinners = maxEl ? parseInt(maxEl.value, 10) : 1;
+            if (!Number.isFinite(maxWinners) || maxWinners < 1) maxWinners = 1;
+            maxWinners = Math.min(13, Math.floor(maxWinners));
             let xp = xpEl ? parseInt(xpEl.value, 10) : 0;
             let bong = bEl ? parseFloat(bEl.value) : 0;
             if (!Number.isFinite(xp) || xp < 0) xp = 0;
@@ -3913,9 +3940,9 @@ function redrawPlazaGrantsUi() {
                         answer: a,
                         rewardXp: xp,
                         rewardBong: normalizeBongValue(bong),
-                        winnerId: null,
-                        winnerName: null,
-                        winnerAt: null,
+                        maxWinners,
+                        winners: {},
+                        winnersCount: 0,
                         openedAt: sessionId,
                     },
                     { merge: true }
@@ -3925,6 +3952,36 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('publishMasterQuiz', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.resetMasterQuizState = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const ok = await window.customConfirm('스피드 퀴즈 상태를 초기화할까요?\n(진행중인 퀴즈가 있으면 학생 팝업이 닫힙니다)');
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(
+                    doc(db, 'artifacts', appId, 'public', 'data', 'masterquiz', 'state'),
+                    {
+                        isOpen: false,
+                        sessionId: Date.now(),
+                        question: '',
+                        answer: '',
+                        maxWinners: 1,
+                        winners: {},
+                        winnersCount: 0,
+                        resetAt: Date.now(),
+                    },
+                    { merge: true }
+                );
+                sessionStorage.removeItem('mq_dismissedSession');
+                await window.customAlert('초기화 완료!');
+            } catch (e) {
+                console.error('resetMasterQuizState', e);
+                await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -3947,10 +4004,15 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
             const st = window.masterQuizState;
             if (!st || !st.isOpen) return window.customAlert('진행 중인 퀴즈가 없어요.');
-            if (st.winnerId) return window.customAlert('이미 선착순이 끝났어요.');
+            const maxW = Math.max(1, Math.floor(Number(st.maxWinners) || 1));
+            const winners = (st.winners && typeof st.winners === 'object') ? st.winners : {};
+            const winnerIds = Object.keys(winners);
+            const count = Number.isFinite(Number(st.winnersCount)) ? Number(st.winnersCount) : winnerIds.length;
+            if (count >= maxW) return window.customAlert('이미 정원이 차서 마감되었어요.');
 
             const myId = localStorage.getItem('sambong_student_id');
             if (!myId || myId === 'gm' || myId === 'gm_a') return;
+            if (winners[String(myId)]) return window.customAlert('이미 이 퀴즈로 보상을 받았어요.');
 
             const inputEl = document.getElementById('masterQuizAnswerInput');
             const raw = inputEl ? inputEl.value : '';
@@ -3968,28 +4030,35 @@ function redrawPlazaGrantsUi() {
                     if (!qSnap.exists()) throw new Error('no_quiz');
                     const d = qSnap.data() || {};
                     if (!d.isOpen) throw new Error('closed');
-                    if (d.winnerId) throw new Error('taken');
+                    const maxWinners = Math.max(1, Math.floor(Number(d.maxWinners) || 1));
+                    const winners = (d.winners && typeof d.winners === 'object') ? d.winners : {};
+                    const winnerIds = Object.keys(winners);
+                    const count = Number.isFinite(Number(d.winnersCount)) ? Number(d.winnersCount) : winnerIds.length;
+                    if (count >= maxWinners) throw new Error('taken');
+                    if (winners[String(myId)]) throw new Error('already');
                     const expected = normalizeQuizAnswer(d.answer);
                     const got = normalizeQuizAnswer(raw);
                     if (got === '' || got !== expected) throw new Error('wrong');
 
-                    const sSnap = await transaction.get(sRef);
-                    const cur = sSnap.exists() ? sSnap.data() : {};
                     const rx = Math.max(0, Math.floor(Number(d.rewardXp) || 0));
                     const rb = Math.max(0, Number(d.rewardBong) || 0);
-                    const newXp = (Number(cur.xp) || 0) + rx;
-                    const newBong = normalizeBongValue((Number(cur.bong) || 0) + rb);
                     const wname = STUDENT_NAMES[String(myId)] || String(myId);
+                    const at = Date.now();
+                    const nextCount = count + 1;
+                    const fullNow = nextCount >= maxWinners;
+
                     transaction.set(
                         qRef,
                         {
-                            winnerId: String(myId),
-                            winnerName: wname,
-                            winnerAt: Date.now(),
+                            [`winners.${String(myId)}`]: { name: wname, at },
+                            winnersCount: nextCount,
+                            ...(fullNow ? { isOpen: false, closedAt: at } : {})
                         },
                         { merge: true }
                     );
-                    transaction.set(sRef, { xp: newXp, bong: newBong }, { merge: true });
+                    if (rx > 0 || rb > 0) {
+                        transaction.set(sRef, { xp: increment(rx), bong: increment(normalizeBongValue(rb)) }, { merge: true });
+                    }
                 });
 
                 if (feedback) {
@@ -4009,8 +4078,8 @@ function redrawPlazaGrantsUi() {
                         feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-rose-300';
                         feedback.textContent = '틀렸어요. 다시 생각해 보세요!';
                     }
-                } else if (msg === 'taken' || msg === 'no_quiz' || msg === 'closed') {
-                    await window.customAlert('이미 다른 친구가 먼저 맞췄거나 퀴즈가 끝났어요.');
+                } else if (msg === 'taken' || msg === 'already' || msg === 'no_quiz' || msg === 'closed') {
+                    await window.customAlert('이미 정원이 차서 마감되었거나, 이미 보상을 받은 퀴즈예요.');
                     window.syncMasterQuizModal();
                 } else {
                     console.error('submitMasterQuizAnswer', e);

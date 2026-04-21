@@ -2301,6 +2301,9 @@ function redrawPlazaGrantsUi() {
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (bankProcessingNeedSave) saveDataToCloud();
+
+            // 스피드 퀴즈: 로그인 직후·상태 갱신 시 진행 중인 퀴즈 팝업을 다시 맞춤 (선생님이 먼저 출제한 경우 포함)
+            if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가
@@ -3843,6 +3846,14 @@ function redrawPlazaGrantsUi() {
             if (!modal || !window.playerState) return;
 
             if (window.playerState.isGuest || window.playerState.isAdmin) {
+                modal.classList.add('hidden');
+                return;
+            }
+
+            // 로그인(또는 게스트 입장) 완료 전에는 팝업을 띄우지 않음. 선생님이 먼저 문제를 낸 뒤 학생이 접속하면
+            // 스냅샷만으로는 이후에 다시 열리지 않으므로, 로그인 직후 updateUI()에서 syncMasterQuizModal을 반드시 호출함.
+            const loginOverlay = document.getElementById('loginOverlay');
+            if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
                 modal.classList.add('hidden');
                 return;
             }

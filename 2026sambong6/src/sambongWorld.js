@@ -3876,6 +3876,14 @@ function redrawPlazaGrantsUi() {
                 return;
             }
 
+            const myId = localStorage.getItem('sambong_student_id');
+            const iWon = !!(myId && winners[String(myId)]);
+            // 정답·보상 처리된 학생은 팝업을 다시 띄우지 않음(선착순 N명일 때 마감 스냅샷 후 재오픈 방지)
+            if (iWon) {
+                modal.classList.add('hidden');
+                return;
+            }
+
             modal.classList.remove('hidden');
 
             if (qBlock) qBlock.textContent = st.question || '';
@@ -3885,20 +3893,12 @@ function redrawPlazaGrantsUi() {
                 hint.textContent = `보상(선착순 ${maxW}명): +${rx} XP · +${rb} B`;
             }
 
-            const myId = localStorage.getItem('sambong_student_id');
-            const iWon = !!(myId && winners && winners[String(myId)]);
-
-            if (iWon || isFull) {
+            if (isFull) {
                 if (input) input.disabled = true;
                 if (submitBtn) submitBtn.disabled = true;
                 if (feedback) {
-                    if (iWon) {
-                        feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-emerald-300';
-                        feedback.textContent = '🎉 정답! 선착순 보상이 지급되었습니다.';
-                    } else {
-                        feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-amber-200';
-                        feedback.textContent = '이미 정원이 차서 마감되었어요.';
-                    }
+                    feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-amber-200';
+                    feedback.textContent = '이미 정원이 차서 마감되었어요.';
                 }
             } else {
                 if (input) input.disabled = false;

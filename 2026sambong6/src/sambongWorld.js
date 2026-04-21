@@ -4072,15 +4072,8 @@ function redrawPlazaGrantsUi() {
                     }
                 });
 
-                if (feedback) {
-                    feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-emerald-300';
-                    feedback.textContent = '🎉 정답! 선착순으로 보상이 지급되었습니다.';
-                }
-                const input = document.getElementById('masterQuizAnswerInput');
-                if (input) input.disabled = true;
-                const submitBtn = document.getElementById('masterQuizSubmitBtn');
-                if (submitBtn) submitBtn.disabled = true;
-
+                // 보상은 트랜잭션에서 1회만 반영됨. 이 세션 팝업은 닫아 두고, syncMasterQuizModal이 다시 열지 않도록 dismiss와 동일하게 session에 기록
+                window.dismissMasterQuizModal();
                 await window.customAlert('🎉 선착순 정답! 보상이 반영되었습니다.');
             } catch (e) {
                 const msg = e && e.message ? String(e.message) : String(e);

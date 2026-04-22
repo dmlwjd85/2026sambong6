@@ -3137,6 +3137,71 @@ function redrawPlazaGrantsUi() {
             return normalizeBongValue(s);
         }
 
+        /** 랜덤박스 당첨 총액을 출자 비율로 분배(마지막 인원에게 반올림 오차 보정) */
+        function splitBongProportionally(totalB, contribs) {
+            const keys = Object.keys(contribs).filter((k) => (Number(contribs[k]) || 0) > 0);
+            if (keys.length === 0 || totalB <= 0) return {};
+            const sum = keys.reduce((a, k) => a + (Number(contribs[k]) || 0), 0);
+            if (sum <= 0) return {};
+            const out = {};
+            let allocated = 0;
+            keys.forEach((k, idx) => {
+                if (idx === keys.length - 1) {
+                    out[k] = normalizeBongValue(totalB - allocated);
+                } else {
+                    const w = Number(contribs[k]) || 0;
+                    const part = normalizeBongValue((totalB * w) / sum);
+                    out[k] = part;
+                    allocated = normalizeBongValue(allocated + part);
+                }
+            });
+            return out;
+        }
+
+        /** 공동구매 랜덤박스: 한 번 굴리고 당첨 삼봉을 출자 비율로 학생 문서에 분배 */
+        async function distributeGroupBuyRandomBox(savedContribs, target) {
+            const result = Math.floor(Math.random() * 11) * 10;
+            const shares = splitBongProportionally(result, savedContribs);
+
+            if (result > 0 && Object.keys(shares).length > 0) {
+                const batch = writeBatch(db);
+                Object.keys(shares).forEach((sid) => {
+                    const amt = shares[sid];
+                    if (!amt || amt <= 0) return;
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                    batch.set(ref, { bong: increment(amt) }, { merge: true });
+                });
+                await batch.commit();
+            }
+
+            await refreshStudentsCacheFromServer();
+            updateUI();
+            playSfx('bong', result >= 50);
+
+            const floater = document.createElement('div');
+            floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center max-w-[95vw] px-2`;
+            floater.innerHTML = `🎁<br>총 ${result} B<br><span class="text-lg sm:text-2xl font-bold">비율 분배 완료</span>`;
+            document.body.appendChild(floater);
+            setTimeout(() => floater.remove(), 2500);
+
+            const lines = Object.keys(shares)
+                .map((sid) => {
+                    const nm = STUDENT_NAMES[String(sid)] || sid;
+                    const v = shares[sid];
+                    return `${nm}: +${Number(v).toFixed(1)} B`;
+                })
+                .join('\n');
+            const myId = localStorage.getItem('sambong_student_id');
+            const mine = myId && shares[myId] != null ? `\n\n내 지분: +${Number(shares[myId]).toFixed(1)} B` : '';
+            const profit = result - target;
+            let tail = '';
+            if (result > target) tail = `\n\n모둠 순이익: +${profit.toFixed(1)} B (총 당첨 − 목표 ${target}B)`;
+            else if (result < target) tail = `\n\n모둠 순손실: ${profit.toFixed(1)} B`;
+            else tail = `\n\n모둠 본전 (총 당첨 = 목표 ${target}B)`;
+
+            await window.customAlert(`🎁 공동구매 랜덤 박스 결과: 총 ${result} B\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
+        }
+
         window.buyItem = async function (id, name, isConsumable, opts) {
             const groupEx = opts && opts.groupBuyExecute === true;
             const price = getEffectiveShopPrice(id);
@@ -3144,14 +3209,15 @@ function redrawPlazaGrantsUi() {
             if (groupEx && id === 'item_mystery_dice') return;
 
             if (id === 'item_random') {
-                if (!groupEx) {
-                    if (window.playerState.bong < price && !window.playerState.isAdmin) {
-                        return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
-                    }
-                    const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능, 각 금액 균등 확률!)`);
-                    if (!ok) return;
-                    if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
+                // 공동구매 랜덤박스는 executeShopGroupBuy → distributeGroupBuyRandomBox에서만 처리(출자 비율 분배)
+                if (groupEx) return;
+
+                if (window.playerState.bong < price && !window.playerState.isAdmin) {
+                    return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
                 }
+                const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능, 각 금액 균등 확률!)`);
+                if (!ok) return;
+                if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                 const result = Math.floor(Math.random() * 11) * 10;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + result);
                 playSfx('bong', result >= 50);
@@ -3347,7 +3413,9 @@ function redrawPlazaGrantsUi() {
             if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${shop ? shop.name : shopId}`;
             if (hint) {
                 hint.textContent = shop
-                    ? `목표 금액(${getEffectiveShopPrice(shopId)}B)이 모이면 「구매 실행」으로 상품이 적용됩니다. 누가 얼마를 냈는지 아래에서 확인하세요.`
+                    ? shopId === 'item_random'
+                        ? `목표 ${getEffectiveShopPrice(shopId)}B가 모이면 실행 시, 랜덤 박스 당첨 삼봉(0~100B)이 출자 비율로 참여자에게 나뉩니다.`
+                        : `목표 금액(${getEffectiveShopPrice(shopId)}B)이 모이면 「구매 실행」으로 상품이 적용됩니다. 누가 얼마를 냈는지 아래에서 확인하세요.`
                     : '';
             }
             window.renderShopGroupBuyModalContent(shopId);
@@ -3476,10 +3544,15 @@ function redrawPlazaGrantsUi() {
             const sum = sumShopPoolContributions(pool);
             if (sum < target - 0.0001) return await window.customAlert('아직 목표 금액이 모이지 않았어요.');
 
-            const ok = await window.customConfirm(`공동구매로 「${shop.name}」을(를) 지금 적용할까요?\n(실행한 학생에게 상품 효과가 적용됩니다.)`);
+            const ok = await window.customConfirm(
+                shopId === 'item_random'
+                    ? `공동구매로 「${shop.name}」을(를) 지금 열까요?\n당첨 삼봉은 출자 비율에 따라 참여 학생에게 나뉘어 들어갑니다.`
+                    : `공동구매로 「${shop.name}」을(를) 지금 적용할까요?\n(실행한 학생에게 상품 효과가 적용됩니다.)`
+            );
             if (!ok) return;
 
             const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            let savedContribs = null;
 
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -3496,6 +3569,7 @@ function redrawPlazaGrantsUi() {
                     });
                     s = normalizeBongValue(s);
                     if (s < target - 0.0001) throw new Error('not_enough');
+                    savedContribs = { ...contributions };
                     transaction.set(poolRef, { contributions: {}, updatedAt: Date.now() }, { merge: true });
                 });
             } catch (e) {
@@ -3506,6 +3580,14 @@ function redrawPlazaGrantsUi() {
             }
 
             document.getElementById('shopGroupBuyModal') && document.getElementById('shopGroupBuyModal').classList.add('hidden');
+
+            if (shopId === 'item_random') {
+                if (!savedContribs || Object.keys(savedContribs).length === 0) {
+                    return await window.customAlert('입금 내역을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+                }
+                await distributeGroupBuyRandomBox(savedContribs, target);
+                return;
+            }
 
             await window.buyItem(shopId, shop.name, !!shop.isConsumable, { groupBuyExecute: true });
         };

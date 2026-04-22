@@ -397,33 +397,10 @@ function redrawPlazaGrantsUi() {
             return getDefaultShopPrice(shopId);
         }
 
-        /** XP가 낮을수록 1에 가깝게 — 랜덤 박스·주사위 보조에 사용 */
+        /** 플레이어 총 XP가 낮을수록 1에 가깝게 — 퀘스트 무기 드랍 보정 등에 사용 */
         function getLowXpBoostFactor(xp) {
             const x = Math.max(0, Number(xp) || 0);
             return Math.max(0, Math.min(1, 1 - x / 30000));
-        }
-
-        function pickWeightedRandomOutcome(outcomes, weights) {
-            let sum = 0;
-            for (let i = 0; i < weights.length; i++) sum += weights[i];
-            let r = Math.random() * sum;
-            for (let i = 0; i < outcomes.length; i++) {
-                r -= weights[i];
-                if (r <= 0) return outcomes[i];
-            }
-            return outcomes[outcomes.length - 1];
-        }
-
-        /** 랜덤 박스: 저XP 학생일수록 고액 구간 가중치 상승 */
-        function rollRandomBoxBongAmount(xp) {
-            const outcomes = [];
-            for (let i = 0; i <= 10; i++) outcomes.push(i * 10);
-            const boost = getLowXpBoostFactor(xp);
-            const weights = outcomes.map((v, i) => {
-                const tier = i / 10;
-                return 1 + tier * tier * boost * 5;
-            });
-            return pickWeightedRandomOutcome(outcomes, weights);
         }
 
         /** 상점 카드에 표시되는 가격 라벨 갱신(마스터 가격 변경 반영) */
@@ -2994,6 +2971,10 @@ function redrawPlazaGrantsUi() {
             else if (invenCount === 1) dropMultiplier = 1.0;
             else dropMultiplier = 0.5;
 
+            // 총 경험치가 낮은 학생일수록 무기 획득 확률 추가 가중 (퀘스트 보상 xp와는 별개)
+            const totalXp = Number(window.playerState.xp) || 0;
+            dropMultiplier *= 1 + getLowXpBoostFactor(totalXp) * 2.0;
+
             const rand = Math.random() * 100;
             let dropped = null;
             
@@ -3167,13 +3148,11 @@ function redrawPlazaGrantsUi() {
                     if (window.playerState.bong < price && !window.playerState.isAdmin) {
                         return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
                     }
-                    const ok = await window.customConfirm(
-                        `[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능! XP가 낮을수록 고액이 나올 확률이 조금 올라가요.)`
-                    );
+                    const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능, 각 금액 균등 확률!)`);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                 }
-                const result = rollRandomBoxBongAmount(window.playerState.xp || 0);
+                const result = Math.floor(Math.random() * 11) * 10;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + result);
                 playSfx('bong', result >= 50);
 
@@ -3193,7 +3172,7 @@ function redrawPlazaGrantsUi() {
             }
 
             if (id === 'item_mystery_dice') {
-                const betStr = await window.customPrompt(`[${name}]\n얼마를 투자할까요? (B)\n맞추면 투자금의 5배를 받습니다!\n(XP가 낮을수록 성공 확률이 소폭 올라가요)`, 'number');
+                const betStr = await window.customPrompt(`[${name}]\n얼마를 투자할까요? (B)\n맞추면 투자금의 5배를 받습니다!`, 'number');
                 if (betStr === null) return;
                 const bet = Math.floor(parseFloat(betStr));
                 if (!Number.isFinite(bet) || bet <= 0) return await window.customAlert('투자금은 1 이상 숫자여야 합니다.');
@@ -3209,9 +3188,7 @@ function redrawPlazaGrantsUi() {
 
                 if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - bet);
 
-                let roll = Math.floor(Math.random() * 6) + 1;
-                const mercy = getLowXpBoostFactor(window.playerState.xp || 0);
-                if (roll !== pick && Math.random() < mercy * 0.22) roll = pick;
+                const roll = Math.floor(Math.random() * 6) + 1;
                 await window.runDiceRollAnimation(roll);
 
                 const win = roll === pick;

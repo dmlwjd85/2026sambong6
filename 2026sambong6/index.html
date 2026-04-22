@@ -156,6 +156,34 @@
         </div>
     </div>
 
+    <!-- ★ 아이템 공동구매 모달 ★ -->
+    <div id="shopGroupBuyModal" class="hidden fixed inset-0 z-[263] bg-black/75 backdrop-blur-sm flex items-center justify-center px-3 py-6">
+        <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-md w-full border-t-4 border-t-cyan-500 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-start justify-between gap-2 mb-2">
+                <h3 id="shopGroupBuyModalTitle" class="text-lg font-display text-white pr-4"><i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매</h3>
+                <button type="button" onclick="document.getElementById('shopGroupBuyModal').classList.add('hidden')" class="shrink-0 text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+            </div>
+            <p id="shopGroupBuyModalHint" class="text-[10px] text-slate-400 mb-3 leading-relaxed"></p>
+            <div class="mb-3 rounded-xl bg-slate-900/80 border border-slate-700 p-3">
+                <div class="text-[10px] text-slate-500 mb-1">모금 현황</div>
+                <div class="text-sm font-black text-cyan-200 tabular-nums"><span id="gbPoolCurrent">0</span> / <span id="gbPoolTarget">0</span> B</div>
+                <div class="mt-2 h-2 rounded-full bg-slate-800 overflow-hidden">
+                    <div id="gbPoolBar" class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500 transition-all duration-300" style="width:0%"></div>
+                </div>
+            </div>
+            <div class="mb-3">
+                <div class="text-[10px] text-slate-500 font-bold mb-1">입금 내역 (학생별)</div>
+                <div id="gbContributorList" class="max-h-40 overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50 p-2 text-[10px] space-y-1.5"></div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-2 mb-3">
+                <input type="number" id="gbContributeAmount" min="0.1" step="0.1" placeholder="입금할 B" class="flex-1 bg-slate-900 border border-cyan-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                <button type="button" onclick="window.contributeShopGroupBuy()" class="bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
+            </div>
+            <button type="button" id="gbExecuteBtn" onclick="window.executeShopGroupBuy()" disabled class="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-700 to-teal-600 hover:from-emerald-600 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white shadow-lg mb-2">목표 금액 달성 — 구매 실행</button>
+            <p class="text-[9px] text-slate-500 text-center">삼봉은 입금 시점에 차감됩니다. 목표가 채워지면 &quot;구매 실행&quot;을 누른 학생에게 상품이 적용됩니다.</p>
+        </div>
+    </div>
+
     <!-- ★ 퀘스트 기록 모달 ★ -->
     <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
         <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
@@ -731,6 +759,14 @@
                 <div>
                     <h2 class="text-2xl font-display text-sb-red"><i class="fa-solid fa-gear"></i> 선생님 설정 창 <span id="dbAdminStatus" class="text-[10px] text-orange-400 font-sans hidden"></span></h2>
                 </div>
+            </div>
+
+            <!-- 아이템 상점 가격 (마스터 J) -->
+            <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-pink-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 가격</h3>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정할 수 있습니다. 저장 후 모든 학생 화면에 반영됩니다.</p>
+                <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
+                <button type="button" onclick="window.saveShopPricesAdmin()" class="w-full sm:w-auto bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
             </div>
 
             <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->

@@ -336,10 +336,13 @@ function redrawPlazaGrantsUi() {
         window.gmData = null; 
         window.gmaData = null; 
         window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '' };
+        /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
+        window.shopGroupBuyPools = {};
         
         let db, auth, storage, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
+        let unsubscribeShopGroupBuy = null;
         /** Firestore artifacts 세그먼트 — 콘솔 실제 경로와 다르면 로드 전 window.__app_id 로 지정 */
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
 
@@ -379,6 +382,58 @@ function redrawPlazaGrantsUi() {
             return id === 's1' || id === 's2' || id === 's_movie' || id === 's4' || id === 's7';
         }
 
+        /** 상점 기본가(SHOP_DATA) — 마스터가 저장한 shopPrices와 병합 시 기준 */
+        function getDefaultShopPrice(shopId) {
+            const s = SHOP_DATA.find((x) => x.id === shopId);
+            return s ? Number(s.price) || 0 : 0;
+        }
+
+        /** Firestore settings.global.shopPrices 우선, 없으면 SHOP_DATA 기본가 */
+        function getEffectiveShopPrice(shopId) {
+            const sp = window.globalSettings && window.globalSettings.shopPrices;
+            if (sp && sp[shopId] != null && Number.isFinite(Number(sp[shopId])) && Number(sp[shopId]) >= 0) {
+                return Math.round(Number(sp[shopId]) * 10) / 10;
+            }
+            return getDefaultShopPrice(shopId);
+        }
+
+        /** XP가 낮을수록 1에 가깝게 — 랜덤 박스·주사위 보조에 사용 */
+        function getLowXpBoostFactor(xp) {
+            const x = Math.max(0, Number(xp) || 0);
+            return Math.max(0, Math.min(1, 1 - x / 30000));
+        }
+
+        function pickWeightedRandomOutcome(outcomes, weights) {
+            let sum = 0;
+            for (let i = 0; i < weights.length; i++) sum += weights[i];
+            let r = Math.random() * sum;
+            for (let i = 0; i < outcomes.length; i++) {
+                r -= weights[i];
+                if (r <= 0) return outcomes[i];
+            }
+            return outcomes[outcomes.length - 1];
+        }
+
+        /** 랜덤 박스: 저XP 학생일수록 고액 구간 가중치 상승 */
+        function rollRandomBoxBongAmount(xp) {
+            const outcomes = [];
+            for (let i = 0; i <= 10; i++) outcomes.push(i * 10);
+            const boost = getLowXpBoostFactor(xp);
+            const weights = outcomes.map((v, i) => {
+                const tier = i / 10;
+                return 1 + tier * tier * boost * 5;
+            });
+            return pickWeightedRandomOutcome(outcomes, weights);
+        }
+
+        /** 상점 카드에 표시되는 가격 라벨 갱신(마스터 가격 변경 반영) */
+        function updateShopPriceLabels() {
+            SHOP_DATA.forEach((shop) => {
+                const el = document.getElementById(`shop-price-${shop.id}`);
+                if (el) el.textContent = `${getEffectiveShopPrice(shop.id)} B`;
+            });
+        }
+
         /** XP 동기화 힌트(학생용, 알림 스팸 방지) */
         function showXpSyncHintFromServer(delta) {
             if (window.playerState && window.playerState.isAdmin) return;
@@ -392,16 +447,26 @@ function redrawPlazaGrantsUi() {
 
         function buildShopCardHtml(shop) {
             const safeName = String(shop.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const groupBuyBtn =
+                shop.id === 'item_mystery_dice'
+                    ? ''
+                    : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal('${shop.id}')">공동구매</button>`;
             return `
-                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex items-center gap-3 unaffordable" onclick="window.buyItem('${shop.id}', '${safeName}', ${shop.price}, ${shop.isConsumable || false})">
-                    <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${shop.iconColor} shadow-inner">
-                        <i class="fa-solid ${shop.icon}"></i>
+                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${shop.iconColor} shadow-inner shrink-0">
+                            <i class="fa-solid ${shop.icon}"></i>
+                        </div>
+                        <div class="flex-grow min-w-0">
+                            <div class="font-bold text-sm">${shop.name}</div>
+                            <div class="text-[10px] text-slate-400">${shop.desc}</div>
+                        </div>
+                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${shop.price} B</div>
                     </div>
-                    <div class="flex-grow min-w-0">
-                        <div class="font-bold text-sm">${shop.name}</div>
-                        <div class="text-[10px] text-slate-400">${shop.desc}</div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
+                        ${groupBuyBtn}
                     </div>
-                    <div class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${shop.price} B</div>
                 </div>`;
         }
 
@@ -862,6 +927,19 @@ function redrawPlazaGrantsUi() {
             }
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
 
+            const gmShopEl = document.getElementById('gmShopPriceInputs');
+            if (gmShopEl) {
+                gmShopEl.innerHTML = SHOP_DATA.map((s) => {
+                    const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
+                    return `
+                    <div class="flex flex-wrap gap-2 items-center mb-2">
+                        <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
+                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="0.1" value="${s.price}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${s.price})</span></span>
+                    </div>`;
+                }).join('');
+            }
+
             let html = '';
             for(let i=0; i<5; i++) {
                 html += `
@@ -1040,6 +1118,15 @@ function redrawPlazaGrantsUi() {
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);
                                 }
+                                if (window.globalSettings.shopPrices) {
+                                    SHOP_DATA.forEach((s) => {
+                                        const el = document.getElementById('gm_shop_price_' + s.id);
+                                        if (el && window.globalSettings.shopPrices[s.id] != null) {
+                                            el.value = String(window.globalSettings.shopPrices[s.id]);
+                                        }
+                                    });
+                                }
+                                updateShopPriceLabels();
                                 updateUI();
                             }
                         });
@@ -1153,6 +1240,21 @@ function redrawPlazaGrantsUi() {
                             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
                             if (typeof window.updateMasterQuizAdminUI === 'function') window.updateMasterQuizAdminUI();
                         });
+
+                        if (unsubscribeShopGroupBuy) unsubscribeShopGroupBuy();
+                        unsubscribeShopGroupBuy = onSnapshot(
+                            collection(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy'),
+                            (snap) => {
+                                window.shopGroupBuyPools = {};
+                                snap.forEach((d) => {
+                                    window.shopGroupBuyPools[d.id] = d.data();
+                                });
+                                if (typeof window._refreshShopGroupBuyModalIfOpen === 'function') {
+                                    window._refreshShopGroupBuyModalIfOpen();
+                                }
+                                updateUI();
+                            }
+                        );
 
                         const savedId = localStorage.getItem('sambong_student_id'); 
                         const savedPin = localStorage.getItem('sambong_student_pin');
@@ -1990,11 +2092,15 @@ function redrawPlazaGrantsUi() {
                     if (bankRatePanel) bankRatePanel.classList.remove('hidden');
                     const dbRec = document.getElementById('dragonBallRecoveryPanel');
                     if (dbRec) dbRec.classList.remove('hidden');
+                    const shopPricePanel = document.getElementById('gmShopPricePanel');
+                    if (shopPricePanel) shopPricePanel.classList.remove('hidden');
                 } else {
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.add('hidden');
                     const dbRec = document.getElementById('dragonBallRecoveryPanel');
                     if (dbRec) dbRec.classList.add('hidden');
+                    const shopPricePanel = document.getElementById('gmShopPricePanel');
+                    if (shopPricePanel) shopPricePanel.classList.add('hidden');
                 }
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
@@ -2005,6 +2111,8 @@ function redrawPlazaGrantsUi() {
                 if (bankRatePanel) bankRatePanel.classList.add('hidden');
                 const dbRec = document.getElementById('dragonBallRecoveryPanel');
                 if (dbRec) dbRec.classList.add('hidden');
+                const shopPricePanel = document.getElementById('gmShopPricePanel');
+                if (shopPricePanel) shopPricePanel.classList.add('hidden');
             }
             
             checkTimeEvents();
@@ -2255,24 +2363,26 @@ function redrawPlazaGrantsUi() {
             SHOP_DATA.forEach(shop => {
                 const item = document.getElementById('shop-btn-' + shop.id);
                 if (item) {
+                    const eff = getEffectiveShopPrice(shop.id);
                     if (shop.id === 'item_shield') {
                         const stock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                         let stockDiv = item.querySelector('.stock-display');
                         if (!stockDiv) {
                             stockDiv = document.createElement('div');
                             stockDiv.className = 'stock-display text-[10px] font-bold mt-0.5';
-                            item.querySelector('.flex-grow').appendChild(stockDiv);
+                            const fg = item.querySelector('.flex-grow');
+                            if (fg) fg.appendChild(stockDiv);
                         }
                         stockDiv.innerText = stock <= 0 ? '(품절)' : `(남은재고: ${stock}개)`;
                         stockDiv.className = stock <= 0 ? 'stock-display text-[10px] font-bold mt-0.5 text-red-400' : 'stock-display text-[10px] font-bold mt-0.5 text-indigo-300';
                         
-                        if ((window.playerState.bong >= shop.price || window.playerState.isAdmin) && stock > 0) { 
+                        if ((window.playerState.bong >= eff || window.playerState.isAdmin) && stock > 0) { 
                             item.classList.replace('unaffordable', 'affordable'); 
                         } else { 
                             item.classList.replace('affordable', 'unaffordable'); 
                         } 
                     } else {
-                        if (window.playerState.bong >= shop.price || window.playerState.isAdmin) { 
+                        if (window.playerState.bong >= eff || window.playerState.isAdmin) { 
                             item.classList.replace('unaffordable', 'affordable'); 
                         } else { 
                             item.classList.replace('affordable', 'unaffordable'); 
@@ -2280,6 +2390,8 @@ function redrawPlazaGrantsUi() {
                     }
                 }
             });
+
+            updateShopPriceLabels();
 
             const logEl = document.getElementById('classPurchaseLog');
             if (logEl && window.playerState && !window.playerState.isGuest) {
@@ -3034,35 +3146,54 @@ function redrawPlazaGrantsUi() {
             }
         };
 
-        window.buyItem = async function(id, name, price, isConsumable) {
-            if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
-            
+        /** 공동구매 풀 contributions 합계 */
+        function sumShopPoolContributions(poolData) {
+            const c = poolData && poolData.contributions && typeof poolData.contributions === 'object' ? poolData.contributions : {};
+            let s = 0;
+            Object.keys(c).forEach((k) => {
+                s += Number(c[k]) || 0;
+            });
+            return normalizeBongValue(s);
+        }
+
+        window.buyItem = async function (id, name, isConsumable, opts) {
+            const groupEx = opts && opts.groupBuyExecute === true;
+            const price = getEffectiveShopPrice(id);
+            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (groupEx && id === 'item_mystery_dice') return;
+
             if (id === 'item_random') {
-                if (window.playerState.bong < price && !window.playerState.isAdmin) return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
-                const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능!)`);
-                if (ok) {
+                if (!groupEx) {
+                    if (window.playerState.bong < price && !window.playerState.isAdmin) {
+                        return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                    }
+                    const ok = await window.customConfirm(
+                        `[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능! XP가 낮을수록 고액이 나올 확률이 조금 올라가요.)`
+                    );
+                    if (!ok) return;
                     if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
-                    const result = Math.floor(Math.random() * 11) * 10;
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + result);
-                    playSfx('bong', result >= 50);
-
-                    const floater = document.createElement('div');
-                    floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center`;
-                    floater.innerHTML = `🎁<br>${result} B 당첨!`;
-                    document.body.appendChild(floater);
-                    setTimeout(() => floater.remove(), 2500);
-
-                    updateUI(); saveDataToCloud();
-                    
-                    if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
-                    else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
-                    else await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${result} B ] 획득!\n(손해: ${result - price} B)`);
                 }
+                const result = rollRandomBoxBongAmount(window.playerState.xp || 0);
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + result);
+                playSfx('bong', result >= 50);
+
+                const floater = document.createElement('div');
+                floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center`;
+                floater.innerHTML = `🎁<br>${result} B 당첨!`;
+                document.body.appendChild(floater);
+                setTimeout(() => floater.remove(), 2500);
+
+                updateUI();
+                saveDataToCloud();
+
+                if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
+                else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
+                else await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${result} B ] 획득!\n(손해: ${result - price} B)`);
                 return;
             }
 
             if (id === 'item_mystery_dice') {
-                const betStr = await window.customPrompt(`[${name}]\n얼마를 투자할까요? (B)\n맞추면 투자금의 5배를 받습니다!`, "number");
+                const betStr = await window.customPrompt(`[${name}]\n얼마를 투자할까요? (B)\n맞추면 투자금의 5배를 받습니다!\n(XP가 낮을수록 성공 확률이 소폭 올라가요)`, 'number');
                 if (betStr === null) return;
                 const bet = Math.floor(parseFloat(betStr));
                 if (!Number.isFinite(bet) || bet <= 0) return await window.customAlert('투자금은 1 이상 숫자여야 합니다.');
@@ -3074,11 +3205,13 @@ function redrawPlazaGrantsUi() {
                 if (pick === null) return;
 
                 const ok = await window.customConfirm(`🎲 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${bet}B\n- 성공 보상: ${bet * 5}B`);
-                if(!ok) return;
+                if (!ok) return;
 
                 if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - bet);
 
-                const roll = Math.floor(Math.random() * 6) + 1;
+                let roll = Math.floor(Math.random() * 6) + 1;
+                const mercy = getLowXpBoostFactor(window.playerState.xp || 0);
+                if (roll !== pick && Math.random() < mercy * 0.22) roll = pick;
                 await window.runDiceRollAnimation(roll);
 
                 const win = roll === pick;
@@ -3086,7 +3219,7 @@ function redrawPlazaGrantsUi() {
                 if (payout > 0) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payout);
 
                 playSfx('bong', win);
-                updateUI(); 
+                updateUI();
                 await saveDataToCloud();
 
                 const floater = document.createElement('div');
@@ -3095,19 +3228,21 @@ function redrawPlazaGrantsUi() {
                 document.body.appendChild(floater);
                 setTimeout(() => floater.remove(), 2500);
 
-                if(win) return await window.customAlert(`🎉 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${payout} B\n(순이익: +${payout - bet} B)`);
+                if (win) return await window.customAlert(`🎉 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${payout} B\n(순이익: +${payout - bet} B)`);
                 return await window.customAlert(`💦 실패!\n선택: ${pick}\n주사위: ${roll}\n손해: -${bet} B`);
             }
 
             if (id === 'item_xp_pack') {
-                const packPrice = 20;
+                const packPrice = getEffectiveShopPrice('item_xp_pack');
                 const gainXp = 100;
-                if (window.playerState.bong < packPrice && !window.playerState.isAdmin) {
-                    return await window.customAlert(`❌ 돈이 부족해요. ${(packPrice - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                if (!groupEx) {
+                    if (window.playerState.bong < packPrice && !window.playerState.isAdmin) {
+                        return await window.customAlert(`❌ 돈이 부족해요. ${(packPrice - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                    }
+                    const ok = await window.customConfirm(`[경험치 팩]\n${packPrice}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                    if (!ok) return;
+                    if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - packPrice);
                 }
-                const ok = await window.customConfirm(`[경험치 팩]\n${packPrice}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
-                if (!ok) return;
-                if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - packPrice);
                 window.playerState.xp += gainXp;
                 playSfx('xp', true);
                 updateUI();
@@ -3118,20 +3253,21 @@ function redrawPlazaGrantsUi() {
             if (isClassShopId(id)) {
                 const shop = SHOP_DATA.find((s) => s.id === id);
                 if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
-                const price = Number(shop.price) || 0;
-                if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < price) {
-                    return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
-                }
-                const ok = await window.customConfirm(
-                    `[${shop.name}] ${price}B를 내고 학급 활동 예약을 할까요?\n` +
-                    '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.'
-                );
-                if (!ok) return;
-                if (!window.playerState.isAdmin) {
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
+                const eff = getEffectiveShopPrice(id);
+                if (!groupEx) {
+                    if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < eff) {
+                        return await window.customAlert(`❌ 돈이 부족해요. ${(eff - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+                    }
+                    const ok = await window.customConfirm(
+                        `[${shop.name}] ${eff}B를 내고 학급 활동 예약을 할까요?\n` + '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.'
+                    );
+                    if (!ok) return;
+                    if (!window.playerState.isAdmin) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - eff);
+                    }
                 }
                 if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
-                window.playerState.classEventPurchases.push({ id: shop.id, name: shop.name, price, at: Date.now() });
+                window.playerState.classEventPurchases.push({ id: shop.id, name: shop.name, price: eff, at: Date.now() });
                 if (window.playerState.classEventPurchases.length > 25) {
                     window.playerState.classEventPurchases = window.playerState.classEventPurchases.slice(-25);
                 }
@@ -3142,35 +3278,259 @@ function redrawPlazaGrantsUi() {
             }
 
             if (isConsumable) {
+                if (groupEx && id === 'item_shield') {
+                    const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                    if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
+                    const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+                    window.playerState.shieldHP = hp + 100;
+                    window.playerState.hasShield = false;
+                    const stNow = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, stNow - 1) }, { merge: true });
+                    updateUI();
+                    saveDataToCloud();
+                    return await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
+                }
+
                 if (window.playerState.bong >= price || window.playerState.isAdmin) {
                     let cMsg = `[${name}] 아이템을 ${price}B에 살까요?`;
-                    if (id === 'item_shield') { 
+                    if (id === 'item_shield') {
                         const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
-                        if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert("❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.");
-                        const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0); 
-                        cMsg = `[${name}] 아이템을 ${price}B에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`; 
+                        if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
+                        const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+                        cMsg = `[${name}] 아이템을 ${price}B에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
                     }
-                    
+
                     const ok = await window.customConfirm(cMsg);
-                    if(ok) {
-                        if(!window.playerState.isAdmin) window.playerState.bong -= price;
+                    if (ok) {
+                        if (!window.playerState.isAdmin) {
+                            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
+                        }
                         if (id === 'item_shield') {
-                            const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0); 
-                            window.playerState.shieldHP = hp + 100; 
-                            window.playerState.hasShield = false; 
+                            const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+                            window.playerState.shieldHP = hp + 100;
+                            window.playerState.hasShield = false;
                             const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
-                            updateUI(); saveDataToCloud(); 
+                            updateUI();
+                            saveDataToCloud();
                             await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                         } else {
-                            updateUI(); saveDataToCloud();
+                            updateUI();
+                            saveDataToCloud();
                         }
                     }
-                } else await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
+                } else await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
             } else {
-                const msg = window.playerState.bong >= price || window.playerState.isAdmin ? `🎉 [구매 가능] 선생님께 말씀해주세요!` : `❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`;
+                const msg =
+                    window.playerState.bong >= price || window.playerState.isAdmin
+                        ? '🎉 [구매 가능] 선생님께 말씀해주세요!'
+                        : `❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`;
                 await window.customAlert(msg);
             }
+        };
+
+        window.saveShopPricesAdmin = async function () {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const shopPrices = {};
+            SHOP_DATA.forEach((s) => {
+                const el = document.getElementById('gm_shop_price_' + s.id);
+                if (!el) return;
+                let v = parseFloat(el.value);
+                if (!Number.isFinite(v) || v < 0) v = getDefaultShopPrice(s.id);
+                shopPrices[s.id] = Math.round(v * 10) / 10;
+            });
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shopPrices }, { merge: true });
+                await window.customAlert('✅ 아이템 상점 가격이 저장되었습니다.');
+            } catch (e) {
+                console.error('saveShopPricesAdmin', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window._groupBuyModalShopId = '';
+
+        window._refreshShopGroupBuyModalIfOpen = function () {
+            const modal = document.getElementById('shopGroupBuyModal');
+            if (!modal || modal.classList.contains('hidden')) return;
+            if (window._groupBuyModalShopId) window.renderShopGroupBuyModalContent(window._groupBuyModalShopId);
+        };
+
+        window.openShopGroupBuyModal = function (shopId) {
+            if (window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isAdmin) return window.customAlert('학생만 공동구매에 참여할 수 있어요.');
+            if (shopId === 'item_mystery_dice') return;
+            window._groupBuyModalShopId = shopId;
+            const shop = SHOP_DATA.find((s) => s.id === shopId);
+            const title = document.getElementById('shopGroupBuyModalTitle');
+            const hint = document.getElementById('shopGroupBuyModalHint');
+            if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${shop ? shop.name : shopId}`;
+            if (hint) {
+                hint.textContent = shop
+                    ? `목표 금액(${getEffectiveShopPrice(shopId)}B)이 모이면 「구매 실행」으로 상품이 적용됩니다. 누가 얼마를 냈는지 아래에서 확인하세요.`
+                    : '';
+            }
+            window.renderShopGroupBuyModalContent(shopId);
+            const modal = document.getElementById('shopGroupBuyModal');
+            if (modal) modal.classList.remove('hidden');
+        };
+
+        window.renderShopGroupBuyModalContent = function (shopId) {
+            const target = getEffectiveShopPrice(shopId);
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+            const sum = sumShopPoolContributions(pool);
+            const curEl = document.getElementById('gbPoolCurrent');
+            const tgtEl = document.getElementById('gbPoolTarget');
+            const bar = document.getElementById('gbPoolBar');
+            const listEl = document.getElementById('gbContributorList');
+            const execBtn = document.getElementById('gbExecuteBtn');
+            if (curEl) curEl.textContent = String(sum);
+            if (tgtEl) tgtEl.textContent = String(target);
+            if (bar) {
+                const pct = target > 0 ? Math.min(100, (sum / target) * 100) : 0;
+                bar.style.width = `${pct}%`;
+            }
+            if (listEl) {
+                const rows = Object.keys(contribs)
+                    .map((sid) => {
+                        const amt = normalizeBongValue(Number(contribs[sid]) || 0);
+                        const nm = STUDENT_NAMES[String(sid)] || sid;
+                        return { sid, amt, nm };
+                    })
+                    .sort((a, b) => b.amt - a.amt);
+                listEl.innerHTML =
+                    rows.length === 0
+                        ? '<div class="text-slate-500 text-center py-2">아직 입금 내역이 없어요.</div>'
+                        : rows
+                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt.toFixed(1)} B</span></div>`)
+                              .join('');
+            }
+            const ready = target > 0 && sum >= target - 0.0001;
+            if (execBtn) {
+                execBtn.disabled = !ready;
+                execBtn.classList.toggle('opacity-40', !ready);
+            }
+        };
+
+        window.contributeShopGroupBuy = async function () {
+            const shopId = window._groupBuyModalShopId;
+            if (!shopId || !db || !currentStudentDocRef) return;
+            if (window.playerState.isGuest || window.playerState.isAdmin) return;
+            const myId = localStorage.getItem('sambong_student_id');
+            if (!myId || myId === 'gm' || myId === 'gm_a') return;
+
+            const target = getEffectiveShopPrice(shopId);
+            if (target <= 0) return await window.customAlert('이 상품은 공동구매 대상이 아니에요.');
+
+            const input = document.getElementById('gbContributeAmount');
+            const raw = input ? input.value : '';
+            let amount = parseFloat(raw);
+            if (!Number.isFinite(amount) || amount <= 0) return await window.customAlert('입금액을 올바르게 입력해 주세요.');
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            const stuRef = currentStudentDocRef;
+
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    const stuSnap = await transaction.get(stuRef);
+                    if (!stuSnap.exists()) throw new Error('no_student');
+                    const stu = stuSnap.data() || {};
+                    const bal = normalizeBongValue(Number(stu.bong) || 0);
+
+                    const poolData = poolSnap.exists() ? poolSnap.data() : {};
+                    const contributions = { ...(poolData.contributions && typeof poolData.contributions === 'object' ? poolData.contributions : {}) };
+                    const currentSum = (() => {
+                        let s = 0;
+                        Object.keys(contributions).forEach((k) => {
+                            s += Number(contributions[k]) || 0;
+                        });
+                        return normalizeBongValue(s);
+                    })();
+                    const remaining = Math.max(0, normalizeBongValue(target - currentSum));
+                    if (remaining <= 0) throw new Error('full');
+
+                    const pay = Math.min(amount, remaining, bal);
+                    if (pay <= 0) throw new Error('no_pay');
+
+                    const prev = Number(contributions[String(myId)]) || 0;
+                    contributions[String(myId)] = normalizeBongValue(prev + pay);
+
+                    transaction.set(
+                        stuRef,
+                        { bong: normalizeBongValue(bal - pay) },
+                        { merge: true }
+                    );
+                    transaction.set(poolRef, { contributions, updatedAt: Date.now() }, { merge: true });
+                });
+
+                if (input) input.value = '';
+                window.renderShopGroupBuyModalContent(shopId);
+                await window.customAlert('입금이 반영되었습니다.');
+                await refreshStudentsCacheFromServer();
+                updateUI();
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'full') return await window.customAlert('이미 목표 금액이 모였어요. 구매 실행을 눌러 주세요.');
+                if (code === 'no_pay') return await window.customAlert('입금 가능한 금액이 없어요. (잔액·남은 목표 금액을 확인해 주세요.)');
+                if (code === 'no_student') return await window.customAlert('학생 정보를 찾을 수 없어요.');
+                console.error('contributeShopGroupBuy', e);
+                await window.customAlert('입금 처리 중 오류: ' + code);
+            }
+        };
+
+        window.executeShopGroupBuy = async function () {
+            const shopId = window._groupBuyModalShopId;
+            if (!shopId || !db) return;
+            if (window.playerState.isGuest || window.playerState.isAdmin) return;
+
+            const shop = SHOP_DATA.find((s) => s.id === shopId);
+            if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
+
+            const target = getEffectiveShopPrice(shopId);
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const sum = sumShopPoolContributions(pool);
+            if (sum < target - 0.0001) return await window.customAlert('아직 목표 금액이 모이지 않았어요.');
+
+            const ok = await window.customConfirm(`공동구매로 「${shop.name}」을(를) 지금 적용할까요?\n(실행한 학생에게 상품 효과가 적용됩니다.)`);
+            if (!ok) return;
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    if (!poolSnap.exists()) throw new Error('no_pool');
+                    const d = poolSnap.data() || {};
+                    const contributions = d.contributions && typeof d.contributions === 'object' ? d.contributions : {};
+                    let s = 0;
+                    Object.keys(contributions).forEach((k) => {
+                        s += Number(contributions[k]) || 0;
+                    });
+                    s = normalizeBongValue(s);
+                    if (s < target - 0.0001) throw new Error('not_enough');
+                    transaction.set(poolRef, { contributions: {}, updatedAt: Date.now() }, { merge: true });
+                });
+            } catch (e) {
+                const msg = e && e.message ? String(e.message) : String(e);
+                if (msg === 'not_enough') return await window.customAlert('다른 친구가 먼저 진행했거나 금액이 부족해요. 새로고침 후 확인해 주세요.');
+                console.error('executeShopGroupBuy', e);
+                return await window.customAlert('처리 중 오류: ' + msg);
+            }
+
+            document.getElementById('shopGroupBuyModal') && document.getElementById('shopGroupBuyModal').classList.add('hidden');
+
+            await window.buyItem(shopId, shop.name, !!shop.isConsumable, { groupBuyExecute: true });
         };
 
         window.toggleJob = async function(jobName, iconClass, colorClass) {

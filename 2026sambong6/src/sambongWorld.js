@@ -4845,6 +4845,46 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        /** 골든벨 최종 제출 직후: 문항별 내 답 vs 정답 비교 결과를 팝업으로 표시 */
+        function showGoldenBellGradeModal({ score, totalQuestions, rewardXp, rewardBong, rows }) {
+            return new Promise((resolve) => {
+                const d = document.createElement('div');
+                d.className =
+                    'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-3 py-6 overflow-y-auto';
+                const rowsHtml = rows
+                    .map((r, i) => {
+                        const borderCls = r.ok
+                            ? 'border-emerald-600/50 bg-emerald-950/25'
+                            : 'border-rose-600/40 bg-rose-950/20';
+                        const markCls = r.ok ? 'text-emerald-400' : 'text-rose-400';
+                        const mark = r.ok ? 'O' : 'X';
+                        return `
+                    <div class="rounded-xl border ${borderCls} p-2.5 mb-2 text-left">
+                        <div class="text-[10px] font-black text-yellow-400 mb-1">문제 ${i + 1}</div>
+                        <div class="text-[10px] text-slate-400 mb-0.5">내 답</div>
+                        <div class="text-xs font-bold text-white break-all mb-1.5">${escapeHtmlGb(r.my)}</div>
+                        <div class="text-[10px] text-slate-400 mb-0.5">정답</div>
+                        <div class="text-xs font-bold text-emerald-200/95 break-all mb-1">${escapeHtmlGb(r.correct)}</div>
+                        <div class="text-right text-sm font-black ${markCls}">${mark}</div>
+                    </div>`;
+                    })
+                    .join('');
+                d.innerHTML = `
+                    <div class="bg-sb-panel p-4 sm:p-6 rounded-3xl border border-yellow-500/40 max-w-md w-full shadow-2xl my-auto max-h-[90vh] flex flex-col">
+                        <h3 class="text-lg font-display text-yellow-300 text-center shrink-0">채점 결과</h3>
+                        <p class="text-center text-sm text-white font-bold mt-2 shrink-0">정답 ${score} / ${totalQuestions}문항</p>
+                        <p class="text-center text-[11px] text-yellow-200/90 shrink-0 mb-3">보상: +${rewardXp} XP · +${rewardBong} B</p>
+                        <div class="overflow-y-auto flex-1 min-h-0 pr-1">${rowsHtml}</div>
+                        <button type="button" id="gbGradeOk" class="mt-4 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2.5 px-8 rounded-full w-full shrink-0">확인</button>
+                    </div>`;
+                document.body.appendChild(d);
+                document.getElementById('gbGradeOk').onclick = () => {
+                    d.remove();
+                    resolve(true);
+                };
+            });
+        }
+
         /** 골든벨: 모든 문항 한 번에 채점·보상 (문항별 XP·봉 합산) */
         window.submitGoldenBellAll = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
@@ -4869,12 +4909,18 @@ function redrawPlazaGrantsUi() {
             let rewardBong = 0;
             let score = 0;
 
+            const gradeRows = [];
             st.questions.forEach((item, idx) => {
                 const el = document.getElementById(`gb_ans_${idx}`);
                 const val = el ? (el.value || '').trim() : '';
                 answers.push(val);
                 const isCorrect = normalizeQuizAnswer(val) === normalizeQuizAnswer(String(item.a));
                 results.push(isCorrect);
+                gradeRows.push({
+                    ok: isCorrect,
+                    my: val.length ? val : '(미입력)',
+                    correct: String(item.a)
+                });
                 if (isCorrect) {
                     score++;
                     const rx = (typeof item.rewardXp === 'number' && !isNaN(item.rewardXp)) ? item.rewardXp : 10;
@@ -4903,7 +4949,13 @@ function redrawPlazaGrantsUi() {
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(rewardBong));
                 await saveDataToCloud();
                 updateUI();
-                await window.customAlert(`✅ 채점 완료!\n정답 ${score} / ${totalQuestions}문항\n보상: +${rewardXp} XP, +${rewardBong} B`);
+                await showGoldenBellGradeModal({
+                    score,
+                    totalQuestions,
+                    rewardXp,
+                    rewardBong,
+                    rows: gradeRows
+                });
                 window.renderGoldenBellStudent();
             } finally {
                 window._gbFinalSubmitting = false;

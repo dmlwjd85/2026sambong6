@@ -4744,6 +4744,25 @@ function redrawPlazaGrantsUi() {
             const rxTotal = mySubmission && mySubmission.rewardXpTotal != null ? mySubmission.rewardXpTotal : null;
             const rbTotal = mySubmission && mySubmission.rewardBongTotal != null ? mySubmission.rewardBongTotal : null;
 
+            // Firestore 스냅샷마다 이 함수가 호출되며 innerHTML로 DOM이 갈아끼워져 작성 중 답안이 사라지는 문제 방지:
+            // 리렌더 직전 화면의 입력값·포커스(커서)를 보존한다.
+            const prevAnswersByIdx = [];
+            let restoreFocus = null;
+            if (!locked) {
+                for (let idx = 0; idx < totalQuestions; idx++) {
+                    const el = document.getElementById(`gb_ans_${idx}`);
+                    if (el) prevAnswersByIdx[idx] = el.value;
+                }
+                const ae = document.activeElement;
+                if (ae && ae.id && /^gb_ans_\d+$/.test(ae.id)) {
+                    restoreFocus = {
+                        id: ae.id,
+                        start: typeof ae.selectionStart === 'number' ? ae.selectionStart : null,
+                        end: typeof ae.selectionEnd === 'number' ? ae.selectionEnd : null
+                    };
+                }
+            }
+
             let html = `
                 <div class="glass-panel p-3 rounded-2xl border border-yellow-500/40 mb-4 bg-slate-900/50">
                     <div class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨</div>
@@ -4752,7 +4771,11 @@ function redrawPlazaGrantsUi() {
             `;
             
             st.questions.forEach((item, idx) => {
-                const val = (myAnswers[idx] != null) ? String(myAnswers[idx]) : '';
+                const fromPrev = prevAnswersByIdx[idx];
+                const val =
+                    fromPrev !== undefined
+                        ? fromPrev
+                        : (myAnswers[idx] != null ? String(myAnswers[idx]) : '');
                 const defRx = (item.rewardXp != null && !isNaN(Number(item.rewardXp))) ? Number(item.rewardXp) : 10;
                 const defB = (item.rewardBong != null && !isNaN(Number(item.rewardBong))) ? Number(item.rewardBong) : 1;
                 let inputCls = 'bg-slate-900/80 border border-slate-600 text-white';
@@ -4806,6 +4829,20 @@ function redrawPlazaGrantsUi() {
             }
 
             container.innerHTML = html;
+
+            if (restoreFocus) {
+                const t = document.getElementById(restoreFocus.id);
+                if (t && !t.disabled) {
+                    t.focus();
+                    try {
+                        if (restoreFocus.start != null && restoreFocus.end != null) {
+                            t.setSelectionRange(restoreFocus.start, restoreFocus.end);
+                        }
+                    } catch (_) {
+                        /* 일부 브라우저/타입에서 selection 미지원 시 무시 */
+                    }
+                }
+            }
         };
 
         /** 골든벨: 모든 문항 한 번에 채점·보상 (문항별 XP·봉 합산) */

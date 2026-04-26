@@ -592,6 +592,46 @@ function redrawPlazaGrantsUi() {
             return getLocalDateStr(x);
         }
 
+        /**
+         * 2026-04-25 주말 장애 복구: 지정 학생의 성구를 기존 보관함과 합쳐 1회 보정합니다.
+         * 배포 직후 직접 복구 스크립트를 실행하지 못해도 첫 접속에서 서버 문서가 복구되도록 둡니다.
+         */
+        async function applyDragonBallEmergencyRestores() {
+            if (!db) return;
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'dragonball_restore_2026_04_25_v1');
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+
+                const weekendKey = '2026-04-25';
+                const restores = [
+                    { id: '6', name: '박소윤', balls: [1, 3, 5, 6, 7] },
+                    { id: '11', name: '조이담', balls: [1, 2, 3, 4] },
+                    { id: '12', name: '황훈태', balls: [2, 5, 6, 7] },
+                    { id: '1', name: '김단엘', balls: [2, 3, 4] },
+                ];
+
+                for (const item of restores) {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + item.id);
+                    const snap = await readStudentDocPreferServer(ref);
+                    const existing = snap.exists() && Array.isArray(snap.data().dragonBalls)
+                        ? snap.data().dragonBalls.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 7)
+                        : [];
+                    const merged = [...new Set([...existing, ...item.balls])].sort((a, b) => a - b);
+                    await setDoc(ref, { dragonBalls: merged, dragonBallWeekendKey: weekendKey }, { merge: true });
+                }
+
+                await setDoc(markerRef, {
+                    done: true,
+                    weekendKey,
+                    restoredAt: new Date().toISOString(),
+                    note: '드래곤볼 보관함 2026-04-25 주말 장애 복구',
+                }, { merge: true });
+            } catch (e) {
+                console.warn('applyDragonBallEmergencyRestores', e);
+            }
+        }
+
         /** 탭 세션 시작 시각 기준 1시간 경과 시 새로고침(로컬 조작·새로고침 악용 완화) */
         function initSessionRefreshGuard() {
             const KEY = 'sambong_sess_start';
@@ -1006,6 +1046,7 @@ function redrawPlazaGrantsUi() {
                 if (auth.currentUser) {
                     await auth.currentUser.getIdToken();
                 }
+                void applyDragonBallEmergencyRestores();
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
@@ -2040,17 +2081,13 @@ function redrawPlazaGrantsUi() {
                     }, 120);
                 }
                 /**
-                 * 새 주말(토요일 키가 바뀜)일 때만 보관함 초기화.
-                 * dragonBallWeekendKey가 비어 있던 계정은 첫 주말 접속 시 키만 채우고 비우지 않음(기존 버그로 수집분이 날아가던 현상 방지).
+                 * 주말 키는 저장하되 보유 성구는 절대 초기화하지 않습니다.
+                 * 기존에는 새 주말마다 dragonBalls를 비워 보관함이 사라지는 문제가 반복되었습니다.
                  */
                 const satKey = getWeekendSaturdayKey();
                 if (satKey) {
                     const prevKey = window.playerState.dragonBallWeekendKey || '';
-                    if (prevKey && prevKey !== satKey) {
-                        window.playerState.dragonBallWeekendKey = satKey;
-                        window.playerState.dragonBalls = [];
-                        bankProcessingNeedSave = true;
-                    } else if (!prevKey) {
+                    if (prevKey !== satKey) {
                         window.playerState.dragonBallWeekendKey = satKey;
                         bankProcessingNeedSave = true;
                     }
@@ -4992,11 +5029,14 @@ function redrawPlazaGrantsUi() {
                     if (now < (st.nextSpawnTime || 0)) return;
 
                     let weekendKey = st.weekendKey || '';
-                    let spawned = Array.isArray(st.spawnedStarsThisWeekend) ? [...st.spawnedStarsThisWeekend] : [];
+                    let spawned = Array.isArray(st.spawnedStarsThisWeekend)
+                        ? st.spawnedStarsThisWeekend.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 1 && n <= 7)
+                        : [];
                     if (weekendKey !== satKey) {
                         weekendKey = satKey;
                         spawned = [];
                     }
+                    spawned = [...new Set(spawned)].sort((a, b) => a - b);
 
                     const pool = [1, 2, 3, 4, 5, 6, 7].filter((n) => !spawned.includes(n));
                     if (pool.length === 0) return;
@@ -5013,7 +5053,8 @@ function redrawPlazaGrantsUi() {
                             posX,
                             posY,
                             weekendKey,
-                            spawnedStarsThisWeekend: spawned,
+                            /** 스폰 순간부터 기록해 이번 주말 전체 등장 수가 정확히 7개를 넘지 않게 합니다. */
+                            spawnedStarsThisWeekend: [...spawned, number].sort((a, b) => a - b),
                         },
                         { merge: true }
                     );
@@ -5028,19 +5069,27 @@ function redrawPlazaGrantsUi() {
             if(!window.dragonBallState || !window.dragonBallState.isActive) return;
             if (!isLocalWeekend()) return window.customAlert('드래곤볼은 주말(토·일)에만 수집할 수 있어요!');
             
-            const dbNum = window.dragonBallState.number;
+            const dbNum = Number(window.dragonBallState.number);
+            if (!Number.isFinite(dbNum) || dbNum < 1 || dbNum > 7) return window.customAlert('드래곤볼 번호가 올바르지 않습니다. 잠시 후 다시 시도해 주세요.');
             if(!window.playerState.dragonBalls) window.playerState.dragonBalls = [];
+            window.playerState.dragonBalls = [...new Set(
+                window.playerState.dragonBalls
+                    .map((n) => Number(n))
+                    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 7)
+            )].sort((a, b) => a - b);
             
             if(window.playerState.dragonBalls.includes(dbNum)) {
                 return window.customAlert("이미 가지고 있는 드래곤볼입니다!");
             }
             
             window.playerState.dragonBalls.push(dbNum);
+            window.playerState.dragonBalls.sort((a, b) => a - b);
+            const satKey = getWeekendSaturdayKey();
+            if (satKey) window.playerState.dragonBallWeekendKey = satKey;
             window.playerState.xp += 50;
             await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다! (+50 XP)\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
             
             if(window.playerState.dragonBalls.length >= 7) {
-                window.playerState.dragonBalls = [];
                 window.playerState.xp += 700;
                 await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복으로 엄청난 경험치(+700 XP)를 획득했습니다!`);
             }

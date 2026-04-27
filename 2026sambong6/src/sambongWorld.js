@@ -312,6 +312,8 @@ function redrawPlazaGrantsUi() {
 
         /** 석서영(학번 13) 부동산 복구용 자리 인덱스(0부터). 8번 자리 = 인덱스 7. */
         const ESTATE_RESTORE_SEOK_SEAT_INDEX = 7;
+        /** 황훈태(학번 12) 부동산 복구용 자리 인덱스(0부터). 2번 자리 = 인덱스 1. */
+        const ESTATE_RESTORE_HHWANG_SEAT_INDEX = 1;
 
         /** 화면에서 제거할 자리(표시 번호 1, 13, 16 → 0부터 인덱스 0, 12, 15) */
         const ESTATE_HIDDEN_SEAT_IDS = [0, 12, 15];
@@ -1240,15 +1242,18 @@ function redrawPlazaGrantsUi() {
                         });
 
                         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
-                            if(snap.exists()) { 
+                            if(snap.exists()) {
                                 window.estateState = snap.data(); 
                                 if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
                                 window.ensureEstateSeokRestore();
+                                window.ensureEstateHwangRestore();
                                 window.renderEstate(); 
                             } else {
                                 const initialSeats = buildInitialEstateSeats();
                                 initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
                                 initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
+                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
                                 const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: ph });
                             }
@@ -3018,6 +3023,18 @@ function redrawPlazaGrantsUi() {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
+
+        /** 빈 자리일 때 황훈태(12번) 학생의 2번 자리 소유를 복구합니다. 하단 구매 기록에는 복구 문구를 남기지 않습니다. */
+        window.ensureEstateHwangRestore = async function() {
+            if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
+            const idx = ESTATE_RESTORE_HHWANG_SEAT_INDEX;
+            const seat = window.estateState.seats[idx];
+            if (!seat || seat.locked || seat.owner) return;
+            seat.owner = '12';
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+            } catch (e) { console.warn('ensureEstateHwangRestore', e); }
+        };
         
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
@@ -3070,6 +3087,8 @@ function redrawPlazaGrantsUi() {
             const initialSeats = buildInitialEstateSeats();
             initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
             initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+            initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
+            initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
             prevHistory.push({
                 studentId: '13',
                 seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,

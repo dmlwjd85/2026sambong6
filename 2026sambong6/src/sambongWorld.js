@@ -480,10 +480,40 @@ function redrawPlazaGrantsUi() {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
+        function getDailyQuestIds() {
+            return QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+        }
+
+        function sanitizeDailyQuestFlagsForDate(state, gameDateStr) {
+            if (!state || !gameDateStr) return false;
+            const dailyQuestIds = getDailyQuestIds();
+            const dailyQuestIdSet = new Set(dailyQuestIds);
+            const history = Array.isArray(state.questHistory) ? state.questHistory : [];
+            const doneToday = new Set(
+                history
+                    .filter((q) => q && q.date === gameDateStr && dailyQuestIdSet.has(q.id))
+                    .map((q) => q.id)
+            );
+            const quests = { ...(state.quests || {}) };
+            let changed = false;
+            dailyQuestIds.forEach((qId) => {
+                if (quests[qId] && !doneToday.has(qId)) {
+                    quests[qId] = false;
+                    changed = true;
+                }
+            });
+            if (changed) {
+                state.quests = quests;
+                if (state.dailyAllClearBonusDate === gameDateStr && !dailyQuestIds.every((qId) => quests[qId])) {
+                    state.dailyAllClearBonusDate = '';
+                }
+            }
+            return changed;
+        }
+
         /**
          * 일일 퀘스트 완료 플래그·밥줄(lunchBid)을 로컬 달력 날짜와 맞춤.
-         * 학생 컬렉션 onSnapshot이 서버의 어제 데이터로 playerState를 덮을 때(자정 직후 저장 레이스) 초기화가 무효화되지 않도록,
-         * 스냅샷 직후에도 동일 규칙을 다시 적용한다.
+         * 과거 체크가 오늘 완료처럼 남지 않도록, 오늘 questHistory에 없는 일일퀘스트 체크는 즉시 해제합니다.
          * @param {{ silent?: boolean }} opts silent: true면 알림 없음(스냅샷·백그라운드 동기화용)
          * @returns {{ needSave: boolean, alertNewDay: boolean }}
          */
@@ -493,15 +523,21 @@ function redrawPlazaGrantsUi() {
                 return { needSave: false, alertNewDay: false };
             }
             const gameDateStr = getLocalDateStr();
+            const dailyQuestIds = getDailyQuestIds();
             if (!window.playerState.lastDailyReset) {
+                const updatedQuests = { ...(window.playerState.quests || {}) };
+                dailyQuestIds.forEach((qId) => {
+                    if (updatedQuests[qId]) updatedQuests[qId] = false;
+                });
+                window.playerState.quests = updatedQuests;
                 window.playerState.lastDailyReset = gameDateStr;
+                if (window.playerState.dailyAllClearBonusDate === gameDateStr) window.playerState.dailyAllClearBonusDate = '';
                 return { needSave: true, alertNewDay: false };
             }
             if (window.playerState.lastDailyReset === gameDateStr) {
-                return { needSave: false, alertNewDay: false };
+                return { needSave: sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr), alertNewDay: false };
             }
 
-            const dailyQuestIds = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
             const updatedQuests = { ...(window.playerState.quests || {}) };
             let hadCompletedDaily = false;
             dailyQuestIds.forEach((qId) => {
@@ -629,6 +665,59 @@ function redrawPlazaGrantsUi() {
                 }, { merge: true });
             } catch (e) {
                 console.warn('applyDragonBallEmergencyRestores', e);
+            }
+        }
+
+        /**
+         * 배포 직후 1회 전체 학생 문서를 보정합니다.
+         * 오늘 기록이 없는 일일퀘스트 체크는 과거 값이 남은 것으로 보고 해제합니다.
+         */
+        async function applyDailyQuestEmergencySanitization() {
+            if (!db) return;
+            const gameDateStr = getLocalDateStr();
+            const markerId = `dailyquest_sanitize_${gameDateStr.replace(/-/g, '_')}_v1`;
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+
+                const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                let snap;
+                try {
+                    snap = await getDocsFromServer(studentsRef);
+                } catch (e) {
+                    snap = await getDocs(studentsRef);
+                }
+
+                const batch = writeBatch(db);
+                let touched = 0;
+                snap.forEach((studentDoc) => {
+                    if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
+                    const data = { ...(studentDoc.data() || {}) };
+                    const changed = sanitizeDailyQuestFlagsForDate(data, gameDateStr);
+                    if (changed || data.lastDailyReset !== gameDateStr) {
+                        const patch = {
+                            quests: data.quests || {},
+                            lastDailyReset: gameDateStr,
+                            dailyQuestSanitizedAt: new Date().toISOString(),
+                        };
+                        if (Object.prototype.hasOwnProperty.call(data, 'dailyAllClearBonusDate')) {
+                            patch.dailyAllClearBonusDate = data.dailyAllClearBonusDate || '';
+                        }
+                        batch.set(studentDoc.ref, patch, { merge: true });
+                        touched++;
+                    }
+                });
+                batch.set(markerRef, {
+                    done: true,
+                    date: gameDateStr,
+                    touched,
+                    sanitizedAt: new Date().toISOString(),
+                    note: '일일퀘스트 과거 체크 잔존 보정',
+                }, { merge: true });
+                await batch.commit();
+            } catch (e) {
+                console.warn('applyDailyQuestEmergencySanitization', e);
             }
         }
 
@@ -1047,6 +1136,7 @@ function redrawPlazaGrantsUi() {
                     await auth.currentUser.getIdToken();
                 }
                 void applyDragonBallEmergencyRestores();
+                void applyDailyQuestEmergencySanitization();
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
@@ -3053,6 +3143,7 @@ function redrawPlazaGrantsUi() {
 
         window.attemptQuest = async function(qId, xp, bong) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
+            applyDailyQuestResetIfNewDay({ silent: true });
             if (window.playerState.quests[qId]) return;
 
             let finalXp = xp; 

@@ -527,13 +527,9 @@ function redrawPlazaGrantsUi() {
             const gameDateStr = getLocalDateStr();
             const dailyQuestIds = getDailyQuestIds();
             if (!window.playerState.lastDailyReset) {
-                const updatedQuests = { ...(window.playerState.quests || {}) };
-                dailyQuestIds.forEach((qId) => {
-                    if (updatedQuests[qId]) updatedQuests[qId] = false;
-                });
-                window.playerState.quests = updatedQuests;
+                /** 기존 학생의 첫 보정에서도 오늘 실제 완료 기록은 보존해 중복 보상을 막습니다. */
+                sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr);
                 window.playerState.lastDailyReset = gameDateStr;
-                if (window.playerState.dailyAllClearBonusDate === gameDateStr) window.playerState.dailyAllClearBonusDate = '';
                 return { needSave: true, alertNewDay: false };
             }
             if (window.playerState.lastDailyReset === gameDateStr) {

@@ -379,12 +379,73 @@ function redrawPlazaGrantsUi() {
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
 
+        /** Firestore에 저장된 상점 문자열을 innerHTML에 넣기 전 반드시 HTML 이스케이프합니다. */
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        /** inline onclick의 작은따옴표 문자열 인자용 이스케이프입니다. */
+        function escapeJsSingleQuoted(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/\\/g, '\\\\')
+                .replace(/'/g, "\\'")
+                .replace(/\r/g, '\\r')
+                .replace(/\n/g, '\\n')
+                .replace(/\u2028/g, '\\u2028')
+                .replace(/\u2029/g, '\\u2029')
+                .replace(/</g, '\\x3C');
+        }
+
+        /** DOM id·onclick 인자에 쓰는 상점 id는 안전한 토큰만 허용합니다. */
+        function isSafeShopId(value) {
+            return /^[A-Za-z0-9_-]+$/.test(String(value || ''));
+        }
+
+        /** class 속성 탈출을 막기 위해 FontAwesome/Tailwind 토큰 형태만 유지합니다. */
+        function sanitizeCssClassTokens(value, fallback) {
+            const tokens = String(value || '')
+                .split(/\s+/)
+                .filter((token) => /^[A-Za-z0-9_:/.[\]#%()-]+$/.test(token));
+            return tokens.length > 0 ? tokens.join(' ') : fallback;
+        }
+
+        /** 설정 문서에서 온 사용자 정의 상점 아이템은 렌더링·onclick 전에 형태를 제한합니다. */
+        function sanitizeCustomShopItem(item) {
+            if (!item || !item.id || !item.name || !isSafeShopId(item.id)) return null;
+            const effect = item.effect === 'xp' ? 'xp' : 'class';
+            const isConsumable = effect === 'xp' || item.isConsumable === true;
+            const fallbackIcon = isConsumable ? 'fa-bolt' : 'fa-ticket';
+            const fallbackIconColor = isConsumable ? 'text-amber-300' : 'text-cyan-300';
+            const icon = /^fa-[A-Za-z0-9-]+$/.test(String(item.icon || '')) ? String(item.icon) : fallbackIcon;
+            const iconColor = sanitizeCssClassTokens(item.iconColor, fallbackIconColor);
+            return {
+                ...item,
+                id: String(item.id),
+                name: String(item.name).slice(0, 80),
+                desc: String(item.desc || '').slice(0, 160),
+                price: normalizeBongValue(Number(item.price) || 0),
+                icon,
+                iconColor,
+                isConsumable,
+                custom: true,
+                effect,
+                xpReward: Math.max(0, Math.min(100000, parseInt(item.xpReward, 10) || 0)),
+            };
+        }
+
         /** 마스터가 추가한 사용자 정의 상점 아이템 목록 */
         function getCustomShopItems() {
             const items = window.globalSettings && Array.isArray(window.globalSettings.customShopItems)
                 ? window.globalSettings.customShopItems
                 : [];
-            return items.filter((item) => item && item.id && item.name);
+            return items.map(sanitizeCustomShopItem).filter(Boolean);
         }
 
         /** 기본 상점 아이템 + 마스터 추가 아이템 */
@@ -430,6 +491,7 @@ function redrawPlazaGrantsUi() {
         /** 상점 카드에 표시되는 가격 라벨 갱신(마스터 가격 변경 반영) */
         function updateShopPriceLabels() {
             getAllShopItems().forEach((shop) => {
+                if (!isSafeShopId(shop.id)) return;
                 const el = document.getElementById(`shop-price-${shop.id}`);
                 if (el) el.textContent = `${getEffectiveShopPrice(shop.id)} B`;
             });
@@ -447,13 +509,17 @@ function redrawPlazaGrantsUi() {
         }
 
         function buildShopCardHtml(shop) {
-            const safeName = String(shop.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const icon = shop.icon || (shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
-            const iconColor = shop.iconColor || (shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
+            if (!isSafeShopId(shop.id)) return '';
+            const safeId = escapeJsSingleQuoted(shop.id);
+            const safeName = escapeJsSingleQuoted(shop.name);
+            const icon = /^fa-[A-Za-z0-9-]+$/.test(String(shop.icon || '')) ? shop.icon : (shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
+            const iconColor = sanitizeCssClassTokens(shop.iconColor, shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
+            const nameHtml = escapeHtml(shop.name);
+            const descHtml = escapeHtml(shop.desc);
             const groupBuyBtn =
                 shop.id === 'item_mystery_dice'
                     ? ''
-                    : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal('${shop.id}')">공동구매</button>`;
+                    : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal('${safeId}')">공동구매</button>`;
             return `
                 <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
                     <div class="flex items-center gap-3">
@@ -461,13 +527,13 @@ function redrawPlazaGrantsUi() {
                             <i class="fa-solid ${icon}"></i>
                         </div>
                         <div class="flex-grow min-w-0">
-                            <div class="font-bold text-sm">${shop.name}</div>
-                            <div class="text-[10px] text-slate-400">${shop.desc}</div>
+                            <div class="font-bold text-sm">${nameHtml}</div>
+                            <div class="text-[10px] text-slate-400">${descHtml}</div>
                         </div>
-                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${shop.price} B</div>
+                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${escapeHtml(shop.price)} B</div>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
+                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${safeId}','${safeName}',${shop.isConsumable || false})">구매</button>
                         ${groupBuyBtn}
                     </div>
                 </div>`;
@@ -1013,16 +1079,18 @@ function redrawPlazaGrantsUi() {
             const gmShopEl = document.getElementById('gmShopPriceInputs');
             if (!gmShopEl) return;
             gmShopEl.innerHTML = getAllShopItems().map((s) => {
-                const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
+                if (!isSafeShopId(s.id)) return '';
+                const safeId = escapeJsSingleQuoted(s.id);
+                const safeLabel = escapeHtml(s.name);
                 const currentPrice = getEffectiveShopPrice(s.id);
                 const deleteBtn = isCustomShopItem(s)
-                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin('${s.id}')" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-1.5 px-2 rounded text-[9px] border border-red-900">삭제</button>`
+                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin('${safeId}')" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-1.5 px-2 rounded text-[9px] border border-red-900">삭제</button>`
                     : '<span class="text-[9px] text-slate-600">기본</span>';
                 return `
                     <div class="flex flex-wrap gap-2 items-center mb-2">
                         <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
-                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="0.1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${Number(s.price) || 0})</span></span>
+                        <input type="number" id="gm_shop_price_${escapeHtml(s.id)}" min="0" step="0.1" value="${escapeHtml(currentPrice)}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${escapeHtml(Number(s.price) || 0)})</span></span>
                         ${deleteBtn}
                     </div>`;
             }).join('');
@@ -2545,7 +2613,7 @@ function redrawPlazaGrantsUi() {
                     const lines = arr.slice(-5).reverse().map((entry) => {
                         const d = entry.at ? new Date(entry.at) : null;
                         const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
-                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}</span><span class="text-slate-500 shrink-0">${ds} · ${entry.price}B</span></div>`;
+                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${escapeHtml(entry.name || entry.id)}</span><span class="text-slate-500 shrink-0">${escapeHtml(ds)} · ${escapeHtml(entry.price)}B</span></div>`;
                     });
                     logEl.innerHTML = '<div class="text-[10px] text-slate-500 font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
                     logEl.classList.remove('hidden');
@@ -3695,7 +3763,7 @@ function redrawPlazaGrantsUi() {
             const shop = getShopItemById(shopId);
             const title = document.getElementById('shopGroupBuyModalTitle');
             const hint = document.getElementById('shopGroupBuyModalHint');
-            if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${shop ? shop.name : shopId}`;
+            if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${escapeHtml(shop ? shop.name : shopId)}`;
             if (hint) {
                 hint.textContent = shop
                     ? shopId === 'item_random'
@@ -3777,12 +3845,12 @@ function redrawPlazaGrantsUi() {
                         .sort((a, b) => b.amount - a.amount);
                     const contributors = contributorRows.length === 0
                         ? '<div class="text-slate-500">입금 없음</div>'
-                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount.toFixed(1)} B</span></div>`).join('');
+                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${escapeHtml(r.name)}</span><span class="text-cyan-300 font-bold">${escapeHtml(r.amount.toFixed(1))} B</span></div>`).join('');
                     return `
                         <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <div class="font-bold text-white">${shop.name}</div>
-                                <div class="text-cyan-200 font-black tabular-nums">${sum.toFixed(1)} / ${target} B (${pct}%)</div>
+                                <div class="font-bold text-white">${escapeHtml(shop.name)}</div>
+                                <div class="text-cyan-200 font-black tabular-nums">${escapeHtml(sum.toFixed(1))} / ${escapeHtml(target)} B (${escapeHtml(pct)}%)</div>
                             </div>
                             <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
                                 <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>

@@ -184,6 +184,20 @@
         </div>
     </div>
 
+    <!-- ★ 마스터 공동구매 현황 모달 ★ -->
+    <div id="shopGroupBuyAdminModal" class="hidden fixed inset-0 z-[264] bg-black/75 backdrop-blur-sm flex items-center justify-center px-3 py-6">
+        <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-2xl w-full border-t-4 border-t-cyan-400 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-start justify-between gap-2 mb-3">
+                <h3 class="text-lg font-display text-white pr-4"><i class="fa-solid fa-clipboard-list text-cyan-300"></i> 공동구매 전체 현황</h3>
+                <button type="button" onclick="document.getElementById('shopGroupBuyAdminModal').classList.add('hidden')" class="shrink-0 text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+            </div>
+            <p class="text-[10px] text-slate-400 mb-3 leading-relaxed">마스터 전용 조회 화면입니다. 학생별 입금액과 목표 달성률을 한 번에 확인할 수 있습니다.</p>
+            <div id="shopGroupBuyAdminBody" class="space-y-3 text-[10px] text-slate-300">
+                <div class="text-center text-slate-500 py-6">불러오는 중...</div>
+            </div>
+        </div>
+    </div>
+
     <!-- ★ 퀘스트 기록 모달 ★ -->
     <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
         <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
@@ -764,9 +778,26 @@
             <!-- 아이템 상점 가격 (마스터 J) -->
             <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-pink-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 가격</h3>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정할 수 있습니다. 저장 후 모든 학생 화면에 반영됩니다.</p>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정하고, 마스터가 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
+                <button type="button" onclick="window.openShopGroupBuyAdminModal()" class="mb-3 w-full sm:w-auto bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-people-group"></i> 공동구매 현황 보기</button>
                 <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
-                <button type="button" onclick="window.saveShopPricesAdmin()" class="w-full sm:w-auto bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
+                <div class="mt-3 pt-3 border-t border-slate-700/70">
+                    <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                        <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="number" id="gmCustomShopPrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                        <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                            <option value="class">학급 활동 예약</option>
+                            <option value="xp">경험치 지급</option>
+                        </select>
+                        <input type="number" id="gmCustomShopXp" min="0" step="1" placeholder="지급 XP(경험치 아이템)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
+                        <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
+                    </div>
+                </div>
             </div>
 
             <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->

@@ -337,7 +337,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '' };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [] };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         
@@ -379,14 +379,36 @@ function redrawPlazaGrantsUi() {
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
 
+        /** 마스터가 추가한 사용자 정의 상점 아이템 목록 */
+        function getCustomShopItems() {
+            const items = window.globalSettings && Array.isArray(window.globalSettings.customShopItems)
+                ? window.globalSettings.customShopItems
+                : [];
+            return items.filter((item) => item && item.id && item.name);
+        }
+
+        /** 기본 상점 아이템 + 마스터 추가 아이템 */
+        function getAllShopItems() {
+            return [...SHOP_DATA, ...getCustomShopItems()];
+        }
+
+        function getShopItemById(shopId) {
+            return getAllShopItems().find((x) => String(x.id) === String(shopId));
+        }
+
+        function isCustomShopItem(item) {
+            return !!(item && item.custom === true);
+        }
+
         /** 학급 상점(s1 등) ID */
         function isClassShopId(id) {
-            return id === 's1' || id === 's2' || id === 's_movie' || id === 's4' || id === 's7';
+            const item = getShopItemById(id);
+            return !!(item && !item.isConsumable);
         }
 
         /** 상점 기본가(SHOP_DATA) — 마스터가 저장한 shopPrices와 병합 시 기준 */
         function getDefaultShopPrice(shopId) {
-            const s = SHOP_DATA.find((x) => x.id === shopId);
+            const s = getShopItemById(shopId);
             return s ? Number(s.price) || 0 : 0;
         }
 
@@ -407,7 +429,7 @@ function redrawPlazaGrantsUi() {
 
         /** 상점 카드에 표시되는 가격 라벨 갱신(마스터 가격 변경 반영) */
         function updateShopPriceLabels() {
-            SHOP_DATA.forEach((shop) => {
+            getAllShopItems().forEach((shop) => {
                 const el = document.getElementById(`shop-price-${shop.id}`);
                 if (el) el.textContent = `${getEffectiveShopPrice(shop.id)} B`;
             });
@@ -426,6 +448,8 @@ function redrawPlazaGrantsUi() {
 
         function buildShopCardHtml(shop) {
             const safeName = String(shop.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            const icon = shop.icon || (shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
+            const iconColor = shop.iconColor || (shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
             const groupBuyBtn =
                 shop.id === 'item_mystery_dice'
                     ? ''
@@ -433,8 +457,8 @@ function redrawPlazaGrantsUi() {
             return `
                 <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
                     <div class="flex items-center gap-3">
-                        <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${shop.iconColor} shadow-inner shrink-0">
-                            <i class="fa-solid ${shop.icon}"></i>
+                        <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${iconColor} shadow-inner shrink-0">
+                            <i class="fa-solid ${icon}"></i>
                         </div>
                         <div class="flex-grow min-w-0">
                             <div class="font-bold text-sm">${shop.name}</div>
@@ -970,6 +994,40 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 동적 콘텐츠 렌더링 ★
         // ==========================================
+        function renderShopCatalog() {
+            const container = document.getElementById('shopContainer');
+            if (!container) return;
+            const allItems = getAllShopItems();
+            const shopInstant = allItems.filter((s) => s.isConsumable);
+            const shopClass = allItems.filter((s) => !s.isConsumable);
+            container.innerHTML = `
+                <div class="text-[10px] text-slate-400 font-bold mb-2 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>바로 적용되는 아이템</div>
+                ${shopInstant.map((shop) => buildShopCardHtml(shop)).join('')}
+                <div class="text-[10px] text-slate-400 font-bold mb-2 mt-4 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-school text-pink-400 mr-1"></i>학급 특별 활동 <span class="font-normal text-slate-500">(삼봉 결제 · 선생님과 일정 조율)</span></div>
+                ${shopClass.map((shop) => buildShopCardHtml(shop)).join('')}
+            `;
+            updateShopPriceLabels();
+        }
+
+        function renderShopManagementAdminPanel() {
+            const gmShopEl = document.getElementById('gmShopPriceInputs');
+            if (!gmShopEl) return;
+            gmShopEl.innerHTML = getAllShopItems().map((s) => {
+                const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
+                const currentPrice = getEffectiveShopPrice(s.id);
+                const deleteBtn = isCustomShopItem(s)
+                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin('${s.id}')" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-1.5 px-2 rounded text-[9px] border border-red-900">삭제</button>`
+                    : '<span class="text-[9px] text-slate-600">기본</span>';
+                return `
+                    <div class="flex flex-wrap gap-2 items-center mb-2">
+                        <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
+                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="0.1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${Number(s.price) || 0})</span></span>
+                        ${deleteBtn}
+                    </div>`;
+            }).join('');
+        }
+
         function initDynamicContent() {
             const jg = document.getElementById('jobGrid');
             if(jg) {
@@ -985,14 +1043,7 @@ function redrawPlazaGrantsUi() {
                 `).join('');
             }
 
-            const shopInstant = SHOP_DATA.filter((s) => s.isConsumable);
-            const shopClass = SHOP_DATA.filter((s) => !s.isConsumable);
-            document.getElementById('shopContainer').innerHTML = `
-                <div class="text-[10px] text-slate-400 font-bold mb-2 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>바로 적용되는 아이템</div>
-                ${shopInstant.map((shop) => buildShopCardHtml(shop)).join('')}
-                <div class="text-[10px] text-slate-400 font-bold mb-2 mt-4 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-school text-pink-400 mr-1"></i>학급 특별 활동 <span class="font-normal text-slate-500">(삼봉 결제 · 선생님과 일정 조율)</span></div>
-                ${shopClass.map((shop) => buildShopCardHtml(shop)).join('')}
-            `;
+            renderShopCatalog();
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
@@ -1035,18 +1086,7 @@ function redrawPlazaGrantsUi() {
             }
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
 
-            const gmShopEl = document.getElementById('gmShopPriceInputs');
-            if (gmShopEl) {
-                gmShopEl.innerHTML = SHOP_DATA.map((s) => {
-                    const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
-                    return `
-                    <div class="flex flex-wrap gap-2 items-center mb-2">
-                        <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
-                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="0.1" value="${s.price}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${s.price})</span></span>
-                    </div>`;
-                }).join('');
-            }
+            renderShopManagementAdminPanel();
 
             let html = '';
             for(let i=0; i<5; i++) {
@@ -1228,14 +1268,9 @@ function redrawPlazaGrantsUi() {
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);
                                 }
-                                if (window.globalSettings.shopPrices) {
-                                    SHOP_DATA.forEach((s) => {
-                                        const el = document.getElementById('gm_shop_price_' + s.id);
-                                        if (el && window.globalSettings.shopPrices[s.id] != null) {
-                                            el.value = String(window.globalSettings.shopPrices[s.id]);
-                                        }
-                                    });
-                                }
+                                renderShopCatalog();
+                                renderShopManagementAdminPanel();
+                                if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
                                 updateUI();
                             }
@@ -1365,6 +1400,7 @@ function redrawPlazaGrantsUi() {
                                 if (typeof window._refreshShopGroupBuyModalIfOpen === 'function') {
                                     window._refreshShopGroupBuyModalIfOpen();
                                 }
+                                if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateUI();
                             }
                         );
@@ -2469,7 +2505,7 @@ function redrawPlazaGrantsUi() {
                 }
             });
 
-            SHOP_DATA.forEach(shop => {
+            getAllShopItems().forEach(shop => {
                 const item = document.getElementById('shop-btn-' + shop.id);
                 if (item) {
                     const eff = getEffectiveShopPrice(shop.id);
@@ -3352,6 +3388,7 @@ function redrawPlazaGrantsUi() {
         window.buyItem = async function (id, name, isConsumable, opts) {
             const groupEx = opts && opts.groupBuyExecute === true;
             const price = getEffectiveShopPrice(id);
+            const currentShopItem = getShopItemById(id);
             if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
             if (groupEx && id === 'item_mystery_dice') return;
 
@@ -3440,8 +3477,26 @@ function redrawPlazaGrantsUi() {
                 return await window.customAlert(`⚡ 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
+            if (currentShopItem && currentShopItem.custom && currentShopItem.effect === 'xp') {
+                const gainXp = Math.max(0, parseInt(currentShopItem.xpReward, 10) || 0);
+                if (gainXp <= 0) return await window.customAlert('지급 XP가 설정되지 않은 아이템입니다.');
+                if (!groupEx) {
+                    if (window.playerState.bong < price && !window.playerState.isAdmin) {
+                        return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                    }
+                    const ok = await window.customConfirm(`[${currentShopItem.name}]\n${price}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                    if (!ok) return;
+                    if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
+                }
+                window.playerState.xp = (Number(window.playerState.xp) || 0) + gainXp;
+                playSfx('xp', true);
+                updateUI();
+                await saveDataToCloud();
+                return await window.customAlert(`⚡ ${currentShopItem.name} 사용!\n+${gainXp} XP 획득했습니다.`);
+            }
+
             if (isClassShopId(id)) {
-                const shop = SHOP_DATA.find((s) => s.id === id);
+                const shop = getShopItemById(id);
                 if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
                 const eff = getEffectiveShopPrice(id);
                 if (!groupEx) {
@@ -3523,21 +3578,104 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const shopPrices = {};
-            SHOP_DATA.forEach((s) => {
+            getAllShopItems().forEach((s) => {
                 const el = document.getElementById('gm_shop_price_' + s.id);
                 if (!el) return;
                 let v = parseFloat(el.value);
                 if (!Number.isFinite(v) || v < 0) v = getDefaultShopPrice(s.id);
                 shopPrices[s.id] = Math.round(v * 10) / 10;
             });
+            const customShopItems = getCustomShopItems().map((item) => ({
+                ...item,
+                price: shopPrices[item.id] != null ? shopPrices[item.id] : (Number(item.price) || 0),
+            }));
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shopPrices }, { merge: true });
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shopPrices, customShopItems }, { merge: true });
                 await window.customAlert('✅ 아이템 상점 가격이 저장되었습니다.');
             } catch (e) {
                 console.error('saveShopPricesAdmin', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.addCustomShopItemAdmin = async function () {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추가할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const nameEl = document.getElementById('gmCustomShopName');
+            const descEl = document.getElementById('gmCustomShopDesc');
+            const priceEl = document.getElementById('gmCustomShopPrice');
+            const typeEl = document.getElementById('gmCustomShopType');
+            const xpEl = document.getElementById('gmCustomShopXp');
+            const name = nameEl ? String(nameEl.value || '').trim() : '';
+            const desc = descEl ? String(descEl.value || '').trim() : '';
+            const price = normalizeBongValue(parseFloat(priceEl ? priceEl.value : ''));
+            const type = typeEl ? String(typeEl.value || 'class') : 'class';
+            const xpReward = Math.max(0, parseInt(xpEl ? xpEl.value : '0', 10) || 0);
+            if (!name) return await window.customAlert('아이템 이름을 입력해 주세요.');
+            if (!Number.isFinite(price) || price < 0) return await window.customAlert('가격은 0 이상의 숫자로 입력해 주세요.');
+            if (type === 'xp' && xpReward <= 0) return await window.customAlert('경험치 아이템은 지급 XP를 1 이상으로 입력해 주세요.');
+
+            const baseId = name
+                .toLowerCase()
+                .replace(/[^a-z0-9가-힣]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .slice(0, 24) || 'item';
+            const id = `custom_${baseId}_${Date.now().toString(36)}`;
+            const item = {
+                id,
+                name,
+                desc: desc || (type === 'xp' ? `${xpReward} XP 지급` : '마스터 추가 학급 활동'),
+                price,
+                icon: type === 'xp' ? 'fa-bolt' : 'fa-ticket',
+                iconColor: type === 'xp' ? 'text-amber-300' : 'text-cyan-300',
+                isConsumable: type === 'xp',
+                custom: true,
+                effect: type,
+                xpReward: type === 'xp' ? xpReward : 0,
+            };
+            const customShopItems = [...getCustomShopItems(), item];
+            const shopPrices = { ...(window.globalSettings.shopPrices || {}), [id]: price };
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customShopItems, shopPrices }, { merge: true });
+                if (nameEl) nameEl.value = '';
+                if (descEl) descEl.value = '';
+                if (priceEl) priceEl.value = '';
+                if (xpEl) xpEl.value = '';
+                window.globalSettings.customShopItems = customShopItems;
+                window.globalSettings.shopPrices = shopPrices;
+                renderShopCatalog();
+                renderShopManagementAdminPanel();
+                await window.customAlert('✅ 새 상점 아이템이 추가되었습니다.');
+            } catch (e) {
+                console.error('addCustomShopItemAdmin', e);
+                await window.customAlert('아이템 추가 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.deleteCustomShopItemAdmin = async function (itemId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            const item = getCustomShopItems().find((x) => x.id === itemId);
+            if (!item) return await window.customAlert('삭제할 수 있는 추가 아이템을 찾지 못했습니다.');
+            if (!await window.customConfirm(`[${item.name}] 아이템을 삭제할까요?\n기존 구매 기록은 학생 문서에 그대로 남습니다.`)) return;
+            const customShopItems = getCustomShopItems().filter((x) => x.id !== itemId);
+            const shopPrices = { ...(window.globalSettings.shopPrices || {}) };
+            delete shopPrices[itemId];
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customShopItems, shopPrices }, { merge: true });
+                window.globalSettings.customShopItems = customShopItems;
+                window.globalSettings.shopPrices = shopPrices;
+                renderShopCatalog();
+                renderShopManagementAdminPanel();
+                await window.customAlert('삭제되었습니다.');
+            } catch (e) {
+                console.error('deleteCustomShopItemAdmin', e);
+                await window.customAlert('아이템 삭제 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -3554,7 +3692,7 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.isAdmin) return window.customAlert('학생만 공동구매에 참여할 수 있어요.');
             if (shopId === 'item_mystery_dice') return;
             window._groupBuyModalShopId = shopId;
-            const shop = SHOP_DATA.find((s) => s.id === shopId);
+            const shop = getShopItemById(shopId);
             const title = document.getElementById('shopGroupBuyModalTitle');
             const hint = document.getElementById('shopGroupBuyModalHint');
             if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${shop ? shop.name : shopId}`;
@@ -3606,6 +3744,54 @@ function redrawPlazaGrantsUi() {
                 execBtn.disabled = !ready;
                 execBtn.classList.toggle('opacity-40', !ready);
             }
+        };
+
+        window.openShopGroupBuyAdminModal = function () {
+            if (!window.playerState || !window.playerState.isGM) return window.customAlert('마스터 J만 조회할 수 있습니다.');
+            const modal = document.getElementById('shopGroupBuyAdminModal');
+            if (!modal) return;
+            window.renderShopGroupBuyAdminModal();
+            modal.classList.remove('hidden');
+        };
+
+        window.renderShopGroupBuyAdminModal = function () {
+            const modal = document.getElementById('shopGroupBuyAdminModal');
+            const body = document.getElementById('shopGroupBuyAdminBody');
+            if (!modal || !body || modal.classList.contains('hidden')) return;
+
+            const rows = getAllShopItems()
+                .filter((shop) => shop.id !== 'item_mystery_dice')
+                .map((shop) => {
+                    const target = getEffectiveShopPrice(shop.id);
+                    const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shop.id]) || {};
+                    const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+                    const sum = sumShopPoolContributions(pool);
+                    const pct = target > 0 ? Math.min(100, Math.round((sum / target) * 100)) : 0;
+                    const contributorRows = Object.keys(contribs)
+                        .map((sid) => ({
+                            sid,
+                            name: STUDENT_NAMES[String(sid)] || sid,
+                            amount: normalizeBongValue(Number(contribs[sid]) || 0),
+                        }))
+                        .filter((r) => r.amount > 0)
+                        .sort((a, b) => b.amount - a.amount);
+                    const contributors = contributorRows.length === 0
+                        ? '<div class="text-slate-500">입금 없음</div>'
+                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount.toFixed(1)} B</span></div>`).join('');
+                    return `
+                        <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <div class="font-bold text-white">${shop.name}</div>
+                                <div class="text-cyan-200 font-black tabular-nums">${sum.toFixed(1)} / ${target} B (${pct}%)</div>
+                            </div>
+                            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
+                                <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
+                            </div>
+                            <div class="space-y-1">${contributors}</div>
+                        </div>`;
+                });
+
+            body.innerHTML = rows.join('') || '<div class="text-center text-slate-500 py-6">조회할 공동구매 항목이 없습니다.</div>';
         };
 
         window.contributeShopGroupBuy = async function () {
@@ -3683,7 +3869,7 @@ function redrawPlazaGrantsUi() {
             if (!shopId || !db) return;
             if (window.playerState.isGuest || window.playerState.isAdmin) return;
 
-            const shop = SHOP_DATA.find((s) => s.id === shopId);
+            const shop = getShopItemById(shopId);
             if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
 
             const target = getEffectiveShopPrice(shopId);

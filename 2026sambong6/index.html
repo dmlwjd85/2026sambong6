@@ -176,7 +176,7 @@
                 <div id="gbContributorList" class="max-h-40 overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50 p-2 text-[10px] space-y-1.5"></div>
             </div>
             <div class="flex flex-col sm:flex-row gap-2 mb-3">
-                <input type="number" id="gbContributeAmount" min="0.1" step="0.1" placeholder="입금할 B" class="flex-1 bg-slate-900 border border-cyan-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                <input type="number" id="gbContributeAmount" min="1" step="1" placeholder="입금할 B(자연수)" class="flex-1 bg-slate-900 border border-cyan-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                 <button type="button" onclick="window.contributeShopGroupBuy()" class="bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
             </div>
             <button type="button" id="gbExecuteBtn" onclick="window.executeShopGroupBuy()" disabled class="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-700 to-teal-600 hover:from-emerald-600 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white shadow-lg mb-2">목표 금액 달성 — 구매 실행</button>

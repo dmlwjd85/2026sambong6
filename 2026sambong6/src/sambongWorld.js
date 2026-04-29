@@ -3310,21 +3310,28 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        /** 공동구매 입금액은 화면·계산 모두 자연수로 취급 */
+        function toNaturalShopContribution(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n) || n <= 0) return 0;
+            return Math.max(1, Math.round(n));
+        }
+
         /** 공동구매 풀 contributions 합계 */
         function sumShopPoolContributions(poolData) {
             const c = poolData && poolData.contributions && typeof poolData.contributions === 'object' ? poolData.contributions : {};
             let s = 0;
             Object.keys(c).forEach((k) => {
-                s += Number(c[k]) || 0;
+                s += toNaturalShopContribution(c[k]);
             });
-            return normalizeBongValue(s);
+            return s;
         }
 
         /** 랜덤박스 당첨 총액을 출자 비율로 분배(마지막 인원에게 반올림 오차 보정) */
         function splitBongProportionally(totalB, contribs) {
-            const keys = Object.keys(contribs).filter((k) => (Number(contribs[k]) || 0) > 0);
+            const keys = Object.keys(contribs).filter((k) => toNaturalShopContribution(contribs[k]) > 0);
             if (keys.length === 0 || totalB <= 0) return {};
-            const sum = keys.reduce((a, k) => a + (Number(contribs[k]) || 0), 0);
+            const sum = keys.reduce((a, k) => a + toNaturalShopContribution(contribs[k]), 0);
             if (sum <= 0) return {};
             const out = {};
             let allocated = 0;
@@ -3332,7 +3339,7 @@ function redrawPlazaGrantsUi() {
                 if (idx === keys.length - 1) {
                     out[k] = normalizeBongValue(totalB - allocated);
                 } else {
-                    const w = Number(contribs[k]) || 0;
+                    const w = toNaturalShopContribution(contribs[k]);
                     const part = normalizeBongValue((totalB * w) / sum);
                     out[k] = part;
                     allocated = normalizeBongValue(allocated + part);
@@ -3727,16 +3734,17 @@ function redrawPlazaGrantsUi() {
             if (listEl) {
                 const rows = Object.keys(contribs)
                     .map((sid) => {
-                        const amt = normalizeBongValue(Number(contribs[sid]) || 0);
+                        const amt = toNaturalShopContribution(contribs[sid]);
                         const nm = STUDENT_NAMES[String(sid)] || sid;
                         return { sid, amt, nm };
                     })
+                    .filter((r) => r.amt > 0)
                     .sort((a, b) => b.amt - a.amt);
                 listEl.innerHTML =
                     rows.length === 0
                         ? '<div class="text-slate-500 text-center py-2">아직 입금 내역이 없어요.</div>'
                         : rows
-                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt.toFixed(1)} B</span></div>`)
+                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt} B</span></div>`)
                               .join('');
             }
             const ready = target > 0 && sum >= target - 0.0001;
@@ -3771,18 +3779,18 @@ function redrawPlazaGrantsUi() {
                         .map((sid) => ({
                             sid,
                             name: STUDENT_NAMES[String(sid)] || sid,
-                            amount: normalizeBongValue(Number(contribs[sid]) || 0),
+                            amount: toNaturalShopContribution(contribs[sid]),
                         }))
                         .filter((r) => r.amount > 0)
                         .sort((a, b) => b.amount - a.amount);
                     const contributors = contributorRows.length === 0
                         ? '<div class="text-slate-500">입금 없음</div>'
-                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount.toFixed(1)} B</span></div>`).join('');
+                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount} B</span></div>`).join('');
                     return `
                         <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div class="font-bold text-white">${shop.name}</div>
-                                <div class="text-cyan-200 font-black tabular-nums">${sum.toFixed(1)} / ${target} B (${pct}%)</div>
+                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${target} B (${pct}%)</div>
                             </div>
                             <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
                                 <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
@@ -3806,8 +3814,8 @@ function redrawPlazaGrantsUi() {
 
             const input = document.getElementById('gbContributeAmount');
             const raw = input ? input.value : '';
-            let amount = parseFloat(raw);
-            if (!Number.isFinite(amount) || amount <= 0) return await window.customAlert('입금액을 올바르게 입력해 주세요.');
+            const amount = Number(raw);
+            if (!Number.isInteger(amount) || amount <= 0) return await window.customAlert('공동구매 입금액은 1 이상의 자연수로 입력해 주세요.');
 
             const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
             const stuRef = currentStudentDocRef;
@@ -3822,24 +3830,26 @@ function redrawPlazaGrantsUi() {
                     if (!stuSnap.exists()) throw new Error('no_student');
                     const stu = stuSnap.data() || {};
                     const bal = normalizeBongValue(Number(stu.bong) || 0);
+                    const integerBalance = Math.floor(bal);
 
                     const poolData = poolSnap.exists() ? poolSnap.data() : {};
                     const contributions = { ...(poolData.contributions && typeof poolData.contributions === 'object' ? poolData.contributions : {}) };
                     const currentSum = (() => {
                         let s = 0;
                         Object.keys(contributions).forEach((k) => {
-                            s += Number(contributions[k]) || 0;
+                            s += toNaturalShopContribution(contributions[k]);
                         });
-                        return normalizeBongValue(s);
+                        return s;
                     })();
                     const remaining = Math.max(0, normalizeBongValue(target - currentSum));
                     if (remaining <= 0) throw new Error('full');
+                    const integerRemaining = Math.max(0, Math.ceil(remaining));
 
-                    const pay = Math.min(amount, remaining, bal);
+                    const pay = Math.min(amount, integerRemaining, integerBalance);
                     if (pay <= 0) throw new Error('no_pay');
 
-                    const prev = Number(contributions[String(myId)]) || 0;
-                    contributions[String(myId)] = normalizeBongValue(prev + pay);
+                    const prev = toNaturalShopContribution(contributions[String(myId)]);
+                    contributions[String(myId)] = prev + pay;
 
                     transaction.set(
                         stuRef,
@@ -3857,7 +3867,7 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 const code = e && e.message ? String(e.message) : String(e);
                 if (code === 'full') return await window.customAlert('이미 목표 금액이 모였어요. 구매 실행을 눌러 주세요.');
-                if (code === 'no_pay') return await window.customAlert('입금 가능한 금액이 없어요. (잔액·남은 목표 금액을 확인해 주세요.)');
+                if (code === 'no_pay') return await window.customAlert('입금 가능한 자연수 금액이 없어요. (잔액·남은 목표 금액을 확인해 주세요.)');
                 if (code === 'no_student') return await window.customAlert('학생 정보를 찾을 수 없어요.');
                 console.error('contributeShopGroupBuy', e);
                 await window.customAlert('입금 처리 중 오류: ' + code);
@@ -3898,11 +3908,14 @@ function redrawPlazaGrantsUi() {
                     const contributions = d.contributions && typeof d.contributions === 'object' ? d.contributions : {};
                     let s = 0;
                     Object.keys(contributions).forEach((k) => {
-                        s += Number(contributions[k]) || 0;
+                        s += toNaturalShopContribution(contributions[k]);
                     });
-                    s = normalizeBongValue(s);
                     if (s < target - 0.0001) throw new Error('not_enough');
-                    savedContribs = { ...contributions };
+                    savedContribs = {};
+                    Object.keys(contributions).forEach((k) => {
+                        const v = toNaturalShopContribution(contributions[k]);
+                        if (v > 0) savedContribs[k] = v;
+                    });
                     transaction.set(poolRef, { contributions: {}, updatedAt: Date.now() }, { merge: true });
                 });
             } catch (e) {

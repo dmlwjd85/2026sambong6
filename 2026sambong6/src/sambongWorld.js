@@ -1990,7 +1990,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
             window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
         };
 
@@ -2054,7 +2054,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
             await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
 
@@ -2704,8 +2704,15 @@ function redrawPlazaGrantsUi() {
             }
         }
 
-        async function saveDataToCloud() {
+        async function saveDataToCloud(options = {}) {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
+            const opts = {
+                allowXpDecrease: false,
+                allowBongDecrease: false,
+                maxXpDecrease: 0,
+                maxBongDecrease: 0,
+                ...options,
+            };
             const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
@@ -2722,7 +2729,36 @@ function redrawPlazaGrantsUi() {
                     console.warn('saveDataToCloud: 익명 인증 실패');
                     return;
                 }
-                await setDoc(currentStudentDocRef, dataToSave, { merge: true });
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(currentStudentDocRef);
+                    if (snap.exists()) {
+                        const serverData = snap.data() || {};
+                        const serverXp = Number(serverData.xp);
+                        const nextXp = Number(dataToSave.xp);
+                        if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && nextXp < serverXp) {
+                            if (opts.allowXpDecrease) {
+                                const maxDrop = Math.max(0, Math.floor(Number(opts.maxXpDecrease) || 0));
+                                dataToSave.xp = Math.max(0, Math.floor(Math.max(nextXp, serverXp - maxDrop)));
+                            } else {
+                                dataToSave.xp = Math.floor(serverXp);
+                            }
+                        }
+
+                        const serverBong = Number(serverData.bong);
+                        const nextBong = Number(dataToSave.bong);
+                        if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
+                            if (opts.allowBongDecrease) {
+                                const maxDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
+                                dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxDrop)));
+                            } else {
+                                dataToSave.bong = normalizeBongValue(serverBong);
+                            }
+                        }
+                    }
+                    transaction.set(currentStudentDocRef, dataToSave, { merge: true });
+                });
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
             } finally {
@@ -2756,7 +2792,7 @@ function redrawPlazaGrantsUi() {
                 window.playerState.lunchBid.amount += amt;
                 
                 updateUI();
-                await saveDataToCloud();
+                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
                 playSfx('bong', false); 
                 
                 await window.customAlert(`✅ 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
@@ -3087,7 +3123,7 @@ function redrawPlazaGrantsUi() {
             if(!ok) return;
 
             window.playerState.bong -= price;
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
             
             seat.owner = window.playerState.id;
             if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
@@ -3303,7 +3339,7 @@ function redrawPlazaGrantsUi() {
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - (Number(bong) + 0.5));
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
-                saveDataToCloud();
+                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: Number(bong) + 0.5 });
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();
@@ -3420,7 +3456,7 @@ function redrawPlazaGrantsUi() {
                 setTimeout(() => floater.remove(), 2500);
 
                 updateUI();
-                saveDataToCloud();
+                saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
 
                 if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
                 else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
@@ -3454,7 +3490,7 @@ function redrawPlazaGrantsUi() {
 
                 playSfx('bong', win);
                 updateUI();
-                await saveDataToCloud();
+                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: bet });
 
                 const floater = document.createElement('div');
                 floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-5xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(16,185,129,0.9)] text-emerald-400 whitespace-nowrap text-center`;
@@ -3480,7 +3516,7 @@ function redrawPlazaGrantsUi() {
                 window.playerState.xp += gainXp;
                 playSfx('xp', true);
                 updateUI();
-                await saveDataToCloud();
+                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: packPrice });
                 return await window.customAlert(`⚡ 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
@@ -3498,7 +3534,7 @@ function redrawPlazaGrantsUi() {
                 window.playerState.xp = (Number(window.playerState.xp) || 0) + gainXp;
                 playSfx('xp', true);
                 updateUI();
-                await saveDataToCloud();
+                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
                 return await window.customAlert(`⚡ ${currentShopItem.name} 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
@@ -3525,7 +3561,7 @@ function redrawPlazaGrantsUi() {
                 }
                 playSfx('bong', true);
                 updateUI();
-                await saveDataToCloud();
+                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: eff });
                 return await window.customAlert(`✅ [${shop.name}] 구매가 기록되었습니다!\n선생님께 일정을 요청해 주세요.\n(아래 '최근 학급 활동 예약'에 남습니다)`);
             }
 
@@ -3539,7 +3575,7 @@ function redrawPlazaGrantsUi() {
                     const stNow = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, stNow - 1) }, { merge: true });
                     updateUI();
-                    saveDataToCloud();
+                    saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
                     return await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                 }
 
@@ -3564,11 +3600,11 @@ function redrawPlazaGrantsUi() {
                             const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
                             updateUI();
-                            saveDataToCloud();
+                            saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
                             await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                         } else {
                             updateUI();
-                            saveDataToCloud();
+                            saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
                         }
                     }
                 } else await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
@@ -3973,7 +4009,7 @@ function redrawPlazaGrantsUi() {
                         
                         window.playerState.equippedSkins[skinId] = true; 
                         await window.customAlert(`🎉 획득 완료! 바로 장착했어요.`); 
-                        updateUI(); saveDataToCloud(); window.switchTab('plaza');
+                        updateUI(); saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price }); window.switchTab('plaza');
                     }
                 } else await window.customAlert(`❌ 돈이 부족해요. ${(skin.price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
             }
@@ -4141,7 +4177,7 @@ function redrawPlazaGrantsUi() {
 
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - 10);
             window.playerState.lastLunchDeductDate = todayYmd;
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: 10 });
             updateUI();
             await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
         };

@@ -327,7 +327,7 @@ function redrawPlazaGrantsUi() {
         }
 
         window.playerState = { 
-            xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
+            id: '', xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
@@ -2673,7 +2673,8 @@ function redrawPlazaGrantsUi() {
                     await setDoc(docRef, data);
                 }
 
-                window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                /** 부동산·레이드 등 즉시 실행 경로가 문서 스냅샷 전에도 학번을 잃지 않도록 문서 id 기준으로 고정합니다. */
+                window.playerState = { ...data, id: String(studentId), isGuest: false, isGM, isGMA, isAdmin };
                 localStorage.setItem('sambong_student_id', studentId);
                 localStorage.setItem('sambong_student_pin', pin);
                 currentStudentDocRef = docRef;
@@ -2718,6 +2719,8 @@ function redrawPlazaGrantsUi() {
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
+            /** id는 Firestore 문서 경로에서 복구하는 UI 전용 값이므로 학생 문서 필드로 저장하지 않습니다. */
+            delete dataToSave.id;
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }

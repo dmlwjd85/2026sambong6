@@ -1975,6 +1975,28 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        /** 은행 원장은 오래 열린 탭의 로컬 값이 아니라 서버 최신 문서 기준으로만 갱신합니다. */
+        async function runBankTransaction(mutator) {
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) throw new Error('auth_failed');
+            let nextBankState = null;
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(currentStudentDocRef);
+                if (!snap.exists()) throw new Error('no_student');
+                const serverData = snap.data() || {};
+                const patch = mutator(serverData);
+                transaction.set(currentStudentDocRef, patch, { merge: true });
+                nextBankState = patch;
+            });
+            if (nextBankState) {
+                if (nextBankState.bong != null) window.playerState.bong = normalizeBongValue(nextBankState.bong);
+                if (nextBankState.bankRegularSavings != null) window.playerState.bankRegularSavings = normalizeBongValue(nextBankState.bankRegularSavings);
+                if (Array.isArray(nextBankState.bankTermDeposits)) window.playerState.bankTermDeposits = nextBankState.bankTermDeposits;
+            }
+            updateUI();
+            return nextBankState;
+        }
+
         /** 일반예금 입금 (마스터·학생 동일하게 지갑에서 차감) */
         window.depositBank = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
@@ -1986,12 +2008,23 @@ function redrawPlazaGrantsUi() {
             if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${wallet.toFixed(1)} B)`);
             const ok = await window.customConfirm(`일반예금 통장에 ${amt} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
             if (!ok) return;
-            window.playerState.bong = normalizeBongValue(wallet - amt);
-            window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
-            if (inp) inp.value = '';
-            updateUI();
-            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
-            window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
+            try {
+                await runBankTransaction((serverData) => {
+                    const serverWallet = normalizeBongValue(Number(serverData.bong) || 0);
+                    if (serverWallet < amt) throw new Error('insufficient_wallet');
+                    const serverRegular = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
+                    return {
+                        bong: normalizeBongValue(serverWallet - amt),
+                        bankRegularSavings: normalizeBongValue(serverRegular + amt),
+                    };
+                });
+                if (inp) inp.value = '';
+                window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'insufficient_wallet') return window.customAlert('서버 기준 보유 삼봉이 부족합니다. 새로고침 후 다시 시도해 주세요.');
+                window.customAlert('입금 실패: ' + code);
+            }
         };
 
         /** 일반예금 출금 */
@@ -2005,12 +2038,23 @@ function redrawPlazaGrantsUi() {
             if (sav < amt) return window.customAlert('일반예금 잔액이 부족합니다.');
             const ok = await window.customConfirm(`일반예금에서 ${amt} B를 지갑으로 출금할까요?`);
             if (!ok) return;
-            window.playerState.bankRegularSavings = normalizeBongValue(sav - amt);
-            window.playerState.bong = normalizeBongValue(window.playerState.bong + amt);
-            if (inp) inp.value = '';
-            updateUI();
-            await saveDataToCloud();
-            window.customAlert(`💵 ${amt} B를 찾았습니다.`);
+            try {
+                await runBankTransaction((serverData) => {
+                    const serverRegular = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
+                    if (serverRegular < amt) throw new Error('insufficient_savings');
+                    const serverWallet = normalizeBongValue(Number(serverData.bong) || 0);
+                    return {
+                        bong: normalizeBongValue(serverWallet + amt),
+                        bankRegularSavings: normalizeBongValue(serverRegular - amt),
+                    };
+                });
+                if (inp) inp.value = '';
+                window.customAlert(`💵 ${amt} B를 찾았습니다.`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'insufficient_savings') return window.customAlert('서버 기준 일반예금 잔액이 부족합니다. 새로고침 후 다시 시도해 주세요.');
+                window.customAlert('출금 실패: ' + code);
+            }
         };
 
         /** 일반예금 전액을 지갑으로 출금 */
@@ -2020,13 +2064,24 @@ function redrawPlazaGrantsUi() {
             if (sav <= 0) return window.customAlert('일반예금에 출금할 잔액이 없습니다.');
             const ok = await window.customConfirm(`일반예금 ${sav.toFixed(1)} B를 전부 지갑으로 출금할까요?`);
             if (!ok) return;
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sav);
-            window.playerState.bankRegularSavings = 0;
-            const inp = document.getElementById('bankWithdrawInput');
-            if (inp) inp.value = '';
-            updateUI();
-            await saveDataToCloud();
-            await window.customAlert(`💵 ${sav.toFixed(1)} B를 모두 찾았습니다.`);
+            try {
+                await runBankTransaction((serverData) => {
+                    const serverRegular = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
+                    if (serverRegular < sav) throw new Error('insufficient_savings');
+                    const serverWallet = normalizeBongValue(Number(serverData.bong) || 0);
+                    return {
+                        bong: normalizeBongValue(serverWallet + sav),
+                        bankRegularSavings: normalizeBongValue(serverRegular - sav),
+                    };
+                });
+                const inp = document.getElementById('bankWithdrawInput');
+                if (inp) inp.value = '';
+                await window.customAlert(`💵 ${sav.toFixed(1)} B를 모두 찾았습니다.`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'insufficient_savings') return window.customAlert('서버 기준 일반예금 잔액이 부족합니다. 새로고침 후 다시 시도해 주세요.');
+                await window.customAlert('출금 실패: ' + code);
+            }
         };
 
         /** 적금(보물상자) 가입 — 안내 후 확인 */
@@ -2048,14 +2103,25 @@ function redrawPlazaGrantsUi() {
             const amt = Math.round(raw * 10) / 10;
             const w0 = Number(window.playerState.bong) || 0;
             if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${w0.toFixed(1)} B)`);
-            if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
-            window.playerState.bong = normalizeBongValue(w0 - amt);
             const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-            window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
-            if (inp) inp.value = '';
-            updateUI();
-            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
-            await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
+            const newTerm = { id, amount: amt, startDate: getLocalDateStr() };
+            try {
+                await runBankTransaction((serverData) => {
+                    const serverWallet = normalizeBongValue(Number(serverData.bong) || 0);
+                    if (serverWallet < amt) throw new Error('insufficient_wallet');
+                    const serverTerms = Array.isArray(serverData.bankTermDeposits) ? serverData.bankTermDeposits : [];
+                    return {
+                        bong: normalizeBongValue(serverWallet - amt),
+                        bankTermDeposits: [...serverTerms, newTerm],
+                    };
+                });
+                if (inp) inp.value = '';
+                await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'insufficient_wallet') return window.customAlert('서버 기준 보유 삼봉이 부족합니다. 새로고침 후 다시 시도해 주세요.');
+                await window.customAlert('적금 가입 실패: ' + code);
+            }
         };
 
         /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음 */
@@ -2069,13 +2135,27 @@ function redrawPlazaGrantsUi() {
                 `중도 해지 시 이자는 지급되지 않고 원금 ${(Number(td.amount) || 0).toFixed(1)} B만 지갑으로 돌아갑니다.\n해지할까요?`
             );
             if (!ok) return;
-            const principal = Number(td.amount) || 0;
-            arr.splice(idx, 1);
-            window.playerState.bankTermDeposits = arr;
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
-            updateUI();
-            await saveDataToCloud();
-            await window.customAlert(`💰 원금 ${principal.toFixed(1)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+            let principal = Number(td.amount) || 0;
+            try {
+                await runBankTransaction((serverData) => {
+                    const serverTerms = Array.isArray(serverData.bankTermDeposits) ? serverData.bankTermDeposits : [];
+                    const serverIdx = serverTerms.findIndex(t => String(t && t.id) === String(termId));
+                    if (serverIdx < 0) throw new Error('term_not_found');
+                    const serverTerm = serverTerms[serverIdx] || {};
+                    principal = Number(serverTerm.amount) || 0;
+                    const nextTerms = serverTerms.filter((_, i) => i !== serverIdx);
+                    const serverWallet = normalizeBongValue(Number(serverData.bong) || 0);
+                    return {
+                        bong: normalizeBongValue(serverWallet + principal),
+                        bankTermDeposits: nextTerms,
+                    };
+                });
+                await window.customAlert(`💰 원금 ${principal.toFixed(1)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'term_not_found') return window.customAlert('서버에서 해당 적금을 찾을 수 없어요. 새로고침 후 다시 확인해 주세요.');
+                await window.customAlert('적금 해지 실패: ' + code);
+            }
         };
 
         window.saveBankInterestRate = async function() {
@@ -2557,7 +2637,7 @@ function redrawPlazaGrantsUi() {
 
             updateLunchInvestLockUI();
             window.updateBankPanel();
-            if (bankProcessingNeedSave) saveDataToCloud();
+            if (bankProcessingNeedSave) saveDataToCloud({ allowBankFields: true });
 
             // 스피드 퀴즈: 로그인 직후·상태 갱신 시 진행 중인 퀴즈 팝업을 다시 맞춤 (선생님이 먼저 출제한 경우 포함)
             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
@@ -2709,6 +2789,7 @@ function redrawPlazaGrantsUi() {
             const opts = {
                 allowXpDecrease: false,
                 allowBongDecrease: false,
+                allowBankFields: false,
                 maxXpDecrease: 0,
                 maxBongDecrease: 0,
                 ...options,
@@ -2718,6 +2799,11 @@ function redrawPlazaGrantsUi() {
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
+            if (!opts.allowBankFields) {
+                delete dataToSave.bankRegularSavings;
+                delete dataToSave.bankTermDeposits;
+                delete dataToSave.bankDailyBonusLastDate;
+            }
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }

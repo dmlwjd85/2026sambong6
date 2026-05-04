@@ -4,6 +4,8 @@ import { useUiStore } from './useUiStore'
 
 export type SentenceStatus = 'idle' | 'loading' | 'done'
 
+export type WordSceneStatus = 'idle' | 'loading' | 'done' | 'error'
+
 export type DirectingStatus = 'draft' | 'done'
 
 export type Directing = {
@@ -48,6 +50,17 @@ export type PicBook = {
   publishedAt: string | null
 }
 
+export type WordScene = {
+  id: string
+  word: string
+  prompt: string
+  imageUrl: string | null
+  status: WordSceneStatus
+  error: string | null
+  durationSec: number
+  createdAt: string
+}
+
 function normalizePicBook(input: PicBook): PicBook {
   // 과거 저장 데이터 호환: published 필드가 없으면 비공개로 취급
   return {
@@ -62,6 +75,9 @@ type BookState = {
   sentences: Sentence[]
   /** 문장 id 순서. 픽북 페이지 순서·캔버스 “모아보기”에 사용. */
   timelineOrder: string[]
+  /** 낱말 단위로 생성한 장면 후보. 장면 연결 에디터에서 사용. */
+  wordScenes: WordScene[]
+  wordSceneOrder: string[]
   picBooks: PicBook[]
   wallet: { coins: number }
   setFullText: (nextText: string) => void
@@ -70,6 +86,14 @@ type BookState = {
   setSentenceDuration: (sentenceId: string, durationSec: number) => void
   setTimelineOrder: (orderedSentenceIds: string[]) => void
   moveTimeline: (sentenceId: string, direction: 'up' | 'down') => void
+  addWordScenesFromInput: (input: string) => { ok: true; added: number } | { ok: false; reason: string }
+  removeWordScene: (sceneId: string) => void
+  updateWordScenePrompt: (sceneId: string, prompt: string) => void
+  generateWordSceneImage: (sceneId: string) => { ok: true } | { ok: false; reason: string }
+  setWordSceneDuration: (sceneId: string, durationSec: number) => void
+  moveWordScene: (sceneId: string, direction: 'up' | 'down') => void
+  getOrderedWordScenes: () => WordScene[]
+  exportWordScenesJson: () => string
   /** 현재 입력 끝 기준으로 “작성 중인 문장” 인덱스(0~). 문장이 없으면 -1. */
   computeActiveSentenceIndex: () => number
   /** 타임라인 순으로 정렬된 문장 목록(누락 id는 뒤에 붙임). */
@@ -314,6 +338,25 @@ function buildNanoBananaPrompt(input: { fullText: string; sentence: Sentence }):
   ].join('\n')
 }
 
+function buildWordScenePrompt(input: { word: string; prompt: string; fullText: string }): string {
+  const story = clipText(input.fullText, 900)
+  const detail = input.prompt.trim()
+
+  return [
+    '너는 아동/청소년 독서 활동용 “그림일기(픽처링 북)” 일러스트레이터다.',
+    '낱말 하나를 중심으로 단일 장면 1컷을 만든다.',
+    '- 장면은 책/영상 편집에 바로 연결할 수 있게 중심 피사체와 배경이 명확해야 한다.',
+    '- 과도한 폭력/선정/혐오/실존 인물 초상화는 피해라.',
+    '- 화풍: 부드러운 수채화 + 연필 스케치 느낌, 따뜻한 조명, 깔끔한 구도.',
+    '',
+    `[핵심 낱말] ${input.word}`,
+    detail ? `[추가 지시] ${detail}` : '[추가 지시] 낱말의 감정과 움직임이 드러나게 표현',
+    '',
+    '[책 전체 맥락(참고용)]',
+    story || '(맥락 텍스트 없음)',
+  ].join('\n')
+}
+
 async function generateSentenceImage(input: { fullText: string; sentence: Sentence }): Promise<string> {
   const provider = getImageProvider()
   const role = useUiStore.getState().role
@@ -353,6 +396,41 @@ async function generateSentenceImage(input: { fullText: string; sentence: Senten
   return svgDataUrl(input.sentence.text)
 }
 
+async function generateWordSceneImageDataUrl(input: { fullText: string; scene: WordScene }): Promise<string> {
+  const provider = getImageProvider()
+  const role = useUiStore.getState().role
+  const mockText = input.scene.prompt ? `${input.scene.word} - ${input.scene.prompt}` : input.scene.word
+
+  if (role !== 'master') {
+    const delay = 250 + Math.floor(Math.random() * 250)
+    await new Promise((r) => setTimeout(r, delay))
+    return svgDataUrl(mockText)
+  }
+
+  if (provider === 'gemini') {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined
+    if (!apiKey) {
+      const delay = 250 + Math.floor(Math.random() * 250)
+      await new Promise((r) => setTimeout(r, delay))
+      return svgDataUrl(mockText)
+    }
+
+    const model = (import.meta.env.VITE_GEMINI_IMAGE_MODEL as string | undefined) ?? 'gemini-2.5-flash-image'
+    const prompt = buildWordScenePrompt({ fullText: input.fullText, word: input.scene.word, prompt: input.scene.prompt })
+    try {
+      return await generateNanoBananaImageDataUrl({ apiKey, model, prompt })
+    } catch {
+      const delay = 250 + Math.floor(Math.random() * 250)
+      await new Promise((r) => setTimeout(r, delay))
+      return svgDataUrl(mockText)
+    }
+  }
+
+  const delay = 650 + Math.floor(Math.random() * 850)
+  await new Promise((r) => setTimeout(r, delay))
+  return svgDataUrl(mockText)
+}
+
 const STORAGE_KEY = 'picbook.v1'
 
 /** v1 저장 포맷 (마이그레이션용) */
@@ -373,11 +451,34 @@ type PersistedV2 = {
   timelineOrder: string[]
 }
 
+type PersistedV3 = {
+  version: 3
+  fullText: string
+  sentences: Sentence[]
+  picBooks: PicBook[]
+  wallet: { coins: number }
+  timelineOrder: string[]
+  wordScenes: WordScene[]
+  wordSceneOrder: string[]
+}
+
 function normalizeSentenceRow(s: Sentence): Sentence {
   return {
     ...s,
     durationSec: typeof s.durationSec === 'number' && s.durationSec > 0 ? s.durationSec : 4,
     directing: s.directing ?? defaultDirecting(),
+  }
+}
+
+function normalizeWordScene(s: WordScene): WordScene {
+  return {
+    ...s,
+    prompt: s.prompt ?? '',
+    imageUrl: s.imageUrl ?? null,
+    status: s.status ?? (s.imageUrl ? 'done' : 'idle'),
+    error: s.error ?? null,
+    durationSec: typeof s.durationSec === 'number' && s.durationSec > 0 ? s.durationSec : 3,
+    createdAt: s.createdAt ?? new Date().toISOString(),
   }
 }
 
@@ -393,51 +494,85 @@ function reconcileTimelineOrder(prevOrder: string[], nextSentences: Sentence[]):
   return kept
 }
 
-function safeParse(json: string | null): PersistedV2 | null {
+function reconcileWordSceneOrder(prevOrder: string[], nextScenes: WordScene[]): string[] {
+  const ids = nextScenes.map((x) => x.id)
+  const idSet = new Set(ids)
+  const kept = prevOrder.filter((id) => idSet.has(id))
+  const keptSet = new Set(kept)
+  for (const id of ids) {
+    if (!keptSet.has(id)) kept.push(id)
+  }
+  return kept
+}
+
+function safeParse(json: string | null): PersistedV3 | null {
   if (!json) return null
   try {
-    const v = JSON.parse(json) as PersistedV1 | PersistedV2
-    if (!v || (v.version !== 1 && v.version !== 2)) return null
+    const v = JSON.parse(json) as PersistedV1 | PersistedV2 | PersistedV3
+    if (!v || (v.version !== 1 && v.version !== 2 && v.version !== 3)) return null
     if (v.version === 1) {
       const sents = (v.sentences ?? []).map(normalizeSentenceRow)
       return {
-        version: 2,
+        version: 3,
         fullText: v.fullText ?? '',
         sentences: sents,
         picBooks: v.picBooks ?? [],
         wallet: v.wallet ?? { coins: 1200 },
         timelineOrder: sents.map((s) => s.id),
+        wordScenes: [],
+        wordSceneOrder: [],
       }
     }
-    const v2 = v as PersistedV2
-    const sents = (v2.sentences ?? []).map(normalizeSentenceRow)
+    if (v.version === 2) {
+      const v2 = v as PersistedV2
+      const sents = (v2.sentences ?? []).map(normalizeSentenceRow)
+      return {
+        version: 3,
+        fullText: v2.fullText ?? '',
+        sentences: sents,
+        picBooks: v2.picBooks ?? [],
+        wallet: v2.wallet ?? { coins: 1200 },
+        timelineOrder: v2.timelineOrder?.length ? v2.timelineOrder : sents.map((x) => x.id),
+        wordScenes: [],
+        wordSceneOrder: [],
+      }
+    }
+    const v3 = v as PersistedV3
+    const sents = (v3.sentences ?? []).map(normalizeSentenceRow)
+    const wordScenes = (v3.wordScenes ?? []).map(normalizeWordScene)
     return {
-      version: 2,
-      fullText: v2.fullText ?? '',
+      version: 3,
+      fullText: v3.fullText ?? '',
       sentences: sents,
-      picBooks: v2.picBooks ?? [],
-      wallet: v2.wallet ?? { coins: 1200 },
-      timelineOrder: v2.timelineOrder?.length ? v2.timelineOrder : sents.map((x) => x.id),
+      picBooks: v3.picBooks ?? [],
+      wallet: v3.wallet ?? { coins: 1200 },
+      timelineOrder: v3.timelineOrder?.length ? v3.timelineOrder : sents.map((x) => x.id),
+      wordScenes,
+      wordSceneOrder: reconcileWordSceneOrder(v3.wordSceneOrder ?? [], wordScenes),
     }
   } catch {
     return null
   }
 }
 
-function loadPersisted(): PersistedV2 | null {
+function loadPersisted(): PersistedV3 | null {
   if (typeof window === 'undefined') return null
   return safeParse(window.localStorage.getItem(STORAGE_KEY))
 }
 
-function persistSnapshot(state: Pick<BookState, 'fullText' | 'sentences' | 'picBooks' | 'wallet' | 'timelineOrder'>) {
+function persistSnapshot(
+  state: Pick<BookState, 'fullText' | 'sentences' | 'picBooks' | 'wallet' | 'timelineOrder' | 'wordScenes' | 'wordSceneOrder'>,
+) {
   if (typeof window === 'undefined') return
-  const payload: PersistedV2 = {
-    version: 2,
+  const payload: PersistedV3 = {
+    version: 3,
     fullText: state.fullText,
     sentences: state.sentences,
     picBooks: state.picBooks,
     wallet: state.wallet,
     timelineOrder: state.timelineOrder,
+    wordScenes: state.wordScenes,
+    wordSceneOrder: state.wordSceneOrder,
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
 }
@@ -446,11 +581,15 @@ export const useBookStore = create<BookState>((set, get) => {
   const hydrated = loadPersisted()
   const initialSentences = (hydrated?.sentences ?? []).map(normalizeSentenceRow)
   const initialOrder = reconcileTimelineOrder(hydrated?.timelineOrder ?? [], initialSentences)
+  const initialWordScenes = (hydrated?.wordScenes ?? []).map(normalizeWordScene)
+  const initialWordSceneOrder = reconcileWordSceneOrder(hydrated?.wordSceneOrder ?? [], initialWordScenes)
 
   return {
     fullText: hydrated?.fullText ?? '',
     sentences: initialSentences,
     timelineOrder: initialOrder,
+    wordScenes: initialWordScenes,
+    wordSceneOrder: initialWordSceneOrder,
     picBooks: (hydrated?.picBooks ?? []).map((b) => normalizePicBook(b)),
     wallet: hydrated?.wallet ?? { coins: 1200 },
 
@@ -534,6 +673,184 @@ export const useBookStore = create<BookState>((set, get) => {
         persistSnapshot(out)
         return out
       })
+    },
+
+    addWordScenesFromInput: (input) => {
+      const words = Array.from(
+        new Set(
+          input
+            .split(/[\s,，、.?!\n\r\t]+/)
+            .map((x) => x.trim())
+            .filter(Boolean),
+        ),
+      )
+
+      if (words.length === 0) return { ok: false, reason: '추가할 낱말을 입력해 주세요.' }
+
+      set((state) => {
+        const existing = new Set(state.wordScenes.map((x) => x.word.toLocaleLowerCase()))
+        const now = new Date().toISOString()
+        const nextScenes = [
+          ...state.wordScenes,
+          ...words
+            .filter((word) => !existing.has(word.toLocaleLowerCase()))
+            .map((word) => ({
+              id: createId(),
+              word,
+              prompt: '',
+              imageUrl: null,
+              status: 'idle' as const,
+              error: null,
+              durationSec: 3,
+              createdAt: now,
+            })),
+        ]
+        const out = {
+          ...state,
+          wordScenes: nextScenes,
+          wordSceneOrder: reconcileWordSceneOrder(state.wordSceneOrder, nextScenes),
+        }
+        persistSnapshot(out)
+        return out
+      })
+
+      return { ok: true, added: words.length }
+    },
+
+    removeWordScene: (sceneId) => {
+      set((state) => {
+        const nextScenes = state.wordScenes.filter((scene) => scene.id !== sceneId)
+        const out = {
+          ...state,
+          wordScenes: nextScenes,
+          wordSceneOrder: reconcileWordSceneOrder(state.wordSceneOrder, nextScenes),
+        }
+        persistSnapshot(out)
+        return out
+      })
+    },
+
+    updateWordScenePrompt: (sceneId, prompt) => {
+      set((state) => {
+        const nextScenes = state.wordScenes.map((scene) => (scene.id === sceneId ? { ...scene, prompt } : scene))
+        const out = { ...state, wordScenes: nextScenes }
+        persistSnapshot(out)
+        return out
+      })
+    },
+
+    generateWordSceneImage: (sceneId) => {
+      if (useUiStore.getState().role !== 'master') {
+        return { ok: false, reason: '마스터 모드에서만 낱말 장면을 생성할 수 있습니다.' }
+      }
+
+      const scene = get().wordScenes.find((x) => x.id === sceneId)
+      if (!scene) return { ok: false, reason: '낱말 장면을 찾을 수 없습니다.' }
+
+      set((state) => {
+        const nextScenes = state.wordScenes.map((it) =>
+          it.id === sceneId
+            ? {
+                ...it,
+                status: 'loading' as const,
+                error: null,
+                imageUrl: null,
+              }
+            : it,
+        )
+        const out = { ...state, wordScenes: nextScenes }
+        persistSnapshot(out)
+        return out
+      })
+
+      void (async () => {
+        const snap = get().wordScenes.find((x) => x.id === sceneId)
+        if (!snap) return
+        try {
+          const url = await generateWordSceneImageDataUrl({ fullText: get().fullText, scene: snap })
+          set((state) => {
+            const nextScenes = state.wordScenes.map((it) =>
+              it.id === sceneId ? { ...it, imageUrl: url, status: 'done' as const, error: null } : it,
+            )
+            const out = { ...state, wordScenes: nextScenes }
+            persistSnapshot(out)
+            return out
+          })
+        } catch (e) {
+          const message = e instanceof Error ? e.message : '장면 생성에 실패했습니다.'
+          set((state) => {
+            const nextScenes = state.wordScenes.map((it) =>
+              it.id === sceneId ? { ...it, status: 'error' as const, error: message } : it,
+            )
+            const out = { ...state, wordScenes: nextScenes }
+            persistSnapshot(out)
+            return out
+          })
+        }
+      })()
+
+      return { ok: true }
+    },
+
+    setWordSceneDuration: (sceneId, durationSec) => {
+      const sec = Math.max(0.5, Math.min(120, durationSec))
+      set((state) => {
+        const nextScenes = state.wordScenes.map((scene) =>
+          scene.id === sceneId ? { ...scene, durationSec: sec } : scene,
+        )
+        const out = { ...state, wordScenes: nextScenes }
+        persistSnapshot(out)
+        return out
+      })
+    },
+
+    moveWordScene: (sceneId, direction) => {
+      set((state) => {
+        let order = [...state.wordSceneOrder]
+        if (order.length === 0) order = state.wordScenes.map((scene) => scene.id)
+        const i = order.indexOf(sceneId)
+        if (i === -1) return state
+        const j = direction === 'up' ? i - 1 : i + 1
+        if (j < 0 || j >= order.length) return state
+        const nextOrder = [...order]
+        ;[nextOrder[i], nextOrder[j]] = [nextOrder[j], nextOrder[i]]
+        const out = { ...state, wordSceneOrder: nextOrder }
+        persistSnapshot(out)
+        return out
+      })
+    },
+
+    getOrderedWordScenes: () => {
+      const state = get()
+      const byId = Object.fromEntries(state.wordScenes.map((x) => [x.id, x])) as Record<string, WordScene>
+      const base = state.wordSceneOrder.length > 0 ? state.wordSceneOrder : state.wordScenes.map((x) => x.id)
+      const seen = new Set<string>()
+      const ordered: WordScene[] = []
+      for (const id of base) {
+        const scene = byId[id]
+        if (scene && !seen.has(id)) {
+          seen.add(id)
+          ordered.push(scene)
+        }
+      }
+      for (const scene of state.wordScenes) {
+        if (!seen.has(scene.id)) ordered.push(scene)
+      }
+      return ordered
+    },
+
+    exportWordScenesJson: () => {
+      const state = get()
+      return JSON.stringify(
+        {
+          version: 1,
+          kind: 'picbook.word_scenes',
+          exportedAt: new Date().toISOString(),
+          scenes: state.getOrderedWordScenes(),
+        },
+        null,
+        2,
+      )
     },
 
     grantMockCoins: (amount) => {

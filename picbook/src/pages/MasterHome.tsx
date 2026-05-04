@@ -3,13 +3,25 @@ import { useMemo } from 'react'
 import { useBookStore } from '../store/useBookStore'
 
 export default function MasterHome() {
+  const sentences = useBookStore((s) => s.sentences)
+  const wordScenes = useBookStore((s) => s.wordScenes)
   const picBooks = useBookStore((s) => s.picBooks)
+  const canAssemble = useBookStore((s) => s.canAssemblePicBookFromDraft())
   const publishPicBook = useBookStore((s) => s.publishPicBook)
   const unpublishPicBook = useBookStore((s) => s.unpublishPicBook)
   const exportMasterBundle = useBookStore((s) => s.exportMasterBundleJson)
 
   const drafts = useMemo(() => picBooks.filter((b) => !b.published), [picBooks])
   const published = useMemo(() => picBooks.filter((b) => b.published), [picBooks])
+  const sentenceStats = useMemo(() => {
+    const imageReady = sentences.filter((s) => s.status === 'done' && s.imageUrl).length
+    const directed = sentences.filter((s) => s.directing.status === 'done').length
+    return { total: sentences.length, imageReady, directed }
+  }, [sentences])
+  const wordSceneStats = useMemo(() => {
+    const ready = wordScenes.filter((scene) => scene.status === 'done' && scene.imageUrl).length
+    return { total: wordScenes.length, ready }
+  }, [wordScenes])
 
   return (
     <div className="h-full overflow-auto">
@@ -31,6 +43,12 @@ export default function MasterHome() {
             className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
           >
             문장 페이지/묶기
+          </Link>
+          <Link
+            to="/editor/word-scenes"
+            className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-semibold text-violet-900 hover:bg-violet-100"
+          >
+            장면 연결 에디터
           </Link>
           <Link
             to="/store"
@@ -55,6 +73,30 @@ export default function MasterHome() {
             마스터 번들보내기(JSON)
           </button>
         </div>
+
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-900">작업 상태</h2>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <StatusCard
+              title="문장 픽북"
+              body={`문장 ${sentenceStats.total}개 · 이미지 ${sentenceStats.imageReady}개 · 디렉팅 ${sentenceStats.directed}개`}
+              tone={canAssemble.ok ? 'ready' : 'wait'}
+              note={canAssemble.ok ? '픽북으로 묶을 수 있습니다.' : canAssemble.reason}
+            />
+            <StatusCard
+              title="낱말 장면"
+              body={`장면 ${wordSceneStats.total}개 · 이미지 준비 ${wordSceneStats.ready}개`}
+              tone={wordSceneStats.ready > 0 ? 'ready' : 'wait'}
+              note={wordSceneStats.ready > 0 ? '연결 에디터에서 편집할 수 있습니다.' : '툴킷에서 낱말을 추가하고 Nano 생성하세요.'}
+            />
+            <StatusCard
+              title="출판"
+              body={`대기 ${drafts.length}개 · 출판됨 ${published.length}개`}
+              tone={drafts.length > 0 || published.length > 0 ? 'ready' : 'wait'}
+              note={drafts.length > 0 ? '출판 버튼을 눌러 서점에 노출하세요.' : '픽북으로 묶은 뒤 출판할 수 있습니다.'}
+            />
+          </div>
+        </section>
 
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -132,6 +174,21 @@ export default function MasterHome() {
           </section>
         </div>
       </div>
+    </div>
+  )
+}
+
+function StatusCard({ title, body, note, tone }: { title: string; body: string; note: string; tone: 'ready' | 'wait' }) {
+  return (
+    <div
+      className={[
+        'rounded-2xl border p-4',
+        tone === 'ready' ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50',
+      ].join(' ')}
+    >
+      <div className="text-xs font-semibold text-slate-700">{title}</div>
+      <div className="mt-2 text-sm font-semibold text-slate-900">{body}</div>
+      <div className="mt-1 text-xs text-slate-600">{note}</div>
     </div>
   )
 }

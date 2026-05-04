@@ -864,6 +864,14 @@
             <!-- 레이드 출제 패널 -->
             <div class="glass-panel p-4 rounded-xl mb-4 border border-purple-500 bg-slate-900/80">
                 <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <label class="text-[10px] text-slate-300">최대 보상 XP
+                        <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    </label>
+                    <label class="text-[10px] text-slate-300">최대 보상 B
+                        <input type="number" id="raidRewardBongInput" min="0" step="0.1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    </label>
+                </div>
                 <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
                 <div class="flex gap-2">
                     <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>

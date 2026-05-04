@@ -337,7 +337,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [] };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         
@@ -410,6 +410,14 @@ function redrawPlazaGrantsUi() {
         function getDefaultShopPrice(shopId) {
             const s = getShopItemById(shopId);
             return s ? Number(s.price) || 0 : 0;
+        }
+
+        function getWeekendRaidRewardSettings() {
+            const rawXp = window.globalSettings && window.globalSettings.weekendRaidRewardXp != null ? window.globalSettings.weekendRaidRewardXp : 100;
+            const rawBong = window.globalSettings && window.globalSettings.weekendRaidRewardBong != null ? window.globalSettings.weekendRaidRewardBong : 20;
+            const xp = Math.max(0, Math.floor(Number(rawXp) || 0));
+            const bong = normalizeBongValue(Math.max(0, Number(rawBong) || 0));
+            return { xp, bong };
         }
 
         /** Firestore settings.global.shopPrices 우선, 없으면 SHOP_DATA 기본가 */
@@ -1268,6 +1276,14 @@ function redrawPlazaGrantsUi() {
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);
                                 }
+                                const raidRewardXpEl = document.getElementById('raidRewardXpInput');
+                                const raidRewardBongEl = document.getElementById('raidRewardBongInput');
+                                if (raidRewardXpEl && window.globalSettings.weekendRaidRewardXp != null) {
+                                    raidRewardXpEl.value = String(window.globalSettings.weekendRaidRewardXp);
+                                }
+                                if (raidRewardBongEl && window.globalSettings.weekendRaidRewardBong != null) {
+                                    raidRewardBongEl.value = String(window.globalSettings.weekendRaidRewardBong);
+                                }
                                 renderShopCatalog();
                                 renderShopManagementAdminPanel();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
@@ -1323,6 +1339,10 @@ function redrawPlazaGrantsUi() {
                                     if(r) r.checked = true;
                                 }
                             }
+                            const raidRewardXpEl = document.getElementById('raidRewardXpInput');
+                            const raidRewardBongEl = document.getElementById('raidRewardBongInput');
+                            if (raidRewardXpEl && d.rewardMaxXp != null) raidRewardXpEl.value = String(d.rewardMaxXp);
+                            if (raidRewardBongEl && d.rewardMaxBong != null) raidRewardBongEl.value = String(d.rewardMaxBong);
                         });
 
                         if(window._unsubGbDraft) window._unsubGbDraft();
@@ -2561,6 +2581,8 @@ function redrawPlazaGrantsUi() {
 
             // 스피드 퀴즈: 로그인 직후·상태 갱신 시 진행 중인 퀴즈 팝업을 다시 맞춤 (선생님이 먼저 출제한 경우 포함)
             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
+            if (typeof updateDragonBallUI === 'function') updateDragonBallUI();
+            if (typeof updateRaidEntryUI === 'function') updateRaidEntryUI();
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가
@@ -3794,8 +3816,8 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || !window.playerState.isGM) return window.customAlert('마스터 J만 조회할 수 있습니다.');
             const modal = document.getElementById('shopGroupBuyAdminModal');
             if (!modal) return;
-            window.renderShopGroupBuyAdminModal();
             modal.classList.remove('hidden');
+            window.renderShopGroupBuyAdminModal();
         };
 
         window.renderShopGroupBuyAdminModal = function () {
@@ -5502,7 +5524,7 @@ function redrawPlazaGrantsUi() {
 
         function raidIsMyParticipant(st) {
             if(!st || !Array.isArray(st.participants)) return false;
-            return st.participants.some(p => p.id === window.playerState.id);
+            return st.participants.some(p => String(p.id) === String(window.playerState.id));
         }
 
         function getRaidBaseDamage(st) {
@@ -5618,7 +5640,6 @@ function redrawPlazaGrantsUi() {
         }
 
         window.maybeDistributeRaidRewards = async function(st) {
-            if(!window.playerState.isGM) return;
             if(!st || st.status !== 'waiting' || st.raidResult !== 'success') return;
 
             const sessionId = st.completionSessionId || st.startTime || st.completedAt;
@@ -5628,37 +5649,50 @@ function redrawPlazaGrantsUi() {
 
             window._raidRewardingFor = sessionId;
             try {
-                // 먼저 보상 플래그를 박아 중복 지급 가능성을 줄임
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
-                    rewardsGivenFor: sessionId,
-                    rewardsGivenAt: Date.now()
-                }, { merge: true });
+                const raidRef = doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state');
+                let paid = false;
+                let paidRewardMaxXp = 0;
+                let paidRewardMaxBong = 0;
+                await runTransaction(db, async (transaction) => {
+                    const raidSnap = await transaction.get(raidRef);
+                    const cur = raidSnap.exists() ? raidSnap.data() : st;
+                    if(!cur || cur.status !== 'waiting' || cur.raidResult !== 'success') return;
+                    const curSessionId = cur.completionSessionId || cur.startTime || cur.completedAt;
+                    if(cur.rewardsGivenFor === curSessionId || String(curSessionId) !== String(sessionId)) return;
 
-                const participants = Array.isArray(st.participants) ? st.participants : [];
-                const dmgBy = (st && st.damageBy && typeof st.damageBy === 'object') ? st.damageBy : {};
-                const maxHp = st.maxBossHP || BASE_BOSS_HP;
+                    const participants = Array.isArray(cur.participants) ? cur.participants : [];
+                    const dmgBy = (cur && cur.damageBy && typeof cur.damageBy === 'object') ? cur.damageBy : {};
+                    const maxHp = cur.maxBossHP || BASE_BOSS_HP;
+                    const defaults = getWeekendRaidRewardSettings();
+                    const rewardMaxXp = Math.max(0, Math.floor(Number(cur.rewardMaxXp != null ? cur.rewardMaxXp : defaults.xp) || 0));
+                    const rewardMaxBong = normalizeBongValue(Math.max(0, Number(cur.rewardMaxBong != null ? cur.rewardMaxBong : defaults.bong) || 0));
+                    paidRewardMaxXp = rewardMaxXp;
+                    paidRewardMaxBong = rewardMaxBong;
 
-                const batch = writeBatch(db);
-                participants.forEach(p => {
-                    const id = p && p.id !== undefined ? String(p.id) : null;
-                    if(!id) return;
-                    // 보스에게 준 데미지에 비례 보상(최대 100XP/20B)
-                    const dmg = Number(dmgBy[id]) || 0;
-                    const ratio = maxHp > 0 ? (dmg / maxHp) : 0;
-                    const rewardXp = Math.max(0, Math.min(100, Math.floor(ratio * 100)));
-                    // 봉은 소수 1자리 사용중이므로 0.1 단위 반올림
-                    const rewardBong = Math.max(0, Math.min(20, Math.round(ratio * 20 * 10) / 10));
+                    participants.forEach(p => {
+                        const id = p && p.id !== undefined ? String(p.id) : null;
+                        if(!id) return;
+                        const dmg = Number(dmgBy[id]) || 0;
+                        const ratio = maxHp > 0 ? (dmg / maxHp) : 0;
+                        const rewardXp = Math.max(0, Math.min(rewardMaxXp, Math.floor(ratio * rewardMaxXp)));
+                        const rewardBong = Math.max(0, Math.min(rewardMaxBong, Math.round(ratio * rewardMaxBong * 10) / 10));
+                        if(rewardXp <= 0 && rewardBong <= 0) return;
+                        transaction.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + id), {
+                            xp: increment(rewardXp),
+                            bong: increment(rewardBong)
+                        }, { merge: true });
+                    });
 
-                    if(rewardXp <= 0 && rewardBong <= 0) return;
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + id), {
-                        xp: increment(rewardXp),
-                        bong: increment(rewardBong)
+                    transaction.set(raidRef, {
+                        rewardsGivenFor: curSessionId,
+                        rewardsGivenAt: Date.now()
                     }, { merge: true });
+                    paid = true;
                 });
-                await batch.commit();
 
-                // GM만 간단 알림
-                window.customAlert(`✅ 보스 격파 보상 지급 완료!\n(개인 데미지 비례 / 최대 100XP, 20B)`);
+                if (paid && window.playerState && window.playerState.isGM) {
+                    window.customAlert(`✅ 보스 격파 보상 지급 완료!\n(개인 데미지 비례 / 최대 ${paidRewardMaxXp}XP, ${paidRewardMaxBong}B)`);
+                }
             } catch(e) {
                 console.error('raid reward distribution failed', e);
             } finally {
@@ -5666,47 +5700,79 @@ function redrawPlazaGrantsUi() {
             }
         };
 
-        window.openRaidLobby = async function() {
-            if(!window.playerState.isGM) return;
+        function readRaidRewardInputs() {
+            const fallback = getWeekendRaidRewardSettings();
+            const xpEl = document.getElementById('raidRewardXpInput');
+            const bongEl = document.getElementById('raidRewardBongInput');
+            const xpRaw = xpEl && xpEl.value !== '' ? xpEl.value : fallback.xp;
+            const bongRaw = bongEl && bongEl.value !== '' ? bongEl.value : fallback.bong;
+            const xp = Math.max(0, Math.floor(Number(xpRaw) || 0));
+            const bong = normalizeBongValue(Math.max(0, Number(bongRaw) || 0));
+            return { xp, bong };
+        }
+
+        function readRaidQuestionInputs() {
             const qs = [];
             for(let i=0; i<5; i++) {
-                const qText = document.getElementById(`rq_${i}`).value.trim();
+                const qText = (document.getElementById(`rq_${i}`).value || '').trim();
                 const options = [];
                 for(let j=0; j<4; j++) {
-                    options.push(document.getElementById(`rop_${i}_${j}`).value.trim());
+                    options.push((document.getElementById(`rop_${i}_${j}`).value || '').trim());
                 }
-                const answer = document.querySelector(`input[name="ra_${i}"]:checked`).value;
-                if(qText) qs.push({ q: qText, options, a: parseInt(answer) });
+                const answerEl = document.querySelector(`input[name="ra_${i}"]:checked`);
+                const answer = answerEl ? parseInt(answerEl.value, 10) : 0;
+                if(qText) {
+                    if(options.some((o) => !o)) {
+                        return { error: `Q${i + 1}의 보기 4개를 모두 입력해 주세요.` };
+                    }
+                    qs.push({ q: qText, options, a: answer });
+                }
             }
+            return { questions: qs };
+        }
+
+        window.openRaidLobby = async function() {
+            if(!window.playerState.isGM) return;
+            const read = readRaidQuestionInputs();
+            if(read.error) return window.customAlert(read.error);
+            const qs = read.questions || [];
             if(qs.length === 0) return window.customAlert('문제를 1개 이상 입력하세요.');
+            const reward = readRaidRewardInputs();
             
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                weekendRaidRewardXp: reward.xp,
+                weekendRaidRewardBong: reward.bong
+            }, { merge: true });
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                 status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP,
                 currentTurn: 0, currentActorIndex: 0,
                 startTime: Date.now(), combo: 0, logs: [], questions: qs,
+                rewardMaxXp: reward.xp, rewardMaxBong: reward.bong,
                 turnStartTime: 0, turnResolvedFor: null, turnSubmissions: {},
                 raidResult: null, completedAt: 0, completionSessionId: null, rewardsGivenFor: null,
                 lastLogAnnouncedFor: null,
                 damageBy: {}
             });
-            window.customAlert('레이드 모집 시작!');
+            window.customAlert(`레이드 모집 시작!\n보상 최대치: ${reward.xp}XP / ${reward.bong}B`);
         };
         
         window.saveRaidQuestions = async function() {
             if(!window.playerState.isGM) return;
-            const qs = [];
-            for(let i=0; i<5; i++) {
-                const qText = document.getElementById(`rq_${i}`).value.trim();
-                const options = [];
-                for(let j=0; j<4; j++) options.push(document.getElementById(`rop_${i}_${j}`).value.trim());
-                const answer = document.querySelector(`input[name="ra_${i}"]:checked`).value;
-                qs.push({ q: qText, options, a: parseInt(answer) });
-            }
+            const read = readRaidQuestionInputs();
+            if(read.error) return window.customAlert(read.error);
+            const qs = read.questions || [];
+            const reward = readRaidRewardInputs();
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'draft'), {
                 questions: qs,
+                rewardMaxXp: reward.xp,
+                rewardMaxBong: reward.bong,
                 updatedAt: Date.now()
             }, { merge: true });
-            window.customAlert('✅ 레이드 문제가 저장되었습니다. (새로고침해도 유지)');
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                weekendRaidRewardXp: reward.xp,
+                weekendRaidRewardBong: reward.bong
+            }, { merge: true });
+            window.customAlert('✅ 레이드 문제와 보상이 저장되었습니다. (새로고침해도 유지)');
         };
 
         window.resetRaidForce = async function() {
@@ -5833,7 +5899,7 @@ function redrawPlazaGrantsUi() {
             const q = st.questions[turn];
             if(!q) return;
 
-            const myId = window.playerState.id;
+            const myId = String(window.playerState.id);
             const turnSubsAll = st.turnSubmissions || {};
             const turnSubs = turnSubsAll[turn] || {};
             if(turnSubs[myId] !== undefined) return; // 이미 제출한 경우 무시
@@ -5875,7 +5941,7 @@ function redrawPlazaGrantsUi() {
                 const damage = Math.round(base * comboMul * weaponMul * normalTierMul * (isCritical ? criticalMul : 1));
                 bossHP = clamp(bossHP - damage, 0, st.maxBossHP || BASE_BOSS_HP);
 
-                const pName = (st.participants || []).find(p => p.id === myId)?.name || STUDENT_NAMES[myId] || myId;
+                const pName = (st.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
                 const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
                 newLogs.push(`${pName}: 정답${isCritical ? ' (크리티컬!)' : ''} -${damage}${weaponBonus ? ` (무기 +${weaponBonus})` : ''}`);
 
@@ -5911,7 +5977,7 @@ function redrawPlazaGrantsUi() {
                 const heal = Math.round(base * 0.12);
                 bossHP = clamp(bossHP + heal, 0, st.maxBossHP || BASE_BOSS_HP);
 
-                const pName = (st.participants || []).find(p => p.id === myId)?.name || STUDENT_NAMES[myId] || myId;
+                const pName = (st.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
                 const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
                 newLogs.push(`${pName}: 오답 +${heal}`);
 

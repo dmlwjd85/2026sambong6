@@ -3777,6 +3777,7 @@ function redrawPlazaGrantsUi() {
             const target = getEffectiveShopPrice(shopId);
             const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
             const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+            const executing = !!(pool.executing && typeof pool.executing === 'object' && pool.executing.token);
             const sum = sumShopPoolContributions(pool);
             const curEl = document.getElementById('gbPoolCurrent');
             const tgtEl = document.getElementById('gbPoolTarget');
@@ -3805,10 +3806,11 @@ function redrawPlazaGrantsUi() {
                               .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt} B</span></div>`)
                               .join('');
             }
-            const ready = target > 0 && sum >= target - 0.0001;
+            const ready = target > 0 && !executing && sum >= target - 0.0001;
             if (execBtn) {
                 execBtn.disabled = !ready;
                 execBtn.classList.toggle('opacity-40', !ready);
+                execBtn.textContent = executing ? '구매 실행 중...' : '목표 금액 달성 — 구매 실행';
             }
         };
 
@@ -3936,6 +3938,7 @@ function redrawPlazaGrantsUi() {
             const shopId = window._groupBuyModalShopId;
             if (!shopId || !db) return;
             if (window.playerState.isGuest || window.playerState.isAdmin) return;
+            if (shopId === 'item_mystery_dice') return await window.customAlert('이 상품은 공동구매로 실행할 수 없어요.');
 
             const shop = getShopItemById(shopId);
             if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
@@ -3954,6 +3957,7 @@ function redrawPlazaGrantsUi() {
 
             const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
             let savedContribs = null;
+            const executionToken = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -3969,31 +3973,83 @@ function redrawPlazaGrantsUi() {
                         s += toNaturalShopContribution(contributions[k]);
                     });
                     if (s < target - 0.0001) throw new Error('not_enough');
+                    const executing = d.executing && typeof d.executing === 'object' ? d.executing : null;
+                    if (executing && executing.token) throw new Error('executing');
                     savedContribs = {};
                     Object.keys(contributions).forEach((k) => {
                         const v = toNaturalShopContribution(contributions[k]);
                         if (v > 0) savedContribs[k] = v;
                     });
-                    transaction.set(poolRef, { contributions: {}, updatedAt: Date.now() }, { merge: true });
+                    transaction.set(
+                        poolRef,
+                        {
+                            executing: {
+                                token: executionToken,
+                                by: String(localStorage.getItem('sambong_student_id') || ''),
+                                shopId,
+                                contributions: savedContribs,
+                                updatedAt: Date.now(),
+                            },
+                            updatedAt: Date.now(),
+                        },
+                        { merge: true }
+                    );
                 });
             } catch (e) {
                 const msg = e && e.message ? String(e.message) : String(e);
                 if (msg === 'not_enough') return await window.customAlert('다른 친구가 먼저 진행했거나 금액이 부족해요. 새로고침 후 확인해 주세요.');
+                if (msg === 'executing') return await window.customAlert('이미 구매 실행 중입니다. 잠시 후 새로고침해서 확인해 주세요.');
                 console.error('executeShopGroupBuy', e);
                 return await window.customAlert('처리 중 오류: ' + msg);
             }
 
             document.getElementById('shopGroupBuyModal') && document.getElementById('shopGroupBuyModal').classList.add('hidden');
 
-            if (shopId === 'item_random') {
-                if (!savedContribs || Object.keys(savedContribs).length === 0) {
-                    return await window.customAlert('입금 내역을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
-                }
-                await distributeGroupBuyRandomBox(savedContribs, target);
-                return;
-            }
+            const clearExecutionLock = async (completed) => {
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    if (!poolSnap.exists()) return;
+                    const d = poolSnap.data() || {};
+                    const executing = d.executing && typeof d.executing === 'object' ? d.executing : null;
+                    if (!executing || executing.token !== executionToken) return;
+                    transaction.set(
+                        poolRef,
+                        {
+                            contributions: completed ? {} : (savedContribs || {}),
+                            executing: null,
+                            updatedAt: Date.now(),
+                        },
+                        { merge: true }
+                    );
+                });
+            };
 
-            await window.buyItem(shopId, shop.name, !!shop.isConsumable, { groupBuyExecute: true });
+            let effectApplied = false;
+            try {
+                if (shopId === 'item_random') {
+                    if (!savedContribs || Object.keys(savedContribs).length === 0) {
+                        throw new Error('no_contributions');
+                    }
+                    await distributeGroupBuyRandomBox(savedContribs, target);
+                } else {
+                    await window.buyItem(shopId, shop.name, !!shop.isConsumable, { groupBuyExecute: true });
+                }
+                effectApplied = true;
+                await clearExecutionLock(true);
+            } catch (e) {
+                if (!effectApplied) {
+                    try {
+                        await clearExecutionLock(false);
+                    } catch (restoreError) {
+                        console.error('executeShopGroupBuy restore', restoreError);
+                    }
+                }
+                const msg = e && e.message ? String(e.message) : String(e);
+                if (msg === 'no_contributions') return await window.customAlert('입금 내역을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+                console.error('executeShopGroupBuy apply', e);
+                if (effectApplied) return await window.customAlert('상품 적용은 완료됐지만 공동구매 정리 중 오류가 발생했습니다. 새로고침 후 선생님께 확인해 주세요: ' + msg);
+                return await window.customAlert('구매 실행 중 오류가 발생해 입금 내역을 복구했습니다: ' + msg);
+            }
         };
 
         window.toggleJob = async function(jobName, iconClass, colorClass) {

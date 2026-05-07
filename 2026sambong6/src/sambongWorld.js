@@ -5359,6 +5359,8 @@ function redrawPlazaGrantsUi() {
 
             const st = window.goldenbellState;
             const mId = localStorage.getItem('sambong_student_id');
+            if(!mId) return window.customAlert('로그인 정보를 찾지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+            if(!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             if(!st || !st.isOpen) return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
 
             const prev = st.submissions && st.submissions[mId];
@@ -5369,61 +5371,114 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm("답안을 최종 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.");
             if(!ok) return;
 
-            const totalQuestions = st.questions.length;
-            const answers = [];
-            const results = [];
-            let rewardXp = 0;
-            let rewardBong = 0;
-            let score = 0;
-
-            const gradeRows = [];
-            st.questions.forEach((item, idx) => {
+            const localAnswers = [];
+            st.questions.forEach((_, idx) => {
                 const el = document.getElementById(`gb_ans_${idx}`);
                 const val = el ? (el.value || '').trim() : '';
-                answers.push(val);
-                const isCorrect = normalizeQuizAnswer(val) === normalizeQuizAnswer(String(item.a));
-                results.push(isCorrect);
-                gradeRows.push({
-                    ok: isCorrect,
-                    my: val.length ? val : '(미입력)',
-                    correct: String(item.a)
-                });
-                if (isCorrect) {
-                    score++;
-                    const rx = (typeof item.rewardXp === 'number' && !isNaN(item.rewardXp)) ? item.rewardXp : 10;
-                    const rb = (typeof item.rewardBong === 'number' && !isNaN(item.rewardBong)) ? item.rewardBong : 1;
-                    rewardXp += rx;
-                    rewardBong += rb;
-                }
+                localAnswers[idx] = val;
             });
 
             window._gbFinalSubmitting = true;
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
-                    [`submissions.${mId}`]: {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                const submittedAt = Date.now();
+                const goldenBellRef = doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state');
+                const studentRef = currentStudentDocRef || doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + mId);
+                const grade = await runTransaction(db, async (transaction) => {
+                    const gbSnap = await transaction.get(goldenBellRef);
+                    if (!gbSnap.exists()) throw new Error('no_goldenbell');
+
+                    const latest = gbSnap.data() || {};
+                    if (!latest.isOpen) throw new Error('closed');
+                    const latestSubmissions = latest.submissions && typeof latest.submissions === 'object' ? latest.submissions : {};
+                    const latestPrev = latestSubmissions[mId];
+                    if (latestPrev && (latestPrev.finalized || latestPrev.rewardsGiven)) throw new Error('already');
+
+                    const questions = Array.isArray(latest.questions) ? latest.questions : [];
+                    if (questions.length === 0) throw new Error('no_questions');
+
+                    const answers = [];
+                    const results = [];
+                    const gradeRows = [];
+                    let rewardXp = 0;
+                    let rewardBong = 0;
+                    let score = 0;
+
+                    questions.forEach((item, idx) => {
+                        const val = (localAnswers[idx] || '').trim();
+                        answers.push(val);
+                        const isCorrect = normalizeQuizAnswer(val) === normalizeQuizAnswer(String(item.a));
+                        results.push(isCorrect);
+                        gradeRows.push({
+                            ok: isCorrect,
+                            my: val.length ? val : '(미입력)',
+                            correct: String(item.a)
+                        });
+                        if (isCorrect) {
+                            score++;
+                            const rx = (typeof item.rewardXp === 'number' && !isNaN(item.rewardXp)) ? item.rewardXp : 10;
+                            const rb = (typeof item.rewardBong === 'number' && !isNaN(item.rewardBong)) ? item.rewardBong : 1;
+                            rewardXp += rx;
+                            rewardBong += rb;
+                        }
+                    });
+
+                    const submission = {
                         answers,
                         results,
                         score,
                         finalized: true,
-                        submittedAt: Date.now(),
+                        submittedAt,
                         rewardsGiven: true,
                         rewardXpTotal: rewardXp,
                         rewardBongTotal: rewardBong
-                    }
-                }, { merge: true });
+                    };
 
-                window.playerState.xp += rewardXp;
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(rewardBong));
-                await saveDataToCloud();
+                    transaction.set(goldenBellRef, { [`submissions.${mId}`]: submission }, { merge: true });
+                    const rewardPatch = {};
+                    if (rewardXp > 0) rewardPatch.xp = increment(rewardXp);
+                    if (rewardBong > 0) rewardPatch.bong = increment(normalizeBongValue(rewardBong));
+                    if (Object.keys(rewardPatch).length > 0) {
+                        transaction.set(studentRef, rewardPatch, { merge: true });
+                    }
+
+                    return {
+                        submission,
+                        score,
+                        totalQuestions: questions.length,
+                        rewardXp,
+                        rewardBong: normalizeBongValue(rewardBong),
+                        rows: gradeRows
+                    };
+                });
+
+                window.playerState.xp = Math.floor((Number(window.playerState.xp) || 0) + Number(grade.rewardXp));
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(grade.rewardBong));
+                if (!window.goldenbellState.submissions) window.goldenbellState.submissions = {};
+                window.goldenbellState.submissions[mId] = grade.submission;
                 updateUI();
                 await showGoldenBellGradeModal({
-                    score,
-                    totalQuestions,
-                    rewardXp,
-                    rewardBong,
-                    rows: gradeRows
+                    score: grade.score,
+                    totalQuestions: grade.totalQuestions,
+                    rewardXp: grade.rewardXp,
+                    rewardBong: grade.rewardBong,
+                    rows: grade.rows
                 });
                 window.renderGoldenBellStudent();
+            } catch (e) {
+                const msg = e && e.message ? String(e.message) : String(e);
+                if (msg === 'already') {
+                    await window.customAlert('이미 최종 제출하여 채점이 완료되었습니다.');
+                    window.renderGoldenBellStudent();
+                } else if (msg === 'closed' || msg === 'no_goldenbell' || msg === 'no_questions') {
+                    await window.customAlert('현재 진행 중인 골든벨이 없습니다.');
+                    window.renderGoldenBellStudent();
+                } else {
+                    console.error('submitGoldenBellAll', e);
+                    await window.customAlert('제출 처리 중 오류: ' + msg);
+                }
             } finally {
                 window._gbFinalSubmitting = false;
             }

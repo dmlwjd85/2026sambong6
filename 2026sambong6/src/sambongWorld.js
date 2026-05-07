@@ -503,6 +503,15 @@ function redrawPlazaGrantsUi() {
             return Math.round(n * 10) / 10;
         }
 
+        /** 퀘스트 기록이 남아 있다면 XP 숫자 필드는 최소한 기록 합계보다 낮아지면 안 됩니다. */
+        function getQuestHistoryXpFloor(state) {
+            const history = Array.isArray(state && state.questHistory) ? state.questHistory : [];
+            return history.reduce((sum, q) => {
+                const xp = Number(q && q.xp);
+                return sum + (Number.isFinite(xp) && xp > 0 ? Math.floor(xp) : 0);
+            }, 0);
+        }
+
         /** 골든벨·스피드 퀴즈 공통: 앞뒤 공백 제거, 연속 공백 축소, 영문 소문자 통일 */
         function normalizeQuizAnswer(s) {
             if (s == null || s === undefined) return '';
@@ -2010,7 +2019,8 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
+            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, operationLabel: '일반예금 입금' });
+            if (!saved) return;
             window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
         };
 
@@ -2074,7 +2084,8 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
+            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, operationLabel: '보물상자 적금 가입' });
+            if (!saved) return;
             await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
 
@@ -2733,6 +2744,8 @@ function redrawPlazaGrantsUi() {
                 allowBongDecrease: false,
                 maxXpDecrease: 0,
                 maxBongDecrease: 0,
+                requireServerBongBalance: false,
+                operationLabel: '저장',
                 ...options,
             };
             const dataToSave = { ...window.playerState };
@@ -2743,13 +2756,20 @@ function redrawPlazaGrantsUi() {
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }
+            const xpFloor = getQuestHistoryXpFloor(dataToSave);
+            if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) {
+                const nextXp = Math.floor(Number(dataToSave.xp) || 0);
+                dataToSave.xp = Math.max(nextXp, xpFloor);
+            }
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;
+            let blockedByServerBalance = false;
+            let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
                     console.warn('saveDataToCloud: 익명 인증 실패');
-                    return;
+                    return false;
                 }
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(currentStudentDocRef);
@@ -2768,10 +2788,21 @@ function redrawPlazaGrantsUi() {
 
                         const serverBong = Number(serverData.bong);
                         const nextBong = Number(dataToSave.bong);
+                        const maxBongDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
+                        if (
+                            opts.allowBongDecrease &&
+                            opts.requireServerBongBalance &&
+                            maxBongDrop > 0 &&
+                            Number.isFinite(serverBong) &&
+                            serverBong + 0.0001 < maxBongDrop
+                        ) {
+                            blockedByServerBalance = true;
+                            serverRestoreData = serverData;
+                            return;
+                        }
                         if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
                             if (opts.allowBongDecrease) {
-                                const maxDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
-                                dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxDrop)));
+                                dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
                             } else {
                                 dataToSave.bong = normalizeBongValue(serverBong);
                             }
@@ -2779,10 +2810,29 @@ function redrawPlazaGrantsUi() {
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
+                if (blockedByServerBalance) {
+                    if (serverRestoreData) {
+                        const roleFlags = {
+                            isGuest: window.playerState.isGuest,
+                            isGM: window.playerState.isGM,
+                            isGMA: window.playerState.isGMA,
+                            isAdmin: window.playerState.isAdmin,
+                        };
+                        window.playerState = { ...serverRestoreData, ...roleFlags };
+                        if (typeof updateUI === 'function') updateUI();
+                    }
+                    await window.customAlert(
+                        `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
+                        '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
+                    );
+                    return false;
+                }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
+                return false;
             } finally {
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1000);
             }
@@ -2814,7 +2864,8 @@ function redrawPlazaGrantsUi() {
                 window.playerState.lunchBid.amount += amt;
                 
                 updateUI();
-                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, operationLabel: '밥줄 결제' });
+                if (!saved) return;
                 playSfx('bong', false); 
                 
                 await window.customAlert(`✅ 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
@@ -3145,7 +3196,8 @@ function redrawPlazaGrantsUi() {
             if(!ok) return;
 
             window.playerState.bong -= price;
-            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
+            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '부동산 구매' });
+            if (!saved) return;
             
             seat.owner = window.playerState.id;
             if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
@@ -3478,7 +3530,8 @@ function redrawPlazaGrantsUi() {
                 setTimeout(() => floater.remove(), 2500);
 
                 updateUI();
-                saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '랜덤 박스 구매' });
+                if (!saved) return;
 
                 if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
                 else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
@@ -3512,7 +3565,8 @@ function redrawPlazaGrantsUi() {
 
                 playSfx('bong', win);
                 updateUI();
-                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: bet });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: bet, requireServerBongBalance: true, operationLabel: '미스테리 박스 투자' });
+                if (!saved) return;
 
                 const floater = document.createElement('div');
                 floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-5xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(16,185,129,0.9)] text-emerald-400 whitespace-nowrap text-center`;
@@ -3538,7 +3592,8 @@ function redrawPlazaGrantsUi() {
                 window.playerState.xp += gainXp;
                 playSfx('xp', true);
                 updateUI();
-                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: packPrice });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : packPrice, requireServerBongBalance: !groupEx, operationLabel: '경험치 팩 구매' });
+                if (!saved) return;
                 return await window.customAlert(`⚡ 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
@@ -3556,7 +3611,8 @@ function redrawPlazaGrantsUi() {
                 window.playerState.xp = (Number(window.playerState.xp) || 0) + gainXp;
                 playSfx('xp', true);
                 updateUI();
-                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, operationLabel: '경험치 아이템 구매' });
+                if (!saved) return;
                 return await window.customAlert(`⚡ ${currentShopItem.name} 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
@@ -3583,7 +3639,8 @@ function redrawPlazaGrantsUi() {
                 }
                 playSfx('bong', true);
                 updateUI();
-                await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: eff });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : eff, requireServerBongBalance: !groupEx, operationLabel: `${shop.name} 구매` });
+                if (!saved) return;
                 return await window.customAlert(`✅ [${shop.name}] 구매가 기록되었습니다!\n선생님께 일정을 요청해 주세요.\n(아래 '최근 학급 활동 예약'에 남습니다)`);
             }
 
@@ -3597,7 +3654,8 @@ function redrawPlazaGrantsUi() {
                     const stNow = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, stNow - 1) }, { merge: true });
                     updateUI();
-                    saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
+                    const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, operationLabel: '방패 구매' });
+                    if (!saved) return;
                     return await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                 }
 
@@ -3622,11 +3680,13 @@ function redrawPlazaGrantsUi() {
                             const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
                             updateUI();
-                            saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
+                            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '방패 구매' });
+                            if (!saved) return;
                             await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                         } else {
                             updateUI();
-                            saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price });
+                            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '아이템 구매' });
+                            if (!saved) return;
                         }
                     }
                 } else await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
@@ -4031,7 +4091,10 @@ function redrawPlazaGrantsUi() {
                         
                         window.playerState.equippedSkins[skinId] = true; 
                         await window.customAlert(`🎉 획득 완료! 바로 장착했어요.`); 
-                        updateUI(); saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price }); window.switchTab('plaza');
+                        updateUI();
+                        const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price, requireServerBongBalance: true, operationLabel: `${skin.name} 스킨 구매` });
+                        if (!saved) return;
+                        window.switchTab('plaza');
                     }
                 } else await window.customAlert(`❌ 돈이 부족해요. ${(skin.price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
             }

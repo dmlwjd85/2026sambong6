@@ -4529,6 +4529,12 @@ function redrawPlazaGrantsUi() {
             if (input !== null && !isNaN(parseFloat(input))) {
                 const raw = parseFloat(input);
                 if (type === 'xp' && raw < 0) return await window.customAlert('경험치는 0 이상만 입력할 수 있어요.');
+                if (type === 'xp' && raw < Number(currentVal || 0)) {
+                    return await window.customAlert('경험치는 관리 화면에서 낮출 수 없어요.\n비정상 하락 방지를 위해 필요한 경우 Firebase 콘솔에서 직접 조정해 주세요.');
+                }
+                if (type === 'bong' && raw < -100) {
+                    return await window.customAlert('삼봉은 -100B 아래로 직접 입력할 수 없어요.\n비정상 마이너스 저장을 막기 위한 제한입니다.');
+                }
                 const val = type === 'bong' ? parseFloat(raw.toFixed(1)) : Math.floor(raw);
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { [type]: val }, { merge: true });
             }

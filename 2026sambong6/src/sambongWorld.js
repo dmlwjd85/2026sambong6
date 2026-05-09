@@ -70,6 +70,7 @@ async function refreshStudentsCacheFromServer() {
                 isAdmin: myId === 'gm' || myId === 'gm_a',
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+            rememberSyncedStudentStats(window.playerState);
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
             updateUI();
         }
@@ -378,6 +379,9 @@ function redrawPlazaGrantsUi() {
 
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
+        /** 마지막으로 확인한 서버 수치. 오래 열린 창은 이 기준 대비 변화량만 최신 서버값에 합쳐 저장합니다. */
+        let _lastSyncedXpFromServer = 0;
+        let _lastSyncedBongFromServer = 0;
 
         /** 마스터가 추가한 사용자 정의 상점 아이템 목록 */
         function getCustomShopItems() {
@@ -501,6 +505,15 @@ function redrawPlazaGrantsUi() {
             const n = Number(v);
             if (!Number.isFinite(n)) return 0;
             return Math.round(n * 10) / 10;
+        }
+
+        /** 서버 스냅샷·저장 성공 시점의 기준 수치를 보관해 stale 탭 저장이 절대값을 되돌리지 않게 합니다. */
+        function rememberSyncedStudentStats(state) {
+            if (!state) return;
+            const xp = Number(state.xp);
+            const bong = Number(state.bong);
+            if (Number.isFinite(xp)) _lastSyncedXpFromServer = Math.floor(xp);
+            if (Number.isFinite(bong)) _lastSyncedBongFromServer = normalizeBongValue(bong);
         }
 
         /** 퀘스트 기록이 남아 있다면 XP 숫자 필드는 최소한 기록 합계보다 낮아지면 안 됩니다. */
@@ -1244,6 +1257,7 @@ function redrawPlazaGrantsUi() {
                                         ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a')
                                     };
                                     if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+                                    rememberSyncedStudentStats(window.playerState);
                                     /** 스냅샷이 어제 quests·lastDailyReset을 다시 주면 자정 초기화가 덮어씌워지는 문제 보정(학생만, 알림 없음) */
                                     if (myId !== 'gm' && myId !== 'gm_a' && !window.playerState.isAdmin) {
                                         const dq = applyDailyQuestResetIfNewDay({ silent: true });
@@ -2717,6 +2731,7 @@ function redrawPlazaGrantsUi() {
                 }
                 if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
                 if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+                rememberSyncedStudentStats(window.playerState);
                 _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
                 window._suppressXpSyncToast = true;
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1200);
@@ -2777,17 +2792,39 @@ function redrawPlazaGrantsUi() {
                         const serverData = snap.data() || {};
                         const serverXp = Number(serverData.xp);
                         const nextXp = Number(dataToSave.xp);
-                        if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && nextXp < serverXp) {
-                            if (opts.allowXpDecrease) {
-                                const maxDrop = Math.max(0, Math.floor(Number(opts.maxXpDecrease) || 0));
-                                dataToSave.xp = Math.max(0, Math.floor(Math.max(nextXp, serverXp - maxDrop)));
-                            } else {
-                                dataToSave.xp = Math.floor(serverXp);
+                        const syncedXp = Number(_lastSyncedXpFromServer);
+                        if (Number.isFinite(serverXp) && Number.isFinite(nextXp)) {
+                            if (Number.isFinite(syncedXp)) {
+                                const localXpDelta = Math.floor(nextXp) - Math.floor(syncedXp);
+                                if (localXpDelta < 0) {
+                                    if (opts.allowXpDecrease) {
+                                        const maxDrop = Math.max(0, Math.floor(Number(opts.maxXpDecrease) || 0));
+                                        const allowedDrop = Math.min(Math.abs(localXpDelta), maxDrop);
+                                        dataToSave.xp = Math.max(0, Math.floor(serverXp - allowedDrop));
+                                    } else {
+                                        dataToSave.xp = Math.floor(serverXp);
+                                    }
+                                } else if (localXpDelta > 0) {
+                                    dataToSave.xp = Math.max(0, Math.floor(serverXp + localXpDelta));
+                                } else {
+                                    dataToSave.xp = Math.floor(serverXp);
+                                }
+                            } else if (nextXp < serverXp) {
+                                if (opts.allowXpDecrease) {
+                                    const maxDrop = Math.max(0, Math.floor(Number(opts.maxXpDecrease) || 0));
+                                    dataToSave.xp = Math.max(0, Math.floor(Math.max(nextXp, serverXp - maxDrop)));
+                                } else {
+                                    dataToSave.xp = Math.floor(serverXp);
+                                }
+                            }
+                            if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) {
+                                dataToSave.xp = Math.max(Math.floor(Number(dataToSave.xp) || 0), xpFloor);
                             }
                         }
 
                         const serverBong = Number(serverData.bong);
                         const nextBong = Number(dataToSave.bong);
+                        const syncedBong = Number(_lastSyncedBongFromServer);
                         const maxBongDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
                         if (
                             opts.allowBongDecrease &&
@@ -2800,11 +2837,29 @@ function redrawPlazaGrantsUi() {
                             serverRestoreData = serverData;
                             return;
                         }
-                        if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
-                            if (opts.allowBongDecrease) {
-                                dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
+                        if (Number.isFinite(serverBong) && Number.isFinite(nextBong)) {
+                            if (Number.isFinite(syncedBong)) {
+                                const localBongDelta = normalizeBongValue(nextBong - syncedBong);
+                                if (localBongDelta < -0.0001) {
+                                    if (opts.allowBongDecrease) {
+                                        const allowedDrop = normalizeBongValue(Math.min(Math.abs(localBongDelta), maxBongDrop));
+                                        dataToSave.bong = normalizeBongValue(serverBong - allowedDrop);
+                                    } else {
+                                        dataToSave.bong = normalizeBongValue(serverBong);
+                                    }
+                                } else if (localBongDelta > 0.0001) {
+                                    dataToSave.bong = normalizeBongValue(serverBong + localBongDelta);
+                                } else {
+                                    dataToSave.bong = normalizeBongValue(serverBong);
+                                }
+                            } else if (nextBong < serverBong) {
+                                if (opts.allowBongDecrease) {
+                                    dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
+                                } else {
+                                    dataToSave.bong = normalizeBongValue(serverBong);
+                                }
                             } else {
-                                dataToSave.bong = normalizeBongValue(serverBong);
+                                dataToSave.bong = normalizeBongValue(nextBong);
                             }
                         }
                     }
@@ -2819,6 +2874,7 @@ function redrawPlazaGrantsUi() {
                             isAdmin: window.playerState.isAdmin,
                         };
                         window.playerState = { ...serverRestoreData, ...roleFlags };
+                        rememberSyncedStudentStats(window.playerState);
                         if (typeof updateUI === 'function') updateUI();
                     }
                     await window.customAlert(
@@ -2829,6 +2885,7 @@ function redrawPlazaGrantsUi() {
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                rememberSyncedStudentStats(dataToSave);
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);

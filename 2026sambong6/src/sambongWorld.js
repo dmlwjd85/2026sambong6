@@ -460,8 +460,9 @@ function redrawPlazaGrantsUi() {
             const shopNameArg = inlineJsStringArg(shop.name || '');
             const safeNameHtml = escapeHtmlText(shop.name || '');
             const safeDescHtml = escapeHtmlText(shop.desc || '');
-            const icon = sanitizeCssClassTokens(shop.icon, shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
-            const iconColor = sanitizeCssClassTokens(shop.iconColor, shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
+            const isConsumable = shop.isConsumable === true;
+            const icon = sanitizeCssClassTokens(shop.icon, isConsumable ? 'fa-bolt' : 'fa-ticket');
+            const iconColor = sanitizeCssClassTokens(shop.iconColor, isConsumable ? 'text-amber-300' : 'text-cyan-300');
             const shopBtnId = escapeHtmlAttr(`shop-btn-${shopId}`);
             const priceId = escapeHtmlAttr(`shop-price-${shopId}`);
             const price = escapeHtmlText(Number(shop.price) || 0);
@@ -482,7 +483,7 @@ function redrawPlazaGrantsUi() {
                         <div id="${priceId}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${price} B</div>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem(${shopIdArg},${shopNameArg},${shop.isConsumable || false})">구매</button>
+                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem(${shopIdArg},${shopNameArg},${isConsumable})">구매</button>
                         ${groupBuyBtn}
                     </div>
                 </div>`;

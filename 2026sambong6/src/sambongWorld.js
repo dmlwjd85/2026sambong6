@@ -455,27 +455,34 @@ function redrawPlazaGrantsUi() {
         }
 
         function buildShopCardHtml(shop) {
-            const safeName = String(shop.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const icon = shop.icon || (shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
-            const iconColor = shop.iconColor || (shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
+            const shopId = String(shop.id || '');
+            const shopIdArg = inlineJsStringArg(shopId);
+            const shopNameArg = inlineJsStringArg(shop.name || '');
+            const safeNameHtml = escapeHtmlText(shop.name || '');
+            const safeDescHtml = escapeHtmlText(shop.desc || '');
+            const icon = sanitizeCssClassTokens(shop.icon, shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
+            const iconColor = sanitizeCssClassTokens(shop.iconColor, shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
+            const shopBtnId = escapeHtmlAttr(`shop-btn-${shopId}`);
+            const priceId = escapeHtmlAttr(`shop-price-${shopId}`);
+            const price = escapeHtmlText(Number(shop.price) || 0);
             const groupBuyBtn =
                 shop.id === 'item_mystery_dice'
                     ? ''
-                    : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal('${shop.id}')">공동구매</button>`;
+                    : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal(${shopIdArg})">공동구매</button>`;
             return `
-                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
+                <div id="${shopBtnId}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
                     <div class="flex items-center gap-3">
                         <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${iconColor} shadow-inner shrink-0">
                             <i class="fa-solid ${icon}"></i>
                         </div>
                         <div class="flex-grow min-w-0">
-                            <div class="font-bold text-sm">${shop.name}</div>
-                            <div class="text-[10px] text-slate-400">${shop.desc}</div>
+                            <div class="font-bold text-sm">${safeNameHtml}</div>
+                            <div class="text-[10px] text-slate-400">${safeDescHtml}</div>
                         </div>
-                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${shop.price} B</div>
+                        <div id="${priceId}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${price} B</div>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
+                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem(${shopIdArg},${shopNameArg},${shop.isConsumable || false})">구매</button>
                         ${groupBuyBtn}
                     </div>
                 </div>`;
@@ -738,12 +745,16 @@ function redrawPlazaGrantsUi() {
                     if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
                     const data = { ...(studentDoc.data() || {}) };
                     const changed = sanitizeDailyQuestFlagsForDate(data, gameDateStr);
-                    if (changed || data.lastDailyReset !== gameDateStr) {
+                    const resetDailyState = data.lastDailyReset !== gameDateStr;
+                    if (changed || resetDailyState) {
                         const patch = {
                             quests: data.quests || {},
                             lastDailyReset: gameDateStr,
                             dailyQuestSanitizedAt: new Date().toISOString(),
                         };
+                        if (resetDailyState && (!data.lunchBid || data.lunchBid.date !== gameDateStr)) {
+                            patch.lunchBid = { date: gameDateStr, amount: 0 };
+                        }
                         if (Object.prototype.hasOwnProperty.call(data, 'dailyAllClearBonusDate')) {
                             patch.dailyAllClearBonusDate = data.dailyAllClearBonusDate || '';
                         }
@@ -797,9 +808,30 @@ function redrawPlazaGrantsUi() {
             return 'other';
         }
 
+        /** HTML 본문 텍스트 안전 이스케이프 */
+        function escapeHtmlText(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         /** HTML 속성값(쌍따옴표) 안전 이스케이프 */
         function escapeHtmlAttr(s) {
-            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+            return escapeHtmlText(s);
+        }
+
+        /** inline onclick에 문자열 인자를 넣을 때 HTML·JS 문맥을 함께 보호 */
+        function inlineJsStringArg(s) {
+            return escapeHtmlAttr(JSON.stringify(String(s)));
+        }
+
+        /** 외부 설정에서 들어온 class 토큰은 class 속성을 깨지 않는 문자만 허용 */
+        function sanitizeCssClassTokens(value, fallback) {
+            const v = String(value || '').trim();
+            return /^[A-Za-z0-9_:/.\[\]%-]+(\s+[A-Za-z0-9_:/.\[\]%-]+)*$/.test(v) ? v : fallback;
         }
         
         function getLevelInfo(xp) { 
@@ -1030,15 +1062,17 @@ function redrawPlazaGrantsUi() {
             const gmShopEl = document.getElementById('gmShopPriceInputs');
             if (!gmShopEl) return;
             gmShopEl.innerHTML = getAllShopItems().map((s) => {
-                const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
+                const safeLabel = escapeHtmlText(s.name || '');
+                const safeInputId = escapeHtmlAttr(`gm_shop_price_${s.id}`);
+                const shopIdArg = inlineJsStringArg(s.id || '');
                 const currentPrice = getEffectiveShopPrice(s.id);
                 const deleteBtn = isCustomShopItem(s)
-                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin('${s.id}')" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-1.5 px-2 rounded text-[9px] border border-red-900">삭제</button>`
+                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin(${shopIdArg})" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-1.5 px-2 rounded text-[9px] border border-red-900">삭제</button>`
                     : '<span class="text-[9px] text-slate-600">기본</span>';
                 return `
                     <div class="flex flex-wrap gap-2 items-center mb-2">
                         <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
-                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="0.1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="number" id="${safeInputId}" min="0" step="0.1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                         <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${Number(s.price) || 0})</span></span>
                         ${deleteBtn}
                     </div>`;
@@ -2576,7 +2610,7 @@ function redrawPlazaGrantsUi() {
                     const lines = arr.slice(-5).reverse().map((entry) => {
                         const d = entry.at ? new Date(entry.at) : null;
                         const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
-                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}</span><span class="text-slate-500 shrink-0">${ds} · ${entry.price}B</span></div>`;
+                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${escapeHtmlText(entry.name || entry.id || '')}</span><span class="text-slate-500 shrink-0">${escapeHtmlText(ds)} · ${Number(entry.price) || 0}B</span></div>`;
                     });
                     logEl.innerHTML = '<div class="text-[10px] text-slate-500 font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
                     logEl.classList.remove('hidden');
@@ -3820,7 +3854,7 @@ function redrawPlazaGrantsUi() {
             const shop = getShopItemById(shopId);
             const title = document.getElementById('shopGroupBuyModalTitle');
             const hint = document.getElementById('shopGroupBuyModalHint');
-            if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${shop ? shop.name : shopId}`;
+            if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${escapeHtmlText(shop ? shop.name : shopId)}`;
             if (hint) {
                 hint.textContent = shop
                     ? shopId === 'item_random'
@@ -3862,7 +3896,7 @@ function redrawPlazaGrantsUi() {
                     rows.length === 0
                         ? '<div class="text-slate-500 text-center py-2">아직 입금 내역이 없어요.</div>'
                         : rows
-                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt} B</span></div>`)
+                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${escapeHtmlText(r.nm)}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt} B</span></div>`)
                               .join('');
             }
             const ready = target > 0 && sum >= target - 0.0001;
@@ -3903,11 +3937,11 @@ function redrawPlazaGrantsUi() {
                         .sort((a, b) => b.amount - a.amount);
                     const contributors = contributorRows.length === 0
                         ? '<div class="text-slate-500">입금 없음</div>'
-                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount} B</span></div>`).join('');
+                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${escapeHtmlText(r.name)}</span><span class="text-cyan-300 font-bold">${r.amount} B</span></div>`).join('');
                     return `
                         <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <div class="font-bold text-white">${shop.name}</div>
+                                <div class="font-bold text-white">${escapeHtmlText(shop.name || '')}</div>
                                 <div class="text-cyan-200 font-black tabular-nums">${sum} / ${target} B (${pct}%)</div>
                             </div>
                             <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">

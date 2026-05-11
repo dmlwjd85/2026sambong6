@@ -179,6 +179,7 @@
                 <input type="number" id="gbContributeAmount" min="1" step="1" placeholder="입금할 B(자연수)" class="flex-1 bg-slate-900 border border-cyan-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                 <button type="button" onclick="window.contributeShopGroupBuy()" class="bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
             </div>
+            <button type="button" id="gbRefundBtn" onclick="window.refundMyShopGroupBuy()" class="w-full py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-700/50 mb-2 hidden">내 입금 환불 (10% 차감)</button>
             <button type="button" id="gbExecuteBtn" onclick="window.executeShopGroupBuy()" disabled class="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-700 to-teal-600 hover:from-emerald-600 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white shadow-lg mb-2">목표 금액 달성 — 구매 실행</button>
             <p class="text-[9px] text-slate-500 text-center">삼봉은 입금 시점에 차감됩니다. 랜덤 박스는 당첨액이 출자 비율로 나뉘고, 그 외 상품은 실행한 학생에게 적용됩니다.</p>
         </div>
@@ -810,6 +811,34 @@
                 <div id="adminQuestBoard" class="overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
                     <div class="text-slate-500 text-[9px] text-center py-6">데이터 로딩 중…</div>
                 </div>
+            </div>
+
+            <!-- 퀘스트 항목 관리 -->
+            <div id="gmQuestManagePanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-list-check text-emerald-400"></i> 퀘스트 항목 관리</h3>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 퀘스트는 숨김 처리되고, 추가 퀘스트는 삭제됩니다. 이미 학생에게 기록된 과거 퀘스트 이력은 보존됩니다.</p>
+                <div id="gmQuestManageList" class="max-h-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 p-2 mb-3 text-[10px] space-y-1"></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                    <input type="text" id="gmQuestName" placeholder="퀘스트 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <select id="gmQuestType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                        <option value="daily">일일 퀘스트</option>
+                        <option value="weekly">주간 퀘스트</option>
+                        <option value="locked">특수 전담 레이드</option>
+                    </select>
+                    <input type="text" id="gmQuestDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                    <input type="number" id="gmQuestXp" min="0" step="1" placeholder="보상 XP" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="number" id="gmQuestBong" min="0" step="0.1" placeholder="보상 B" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="text" id="gmQuestIcon" placeholder="아이콘 예: fa-star" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <select id="gmQuestColor" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                        <option value="text-emerald-300">초록</option>
+                        <option value="text-yellow-300">노랑</option>
+                        <option value="text-purple-300">보라</option>
+                        <option value="text-blue-300">파랑</option>
+                        <option value="text-orange-300">주황</option>
+                        <option value="text-cyan-200">청록</option>
+                    </select>
+                </div>
+                <button type="button" onclick="window.addCustomQuestAdmin()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">퀘스트 추가</button>
             </div>
 
             <!-- 골든벨 관리 패널 -->

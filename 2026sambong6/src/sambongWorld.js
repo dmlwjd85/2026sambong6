@@ -337,7 +337,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], deletedQuestIds: [], customQuests: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         
@@ -385,6 +385,38 @@ function redrawPlazaGrantsUi() {
                 ? window.globalSettings.customShopItems
                 : [];
             return items.filter((item) => item && item.id && item.name);
+        }
+
+        function getDeletedQuestIds() {
+            return new Set(
+                window.globalSettings && Array.isArray(window.globalSettings.deletedQuestIds)
+                    ? window.globalSettings.deletedQuestIds.map((id) => String(id))
+                    : []
+            );
+        }
+
+        function getCustomQuests() {
+            const qs = window.globalSettings && Array.isArray(window.globalSettings.customQuests)
+                ? window.globalSettings.customQuests
+                : [];
+            return qs
+                .filter((q) => q && q.id && q.name)
+                .map((q) => ({
+                    id: String(q.id),
+                    type: ['daily', 'weekly', 'locked'].includes(q.type) ? q.type : 'daily',
+                    name: String(q.name),
+                    desc: String(q.desc || ''),
+                    xp: Math.max(0, Math.floor(Number(q.xp) || 0)),
+                    bong: normalizeBongValue(Math.max(0, Number(q.bong) || 0)),
+                    icon: q.icon || 'fa-star',
+                    color: q.color || 'text-emerald-300',
+                    custom: true,
+                }));
+        }
+
+        function getQuestCatalog() {
+            const deleted = getDeletedQuestIds();
+            return [...QUEST_DATA, ...getCustomQuests()].filter((q) => !deleted.has(String(q.id)));
         }
 
         /** 기본 상점 아이템 + 마스터 추가 아이템 */
@@ -524,7 +556,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function getDailyQuestIds() {
-            return QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+            return getQuestCatalog().filter(q => q.type === 'daily').map(q => q.id);
         }
 
         function sanitizeDailyQuestFlagsForDate(state, gameDateStr) {
@@ -851,6 +883,9 @@ function redrawPlazaGrantsUi() {
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
             if (window.updateBankPanel) window.updateBankPanel();
+            if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
+                window.renderGoldenBellMasterLive();
+            }
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
         }
@@ -1045,6 +1080,30 @@ function redrawPlazaGrantsUi() {
             }).join('');
         }
 
+        function renderQuestManagementAdminPanel() {
+            const listEl = document.getElementById('gmQuestManageList');
+            if (!listEl) return;
+            const deleted = getDeletedQuestIds();
+            const rows = [...QUEST_DATA, ...getCustomQuests()]
+                .map((q) => {
+                    const isHidden = deleted.has(String(q.id));
+                    const typeLabel = q.type === 'daily' ? '일일' : (q.type === 'weekly' ? '주간' : '특수');
+                    const action = q.custom
+                        ? `<button type="button" onclick="window.deleteQuestAdmin('${q.id}')" class="bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1 rounded text-[9px] font-bold">삭제</button>`
+                        : isHidden
+                            ? `<button type="button" onclick="window.restoreQuestAdmin('${q.id}')" class="bg-emerald-900/50 hover:bg-emerald-800 text-emerald-100 border border-emerald-800 px-2 py-1 rounded text-[9px] font-bold">복구</button>`
+                            : `<button type="button" onclick="window.deleteQuestAdmin('${q.id}')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2 py-1 rounded text-[9px] font-bold">숨김</button>`;
+                    return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? 'border-slate-800 opacity-55' : 'border-slate-700'} bg-slate-900/70 px-2 py-1.5">
+                        <div class="min-w-0">
+                            <div class="text-white font-bold truncate">${q.name} <span class="text-[8px] text-slate-500">(${typeLabel})</span></div>
+                            <div class="text-[9px] text-slate-400 truncate">${q.xp}XP · ${q.bong}B · ${q.desc || '-'}</div>
+                        </div>
+                        ${action}
+                    </div>`;
+                });
+            listEl.innerHTML = rows.join('') || '<div class="text-slate-500 text-center py-3">퀘스트가 없습니다.</div>';
+        }
+
         function initDynamicContent() {
             const jg = document.getElementById('jobGrid');
             if(jg) {
@@ -1104,6 +1163,7 @@ function redrawPlazaGrantsUi() {
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
 
             renderShopManagementAdminPanel();
+            renderQuestManagementAdminPanel();
 
             let html = '';
             for(let i=0; i<5; i++) {
@@ -1295,6 +1355,7 @@ function redrawPlazaGrantsUi() {
                                 }
                                 renderShopCatalog();
                                 renderShopManagementAdminPanel();
+                                renderQuestManagementAdminPanel();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
                                 updateUI();
@@ -1686,7 +1747,7 @@ function redrawPlazaGrantsUi() {
             const summaryEl = document.getElementById('adminQuestSummary');
             if(!board) return;
             
-            const dailyQuests = QUEST_DATA.filter(q => q.type === 'daily');
+            const dailyQuests = getQuestCatalog().filter(q => q.type === 'daily');
             const total = dailyQuests.length;
             const now = new Date();
             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -2270,6 +2331,8 @@ function redrawPlazaGrantsUi() {
                     if (dbRec) dbRec.classList.remove('hidden');
                     const shopPricePanel = document.getElementById('gmShopPricePanel');
                     if (shopPricePanel) shopPricePanel.classList.remove('hidden');
+                    const questPanel = document.getElementById('gmQuestManagePanel');
+                    if (questPanel) questPanel.classList.remove('hidden');
                 } else {
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.add('hidden');
@@ -2277,6 +2340,8 @@ function redrawPlazaGrantsUi() {
                     if (dbRec) dbRec.classList.add('hidden');
                     const shopPricePanel = document.getElementById('gmShopPricePanel');
                     if (shopPricePanel) shopPricePanel.classList.add('hidden');
+                    const questPanel = document.getElementById('gmQuestManagePanel');
+                    if (questPanel) questPanel.classList.add('hidden');
                 }
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
@@ -2289,6 +2354,8 @@ function redrawPlazaGrantsUi() {
                 if (dbRec) dbRec.classList.add('hidden');
                 const shopPricePanel = document.getElementById('gmShopPricePanel');
                 if (shopPricePanel) shopPricePanel.classList.add('hidden');
+                const questPanel = document.getElementById('gmQuestManagePanel');
+                if (questPanel) questPanel.classList.add('hidden');
             }
             
             checkTimeEvents();
@@ -2387,7 +2454,7 @@ function redrawPlazaGrantsUi() {
                 window.selectBody(window.playerState.condition.body.val, false);
             }
 
-            const dailyQuestList = QUEST_DATA.filter(q => q.type === 'daily');
+            const dailyQuestList = getQuestCatalog().filter(q => q.type === 'daily');
             document.getElementById('todoContainer').innerHTML = dailyQuestList.map(q => {
                 const done = window.playerState.quests && window.playerState.quests[q.id];
                 return `
@@ -2485,9 +2552,9 @@ function redrawPlazaGrantsUi() {
                 }).join('');
             };
             
-            renderQuests(QUEST_DATA.filter(q => q.type === 'daily'), 'dailyQuestContainer');
-            renderQuests(QUEST_DATA.filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
-            renderQuests(QUEST_DATA.filter(q => q.type === 'locked'), 'specialQuestContainer');
+            renderQuests(getQuestCatalog().filter(q => q.type === 'daily'), 'dailyQuestContainer');
+            renderQuests(getQuestCatalog().filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
+            renderQuests(getQuestCatalog().filter(q => q.type === 'locked'), 'specialQuestContainer');
 
             // 밥줄 탭: 식단표 UI 갱신
             renderLunchMenuUI();
@@ -3333,13 +3400,13 @@ function redrawPlazaGrantsUi() {
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(finalBong));
             window.playerState.quests[qId] = true;
 
-            const qMeta = QUEST_DATA.find((q) => q.id === qId);
+            const qMeta = getQuestCatalog().find((q) => q.id === qId);
             if (qMeta && qMeta.type === 'daily' && !window.playerState.lastDailyReset) {
                 window.playerState.lastDailyReset = getLocalDateStr();
             }
 
             // 일일 퀘스트를 모두 완료한 날 1회 보너스 (50 XP, 10 B)
-            const dailyIdsAll = QUEST_DATA.filter(q => q.type === 'daily').map(q => q.id);
+            const dailyIdsAll = getQuestCatalog().filter(q => q.type === 'daily').map(q => q.id);
             const allDailyDone = dailyIdsAll.length > 0 && dailyIdsAll.every(id => window.playerState.quests[id]);
             const nowBonus = new Date();
             const todayStrBonus = `${nowBonus.getFullYear()}-${String(nowBonus.getMonth() + 1).padStart(2, '0')}-${String(nowBonus.getDate()).padStart(2, '0')}`;
@@ -3361,7 +3428,7 @@ function redrawPlazaGrantsUi() {
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             const now = new Date();
             const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const qInfo = QUEST_DATA.find(q => q.id === qId);
+            const qInfo = getQuestCatalog().find(q => q.id === qId);
             if(qInfo) {
                 window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
             }
@@ -3425,6 +3492,12 @@ function redrawPlazaGrantsUi() {
             const n = Number(value);
             if (!Number.isFinite(n) || n <= 0) return 0;
             return Math.max(1, Math.round(n));
+        }
+
+        /** 공동구매 환불은 10% 차감 후 소수점 아래를 버림으로 통일 */
+        function calcShopGroupBuyRefund(contribution) {
+            const amt = toNaturalShopContribution(contribution);
+            return Math.floor(amt * 0.9);
         }
 
         /** 공동구매 풀 contributions 합계 */
@@ -3804,6 +3877,98 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        window.addCustomQuestAdmin = async function () {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추가할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const nameEl = document.getElementById('gmQuestName');
+            const typeEl = document.getElementById('gmQuestType');
+            const descEl = document.getElementById('gmQuestDesc');
+            const xpEl = document.getElementById('gmQuestXp');
+            const bongEl = document.getElementById('gmQuestBong');
+            const iconEl = document.getElementById('gmQuestIcon');
+            const colorEl = document.getElementById('gmQuestColor');
+            const name = nameEl ? String(nameEl.value || '').trim() : '';
+            const type = typeEl ? String(typeEl.value || 'daily') : 'daily';
+            const desc = descEl ? String(descEl.value || '').trim() : '';
+            const xp = Math.max(0, Math.floor(Number(xpEl ? xpEl.value : 0) || 0));
+            const bong = normalizeBongValue(Math.max(0, Number(bongEl ? bongEl.value : 0) || 0));
+            const icon = iconEl && iconEl.value ? String(iconEl.value).trim() : 'fa-star';
+            const color = colorEl ? String(colorEl.value || 'text-emerald-300') : 'text-emerald-300';
+            if (!name) return await window.customAlert('퀘스트 이름을 입력해 주세요.');
+            if (!['daily', 'weekly', 'locked'].includes(type)) return await window.customAlert('퀘스트 종류가 올바르지 않습니다.');
+            const baseId = name
+                .toLowerCase()
+                .replace(/[^a-z0-9가-힣]+/g, '_')
+                .replace(/^_+|_+$/g, '')
+                .slice(0, 24) || 'quest';
+            const q = { id: `custom_q_${baseId}_${Date.now().toString(36)}`, type, name, desc, xp, bong, icon, color, custom: true };
+            const customQuests = [...getCustomQuests(), q];
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customQuests }, { merge: true });
+                window.globalSettings.customQuests = customQuests;
+                if (nameEl) nameEl.value = '';
+                if (descEl) descEl.value = '';
+                if (xpEl) xpEl.value = '';
+                if (bongEl) bongEl.value = '';
+                if (iconEl) iconEl.value = '';
+                renderQuestManagementAdminPanel();
+                updateUI();
+                await window.customAlert('퀘스트가 추가되었습니다.');
+            } catch (e) {
+                console.error('addCustomQuestAdmin', e);
+                await window.customAlert('퀘스트 추가 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.deleteQuestAdmin = async function (questId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            const id = String(questId);
+            const custom = getCustomQuests().find((q) => q.id === id);
+            const base = QUEST_DATA.find((q) => q.id === id);
+            if (!custom && !base) return await window.customAlert('퀘스트를 찾지 못했습니다.');
+            const ok = await window.customConfirm(
+                custom
+                    ? `[${custom.name}] 추가 퀘스트를 삭제할까요?\n학생들의 과거 완료 기록은 보존됩니다.`
+                    : `[${base.name}] 기본 퀘스트를 숨길까요?\n학생들의 과거 완료 기록은 보존됩니다.`
+            );
+            if (!ok) return;
+            const customQuests = custom ? getCustomQuests().filter((q) => q.id !== id) : getCustomQuests();
+            const deletedQuestIds = custom ? Array.from(getDeletedQuestIds()) : [...new Set([...Array.from(getDeletedQuestIds()), id])];
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customQuests, deletedQuestIds }, { merge: true });
+                window.globalSettings.customQuests = customQuests;
+                window.globalSettings.deletedQuestIds = deletedQuestIds;
+                renderQuestManagementAdminPanel();
+                updateUI();
+                await window.customAlert(custom ? '퀘스트가 삭제되었습니다.' : '기본 퀘스트가 숨김 처리되었습니다.');
+            } catch (e) {
+                console.error('deleteQuestAdmin', e);
+                await window.customAlert('퀘스트 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.restoreQuestAdmin = async function (questId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 복구할 수 있습니다.');
+            const id = String(questId);
+            const deletedQuestIds = Array.from(getDeletedQuestIds()).filter((x) => x !== id);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { deletedQuestIds }, { merge: true });
+                window.globalSettings.deletedQuestIds = deletedQuestIds;
+                renderQuestManagementAdminPanel();
+                updateUI();
+                await window.customAlert('퀘스트가 복구되었습니다.');
+            } catch (e) {
+                console.error('restoreQuestAdmin', e);
+                await window.customAlert('퀘스트 복구 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window._groupBuyModalShopId = '';
 
         window._refreshShopGroupBuyModalIfOpen = function () {
@@ -3843,6 +4008,7 @@ function redrawPlazaGrantsUi() {
             const bar = document.getElementById('gbPoolBar');
             const listEl = document.getElementById('gbContributorList');
             const execBtn = document.getElementById('gbExecuteBtn');
+            const refundBtn = document.getElementById('gbRefundBtn');
             if (curEl) curEl.textContent = String(sum);
             if (tgtEl) tgtEl.textContent = String(target);
             if (bar) {
@@ -3869,6 +4035,16 @@ function redrawPlazaGrantsUi() {
             if (execBtn) {
                 execBtn.disabled = !ready;
                 execBtn.classList.toggle('opacity-40', !ready);
+            }
+            if (refundBtn) {
+                const myId = localStorage.getItem('sambong_student_id');
+                const myAmt = myId ? toNaturalShopContribution(contribs[String(myId)]) : 0;
+                if (myAmt > 0) {
+                    refundBtn.classList.remove('hidden');
+                    refundBtn.textContent = `내 입금 ${myAmt}B 환불 (10% 차감 → ${calcShopGroupBuyRefund(myAmt)}B)`;
+                } else {
+                    refundBtn.classList.add('hidden');
+                }
             }
         };
 
@@ -3904,6 +4080,9 @@ function redrawPlazaGrantsUi() {
                     const contributors = contributorRows.length === 0
                         ? '<div class="text-slate-500">입금 없음</div>'
                         : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount} B</span></div>`).join('');
+                    const resetBtn = sum > 0
+                        ? `<button type="button" onclick="window.resetShopGroupBuyAdmin('${shop.id}')" class="mt-2 w-full bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 font-bold py-1.5 px-2 rounded text-[9px]">10% 차감 환불 후 초기화</button>`
+                        : `<button type="button" disabled class="mt-2 w-full bg-slate-800 text-slate-600 border border-slate-700 font-bold py-1.5 px-2 rounded text-[9px] cursor-not-allowed">초기화할 입금 없음</button>`;
                     return `
                         <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -3914,6 +4093,7 @@ function redrawPlazaGrantsUi() {
                                 <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
                             </div>
                             <div class="space-y-1">${contributors}</div>
+                            ${resetBtn}
                         </div>`;
                 });
 
@@ -3989,6 +4169,93 @@ function redrawPlazaGrantsUi() {
                 if (code === 'no_student') return await window.customAlert('학생 정보를 찾을 수 없어요.');
                 console.error('contributeShopGroupBuy', e);
                 await window.customAlert('입금 처리 중 오류: ' + code);
+            }
+        };
+
+        window.refundMyShopGroupBuy = async function () {
+            const shopId = window._groupBuyModalShopId;
+            if (!shopId || !db || !currentStudentDocRef) return;
+            if (window.playerState.isGuest || window.playerState.isAdmin) return;
+            const myId = localStorage.getItem('sambong_student_id');
+            if (!myId || myId === 'gm' || myId === 'gm_a') return;
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const myAmt = toNaturalShopContribution(pool.contributions && pool.contributions[String(myId)]);
+            if (myAmt <= 0) return await window.customAlert('환불할 공동구매 입금액이 없습니다.');
+            const refund = calcShopGroupBuyRefund(myAmt);
+            const ok = await window.customConfirm(`내 입금 ${myAmt}B를 환불할까요?\n수수료 10% 차감 후 ${refund}B가 돌아옵니다.\n(소수점 아래는 버림 처리됩니다.)`);
+            if (!ok) return;
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    if (!poolSnap.exists()) throw new Error('no_pool');
+                    const d = poolSnap.data() || {};
+                    const contributions = { ...(d.contributions && typeof d.contributions === 'object' ? d.contributions : {}) };
+                    const amt = toNaturalShopContribution(contributions[String(myId)]);
+                    if (amt <= 0) throw new Error('no_refund');
+                    const refundAmt = calcShopGroupBuyRefund(amt);
+                    delete contributions[String(myId)];
+                    if (refundAmt > 0) {
+                        transaction.set(currentStudentDocRef, { bong: increment(refundAmt) }, { merge: true });
+                    }
+                    transaction.set(poolRef, { contributions, updatedAt: Date.now(), lastRefundAt: Date.now() }, { merge: true });
+                });
+                window.renderShopGroupBuyModalContent(shopId);
+                await refreshStudentsCacheFromServer();
+                updateUI();
+                await window.customAlert(`${refund}B 환불이 완료되었습니다. (10% 차감)`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'no_refund') return await window.customAlert('이미 환불되었거나 입금 내역이 없습니다.');
+                console.error('refundMyShopGroupBuy', e);
+                await window.customAlert('환불 처리 중 오류: ' + code);
+            }
+        };
+
+        window.resetShopGroupBuyAdmin = async function (shopId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 초기화할 수 있습니다.');
+            if (!shopId || !db) return;
+            const shop = getShopItemById(shopId);
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+            const total = sumShopPoolContributions(pool);
+            if (total <= 0) return await window.customAlert('초기화할 입금 내역이 없습니다.');
+            const refundTotal = Object.keys(contribs).reduce((s, sid) => s + calcShopGroupBuyRefund(contribs[sid]), 0);
+            const ok = await window.customConfirm(
+                `「${shop ? shop.name : shopId}」 공동구매를 초기화할까요?\n` +
+                `총 입금 ${total}B 중 10% 차감 환불 합계 ${refundTotal}B가 학생들에게 지급됩니다.\n` +
+                '소수점 아래는 버림 처리됩니다.'
+            );
+            if (!ok) return;
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const batch = writeBatch(db);
+                Object.keys(contribs).forEach((sid) => {
+                    const refund = calcShopGroupBuyRefund(contribs[sid]);
+                    if (refund <= 0) return;
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
+                });
+                batch.set(poolRef, {
+                    contributions: {},
+                    updatedAt: Date.now(),
+                    lastResetAt: Date.now(),
+                    lastResetRefundTotal: refundTotal,
+                    lastResetOriginalTotal: total,
+                }, { merge: true });
+                await batch.commit();
+                await refreshStudentsCacheFromServer();
+                window.renderShopGroupBuyAdminModal();
+                if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
+                await window.customAlert('공동구매가 초기화되고 환불 처리되었습니다.');
+            } catch (e) {
+                console.error('resetShopGroupBuyAdmin', e);
+                await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 

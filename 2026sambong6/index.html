@@ -388,13 +388,13 @@
 
                 <!-- 10. Right Edge: 가나다눈치게임 -->
                 <a href="https://dmlwjd85.github.io/ncgame/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[42%] left-[92%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_12px_rgba(96,165,250,0.7)] avatar-bounce pointer-events-none" style="animation-delay: 0.9s;">🔤</div>
+                    <div class="worldmap-emoji absolute bottom-8 text-2xl sm:text-3xl font-black text-cyan-100 bg-blue-800/90 border-2 border-cyan-300 rounded-xl px-2 py-1 drop-shadow-[0_0_12px_rgba(96,165,250,0.7)] avatar-bounce pointer-events-none" style="animation-delay: 0.9s;">ㄱㄴㄷ</div>
                     <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-cyan-400 to-blue-700 rounded-[100%] border-b-4 border-blue-950 shadow-xl"></div>
                     <div class="worldmap-label mt-1 bg-slate-900/95 text-cyan-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-cyan-500/80 whitespace-nowrap">가나다눈치게임</div>
                 </a>
 
-                <!-- 11. Bottom Right: 영켓몬 -->
-                <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[70%] left-[84%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
+                <!-- 11. Top Right: 영켓몬 -->
+                <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[20%] left-[90%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
                     <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_14px_rgba(248,113,113,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.15s;">🐾</div>
                     <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-red-400 via-white to-yellow-400 rounded-[100%] border-b-4 border-red-950 shadow-xl"></div>
                     <div class="worldmap-label mt-1 bg-slate-900/95 text-red-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-red-400/80 whitespace-nowrap">영켓몬</div>
@@ -690,27 +690,6 @@
                 <button type="button" onclick="window.addCustomQuestAdmin()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">퀘스트 추가</button>
             </div>
 
-            <!-- 레이드 출제 패널 -->
-            <div id="raidAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-purple-500 bg-slate-900/80">
-                <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                    <label class="text-[10px] text-slate-300">최대 보상 XP
-                        <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    </label>
-                    <label class="text-[10px] text-slate-300">최대 보상 B
-                        <input type="number" id="raidRewardBongInput" min="0" step="0.1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    </label>
-                </div>
-                <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
-                <div class="flex gap-2">
-                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
-                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
-                    <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
-                </div>
-                <div class="mt-2 flex gap-2">
-                    <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
-                </div>
-            </div>
         </section>
 
         <!-- ★ 4. 직업 탭 ★ -->
@@ -846,6 +825,28 @@
                         <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
                     </div>
                     <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
+                </div>
+
+                <!-- 레이드 출제 패널 -->
+                <div id="raidAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-purple-500 bg-slate-900/80">
+                    <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <label class="text-[10px] text-slate-300">최대 보상 XP
+                            <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        </label>
+                        <label class="text-[10px] text-slate-300">최대 보상 B
+                            <input type="number" id="raidRewardBongInput" min="0" step="0.1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        </label>
+                    </div>
+                    <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
+                    <div class="flex gap-2">
+                        <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
+                        <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
+                        <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
+                    </div>
+                    <div class="mt-2 flex gap-2">
+                        <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
+                    </div>
                 </div>
             </div>
         </section>

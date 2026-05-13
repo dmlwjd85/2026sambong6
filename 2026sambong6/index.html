@@ -230,10 +230,10 @@
     </div>
 
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
-    <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-20 px-3 sm:px-4 max-w-7xl mx-auto w-full min-h-screen">
+    <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-16 px-3 sm:px-4 2xl:px-6 max-w-[1600px] mx-auto w-full min-h-screen">
 
         <!-- ★ 1. 대시보드 탭 (월드맵 + 스탯 통합) ★ -->
-        <section id="dashboardSection" class="hidden space-y-6">
+        <section id="dashboardSection" class="hidden space-y-4">
             
             <!-- 시즌 타이머 영역 -->
             <div class="glass-panel p-3 rounded-2xl flex justify-between items-center bg-slate-800/80 border border-slate-700 shadow-sm">
@@ -245,7 +245,7 @@
             </div>
 
             <!-- ★ 추가된 3D 월드맵 영역 ★ -->
-            <div id="worldMapArea" class="night-sky w-full h-[400px] sm:h-[500px] rounded-3xl border-4 border-slate-700 shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden relative mb-6">
+            <div id="worldMapArea" class="night-sky w-full h-[360px] sm:h-[420px] xl:h-[460px] rounded-3xl border-4 border-slate-700 shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden relative mb-4">
                 <!-- 배경 반짝이는 별들 -->
                 <div class="star w-1 h-1 top-[10%] left-[20%]"></div>
                 <div class="star w-2 h-2 top-[30%] left-[80%]" style="animation-delay: 1s;"></div>
@@ -409,7 +409,7 @@
             </div>
 
             <!-- 하단 스탯 및 대시보드 그리드 배치 -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
                 
                 <!-- 1열 (아바타 카드 & 무기고) -->
                 <div class="flex flex-col gap-4 sm:gap-6">
@@ -576,7 +576,7 @@
             </div>
             <div class="glass-panel p-2 sm:p-4 rounded-2xl shadow-xl">
                 <!-- Grid: 모바일 3칸, 태블릿 4칸, 데스크탑 5칸 -->
-                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 sm:gap-3 w-full" id="plazaContainer">
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2 sm:gap-3 w-full" id="plazaContainer">
                     <div class="text-slate-500 text-xs p-4">데이터 로딩 중...</div>
                 </div>
             </div>
@@ -589,12 +589,12 @@
         </section>
 
         <!-- ★ 3. 퀘스트/상점 탭 ★ -->
-        <section id="questsSection" class="hidden space-y-6">
-            <div class="grid lg:grid-cols-2 gap-6">
+        <section id="questsSection" class="hidden space-y-4">
+            <div class="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-4">
                 <!-- Quests -->
-                <div class="space-y-4">
+                <div class="grid md:grid-cols-2 gap-3">
                     <!-- 레이드 -->
-                    <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-4 rounded-2xl border border-purple-500 shadow-lg">
+                    <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-3 rounded-2xl border border-purple-500 shadow-lg md:col-span-2">
                         <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
                             <div class="flex-1">
                                 <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 주말 협동 레이드</h3>
@@ -608,30 +608,30 @@
                         </div>
                     </div>
                     
-                    <div class="glass-panel p-4 rounded-2xl">
-                        <h3 class="font-bold text-sm text-slate-300 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
+                    <div class="glass-panel p-3 rounded-2xl">
+                        <h3 class="font-bold text-sm text-slate-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
                         <div id="dailyQuestContainer" class="space-y-2"></div>
                     </div>
-                    <div class="glass-panel p-4 rounded-2xl">
-                        <h3 class="font-bold text-sm text-yellow-400 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
+                    <div class="glass-panel p-3 rounded-2xl">
+                        <h3 class="font-bold text-sm text-yellow-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
                         <div id="weeklyQuestContainer" class="space-y-2"></div>
                     </div>
-                    <div class="glass-panel p-4 rounded-2xl">
-                        <h3 class="font-bold text-sm text-purple-400 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
+                    <div class="glass-panel p-3 rounded-2xl md:col-span-2 xl:col-span-1">
+                        <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
                         <div id="specialQuestContainer" class="space-y-2"></div>
                     </div>
                 </div>
 
                 <!-- Shop -->
-                <div class="space-y-4" id="shopArea">
-                    <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-pink-500">
-                        <h3 class="font-bold text-sm text-pink-400 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
-                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-96 overflow-y-auto scrollbar-hide"></div>
+                <div class="space-y-3" id="shopArea">
+                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-500">
+                        <h3 class="font-bold text-sm text-pink-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
+                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 xl:max-h-56 overflow-y-auto scrollbar-hide"></div>
                     </div>
-                    <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-sb-gold">
+                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-sb-gold">
                         <h3 class="font-bold text-sm text-sb-gold mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
-                        <p class="text-[9px] text-slate-500 mb-3">위쪽은 즉시 사용, 아래는 삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목이에요.</p>
-                        <div id="shopContainer" class="grid grid-cols-1 gap-3"></div>
+                        <p class="text-[9px] text-slate-500 mb-2">위쪽은 즉시 사용, 아래는 삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목이에요.</p>
+                        <div id="shopContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
                         <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
                     </div>
 
@@ -698,7 +698,7 @@
                 <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 직업 목록</h2>
                 <p class="text-[10px] sm:text-xs text-slate-400 mt-1">매주 금요일 오후 3시 이후, 누군가 앱에 접속하면 직업 합산 주급이 자동 지급돼요. 카드를 눌러 직업을 선택하세요.</p>
             </div>
-            <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3"></div>
+            <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3"></div>
             <div id="gmJobManagePanel" class="hidden glass-panel p-4 rounded-xl mt-4 border border-blue-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-briefcase text-blue-300"></i> 직업 항목 관리</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 직업은 숨김/복구 또는 수정할 수 있고, 추가 직업은 삭제할 수 있습니다. 이미 선택한 학생의 직업 기록은 그대로 유지됩니다.</p>
@@ -729,8 +729,8 @@
 
         <!-- ★ 5. 밥줄(점심) 탭 (레이아웃 개선) ★ -->
         <section id="lunchSection" class="hidden">
-            <div class="max-w-3xl mx-auto space-y-3">
-                <div class="mb-1">
+            <div class="max-w-6xl mx-auto space-y-3 lg:grid lg:grid-cols-[0.8fr_1.2fr_0.9fr] lg:items-start lg:gap-3 lg:space-y-0">
+                <div class="mb-1 lg:col-span-3">
                     <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
                     <p class="text-[9px] sm:text-[10px] text-slate-300 mt-0.5">평일 낮 12시 이후 점심값(10B)이 자동 차감됩니다. 투자액이 많을수록 먼저 먹고, 동점이면 레벨(XP)이 높은 사람이 이깁니다.</p>
                     <p id="lunchInvestLockHint" class="hidden text-[9px] text-red-400 font-bold mt-1">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
@@ -797,7 +797,7 @@
 
         <!-- ★ 6. 골든벨 탭 ★ -->
         <section id="goldenbellSection" class="hidden">
-            <div class="max-w-3xl mx-auto space-y-4">
+            <div class="max-w-7xl mx-auto space-y-4">
                 <div class="mb-4">
                     <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-bell"></i> 도전! 삼봉 골든벨</h2>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">문제를 푼 뒤 <strong class="text-yellow-200/90">최종 제출 및 채점</strong> 한 번으로 채점·보상이 적용됩니다.</p>
@@ -860,17 +860,17 @@
                 </div>
                 <button id="btnEstateReset" onclick="window.masterResetEstate()" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-slate-500">전체 초기화</button>
             </div>
-            <div class="glass-panel p-3 sm:p-5 rounded-3xl shadow-xl border-t-4 border-t-teal-500 max-w-2xl mx-auto bg-slate-900/80">
+            <div class="glass-panel p-3 sm:p-5 rounded-3xl shadow-xl border-t-4 border-t-teal-500 max-w-6xl mx-auto bg-slate-900/80">
                 <div class="w-full text-center bg-slate-800 text-slate-400 font-bold py-2 mb-4 rounded-xl border border-slate-600 tracking-widest text-xs">칠판 (앞)</div>
-                <div class="grid grid-cols-4 gap-2 sm:gap-4" id="estateGrid"><div class="text-center text-slate-500 text-xs py-10 col-span-4">로딩 중...</div></div>
+                <div class="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-3" id="estateGrid"><div class="text-center text-slate-500 text-xs py-10 col-span-4">로딩 중...</div></div>
                 <div id="estatePurchaseLog" class="hidden"></div>
             </div>
         </section>
 
         <!-- ★ 삼봉 은행 탭 (일반예금 / 적금 분리) ★ -->
         <section id="bankSection" class="hidden">
-            <div class="max-w-lg mx-auto space-y-4 px-1 pb-8">
-                <div class="mb-2">
+            <div class="max-w-6xl mx-auto grid gap-4 lg:grid-cols-3 lg:items-start px-1 pb-8">
+                <div class="mb-2 lg:col-span-3">
                     <h2 class="text-xl sm:text-2xl font-display text-sky-400"><i class="fa-solid fa-building-columns"></i> 삼봉 은행</h2>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">일반예금은 이자 없음 · 일반예금+적금 원금 합 100 B 이상이면 마지막 지급일 기준 3일마다 1 B. 적금은 30일 보물상자 잠금 후 만기 이자(반올림) 지급.</p>
                 </div>
@@ -913,7 +913,7 @@
                     </div>
                 </div>
 
-                <div id="bankAdminBalancesPanel" class="hidden glass-panel p-4 rounded-xl border border-cyan-500/50 bg-slate-900/80">
+                <div id="bankAdminBalancesPanel" class="hidden glass-panel p-4 rounded-xl border border-cyan-500/50 bg-slate-900/80 lg:col-span-2">
                     <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-vault text-cyan-300"></i> 학생 통장 잔고</h3>
                     <p class="text-[9px] text-slate-400 mb-2">지갑, 일반예금, 적금 원금 합계를 한 번에 확인합니다.</p>
                     <div id="bankAdminBalancesList" class="max-h-72 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 text-[10px]"></div>

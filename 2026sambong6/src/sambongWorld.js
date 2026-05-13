@@ -1096,9 +1096,9 @@ function redrawPlazaGrantsUi() {
             const shopInstant = allItems.filter((s) => s.isConsumable);
             const shopClass = allItems.filter((s) => !s.isConsumable);
             container.innerHTML = `
-                <div class="text-[10px] text-slate-400 font-bold mb-2 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>바로 적용되는 아이템</div>
+                <div class="xl:col-span-2 text-[10px] text-slate-400 font-bold mb-1 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>바로 적용되는 아이템</div>
                 ${shopInstant.map((shop) => buildShopCardHtml(shop)).join('')}
-                <div class="text-[10px] text-slate-400 font-bold mb-2 mt-4 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-school text-pink-400 mr-1"></i>학급 특별 활동 <span class="font-normal text-slate-500">(삼봉 결제 · 선생님과 일정 조율)</span></div>
+                <div class="xl:col-span-2 text-[10px] text-slate-400 font-bold mb-1 mt-2 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-school text-pink-400 mr-1"></i>학급 특별 활동 <span class="font-normal text-slate-500">(삼봉 결제 · 선생님과 일정 조율)</span></div>
                 ${shopClass.map((shop) => buildShopCardHtml(shop)).join('')}
             `;
             updateShopPriceLabels();
@@ -5765,6 +5765,7 @@ function redrawPlazaGrantsUi() {
                     <div class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨</div>
                     <p class="text-[10px] text-slate-400 leading-relaxed">모든 문항에 답을 입력한 뒤 하단 <strong class="text-yellow-200">최종 제출 및 채점</strong>을 누르면 한 번에 채점·보상이 적용됩니다.</p>
                 </div>
+                <div class="grid lg:grid-cols-2 gap-3">
             `;
             
             st.questions.forEach((item, idx) => {
@@ -5789,7 +5790,7 @@ function redrawPlazaGrantsUi() {
                 }
 
                 html += `
-                <div class="glass-panel p-4 rounded-xl border-l-4 border-l-yellow-500 relative mb-3">
+                <div class="glass-panel p-3 rounded-xl border-l-4 border-l-yellow-500 relative h-full">
                     <div class="text-sb-gold font-black text-xs sm:text-sm mb-2">
                         <span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span>
                         <span class="text-white/95">${escapeHtmlGb(item.q)}</span>
@@ -5806,6 +5807,8 @@ function redrawPlazaGrantsUi() {
                     </div>
                 </div>`;
             });
+
+            html += '</div>';
 
             if (locked) {
                 html += `

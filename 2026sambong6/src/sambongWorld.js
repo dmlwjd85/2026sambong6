@@ -337,7 +337,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], deletedQuestIds: [], customQuests: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         
@@ -417,6 +417,49 @@ function redrawPlazaGrantsUi() {
         function getQuestCatalog() {
             const deleted = getDeletedQuestIds();
             return [...QUEST_DATA, ...getCustomQuests()].filter((q) => !deleted.has(String(q.id)));
+        }
+
+        function getDeletedJobIds() {
+            return new Set(
+                window.globalSettings && Array.isArray(window.globalSettings.deletedJobIds)
+                    ? window.globalSettings.deletedJobIds.map((id) => String(id))
+                    : []
+            );
+        }
+
+        function sanitizeJobItem(job, fallbackId) {
+            const id = String(job && job.id ? job.id : fallbackId || `job_${Date.now().toString(36)}`);
+            const name = String(job && job.name ? job.name : '').trim();
+            return {
+                id,
+                name,
+                sub: String(job && job.sub ? job.sub : '').trim(),
+                icon: String(job && job.icon ? job.icon : 'fa-star'),
+                color: String(job && job.color ? job.color : 'text-blue-400'),
+                pay: Math.max(0, Math.floor(Number(job && job.pay) || 0)),
+                desc: String(job && job.desc ? job.desc : '').trim(),
+                custom: !!(job && job.custom),
+            };
+        }
+
+        function getCustomJobs() {
+            const jobs = window.globalSettings && Array.isArray(window.globalSettings.customJobs)
+                ? window.globalSettings.customJobs
+                : [];
+            return jobs.map((j) => sanitizeJobItem({ ...j, custom: true })).filter((j) => j.id && j.name);
+        }
+
+        function getJobOverrides() {
+            return window.globalSettings && window.globalSettings.jobOverrides && typeof window.globalSettings.jobOverrides === 'object'
+                ? window.globalSettings.jobOverrides
+                : {};
+        }
+
+        function getJobCatalog() {
+            const deleted = getDeletedJobIds();
+            const overrides = getJobOverrides();
+            const baseJobs = JOB_DATA.map((job) => sanitizeJobItem({ ...job, ...(overrides[job.id] || {}) }, job.id));
+            return [...baseJobs, ...getCustomJobs()].filter((job) => !deleted.has(String(job.id)));
         }
 
         /** 기본 상점 아이템 + 마스터 추가 아이템 */
@@ -1104,20 +1147,51 @@ function redrawPlazaGrantsUi() {
             listEl.innerHTML = rows.join('') || '<div class="text-slate-500 text-center py-3">퀘스트가 없습니다.</div>';
         }
 
-        function initDynamicContent() {
+        function renderJobGrid() {
             const jg = document.getElementById('jobGrid');
-            if(jg) {
-                jg.innerHTML = JOB_DATA.map(job => `
-                    <div id="job-card-${job.id}" onclick="window.toggleJob('${job.name}', '${job.icon}', '${job.color}')" class="cursor-pointer glass-panel p-2 sm:p-3 rounded-xl border-l-4 border-l-${job.color.replace('text-', '')} hover:bg-slate-800 transition flex items-center gap-2 sm:gap-3 group">
-                        <i class="fa-solid ${job.icon} text-xl sm:text-2xl ${job.color} group-hover:scale-110 w-8 text-center shrink-0"></i>
-                        <div class="flex-grow min-w-0">
-                            <div class="font-bold text-xs sm:text-sm truncate">${job.name} <span class="font-normal text-[9px] sm:text-[10px] text-slate-400">${job.sub}</span></div>
-                            <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${job.desc}</div>
-                        </div>
-                        <div class="bg-slate-900 text-sb-gold px-2 py-1 rounded font-bold text-[9px] sm:text-[10px] shrink-0 border border-slate-700 whitespace-nowrap">${job.pay} B</div>
+            if (!jg) return;
+            jg.innerHTML = getJobCatalog().map(job => `
+                <div id="job-card-${job.id}" onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}')" class="relative cursor-pointer glass-panel p-2 sm:p-3 rounded-xl border-l-4 border-l-${job.color.replace('text-', '')} hover:bg-slate-800 transition flex items-center gap-2 sm:gap-3 group">
+                    <i class="fa-solid ${job.icon} text-xl sm:text-2xl ${job.color} group-hover:scale-110 w-8 text-center shrink-0"></i>
+                    <div class="flex-grow min-w-0">
+                        <div class="font-bold text-xs sm:text-sm truncate">${job.name} <span class="font-normal text-[9px] sm:text-[10px] text-slate-400">${job.sub}</span></div>
+                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${job.desc}</div>
                     </div>
-                `).join('');
-            }
+                    <div class="bg-slate-900 text-sb-gold px-2 py-1 rounded font-bold text-[9px] sm:text-[10px] shrink-0 border border-slate-700 whitespace-nowrap">${job.pay} B</div>
+                </div>
+            `).join('');
+        }
+
+        function renderJobManagementAdminPanel() {
+            const listEl = document.getElementById('gmJobManageList');
+            if (!listEl) return;
+            const deleted = getDeletedJobIds();
+            const jobs = [
+                ...JOB_DATA.map((j) => sanitizeJobItem({ ...j, ...(getJobOverrides()[j.id] || {}) }, j.id)),
+                ...getCustomJobs(),
+            ];
+            listEl.innerHTML = jobs.map((job) => {
+                const isHidden = deleted.has(job.id);
+                const action = job.custom
+                    ? `<button type="button" onclick="window.deleteJobAdmin('${job.id}')" class="bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1 rounded text-[9px] font-bold">삭제</button>`
+                    : isHidden
+                        ? `<button type="button" onclick="window.restoreJobAdmin('${job.id}')" class="bg-emerald-900/50 hover:bg-emerald-800 text-emerald-100 border border-emerald-800 px-2 py-1 rounded text-[9px] font-bold">복구</button>`
+                        : `<button type="button" onclick="window.deleteJobAdmin('${job.id}')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2 py-1 rounded text-[9px] font-bold">숨김</button>`;
+                return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? 'border-slate-800 opacity-55' : 'border-slate-700'} bg-slate-900/70 px-2 py-1.5">
+                    <div class="min-w-0">
+                        <div class="text-white font-bold truncate"><i class="fa-solid ${job.icon} ${job.color}"></i> ${job.name} <span class="text-[8px] text-slate-500">${job.sub}</span></div>
+                        <div class="text-[9px] text-slate-400 truncate">${job.pay}B · ${job.desc || '-'}</div>
+                    </div>
+                    <div class="flex gap-1 shrink-0">
+                        <button type="button" onclick="window.editJobAdmin('${job.id}')" class="bg-blue-900/50 hover:bg-blue-800 text-blue-100 border border-blue-800 px-2 py-1 rounded text-[9px] font-bold">수정</button>
+                        ${action}
+                    </div>
+                </div>`;
+            }).join('') || '<div class="text-slate-500 text-center py-3">직업이 없습니다.</div>';
+        }
+
+        function initDynamicContent() {
+            renderJobGrid();
 
             renderShopCatalog();
             
@@ -1164,6 +1238,7 @@ function redrawPlazaGrantsUi() {
 
             renderShopManagementAdminPanel();
             renderQuestManagementAdminPanel();
+            renderJobManagementAdminPanel();
 
             let html = '';
             for(let i=0; i<5; i++) {
@@ -1333,7 +1408,7 @@ function redrawPlazaGrantsUi() {
                         if(unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), snap => {
                             if (snap.exists()) {
-                                window.globalSettings = snap.data();
+                                window.globalSettings = { ...window.globalSettings, ...(snap.data() || {}) };
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
                                 
@@ -1356,6 +1431,8 @@ function redrawPlazaGrantsUi() {
                                 renderShopCatalog();
                                 renderShopManagementAdminPanel();
                                 renderQuestManagementAdminPanel();
+                                renderJobGrid();
+                                renderJobManagementAdminPanel();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
                                 updateUI();
@@ -1865,16 +1942,16 @@ function redrawPlazaGrantsUi() {
                 const crown = idx === 0 ? '<i class="fa-solid fa-crown text-yellow-400 text-[10px] absolute -top-2 left-1/2 transform -translate-x-1/2"></i>' : '';
                 
                 return `
-                <div class="flex items-center justify-between p-3 rounded-xl border ${borderClass} relative">
-                    <div class="flex items-center gap-3">
-                        <div class="w-6 text-center text-lg ${rankColor}">${idx + 1}</div>
-                        <div class="text-3xl relative">${crown}${face}</div>
+                <div class="flex items-center justify-between p-2 rounded-xl border ${borderClass} relative">
+                    <div class="flex items-center gap-2">
+                        <div class="w-5 text-center text-base ${rankColor}">${idx + 1}</div>
+                        <div class="text-2xl relative">${crown}${face}</div>
                         <div>
-                            <div class="font-bold text-sm text-white">${STUDENT_NAMES[s.id]}</div>
-                            <div class="text-[10px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
+                            <div class="font-bold text-xs text-white">${STUDENT_NAMES[s.id]}</div>
+                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
                         </div>
                     </div>
-                    <div class="bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-600 text-right min-w-[60px]">
+                    <div class="bg-slate-900 px-2 py-1 rounded-lg border border-slate-600 text-right min-w-[52px]">
                         <div class="text-orange-400 font-black text-xs">${bidAmt > 0 ? '+' : ''}${bidAmt} B</div>
                     </div>
                 </div>`;
@@ -1889,19 +1966,8 @@ function redrawPlazaGrantsUi() {
 
             const logEl = document.getElementById('estatePurchaseLog');
             if (logEl) {
-                const hist = Array.isArray(window.estateState.purchaseHistory) ? [...window.estateState.purchaseHistory].reverse() : [];
-                if (hist.length === 0) {
-                    logEl.innerHTML = '<div class="text-slate-600">아직 기록이 없습니다.</div>';
-                } else {
-                    logEl.innerHTML = hist.slice(0, 50).map(h => {
-                        if (!h) return '';
-                        const name = STUDENT_NAMES[h.studentId] || h.studentId;
-                        const note = h.note ? ' · ' + h.note : '';
-                        const t = h.at ? new Date(h.at).toLocaleString('ko-KR') : '';
-                        const sn = typeof h.seatId === 'number' ? (h.seatId + 1) : '?';
-                        return '<div class="border-b border-slate-700/40 pb-0.5">' + t + ' — ' + name + ' · ' + sn + '번 자리 · ' + (h.price != null ? h.price : '?') + 'B' + note + '</div>';
-                    }).join('');
-                }
+                logEl.innerHTML = '';
+                logEl.classList.add('hidden');
             }
 
             grid.innerHTML = window.estateState.seats.map((seat) => {
@@ -2061,6 +2127,30 @@ function redrawPlazaGrantsUi() {
                             </div>
                         </div>`;
                     }).join('');
+                }
+            }
+            const adminList = document.getElementById('bankAdminBalancesList');
+            if (adminList) {
+                if (!window.playerState || !window.playerState.isAdmin) {
+                    adminList.innerHTML = '';
+                } else {
+                    const rows = [];
+                    for (let i = 1; i <= 13; i++) {
+                        const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(i)) || {};
+                        const wallet = normalizeBongValue(Number(stu.bong) || 0);
+                        const regular = normalizeBongValue(Number(stu.bankRegularSavings) || 0);
+                        const terms = Array.isArray(stu.bankTermDeposits) ? stu.bankTermDeposits : [];
+                        const termTotal = normalizeBongValue(terms.reduce((sum, t) => sum + (Number(t && t.amount) || 0), 0));
+                        rows.push(`<div class="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
+                            <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(i)] || i}</div>
+                            <div class="text-right text-sb-gold tabular-nums">${wallet.toFixed(1)}B</div>
+                            <div class="text-right text-sky-300 tabular-nums">${regular.toFixed(1)}B</div>
+                            <div class="text-right text-amber-200 tabular-nums">${termTotal.toFixed(1)}B</div>
+                        </div>`);
+                    }
+                    adminList.innerHTML = `<div class="grid grid-cols-4 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700">
+                        <div>학생</div><div class="text-right">지갑</div><div class="text-right">일반예금</div><div class="text-right">적금</div>
+                    </div>${rows.join('')}`;
                 }
             }
         };
@@ -2333,6 +2423,12 @@ function redrawPlazaGrantsUi() {
                     if (shopPricePanel) shopPricePanel.classList.remove('hidden');
                     const questPanel = document.getElementById('gmQuestManagePanel');
                     if (questPanel) questPanel.classList.remove('hidden');
+                    const jobPanel = document.getElementById('gmJobManagePanel');
+                    if (jobPanel) jobPanel.classList.remove('hidden');
+                    const bankBalancesPanel = document.getElementById('bankAdminBalancesPanel');
+                    if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
+                    const raidAdminPanel = document.getElementById('raidAdminPanel');
+                    if (raidAdminPanel) raidAdminPanel.classList.remove('hidden');
                 } else {
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.add('hidden');
@@ -2342,7 +2438,15 @@ function redrawPlazaGrantsUi() {
                     if (shopPricePanel) shopPricePanel.classList.add('hidden');
                     const questPanel = document.getElementById('gmQuestManagePanel');
                     if (questPanel) questPanel.classList.add('hidden');
+                    const jobPanel = document.getElementById('gmJobManagePanel');
+                    if (jobPanel) jobPanel.classList.add('hidden');
+                    const bankBalancesPanel = document.getElementById('bankAdminBalancesPanel');
+                    if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
+                    const raidAdminPanel = document.getElementById('raidAdminPanel');
+                    if (raidAdminPanel) raidAdminPanel.classList.add('hidden');
                 }
+                const gbMasterPanel = document.getElementById('gbMasterPanel');
+                if (gbMasterPanel) gbMasterPanel.classList.remove('hidden');
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
                 document.getElementById('todoPanel').classList.remove('hidden');
@@ -2356,6 +2460,14 @@ function redrawPlazaGrantsUi() {
                 if (shopPricePanel) shopPricePanel.classList.add('hidden');
                 const questPanel = document.getElementById('gmQuestManagePanel');
                 if (questPanel) questPanel.classList.add('hidden');
+                const jobPanel = document.getElementById('gmJobManagePanel');
+                if (jobPanel) jobPanel.classList.add('hidden');
+                const bankBalancesPanel = document.getElementById('bankAdminBalancesPanel');
+                if (bankBalancesPanel) bankBalancesPanel.classList.add('hidden');
+                const gbMasterPanel = document.getElementById('gbMasterPanel');
+                if (gbMasterPanel) gbMasterPanel.classList.add('hidden');
+                const raidAdminPanel = document.getElementById('raidAdminPanel');
+                if (raidAdminPanel) raidAdminPanel.classList.add('hidden');
             }
             
             checkTimeEvents();
@@ -2559,7 +2671,7 @@ function redrawPlazaGrantsUi() {
             // 밥줄 탭: 식단표 UI 갱신
             renderLunchMenuUI();
 
-            JOB_DATA.forEach(job => {
+            getJobCatalog().forEach(job => {
                 const card = document.getElementById(`job-card-${job.id}`);
                 if (card) {
                     const isEquipped = window.playerState.jobs && window.playerState.jobs.some(j => j.name === job.name);
@@ -3969,6 +4081,127 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        window.clearJobAdminForm = function () {
+            ['gmJobEditId', 'gmJobName', 'gmJobSub', 'gmJobDesc', 'gmJobPay', 'gmJobIcon'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            const colorEl = document.getElementById('gmJobColor');
+            if (colorEl) colorEl.value = 'text-blue-400';
+        };
+
+        window.editJobAdmin = function (jobId) {
+            if (!window.playerState || !window.playerState.isGM) return window.customAlert('마스터 J만 수정할 수 있습니다.');
+            const id = String(jobId);
+            const job = [
+                ...JOB_DATA.map((j) => sanitizeJobItem({ ...j, ...(getJobOverrides()[j.id] || {}) }, j.id)),
+                ...getCustomJobs(),
+            ].find((j) => j.id === id);
+            if (!job) return window.customAlert('직업을 찾지 못했습니다.');
+            const set = (elId, value) => {
+                const el = document.getElementById(elId);
+                if (el) el.value = value;
+            };
+            set('gmJobEditId', job.id);
+            set('gmJobName', job.name);
+            set('gmJobSub', job.sub);
+            set('gmJobDesc', job.desc);
+            set('gmJobPay', job.pay);
+            set('gmJobIcon', job.icon);
+            set('gmJobColor', job.color);
+        };
+
+        window.saveJobAdmin = async function () {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const editId = String((document.getElementById('gmJobEditId') || {}).value || '').trim();
+            const name = String((document.getElementById('gmJobName') || {}).value || '').trim();
+            const subRaw = String((document.getElementById('gmJobSub') || {}).value || '').trim();
+            const desc = String((document.getElementById('gmJobDesc') || {}).value || '').trim();
+            const pay = Math.max(0, Math.floor(Number((document.getElementById('gmJobPay') || {}).value) || 0));
+            const icon = String((document.getElementById('gmJobIcon') || {}).value || 'fa-star').trim() || 'fa-star';
+            const color = String((document.getElementById('gmJobColor') || {}).value || 'text-blue-400');
+            if (!name) return await window.customAlert('직업 이름을 입력해 주세요.');
+            const sub = subRaw ? (subRaw.startsWith('(') ? subRaw : `(${subRaw})`) : '';
+            const base = editId ? JOB_DATA.find((j) => j.id === editId) : null;
+            const custom = editId ? getCustomJobs().find((j) => j.id === editId) : null;
+            const job = sanitizeJobItem({
+                id: editId || `custom_job_${Date.now().toString(36)}`,
+                name,
+                sub,
+                desc,
+                pay,
+                icon,
+                color,
+                custom: !base,
+            });
+            const customJobs = custom
+                ? getCustomJobs().map((j) => (j.id === editId ? { ...job, custom: true } : j))
+                : (!base ? [...getCustomJobs(), { ...job, custom: true }] : getCustomJobs());
+            const jobOverrides = { ...getJobOverrides() };
+            if (base) {
+                jobOverrides[editId] = { name, sub, desc, pay, icon, color };
+            }
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customJobs, jobOverrides }, { merge: true });
+                window.globalSettings.customJobs = customJobs;
+                window.globalSettings.jobOverrides = jobOverrides;
+                window.clearJobAdminForm();
+                renderJobGrid();
+                renderJobManagementAdminPanel();
+                updateUI();
+                await window.customAlert('직업 항목이 저장되었습니다.');
+            } catch (e) {
+                console.error('saveJobAdmin', e);
+                await window.customAlert('직업 저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.deleteJobAdmin = async function (jobId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            const id = String(jobId);
+            const custom = getCustomJobs().find((j) => j.id === id);
+            const base = JOB_DATA.find((j) => j.id === id);
+            if (!custom && !base) return await window.customAlert('직업을 찾지 못했습니다.');
+            if (!await window.customConfirm(custom ? `[${custom.name}] 추가 직업을 삭제할까요?` : `[${base.name}] 기본 직업을 숨길까요?`)) return;
+            const customJobs = custom ? getCustomJobs().filter((j) => j.id !== id) : getCustomJobs();
+            const deletedJobIds = custom ? Array.from(getDeletedJobIds()) : [...new Set([...Array.from(getDeletedJobIds()), id])];
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customJobs, deletedJobIds }, { merge: true });
+                window.globalSettings.customJobs = customJobs;
+                window.globalSettings.deletedJobIds = deletedJobIds;
+                renderJobGrid();
+                renderJobManagementAdminPanel();
+                updateUI();
+                await window.customAlert(custom ? '직업이 삭제되었습니다.' : '기본 직업이 숨김 처리되었습니다.');
+            } catch (e) {
+                console.error('deleteJobAdmin', e);
+                await window.customAlert('직업 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.restoreJobAdmin = async function (jobId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 복구할 수 있습니다.');
+            const deletedJobIds = Array.from(getDeletedJobIds()).filter((id) => id !== String(jobId));
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { deletedJobIds }, { merge: true });
+                window.globalSettings.deletedJobIds = deletedJobIds;
+                renderJobGrid();
+                renderJobManagementAdminPanel();
+                updateUI();
+                await window.customAlert('직업이 복구되었습니다.');
+            } catch (e) {
+                console.error('restoreJobAdmin', e);
+                await window.customAlert('직업 복구 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window._groupBuyModalShopId = '';
 
         window._refreshShopGroupBuyModalIfOpen = function () {
@@ -4008,7 +4241,6 @@ function redrawPlazaGrantsUi() {
             const bar = document.getElementById('gbPoolBar');
             const listEl = document.getElementById('gbContributorList');
             const execBtn = document.getElementById('gbExecuteBtn');
-            const refundBtn = document.getElementById('gbRefundBtn');
             if (curEl) curEl.textContent = String(sum);
             if (tgtEl) tgtEl.textContent = String(target);
             if (bar) {
@@ -4035,16 +4267,6 @@ function redrawPlazaGrantsUi() {
             if (execBtn) {
                 execBtn.disabled = !ready;
                 execBtn.classList.toggle('opacity-40', !ready);
-            }
-            if (refundBtn) {
-                const myId = localStorage.getItem('sambong_student_id');
-                const myAmt = myId ? toNaturalShopContribution(contribs[String(myId)]) : 0;
-                if (myAmt > 0) {
-                    refundBtn.classList.remove('hidden');
-                    refundBtn.textContent = `내 입금 ${myAmt}B 환불 (10% 차감 → ${calcShopGroupBuyRefund(myAmt)}B)`;
-                } else {
-                    refundBtn.classList.add('hidden');
-                }
             }
         };
 
@@ -4079,7 +4301,14 @@ function redrawPlazaGrantsUi() {
                         .sort((a, b) => b.amount - a.amount);
                     const contributors = contributorRows.length === 0
                         ? '<div class="text-slate-500">입금 없음</div>'
-                        : contributorRows.map((r) => `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-cyan-300 font-bold">${r.amount} B</span></div>`).join('');
+                        : contributorRows.map((r) => `<div class="flex flex-wrap items-center justify-between gap-2">
+                            <span>${r.name}</span>
+                            <span class="text-cyan-300 font-bold">${r.amount} B</span>
+                            <div class="flex gap-1 w-full sm:w-auto">
+                                <input type="number" id="gb_admin_refund_${shop.id}_${r.sid}" min="1" max="${r.amount}" step="1" placeholder="환불할 B" class="flex-1 sm:w-20 bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-[9px] font-bold" />
+                                <button type="button" onclick="window.refundShopGroupBuyStudentAdmin('${shop.id}', '${r.sid}')" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-1 px-2 rounded text-[9px]">학생별 환불</button>
+                            </div>
+                        </div>`).join('');
                     const resetBtn = sum > 0
                         ? `<button type="button" onclick="window.resetShopGroupBuyAdmin('${shop.id}')" class="mt-2 w-full bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 font-bold py-1.5 px-2 rounded text-[9px]">10% 차감 환불 후 초기화</button>`
                         : `<button type="button" disabled class="mt-2 w-full bg-slate-800 text-slate-600 border border-slate-700 font-bold py-1.5 px-2 rounded text-[9px] cursor-not-allowed">초기화할 입금 없음</button>`;
@@ -4173,46 +4402,7 @@ function redrawPlazaGrantsUi() {
         };
 
         window.refundMyShopGroupBuy = async function () {
-            const shopId = window._groupBuyModalShopId;
-            if (!shopId || !db || !currentStudentDocRef) return;
-            if (window.playerState.isGuest || window.playerState.isAdmin) return;
-            const myId = localStorage.getItem('sambong_student_id');
-            if (!myId || myId === 'gm' || myId === 'gm_a') return;
-            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
-            const myAmt = toNaturalShopContribution(pool.contributions && pool.contributions[String(myId)]);
-            if (myAmt <= 0) return await window.customAlert('환불할 공동구매 입금액이 없습니다.');
-            const refund = calcShopGroupBuyRefund(myAmt);
-            const ok = await window.customConfirm(`내 입금 ${myAmt}B를 환불할까요?\n수수료 10% 차감 후 ${refund}B가 돌아옵니다.\n(소수점 아래는 버림 처리됩니다.)`);
-            if (!ok) return;
-
-            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                await runTransaction(db, async (transaction) => {
-                    const poolSnap = await transaction.get(poolRef);
-                    if (!poolSnap.exists()) throw new Error('no_pool');
-                    const d = poolSnap.data() || {};
-                    const contributions = { ...(d.contributions && typeof d.contributions === 'object' ? d.contributions : {}) };
-                    const amt = toNaturalShopContribution(contributions[String(myId)]);
-                    if (amt <= 0) throw new Error('no_refund');
-                    const refundAmt = calcShopGroupBuyRefund(amt);
-                    delete contributions[String(myId)];
-                    if (refundAmt > 0) {
-                        transaction.set(currentStudentDocRef, { bong: increment(refundAmt) }, { merge: true });
-                    }
-                    transaction.set(poolRef, { contributions, updatedAt: Date.now(), lastRefundAt: Date.now() }, { merge: true });
-                });
-                window.renderShopGroupBuyModalContent(shopId);
-                await refreshStudentsCacheFromServer();
-                updateUI();
-                await window.customAlert(`${refund}B 환불이 완료되었습니다. (10% 차감)`);
-            } catch (e) {
-                const code = e && e.message ? String(e.message) : String(e);
-                if (code === 'no_refund') return await window.customAlert('이미 환불되었거나 입금 내역이 없습니다.');
-                console.error('refundMyShopGroupBuy', e);
-                await window.customAlert('환불 처리 중 오류: ' + code);
-            }
+            return await window.customAlert('공동구매 환불은 마스터가 공동구매 현황에서 학생별로 처리합니다.');
         };
 
         window.resetShopGroupBuyAdmin = async function (shopId) {
@@ -4256,6 +4446,56 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('resetShopGroupBuyAdmin', e);
                 await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.refundShopGroupBuyStudentAdmin = async function (shopId, studentId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 학생별 환불을 할 수 있습니다.');
+            if (!shopId || !studentId || !db) return;
+            const input = document.getElementById(`gb_admin_refund_${shopId}_${studentId}`);
+            const rawAmount = Number(input ? input.value : 0);
+            if (!Number.isInteger(rawAmount) || rawAmount <= 0) return await window.customAlert('환불할 입금액은 1 이상의 자연수로 입력해 주세요.');
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+            const current = toNaturalShopContribution(contribs[String(studentId)]);
+            if (current <= 0) return await window.customAlert('해당 학생의 입금 내역이 없습니다.');
+            if (rawAmount > current) return await window.customAlert(`환불할 입금액은 현재 입금액(${current}B)을 넘을 수 없습니다.`);
+            const refund = calcShopGroupBuyRefund(rawAmount);
+            const name = STUDENT_NAMES[String(studentId)] || studentId;
+            const shop = getShopItemById(shopId);
+            const ok = await window.customConfirm(`[${name}] 학생의 「${shop ? shop.name : shopId}」 공동구매 입금 ${rawAmount}B를 부분 환불할까요?\n10% 차감 후 ${refund}B가 지급되고, 공동구매 입금액은 ${rawAmount}B만큼 줄어듭니다.`);
+            if (!ok) return;
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    if (!poolSnap.exists()) throw new Error('no_pool');
+                    const d = poolSnap.data() || {};
+                    const contributions = { ...(d.contributions && typeof d.contributions === 'object' ? d.contributions : {}) };
+                    const serverCurrent = toNaturalShopContribution(contributions[String(studentId)]);
+                    if (serverCurrent <= 0) throw new Error('no_refund');
+                    if (rawAmount > serverCurrent) throw new Error('too_much');
+                    const left = serverCurrent - rawAmount;
+                    if (left > 0) contributions[String(studentId)] = left;
+                    else delete contributions[String(studentId)];
+                    if (refund > 0) transaction.set(stuRef, { bong: increment(refund) }, { merge: true });
+                    transaction.set(poolRef, { contributions, updatedAt: Date.now(), lastAdminRefundAt: Date.now() }, { merge: true });
+                });
+                if (input) input.value = '';
+                await refreshStudentsCacheFromServer();
+                window.renderShopGroupBuyAdminModal();
+                if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
+                await window.customAlert(`${name} 학생에게 ${refund}B가 환불되었습니다. (10% 차감)`);
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'no_refund') return await window.customAlert('이미 환불되었거나 입금 내역이 없습니다.');
+                if (code === 'too_much') return await window.customAlert('다른 처리로 입금액이 줄었습니다. 다시 확인해 주세요.');
+                console.error('refundShopGroupBuyStudentAdmin', e);
+                await window.customAlert('학생별 환불 실패: ' + code);
             }
         };
 
@@ -4491,7 +4731,7 @@ function redrawPlazaGrantsUi() {
                         let pay = 0;
                         if (stu.jobs) {
                             stu.jobs.forEach(j => {
-                                const ji = JOB_DATA.find(jd => jd.name === j.name);
+                                const ji = getJobCatalog().find(jd => jd.name === j.name || (jd.icon === j.icon && jd.color === j.color));
                                 if (ji) pay += ji.pay;
                             });
                         }
@@ -5425,6 +5665,23 @@ function redrawPlazaGrantsUi() {
                 updatedAt: Date.now()
             }, { merge: true });
             window.customAlert('✅ 골든벨 문제가 저장되었습니다. (새로고침해도 유지)');
+        };
+
+        window.clearGoldenBellInputs = async function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('골든벨 입력칸을 모두 비울까요?\n서버에 저장된 문제는 [문제 저장]을 누르기 전까지 유지됩니다.');
+            if (!ok) return;
+            for(let i=0; i<10; i++) {
+                const qEl = document.getElementById(`gb_admin_q_${i}`);
+                const aEl = document.getElementById(`gb_admin_a_${i}`);
+                const xpEl = document.getElementById(`gb_admin_xp_${i}`);
+                const bongEl = document.getElementById(`gb_admin_bong_${i}`);
+                if (qEl) qEl.value = '';
+                if (aEl) aEl.value = '';
+                if (xpEl) xpEl.value = '10';
+                if (bongEl) bongEl.value = '1';
+            }
+            await window.customAlert('입력칸을 비웠습니다. 새 문제를 작성한 뒤 저장해 주세요.');
         };
 
         // 선생님 테스트용: 학생 화면 미리보기 토글

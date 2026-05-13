@@ -179,7 +179,6 @@
                 <input type="number" id="gbContributeAmount" min="1" step="1" placeholder="입금할 B(자연수)" class="flex-1 bg-slate-900 border border-cyan-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                 <button type="button" onclick="window.contributeShopGroupBuy()" class="bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
             </div>
-            <button type="button" id="gbRefundBtn" onclick="window.refundMyShopGroupBuy()" class="w-full py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-amber-200 border border-amber-700/50 mb-2 hidden">내 입금 환불 (10% 차감)</button>
             <button type="button" id="gbExecuteBtn" onclick="window.executeShopGroupBuy()" disabled class="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-emerald-700 to-teal-600 hover:from-emerald-600 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none text-white shadow-lg mb-2">목표 금액 달성 — 구매 실행</button>
             <p class="text-[9px] text-slate-500 text-center">삼봉은 입금 시점에 차감됩니다. 랜덤 박스는 당첨액이 출자 비율로 나뉘고, 그 외 상품은 실행한 학생에게 적용됩니다.</p>
         </div>
@@ -394,8 +393,8 @@
                     <div class="worldmap-label mt-1 bg-slate-900/95 text-cyan-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-cyan-500/80 whitespace-nowrap">가나다눈치게임</div>
                 </a>
 
-                <!-- 11. Bottom Right Edge: 영켓몬 -->
-                <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[70%] left-[92%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                <!-- 11. Bottom Right: 영켓몬 -->
+                <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[70%] left-[84%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
                     <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_14px_rgba(248,113,113,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.15s;">🐾</div>
                     <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-red-400 via-white to-yellow-400 rounded-[100%] border-b-4 border-red-950 shadow-xl"></div>
                     <div class="worldmap-label mt-1 bg-slate-900/95 text-red-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-red-400/80 whitespace-nowrap">영켓몬</div>
@@ -635,6 +634,81 @@
                         <div id="shopContainer" class="grid grid-cols-1 gap-3"></div>
                         <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
                     </div>
+
+                    <!-- 아이템 상점 관리 (마스터 J) -->
+                    <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl border border-pink-500/50 bg-slate-900/80">
+                        <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 관리</h3>
+                        <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정하고, 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
+                        <button type="button" onclick="window.openShopGroupBuyAdminModal()" class="mb-3 w-full sm:w-auto bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-people-group"></i> 공동구매 현황 보기</button>
+                        <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
+                        <div class="mt-3 pt-3 border-t border-slate-700/70">
+                            <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                                <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                <input type="number" id="gmCustomShopPrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                                <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                                    <option value="class">학급 활동 예약</option>
+                                    <option value="xp">경험치 지급</option>
+                                </select>
+                                <input type="number" id="gmCustomShopXp" min="0" step="1" placeholder="지급 XP(경험치 아이템)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-2">
+                                <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
+                                <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 퀘스트 항목 관리 -->
+            <div id="gmQuestManagePanel" class="hidden glass-panel p-4 rounded-xl border border-emerald-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-list-check text-emerald-400"></i> 퀘스트 항목 관리</h3>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 퀘스트는 숨김 처리되고, 추가 퀘스트는 삭제됩니다. 이미 학생에게 기록된 과거 퀘스트 이력은 보존됩니다.</p>
+                <div id="gmQuestManageList" class="max-h-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 p-2 mb-3 text-[10px] space-y-1"></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                    <input type="text" id="gmQuestName" placeholder="퀘스트 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <select id="gmQuestType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                        <option value="daily">일일 퀘스트</option>
+                        <option value="weekly">주간 퀘스트</option>
+                        <option value="locked">특수 전담 레이드</option>
+                    </select>
+                    <input type="text" id="gmQuestDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                    <input type="number" id="gmQuestXp" min="0" step="1" placeholder="보상 XP" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="number" id="gmQuestBong" min="0" step="0.1" placeholder="보상 B" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="text" id="gmQuestIcon" placeholder="아이콘 예: fa-star" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <select id="gmQuestColor" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                        <option value="text-emerald-300">초록</option>
+                        <option value="text-yellow-300">노랑</option>
+                        <option value="text-purple-300">보라</option>
+                        <option value="text-blue-300">파랑</option>
+                        <option value="text-orange-300">주황</option>
+                        <option value="text-cyan-200">청록</option>
+                    </select>
+                </div>
+                <button type="button" onclick="window.addCustomQuestAdmin()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">퀘스트 추가</button>
+            </div>
+
+            <!-- 레이드 출제 패널 -->
+            <div id="raidAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-purple-500 bg-slate-900/80">
+                <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <label class="text-[10px] text-slate-300">최대 보상 XP
+                        <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    </label>
+                    <label class="text-[10px] text-slate-300">최대 보상 B
+                        <input type="number" id="raidRewardBongInput" min="0" step="0.1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    </label>
+                </div>
+                <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
+                <div class="flex gap-2">
+                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
+                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
+                    <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
+                </div>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
                 </div>
             </div>
         </section>
@@ -646,46 +720,71 @@
                 <p class="text-[10px] sm:text-xs text-slate-400 mt-1">매주 금요일 오후 3시 이후, 누군가 앱에 접속하면 직업 합산 주급이 자동 지급돼요. 카드를 눌러 직업을 선택하세요.</p>
             </div>
             <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3"></div>
+            <div id="gmJobManagePanel" class="hidden glass-panel p-4 rounded-xl mt-4 border border-blue-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-briefcase text-blue-300"></i> 직업 항목 관리</h3>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 직업은 숨김/복구 또는 수정할 수 있고, 추가 직업은 삭제할 수 있습니다. 이미 선택한 학생의 직업 기록은 그대로 유지됩니다.</p>
+                <div id="gmJobManageList" class="max-h-52 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 p-2 mb-3 text-[10px] space-y-1"></div>
+                <input type="hidden" id="gmJobEditId" value="" />
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                    <input type="text" id="gmJobName" placeholder="직업 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="text" id="gmJobSub" placeholder="부제 (예: 학급회장)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="text" id="gmJobDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                    <input type="number" id="gmJobPay" min="0" step="1" placeholder="주급 B" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="text" id="gmJobIcon" placeholder="아이콘 예: fa-star" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <select id="gmJobColor" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                        <option value="text-blue-400">파랑</option>
+                        <option value="text-emerald-400">초록</option>
+                        <option value="text-yellow-300">노랑</option>
+                        <option value="text-purple-400">보라</option>
+                        <option value="text-pink-400">분홍</option>
+                        <option value="text-orange-400">주황</option>
+                        <option value="text-slate-400">회색</option>
+                    </select>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <button type="button" onclick="window.saveJobAdmin()" class="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">직업 추가/수정 저장</button>
+                    <button type="button" onclick="window.clearJobAdminForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-4 rounded-xl text-[10px]">입력칸 비우기</button>
+                </div>
+            </div>
         </section>
 
         <!-- ★ 5. 밥줄(점심) 탭 (레이아웃 개선) ★ -->
         <section id="lunchSection" class="hidden">
-            <div class="max-w-3xl mx-auto space-y-6">
-                <div class="mb-2">
+            <div class="max-w-3xl mx-auto space-y-3">
+                <div class="mb-1">
                     <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-300 mt-1">평일 낮 12시 이후 접속 시, 점심값(10B)이 자동으로 차감돼요. 잔액이 부족하면 <span class="text-red-400 font-bold">마이너스</span>까지 표시됩니다.</p>
-                    <p id="lunchInvestLockHint" class="hidden text-[10px] text-red-400 font-bold mt-2">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
-                    <p class="text-[10px] sm:text-xs text-slate-400">투자한 돈(B)이 많을수록 밥을 먼저 먹어요. 동점이면 <span class="text-sb-blue font-bold">레벨(XP)이 높은 사람</span>이 이깁니다!</p>
+                    <p class="text-[9px] sm:text-[10px] text-slate-300 mt-0.5">평일 낮 12시 이후 점심값(10B)이 자동 차감됩니다. 투자액이 많을수록 먼저 먹고, 동점이면 레벨(XP)이 높은 사람이 이깁니다.</p>
+                    <p id="lunchInvestLockHint" class="hidden text-[9px] text-red-400 font-bold mt-1">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
                 </div>
                 
-                <div class="glass-panel p-5 rounded-2xl border border-orange-500/30">
-                    <h3 class="font-bold text-sm text-white mb-3">식권 투자하기 (누구나 가능)</h3>
+                <div class="glass-panel p-3 rounded-2xl border border-orange-500/30">
+                    <h3 class="font-bold text-xs text-white mb-2">식권 투자하기</h3>
                     <div class="flex gap-2">
-                        <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-4 py-3 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
-                        <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-3 px-8 rounded-xl shadow-lg transition transform hover:scale-105 disabled:opacity-40 disabled:pointer-events-none">입찰</button>
+                        <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
+                        <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition transform hover:scale-105 disabled:opacity-40 disabled:pointer-events-none">입찰</button>
                     </div>
                 </div>
 
                 <!-- 12시 10분 전까지 학생들에게는 이 영역이 숨겨집니다 -->
-                <div id="lunchQueueWrapper" class="glass-panel p-4 sm:p-5 rounded-2xl hidden shadow-xl border-t-4 border-t-orange-500">
-                    <h3 class="font-bold text-sm text-white mb-4"><i class="fa-solid fa-ranking-star text-orange-400"></i> 오늘의 급식 순위 <span class="text-[10px] text-slate-400 font-normal">(12시 10분 공개)</span></h3>
-                    <div id="lunchQueueContainer" class="space-y-3">
+                <div id="lunchQueueWrapper" class="glass-panel p-3 sm:p-4 rounded-2xl hidden shadow-xl border-t-4 border-t-orange-500">
+                    <h3 class="font-bold text-xs sm:text-sm text-white mb-2"><i class="fa-solid fa-ranking-star text-orange-400"></i> 오늘의 급식 순위 <span class="text-[9px] text-slate-400 font-normal">(12시 10분 공개)</span></h3>
+                    <div id="lunchQueueContainer" class="space-y-1.5">
                         <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
                     </div>
                 </div>
 
                 <!-- 식단표(마스터 첨부) -->
-                <div class="glass-panel p-4 sm:p-5 rounded-2xl shadow-xl border-t-4 border-t-emerald-500 bg-slate-900/60">
-                    <div class="flex items-center justify-between gap-3 mb-3">
-                        <h3 class="font-bold text-sm text-white"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
+                <div class="glass-panel p-3 sm:p-4 rounded-2xl shadow-xl border-t-4 border-t-emerald-500 bg-slate-900/60">
+                    <div class="flex items-center justify-between gap-3 mb-2">
+                        <h3 class="font-bold text-xs sm:text-sm text-white"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 식단표</h3>
                         <span id="lunchMenuUpdatedText" class="text-[9px] text-slate-400 font-bold"></span>
                     </div>
                     <!-- 썸네일: 이미지는 미리보기, PDF는 아이콘(클릭 시 모달에서 확인) -->
                     <div id="lunchMenuThumbWrap" class="hidden mb-2 rounded-xl overflow-hidden border border-emerald-600/50 shadow-lg">
                         <button type="button" id="lunchMenuThumbBtn" onclick="window.openLunchMenu()" class="relative w-full block group text-left focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                            <img id="lunchMenuThumbImg" src="" alt="식단표 미리보기" class="hidden w-full h-36 sm:h-40 object-cover bg-slate-800" loading="lazy" decoding="async" />
-                            <div id="lunchMenuThumbPdf" class="hidden flex flex-col items-center justify-center gap-2 h-32 sm:h-36 bg-gradient-to-br from-slate-800 to-slate-900">
-                                <i class="fa-solid fa-file-pdf text-5xl text-red-400"></i>
+                            <img id="lunchMenuThumbImg" src="" alt="식단표 미리보기" class="hidden w-full h-24 sm:h-28 object-cover bg-slate-800" loading="lazy" decoding="async" />
+                            <div id="lunchMenuThumbPdf" class="hidden flex flex-col items-center justify-center gap-1 h-20 sm:h-24 bg-gradient-to-br from-slate-800 to-slate-900">
+                                <i class="fa-solid fa-file-pdf text-3xl text-red-400"></i>
                                 <span class="text-[11px] font-bold text-slate-300">PDF 식단표</span>
                             </div>
                             <div class="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[10px] sm:text-xs font-bold py-1.5 text-center">탭하여 크게 보기</div>
@@ -700,7 +799,7 @@
                         </div>
                     </div>
 
-                    <div id="lunchMenuAdminPanel" class="hidden mt-4 pt-4 border-t border-slate-700/60 space-y-2">
+                    <div id="lunchMenuAdminPanel" class="hidden mt-3 pt-3 border-t border-slate-700/60 space-y-2">
                         <div class="text-[10px] text-slate-300 font-bold">마스터 전용: 아래에서 PDF 또는 이미지 파일을 업로드하세요. 제목만 바꿀 때는 저장을 누르면 됩니다.</div>
                         <input type="text" id="lunchMenuTitleInput" placeholder="식단표 제목 (예: 3월 4주 식단)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold">
                         <input type="file" id="lunchMenuFileInput" accept="application/pdf,image/*,.pdf" class="hidden">
@@ -728,6 +827,26 @@
                 <div id="gbStudentContainer" class="space-y-3 pb-8">
                     <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
                 </div>
+
+                <!-- 골든벨 관리 패널 -->
+                <div id="gbMasterPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-yellow-500 bg-slate-900/80">
+                    <div class="flex justify-between mb-3">
+                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨 출제 관리</h3>
+                        <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
+                    </div>
+                    <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
+                    <div class="flex gap-2 flex-wrap">
+                        <button onclick="window.saveGoldenBellDraft()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
+                        <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
+                        <button onclick="window.clearGoldenBellInputs()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 px-3 rounded font-bold border border-slate-600">입력칸 초기화</button>
+                        <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
+                    </div>
+                    <p class="mt-2 text-[9px] text-slate-500">초기화 버튼을 누르기 전에는 저장된 문제가 입력칸에 유지됩니다.</p>
+                    <div class="mt-2 flex gap-2">
+                        <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
+                    </div>
+                    <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
+                </div>
             </div>
         </section>
 
@@ -743,11 +862,7 @@
             <div class="glass-panel p-3 sm:p-5 rounded-3xl shadow-xl border-t-4 border-t-teal-500 max-w-2xl mx-auto bg-slate-900/80">
                 <div class="w-full text-center bg-slate-800 text-slate-400 font-bold py-2 mb-4 rounded-xl border border-slate-600 tracking-widest text-xs">칠판 (앞)</div>
                 <div class="grid grid-cols-4 gap-2 sm:gap-4" id="estateGrid"><div class="text-center text-slate-500 text-xs py-10 col-span-4">로딩 중...</div></div>
-                <div class="mt-4 pt-4 border-t border-teal-700/50">
-                    <h3 class="text-[10px] sm:text-xs font-bold text-teal-300/90 mb-2"><i class="fa-solid fa-clock-rotate-left"></i> 자리 구매 기록 (삭제 방지·감사 로그)</h3>
-                    <p class="text-[9px] text-slate-500 mb-2">전체 초기화 시에도 아래 기록은 서버에 보존됩니다.</p>
-                    <div id="estatePurchaseLog" class="max-h-36 overflow-y-auto text-[9px] sm:text-[10px] text-slate-400 space-y-1 pr-1"></div>
-                </div>
+                <div id="estatePurchaseLog" class="hidden"></div>
             </div>
         </section>
 
@@ -786,6 +901,22 @@
                         <button type="button" onclick="window.openTermDeposit()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">적금 가입</button>
                     </div>
                 </div>
+
+                <!-- 은행 관리 (마스터 J) -->
+                <div id="bankInterestAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-sky-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 적금 만기 이자율 (%)</h3>
+                    <p class="text-[9px] text-slate-400 mb-2">적금 보물상자가 30일 만기될 때, 원금에 대해 이 비율(%)만큼 이자가 반올림되어 지급됩니다. 이율 변경 시 이후 만기분부터 변경된 비율이 적용됩니다.</p>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <input type="number" id="gmBankInterestRate" min="0" max="100" step="0.1" placeholder="예: 3" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
+                        <button type="button" onclick="window.saveBankInterestRate()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
+                    </div>
+                </div>
+
+                <div id="bankAdminBalancesPanel" class="hidden glass-panel p-4 rounded-xl border border-cyan-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-vault text-cyan-300"></i> 학생 통장 잔고</h3>
+                    <p class="text-[9px] text-slate-400 mb-2">지갑, 일반예금, 적금 원금 합계를 한 번에 확인합니다.</p>
+                    <div id="bankAdminBalancesList" class="max-h-72 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 text-[10px]"></div>
+                </div>
             </div>
         </section>
 
@@ -794,31 +925,6 @@
             <div class="mb-4 flex justify-between items-end">
                 <div>
                     <h2 class="text-2xl font-display text-sb-red"><i class="fa-solid fa-gear"></i> 선생님 설정 창 <span id="dbAdminStatus" class="text-[10px] text-orange-400 font-sans hidden"></span></h2>
-                </div>
-            </div>
-
-            <!-- 아이템 상점 가격 (마스터 J) -->
-            <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-pink-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 가격</h3>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정하고, 마스터가 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
-                <button type="button" onclick="window.openShopGroupBuyAdminModal()" class="mb-3 w-full sm:w-auto bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-people-group"></i> 공동구매 현황 보기</button>
-                <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
-                <div class="mt-3 pt-3 border-t border-slate-700/70">
-                    <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                        <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <input type="number" id="gmCustomShopPrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
-                        <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
-                            <option value="class">학급 활동 예약</option>
-                            <option value="xp">경험치 지급</option>
-                        </select>
-                        <input type="number" id="gmCustomShopXp" min="0" step="1" placeholder="지급 XP(경험치 아이템)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    </div>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
-                        <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
-                    </div>
                 </div>
             </div>
 
@@ -832,52 +938,6 @@
                 <div id="adminQuestBoard" class="overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
                     <div class="text-slate-500 text-[9px] text-center py-6">데이터 로딩 중…</div>
                 </div>
-            </div>
-
-            <!-- 퀘스트 항목 관리 -->
-            <div id="gmQuestManagePanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-list-check text-emerald-400"></i> 퀘스트 항목 관리</h3>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 퀘스트는 숨김 처리되고, 추가 퀘스트는 삭제됩니다. 이미 학생에게 기록된 과거 퀘스트 이력은 보존됩니다.</p>
-                <div id="gmQuestManageList" class="max-h-56 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 p-2 mb-3 text-[10px] space-y-1"></div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                    <input type="text" id="gmQuestName" placeholder="퀘스트 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <select id="gmQuestType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
-                        <option value="daily">일일 퀘스트</option>
-                        <option value="weekly">주간 퀘스트</option>
-                        <option value="locked">특수 전담 레이드</option>
-                    </select>
-                    <input type="text" id="gmQuestDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
-                    <input type="number" id="gmQuestXp" min="0" step="1" placeholder="보상 XP" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <input type="number" id="gmQuestBong" min="0" step="0.1" placeholder="보상 B" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <input type="text" id="gmQuestIcon" placeholder="아이콘 예: fa-star" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <select id="gmQuestColor" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
-                        <option value="text-emerald-300">초록</option>
-                        <option value="text-yellow-300">노랑</option>
-                        <option value="text-purple-300">보라</option>
-                        <option value="text-blue-300">파랑</option>
-                        <option value="text-orange-300">주황</option>
-                        <option value="text-cyan-200">청록</option>
-                    </select>
-                </div>
-                <button type="button" onclick="window.addCustomQuestAdmin()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">퀘스트 추가</button>
-            </div>
-
-            <!-- 골든벨 관리 패널 -->
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-yellow-500 bg-slate-900/80">
-                <div class="flex justify-between mb-3">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨 출제 관리</h3>
-                    <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
-                </div>
-                <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
-                <div class="flex gap-2">
-                    <button onclick="window.saveGoldenBellDraft()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
-                    <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
-                    <button onclick="window.closeGoldenBell()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">종료 (닫기)</button>
-                </div>
-                <div class="mt-2 flex gap-2">
-                    <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
-                </div>
-                <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
             </div>
 
             <!-- 마스터 스피드 퀴즈 (선착순 N명) -->
@@ -911,41 +971,9 @@
                 </div>
             </div>
 
-            <!-- 레이드 출제 패널 -->
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-purple-500 bg-slate-900/80">
-                <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                    <label class="text-[10px] text-slate-300">최대 보상 XP
-                        <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    </label>
-                    <label class="text-[10px] text-slate-300">최대 보상 B
-                        <input type="number" id="raidRewardBongInput" min="0" step="0.1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    </label>
-                </div>
-                <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
-                <div class="flex gap-2">
-                    <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
-                    <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
-                    <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
-                </div>
-                <div class="mt-2 flex gap-2">
-                    <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
-                </div>
-            </div>
-
             <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> 전체 공지사항</h3>
                 <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
-            </div>
-
-            <!-- 삼봉 은행 이자율 (마스터 J) — 적금 30일 만기 시 적용 -->
-            <div id="bankInterestAdminPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-sky-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 적금 만기 이자율 (%)</h3>
-                <p class="text-[9px] text-slate-400 mb-2">적금 보물상자가 30일 만기될 때, 원금에 대해 이 비율(%)만큼 이자가 반올림되어 지급됩니다. 이율 변경 시 이후 만기분부터 변경된 비율이 적용됩니다.</p>
-                <div class="flex flex-wrap gap-2 items-center">
-                    <input type="number" id="gmBankInterestRate" min="0" max="100" step="0.1" placeholder="예: 3" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
-                    <button type="button" onclick="window.saveBankInterestRate()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
-                </div>
             </div>
 
             <!-- 드래곤볼 보관함 복구 (마스터 J) — 버그 등으로 비워진 경우 Firestore에 성구·주말 키 복구 -->

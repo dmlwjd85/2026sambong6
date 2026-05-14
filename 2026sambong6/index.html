@@ -584,61 +584,39 @@
 
                             <div class="rounded-3xl bg-[#f8ecd2] text-stone-900 shadow-2xl border border-amber-200/70 overflow-hidden">
                                 <div class="bg-gradient-to-r from-amber-800 via-amber-700 to-stone-800 text-amber-50 px-5 sm:px-7 py-4 border-b-4 border-amber-300">
-                                    <div class="flex items-center justify-between gap-3">
+                                    <div class="flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <p class="text-[10px] font-black tracking-[0.25em] text-amber-200/90">전문</p>
                                             <h3 class="text-xl sm:text-2xl font-black">삼봉월드 헌법 조문</h3>
                                         </div>
-                                        <i class="fa-solid fa-landmark text-3xl text-amber-200/80"></i>
+                                        <div class="flex items-center gap-2">
+                                            <button id="constitutionEditBtn" type="button" onclick="window.toggleConstitutionEditor()" class="hidden bg-amber-200 hover:bg-amber-100 text-amber-950 font-black py-2 px-3 rounded-xl text-[10px] shadow-lg">
+                                                <i class="fa-solid fa-pen-to-square"></i> 헌법 수정
+                                            </button>
+                                            <i class="fa-solid fa-landmark text-3xl text-amber-200/80"></i>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div class="p-5 sm:p-7 lg:p-8 space-y-7 leading-relaxed constitution-scroll">
-                                    <article>
-                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제1장 강령</h3>
-                                        <div class="space-y-3 text-sm sm:text-base font-medium">
-                                            <p><strong>제1조 ①</strong> 삼봉월드는 추억과 사랑이다.</p>
-                                            <p><strong>제1조 ②</strong> 삼봉월드의 주권은 학생들에게 있고, 모든 권력은 학생들로부터 나온다.</p>
-                                            <p><strong>제2조</strong> 삼봉월드는 학생의 행복과 성장을 최우선 가치로 하며, 현실과 메타버스의 조화로운 통리를 지향한다.</p>
-                                        </div>
-                                    </article>
+                                <div class="p-5 sm:p-7 lg:p-8 leading-relaxed constitution-scroll">
+                                    <div id="constitutionViewContent" class="space-y-7">
+                                        <div class="text-center text-amber-900/60 font-bold text-sm py-8">헌법을 불러오는 중...</div>
+                                    </div>
 
-                                    <article>
-                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제2장 학생의 권리와 의무</h3>
-                                        <div class="space-y-3 text-sm sm:text-base font-medium">
-                                            <p><strong>제3조 (평등권)</strong> 모든 학생은 삼봉월드 내에서 평등하며, 성별·성적·캐릭터 레벨·등급에 의해 차별받지 아니한다.</p>
-                                            <p><strong>제4조 (자유권)</strong> 모든 학생은 타인에게 해를 끼치지 않는 범위 내에서 자신의 의견을 자유롭게 표현할 권리를 가진다.</p>
-                                            <p><strong>제5조 (성장권)</strong> 모든 학생은 퀘스트와 학습을 통해 경험치(XP)를 쌓고 성장할 권리를 가지며, 학교는 이를 위한 평등한 기회를 제공해야 한다.</p>
-                                            <div class="rounded-2xl bg-amber-100/70 border border-amber-700/20 p-4">
-                                                <p><strong>제6조 (납세 및 노동의 의무)</strong></p>
-                                                <p class="mt-2">① 모든 학생은 할당된 직업(1인 1역)을 성실히 수행할 노동의 의무를 진다.</p>
-                                                <p class="mt-2">② 모든 학생은 법률이 정하는 바에 따라 공동체 유지 비용인 '봉(Bong)'을 세금으로 납부할 의무를 진다.</p>
+                                    <div id="constitutionEditPanel" class="hidden space-y-3">
+                                        <div class="rounded-2xl border border-amber-800/25 bg-amber-100/70 p-4">
+                                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                                <h3 class="text-lg font-black text-amber-950">헌법 수정 모드</h3>
+                                                <button type="button" onclick="window.addConstitutionItem()" class="bg-emerald-700 hover:bg-emerald-600 text-white font-black py-2 px-3 rounded-xl text-[10px]">문장 추가</button>
                                             </div>
-                                            <p><strong>제7조 (환경 보전의 의무)</strong> 모든 학생은 현실의 교실과 메타버스 공간을 청결하게 유지하고 보전해야 할 의무를 가진다.</p>
+                                            <p class="text-[10px] text-stone-700 font-bold leading-relaxed">각 문장을 직접 수정할 수 있습니다. 유형을 '장 제목'으로 선택하면 큰 제목으로 표시되고, '문장'은 조문으로 표시됩니다.</p>
                                         </div>
-                                    </article>
-
-                                    <article>
-                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제3장 자치 기구와 경제</h3>
-                                        <div class="space-y-3 text-sm sm:text-base font-medium">
-                                            <p><strong>제8조 (학급 회의: 입법)</strong> 삼봉월드의 주요 법규 수정 및 예산(봉) 사용은 삼봉월드 국회의원 회의에서 결정한다.</p>
-                                            <div class="rounded-2xl bg-stone-100/80 border border-stone-500/20 p-4">
-                                                <p><strong>제9조 (은행 및 부동산: 경제)</strong></p>
-                                                <p class="mt-2">① 모든 학생의 재산권(봉, 부동산 등)은 보장된다. 다만, 공공의 이익을 위해 필요한 경우 회의를 통해 제한할 수 있다.</p>
-                                                <p class="mt-2">② 은행은 화폐 가치를 유지하며, 저축한 자에 대해 정당한 이자를 지급해야 한다.</p>
-                                            </div>
-                                            <p><strong>제10조 (사회적 보장)</strong> 캐릭터 등급이 낮거나 적응에 어려움을 겪는 학생을 위해 '초보자 지원 퀘스트' 등의 복지 제도를 운영한다.</p>
+                                        <div id="constitutionEditList" class="space-y-2"></div>
+                                        <div class="flex flex-col sm:flex-row gap-2 pt-2">
+                                            <button type="button" onclick="window.saveConstitutionItems()" class="flex-1 bg-amber-700 hover:bg-amber-600 text-white font-black py-3 px-4 rounded-2xl text-xs shadow-lg">헌법 저장</button>
+                                            <button type="button" onclick="window.cancelConstitutionEditor()" class="bg-stone-700 hover:bg-stone-600 text-white font-black py-3 px-4 rounded-2xl text-xs">취소</button>
                                         </div>
-                                    </article>
-
-                                    <article>
-                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제4장 분쟁 조정 및 보칙</h3>
-                                        <div class="space-y-3 text-sm sm:text-base font-medium">
-                                            <p><strong>제11조 (재판)</strong> 학생 간의 다툼이나 법규 위반이 발생할 경우, 사법부를 통해 공정하게 판결하며, 교사는 최종적인 조언자의 역할을 수행한다.</p>
-                                            <p><strong>제11조 ②</strong> 법관은 헌법과 법률에 의하여 그 양심에 따라 독립하여 심판한다.</p>
-                                            <p><strong>제12조 (개정)</strong> 본 헌법의 개정은 교사와 국회 인원 3분의 2 이상의 찬성이 있어야 한다.</p>
-                                        </div>
-                                    </article>
+                                    </div>
 
                                     <div class="pt-4 border-t-2 border-dashed border-amber-800/30 text-center">
                                         <p class="text-xs sm:text-sm font-black text-amber-900">삼봉월드의 모든 모험은 학생의 행복과 성장으로 향한다.</p>

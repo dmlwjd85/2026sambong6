@@ -337,7 +337,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         
@@ -494,6 +494,176 @@ function redrawPlazaGrantsUi() {
             const bong = normalizeBongValue(Math.max(0, Number(rawBong) || 0));
             return { xp, bong };
         }
+
+        const DEFAULT_CONSTITUTION_ITEMS = [
+            { id: 'c1', type: 'chapter', text: '제1장 강령' },
+            { id: 'c1_a1', type: 'clause', text: '제1조 ① 삼봉월드는 추억과 사랑이다.' },
+            { id: 'c1_a2', type: 'clause', text: '제1조 ② 삼봉월드의 주권은 학생들에게 있고, 모든 권력은 학생들로부터 나온다.' },
+            { id: 'c1_a3', type: 'clause', text: '제2조 삼봉월드는 학생의 행복과 성장을 최우선 가치로 하며, 현실과 메타버스의 조화로운 통리를 지향한다.' },
+            { id: 'c2', type: 'chapter', text: '제2장 학생의 권리와 의무' },
+            { id: 'c2_a1', type: 'clause', text: '제3조 (평등권) 모든 학생은 삼봉월드 내에서 평등하며, 성별·성적·캐릭터 레벨·등급에 의해 차별받지 아니한다.' },
+            { id: 'c2_a2', type: 'clause', text: '제4조 (자유권) 모든 학생은 타인에게 해를 끼치지 않는 범위 내에서 자신의 의견을 자유롭게 표현할 권리를 가진다.' },
+            { id: 'c2_a3', type: 'clause', text: '제5조 (성장권) 모든 학생은 퀘스트와 학습을 통해 경험치(XP)를 쌓고 성장할 권리를 가지며, 학교는 이를 위한 평등한 기회를 제공해야 한다.' },
+            { id: 'c2_a4', type: 'clause', text: '제6조 (납세 및 노동의 의무)' },
+            { id: 'c2_a5', type: 'clause', text: '① 모든 학생은 할당된 직업(1인 1역)을 성실히 수행할 노동의 의무를 진다.' },
+            { id: 'c2_a6', type: 'clause', text: "② 모든 학생은 법률이 정하는 바에 따라 공동체 유지 비용인 '봉(Bong)'을 세금으로 납부할 의무를 진다." },
+            { id: 'c2_a7', type: 'clause', text: '제7조 (환경 보전의 의무) 모든 학생은 현실의 교실과 메타버스 공간을 청결하게 유지하고 보전해야 할 의무를 가진다.' },
+            { id: 'c3', type: 'chapter', text: '제3장 자치 기구와 경제' },
+            { id: 'c3_a1', type: 'clause', text: '제8조 (학급 회의: 입법) 삼봉월드의 주요 법규 수정 및 예산(봉) 사용은 삼봉월드 국회의원 회의에서 결정한다.' },
+            { id: 'c3_a2', type: 'clause', text: '제9조 (은행 및 부동산: 경제)' },
+            { id: 'c3_a3', type: 'clause', text: '① 모든 학생의 재산권(봉, 부동산 등)은 보장된다. 다만, 공공의 이익을 위해 필요한 경우 회의를 통해 제한할 수 있다.' },
+            { id: 'c3_a4', type: 'clause', text: '② 은행은 화폐 가치를 유지하며, 저축한 자에 대해 정당한 이자를 지급해야 한다.' },
+            { id: 'c3_a5', type: 'clause', text: "제10조 (사회적 보장) 캐릭터 등급이 낮거나 적응에 어려움을 겪는 학생을 위해 '초보자 지원 퀘스트' 등의 복지 제도를 운영한다." },
+            { id: 'c4', type: 'chapter', text: '제4장 분쟁 조정 및 보칙' },
+            { id: 'c4_a1', type: 'clause', text: '제11조 (재판) 학생 간의 다툼이나 법규 위반이 발생할 경우, 사법부를 통해 공정하게 판결하며, 교사는 최종적인 조언자의 역할을 수행한다.' },
+            { id: 'c4_a2', type: 'clause', text: '제11조 ② 법관은 헌법과 법률에 의하여 그 양심에 따라 독립하여 심판한다.' },
+            { id: 'c4_a3', type: 'clause', text: '제12조 (개정) 본 헌법의 개정은 교사와 국회 인원 3분의 2 이상의 찬성이 있어야 한다.' }
+        ];
+
+        let constitutionEditDraft = null;
+
+        function escapeConstitutionHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getConstitutionItems() {
+            const saved = window.globalSettings && Array.isArray(window.globalSettings.constitutionItems)
+                ? window.globalSettings.constitutionItems
+                : null;
+            const source = saved && saved.length > 0 ? saved : DEFAULT_CONSTITUTION_ITEMS;
+            return source
+                .map((item, idx) => ({
+                    id: String(item && item.id ? item.id : `constitution_${idx}_${Date.now().toString(36)}`),
+                    type: item && item.type === 'chapter' ? 'chapter' : 'clause',
+                    text: String(item && item.text ? item.text : '').trim()
+                }))
+                .filter((item) => item.text);
+        }
+
+        function renderConstitutionView(items) {
+            const container = document.getElementById('constitutionViewContent');
+            if (!container) return;
+            let openArticle = false;
+            const html = items.map((item) => {
+                const safeText = escapeConstitutionHtml(item.text);
+                if (item.type === 'chapter') {
+                    const close = openArticle ? '</div></article>' : '';
+                    openArticle = true;
+                    return `${close}<article><h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">${safeText}</h3><div class="space-y-3 text-sm sm:text-base font-medium">`;
+                }
+                return `<p>${safeText}</p>`;
+            }).join('') + (openArticle ? '</div></article>' : '');
+            container.innerHTML = html || '<div class="text-center text-amber-900/60 font-bold text-sm py-8">등록된 헌법 조문이 없습니다.</div>';
+        }
+
+        function renderConstitutionEditList() {
+            const list = document.getElementById('constitutionEditList');
+            if (!list) return;
+            const draft = constitutionEditDraft || getConstitutionItems();
+            list.innerHTML = draft.map((item, idx) => `
+                <div class="rounded-2xl border border-amber-800/20 bg-white/55 p-3">
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <select id="constitution_type_${idx}" class="bg-stone-100 border border-amber-800/25 text-stone-900 px-2 py-2 rounded-xl text-xs font-black sm:w-28">
+                            <option value="chapter" ${item.type === 'chapter' ? 'selected' : ''}>장 제목</option>
+                            <option value="clause" ${item.type !== 'chapter' ? 'selected' : ''}>문장</option>
+                        </select>
+                        <textarea id="constitution_text_${idx}" rows="2" class="flex-1 bg-stone-50 border border-amber-800/25 text-stone-900 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold leading-relaxed">${escapeConstitutionHtml(item.text)}</textarea>
+                        <button type="button" onclick="window.deleteConstitutionItem(${idx})" class="bg-red-800 hover:bg-red-700 text-white font-black py-2 px-3 rounded-xl text-[10px] sm:w-16">삭제</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function collectConstitutionDraftFromDom() {
+            const draft = constitutionEditDraft || getConstitutionItems();
+            return draft.map((item, idx) => {
+                const typeEl = document.getElementById(`constitution_type_${idx}`);
+                const textEl = document.getElementById(`constitution_text_${idx}`);
+                return {
+                    id: item.id || `constitution_${Date.now().toString(36)}_${idx}`,
+                    type: typeEl && typeEl.value === 'chapter' ? 'chapter' : 'clause',
+                    text: textEl ? textEl.value.trim() : ''
+                };
+            }).filter((item) => item.text);
+        }
+
+        function isConstitutionEditorOpen() {
+            const panel = document.getElementById('constitutionEditPanel');
+            return !!(panel && !panel.classList.contains('hidden'));
+        }
+
+        window.renderConstitutionContent = function() {
+            const editBtn = document.getElementById('constitutionEditBtn');
+            const view = document.getElementById('constitutionViewContent');
+            const panel = document.getElementById('constitutionEditPanel');
+            if (!view || !panel) return;
+            if (editBtn) editBtn.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
+            if (!isConstitutionEditorOpen()) {
+                renderConstitutionView(getConstitutionItems());
+            }
+        };
+
+        window.toggleConstitutionEditor = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('헌법 수정은 마스터만 할 수 있습니다.');
+            const view = document.getElementById('constitutionViewContent');
+            const panel = document.getElementById('constitutionEditPanel');
+            if (!view || !panel) return;
+            const opening = panel.classList.contains('hidden');
+            if (opening) {
+                constitutionEditDraft = getConstitutionItems();
+                renderConstitutionEditList();
+                view.classList.add('hidden');
+                panel.classList.remove('hidden');
+            } else {
+                window.cancelConstitutionEditor();
+            }
+        };
+
+        window.cancelConstitutionEditor = function() {
+            constitutionEditDraft = null;
+            const view = document.getElementById('constitutionViewContent');
+            const panel = document.getElementById('constitutionEditPanel');
+            if (view) view.classList.remove('hidden');
+            if (panel) panel.classList.add('hidden');
+            renderConstitutionView(getConstitutionItems());
+        };
+
+        window.addConstitutionItem = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            constitutionEditDraft = collectConstitutionDraftFromDom();
+            constitutionEditDraft.push({ id: `constitution_${Date.now().toString(36)}`, type: 'clause', text: '새 헌법 문장을 입력하세요.' });
+            renderConstitutionEditList();
+        };
+
+        window.deleteConstitutionItem = async function(index) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('이 헌법 문장을 삭제할까요?');
+            if (!ok) return;
+            constitutionEditDraft = collectConstitutionDraftFromDom().filter((_, idx) => idx !== index);
+            renderConstitutionEditList();
+        };
+
+        window.saveConstitutionItems = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('헌법 수정은 마스터만 할 수 있습니다.');
+            const constitutionItems = collectConstitutionDraftFromDom();
+            if (constitutionItems.length === 0) return window.customAlert('헌법 문장을 1개 이상 남겨 주세요.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { constitutionItems }, { merge: true });
+                window.globalSettings.constitutionItems = constitutionItems;
+                window.cancelConstitutionEditor();
+                await window.customAlert('✅ 헌법이 저장되었습니다.');
+            } catch (e) {
+                console.error(e);
+                await window.customAlert('저장 중 오류가 발생했습니다.');
+            }
+        };
 
         /** Firestore settings.global.shopPrices 우선, 없으면 SHOP_DATA 기본가 */
         function getEffectiveShopPrice(shopId) {
@@ -1434,6 +1604,7 @@ function redrawPlazaGrantsUi() {
                                 renderQuestManagementAdminPanel();
                                 renderJobGrid();
                                 renderJobManagementAdminPanel();
+                                if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
                                 updateUI();
@@ -2768,6 +2939,7 @@ function redrawPlazaGrantsUi() {
 
             updateLunchInvestLockUI();
             window.updateBankPanel();
+            if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) saveDataToCloud();
 
             // 스피드 퀴즈: 로그인 직후·상태 갱신 시 진행 중인 퀴즈 팝업을 다시 맞춤 (선생님이 먼저 출제한 경우 포함)

@@ -573,7 +573,11 @@ function redrawPlazaGrantsUi() {
                             <option value="clause" ${item.type !== 'chapter' ? 'selected' : ''}>문장</option>
                         </select>
                         <textarea id="constitution_text_${idx}" rows="2" class="flex-1 bg-stone-50 border border-amber-800/25 text-stone-900 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold leading-relaxed">${escapeConstitutionHtml(item.text)}</textarea>
-                        <button type="button" onclick="window.deleteConstitutionItem(${idx})" class="bg-red-800 hover:bg-red-700 text-white font-black py-2 px-3 rounded-xl text-[10px] sm:w-16">삭제</button>
+                        <div class="grid grid-cols-3 sm:grid-cols-1 gap-1 sm:w-16">
+                            <button type="button" onclick="window.moveConstitutionItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 disabled:opacity-30 disabled:pointer-events-none text-white font-black py-2 px-2 rounded-lg text-[10px]">위</button>
+                            <button type="button" onclick="window.moveConstitutionItem(${idx}, 1)" ${idx === draft.length - 1 ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 disabled:opacity-30 disabled:pointer-events-none text-white font-black py-2 px-2 rounded-lg text-[10px]">아래</button>
+                            <button type="button" onclick="window.deleteConstitutionItem(${idx})" class="bg-red-800 hover:bg-red-700 text-white font-black py-2 px-2 rounded-lg text-[10px]">삭제</button>
+                        </div>
                     </div>
                 </div>
             `).join('');
@@ -637,6 +641,16 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || !window.playerState.isAdmin) return;
             constitutionEditDraft = collectConstitutionDraftFromDom();
             constitutionEditDraft.push({ id: `constitution_${Date.now().toString(36)}`, type: 'clause', text: '새 헌법 문장을 입력하세요.' });
+            renderConstitutionEditList();
+        };
+
+        window.moveConstitutionItem = function(index, direction) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            constitutionEditDraft = collectConstitutionDraftFromDom();
+            const targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= constitutionEditDraft.length) return;
+            const [item] = constitutionEditDraft.splice(index, 1);
+            constitutionEditDraft.splice(targetIndex, 0, item);
             renderConstitutionEditList();
         };
 

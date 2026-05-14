@@ -895,9 +895,9 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'admin'];
+        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'admin'];
         /** 기본 탭: 광장(plaza) */
-        let currentTabIndex = 1;
+        let currentTabIndex = 2;
 
         window.switchTab = function(tabId) {
             TABS.forEach(t => {
@@ -906,7 +906,7 @@ function redrawPlazaGrantsUi() {
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -921,6 +921,7 @@ function redrawPlazaGrantsUi() {
                 else if (tabId === 'goldenbell') activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
                 else if (tabId === 'estate') activeBtn.classList.add('border-teal-400', 'text-teal-400', 'bg-slate-800/50');
                 else if (tabId === 'bank') activeBtn.classList.add('border-sky-400', 'text-sky-400', 'bg-slate-800/50');
+                else if (tabId === 'constitution') activeBtn.classList.add('border-amber-300', 'text-amber-300', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 

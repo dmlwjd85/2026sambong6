@@ -7,6 +7,7 @@
 
         /* ★ 4월 봄·벚꽃 테마 (탭별 배경) ★ */
         .bg-theme-dashboard { background-color: #1a0a14; background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(251, 207, 232, 0.35) 0%, rgba(15, 23, 42, 0.9) 45%, #0f172a 100%); }
+        .bg-theme-constitution { background-color: #1c1206; background-image: radial-gradient(circle at 50% -10%, rgba(251, 191, 36, 0.24) 0%, rgba(67, 20, 7, 0.86) 46%, #0f172a 100%); }
         .bg-theme-plaza { background-color: #1e1030; background-image: radial-gradient(circle at 80% 10%, rgba(244, 114, 182, 0.25) 0%, #1a1035 55%, #0f172a 100%); }
         .bg-theme-quests { background-color: #0c1f1a; background-image: radial-gradient(circle at 20% 0%, rgba(167, 243, 208, 0.2) 0%, #052e26 50%, #0f172a 100%); }
         .bg-theme-jobs { background-color: #1f1408; background-image: radial-gradient(circle at 50% 0%, rgba(253, 230, 138, 0.18) 0%, #29200f 60%, #0f172a 100%); }

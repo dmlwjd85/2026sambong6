@@ -87,6 +87,7 @@
         <!-- 탭 버튼 영역 -->
         <div class="flex w-full overflow-x-auto scrollbar-hide border-t border-slate-700/50" id="mainTabBar">
             <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">월드맵</button>
+            <button id="tab-constitution" onclick="window.switchTab('constitution')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-amber-300">헌법</button>
             <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">광장</button>
             <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
             <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
@@ -539,7 +540,118 @@
             </div>
         </section>
 
-        <!-- ★ 2. 광장 탭 (모바일 3열 최적화) ★ -->
+        <!-- ★ 2. 헌법 탭: 삼봉월드의 기본 정신 ★ -->
+        <section id="constitutionSection" class="hidden">
+            <div class="max-w-6xl mx-auto">
+                <div class="relative overflow-hidden rounded-[2rem] border border-amber-300/40 bg-gradient-to-br from-amber-950/80 via-slate-950/95 to-stone-950/90 shadow-[0_0_45px_rgba(251,191,36,0.18)]">
+                    <div class="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(circle_at_20%_10%,rgba(251,191,36,0.35),transparent_28%),radial-gradient(circle_at_85%_20%,rgba(245,158,11,0.25),transparent_26%),linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.08)_50%,transparent_100%)]"></div>
+                    <div class="relative px-4 sm:px-8 lg:px-10 py-8 sm:py-10">
+                        <div class="text-center mb-8">
+                            <div class="mx-auto mb-4 w-16 h-16 rounded-full bg-amber-300/10 border border-amber-200/50 flex items-center justify-center shadow-[0_0_24px_rgba(251,191,36,0.35)]">
+                                <i class="fa-solid fa-scale-balanced text-3xl text-amber-200"></i>
+                            </div>
+                            <p class="text-[10px] sm:text-xs font-black tracking-[0.35em] text-amber-200/80">THE CONSTITUTION OF SAMBONG WORLD</p>
+                            <h2 class="mt-2 text-3xl sm:text-5xl font-display text-amber-100 drop-shadow-[0_0_18px_rgba(251,191,36,0.28)]">삼봉월드 헌법</h2>
+                            <p class="mt-3 text-xs sm:text-sm text-amber-100/70 font-bold break-keep">추억과 사랑을 바탕으로 학생의 행복과 성장을 지키는 삼봉월드의 기본 정신입니다.</p>
+                        </div>
+
+                        <div class="grid lg:grid-cols-[0.85fr_1.15fr] gap-5 lg:gap-6 items-start">
+                            <aside class="glass-panel rounded-3xl p-5 border border-amber-300/25 bg-stone-950/55 lg:sticky lg:top-32">
+                                <div class="text-center border-b border-amber-300/20 pb-4 mb-4">
+                                    <div class="text-5xl mb-2">📜</div>
+                                    <h3 class="text-lg font-black text-amber-100">삼봉월드 기본 정신</h3>
+                                    <p class="text-[10px] text-stone-300 mt-2 leading-relaxed">이 헌법은 학생들이 함께 만들어 가는 세계의 방향을 밝히고, 권리와 의무의 균형을 세웁니다.</p>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-center">
+                                    <div class="rounded-2xl border border-amber-300/20 bg-amber-950/35 p-3">
+                                        <div class="text-2xl mb-1">💛</div>
+                                        <div class="text-[10px] font-black text-amber-100">추억과 사랑</div>
+                                    </div>
+                                    <div class="rounded-2xl border border-amber-300/20 bg-amber-950/35 p-3">
+                                        <div class="text-2xl mb-1">🗳️</div>
+                                        <div class="text-[10px] font-black text-amber-100">학생 주권</div>
+                                    </div>
+                                    <div class="rounded-2xl border border-amber-300/20 bg-amber-950/35 p-3">
+                                        <div class="text-2xl mb-1">🌱</div>
+                                        <div class="text-[10px] font-black text-amber-100">행복과 성장</div>
+                                    </div>
+                                    <div class="rounded-2xl border border-amber-300/20 bg-amber-950/35 p-3">
+                                        <div class="text-2xl mb-1">⚖️</div>
+                                        <div class="text-[10px] font-black text-amber-100">공정한 공동체</div>
+                                    </div>
+                                </div>
+                            </aside>
+
+                            <div class="rounded-3xl bg-[#f8ecd2] text-stone-900 shadow-2xl border border-amber-200/70 overflow-hidden">
+                                <div class="bg-gradient-to-r from-amber-800 via-amber-700 to-stone-800 text-amber-50 px-5 sm:px-7 py-4 border-b-4 border-amber-300">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p class="text-[10px] font-black tracking-[0.25em] text-amber-200/90">전문</p>
+                                            <h3 class="text-xl sm:text-2xl font-black">삼봉월드 헌법 조문</h3>
+                                        </div>
+                                        <i class="fa-solid fa-landmark text-3xl text-amber-200/80"></i>
+                                    </div>
+                                </div>
+
+                                <div class="p-5 sm:p-7 lg:p-8 space-y-7 leading-relaxed constitution-scroll">
+                                    <article>
+                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제1장 강령</h3>
+                                        <div class="space-y-3 text-sm sm:text-base font-medium">
+                                            <p><strong>제1조 ①</strong> 삼봉월드는 추억과 사랑이다.</p>
+                                            <p><strong>제1조 ②</strong> 삼봉월드의 주권은 학생들에게 있고, 모든 권력은 학생들로부터 나온다.</p>
+                                            <p><strong>제2조</strong> 삼봉월드는 학생의 행복과 성장을 최우선 가치로 하며, 현실과 메타버스의 조화로운 통리를 지향한다.</p>
+                                        </div>
+                                    </article>
+
+                                    <article>
+                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제2장 학생의 권리와 의무</h3>
+                                        <div class="space-y-3 text-sm sm:text-base font-medium">
+                                            <p><strong>제3조 (평등권)</strong> 모든 학생은 삼봉월드 내에서 평등하며, 성별·성적·캐릭터 레벨·등급에 의해 차별받지 아니한다.</p>
+                                            <p><strong>제4조 (자유권)</strong> 모든 학생은 타인에게 해를 끼치지 않는 범위 내에서 자신의 의견을 자유롭게 표현할 권리를 가진다.</p>
+                                            <p><strong>제5조 (성장권)</strong> 모든 학생은 퀘스트와 학습을 통해 경험치(XP)를 쌓고 성장할 권리를 가지며, 학교는 이를 위한 평등한 기회를 제공해야 한다.</p>
+                                            <div class="rounded-2xl bg-amber-100/70 border border-amber-700/20 p-4">
+                                                <p><strong>제6조 (납세 및 노동의 의무)</strong></p>
+                                                <p class="mt-2">① 모든 학생은 할당된 직업(1인 1역)을 성실히 수행할 노동의 의무를 진다.</p>
+                                                <p class="mt-2">② 모든 학생은 법률이 정하는 바에 따라 공동체 유지 비용인 '봉(Bong)'을 세금으로 납부할 의무를 진다.</p>
+                                            </div>
+                                            <p><strong>제7조 (환경 보전의 의무)</strong> 모든 학생은 현실의 교실과 메타버스 공간을 청결하게 유지하고 보전해야 할 의무를 가진다.</p>
+                                        </div>
+                                    </article>
+
+                                    <article>
+                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제3장 자치 기구와 경제</h3>
+                                        <div class="space-y-3 text-sm sm:text-base font-medium">
+                                            <p><strong>제8조 (학급 회의: 입법)</strong> 삼봉월드의 주요 법규 수정 및 예산(봉) 사용은 삼봉월드 국회의원 회의에서 결정한다.</p>
+                                            <div class="rounded-2xl bg-stone-100/80 border border-stone-500/20 p-4">
+                                                <p><strong>제9조 (은행 및 부동산: 경제)</strong></p>
+                                                <p class="mt-2">① 모든 학생의 재산권(봉, 부동산 등)은 보장된다. 다만, 공공의 이익을 위해 필요한 경우 회의를 통해 제한할 수 있다.</p>
+                                                <p class="mt-2">② 은행은 화폐 가치를 유지하며, 저축한 자에 대해 정당한 이자를 지급해야 한다.</p>
+                                            </div>
+                                            <p><strong>제10조 (사회적 보장)</strong> 캐릭터 등급이 낮거나 적응에 어려움을 겪는 학생을 위해 '초보자 지원 퀘스트' 등의 복지 제도를 운영한다.</p>
+                                        </div>
+                                    </article>
+
+                                    <article>
+                                        <h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">제4장 분쟁 조정 및 보칙</h3>
+                                        <div class="space-y-3 text-sm sm:text-base font-medium">
+                                            <p><strong>제11조 (재판)</strong> 학생 간의 다툼이나 법규 위반이 발생할 경우, 사법부를 통해 공정하게 판결하며, 교사는 최종적인 조언자의 역할을 수행한다.</p>
+                                            <p><strong>제11조 ②</strong> 법관은 헌법과 법률에 의하여 그 양심에 따라 독립하여 심판한다.</p>
+                                            <p><strong>제12조 (개정)</strong> 본 헌법의 개정은 교사와 국회 인원 3분의 2 이상의 찬성이 있어야 한다.</p>
+                                        </div>
+                                    </article>
+
+                                    <div class="pt-4 border-t-2 border-dashed border-amber-800/30 text-center">
+                                        <p class="text-xs sm:text-sm font-black text-amber-900">삼봉월드의 모든 모험은 학생의 행복과 성장으로 향한다.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 3. 광장 탭 (모바일 3열 최적화) ★ -->
         <section id="plazaSection">
             <!-- 마스터 전용 광장 일괄 컨트롤 (코드 유지) -->
             <div id="plazaGMControls" class="hidden mb-4 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">

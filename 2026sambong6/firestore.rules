@@ -38,9 +38,10 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /artifacts/{appId}/public/{document=**} {
+    match /artifacts/{appId}/public/data/{collectionId}/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      // 학생 문서는 위 전용 규칙만 통과해야 삭제 금지와 수치 하락 방어가 우회되지 않습니다.
+      allow write: if signedIn() && collectionId != 'students';
     }
 
     // --- ncgame ---

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test:rules": "node test/firestore-rules.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

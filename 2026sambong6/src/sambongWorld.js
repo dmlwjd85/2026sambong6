@@ -4612,27 +4612,43 @@ function redrawPlazaGrantsUi() {
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                const batch = writeBatch(db);
-                Object.keys(contribs).forEach((sid) => {
-                    const refund = calcShopGroupBuyRefund(contribs[sid]);
-                    if (refund <= 0) return;
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
+                let committedTotal = 0;
+                let committedRefundTotal = 0;
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    const serverPool = poolSnap.exists() ? poolSnap.data() : {};
+                    const serverContribs = serverPool.contributions && typeof serverPool.contributions === 'object' ? serverPool.contributions : {};
+                    const normalizedContribs = {};
+                    Object.keys(serverContribs).forEach((sid) => {
+                        const amt = toNaturalShopContribution(serverContribs[sid]);
+                        if (amt > 0) normalizedContribs[String(sid)] = amt;
+                    });
+                    committedTotal = Object.keys(normalizedContribs).reduce((s, sid) => s + normalizedContribs[sid], 0);
+                    if (committedTotal <= 0) throw new Error('no_refund');
+                    committedRefundTotal = Object.keys(normalizedContribs).reduce((s, sid) => s + calcShopGroupBuyRefund(normalizedContribs[sid]), 0);
+                    const now = Date.now();
+                    Object.keys(normalizedContribs).forEach((sid) => {
+                        const refund = calcShopGroupBuyRefund(normalizedContribs[sid]);
+                        if (refund <= 0) return;
+                        transaction.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
+                    });
+                    transaction.set(poolRef, {
+                        contributions: {},
+                        updatedAt: now,
+                        lastResetAt: now,
+                        lastResetRefundTotal: committedRefundTotal,
+                        lastResetOriginalTotal: committedTotal,
+                    }, { merge: true });
                 });
-                batch.set(poolRef, {
-                    contributions: {},
-                    updatedAt: Date.now(),
-                    lastResetAt: Date.now(),
-                    lastResetRefundTotal: refundTotal,
-                    lastResetOriginalTotal: total,
-                }, { merge: true });
-                await batch.commit();
                 await refreshStudentsCacheFromServer();
                 window.renderShopGroupBuyAdminModal();
                 if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
                 await window.customAlert('공동구매가 초기화되고 환불 처리되었습니다.');
             } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'no_refund') return await window.customAlert('이미 초기화되었거나 입금 내역이 없습니다.');
                 console.error('resetShopGroupBuyAdmin', e);
-                await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('초기화 실패: ' + code);
             }
         };
 

@@ -1130,6 +1130,16 @@ function redrawPlazaGrantsUi() {
             window.customAlert("🌊 [난지도 분교]\n해적 마스터 A의 구역입니다!\n으스스한 해골 깃발이 펄럭이고 있습니다. 🏴‍☠️");
         };
 
+        window.openExternalPortal = function() {
+            const modal = document.getElementById('externalPortalModal');
+            if (modal) modal.classList.remove('hidden');
+        };
+
+        window.closeExternalPortal = function() {
+            const modal = document.getElementById('externalPortalModal');
+            if (modal) modal.classList.add('hidden');
+        };
+
         let touchstartX = 0; 
         let touchstartY = 0;
         
@@ -3619,13 +3629,13 @@ function redrawPlazaGrantsUi() {
             updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
         };
 
-        async function handleQuestDrop(xp) {
+        async function handleQuestDrop(xp, opts = {}) {
             // 기본 드랍 확률 배율 (무기 인벤 0개면 가중↑, 1개면 기본, 2개 이상이면 감쇠)
             let dropMultiplier = 1.0;
             if (!window.playerState.inventory) window.playerState.inventory = [];
             const invenCount = window.playerState.inventory.length;
             
-            if (invenCount === 0) dropMultiplier = 6.0;
+            if (invenCount === 0) dropMultiplier = opts.allDailyDone ? 10.0 : 6.0;
             else if (invenCount === 1) dropMultiplier = 1.0;
             else dropMultiplier = 0.5;
 
@@ -3740,7 +3750,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
             if (alertMsg !== "") await window.customAlert(alertMsg.trim());
 
-            await handleQuestDrop(xp);
+            await handleQuestDrop(xp, { allDailyDone });
 
             updateUI();
 
@@ -5300,6 +5310,38 @@ function redrawPlazaGrantsUi() {
                 console.error('setRaidPassword', e);
                 await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
             }
+        };
+
+        function createRandomRaidPassword() {
+            return String(Math.floor(1000 + Math.random() * 9000));
+        }
+
+        async function saveRaidPasswordAndReset(password, label) {
+            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(password) }, { merge: true });
+                const r = await applyRaidResetToAllStudents();
+                await window.customAlert(`✅ ${label} 완료!\n새 전담 레이드 비번: ${password}\n학생 ${r.count}명의 전담 레이드가 잠금으로 초기화되었습니다.`);
+            } catch (e) {
+                console.error('saveRaidPasswordAndReset', e);
+                await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
+            }
+        }
+
+        window.generateRaidPassword = async function() {
+            const nextPassword = createRandomRaidPassword();
+            const ok = await window.customConfirm(`전담 레이드 비밀번호를 랜덤 생성할까요?\n새 비번: ${nextPassword}\n\n저장하면 모든 학생의 전담 레이드 잠금도 초기화됩니다.`);
+            if (!ok) return;
+            await saveRaidPasswordAndReset(nextPassword, '랜덤 비밀번호 생성');
+        };
+
+        window.resetRaidPassword = async function() {
+            const ok = await window.customConfirm('전담 레이드 비밀번호를 기본값 1234로 초기화할까요?\n저장하면 모든 학생의 전담 레이드 잠금도 초기화됩니다.');
+            if (!ok) return;
+            await saveRaidPasswordAndReset('1234', '비밀번호 초기화');
         };
 
         window.openQuestHistory = function() {

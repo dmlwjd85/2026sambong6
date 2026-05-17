@@ -199,6 +199,49 @@
         </div>
     </div>
 
+    <!-- ★ 외부 세계 차원문 모달 ★ -->
+    <div id="externalPortalModal" class="hidden fixed inset-0 z-[265] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6">
+        <div class="relative glass-panel p-5 sm:p-6 rounded-3xl max-w-lg w-full border-2 border-cyan-300/60 shadow-[0_0_35px_rgba(34,211,238,0.32)] max-h-[90vh] overflow-y-auto">
+            <div class="absolute inset-0 rounded-3xl pointer-events-none opacity-30 bg-[radial-gradient(circle_at_50%_10%,rgba(34,211,238,0.45),transparent_35%),radial-gradient(circle_at_50%_90%,rgba(168,85,247,0.35),transparent_32%)]"></div>
+            <div class="relative">
+                <div class="flex items-start justify-between gap-2 mb-4">
+                    <div>
+                        <p class="text-[10px] text-cyan-200 font-black tracking-[0.25em]">DIMENSION GATE</p>
+                        <h3 class="text-xl sm:text-2xl font-display text-white"><i class="fa-solid fa-wand-sparkles text-cyan-300"></i> 외부 세계 차원문</h3>
+                        <p class="text-[10px] text-slate-400 mt-1">이동할 세계를 선택하면 새 창으로 열립니다.</p>
+                    </div>
+                    <button type="button" onclick="window.closeExternalPortal()" class="shrink-0 text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+                </div>
+                <div class="grid gap-3">
+                    <a href="https://dmlwjd85.github.io/sambong-FC/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-lime-400/50 bg-lime-950/25 hover:bg-lime-900/45 p-4 flex items-center gap-3 transition">
+                        <div class="w-12 h-12 rounded-2xl bg-lime-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition">⚽</div>
+                        <div class="flex-1">
+                            <div class="text-lime-200 font-black text-sm">삼봉FC</div>
+                            <div class="text-[10px] text-slate-400">축구 세계로 이동</div>
+                        </div>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-lime-300"></i>
+                    </a>
+                    <a href="https://dmlwjd85.github.io/ncgame/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-cyan-400/50 bg-cyan-950/25 hover:bg-cyan-900/45 p-4 flex items-center gap-3 transition">
+                        <div class="w-12 h-12 rounded-2xl bg-blue-800/80 border border-cyan-300 flex items-center justify-center text-cyan-100 text-lg font-black group-hover:scale-110 transition">ㄱㄴㄷ</div>
+                        <div class="flex-1">
+                            <div class="text-cyan-200 font-black text-sm">가나다 눈치게임</div>
+                            <div class="text-[10px] text-slate-400">눈치게임 세계로 이동</div>
+                        </div>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-cyan-300"></i>
+                    </a>
+                    <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-red-400/50 bg-red-950/20 hover:bg-red-900/35 p-4 flex items-center gap-3 transition">
+                        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-400 via-white to-yellow-300 flex items-center justify-center text-3xl group-hover:scale-110 transition">🐾</div>
+                        <div class="flex-1">
+                            <div class="text-red-200 font-black text-sm">영켓몬</div>
+                            <div class="text-[10px] text-slate-400">영어 RPG 세계로 이동</div>
+                        </div>
+                        <i class="fa-solid fa-arrow-up-right-from-square text-red-300"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ★ 퀘스트 기록 모달 ★ -->
     <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
         <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
@@ -380,28 +423,16 @@
                     <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">골든벨</div>
                 </div>
 
-                <!-- 9. Left Edge: Sambong FC -->
-                <a href="https://dmlwjd85.github.io/sambong-FC/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[42%] left-[8%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_12px_rgba(74,222,128,0.7)] avatar-float pointer-events-none" style="animation-delay: 0.6s;">⚽</div>
-                    <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-lime-400 to-emerald-700 rounded-[100%] border-b-4 border-emerald-950 shadow-xl"></div>
-                    <div class="worldmap-label mt-1 bg-slate-900/95 text-lime-300 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-lime-500/80 whitespace-nowrap">삼봉FC</div>
-                </a>
+                <!-- 9. Right Edge: 외부 세계 차원문 -->
+                <div onclick="window.openExternalPortal()" class="island-hover absolute top-[42%] left-[92%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
+                    <div class="worldmap-emoji absolute bottom-6 w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 border-cyan-200/80 bg-gradient-to-br from-cyan-400 via-blue-700 to-purple-800 shadow-[0_0_28px_rgba(34,211,238,0.9)] avatar-bounce pointer-events-none flex items-center justify-center" style="animation-delay: 0.9s;">
+                        <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-950/70 border border-white/60 shadow-inner"></div>
+                    </div>
+                    <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-cyan-300 to-purple-700 rounded-[100%] border-b-4 border-purple-950 shadow-xl"></div>
+                    <div class="worldmap-label mt-1 bg-slate-900/95 text-cyan-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-cyan-500/80 whitespace-nowrap">외부 세계</div>
+                </div>
 
-                <!-- 10. Right Edge: 가나다눈치게임 -->
-                <a href="https://dmlwjd85.github.io/ncgame/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[42%] left-[92%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
-                    <div class="worldmap-emoji absolute bottom-8 text-2xl sm:text-3xl font-black text-cyan-100 bg-blue-800/90 border-2 border-cyan-300 rounded-xl px-2 py-1 drop-shadow-[0_0_12px_rgba(96,165,250,0.7)] avatar-bounce pointer-events-none" style="animation-delay: 0.9s;">ㄱㄴㄷ</div>
-                    <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-cyan-400 to-blue-700 rounded-[100%] border-b-4 border-blue-950 shadow-xl"></div>
-                    <div class="worldmap-label mt-1 bg-slate-900/95 text-cyan-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-cyan-500/80 whitespace-nowrap">가나다눈치게임</div>
-                </a>
-
-                <!-- 11. Top Right: 영켓몬 -->
-                <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="island-hover absolute top-[20%] left-[90%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
-                    <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_14px_rgba(248,113,113,0.8)] avatar-bounce pointer-events-none" style="animation-delay: 0.15s;">🐾</div>
-                    <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-red-400 via-white to-yellow-400 rounded-[100%] border-b-4 border-red-950 shadow-xl"></div>
-                    <div class="worldmap-label mt-1 bg-slate-900/95 text-red-200 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-red-400/80 whitespace-nowrap">영켓몬</div>
-                </a>
-
-                <!-- 12. Bottom Center: Bank -->
+                <!-- 10. Bottom Center: Bank -->
                 <div onclick="window.visitBank()" class="island-hover absolute top-[92%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
                     <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_12px_rgba(56,189,248,0.7)] avatar-float pointer-events-none" style="animation-delay: 0.35s;">🏦</div>
                     <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-sky-500 to-sky-800 rounded-[100%] border-b-4 border-sky-950 shadow-xl"></div>
@@ -1089,9 +1120,14 @@
                 </table>
             </div>
 
-            <div class="glass-panel p-4 rounded-xl mt-4 border border-purple-500/50 flex justify-between items-center">
+            <div class="glass-panel p-4 rounded-xl mt-4 border border-purple-500/50 flex flex-col sm:flex-row justify-between gap-3 sm:items-center">
                 <div><h3 class="text-white font-bold text-sm">전담 레이드</h3><p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">1234</span></p></div>
-                <div class="flex gap-1"><button onclick="window.setRaidPassword()" class="bg-purple-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button><button onclick="window.resetRaids()" class="bg-red-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">초기화</button></div>
+                <div class="flex flex-wrap gap-1">
+                    <button onclick="window.setRaidPassword()" class="bg-purple-600 hover:bg-purple-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button>
+                    <button onclick="window.generateRaidPassword()" class="bg-cyan-700 hover:bg-cyan-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">랜덤생성</button>
+                    <button onclick="window.resetRaidPassword()" class="bg-slate-700 hover:bg-slate-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번초기화</button>
+                    <button onclick="window.resetRaids()" class="bg-red-600 hover:bg-red-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">레이드초기화</button>
+                </div>
             </div>
 
             <!-- ★ 완전 초기화 (맨 아래·위험) ★ -->

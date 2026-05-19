@@ -3183,6 +3183,7 @@ function redrawPlazaGrantsUi() {
                                 dataToSave.bong = normalizeBongValue(serverBong);
                             }
                         }
+                        mergeRaidSensitiveStateFromServer(dataToSave, serverData, opts);
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
@@ -3205,6 +3206,9 @@ function redrawPlazaGrantsUi() {
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'quests')) window.playerState.quests = dataToSave.quests;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'unlockedQuests')) window.playerState.unlockedQuests = dataToSave.unlockedQuests;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'usedRaidPasswords')) window.playerState.usedRaidPasswords = dataToSave.usedRaidPasswords;
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
@@ -3686,6 +3690,27 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             applyDailyQuestResetIfNewDay({ silent: true });
             if (window.playerState.quests[qId]) return;
+            if (isRaidQuestId(qId) && db && currentStudentDocRef) {
+                try {
+                    const serverSnap = await readStudentDocPreferServer(currentStudentDocRef);
+                    const serverData = serverSnap.exists() ? (serverSnap.data() || {}) : {};
+                    const serverUnlocked = toPlainObject(serverData.unlockedQuests);
+                    const serverQuests = toPlainObject(serverData.quests);
+                    if (serverQuests[qId]) {
+                        mergeRaidSensitiveStateFromServer(window.playerState, serverData, {});
+                        updateUI();
+                        return;
+                    }
+                    if (!serverUnlocked[qId]) {
+                        mergeRaidSensitiveStateFromServer(window.playerState, serverData, {});
+                        updateUI();
+                        return await window.customAlert('전담 레이드가 다시 잠금 상태입니다. 최신 비밀번호로 다시 열어 주세요.');
+                    }
+                } catch (e) {
+                    console.error('attemptQuest raid state check', e);
+                    return await window.customAlert('전담 레이드 상태 확인에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                }
+            }
 
             let finalXp = xp; 
             let finalBong = bong; 
@@ -3763,7 +3788,8 @@ function redrawPlazaGrantsUi() {
                     return;
                 }
                 /** 퀘스트 직후 playerState가 이미 최종값이므로 전체 merge 저장(서버 재읽기·델타 계산 없음 — 실패 알림 오판 방지) */
-                await saveDataToCloud();
+                const saveOpts = isRaidQuestId(qId) ? { allowRaidQuestIds: [qId] } : {};
+                await saveDataToCloud(saveOpts);
             } catch (e) {
                 console.error('attemptQuest persist', e);
                 await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -3776,6 +3802,21 @@ function redrawPlazaGrantsUi() {
             const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(0.5 B)가 깎여요.");
             
             if (isOk) {
+                if (isRaidQuestId(qId) && db && currentStudentDocRef) {
+                    try {
+                        const serverSnap = await readStudentDocPreferServer(currentStudentDocRef);
+                        const serverData = serverSnap.exists() ? (serverSnap.data() || {}) : {};
+                        const serverQuests = toPlainObject(serverData.quests);
+                        if (!serverQuests[qId]) {
+                            mergeRaidSensitiveStateFromServer(window.playerState, serverData, {});
+                            updateUI();
+                            return await window.customAlert('서버에서는 이미 초기화된 전담 레이드입니다. 화면을 최신 상태로 맞췄습니다.');
+                        }
+                    } catch (e) {
+                        console.error('cancelQuest raid state check', e);
+                        return await window.customAlert('전담 레이드 상태 확인에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                    }
+                }
                 if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
 
                 if (window.playerState.questHistory) {
@@ -3789,7 +3830,9 @@ function redrawPlazaGrantsUi() {
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - (Number(bong) + 0.5));
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
-                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: Number(bong) + 0.5 });
+                const saveOpts = { allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: Number(bong) + 0.5 };
+                if (isRaidQuestId(qId)) saveOpts.allowRaidQuestIds = [qId];
+                saveDataToCloud(saveOpts);
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();
@@ -4806,21 +4849,54 @@ function redrawPlazaGrantsUi() {
 
         window.promptUnlock = async function(qId) {
             if (window.playerState.isGuest) return;
-            const pw = window.globalSettings.raidPassword || "1234";
             const code = await window.customPrompt(`전담 선생님 비밀번호를 입력하세요:`, "password");
-            
-            if (code === pw || code === "마스터J") { 
+            if (code === null) return;
+
+            let latestPassword = window.globalSettings.raidPassword || "1234";
+            let serverStudentData = {};
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                let settingsSnap;
+                try {
+                    settingsSnap = await getDocFromServer(settingsRef);
+                } catch (e) {
+                    console.warn('promptUnlock settings getDocFromServer', e);
+                    settingsSnap = await getDoc(settingsRef);
+                }
+                if (settingsSnap.exists()) {
+                    latestPassword = (settingsSnap.data() && settingsSnap.data().raidPassword) || "1234";
+                }
+                if (currentStudentDocRef) {
+                    const studentSnap = await readStudentDocPreferServer(currentStudentDocRef);
+                    serverStudentData = studentSnap.exists() ? (studentSnap.data() || {}) : {};
+                }
+            } catch (e) {
+                console.error('promptUnlock server validation', e);
+                return await window.customAlert('비밀번호 확인 중 오류가 났습니다. 새로고침 후 다시 시도해 주세요.');
+            }
+
+            if (code === latestPassword || code === "마스터J") { 
                 if (code !== "마스터J") {
-                    if (!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
-                    if (window.playerState.usedRaidPasswords.includes(code)) {
+                    const serverUsedPasswords = toStringArray(serverStudentData.usedRaidPasswords);
+                    if (serverUsedPasswords.includes(String(code))) {
                         return await window.customAlert("❌ 이미 사용한 비밀번호입니다.\n비밀번호 하나당 하나의 레이드만 열 수 있습니다.");
                     }
-                    window.playerState.usedRaidPasswords.push(code);
+                    window.playerState.usedRaidPasswords = [...serverUsedPasswords, String(code)];
                 }
-                await window.customAlert("🔓 퀘스트가 열렸어요!");
-                if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
+                const serverUnlocked = toPlainObject(serverStudentData.unlockedQuests);
+                window.playerState.unlockedQuests = { ...toPlainObject(window.playerState.unlockedQuests), ...serverUnlocked };
                 window.playerState.unlockedQuests[qId] = true; 
-                updateUI(); saveDataToCloud();
+                const saveOpts = {
+                    allowRaidPasswordUseSave: code !== "마스터J",
+                    raidPasswordCode: code !== "마스터J" ? String(code) : null,
+                };
+                if (isRaidQuestId(qId)) saveOpts.allowRaidUnlockIds = [qId];
+                const saved = await saveDataToCloud(saveOpts);
+                if (!saved) return await window.customAlert('퀘스트 잠금 해제를 서버에 저장하지 못했습니다. 새로고침 후 다시 시도해 주세요.');
+                await window.customAlert("🔓 퀘스트가 열렸어요!");
+                updateUI();
             } else if (code !== null) await window.customAlert("❌ 비밀번호가 틀렸어요.");
         };
 
@@ -5258,12 +5334,60 @@ function redrawPlazaGrantsUi() {
         /** 전담 레이드 퀘스트 ID (비번 변경·초기화 시 동일 목록 사용) */
         const RAID_QUEST_IDS = ['q_sci', 'q_prac', 'q_eng', 'q_dan', 'q_the', 'q_teacher'];
 
+        function isRaidQuestId(qId) {
+            return RAID_QUEST_IDS.includes(String(qId));
+        }
+
+        function toPlainObject(value) {
+            return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        }
+
+        function toStringArray(value) {
+            return Array.isArray(value) ? value.map((v) => String(v)) : [];
+        }
+
         /**
-         * 1~13번 학생 문서에 전담 레이드 필드만 병합 반영. 광장 스냅샷과 무관하게 항상 13건 배치.
-         * (merge: true로 기존 일일 퀘스트 등 다른 quests 키는 유지)
+         * 일반 저장이 오래 열린 창의 레이드 잠금 상태를 다시 덮어쓰지 않도록,
+         * 레이드 전용 필드는 서버 최신값을 기준으로 병합합니다.
          */
-        async function applyRaidResetToAllStudents() {
-            const batch = writeBatch(db);
+        function mergeRaidSensitiveStateFromServer(dataToSave, serverData, opts = {}) {
+            const allowQuestIds = new Set(toStringArray(opts.allowRaidQuestIds));
+            const allowUnlockIds = new Set(toStringArray(opts.allowRaidUnlockIds));
+            const serverQuests = toPlainObject(serverData.quests);
+            const serverUnlocked = toPlainObject(serverData.unlockedQuests);
+            const nextQuests = { ...toPlainObject(dataToSave.quests) };
+            const nextUnlocked = { ...toPlainObject(dataToSave.unlockedQuests) };
+
+            RAID_QUEST_IDS.forEach((id) => {
+                if (!allowQuestIds.has(id)) {
+                    if (Object.prototype.hasOwnProperty.call(serverQuests, id)) nextQuests[id] = serverQuests[id];
+                    else delete nextQuests[id];
+                } else if (nextQuests[id] && !serverQuests[id] && !serverUnlocked[id]) {
+                    nextQuests[id] = false;
+                }
+
+                if (!allowUnlockIds.has(id)) {
+                    if (Object.prototype.hasOwnProperty.call(serverUnlocked, id)) nextUnlocked[id] = serverUnlocked[id];
+                    else delete nextUnlocked[id];
+                }
+            });
+
+            dataToSave.quests = nextQuests;
+            dataToSave.unlockedQuests = nextUnlocked;
+
+            if (opts.allowRaidPasswordUseSave) {
+                const used = new Set([
+                    ...toStringArray(serverData.usedRaidPasswords),
+                    ...toStringArray(dataToSave.usedRaidPasswords),
+                ]);
+                if (opts.raidPasswordCode != null) used.add(String(opts.raidPasswordCode));
+                dataToSave.usedRaidPasswords = Array.from(used);
+            } else {
+                dataToSave.usedRaidPasswords = toStringArray(serverData.usedRaidPasswords);
+            }
+        }
+
+        function addRaidResetStudentWrites(batch) {
             const qPatch = {};
             const uqPatch = {};
             RAID_QUEST_IDS.forEach((id) => {
@@ -5277,6 +5401,15 @@ function redrawPlazaGrantsUi() {
                     { merge: true }
                 );
             }
+        }
+
+        /**
+         * 1~13번 학생 문서에 전담 레이드 필드만 병합 반영. 광장 스냅샷과 무관하게 항상 13건 배치.
+         * (merge: true로 기존 일일 퀘스트 등 다른 quests 키는 유지)
+         */
+        async function applyRaidResetToAllStudents() {
+            const batch = writeBatch(db);
+            addRaidResetStudentWrites(batch);
             await batch.commit();
             return { count: 13 };
         }
@@ -5303,8 +5436,13 @@ function redrawPlazaGrantsUi() {
             if (p === null || String(p).trim() === '') return;
 
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(p) }, { merge: true });
-                const r = await applyRaidResetToAllStudents();
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(p) }, { merge: true });
+                addRaidResetStudentWrites(batch);
+                await batch.commit();
+                const r = { count: 13 };
                 await window.customAlert(`✅ 비밀번호 변경 및 전담 레이드 초기화 완료! (학생 ${r.count}명 반영)`);
             } catch (e) {
                 console.error('setRaidPassword', e);
@@ -5322,8 +5460,11 @@ function redrawPlazaGrantsUi() {
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(password) }, { merge: true });
-                const r = await applyRaidResetToAllStudents();
+                const batch = writeBatch(db);
+                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(password) }, { merge: true });
+                addRaidResetStudentWrites(batch);
+                await batch.commit();
+                const r = { count: 13 };
                 await window.customAlert(`✅ ${label} 완료!\n새 전담 레이드 비번: ${password}\n학생 ${r.count}명의 전담 레이드가 잠금으로 초기화되었습니다.`);
             } catch (e) {
                 console.error('saveRaidPasswordAndReset', e);

@@ -65,5 +65,10 @@ service cloud.firestore {
         && request.resource.data.packId == packId;
       allow delete: if false;
     }
+
+    // --- PicBook (picbook 앱) — 회원·구매·연출, 삼봉월드와 동일 Firebase 프로젝트 ---
+    match /picbook_accounts/{accountKey} {
+      allow read, write: if request.auth != null;
+    }
   }
 }

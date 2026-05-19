@@ -1106,6 +1106,34 @@
                 <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
             </div>
 
+            <!-- PicBook 회원 (Firestore picbook_accounts) -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-indigo-500/50 bg-slate-900/80">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-book-open text-indigo-400"></i> PicBook 회원</h3>
+                    <div class="flex flex-wrap gap-1">
+                        <button type="button" onclick="window.refreshPicbookAccountsAdmin()" class="bg-indigo-700 hover:bg-indigo-600 text-white text-[10px] py-1.5 px-3 rounded font-bold">새로고침</button>
+                        <a href="https://dmlwjd85.github.io/picbook/" target="_blank" rel="noopener noreferrer" class="bg-slate-800 hover:bg-slate-700 text-indigo-200 text-[10px] py-1.5 px-3 rounded font-bold border border-indigo-600/50">PicBook 열기 ↗</a>
+                    </div>
+                </div>
+                <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">삼봉월드와 같은 Firebase(<code class="text-indigo-300">sambong-world-2026</code>)의 <strong class="text-indigo-200">picbook_accounts</strong> 컬렉션입니다. 태블릿·다른 PC에서도 같은 이름·비밀번호로 PicBook 로그인 시 이어집니다. 비밀번호는 해시만 저장됩니다.</p>
+                <p id="picbookAdminStatus" class="text-[10px] text-indigo-300/90 font-bold mb-2 min-h-[1rem]">—</p>
+                <div class="overflow-x-auto max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
+                    <table class="w-full text-left text-[10px] text-slate-300 min-w-[520px]">
+                        <thead class="bg-slate-800 text-slate-400 sticky top-0">
+                            <tr>
+                                <th class="p-2">이름</th>
+                                <th class="p-2">구매 PicBook</th>
+                                <th class="p-2">마지막 저장</th>
+                                <th class="p-2 text-center">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody id="picbookAdminTableBody">
+                            <tr><td colspan="4" class="p-4 text-center text-slate-500">마스터 탭을 열면 불러옵니다.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- 드래곤볼 보관함 복구 (마스터 J) — 버그 등으로 비워진 경우 Firestore에 성구·주말 키 복구 -->
             <div id="dragonBallRecoveryPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-amber-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-dragon text-amber-400"></i> 드래곤볼 보관함 복구</h3>

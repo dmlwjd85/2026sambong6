@@ -15,6 +15,7 @@ import {
     increment,
     runTransaction,
     arrayUnion,
+    deleteDoc,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -1111,6 +1112,9 @@ function redrawPlazaGrantsUi() {
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
             if (window.updateBankPanel) window.updateBankPanel();
+            if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && window.refreshPicbookAccountsAdmin) {
+                void window.refreshPicbookAccountsAdmin();
+            }
             if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                 window.renderGoldenBellMasterLive();
             }
@@ -2473,6 +2477,140 @@ function redrawPlazaGrantsUi() {
          * 마스터 J 전용: 오류로 비워진 드래곤볼 보관함을 Firestore에 복구합니다.
          * 학번·성구는 쉼표로 구분; 기존 보관함과 합쳐 중복 제거 후 저장합니다.
          */
+        const PICBOOK_ACCOUNTS_COL = 'picbook_accounts';
+
+        async function hashPicbookPassword(password) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(password)));
+            return Array.from(new Uint8Array(buf))
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        function formatPicbookDate(iso) {
+            if (!iso) return '—';
+            try {
+                const d = new Date(iso);
+                if (Number.isNaN(d.getTime())) return iso;
+                return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch {
+                return iso;
+            }
+        }
+
+        window.refreshPicbookAccountsAdmin = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return;
+            const statusEl = document.getElementById('picbookAdminStatus');
+            const tbody = document.getElementById('picbookAdminTableBody');
+            if (!tbody) return;
+            if (statusEl) statusEl.textContent = '불러오는 중…';
+            tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">불러오는 중…</td></tr>';
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) {
+                    if (statusEl) statusEl.textContent = '인증 실패 — 새로고침 후 다시 시도';
+                    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">인증 실패</td></tr>';
+                    return;
+                }
+                const snap = await getDocs(collection(db, PICBOOK_ACCOUNTS_COL));
+                const rows = [];
+                snap.forEach((docSnap) => {
+                    const d = docSnap.data() || {};
+                    rows.push({
+                        key: docSnap.id,
+                        name: d.name || docSnap.id,
+                        unlockedIds: Array.isArray(d.unlockedIds) ? d.unlockedIds : [],
+                        updatedAt: d.updatedAt || '',
+                    });
+                });
+                rows.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+                if (rows.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">등록된 PicBook 회원이 없습니다.</td></tr>';
+                    if (statusEl) statusEl.textContent = '0명';
+                    return;
+                }
+                tbody.innerHTML = rows
+                    .map((r) => {
+                        const books = r.unlockedIds.length
+                            ? r.unlockedIds.map((id) => `<span class="inline-block mr-1 mb-0.5 rounded bg-indigo-950/80 px-1.5 py-0.5 text-[9px] text-indigo-200">${id}</span>`).join('')
+                            : '<span class="text-slate-500">없음</span>';
+                        const safeName = String(r.name).replace(/</g, '&lt;');
+                        const safeKey = String(r.key).replace(/"/g, '&quot;');
+                        return `<tr class="border-b border-slate-800/80 hover:bg-slate-900/50">
+                            <td class="p-2 font-bold text-white">${safeName}<br><span class="text-[8px] text-slate-500">${safeKey}</span></td>
+                            <td class="p-2">${books}</td>
+                            <td class="p-2 text-slate-400 tabular-nums">${formatPicbookDate(r.updatedAt)}</td>
+                            <td class="p-2 text-center whitespace-nowrap">
+                                <button type="button" class="picbook-reset-pw mr-1 rounded bg-slate-700 px-2 py-1 text-[9px] font-bold text-white hover:bg-slate-600" data-key="${safeKey}" data-name="${safeName}">비번</button>
+                                <button type="button" class="picbook-del rounded bg-red-900/60 px-2 py-1 text-[9px] font-bold text-red-200 hover:bg-red-800" data-key="${safeKey}" data-name="${safeName}">삭제</button>
+                            </td>
+                        </tr>`;
+                    })
+                    .join('');
+                tbody.querySelectorAll('.picbook-reset-pw').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const key = btn.getAttribute('data-key');
+                        const name = btn.getAttribute('data-name');
+                        void window.resetPicbookPasswordAdmin(key, name);
+                    });
+                });
+                tbody.querySelectorAll('.picbook-del').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const key = btn.getAttribute('data-key');
+                        const name = btn.getAttribute('data-name');
+                        void window.deletePicbookAccountAdmin(key, name);
+                    });
+                });
+                if (statusEl) statusEl.textContent = `${rows.length}명`;
+            } catch (e) {
+                console.error('refreshPicbookAccountsAdmin', e);
+                if (statusEl) statusEl.textContent = '오류: ' + (e && e.message ? e.message : String(e));
+                tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">불러오기 실패</td></tr>';
+            }
+        };
+
+        window.resetPicbookPasswordAdmin = async function (accountKey, displayName) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return;
+            const raw = window.prompt(`${displayName || accountKey} — 새 비밀번호(숫자 6자리)`);
+            if (raw == null) return;
+            const pw = String(raw).replace(/\D/g, '').slice(0, 6);
+            if (pw.length !== 6) return window.customAlert('숫자 6자리를 입력해 주세요.');
+            const ok = await window.customConfirm(`${displayName || accountKey} 비밀번호를 변경할까요?`);
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증 실패');
+                const passwordHash = await hashPicbookPassword(pw);
+                await updateDoc(doc(db, PICBOOK_ACCOUNTS_COL, accountKey), {
+                    passwordHash,
+                    updatedAt: new Date().toISOString(),
+                });
+                await window.customAlert('비밀번호를 변경했습니다.');
+                void window.refreshPicbookAccountsAdmin();
+            } catch (e) {
+                window.customAlert('변경 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.deletePicbookAccountAdmin = async function (accountKey, displayName) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return;
+            const ok = await window.customConfirm(
+                `${displayName || accountKey} PicBook 회원 데이터를 삭제할까요?\n(복구할 수 없습니다.)`
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증 실패');
+                await deleteDoc(doc(db, PICBOOK_ACCOUNTS_COL, accountKey));
+                await window.customAlert('삭제했습니다.');
+                void window.refreshPicbookAccountsAdmin();
+            } catch (e) {
+                window.customAlert('삭제 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window.restoreDragonBallsAdmin = async function () {
             if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');

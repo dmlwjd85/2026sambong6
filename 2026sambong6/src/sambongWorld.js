@@ -5873,9 +5873,22 @@ function redrawPlazaGrantsUi() {
                 .replace(/"/g, '&quot;');
         }
 
+        function getGoldenBellSubmissions(st) {
+            const subs = { ...((st && st.submissions && typeof st.submissions === 'object') ? st.submissions : {}) };
+            if (st && typeof st === 'object') {
+                Object.keys(st).forEach((key) => {
+                    if (key.startsWith('submissions.')) {
+                        const sid = key.slice('submissions.'.length);
+                        if (sid) subs[sid] = st[key];
+                    }
+                });
+            }
+            return subs;
+        }
+
         /** 실시간 제출 답안 표 (문항별 제출 내용·O/X·합계) */
         function buildGoldenBellMasterAnswerTableHtml(st) {
-            const subs = st.submissions || {};
+            const subs = getGoldenBellSubmissions(st);
             const qs = st.questions || [];
             const n = qs.length;
             const subsKeys = Object.keys(subs);
@@ -5934,6 +5947,7 @@ function redrawPlazaGrantsUi() {
             if(!window.playerState.isAdmin) return;
             const st = window.goldenbellState;
             const dash = document.getElementById('gbAdminDashboard');
+            if (!dash) return;
             
             if (st && st.questions && st.questions.length > 0) {
                 st.questions.forEach((item) => {
@@ -5967,23 +5981,8 @@ function redrawPlazaGrantsUi() {
         window.renderGoldenBellMasterLive = function() {
             if(!window.playerState || !window.playerState.isAdmin) return;
             const container = document.getElementById('gbStudentContainer');
-            if(!container) return;
-            const st = window.goldenbellState;
-
-            if(!st || !st.isOpen) return;
-
-            const total = st.questions ? st.questions.length : 0;
-            let html = `
-                <div class="glass-panel p-4 rounded-2xl border border-yellow-500/50 mb-3 bg-slate-900/60">
-                    <div class="flex items-center justify-between mb-1 gap-2 flex-wrap">
-                        <div class="text-white font-bold text-sm"><i class="fa-solid fa-table text-yellow-400"></i> 골든벨 실시간 답안</div>
-                        <div class="text-[10px] text-slate-400">총 ${total}문항 · 학생이 최종 제출하면 문항별로 O/X·합계가 갱신됩니다.</div>
-                    </div>
-                    ${buildGoldenBellMasterAnswerTableHtml(st)}
-                </div>
-            `;
-
-            container.innerHTML = html;
+            if(container) container.innerHTML = '';
+            window.updateGoldenBellAdminUI();
         };
 
         window.saveAndOpenGoldenBell = async function() {
@@ -6098,7 +6097,7 @@ function redrawPlazaGrantsUi() {
             }
 
             const totalQuestions = st.questions.length;
-            const mySubmission = st.submissions && st.submissions[mId];
+            const mySubmission = getGoldenBellSubmissions(st)[mId];
             const myAnswers = mySubmission && Array.isArray(mySubmission.answers) ? mySubmission.answers : [];
             const myResults = mySubmission && Array.isArray(mySubmission.results) ? mySubmission.results : [];
             const locked = !!(mySubmission && (mySubmission.finalized || mySubmission.rewardsGiven));
@@ -6265,7 +6264,7 @@ function redrawPlazaGrantsUi() {
                 return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
             }
 
-            const prev = st.submissions && st.submissions[mId];
+            const prev = getGoldenBellSubmissions(st)[mId];
             if (prev && (prev.finalized || prev.rewardsGiven)) {
                 window._gbFinalSubmitting = false;
                 return window.customAlert('이미 최종 제출하여 채점이 완료되었습니다.');
@@ -6329,10 +6328,12 @@ function redrawPlazaGrantsUi() {
                     const gbSnap = await transaction.get(gbRef);
                     const latest = gbSnap.exists() ? gbSnap.data() : null;
                     if (!latest || !latest.isOpen) throw new Error('gb_closed');
-                    const latestSub = latest.submissions && latest.submissions[mId];
+                    const latestSub = getGoldenBellSubmissions(latest)[mId];
                     if (latestSub && (latestSub.finalized || latestSub.rewardsGiven)) throw new Error('already_submitted');
                     transaction.set(gbRef, {
-                        [`submissions.${mId}`]: submission
+                        submissions: {
+                            [mId]: submission
+                        }
                     }, { merge: true });
                     if (currentStudentDocRef) {
                         transaction.set(currentStudentDocRef, {

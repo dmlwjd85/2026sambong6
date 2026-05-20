@@ -6256,18 +6256,33 @@ function redrawPlazaGrantsUi() {
         window.submitGoldenBellAll = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if(window._gbFinalSubmitting) return;
+            window._gbFinalSubmitting = true;
 
             const st = window.goldenbellState;
             const mId = localStorage.getItem('sambong_student_id');
-            if(!st || !st.isOpen) return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
+            if(!st || !st.isOpen) {
+                window._gbFinalSubmitting = false;
+                return window.customAlert("현재 진행 중인 골든벨이 없습니다.");
+            }
 
             const prev = st.submissions && st.submissions[mId];
             if (prev && (prev.finalized || prev.rewardsGiven)) {
+                window._gbFinalSubmitting = false;
                 return window.customAlert('이미 최종 제출하여 채점이 완료되었습니다.');
             }
 
             const ok = await window.customConfirm("답안을 최종 제출하시겠습니까?\n제출 후에는 수정할 수 없습니다.");
-            if(!ok) return;
+            if(!ok) {
+                window._gbFinalSubmitting = false;
+                return;
+            }
+
+            const submitBtn = document.querySelector('button[onclick="window.submitGoldenBellAll()"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-50', 'pointer-events-none');
+                submitBtn.textContent = '제출 처리 중...';
+            }
 
             const totalQuestions = st.questions.length;
             const answers = [];
@@ -6297,10 +6312,8 @@ function redrawPlazaGrantsUi() {
                 }
             });
 
-            window._gbFinalSubmitting = true;
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
-                    [`submissions.${mId}`]: {
+                const submission = {
                         answers,
                         results,
                         score,
@@ -6309,12 +6322,35 @@ function redrawPlazaGrantsUi() {
                         rewardsGiven: true,
                         rewardXpTotal: rewardXp,
                         rewardBongTotal: rewardBong
+                };
+
+                await runTransaction(db, async (transaction) => {
+                    const gbRef = doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state');
+                    const gbSnap = await transaction.get(gbRef);
+                    const latest = gbSnap.exists() ? gbSnap.data() : null;
+                    if (!latest || !latest.isOpen) throw new Error('gb_closed');
+                    const latestSub = latest.submissions && latest.submissions[mId];
+                    if (latestSub && (latestSub.finalized || latestSub.rewardsGiven)) throw new Error('already_submitted');
+                    transaction.set(gbRef, {
+                        [`submissions.${mId}`]: submission
+                    }, { merge: true });
+                    if (currentStudentDocRef) {
+                        transaction.set(currentStudentDocRef, {
+                            xp: increment(rewardXp),
+                            bong: increment(normalizeBongValue(rewardBong))
+                        }, { merge: true });
                     }
-                }, { merge: true });
+                });
 
                 window.playerState.xp += rewardXp;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + Number(rewardBong));
-                await saveDataToCloud();
+                window.goldenbellState = {
+                    ...(window.goldenbellState || {}),
+                    submissions: {
+                        ...((window.goldenbellState && window.goldenbellState.submissions) || {}),
+                        [mId]: submission
+                    }
+                };
                 updateUI();
                 await showGoldenBellGradeModal({
                     score,
@@ -6323,7 +6359,21 @@ function redrawPlazaGrantsUi() {
                     rewardBong,
                     rows: gradeRows
                 });
-                window.renderGoldenBellStudent();
+                const container = document.getElementById('gbStudentContainer');
+                if (container) {
+                    container.innerHTML = '<div class="text-center p-6 text-emerald-300 glass-panel rounded-2xl font-bold">제출이 완료되어 골든벨 창을 닫았습니다.</div>';
+                }
+                window.switchTab('dashboard');
+            } catch (e) {
+                if (e && e.message === 'already_submitted') {
+                    await window.customAlert('이미 최종 제출하여 채점이 완료되었습니다.');
+                    window.renderGoldenBellStudent();
+                } else if (e && e.message === 'gb_closed') {
+                    await window.customAlert('골든벨이 종료되어 제출할 수 없습니다.');
+                } else {
+                    console.error(e);
+                    await window.customAlert('제출 중 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.');
+                }
             } finally {
                 window._gbFinalSubmitting = false;
             }

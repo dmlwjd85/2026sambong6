@@ -1853,7 +1853,7 @@ function redrawPlazaGrantsUi() {
             return h === 8 && m >= 40 && m <= 59;
         }
 
-        function buildMorningActivityPlazaHtml() {
+        function buildMorningActivityPlazaHtml({ preview = false } = {}) {
             const lines = getMorningActivityNoticeText()
                 .split('\n')
                 .map(line => line.trim())
@@ -1874,8 +1874,8 @@ function redrawPlazaGrantsUi() {
                                 </div>
                             </div>
                             <div class="hidden sm:flex flex-col items-center justify-center rounded-2xl bg-white/10 border border-white/20 px-5 py-3 text-amber-100">
-                                <i class="fa-solid fa-clock text-3xl mb-1"></i>
-                                <span class="font-black text-xl">08:40</span>
+                                ${preview ? '<span class="text-xs font-black text-emerald-200 mb-1">미리보기</span>' : '<i class="fa-solid fa-clock text-3xl mb-1"></i>'}
+                                <span class="font-black text-xl">${preview ? 'PREVIEW' : '08:40'}</span>
                             </div>
                         </div>
                         <div class="flex-1 rounded-[1.5rem] bg-stone-50 text-slate-900 border-4 border-amber-200 shadow-inner px-5 sm:px-10 py-6 sm:py-8 flex items-center">
@@ -1888,6 +1888,7 @@ function redrawPlazaGrantsUi() {
                             <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-pencil"></i> 차분히 쓰기</span>
                             <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-user-graduate"></i> 배움 준비</span>
                         </div>
+                        ${preview ? '<button type="button" onclick="window.closeMorningActivityPreview()" class="mt-5 mx-auto bg-amber-700 hover:bg-amber-600 text-white font-black py-2.5 px-6 rounded-full text-sm shadow-lg">미리보기 종료</button>' : ''}
                     </div>
                 </div>`;
         }
@@ -1900,8 +1901,8 @@ function redrawPlazaGrantsUi() {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
 
-            if (isMorningActivityTime()) {
-                container.innerHTML = buildMorningActivityPlazaHtml();
+            if (window._morningActivityPreviewActive || isMorningActivityTime()) {
+                container.innerHTML = buildMorningActivityPlazaHtml({ preview: !!window._morningActivityPreviewActive });
                 return;
             }
             
@@ -5635,8 +5636,15 @@ function redrawPlazaGrantsUi() {
         window.previewMorningActivityNotice = function() {
             if(!window.playerState || !window.playerState.isAdmin) return;
             const el = document.getElementById('gmMorningActivityNoticeInput');
-            const text = el && el.value.trim() ? el.value.trim() : getMorningActivityNoticeText();
-            window.customAlert(`☀️ [아침활동시간 안내]\n${text}`);
+            if (el && el.value.trim()) window.globalSettings.morningActivityNotice = el.value.trim();
+            window._morningActivityPreviewActive = true;
+            window.switchTab('plaza');
+            window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+        };
+
+        window.closeMorningActivityPreview = function() {
+            window._morningActivityPreviewActive = false;
+            window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
         };
 
         // ==========================================

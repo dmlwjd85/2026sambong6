@@ -1858,24 +1858,36 @@ function redrawPlazaGrantsUi() {
                 .split('\n')
                 .map(line => line.trim())
                 .filter(Boolean)
-                .map(line => `<p>${escapeConstitutionHtml(line)}</p>`)
+                .map(line => `<p class="border-b border-slate-300/70 pb-2">${escapeConstitutionHtml(line)}</p>`)
                 .join('') || `<p>${escapeConstitutionHtml(DEFAULT_MORNING_ACTIVITY_NOTICE)}</p>`;
 
             return `
-                <div class="col-span-full min-h-[62vh] flex items-center justify-center rounded-[2rem] border-4 border-amber-300/80 bg-gradient-to-br from-amber-200 via-orange-100 to-yellow-50 text-slate-900 shadow-[0_0_45px_rgba(251,191,36,0.45)] overflow-hidden relative">
-                    <div class="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_left,_#f97316,_transparent_32%),radial-gradient(circle_at_bottom_right,_#facc15,_transparent_34%)]"></div>
-                    <div class="relative z-10 w-full px-6 sm:px-10 py-10 text-center">
-                        <div class="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-white/80 border border-amber-300 shadow mb-6">
-                            <span class="text-3xl sm:text-5xl">☀️</span>
-                            <span class="font-black text-amber-700 text-lg sm:text-3xl tracking-tight">삼봉월드 아침활동시간</span>
+                <div class="col-span-full min-h-[78vh] flex items-center justify-center rounded-[2rem] border border-emerald-900/70 bg-gradient-to-br from-slate-950 via-emerald-950 to-slate-900 text-white shadow-[0_0_55px_rgba(16,185,129,0.35)] overflow-hidden relative px-4 sm:px-8 py-6">
+                    <div class="absolute inset-0 opacity-25 bg-[linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px)] bg-[size:48px_48px]"></div>
+                    <div class="relative z-10 w-full lg:w-[70vw] max-w-6xl min-h-[70vh] rounded-[2rem] border-[10px] border-amber-900 bg-emerald-950 shadow-2xl p-4 sm:p-8 flex flex-col">
+                        <div class="flex items-center justify-between gap-4 border-b-4 border-white/20 pb-4 mb-6">
+                            <div class="flex items-center gap-4">
+                                <span class="text-4xl sm:text-6xl">📚</span>
+                                <div class="text-left">
+                                    <p class="text-emerald-200 text-sm sm:text-xl font-black tracking-[0.35em]">MORNING STUDY</p>
+                                    <h2 class="font-display text-4xl sm:text-6xl lg:text-7xl text-white drop-shadow">아침활동시간</h2>
+                                </div>
+                            </div>
+                            <div class="hidden sm:flex flex-col items-center justify-center rounded-2xl bg-white/10 border border-white/20 px-5 py-3 text-amber-100">
+                                <i class="fa-solid fa-clock text-3xl mb-1"></i>
+                                <span class="font-black text-xl">08:40</span>
+                            </div>
                         </div>
-                        <h2 class="font-display text-5xl sm:text-7xl lg:text-8xl text-orange-600 drop-shadow-sm mb-6">좋은 아침!</h2>
-                        <div class="max-w-5xl mx-auto bg-white/80 border-2 border-amber-300 rounded-[2rem] px-5 sm:px-10 py-6 sm:py-8 shadow-xl">
-                            <div class="text-2xl sm:text-4xl lg:text-5xl font-black leading-snug text-slate-900 space-y-3">
+                        <div class="flex-1 rounded-[1.5rem] bg-stone-50 text-slate-900 border-4 border-amber-200 shadow-inner px-5 sm:px-10 py-6 sm:py-8 flex items-center">
+                            <div class="w-full text-2xl sm:text-4xl lg:text-5xl font-black leading-snug space-y-4 text-left">
                                 ${lines}
                             </div>
                         </div>
-                        <p class="mt-6 text-lg sm:text-2xl font-bold text-amber-800">8시 40분부터 9시까지는 차분하게 아침활동을 시작합니다.</p>
+                        <div class="mt-5 flex flex-wrap items-center justify-center gap-3 text-emerald-100 text-lg sm:text-2xl font-black">
+                            <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-book-open"></i> 조용히 읽기</span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-pencil"></i> 차분히 쓰기</span>
+                            <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-user-graduate"></i> 배움 준비</span>
+                        </div>
                     </div>
                 </div>`;
         }

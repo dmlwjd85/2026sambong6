@@ -1808,7 +1808,9 @@ function redrawPlazaGrantsUi() {
                 }
             }
 
-            maybeShowMorningActivityNotice(now);
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
 
             if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
                 const r = applyDailyQuestResetIfNewDay({ silent: false });
@@ -1843,19 +1845,39 @@ function redrawPlazaGrantsUi() {
             return raw || DEFAULT_MORNING_ACTIVITY_NOTICE;
         }
 
-        function maybeShowMorningActivityNotice(now = new Date()) {
-            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+        function isMorningActivityTime(now = new Date()) {
             const day = now.getDay();
-            if (day === 0 || day === 6) return;
+            if (day === 0 || day === 6) return false;
             const h = now.getHours();
             const m = now.getMinutes();
-            if (h !== 8 || m < 40 || m > 59) return;
+            return h === 8 && m >= 40 && m <= 59;
+        }
 
-            const dateKey = getLocalDateStr();
-            const storageKey = `sambong_morning_activity_notice_${dateKey}`;
-            if (localStorage.getItem(storageKey) === 'shown') return;
-            localStorage.setItem(storageKey, 'shown');
-            window.customAlert(`☀️ [아침활동시간 안내]\n${getMorningActivityNoticeText()}`);
+        function buildMorningActivityPlazaHtml() {
+            const lines = getMorningActivityNoticeText()
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean)
+                .map(line => `<p>${escapeConstitutionHtml(line)}</p>`)
+                .join('') || `<p>${escapeConstitutionHtml(DEFAULT_MORNING_ACTIVITY_NOTICE)}</p>`;
+
+            return `
+                <div class="col-span-full min-h-[62vh] flex items-center justify-center rounded-[2rem] border-4 border-amber-300/80 bg-gradient-to-br from-amber-200 via-orange-100 to-yellow-50 text-slate-900 shadow-[0_0_45px_rgba(251,191,36,0.45)] overflow-hidden relative">
+                    <div class="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_top_left,_#f97316,_transparent_32%),radial-gradient(circle_at_bottom_right,_#facc15,_transparent_34%)]"></div>
+                    <div class="relative z-10 w-full px-6 sm:px-10 py-10 text-center">
+                        <div class="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-white/80 border border-amber-300 shadow mb-6">
+                            <span class="text-3xl sm:text-5xl">☀️</span>
+                            <span class="font-black text-amber-700 text-lg sm:text-3xl tracking-tight">삼봉월드 아침활동시간</span>
+                        </div>
+                        <h2 class="font-display text-5xl sm:text-7xl lg:text-8xl text-orange-600 drop-shadow-sm mb-6">좋은 아침!</h2>
+                        <div class="max-w-5xl mx-auto bg-white/80 border-2 border-amber-300 rounded-[2rem] px-5 sm:px-10 py-6 sm:py-8 shadow-xl">
+                            <div class="text-2xl sm:text-4xl lg:text-5xl font-black leading-snug text-slate-900 space-y-3">
+                                ${lines}
+                            </div>
+                        </div>
+                        <p class="mt-6 text-lg sm:text-2xl font-bold text-amber-800">8시 40분부터 9시까지는 차분하게 아침활동을 시작합니다.</p>
+                    </div>
+                </div>`;
         }
 
 
@@ -1865,6 +1887,11 @@ function redrawPlazaGrantsUi() {
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
+
+            if (isMorningActivityTime()) {
+                container.innerHTML = buildMorningActivityPlazaHtml();
+                return;
+            }
             
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();

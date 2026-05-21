@@ -338,7 +338,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         
@@ -1615,6 +1615,10 @@ function redrawPlazaGrantsUi() {
                                 if (npcEl) {
                                     npcEl.innerText = window.globalSettings.announcement ? `"[공지] ${window.globalSettings.announcement}"` : '"(등록된 공지가 없습니다)"';
                                 }
+                                const morningNoticeEl = document.getElementById('gmMorningActivityNoticeInput');
+                                if (morningNoticeEl && document.activeElement !== morningNoticeEl) {
+                                    morningNoticeEl.value = window.globalSettings.morningActivityNotice || DEFAULT_MORNING_ACTIVITY_NOTICE;
+                                }
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);
@@ -1804,6 +1808,8 @@ function redrawPlazaGrantsUi() {
                 }
             }
 
+            maybeShowMorningActivityNotice(now);
+
             if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
                 const r = applyDailyQuestResetIfNewDay({ silent: false });
                 if (r.needSave) {
@@ -1826,6 +1832,30 @@ function redrawPlazaGrantsUi() {
             if (window.playerState && window.playerState.isGM && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 void window.checkAndDistributeClassXP();
             }
+        }
+
+        const DEFAULT_MORNING_ACTIVITY_NOTICE = '아침활동 시간입니다. 오늘의 준비물을 정리하고 조용히 독서 또는 아침활동을 시작하세요.';
+
+        function getMorningActivityNoticeText() {
+            const raw = window.globalSettings && typeof window.globalSettings.morningActivityNotice === 'string'
+                ? window.globalSettings.morningActivityNotice.trim()
+                : '';
+            return raw || DEFAULT_MORNING_ACTIVITY_NOTICE;
+        }
+
+        function maybeShowMorningActivityNotice(now = new Date()) {
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            const day = now.getDay();
+            if (day === 0 || day === 6) return;
+            const h = now.getHours();
+            const m = now.getMinutes();
+            if (h !== 8 || m < 40 || m > 59) return;
+
+            const dateKey = getLocalDateStr();
+            const storageKey = `sambong_morning_activity_notice_${dateKey}`;
+            if (localStorage.getItem(storageKey) === 'shown') return;
+            localStorage.setItem(storageKey, 'shown');
+            window.customAlert(`☀️ [아침활동시간 안내]\n${getMorningActivityNoticeText()}`);
         }
 
 
@@ -5551,6 +5581,23 @@ function redrawPlazaGrantsUi() {
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { announcement: t }, { merge: true }); 
             window.customAlert('✅ 공지 등록 완료!'); 
             document.getElementById('gmAnnouncementInput').value = ''; 
+        };
+
+        window.saveMorningActivityNotice = async function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const el = document.getElementById('gmMorningActivityNoticeInput');
+            const text = el ? el.value.trim() : '';
+            if (!text) return window.customAlert('아침활동시간 안내 내용을 입력해주세요.');
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { morningActivityNotice: text }, { merge: true });
+            window.globalSettings.morningActivityNotice = text;
+            await window.customAlert('✅ 아침활동시간 안내가 저장되었습니다.');
+        };
+
+        window.previewMorningActivityNotice = function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const el = document.getElementById('gmMorningActivityNoticeInput');
+            const text = el && el.value.trim() ? el.value.trim() : getMorningActivityNoticeText();
+            window.customAlert(`☀️ [아침활동시간 안내]\n${text}`);
         };
 
         // ==========================================

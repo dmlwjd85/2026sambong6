@@ -695,6 +695,15 @@ function redrawPlazaGrantsUi() {
             return Math.max(0, Math.min(1, 1 - x / 30000));
         }
 
+        function getXpWeaponDropFactor(xp) {
+            const x = Math.max(0, Number(xp) || 0);
+            if (x < 10000) return 1.8;
+            if (x < 20000) return 1.35;
+            if (x < 30000) return 1.0;
+            if (x < 50000) return 0.65;
+            return 0.4;
+        }
+
         /** 상점 카드에 표시되는 가격 라벨 갱신(마스터 가격 변경 반영) */
         function updateShopPriceLabels() {
             getAllShopItems().forEach((shop) => {
@@ -776,6 +785,24 @@ function redrawPlazaGrantsUi() {
         function normalizeQuizAnswer(s) {
             if (s == null || s === undefined) return '';
             return String(s).trim().replace(/\s+/g, ' ').toLowerCase();
+        }
+
+        async function sha256Hex(text) {
+            const normalized = String(text == null ? '' : text);
+            if (window.crypto && window.crypto.subtle && window.TextEncoder) {
+                const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+                return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+            }
+            let h = 2166136261;
+            for (let i = 0; i < normalized.length; i++) {
+                h ^= normalized.charCodeAt(i);
+                h = Math.imul(h, 16777619);
+            }
+            return `fallback-${(h >>> 0).toString(16)}`;
+        }
+
+        async function hashGoldenBellAnswer(answer, salt) {
+            return sha256Hex(`${salt || ''}::${normalizeQuizAnswer(answer)}`);
         }
 
         /** 로컬 기준 오늘 날짜 YYYY-MM-DD */
@@ -1734,6 +1761,8 @@ function redrawPlazaGrantsUi() {
                         unsubscribeGoldenBell = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), snap => {
                             if(snap.exists()) {
                                 window.goldenbellState = snap.data();
+                                void sanitizeLegacyGoldenBellAnswers(window.goldenbellState);
+                                void maybeExpireGoldenBell();
                                 if (window.playerState && window.playerState.isAdmin) {
                                     if(window._gbPreviewStudent) window.renderGoldenBellStudent();
                                     else window.renderGoldenBellMasterLive();
@@ -1811,6 +1840,7 @@ function redrawPlazaGrantsUi() {
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
             }
+            void maybeExpireGoldenBell(now);
 
             if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
                 const r = applyDailyQuestResetIfNewDay({ silent: false });
@@ -1833,6 +1863,67 @@ function redrawPlazaGrantsUi() {
             // 수업 종료 XP: 마스터 J 접속 시에만(기존 설계 유지)
             if (window.playerState && window.playerState.isGM && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 void window.checkAndDistributeClassXP();
+            }
+        }
+
+        async function resetGoldenBellState(reason = 'expired') {
+            if (!db) return;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
+                isOpen: false,
+                questions: [],
+                submissions: {},
+                closedAt: Date.now(),
+                closeReason: reason
+            }, { merge: true });
+        }
+
+        let _gbExpireRunning = false;
+        async function maybeExpireGoldenBell(now = new Date()) {
+            const st = window.goldenbellState;
+            if (!st || !st.isOpen || _gbExpireRunning) return;
+            const openedAt = Number(st.openedAt || st.createdAt || 0);
+            const expiresAt = Number(st.expiresAt || (openedAt ? openedAt + 60 * 60 * 1000 : 0));
+            if (!expiresAt || now.getTime() < expiresAt) return;
+            _gbExpireRunning = true;
+            try {
+                await resetGoldenBellState('expired_1h');
+            } catch (e) {
+                console.warn('maybeExpireGoldenBell', e);
+            } finally {
+                _gbExpireRunning = false;
+            }
+        }
+
+        let _gbSanitizeRunning = false;
+        async function sanitizeLegacyGoldenBellAnswers(st) {
+            if (!db || _gbSanitizeRunning || !st || !st.isOpen || !Array.isArray(st.questions)) return;
+            if (!st.questions.some(q => q && q.a != null && !q.answerHash)) return;
+            _gbSanitizeRunning = true;
+            try {
+                const sanitized = [];
+                for (let i = 0; i < st.questions.length; i++) {
+                    const q = st.questions[i] || {};
+                    if (q.answerHash) {
+                        const { a, ...rest } = q;
+                        sanitized.push(rest);
+                        continue;
+                    }
+                    const salt = `gb_migrate_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 10)}`;
+                    const answerHash = await hashGoldenBellAnswer(q.a || '', salt);
+                    const { a, ...rest } = q;
+                    sanitized.push({ ...rest, answerHash, answerSalt: salt });
+                }
+                const openedAt = Number(st.openedAt || Date.now());
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
+                    questions: sanitized,
+                    openedAt,
+                    expiresAt: Number(st.expiresAt || 0) || openedAt + 60 * 60 * 1000,
+                    sessionId: st.sessionId || openedAt
+                }, { merge: true });
+            } catch (e) {
+                console.warn('sanitizeLegacyGoldenBellAnswers', e);
+            } finally {
+                _gbSanitizeRunning = false;
             }
         }
 
@@ -2440,7 +2531,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, operationLabel: '일반예금 입금' });
+            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
             if (!saved) return;
             window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
         };
@@ -2460,7 +2551,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bong = normalizeBongValue(window.playerState.bong + amt);
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBankFieldChanges: true });
             window.customAlert(`💵 ${amt} B를 찾았습니다.`);
         };
 
@@ -2476,7 +2567,7 @@ function redrawPlazaGrantsUi() {
             const inp = document.getElementById('bankWithdrawInput');
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBankFieldChanges: true });
             await window.customAlert(`💵 ${sav.toFixed(1)} B를 모두 찾았습니다.`);
         };
 
@@ -2505,7 +2596,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
             if (inp) inp.value = '';
             updateUI();
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, operationLabel: '보물상자 적금 가입' });
+            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '보물상자 적금 가입' });
             if (!saved) return;
             await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
@@ -2526,7 +2617,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankTermDeposits = arr;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
             updateUI();
-            await saveDataToCloud();
+            await saveDataToCloud({ allowBankFieldChanges: true });
             await window.customAlert(`💰 원금 ${principal.toFixed(1)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
@@ -3172,7 +3263,7 @@ function redrawPlazaGrantsUi() {
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
-            if (bankProcessingNeedSave) saveDataToCloud();
+            if (bankProcessingNeedSave) saveDataToCloud({ allowBankFieldChanges: true });
 
             // 스피드 퀴즈: 로그인 직후·상태 갱신 시 진행 중인 퀴즈 팝업을 다시 맞춤 (선생님이 먼저 출제한 경우 포함)
             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
@@ -3197,6 +3288,8 @@ function redrawPlazaGrantsUi() {
             hint.classList.toggle('hidden', !locked);
             btn.disabled = locked;
             input.disabled = locked;
+            input.max = String(Math.max(0, Math.floor(bal - 10)));
+            input.placeholder = locked ? '투자 불가' : `최대 ${Math.max(0, Math.floor(bal - 10))}B`;
         }
 
 
@@ -3329,6 +3422,8 @@ function redrawPlazaGrantsUi() {
                 maxXpDecrease: 0,
                 maxBongDecrease: 0,
                 requireServerBongBalance: false,
+                allowBankFieldChanges: false,
+                allowLunchBidChanges: false,
                 operationLabel: '저장',
                 ...options,
             };
@@ -3391,6 +3486,14 @@ function redrawPlazaGrantsUi() {
                                 dataToSave.bong = normalizeBongValue(serverBong);
                             }
                         }
+                        if (!opts.allowBankFieldChanges) {
+                            ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
+                                if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
+                            });
+                        }
+                        if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
+                            dataToSave.lunchBid = serverData.lunchBid;
+                        }
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
@@ -3425,35 +3528,53 @@ function redrawPlazaGrantsUi() {
         window.submitLunchBid = async function() {
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (window.playerState.isAdmin) return window.customAlert("선생님은 식권 경매에 참여할 수 없습니다.");
+            if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
             
             const bal = Number(window.playerState.bong) || 0;
             if (bal <= 10) return window.customAlert("보유 삼봉이 10B 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.");
 
             const inputEl = document.getElementById('lunchBidInput');
-            const amt = parseInt(inputEl.value);
+            const amt = parseInt(inputEl.value, 10);
             
             if (isNaN(amt) || amt <= 0) return window.customAlert('정확한 금액을 입력해주세요.');
-            if (window.playerState.bong < amt) return window.customAlert(`❌ 돈이 부족해요. ${(amt - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+            if (amt > bal - 10) return window.customAlert(`밥줄 투자 후 지갑에 최소 10B는 남겨야 해요.\n현재 최대 투자 가능 금액은 ${Math.max(0, Math.floor(bal - 10))}B입니다.`);
             
             const ok = await window.customConfirm(`급식을 먼저 먹기 위해 ${amt}B를 결제할까요?\n(이미 결제했다면 합산됩니다.)`);
             if (ok) {
-                window.playerState.bong -= amt;
-                
-                const now = new Date(); 
-                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                
-                if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== todayStr) {
-                    window.playerState.lunchBid = { date: todayStr, amount: 0 };
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const todayStr = getLocalDateStr();
+                try {
+                    let nextBong = bal;
+                    let nextLunchBid = { date: todayStr, amount: 0 };
+                    await runTransaction(db, async (transaction) => {
+                        const snap = await transaction.get(currentStudentDocRef);
+                        const serverData = snap.exists() ? (snap.data() || {}) : {};
+                        const serverBong = normalizeBongValue(Number(serverData.bong) || 0);
+                        if (serverBong <= 10 || amt > serverBong - 10) throw new Error('reserve');
+                        const currentBid = serverData.lunchBid && serverData.lunchBid.date === todayStr
+                            ? Number(serverData.lunchBid.amount) || 0
+                            : 0;
+                        nextBong = normalizeBongValue(serverBong - amt);
+                        nextLunchBid = { date: todayStr, amount: currentBid + amt };
+                        transaction.set(currentStudentDocRef, {
+                            bong: nextBong,
+                            lunchBid: nextLunchBid
+                        }, { merge: true });
+                    });
+                    window.playerState.bong = nextBong;
+                    window.playerState.lunchBid = nextLunchBid;
+                    updateUI();
+                    playSfx('bong', false); 
+                    await window.customAlert(`✅ 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
+                    inputEl.value = '';
+                } catch (e) {
+                    if (e && e.message === 'reserve') {
+                        return window.customAlert('서버 최신 지갑 잔액 기준으로 밥줄 투자 후 최소 10B가 남지 않아 차단했습니다.\n은행 예금은 밥줄 투자에 사용되지 않습니다.');
+                    }
+                    console.error('submitLunchBid', e);
+                    return window.customAlert('밥줄 투자 저장 중 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.');
                 }
-                window.playerState.lunchBid.amount += amt;
-                
-                updateUI();
-                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, operationLabel: '밥줄 결제' });
-                if (!saved) return;
-                playSfx('bong', false); 
-                
-                await window.customAlert(`✅ 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
-                inputEl.value = '';
             }
         };
 
@@ -3849,7 +3970,7 @@ function redrawPlazaGrantsUi() {
 
             // 총 경험치가 낮은 학생일수록 무기 획득 확률 추가 가중 (퀘스트 보상 xp와는 별개)
             const totalXp = Number(window.playerState.xp) || 0;
-            dropMultiplier *= 1 + getLowXpBoostFactor(totalXp) * 2.0;
+            dropMultiplier *= (1 + getLowXpBoostFactor(totalXp) * 2.0) * getXpWeaponDropFactor(totalXp);
 
             const rand = Math.random() * 100;
             let dropped = null;
@@ -3879,10 +4000,12 @@ function redrawPlazaGrantsUi() {
                 if (hadSame > 0) {
                     const comp = 10;
                     window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + comp);
+                    if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
                     await window.customAlert(
                         `🎁 [${wp.emoji} ${wp.name}] 중복 획득!\n컬렉션에 추가되었고, 보너스로 ${comp} B를 드려요.`
                     );
                 } else {
+                    if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
                     await window.customAlert(
                         `🎉 [무기 획득!]\n[${wp.emoji} ${wp.name}] (데미지 +${wp.bonus}) 이 컬렉션에 추가되었어요!\n같은 종류를 탭하면 장착합니다.`
                     );
@@ -6052,7 +6175,7 @@ function redrawPlazaGrantsUi() {
                     // 진행 중 스냅샷이 관리자 입력칸을 덮어써서 "작성 중 초기화"되는 문제 방지
                     if(qInput && aInput && st.isOpen) {
                         if(document.activeElement !== qInput && (qInput.value || '') === '') qInput.value = item.q;
-                        if(document.activeElement !== aInput && (aInput.value || '') === '') aInput.value = item.a;
+                        if(item.a != null && document.activeElement !== aInput && (aInput.value || '') === '') aInput.value = item.a;
                     }
                     if (xpInput && bongInput && st.isOpen) {
                         const defXp = (item.rewardXp != null && item.rewardXp !== '') ? item.rewardXp : 10;
@@ -6092,16 +6215,22 @@ function redrawPlazaGrantsUi() {
                 if (isNaN(rewardXp) || rewardXp < 0) rewardXp = 10;
                 let rewardBong = bongEl ? parseFloat(bongEl.value) : 1;
                 if (isNaN(rewardBong) || rewardBong < 0) rewardBong = 1;
-                qs.push({ q: qText, a: aText, originalIndex: i, rewardXp, rewardBong });
+                const salt = `gb_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 10)}`;
+                const answerHash = await hashGoldenBellAnswer(aText, salt);
+                qs.push({ q: qText, originalIndex: i, rewardXp, rewardBong, answerHash, answerSalt: salt });
             }
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
-            
+            const openedAt = Date.now();
+
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
                 isOpen: true, 
+                sessionId: openedAt,
+                openedAt,
+                expiresAt: openedAt + 60 * 60 * 1000,
                 questions: qs, 
                 submissions: {} 
             }, {merge: true}); 
-            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제) 문항별 XP·봉은 출제 시 입력한 값으로 채점됩니다.`);
+            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.`);
         };
 
         window.saveGoldenBellDraft = async function() {
@@ -6176,7 +6305,7 @@ function redrawPlazaGrantsUi() {
         window.closeGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
             const ok = await window.customConfirm("골든벨을 종료하시겠습니까?\n(학생 화면에서 문제가 사라집니다)");
-            if(ok) await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { isOpen: false }, {merge: true});
+            if(ok) await resetGoldenBellState('manual');
         };
 
         window.renderGoldenBellStudent = function() {
@@ -6245,7 +6374,7 @@ function redrawPlazaGrantsUi() {
                         resHtml = `<span class="text-emerald-400 font-black text-sm">O</span> <span class="text-[10px] text-emerald-300/90">(+${defRx}XP · +${defB}B)</span>`;
                     } else {
                         inputCls = 'bg-red-900/20 border-sb-red text-white';
-                        resHtml = `<span class="text-rose-400 font-bold text-sm">X</span> <span class="text-[10px] text-slate-400">(정답: ${escapeHtmlGb(item.a)})</span>`;
+                        resHtml = `<span class="text-rose-400 font-bold text-sm">X</span> <span class="text-[10px] text-slate-400">(오답)</span>`;
                     }
                 }
 
@@ -6323,8 +6452,8 @@ function redrawPlazaGrantsUi() {
                         <div class="text-[10px] font-black text-yellow-400 mb-1">문제 ${i + 1}</div>
                         <div class="text-[10px] text-slate-400 mb-0.5">내 답</div>
                         <div class="text-xs font-bold text-white break-all mb-1.5">${escapeHtmlGb(r.my)}</div>
-                        <div class="text-[10px] text-slate-400 mb-0.5">정답</div>
-                        <div class="text-xs font-bold text-emerald-200/95 break-all mb-1">${escapeHtmlGb(r.correct)}</div>
+                        <div class="text-[10px] text-slate-400 mb-0.5">결과</div>
+                        <div class="text-xs font-bold text-emerald-200/95 break-all mb-1">${r.ok ? '정답입니다.' : '오답입니다.'}</div>
                         <div class="text-right text-sm font-black ${markCls}">${mark}</div>
                     </div>`;
                     })
@@ -6385,16 +6514,19 @@ function redrawPlazaGrantsUi() {
             let score = 0;
 
             const gradeRows = [];
-            st.questions.forEach((item, idx) => {
+            for (let idx = 0; idx < st.questions.length; idx++) {
+                const item = st.questions[idx];
                 const el = document.getElementById(`gb_ans_${idx}`);
                 const val = el ? (el.value || '').trim() : '';
                 answers.push(val);
-                const isCorrect = normalizeQuizAnswer(val) === normalizeQuizAnswer(String(item.a));
+                const gotHash = item.answerHash ? await hashGoldenBellAnswer(val, item.answerSalt || '') : '';
+                const isCorrect = item.answerHash
+                    ? gotHash === item.answerHash
+                    : normalizeQuizAnswer(val) === normalizeQuizAnswer(String(item.a || ''));
                 results.push(isCorrect);
                 gradeRows.push({
                     ok: isCorrect,
-                    my: val.length ? val : '(미입력)',
-                    correct: String(item.a)
+                    my: val.length ? val : '(미입력)'
                 });
                 if (isCorrect) {
                     score++;
@@ -6403,7 +6535,7 @@ function redrawPlazaGrantsUi() {
                     rewardXp += rx;
                     rewardBong += rb;
                 }
-            });
+            }
 
             try {
                 const submission = {
@@ -6422,6 +6554,8 @@ function redrawPlazaGrantsUi() {
                     const gbSnap = await transaction.get(gbRef);
                     const latest = gbSnap.exists() ? gbSnap.data() : null;
                     if (!latest || !latest.isOpen) throw new Error('gb_closed');
+                    if (Number(latest.expiresAt || 0) && Date.now() >= Number(latest.expiresAt)) throw new Error('gb_closed');
+                    if (latest.sessionId && st.sessionId && latest.sessionId !== st.sessionId) throw new Error('gb_closed');
                     const latestSub = getGoldenBellSubmissions(latest)[mId];
                     if (latestSub && (latestSub.finalized || latestSub.rewardsGiven)) throw new Error('already_submitted');
                     transaction.set(gbRef, {
@@ -6464,6 +6598,7 @@ function redrawPlazaGrantsUi() {
                     await window.customAlert('이미 최종 제출하여 채점이 완료되었습니다.');
                     window.renderGoldenBellStudent();
                 } else if (e && e.message === 'gb_closed') {
+                    void maybeExpireGoldenBell();
                     await window.customAlert('골든벨이 종료되어 제출할 수 없습니다.');
                 } else {
                     console.error(e);

@@ -16,6 +16,8 @@ import {
     runTransaction,
     arrayUnion,
     deleteDoc,
+    deleteField,
+    FieldPath,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -1868,13 +1870,19 @@ function redrawPlazaGrantsUi() {
 
         async function resetGoldenBellState(reason = 'expired') {
             if (!db) return;
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
-                isOpen: false,
-                questions: [],
-                submissions: {},
-                closedAt: Date.now(),
-                closeReason: reason
-            }, { merge: true });
+            const gbRef = doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state');
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(gbRef);
+                const latest = snap.exists() ? snap.data() : {};
+                transaction.set(gbRef, {
+                    isOpen: false,
+                    questions: [],
+                    submissions: {},
+                    closedAt: Date.now(),
+                    closeReason: reason
+                }, { merge: true });
+                clearGoldenBellLegacySubmissionFields(transaction, gbRef, latest);
+            });
         }
 
         let _gbExpireRunning = false;
@@ -6090,13 +6098,52 @@ function redrawPlazaGrantsUi() {
                 .replace(/"/g, '&quot;');
         }
 
+        function isGoldenBellSubmissionInCurrentSession(submission, st, { legacyLiteralField = false } = {}) {
+            if (!submission || typeof submission !== 'object') return false;
+            const currentSessionId = st && st.sessionId != null ? String(st.sessionId) : '';
+            if (currentSessionId && submission.sessionId != null && String(submission.sessionId) !== currentSessionId) return false;
+
+            const openedAt = Number((st && (st.openedAt || st.createdAt)) || 0);
+            const submittedAt = Number(submission.submittedAt || 0);
+            if (!legacyLiteralField) {
+                return true;
+            }
+
+            // 예전 배포본이 만든 루트 필드(`submissions.1`)는 회차 시간이 맞을 때만 호환 읽기합니다.
+            if (!openedAt) return true;
+            if (!submittedAt) return false;
+            const migratedLegacySession = Array.isArray(st && st.questions)
+                && st.questions.some((q) => q && typeof q.answerSalt === 'string' && q.answerSalt.startsWith('gb_migrate_'));
+            if (migratedLegacySession) return true;
+            return submittedAt >= openedAt;
+        }
+
+        function getGoldenBellLegacySubmissionKeys(st) {
+            if (!st || typeof st !== 'object') return [];
+            return Object.keys(st).filter((key) => key.startsWith('submissions.') && key.length > 'submissions.'.length);
+        }
+
+        function clearGoldenBellLegacySubmissionFields(transaction, gbRef, st) {
+            getGoldenBellLegacySubmissionKeys(st).forEach((key) => {
+                transaction.update(gbRef, new FieldPath(key), deleteField());
+            });
+        }
+
         function getGoldenBellSubmissions(st) {
-            const subs = { ...((st && st.submissions && typeof st.submissions === 'object') ? st.submissions : {}) };
+            const subs = {};
+            const nestedSubs = (st && st.submissions && typeof st.submissions === 'object') ? st.submissions : {};
+            Object.keys(nestedSubs).forEach((sid) => {
+                const submission = nestedSubs[sid];
+                if (isGoldenBellSubmissionInCurrentSession(submission, st)) {
+                    subs[sid] = submission;
+                }
+            });
             if (st && typeof st === 'object') {
-                Object.keys(st).forEach((key) => {
-                    if (key.startsWith('submissions.')) {
-                        const sid = key.slice('submissions.'.length);
-                        if (sid) subs[sid] = st[key];
+                getGoldenBellLegacySubmissionKeys(st).forEach((key) => {
+                    const sid = key.slice('submissions.'.length);
+                    const submission = st[key];
+                    if (sid && isGoldenBellSubmissionInCurrentSession(submission, st, { legacyLiteralField: true })) {
+                        subs[sid] = submission;
                     }
                 });
             }
@@ -6222,14 +6269,20 @@ function redrawPlazaGrantsUi() {
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
             const openedAt = Date.now();
 
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
-                isOpen: true, 
-                sessionId: openedAt,
-                openedAt,
-                expiresAt: openedAt + 60 * 60 * 1000,
-                questions: qs, 
-                submissions: {} 
-            }, {merge: true}); 
+            const gbRef = doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state');
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(gbRef);
+                const latest = snap.exists() ? snap.data() : {};
+                transaction.set(gbRef, { 
+                    isOpen: true, 
+                    sessionId: openedAt,
+                    openedAt,
+                    expiresAt: openedAt + 60 * 60 * 1000,
+                    questions: qs, 
+                    submissions: {} 
+                }, {merge: true});
+                clearGoldenBellLegacySubmissionFields(transaction, gbRef, latest);
+            });
             window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.`);
         };
 
@@ -6542,6 +6595,7 @@ function redrawPlazaGrantsUi() {
                         answers,
                         results,
                         score,
+                        sessionId: st.sessionId || null,
                         finalized: true,
                         submittedAt: Date.now(),
                         rewardsGiven: true,

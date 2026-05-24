@@ -228,34 +228,52 @@ function redrawPlazaGrantsUi() {
             const modal = document.getElementById('martialLawLessonModal');
             if (!modal) return;
             if (step === 'proclamation') {
-                const rows = MARTIAL_LAW_PROCLAMATION.map((item) => `
-                    <div class="rounded-xl border border-slate-300 bg-white/95 p-2.5 sm:p-3 shadow">
-                        <div class="text-xs sm:text-base font-black text-slate-950">${item.title}</div>
-                        <div class="mt-0.5 whitespace-pre-line text-sm sm:text-xl font-black leading-tight text-slate-800">${item.text}</div>
-                    </div>
-                `).join('');
+                const idx = Math.max(0, Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, Number(window._martialLawProclamationIndex) || 0));
+                window._martialLawProclamationIndex = idx;
+                const item = MARTIAL_LAW_PROCLAMATION[idx];
+                const isFirst = idx === 0;
+                const isLast = idx === MARTIAL_LAW_PROCLAMATION.length - 1;
                 modal.innerHTML = `
                     <div class="fixed inset-0 z-[500] bg-slate-950 text-white overflow-hidden">
-                        <div class="h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-3 py-3 sm:px-8 sm:py-5">
+                        <div class="h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-4 py-4 sm:px-10 sm:py-7">
                             <div class="mx-auto flex h-full max-w-6xl flex-col">
-                                <div class="mb-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                                <div class="mb-4 flex flex-wrap items-center justify-between gap-3 shrink-0">
                                     <div>
                                         <p class="text-xs sm:text-sm font-black tracking-[0.45em] text-red-200">EMERGENCY DECREE</p>
-                                        <h2 class="font-display text-3xl sm:text-5xl text-white">비상계엄 포고문</h2>
+                                        <h2 class="font-display text-4xl sm:text-6xl text-white">비상계엄 포고문</h2>
                                     </div>
                                     <div class="flex gap-2">
                                         <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100">사이렌 끄기</button>
                                         <button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>
                                     </div>
                                 </div>
-                                <div class="min-h-0 flex-1 rounded-[1.5rem] border-4 border-slate-200 bg-slate-100 p-3 sm:p-5 text-slate-950 shadow-2xl flex flex-col">
-                                    <div class="mb-3 border-b-4 border-slate-900 pb-2 text-center shrink-0">
-                                        <div class="mx-auto mb-2 flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full border-4 border-slate-900 bg-white shadow">
-                                            <i class="fa-solid fa-landmark text-2xl sm:text-3xl text-slate-950"></i>
-                                        </div>
-                                        <div class="font-display text-3xl sm:text-5xl text-slate-950">포 고 문</div>
+                                <div class="relative min-h-0 flex-1 rounded-[2rem] border-[10px] border-stone-900 bg-stone-100 p-4 sm:p-8 text-slate-950 shadow-2xl flex flex-col overflow-hidden">
+                                    <div class="absolute inset-4 border-4 border-double border-slate-900/70 pointer-events-none"></div>
+                                    <div class="absolute -right-10 -bottom-10 h-44 w-44 rounded-full border-[12px] border-red-800/25 text-red-900/20 flex items-center justify-center rotate-[-18deg] text-7xl">
+                                        <i class="fa-solid fa-landmark"></i>
                                     </div>
-                                    <div class="grid min-h-0 flex-1 grid-cols-2 gap-2 sm:gap-3 content-stretch">${rows}</div>
+                                    <div class="relative z-10 mb-5 border-b-4 border-slate-900 pb-4 text-center shrink-0">
+                                        <div class="mx-auto mb-3 flex h-20 w-20 sm:h-28 sm:w-28 items-center justify-center rounded-full border-4 border-slate-900 bg-white shadow">
+                                            <i class="fa-solid fa-landmark text-3xl sm:text-5xl text-slate-950"></i>
+                                        </div>
+                                        <div class="font-display text-4xl sm:text-7xl text-slate-950">포 고 문</div>
+                                        <div class="mt-1 text-xs sm:text-base font-black tracking-[0.3em] text-slate-600">제 ${idx + 1} / ${MARTIAL_LAW_PROCLAMATION.length} 호</div>
+                                    </div>
+                                    <div class="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center text-center px-3 sm:px-10">
+                                        <div class="mb-6 inline-flex items-center justify-center rounded-full bg-slate-950 px-8 py-3 text-3xl sm:text-6xl font-black text-white shadow-xl">
+                                            ${item.title}
+                                        </div>
+                                        <div class="max-w-5xl whitespace-pre-line text-5xl sm:text-8xl lg:text-9xl font-black leading-tight tracking-tight text-slate-950">
+                                            ${item.text}
+                                        </div>
+                                    </div>
+                                    <div class="relative z-10 mt-5 flex items-center justify-between gap-3 shrink-0">
+                                        <button type="button" onclick="window.prevMartialLawProclamation()" ${isFirst ? 'disabled' : ''} class="rounded-full border border-slate-900 bg-slate-900 px-5 py-2.5 text-xs sm:text-sm font-black text-white disabled:opacity-25 disabled:pointer-events-none">이전 포고문</button>
+                                        <div class="text-sm sm:text-xl font-black text-red-900">마스터 포고령</div>
+                                        ${isLast
+                                            ? '<button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-red-800 bg-red-800 px-5 py-2.5 text-xs sm:text-sm font-black text-white">포고 종료</button>'
+                                            : '<button type="button" onclick="window.nextMartialLawProclamation()" class="rounded-full border border-red-800 bg-red-800 px-5 py-2.5 text-xs sm:text-sm font-black text-white">다음 포고문</button>'}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -281,6 +299,17 @@ function redrawPlazaGrantsUi() {
         }
 
         window.showMartialLawProclamation = function() {
+            window._martialLawProclamationIndex = 0;
+            renderMartialLawStep('proclamation');
+        };
+
+        window.nextMartialLawProclamation = function() {
+            window._martialLawProclamationIndex = Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, (Number(window._martialLawProclamationIndex) || 0) + 1);
+            renderMartialLawStep('proclamation');
+        };
+
+        window.prevMartialLawProclamation = function() {
+            window._martialLawProclamationIndex = Math.max(0, (Number(window._martialLawProclamationIndex) || 0) - 1);
             renderMartialLawStep('proclamation');
         };
 

@@ -166,13 +166,13 @@ function redrawPlazaGrantsUi() {
         }
 
         const MARTIAL_LAW_PROCLAMATION = [
-            { title: '제1조', text: '진도율 100% 달성' },
+            { title: '제1조', text: '국어사회수학 진도율 100% 달성' },
             { title: '제2조', text: '쉬는 시간 5분' },
             { title: '제3조', text: '계좌 동결' },
             { title: '제4조', text: '불만 표출 금지' },
             { title: '제5조', text: '주급 무기한 정지' },
             { title: '제6조', text: '사적인 대화 금지' },
-            { title: '제7조', text: '입법부 정지\n새로운 법안의 발의 및 투표는 불가능하며, 오직 마스터의 포고령만이 유일한 법이다.' },
+            { title: '제7조', text: '입법부 정지' },
             { title: '제8조', text: '사법부 기능 중지' },
             { title: '제9조', text: '비상 안보세 징수' },
             { title: '제10조', text: '무기한 유지' }
@@ -229,31 +229,33 @@ function redrawPlazaGrantsUi() {
             if (!modal) return;
             if (step === 'proclamation') {
                 const rows = MARTIAL_LAW_PROCLAMATION.map((item) => `
-                    <div class="rounded-2xl border border-slate-300 bg-white/95 p-3 sm:p-4 shadow">
-                        <div class="text-sm sm:text-lg font-black text-slate-950">${item.title}</div>
-                        <div class="mt-1 whitespace-pre-line text-base sm:text-2xl font-black leading-snug text-slate-800">${item.text}</div>
+                    <div class="rounded-xl border border-slate-300 bg-white/95 p-2.5 sm:p-3 shadow">
+                        <div class="text-xs sm:text-base font-black text-slate-950">${item.title}</div>
+                        <div class="mt-0.5 whitespace-pre-line text-sm sm:text-xl font-black leading-tight text-slate-800">${item.text}</div>
                     </div>
                 `).join('');
                 modal.innerHTML = `
-                    <div class="fixed inset-0 z-[500] bg-slate-950 text-white overflow-y-auto">
-                        <div class="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-4 py-5 sm:px-10 sm:py-8">
-                            <div class="mx-auto max-w-6xl">
-                                <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+                    <div class="fixed inset-0 z-[500] bg-slate-950 text-white overflow-hidden">
+                        <div class="h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-3 py-3 sm:px-8 sm:py-5">
+                            <div class="mx-auto flex h-full max-w-6xl flex-col">
+                                <div class="mb-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
                                     <div>
                                         <p class="text-xs sm:text-sm font-black tracking-[0.45em] text-red-200">EMERGENCY DECREE</p>
-                                        <h2 class="font-display text-4xl sm:text-6xl text-white">비상계엄 포고문</h2>
+                                        <h2 class="font-display text-3xl sm:text-5xl text-white">비상계엄 포고문</h2>
                                     </div>
                                     <div class="flex gap-2">
                                         <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100">사이렌 끄기</button>
                                         <button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>
                                     </div>
                                 </div>
-                                <div class="rounded-[2rem] border-4 border-slate-200 bg-slate-100 p-4 sm:p-7 text-slate-950 shadow-2xl">
-                                    <div class="mb-5 border-b-4 border-slate-900 pb-4 text-center">
-                                        ${getMartialLawSealHtml()}
-                                        <div class="font-display text-4xl sm:text-6xl text-slate-950">포 고 문</div>
+                                <div class="min-h-0 flex-1 rounded-[1.5rem] border-4 border-slate-200 bg-slate-100 p-3 sm:p-5 text-slate-950 shadow-2xl flex flex-col">
+                                    <div class="mb-3 border-b-4 border-slate-900 pb-2 text-center shrink-0">
+                                        <div class="mx-auto mb-2 flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full border-4 border-slate-900 bg-white shadow">
+                                            <i class="fa-solid fa-landmark text-2xl sm:text-3xl text-slate-950"></i>
+                                        </div>
+                                        <div class="font-display text-3xl sm:text-5xl text-slate-950">포 고 문</div>
                                     </div>
-                                    <div class="grid gap-3 sm:grid-cols-2">${rows}</div>
+                                    <div class="grid min-h-0 flex-1 grid-cols-2 gap-2 sm:gap-3 content-stretch">${rows}</div>
                                 </div>
                             </div>
                         </div>
@@ -270,7 +272,7 @@ function redrawPlazaGrantsUi() {
                             ${getMartialLawSealHtml()}
                             <p class="mb-3 text-sm sm:text-xl font-black tracking-[0.5em] text-red-200">국가 비상 상황</p>
                             <h2 class="font-display text-6xl sm:text-8xl lg:text-9xl text-red-100 drop-shadow-[0_0_22px_rgba(248,113,113,0.9)]">비상계엄 선포</h2>
-                            <p class="mt-8 text-lg sm:text-3xl font-black text-slate-100">사회 수업 시뮬레이션 화면입니다.</p>
+                            <p class="mt-8 text-lg sm:text-3xl font-black text-slate-100">(본 수업은 픽션이며 실존 인물과는 전혀 관련이 없습니다.)</p>
                         </div>
                     </div>
                     <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="absolute left-4 top-4 z-20 rounded-full border border-red-300/60 bg-red-950/80 px-4 py-2 text-xs sm:text-sm font-black text-red-100 shadow-lg">사이렌 끄기</button>

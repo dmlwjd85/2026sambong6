@@ -165,6 +165,142 @@ function redrawPlazaGrantsUi() {
             }
         }
 
+        const MARTIAL_LAW_PROCLAMATION = [
+            { title: '제1조', text: '진도율 100% 달성' },
+            { title: '제2조', text: '쉬는 시간 5분' },
+            { title: '제3조', text: '계좌 동결' },
+            { title: '제4조', text: '불만 표출 금지' },
+            { title: '제5조', text: '주급 무기한 정지' },
+            { title: '제6조', text: '사적인 대화 금지' },
+            { title: '제7조', text: '입법부 정지\n새로운 법안의 발의 및 투표는 불가능하며, 오직 마스터의 포고령만이 유일한 법이다.' },
+            { title: '제8조', text: '사법부 기능 중지' },
+            { title: '제9조', text: '비상 안보세 징수' },
+            { title: '제10조', text: '무기한 유지' }
+        ];
+
+        function playMartialLawSirenTick() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(520, now);
+            osc.frequency.linearRampToValueAtTime(1180, now + 0.32);
+            osc.frequency.linearRampToValueAtTime(520, now + 0.64);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.18, now + 0.04);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.68);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.72);
+        }
+
+        function startMartialLawSiren() {
+            window.stopMartialLawSiren();
+            playMartialLawSirenTick();
+            window._martialLawSirenTimer = setInterval(playMartialLawSirenTick, 760);
+        }
+
+        window.stopMartialLawSiren = function() {
+            if (window._martialLawSirenTimer) {
+                clearInterval(window._martialLawSirenTimer);
+                window._martialLawSirenTimer = null;
+            }
+            const btn = document.getElementById('martialLawMuteBtn');
+            if (btn) {
+                btn.textContent = '사이렌 꺼짐';
+                btn.classList.add('opacity-60');
+            }
+        };
+
+        function getMartialLawSealHtml() {
+            return `
+                <div class="mx-auto mb-6 flex h-32 w-32 sm:h-40 sm:w-40 items-center justify-center rounded-full border-[10px] border-white/80 bg-gradient-to-br from-slate-100 via-white to-slate-300 shadow-2xl">
+                    <div class="text-center text-slate-950">
+                        <i class="fa-solid fa-landmark text-5xl sm:text-6xl mb-2"></i>
+                        <div class="text-[10px] sm:text-xs font-black tracking-[0.28em]">정부</div>
+                    </div>
+                </div>`;
+        }
+
+        function renderMartialLawStep(step) {
+            const modal = document.getElementById('martialLawLessonModal');
+            if (!modal) return;
+            if (step === 'proclamation') {
+                const rows = MARTIAL_LAW_PROCLAMATION.map((item) => `
+                    <div class="rounded-2xl border border-slate-300 bg-white/95 p-3 sm:p-4 shadow">
+                        <div class="text-sm sm:text-lg font-black text-slate-950">${item.title}</div>
+                        <div class="mt-1 whitespace-pre-line text-base sm:text-2xl font-black leading-snug text-slate-800">${item.text}</div>
+                    </div>
+                `).join('');
+                modal.innerHTML = `
+                    <div class="fixed inset-0 z-[500] bg-slate-950 text-white overflow-y-auto">
+                        <div class="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-4 py-5 sm:px-10 sm:py-8">
+                            <div class="mx-auto max-w-6xl">
+                                <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <p class="text-xs sm:text-sm font-black tracking-[0.45em] text-red-200">EMERGENCY DECREE</p>
+                                        <h2 class="font-display text-4xl sm:text-6xl text-white">비상계엄 포고문</h2>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100">사이렌 끄기</button>
+                                        <button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>
+                                    </div>
+                                </div>
+                                <div class="rounded-[2rem] border-4 border-slate-200 bg-slate-100 p-4 sm:p-7 text-slate-950 shadow-2xl">
+                                    <div class="mb-5 border-b-4 border-slate-900 pb-4 text-center">
+                                        ${getMartialLawSealHtml()}
+                                        <div class="font-display text-4xl sm:text-6xl text-slate-950">포 고 문</div>
+                                    </div>
+                                    <div class="grid gap-3 sm:grid-cols-2">${rows}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            modal.innerHTML = `
+                <div class="fixed inset-0 z-[500] flex items-center justify-center overflow-hidden bg-black text-white">
+                    <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(248,113,113,0.28),transparent_31%),linear-gradient(135deg,#020617,#450a0a_48%,#111827)]"></div>
+                    <div class="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(45deg,rgba(255,255,255,0.12)_0_2px,transparent_2px_18px)]"></div>
+                    <div class="relative z-10 w-full px-5 text-center">
+                        <div class="mx-auto max-w-5xl rounded-[2.5rem] border-4 border-red-200/80 bg-black/55 px-5 py-10 sm:px-12 sm:py-14 shadow-[0_0_80px_rgba(239,68,68,0.45)]">
+                            ${getMartialLawSealHtml()}
+                            <p class="mb-3 text-sm sm:text-xl font-black tracking-[0.5em] text-red-200">국가 비상 상황</p>
+                            <h2 class="font-display text-6xl sm:text-8xl lg:text-9xl text-red-100 drop-shadow-[0_0_22px_rgba(248,113,113,0.9)]">비상계엄 선포</h2>
+                            <p class="mt-8 text-lg sm:text-3xl font-black text-slate-100">사회 수업 시뮬레이션 화면입니다.</p>
+                        </div>
+                    </div>
+                    <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="absolute left-4 top-4 z-20 rounded-full border border-red-300/60 bg-red-950/80 px-4 py-2 text-xs sm:text-sm font-black text-red-100 shadow-lg">사이렌 끄기</button>
+                    <button type="button" onclick="window.showMartialLawProclamation()" class="absolute bottom-4 right-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] sm:text-xs font-black text-white hover:bg-white/20">다음단계</button>
+                </div>`;
+        }
+
+        window.showMartialLawProclamation = function() {
+            renderMartialLawStep('proclamation');
+        };
+
+        window.openMartialLawLesson = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 실행할 수 있습니다.');
+            let modal = document.getElementById('martialLawLessonModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'martialLawLessonModal';
+                document.body.appendChild(modal);
+            }
+            modal.classList.remove('hidden');
+            renderMartialLawStep('declaration');
+            startMartialLawSiren();
+        };
+
+        window.closeMartialLawLesson = function() {
+            window.stopMartialLawSiren();
+            const modal = document.getElementById('martialLawLessonModal');
+            if (modal) modal.remove();
+        };
+
         // ==========================================
         // ★ 시즌 타이머 로직 ★
         // ==========================================

@@ -45,19 +45,18 @@
         </div>
 
         <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-pink-400/80 relative z-10">
-            <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-6">삼봉월드 로그인</h2>
+            <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-4">삼봉월드 로그인</h2>
             <div class="space-y-4">
+                <div class="space-y-1">
+                    <label for="loginClassCode" class="text-[10px] text-slate-400 font-bold">학급 코드 / 초대 코드</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="loginClassCode" placeholder="sambong-class-2026 또는 초대코드" class="flex-1 bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2 focus:outline-none focus:border-sb-blue text-xs font-bold">
+                        <button type="button" id="btnApplyClass" class="shrink-0 bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-xl text-[10px]">적용</button>
+                    </div>
+                    <p id="loginClassLabel" class="text-[10px] text-emerald-300/90 leading-relaxed">학급 정보를 불러오는 중…</p>
+                </div>
                 <select id="loginId" class="w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold appearance-none">
                     <option value="" disabled selected>내 이름(학번) 선택</option>
-                    <option disabled>─── 6학년 1반 ───</option>
-                    <option value="1">1. 김단엘</option><option value="2">2. 김라희</option><option value="3">3. 김민지</option>
-                    <option value="4">4. 김정훈</option><option value="5">5. 박문경</option><option value="6">6. 박소윤</option>
-                    <option value="7">7. 박하율</option><option value="8">8. 박현수</option><option value="9">9. 백시율</option>
-                    <option value="10">10. 임은영</option><option value="11">11. 조이담</option><option value="12">12. 황훈태</option>
-                    <option value="13" class="text-cyan-300">13. 석서영 (해적섬)</option>
-                    <option disabled>─── 관리자 ───</option>
-                    <option value="gm" class="text-sb-gold">👑 마스터 J (담임교사)</option>
-                    <option value="gm_a" class="text-cyan-400">🏴‍☠️ 마스터 A (해적섬 두목)</option>
                 </select>
                 <input type="password" id="loginPin" placeholder="비밀번호(PIN) 4자리" class="w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold text-center tracking-[0.5em]" maxlength="4" pattern="[0-9]*" inputmode="numeric">
                 <p class="text-[10px] sm:text-xs text-slate-500 text-center"><i class="fa-solid fa-circle-info"></i> 처음 입력한 번호가 영구 비밀번호가 됩니다.</p>
@@ -75,6 +74,7 @@
             <div class="flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md"></i>
                 <span class="font-display text-lg text-white tracking-widest">SAMBONG <span class="text-emerald-400">S1</span></span>
+                <span id="navClassLabel" class="hidden sm:inline text-[10px] text-emerald-300/80 font-bold truncate max-w-[8rem]" title="">우리 반</span>
             </div>
             <div class="flex items-center space-x-2">
                 <div id="saveStatus" class="hidden text-[10px] sm:text-xs text-slate-300 items-center gap-1.5 bg-slate-800/80 px-2 py-1 rounded-full border border-slate-600">
@@ -1064,6 +1064,13 @@
                 <div>
                     <h2 class="text-2xl font-display text-sb-red"><i class="fa-solid fa-gear"></i> 선생님 설정 창 <span id="dbAdminStatus" class="text-[10px] text-orange-400 font-sans hidden"></span></h2>
                 </div>
+            </div>
+
+            <!-- 학급·명단 관리 (담임 전용) -->
+            <div id="classAdminSection" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-users text-emerald-400"></i> 학급·명단 관리</h3>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">학생 명단은 Firestore에 저장됩니다. 내년에는 <strong class="text-emerald-200">새 학급 만들기</strong>로 데이터를 분리하고, 다른 선생님은 초대 코드로 접속할 수 있습니다.</p>
+                <div id="classAdminPanel" class="text-[10px] text-slate-400">마스터 J로 로그인하면 편집할 수 있습니다.</div>
             </div>
 
             <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->

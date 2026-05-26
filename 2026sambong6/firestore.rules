@@ -43,6 +43,11 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    match /classes/{classId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
     // --- ncgame ---
     match /loginByName/{name} {
       allow read: if true;
@@ -69,6 +74,21 @@ service cloud.firestore {
     // --- PicBook (picbook 앱) — 회원·구매·연출, 삼봉월드와 동일 Firebase 프로젝트 ---
     match /picbook_accounts/{accountKey} {
       allow read, write: if request.auth != null;
+    }
+
+    match /picbook_published_timelines/{bookId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    match /visual_dictionary/{wordId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    match /visual_dictionary_stories/{storyId} {
+      allow read: if true;
+      allow write: if request.auth != null;
     }
   }
 }

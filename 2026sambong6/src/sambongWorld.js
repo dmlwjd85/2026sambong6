@@ -16,6 +16,9 @@ import {
     runTransaction,
     arrayUnion,
     deleteDoc,
+    serverTimestamp,
+    query,
+    where,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
@@ -475,6 +478,394 @@ function redrawPlazaGrantsUi() {
             "13": "F", "gm": "M", "gm_a": "F", "guest": "M" 
         };
 
+        const DEFAULT_CLASS_STAFF = [
+            { id: 'gm', name: '마스터 J', gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
+            { id: 'gm_a', name: '마스터 A', gender: 'F', role: 'co_teacher', label: '해적섬 두목', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
+        ];
+
+        function buildDefaultRosterFromLegacy() {
+            return [
+                { id: '1', name: '김단엘', gender: 'M', label: '', active: true },
+                { id: '2', name: '김라희', gender: 'F', label: '', active: true },
+                { id: '3', name: '김민지', gender: 'F', label: '', active: true },
+                { id: '4', name: '김정훈', gender: 'M', label: '', active: true },
+                { id: '5', name: '박문경', gender: 'M', label: '', active: true },
+                { id: '6', name: '박소윤', gender: 'F', label: '', active: true },
+                { id: '7', name: '박하율', gender: 'F', label: '', active: true },
+                { id: '8', name: '박현수', gender: 'M', label: '', active: true },
+                { id: '9', name: '백시율', gender: 'M', label: '', active: true },
+                { id: '10', name: '임은영', gender: 'F', label: '', active: true },
+                { id: '11', name: '조이담', gender: 'M', label: '', active: true },
+                { id: '12', name: '황훈태', gender: 'M', label: '', active: true },
+                { id: '13', name: '석서영', gender: 'F', label: '해적섬', active: true },
+            ];
+        }
+
+        function resolveClassId() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const fromUrl = (params.get('class') || params.get('classId') || '').trim();
+                if (fromUrl) {
+                    localStorage.setItem('sambong_class_id', fromUrl);
+                    return fromUrl;
+                }
+            } catch (_) { /* ignore */ }
+            const stored = localStorage.getItem('sambong_class_id');
+            if (stored) return stored;
+            if (typeof window.__app_id !== 'undefined' && window.__app_id) return window.__app_id;
+            if (typeof __app_id !== 'undefined' && __app_id) return __app_id;
+            return 'sambong-class-2026';
+        }
+
+        function buildDefaultClassMeta(classId) {
+            return {
+                classId,
+                displayName: '6학년 1반',
+                schoolYear: 2026,
+                grade: 6,
+                homeroom: 1,
+                inviteCode: '',
+                gmaEditStudentId: '13',
+                isActive: true,
+                roster: buildDefaultRosterFromLegacy(),
+                staff: DEFAULT_CLASS_STAFF.map((s) => ({ ...s })),
+            };
+        }
+
+        window.classMeta = null;
+
+        function syncNameGenderMaps() {
+            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const names = { guest: '손님' };
+            const genders = { guest: 'M' };
+            (meta.roster || []).forEach((r) => {
+                if (r.active === false) return;
+                names[String(r.id)] = r.name;
+                genders[String(r.id)] = r.gender === 'F' ? 'F' : 'M';
+            });
+            (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
+                names[String(s.id)] = s.name;
+                genders[String(s.id)] = s.gender === 'F' ? 'F' : 'M';
+            });
+            for (const k of Object.keys(STUDENT_NAMES)) delete STUDENT_NAMES[k];
+            Object.assign(STUDENT_NAMES, names);
+            for (const k of Object.keys(STUDENT_GENDERS)) delete STUDENT_GENDERS[k];
+            Object.assign(STUDENT_GENDERS, genders);
+        }
+
+        function getActiveStudentIds() {
+            const roster = window.classMeta && Array.isArray(window.classMeta.roster)
+                ? window.classMeta.roster
+                : buildDefaultRosterFromLegacy();
+            return roster.filter((r) => r.active !== false).map((r) => String(r.id));
+        }
+
+        function getStudentDisplayLabel(id) {
+            const sid = String(id);
+            const roster = window.classMeta?.roster || buildDefaultRosterFromLegacy();
+            const entry = roster.find((r) => String(r.id) === sid);
+            const name = entry ? entry.name : (STUDENT_NAMES[sid] || sid);
+            const suffix = entry && entry.label ? ` (${entry.label})` : '';
+            return `${sid}. ${name}${suffix}`;
+        }
+
+        function getGmaEditStudentId() {
+            return String(window.classMeta?.gmaEditStudentId || '13');
+        }
+
+        function getStaffMember(staffId) {
+            const staff = window.classMeta?.staff || DEFAULT_CLASS_STAFF;
+            return staff.find((s) => String(s.id) === String(staffId));
+        }
+
+        function getStaffCardLabel(staffId) {
+            const member = getStaffMember(staffId);
+            return member ? member.name : (STUDENT_NAMES[staffId] || staffId);
+        }
+
+        function canEditStudentAsAdmin(targetId) {
+            return window.playerState.isGM || (window.playerState.isGMA && String(targetId) === getGmaEditStudentId());
+        }
+
+        function generateInviteCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = '';
+            for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+            return code;
+        }
+
+        function buildClassIdFromMeta(meta) {
+            const year = Number(meta.schoolYear) || new Date().getFullYear();
+            const grade = Number(meta.grade) || 6;
+            const room = Number(meta.homeroom) || 1;
+            return `sambong-${year}-${grade}-${room}`;
+        }
+
+        function updateClassDisplayLabels() {
+            const meta = window.classMeta;
+            const labelEl = document.getElementById('loginClassLabel');
+            const codeEl = document.getElementById('loginClassCode');
+            const navClassEl = document.getElementById('navClassLabel');
+            if (labelEl && meta) {
+                labelEl.textContent = `${meta.displayName || appId} · 코드: ${appId}`;
+            }
+            if (codeEl) codeEl.value = appId;
+            if (navClassEl && meta) {
+                navClassEl.textContent = meta.displayName || appId;
+                navClassEl.title = `학급 ID: ${appId}`;
+                navClassEl.classList.remove('hidden');
+            }
+        }
+
+        function populateLoginSelect() {
+            const sel = document.getElementById('loginId');
+            if (!sel) return;
+            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const prev = sel.value;
+            let html = '<option value="" disabled selected>내 이름(학번) 선택</option>';
+            html += `<option disabled>─── ${meta.displayName || '우리 반'} ───</option>`;
+            getActiveStudentIds().forEach((sid) => {
+                const rosterEntry = (meta.roster || []).find((r) => String(r.id) === sid);
+                const labelSuffix = rosterEntry && rosterEntry.label ? ` (${rosterEntry.label})` : '';
+                const optClass = rosterEntry && rosterEntry.label ? ' class="text-cyan-300"' : '';
+                html += `<option value="${sid}"${optClass}>${sid}. ${STUDENT_NAMES[sid] || sid}${labelSuffix}</option>`;
+            });
+            html += '<option disabled>─── 관리자 ───</option>';
+            (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
+                const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
+                html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
+            });
+            sel.innerHTML = html;
+            if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+        }
+
+        async function loadClassMeta() {
+            const classRef = doc(db, 'classes', appId);
+            const snap = await getDoc(classRef);
+            if (snap.exists()) {
+                window.classMeta = { ...buildDefaultClassMeta(appId), ...snap.data(), classId: appId };
+            } else if (appId === 'sambong-class-2026') {
+                const defaultMeta = buildDefaultClassMeta(appId);
+                window.classMeta = defaultMeta;
+                await setDoc(classRef, { ...defaultMeta, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+            } else {
+                window.classMeta = buildDefaultClassMeta(appId);
+            }
+            syncNameGenderMaps();
+            populateLoginSelect();
+            updateClassDisplayLabels();
+            if (window.playerState && window.playerState.isAdmin && typeof window.renderClassAdminPanel === 'function') {
+                window.renderClassAdminPanel();
+            }
+        }
+
+        window.switchClass = function(nextClassId, { reload = true } = {}) {
+            const id = String(nextClassId || '').trim();
+            if (!id) return;
+            localStorage.setItem('sambong_class_id', id);
+            if (reload) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('class', id);
+                window.location.href = url.pathname + url.search + url.hash;
+            }
+        };
+
+        window.applyLoginClassCode = async function() {
+            const input = document.getElementById('loginClassCode');
+            const raw = input ? String(input.value || '').trim() : '';
+            if (!raw) return window.customAlert('학급 코드 또는 초대 코드를 입력해 주세요.');
+            if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            let classId = raw;
+            if (!raw.includes('-') && raw.length <= 8) {
+                try {
+                    const q = query(collection(db, 'classes'), where('inviteCode', '==', raw.toUpperCase()));
+                    const found = await getDocs(q);
+                    if (!found.empty) classId = found.docs[0].id;
+                    else return window.customAlert('초대 코드를 찾을 수 없습니다.');
+                } catch (e) {
+                    console.warn('applyLoginClassCode invite lookup', e);
+                }
+            }
+            window.switchClass(classId);
+        };
+
+        window.renderClassAdminPanel = function() {
+            const panel = document.getElementById('classAdminPanel');
+            if (!panel || !window.playerState?.isGM) return;
+            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const rosterRows = (meta.roster || []).map((r, idx) => `
+                <tr class="border-b border-slate-700/80">
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1">
+                        <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
+                            <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
+                            <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
+                        </select>
+                    </td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
+                </tr>`).join('');
+            panel.innerHTML = `
+                <div class="grid sm:grid-cols-2 gap-3 mb-3">
+                    <label class="text-[10px] text-slate-300">학급 표시 이름
+                        <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                    </label>
+                    <label class="text-[10px] text-slate-300">학급 ID (데이터 경로)
+                        <input type="text" value="${appId}" readonly class="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400">
+                    </label>
+                    <label class="text-[10px] text-slate-300">학년도
+                        <input id="classMetaSchoolYear" type="number" min="2020" max="2100" value="${meta.schoolYear || 2026}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                    </label>
+                    <label class="text-[10px] text-slate-300">학년 · 반
+                        <div class="mt-1 flex gap-2">
+                            <input id="classMetaGrade" type="number" min="1" max="6" value="${meta.grade || 6}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                            <input id="classMetaHomeroom" type="number" min="1" max="20" value="${meta.homeroom || 1}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                        </div>
+                    </label>
+                </div>
+                <p class="text-[9px] text-slate-500 mb-2">초대 코드: <span class="text-emerald-300 font-bold">${meta.inviteCode || '(저장 후 생성)'}</span> · GMA 편집 대상 학번: ${meta.gmaEditStudentId || '13'}</p>
+                <div class="overflow-x-auto max-h-[240px] overflow-y-auto rounded border border-slate-700 mb-3">
+                    <table class="w-full text-[10px]">
+                        <thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-1">번호</th><th class="p-1">이름</th><th class="p-1">성별</th><th class="p-1">별칭</th><th class="p-1">활성</th></tr></thead>
+                        <tbody id="classRosterEditorBody">${rosterRows}</tbody>
+                    </table>
+                </div>
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-2 px-3 rounded border border-slate-600">+ 학생 추가</button>
+                    <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-4 rounded">명단 저장</button>
+                </div>
+                <div class="border-t border-slate-700 pt-3 mt-1">
+                    <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-plus-circle text-sky-400"></i> 새 학급 만들기 (내년·다른 반)</h4>
+                    <div class="grid sm:grid-cols-2 gap-2 mb-2">
+                        <input id="newClassDisplayName" type="text" placeholder="예: 2027학년도 6학년 1반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
+                        <input id="newClassSchoolYear" type="number" placeholder="학년도 (2027)" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
+                        <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
+                        <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
+                    </div>
+                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">새 학급 생성 후 이동</button>
+                    <p class="text-[9px] text-slate-500 mt-2">새 학급은 별도 데이터 공간(artifacts)을 사용합니다. 작년 반 데이터는 그대로 보존됩니다.</p>
+                </div>`;
+        };
+
+        window.addClassRosterRow = function() {
+            if (!window.playerState?.isGM) return;
+            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const roster = Array.isArray(meta.roster) ? [...meta.roster] : [];
+            const nextNum = roster.reduce((max, r) => Math.max(max, Number(r.id) || 0), 0) + 1;
+            roster.push({ id: String(nextNum), name: '새 학생', gender: 'M', label: '', active: true });
+            window.classMeta = { ...meta, roster };
+            window.renderClassAdminPanel();
+        };
+
+        function readRosterFromEditor() {
+            const tbody = document.getElementById('classRosterEditorBody');
+            if (!tbody) return window.classMeta?.roster || [];
+            const rows = tbody.querySelectorAll('tr');
+            const roster = [];
+            rows.forEach((tr) => {
+                const idEl = tr.querySelector('[data-roster-field="id"]');
+                const nameEl = tr.querySelector('[data-roster-field="name"]');
+                const genderEl = tr.querySelector('[data-roster-field="gender"]');
+                const labelEl = tr.querySelector('[data-roster-field="label"]');
+                const activeEl = tr.querySelector('[data-roster-field="active"]');
+                const id = idEl ? String(idEl.value || '').trim() : '';
+                const name = nameEl ? String(nameEl.value || '').trim() : '';
+                if (!id || !name) return;
+                roster.push({
+                    id,
+                    name,
+                    gender: genderEl && genderEl.value === 'F' ? 'F' : 'M',
+                    label: labelEl ? String(labelEl.value || '').trim() : '',
+                    active: activeEl ? !!activeEl.checked : true,
+                });
+            });
+            return roster;
+        }
+
+        window.saveClassMeta = async function() {
+            if (!window.playerState?.isGM || !db) return;
+            const roster = readRosterFromEditor();
+            if (!roster.length) return window.customAlert('최소 1명의 학생이 필요합니다.');
+            const displayName = document.getElementById('classMetaDisplayName')?.value?.trim() || window.classMeta?.displayName || '우리 반';
+            const schoolYear = Number(document.getElementById('classMetaSchoolYear')?.value) || window.classMeta?.schoolYear || 2026;
+            const grade = Number(document.getElementById('classMetaGrade')?.value) || window.classMeta?.grade || 6;
+            const homeroom = Number(document.getElementById('classMetaHomeroom')?.value) || window.classMeta?.homeroom || 1;
+            const inviteCode = window.classMeta?.inviteCode || generateInviteCode();
+            const payload = {
+                classId: appId,
+                displayName,
+                schoolYear,
+                grade,
+                homeroom,
+                inviteCode,
+                gmaEditStudentId: window.classMeta?.gmaEditStudentId || '13',
+                isActive: true,
+                roster,
+                staff: window.classMeta?.staff || DEFAULT_CLASS_STAFF,
+                updatedAt: serverTimestamp(),
+            };
+            await setDoc(doc(db, 'classes', appId), payload, { merge: true });
+            window.classMeta = { ...window.classMeta, ...payload, roster, staff: payload.staff };
+            syncNameGenderMaps();
+            populateLoginSelect();
+            updateClassDisplayLabels();
+            window.renderClassAdminPanel();
+            window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            await window.customAlert('✅ 학급 명단이 저장되었습니다.');
+        };
+
+        window.createNewClass = async function() {
+            if (!window.playerState?.isGM || !db) return;
+            const displayName = document.getElementById('newClassDisplayName')?.value?.trim();
+            const schoolYear = Number(document.getElementById('newClassSchoolYear')?.value);
+            const grade = Number(document.getElementById('newClassGrade')?.value);
+            const homeroom = Number(document.getElementById('newClassHomeroom')?.value);
+            if (!displayName || !schoolYear || !grade || !homeroom) {
+                return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
+            }
+            const newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
+            const ok = await window.customConfirm(`새 학급을 만듭니다.\n\nID: ${newClassId}\n이름: ${displayName}\n\n빈 명단(학생 1~13번 틀)으로 시작합니다. 계속할까요?`);
+            if (!ok) return;
+            const existing = await getDoc(doc(db, 'classes', newClassId));
+            if (existing.exists()) {
+                const go = await window.customConfirm(`"${newClassId}" 학급이 이미 있습니다.\n그 학급으로 이동할까요?`);
+                if (go) window.switchClass(newClassId);
+                return;
+            }
+            const defaultRoster = Array.from({ length: 13 }, (_, i) => ({
+                id: String(i + 1),
+                name: `학생 ${i + 1}`,
+                gender: 'M',
+                label: '',
+                active: true,
+            }));
+            const inviteCode = generateInviteCode();
+            const newMeta = {
+                classId: newClassId,
+                displayName,
+                schoolYear,
+                grade,
+                homeroom,
+                inviteCode,
+                gmaEditStudentId: '13',
+                isActive: true,
+                roster: defaultRoster,
+                staff: DEFAULT_CLASS_STAFF.map((s) => ({ ...s })),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            };
+            await setDoc(doc(db, 'classes', newClassId), newMeta, { merge: true });
+            const globalSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'));
+            if (globalSnap.exists()) {
+                const src = globalSnap.data();
+                const { announcement, lastAutoXpTime, ...copySettings } = src;
+                await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), copySettings, { merge: true });
+            }
+            await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생 PIN을 설정하세요.`);
+            window.switchClass(newClassId);
+        };
+
         /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */
         const DICE_UNICODE_FACES = ['\u2680','\u2681','\u2682','\u2683','\u2684','\u2685'];
 
@@ -513,8 +904,8 @@ function redrawPlazaGrantsUi() {
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
         let unsubscribeShopGroupBuy = null;
-        /** Firestore artifacts 세그먼트 — 콘솔 실제 경로와 다르면 로드 전 window.__app_id 로 지정 */
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'sambong-class-2026';
+        /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
+        const appId = resolveClassId();
 
         /**
          * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
@@ -1309,6 +1700,9 @@ function redrawPlazaGrantsUi() {
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && window.refreshPicbookAccountsAdmin) {
                 void window.refreshPicbookAccountsAdmin();
             }
+            if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
+                window.renderClassAdminPanel();
+            }
             if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                 window.renderGoldenBellMasterLive();
             }
@@ -1722,6 +2116,7 @@ function redrawPlazaGrantsUi() {
                 if (auth.currentUser) {
                     await auth.currentUser.getIdToken();
                 }
+                await loadClassMeta();
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
 
@@ -2169,7 +2564,7 @@ function redrawPlazaGrantsUi() {
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
                 const targetId = data ? data.id : emptyId;
-                const canEdit = window.playerState.isGM || (window.playerState.isGMA && targetId === '13');
+                const canEdit = canEditStudentAsAdmin(targetId);
                 const gmOnClick = canEdit && !isGMCard ? `onclick="window.plazaClickXP('${targetId}', this)"` : '';
                 const gmCursor = canEdit && !isGMCard ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : '';
 
@@ -2295,9 +2690,11 @@ function redrawPlazaGrantsUi() {
                 </div>`;
             };
 
-            let html = createCard(gmData || {id: 'gm', xp: 0, bong: 0}, true, '마스터 J');
-            if(gmaData || window.playerState.isGMA) html += createCard(gmaData || {id: 'gm_a', xp: 0, bong: 0}, true, '마스터 A');
-            for(let i=1; i<=13; i++) html += createCard(studentsData.find(s => s.id === String(i)), false, `${i}. ${STUDENT_NAMES[i]}${i===13?' (해적섬)':''}`); 
+            let html = createCard(gmData || {id: 'gm', xp: 0, bong: 0}, true, getStaffCardLabel('gm'));
+            if(gmaData || window.playerState.isGMA) html += createCard(gmaData || {id: 'gm_a', xp: 0, bong: 0}, true, getStaffCardLabel('gm_a'));
+            getActiveStudentIds().forEach((sid) => {
+                html += createCard(studentsData.find(s => s.id === String(sid)), false, getStudentDisplayLabel(sid));
+            });
             container.innerHTML = html;
         };
 
@@ -2306,13 +2703,13 @@ function redrawPlazaGrantsUi() {
             if(!tbody) return;
             
             tbody.innerHTML = '';
-            for(let i=1; i<=13; i++) { 
-                const stu = studentsData.find(s => s.id === String(i));
-                const canEdit = window.playerState.isGM || (window.playerState.isGMA && String(i) === '13');
+            getActiveStudentIds().forEach((sid) => {
+                const stu = studentsData.find(s => s.id === String(sid));
+                const canEdit = canEditStudentAsAdmin(sid);
                 
                 if(stu) {
                     const exactLv = calculateExactLevel(stu.xp || 0);
-                    let faceEmoji = STUDENT_GENDERS[String(i)] === 'F' ? '👧' : '👦';
+                    let faceEmoji = STUDENT_GENDERS[String(sid)] === 'F' ? '👧' : '👦';
                     
                     if (stu.equippedSkins) SKIN_DATA.forEach(sk => { if (stu.equippedSkins[sk.id] && sk.type === 'face') faceEmoji = sk.emoji; }); 
                     if (stu.equippedWeapon) {
@@ -2326,19 +2723,20 @@ function redrawPlazaGrantsUi() {
                         const bColor = stu.condition.body ? stu.condition.body.color : 'text-slate-400';
                         condStr = `${stu.condition.emotion.icon} <i class="fa-solid ${bIcon} ${bColor}"></i>`;
                     }
+                    const stuName = STUDENT_NAMES[sid] || sid;
                     
                     tbody.innerHTML += `
                     <tr id="admin-row-${stu.id}" class="border-b border-slate-700 hover:bg-slate-800 ${!canEdit ? 'opacity-50' : ''}">
-                        <td class="p-2 cursor-pointer" onclick="window.changeStudentPin('${stu.id}', '${STUDENT_NAMES[i]}')">
-                            ${i}. ${STUDENT_NAMES[i]} <span class="text-[8px] text-slate-500">****</span>
+                        <td class="p-2 cursor-pointer" onclick="window.changeStudentPin('${stu.id}', '${stuName}')">
+                            ${getStudentDisplayLabel(sid)} <span class="text-[8px] text-slate-500">****</span>
                         </td>
                         <td class="p-2 whitespace-nowrap">
                             ${faceEmoji} <span class="text-[9px] text-slate-400">Lv.${exactLv} ${condStr}</span>
                         </td>
-                        <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${STUDENT_NAMES[i]}', ${stu.xp || 0})">
+                        <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${STUDENT_NAMES[i]}', ${stu.bong || 0})">
+                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
                             ${(Number(stu.bong)||0).toFixed(1)} B
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
@@ -2346,7 +2744,7 @@ function redrawPlazaGrantsUi() {
                         </td>
                     </tr>`;
                 }
-            }
+            });
         };
 
         window.renderAdminQuestBoard = function(studentsData) {
@@ -2370,9 +2768,10 @@ function redrawPlazaGrantsUi() {
                 </th>`
             ).join('');
 
+            const studentIds = getActiveStudentIds();
             let bodyRows = '';
-            for (let i = 1; i <= 13; i++) {
-                const stu = studentsData.find(s => s.id === String(i));
+            studentIds.forEach((sid) => {
+                const stu = studentsData.find(s => s.id === String(sid));
                 const resetOk = stu && stu.lastDailyReset === todayStr;
                 let rowDone = 0;
                 const cells = dailyQuests.map((q, qi) => {
@@ -2386,17 +2785,18 @@ function redrawPlazaGrantsUi() {
                 sumDoneAll += rowDone;
                 if (stu && rowDone === total && total > 0) allClearStudents++;
 
-                const shortName = `${i}`;
+                const shortName = `${sid}`;
                 const rowBg = rowDone === total && total > 0 ? 'bg-emerald-950/35' : '';
                 bodyRows += `
                 <tr class="${rowBg}">
-                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[i] || ''}">${shortName}. ${STUDENT_NAMES[i] || '-'}</td>
+                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] || ''}">${shortName}. ${STUDENT_NAMES[sid] || '-'}</td>
                     ${cells}
                     <td class="p-0.5 text-center border-b border-slate-800/80 text-[8px] sm:text-[9px] tabular-nums text-slate-400 font-bold whitespace-nowrap">${rowDone}/${total}</td>
                 </tr>`;
-            }
+            });
 
-            const avg = sumDoneAll / 13;
+            const studentCount = Math.max(studentIds.length, 1);
+            const avg = sumDoneAll / studentCount;
             const badgeLine = dailyQuests.map((q, qi) => 
                 `<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-800/90 border border-slate-600/60 text-[8px] text-slate-300 shrink-0" title="${q.name}"><i class="fa-solid ${q.icon} ${q.color} text-[7px]"></i>${colDone[qi]}</span>`
             ).join('');
@@ -2665,19 +3065,19 @@ function redrawPlazaGrantsUi() {
                     adminList.innerHTML = '';
                 } else {
                     const rows = [];
-                    for (let i = 1; i <= 13; i++) {
-                        const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(i)) || {};
+                    getActiveStudentIds().forEach((sid) => {
+                        const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(sid)) || {};
                         const wallet = normalizeBongValue(Number(stu.bong) || 0);
                         const regular = normalizeBongValue(Number(stu.bankRegularSavings) || 0);
                         const terms = Array.isArray(stu.bankTermDeposits) ? stu.bankTermDeposits : [];
                         const termTotal = normalizeBongValue(terms.reduce((sum, t) => sum + (Number(t && t.amount) || 0), 0));
                         rows.push(`<div class="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
-                            <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(i)] || i}</div>
+                            <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
                             <div class="text-right text-sb-gold tabular-nums">${wallet.toFixed(1)}B</div>
                             <div class="text-right text-sky-300 tabular-nums">${regular.toFixed(1)}B</div>
                             <div class="text-right text-amber-200 tabular-nums">${termTotal.toFixed(1)}B</div>
                         </div>`);
-                    }
+                    });
                     adminList.innerHTML = `<div class="grid grid-cols-4 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700">
                         <div>학생</div><div class="text-right">지갑</div><div class="text-right">일반예금</div><div class="text-right">적금</div>
                     </div>${rows.join('')}`;
@@ -3093,6 +3493,9 @@ function redrawPlazaGrantsUi() {
                     if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
                     const raidAdminPanel = document.getElementById('raidAdminPanel');
                     if (raidAdminPanel) raidAdminPanel.classList.remove('hidden');
+                    const classAdminSection = document.getElementById('classAdminSection');
+                    if (classAdminSection) classAdminSection.classList.remove('hidden');
+                    if (typeof window.renderClassAdminPanel === 'function') window.renderClassAdminPanel();
                 } else {
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.add('hidden');
@@ -3108,6 +3511,8 @@ function redrawPlazaGrantsUi() {
                     if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
                     const raidAdminPanel = document.getElementById('raidAdminPanel');
                     if (raidAdminPanel) raidAdminPanel.classList.add('hidden');
+                    const classAdminSectionHide = document.getElementById('classAdminSection');
+                    if (classAdminSectionHide) classAdminSectionHide.classList.add('hidden');
                 }
                 const gbMasterPanel = document.getElementById('gbMasterPanel');
                 if (gbMasterPanel) gbMasterPanel.classList.remove('hidden');
@@ -3132,6 +3537,8 @@ function redrawPlazaGrantsUi() {
                 if (gbMasterPanel) gbMasterPanel.classList.add('hidden');
                 const raidAdminPanel = document.getElementById('raidAdminPanel');
                 if (raidAdminPanel) raidAdminPanel.classList.add('hidden');
+                const classAdminSectionOff = document.getElementById('classAdminSection');
+                if (classAdminSectionOff) classAdminSectionOff.classList.add('hidden');
             }
             
             checkTimeEvents();
@@ -3468,6 +3875,8 @@ function redrawPlazaGrantsUi() {
         document.getElementById('btnLogin').onclick = () => {
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
         };
+        const btnApplyClass = document.getElementById('btnApplyClass');
+        if (btnApplyClass) btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
         
         window.loginAsGuest = function() {
             window.playerState = { 
@@ -3493,7 +3902,12 @@ function redrawPlazaGrantsUi() {
         
         window.logout = async function() { 
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
-            if(isOk) { localStorage.clear(); location.reload(); } 
+            if(isOk) {
+                const classId = localStorage.getItem('sambong_class_id');
+                localStorage.clear();
+                if (classId) localStorage.setItem('sambong_class_id', classId);
+                location.reload();
+            }
         };
 
         async function attemptLogin(studentId, pin, isAutoLogin) {
@@ -3540,7 +3954,13 @@ function redrawPlazaGrantsUi() {
                         data.pin = pin; 
                         await setDoc(docRef, { pin: pin }, { merge: true });
                     } else if (data.pin !== pin) {
-                        if (isAutoLogin) { localStorage.clear(); location.reload(); return; }
+                        if (isAutoLogin) {
+                            const classId = localStorage.getItem('sambong_class_id');
+                            localStorage.clear();
+                            if (classId) localStorage.setItem('sambong_class_id', classId);
+                            location.reload();
+                            return;
+                        }
                         return await window.customAlert("❌ 비밀번호가 틀렸어요!");
                     }
                 } else {
@@ -5334,9 +5754,9 @@ function redrawPlazaGrantsUi() {
             
             try {
                 const batch = writeBatch(db);
-                for (let i=1; i<=13; i++) {
-                    let docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + i);
-                    let stu = window.allStudentsData.find(s => s.id === String(i)) || {};
+                getActiveStudentIds().forEach((sid) => {
+                    let docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                    let stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
                     batch.set(docRef, {
                         pin: stu.pin || '',
                         xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
@@ -5346,7 +5766,7 @@ function redrawPlazaGrantsUi() {
                         bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
                         classEventPurchases: []
                     });
-                }
+                });
                 
                 batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
 
@@ -5770,15 +6190,15 @@ function redrawPlazaGrantsUi() {
                 qPatch[id] = false;
                 uqPatch[id] = false;
             });
-            for (let i = 1; i <= 13; i++) {
+            getActiveStudentIds().forEach((sid) => {
                 batch.set(
-                    doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + i),
+                    doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
                     { quests: qPatch, unlockedQuests: uqPatch, usedRaidPasswords: [] },
                     { merge: true }
                 );
-            }
+            });
             await batch.commit();
-            return { count: 13 };
+            return { count: getActiveStudentIds().length };
         }
 
         window.resetRaids = async function() {
@@ -6294,9 +6714,10 @@ function redrawPlazaGrantsUi() {
             }
             thead += '<th class="p-1.5 text-[9px] border border-slate-600 min-w-[64px]">합계</th></tr></thead>';
 
+            const studentIds = getActiveStudentIds();
             let body = '<tbody>';
-            for (let i = 1; i <= 13; i++) {
-                const id = String(i);
+            studentIds.forEach((sid) => {
+                const id = String(sid);
                 const name = STUDENT_NAMES[id];
                 const s = subs[id];
                 body += `<tr><td class="sticky left-0 z-10 bg-slate-900/95 p-1.5 text-[9px] font-bold border border-slate-600">${escapeHtmlGb(name)}</td>`;
@@ -6305,7 +6726,7 @@ function redrawPlazaGrantsUi() {
                         body += `<td class="p-1.5 text-[9px] text-slate-500 border border-slate-600 align-top">—</td>`;
                     }
                     body += `<td class="p-1.5 text-[9px] text-slate-500 border border-slate-600">미제출</td></tr>`;
-                    continue;
+                    return;
                 }
                 const results = Array.isArray(s.results) ? s.results : [];
                 let correct = 0;
@@ -6325,10 +6746,10 @@ function redrawPlazaGrantsUi() {
                     ? `<div class="text-emerald-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-yellow-200/90">+${rxp}XP</div><div class="text-[8px] text-amber-200/90">+${rb}B</div>`
                     : `<div class="text-slate-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-slate-500">${fin ? '완료' : '작성중'}</div>`;
                 body += `<td class="p-1.5 text-[9px] border border-slate-600 align-top">${sumHtml}</td></tr>`;
-            }
+            });
             body += '</tbody>';
 
-            return `<div class="text-[10px] text-slate-300 mb-2">최종 제출·채점 완료: ${submittedCount} / 13 (실시간 반영)</div>
+            return `<div class="text-[10px] text-slate-300 mb-2">최종 제출·채점 완료: ${submittedCount} / ${studentIds.length} (실시간 반영)</div>
                 <div class="overflow-x-auto max-h-[52vh] overflow-y-auto rounded-lg border border-slate-600/80">
                 <table class="w-full border-collapse">${thead}${body}</table>
                 </div>`;

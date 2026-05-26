@@ -2146,7 +2146,9 @@ function redrawPlazaGrantsUi() {
                             <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-pencil"></i> 차분히 쓰기</span>
                             <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-user-graduate"></i> 배움 준비</span>
                         </div>
-                        ${preview ? '<button type="button" onclick="window.closeMorningActivityPreview()" class="mt-5 mx-auto bg-amber-700 hover:bg-amber-600 text-white font-black py-2.5 px-6 rounded-full text-sm shadow-lg">미리보기 종료</button>' : ''}
+                        <button type="button" onclick="window.closeMorningActivity()" class="mt-5 mx-auto bg-amber-700 hover:bg-amber-600 text-white font-black py-2.5 px-6 rounded-full text-sm shadow-lg flex items-center gap-2">
+                            <i class="fa-solid fa-xmark"></i> ${preview ? '미리보기 종료' : '닫기'}
+                        </button>
                     </div>
                 </div>`;
         }
@@ -2159,7 +2161,7 @@ function redrawPlazaGrantsUi() {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
 
-            if (window._morningActivityPreviewActive || isMorningActivityTime()) {
+            if (window._morningActivityPreviewActive || (isMorningActivityTime() && !window._morningActivityDismissed)) {
                 container.innerHTML = buildMorningActivityPlazaHtml({ preview: !!window._morningActivityPreviewActive });
                 return;
             }
@@ -5933,7 +5935,12 @@ function redrawPlazaGrantsUi() {
         };
 
         window.closeMorningActivityPreview = function() {
+            window.closeMorningActivity();
+        };
+
+        window.closeMorningActivity = function() {
             window._morningActivityPreviewActive = false;
+            window._morningActivityDismissed = true;
             window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
         };
 

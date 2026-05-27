@@ -2742,6 +2742,9 @@ function redrawPlazaGrantsUi() {
                         <td class="p-2 border-l border-slate-700/50 w-24">
                             ${canEdit ? `<div class="flex gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
                         </td>
+                        <td class="p-2 text-center border-l border-slate-700/50 w-16">
+                            ${canEdit ? `<button type="button" onclick="event.stopPropagation(); void window.resetStudentData('${stu.id}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800/80 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap" title="XP·봉·퀘스트 등 초기화 (PIN 유지)">초기화</button>` : '-'}
+                        </td>
                     </tr>`;
                 }
             });
@@ -5747,6 +5750,73 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 관리자 권한 도구 모음 (자동 경험치 포함) ★
         // ==========================================
+        /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
+        function buildStudentResetPayload(existingData = {}) {
+            return {
+                pin: existingData.pin || '',
+                xp: 0,
+                bong: 0.0,
+                quests: {},
+                unlockedQuests: {},
+                jobs: [],
+                ownedSkins: {},
+                equippedSkins: {},
+                hasShield: false,
+                shieldHP: 0,
+                condition: null,
+                dragonBalls: [],
+                dragonBallWeekendKey: '',
+                earlyBirdCount: 0,
+                inventory: [],
+                equippedWeapon: null,
+                lunchBid: { date: '', amount: 0 },
+                lastLunchDeductDate: '',
+                questHistory: [],
+                usedRaidPasswords: [],
+                bankRegularSavings: 0,
+                bankTermDeposits: [],
+                bankDailyBonusLastDate: '',
+                dailyAllClearBonusDate: '',
+                classEventPurchases: [],
+            };
+        }
+
+        window.resetStudentData = async function(stuId, stuName) {
+            if (!window.playerState?.isAdmin) return;
+            if (!canEditStudentAsAdmin(stuId)) {
+                return window.customAlert('이 학생 데이터를 초기화할 권한이 없습니다.');
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+
+            const label = stuName || STUDENT_NAMES[String(stuId)] || String(stuId);
+            const ok = await window.customConfirm(
+                `⚠️ [${label}] 학생의 게임 데이터를 초기화할까요?\n\n` +
+                'XP·봉·퀘스트·은행·인벤토리·드래곤볼 등이 0/빈 값으로 돌아갑니다.\n' +
+                'PIN(비밀번호)은 유지됩니다.'
+            );
+            if (!ok) return;
+
+            try {
+                const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
+                const payload = buildStudentResetPayload(stu);
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
+                await setDoc(docRef, payload);
+
+                const myId = localStorage.getItem('sambong_student_id');
+                if (myId === String(stuId) && !window.playerState.isAdmin) {
+                    window.playerState = { ...payload, isGuest: false, isGM: false, isGMA: false, isAdmin: false };
+                    currentStudentDocRef = docRef;
+                    _prevXpFromSnapshot = 0;
+                    updateUI();
+                }
+
+                await window.customAlert(`✅ [${label}] 학생 데이터 초기화가 완료되었습니다.`);
+            } catch (e) {
+                console.error('resetStudentData', e);
+                await window.customAlert('초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window.hardResetAll = async function() {
             if (!window.playerState.isGM) return window.customAlert('선생님(마스터 J) 전용 기능입니다.');
             const ok1 = await window.customPrompt('⚠️ [위험] 모든 학생의 데이터가 0으로 영구 초기화됩니다.\n계속하시려면 "초기화확인"을 입력하세요:', 'text');
@@ -5755,17 +5825,11 @@ function redrawPlazaGrantsUi() {
             try {
                 const batch = writeBatch(db);
                 getActiveStudentIds().forEach((sid) => {
-                    let docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-                    let stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
-                    batch.set(docRef, {
-                        pin: stu.pin || '',
-                        xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [],
-                        ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0,
-                        condition: null, dragonBalls: [], dragonBallWeekendKey: '', earlyBirdCount: 0,
-                        inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
-                        bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
-                        classEventPurchases: []
-                    });
+                    const stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
+                    batch.set(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        buildStudentResetPayload(stu)
+                    );
                 });
                 
                 batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });

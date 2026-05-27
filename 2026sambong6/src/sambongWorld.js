@@ -169,7 +169,7 @@ function redrawPlazaGrantsUi() {
         }
 
         const MARTIAL_LAW_PROCLAMATION = [
-            { title: '제1조', text: '국어사회수학 진도율 100% 달성' },
+            { title: '제1조', text: '체육수업 전면 폐지 및 국어수학진도 100% 달성' },
             { title: '제2조', text: '쉬는 시간 5분' },
             { title: '제3조', text: '계좌 동결' },
             { title: '제4조', text: '불만 표출 금지' },
@@ -217,6 +217,84 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        window.martialLawState = null;
+        let unsubscribeMartialLaw = null;
+        let _martialLawSirenSessionId = null;
+
+        function getMartialLawStateRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'martialLaw', 'state');
+        }
+
+        function isMartialLawLockingStudent() {
+            const st = window.martialLawState;
+            return !!(
+                st && st.isActive && st.step !== 'closed'
+                && window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin
+            );
+        }
+
+        function applyMartialLawBodyLock(locked) {
+            let blocker = document.getElementById('martialLawBlocker');
+            if (locked) {
+                if (!blocker) {
+                    blocker = document.createElement('div');
+                    blocker.id = 'martialLawBlocker';
+                    blocker.setAttribute('aria-hidden', 'true');
+                    blocker.className = 'fixed inset-0 z-[490] bg-black/50';
+                    document.body.appendChild(blocker);
+                }
+                blocker.classList.remove('hidden');
+                document.body.classList.add('martial-law-student-lock');
+            } else {
+                if (blocker) blocker.classList.add('hidden');
+                document.body.classList.remove('martial-law-student-lock');
+            }
+        }
+
+        function ensureMartialLawModal() {
+            let modal = document.getElementById('martialLawLessonModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'martialLawLessonModal';
+                document.body.appendChild(modal);
+            }
+            modal.classList.remove('hidden');
+            return modal;
+        }
+
+        function hideMartialLawModal() {
+            const modal = document.getElementById('martialLawLessonModal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.innerHTML = '';
+            }
+            applyMartialLawBodyLock(false);
+        }
+
+        async function publishMartialLawState(patch) {
+            if (!db || !window.playerState?.isAdmin) return false;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) {
+                    await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                    return false;
+                }
+                const base = window.martialLawState && typeof window.martialLawState === 'object'
+                    ? window.martialLawState
+                    : {};
+                await setDoc(getMartialLawStateRef(), {
+                    ...base,
+                    ...patch,
+                    updatedAt: Date.now(),
+                }, { merge: true });
+                return true;
+            } catch (e) {
+                console.error('publishMartialLawState', e);
+                await window.customAlert('비상계엄 상태 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
+            }
+        }
+
         function getMartialLawSealHtml() {
             return `
                 <div class="mx-auto mb-6 flex h-32 w-32 sm:h-40 sm:w-40 items-center justify-center rounded-full border-[10px] border-white/80 bg-gradient-to-br from-slate-100 via-white to-slate-300 shadow-2xl">
@@ -227,15 +305,25 @@ function redrawPlazaGrantsUi() {
                 </div>`;
         }
 
-        function renderMartialLawStep(step) {
-            const modal = document.getElementById('martialLawLessonModal');
-            if (!modal) return;
+        function renderMartialLawStep(step, options = {}) {
+            const readOnly = !!options.readOnly;
+            const modal = ensureMartialLawModal();
             if (step === 'proclamation') {
                 const idx = Math.max(0, Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, Number(window._martialLawProclamationIndex) || 0));
                 window._martialLawProclamationIndex = idx;
                 const item = MARTIAL_LAW_PROCLAMATION[idx];
                 const isFirst = idx === 0;
                 const isLast = idx === MARTIAL_LAW_PROCLAMATION.length - 1;
+                const adminNav = readOnly
+                    ? '<p class="text-[10px] sm:text-xs font-black text-red-900/80">교사가 다음 단계로 넘기면 함께 바뀝니다</p>'
+                    : `<button type="button" onclick="window.prevMartialLawProclamation()" ${isFirst ? 'disabled' : ''} class="rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-[10px] sm:text-xs font-black text-white disabled:opacity-25 disabled:pointer-events-none">이전 포고문</button>
+                                        <div class="text-xs sm:text-lg font-black text-red-900">마스터 포고령</div>
+                                        ${isLast
+                                            ? '<button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-red-800 bg-red-800 px-4 py-2 text-[10px] sm:text-xs font-black text-white">포고 종료</button>'
+                                            : '<button type="button" onclick="window.nextMartialLawProclamation()" class="rounded-full border border-red-800 bg-red-800 px-4 py-2 text-[10px] sm:text-xs font-black text-white">다음 포고문</button>'}`;
+                const topClose = readOnly
+                    ? ''
+                    : '<button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>';
                 modal.innerHTML = `
                     <div class="fixed inset-0 z-[500] bg-slate-950 text-white overflow-hidden">
                         <div class="h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-3 py-3 sm:px-8 sm:py-5">
@@ -247,7 +335,7 @@ function redrawPlazaGrantsUi() {
                                     </div>
                                     <div class="flex gap-2">
                                         <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100">사이렌 끄기</button>
-                                        <button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>
+                                        ${topClose}
                                     </div>
                                 </div>
                                 <div class="relative min-h-0 flex-1 rounded-[1.75rem] border-[8px] border-stone-900 bg-stone-100 p-4 sm:p-6 text-slate-950 shadow-2xl flex flex-col overflow-hidden">
@@ -271,11 +359,7 @@ function redrawPlazaGrantsUi() {
                                         </div>
                                     </div>
                                     <div class="relative z-10 mt-3 flex items-center justify-between gap-3 shrink-0">
-                                        <button type="button" onclick="window.prevMartialLawProclamation()" ${isFirst ? 'disabled' : ''} class="rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-[10px] sm:text-xs font-black text-white disabled:opacity-25 disabled:pointer-events-none">이전 포고문</button>
-                                        <div class="text-xs sm:text-lg font-black text-red-900">마스터 포고령</div>
-                                        ${isLast
-                                            ? '<button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-red-800 bg-red-800 px-4 py-2 text-[10px] sm:text-xs font-black text-white">포고 종료</button>'
-                                            : '<button type="button" onclick="window.nextMartialLawProclamation()" class="rounded-full border border-red-800 bg-red-800 px-4 py-2 text-[10px] sm:text-xs font-black text-white">다음 포고문</button>'}
+                                        ${adminNav}
                                     </div>
                                 </div>
                             </div>
@@ -297,42 +381,94 @@ function redrawPlazaGrantsUi() {
                         </div>
                     </div>
                     <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="absolute left-4 top-4 z-20 rounded-full border border-red-300/60 bg-red-950/80 px-4 py-2 text-xs sm:text-sm font-black text-red-100 shadow-lg">사이렌 끄기</button>
-                    <button type="button" onclick="window.showMartialLawProclamation()" class="absolute bottom-4 right-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] sm:text-xs font-black text-white hover:bg-white/20">다음단계</button>
+                    ${readOnly
+                        ? '<p class="absolute bottom-4 left-0 right-0 z-20 text-center text-[10px] sm:text-xs font-black text-red-200/90 px-4">교사가 다음 단계를 누르면 포고문이 함께 표시됩니다</p>'
+                        : '<button type="button" onclick="window.showMartialLawProclamation()" class="absolute bottom-4 right-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] sm:text-xs font-black text-white hover:bg-white/20">다음단계</button>'}
+                    ${readOnly
+                        ? ''
+                        : '<button type="button" onclick="window.closeMartialLawLesson()" class="absolute right-4 top-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>'}
                 </div>`;
         }
 
-        window.showMartialLawProclamation = function() {
-            window._martialLawProclamationIndex = 0;
-            renderMartialLawStep('proclamation');
-        };
+        window.syncMartialLawModal = function() {
+            const st = window.martialLawState;
+            const loginOverlay = document.getElementById('loginOverlay');
+            const onLoginScreen = loginOverlay && !loginOverlay.classList.contains('hidden');
 
-        window.nextMartialLawProclamation = function() {
-            window._martialLawProclamationIndex = Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, (Number(window._martialLawProclamationIndex) || 0) + 1);
-            renderMartialLawStep('proclamation');
-        };
-
-        window.prevMartialLawProclamation = function() {
-            window._martialLawProclamationIndex = Math.max(0, (Number(window._martialLawProclamationIndex) || 0) - 1);
-            renderMartialLawStep('proclamation');
-        };
-
-        window.openMartialLawLesson = function() {
-            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 실행할 수 있습니다.');
-            let modal = document.getElementById('martialLawLessonModal');
-            if (!modal) {
-                modal = document.createElement('div');
-                modal.id = 'martialLawLessonModal';
-                document.body.appendChild(modal);
+            if (!st || !st.isActive || st.step === 'closed') {
+                hideMartialLawModal();
+                window.stopMartialLawSiren();
+                _martialLawSirenSessionId = null;
+                return;
             }
-            modal.classList.remove('hidden');
-            renderMartialLawStep('declaration');
-            startMartialLawSiren();
+
+            if (window.playerState?.isGuest) {
+                hideMartialLawModal();
+                return;
+            }
+            if (!window.playerState) {
+                window.playerState = { isGuest: false, isGM: false, isGMA: false, isAdmin: false };
+            }
+
+            const idx = Math.max(0, Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, Number(st.proclamationIndex) || 0));
+            window._martialLawProclamationIndex = idx;
+            const step = st.step === 'proclamation' ? 'proclamation' : 'declaration';
+            const readOnly = !window.playerState.isAdmin;
+
+            if (readOnly || onLoginScreen) {
+                applyMartialLawBodyLock(true);
+            } else {
+                applyMartialLawBodyLock(false);
+            }
+
+            const sessionId = st.sessionId != null ? String(st.sessionId) : '';
+            if (sessionId && _martialLawSirenSessionId !== sessionId) {
+                _martialLawSirenSessionId = sessionId;
+                startMartialLawSiren();
+            }
+
+            renderMartialLawStep(step, { readOnly });
         };
 
-        window.closeMartialLawLesson = function() {
+        window.showMartialLawProclamation = async function() {
+            if (!window.playerState?.isAdmin) return;
+            await publishMartialLawState({ isActive: true, step: 'proclamation', proclamationIndex: 0 });
+        };
+
+        window.nextMartialLawProclamation = async function() {
+            if (!window.playerState?.isAdmin) return;
+            const idx = Math.min(
+                MARTIAL_LAW_PROCLAMATION.length - 1,
+                (Number(window.martialLawState?.proclamationIndex ?? window._martialLawProclamationIndex) || 0) + 1
+            );
+            await publishMartialLawState({ isActive: true, step: 'proclamation', proclamationIndex: idx });
+        };
+
+        window.prevMartialLawProclamation = async function() {
+            if (!window.playerState?.isAdmin) return;
+            const idx = Math.max(0, (Number(window.martialLawState?.proclamationIndex ?? window._martialLawProclamationIndex) || 0) - 1);
+            await publishMartialLawState({ isActive: true, step: 'proclamation', proclamationIndex: idx });
+        };
+
+        window.openMartialLawLesson = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 실행할 수 있습니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const sessionId = Date.now();
+            const ok = await publishMartialLawState({
+                isActive: true,
+                step: 'declaration',
+                proclamationIndex: 0,
+                sessionId,
+            });
+            if (!ok) return;
+            await window.customAlert('학생 화면이 비상계엄 연출로 잠깁니다. 다음 단계에서 포고문이 함께 표시됩니다.');
+        };
+
+        window.closeMartialLawLesson = async function() {
+            if (!window.playerState?.isAdmin) return;
+            await publishMartialLawState({ isActive: false, step: 'closed', proclamationIndex: 0 });
             window.stopMartialLawSiren();
-            const modal = document.getElementById('martialLawLessonModal');
-            if (modal) modal.remove();
+            _martialLawSirenSessionId = null;
         };
 
         // ==========================================
@@ -1673,6 +1809,7 @@ function redrawPlazaGrantsUi() {
         let currentTabIndex = 2;
 
         window.switchTab = function(tabId) {
+            if (isMartialLawLockingStudent()) return;
             TABS.forEach(t => {
                 const sec = document.getElementById(t + 'Section');
                 if(sec) sec.classList.add('hidden');
@@ -1738,12 +1875,14 @@ function redrawPlazaGrantsUi() {
         let touchstartX = 0; 
         let touchstartY = 0;
         
-        document.getElementById('swipeWrapper').addEventListener('touchstart', e => { 
-            touchstartX = e.changedTouches[0].screenX; 
-            touchstartY = e.changedTouches[0].screenY; 
+        document.getElementById('swipeWrapper').addEventListener('touchstart', e => {
+            if (isMartialLawLockingStudent()) return;
+            touchstartX = e.changedTouches[0].screenX;
+            touchstartY = e.changedTouches[0].screenY;
         }, {passive: true});
         
         document.getElementById('swipeWrapper').addEventListener('touchend', e => {
+            if (isMartialLawLockingStudent()) return;
             let touchendX = e.changedTouches[0].screenX; 
             let touchendY = e.changedTouches[0].screenY;
             let diffX = touchstartX - touchendX; 
@@ -2352,6 +2491,16 @@ function redrawPlazaGrantsUi() {
                             }
                             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
                             if (typeof window.updateMasterQuizAdminUI === 'function') window.updateMasterQuizAdminUI();
+                        });
+
+                        if (unsubscribeMartialLaw) unsubscribeMartialLaw();
+                        unsubscribeMartialLaw = onSnapshot(getMartialLawStateRef(), (snap) => {
+                            if (snap.exists()) {
+                                window.martialLawState = snap.data();
+                            } else {
+                                window.martialLawState = { isActive: false, step: 'closed', proclamationIndex: 0 };
+                            }
+                            if (typeof window.syncMartialLawModal === 'function') window.syncMartialLawModal();
                         });
 
                         if (unsubscribeShopGroupBuy) unsubscribeShopGroupBuy();
@@ -3442,6 +3591,7 @@ function redrawPlazaGrantsUi() {
         function updateUI() {
             /** docRef 없다고 전체 UI를 건너뛰면, 스냅샷이 playerState만 갱신한 뒤 대시보드·퀘스트가 영원히 옛값으로 남음(실시간 동기화 깨짐) */
             if (!window.playerState) return;
+            if (typeof window.syncMartialLawModal === 'function') window.syncMartialLawModal();
             ensureStudentBackupSubscription();
             const canRunBankSideEffects = !window.playerState.isGuest && currentStudentDocRef;
 
@@ -6627,6 +6777,11 @@ function redrawPlazaGrantsUi() {
             // 스냅샷만으로는 이후에 다시 열리지 않으므로, 로그인 직후 updateUI()에서 syncMasterQuizModal을 반드시 호출함.
             const loginOverlay = document.getElementById('loginOverlay');
             if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
+                modal.classList.add('hidden');
+                return;
+            }
+
+            if (isMartialLawLockingStudent()) {
                 modal.classList.add('hidden');
                 return;
             }

@@ -899,11 +899,14 @@ function redrawPlazaGrantsUi() {
         window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
+        /** 초기화 직전 저장된 학생별 백업 (studentId → { savedAt, data }) */
+        window.studentBackupMap = {};
         
         let db, auth, storage, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
         let unsubscribeShopGroupBuy = null;
+        let unsubscribeStudentBackups = null;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
         const appId = resolveClassId();
 
@@ -2742,8 +2745,17 @@ function redrawPlazaGrantsUi() {
                         <td class="p-2 border-l border-slate-700/50 w-24">
                             ${canEdit ? `<div class="flex gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
                         </td>
-                        <td class="p-2 text-center border-l border-slate-700/50 w-16">
-                            ${canEdit ? `<button type="button" onclick="event.stopPropagation(); void window.resetStudentData('${stu.id}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800/80 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap" title="XP·봉·퀘스트 등 초기화 (PIN 유지)">초기화</button>` : '-'}
+                        <td class="p-2 text-center border-l border-slate-700/50 min-w-[4.5rem]">
+                            ${canEdit ? (() => {
+                                const backup = window.studentBackupMap && window.studentBackupMap[String(stu.id)];
+                                const backupTitle = backup && backup.savedAt
+                                    ? `마지막 백업: ${new Date(backup.savedAt).toLocaleString('ko-KR')}`
+                                    : '초기화 전 백업이 없습니다';
+                                const restoreBtn = backup
+                                    ? `<button type="button" onclick="event.stopPropagation(); void window.restoreStudentData('${stu.id}')" class="bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100 border border-emerald-800/80 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap" title="${backupTitle}">복구</button>`
+                                    : `<button type="button" disabled class="bg-slate-800 text-slate-500 border border-slate-700 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap cursor-not-allowed" title="${backupTitle}">복구</button>`;
+                                return `<div class="flex flex-col gap-1 items-center">${restoreBtn}<button type="button" onclick="event.stopPropagation(); void window.resetStudentData('${stu.id}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800/80 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap" title="초기화 전 자동 백업 후 XP·봉·퀘스트 등 초기화 (PIN 유지)">초기화</button></div>`;
+                            })() : '-'}
                         </td>
                     </tr>`;
                 }
@@ -3430,6 +3442,7 @@ function redrawPlazaGrantsUi() {
         function updateUI() {
             /** docRef 없다고 전체 UI를 건너뛰면, 스냅샷이 playerState만 갱신한 뒤 대시보드·퀘스트가 영원히 옛값으로 남음(실시간 동기화 깨짐) */
             if (!window.playerState) return;
+            ensureStudentBackupSubscription();
             const canRunBankSideEffects = !window.playerState.isGuest && currentStudentDocRef;
 
             if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
@@ -5751,6 +5764,66 @@ function redrawPlazaGrantsUi() {
         // ★ 관리자 권한 도구 모음 (자동 경험치 포함) ★
         // ==========================================
         /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
+        const STUDENT_GAME_FIELD_KEYS = [
+            'pin', 'xp', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins',
+            'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
+            'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
+            'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
+            'classEventPurchases', 'lastDailyReset',
+        ];
+
+        function extractStudentGameData(existingData = {}) {
+            const data = {};
+            STUDENT_GAME_FIELD_KEYS.forEach((key) => {
+                if (existingData[key] !== undefined) data[key] = existingData[key];
+            });
+            if (data.pin === undefined) data.pin = existingData.pin || '';
+            return data;
+        }
+
+        function getStudentBackupRef(stuId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'studentBackups', 'backup_' + stuId);
+        }
+
+        async function saveStudentBackupDoc(stuId, existingData = {}) {
+            const payload = {
+                studentId: String(stuId),
+                savedAt: new Date().toISOString(),
+                data: extractStudentGameData(existingData),
+            };
+            await setDoc(getStudentBackupRef(stuId), payload);
+            return payload;
+        }
+
+        function ensureStudentBackupSubscription() {
+            if (!db) return;
+            if (!window.playerState?.isAdmin) {
+                if (unsubscribeStudentBackups) {
+                    unsubscribeStudentBackups();
+                    unsubscribeStudentBackups = null;
+                }
+                window.studentBackupMap = {};
+                return;
+            }
+            if (unsubscribeStudentBackups) return;
+            unsubscribeStudentBackups = onSnapshot(
+                collection(db, 'artifacts', appId, 'public', 'data', 'studentBackups'),
+                (snap) => {
+                    const map = {};
+                    snap.forEach((d) => {
+                        const row = d.data();
+                        const sid = row.studentId || String(d.id).replace(/^backup_/, '');
+                        map[String(sid)] = row;
+                    });
+                    window.studentBackupMap = map;
+                    if (window.playerState?.isAdmin && window.allStudentsData?.length) {
+                        window.renderAdminTable(window.allStudentsData);
+                    }
+                },
+                (err) => console.warn('ensureStudentBackupSubscription', err)
+            );
+        }
+
         function buildStudentResetPayload(existingData = {}) {
             return {
                 pin: existingData.pin || '',
@@ -5798,6 +5871,7 @@ function redrawPlazaGrantsUi() {
 
             try {
                 const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
+                await saveStudentBackupDoc(stuId, stu);
                 const payload = buildStudentResetPayload(stu);
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
                 await setDoc(docRef, payload);
@@ -5810,10 +5884,63 @@ function redrawPlazaGrantsUi() {
                     updateUI();
                 }
 
-                await window.customAlert(`✅ [${label}] 학생 데이터 초기화가 완료되었습니다.`);
+                await window.customAlert(`✅ [${label}] 학생 데이터 초기화가 완료되었습니다.\n(직전 상태는 복구 버튼으로 되돌릴 수 있습니다.)`);
             } catch (e) {
                 console.error('resetStudentData', e);
                 await window.customAlert('초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.restoreStudentData = async function(stuId, stuName) {
+            if (!window.playerState?.isAdmin) return;
+            if (!canEditStudentAsAdmin(stuId)) {
+                return window.customAlert('이 학생 데이터를 복구할 권한이 없습니다.');
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+
+            const label = stuName || STUDENT_NAMES[String(stuId)] || String(stuId);
+            const backupRef = getStudentBackupRef(stuId);
+            let backupSnap;
+            try {
+                backupSnap = await getDoc(backupRef);
+            } catch (e) {
+                console.error('restoreStudentData getDoc', e);
+                return window.customAlert('백업 정보를 불러오지 못했습니다.');
+            }
+            if (!backupSnap.exists() || !backupSnap.data()?.data) {
+                return window.customAlert(`[${label}] 학생의 복구 가능한 백업이 없습니다.\n먼저 초기화를 실행하면 직전 상태가 자동 저장됩니다.`);
+            }
+
+            const backup = backupSnap.data();
+            const savedLabel = backup.savedAt
+                ? new Date(backup.savedAt).toLocaleString('ko-KR')
+                : '알 수 없음';
+            const ok = await window.customConfirm(
+                `↩️ [${label}] 학생 데이터를 복구할까요?\n\n` +
+                `복구 시점: ${savedLabel}\n` +
+                '초기화·실수 변경 직전 상태로 되돌립니다.'
+            );
+            if (!ok) return;
+
+            try {
+                const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
+                const restorePayload = { ...backup.data };
+                if (stu.pin) restorePayload.pin = stu.pin;
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
+                await setDoc(docRef, restorePayload);
+
+                const myId = localStorage.getItem('sambong_student_id');
+                if (myId === String(stuId) && !window.playerState.isAdmin) {
+                    window.playerState = { ...restorePayload, isGuest: false, isGM: false, isGMA: false, isAdmin: false };
+                    currentStudentDocRef = docRef;
+                    _prevXpFromSnapshot = Number(restorePayload.xp) || 0;
+                    updateUI();
+                }
+
+                await window.customAlert(`✅ [${label}] 학생 데이터 복구가 완료되었습니다.`);
+            } catch (e) {
+                console.error('restoreStudentData', e);
+                await window.customAlert('복구 중 오류: ' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -5826,6 +5953,11 @@ function redrawPlazaGrantsUi() {
                 const batch = writeBatch(db);
                 getActiveStudentIds().forEach((sid) => {
                     const stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
+                    batch.set(getStudentBackupRef(sid), {
+                        studentId: String(sid),
+                        savedAt: new Date().toISOString(),
+                        data: extractStudentGameData(stu),
+                    });
                     batch.set(
                         doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
                         buildStudentResetPayload(stu)
@@ -5835,7 +5967,7 @@ function redrawPlazaGrantsUi() {
                 batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
 
                 await batch.commit();
-                await window.customAlert("✅ 서버 대규모 초기화가 완료되었습니다! 내일부터 새로운 시즌을 시작하세요.");
+                await window.customAlert("✅ 서버 대규모 초기화가 완료되었습니다!\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.");
             } catch(e) { window.customAlert("초기화 중 오류 발생: " + e.message); }
         };
 

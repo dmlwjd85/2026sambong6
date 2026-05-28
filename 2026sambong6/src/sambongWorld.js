@@ -1959,19 +1959,40 @@ function redrawPlazaGrantsUi() {
         let _classTimerAlarmId = null;
         let _classTimerFinishHandled = false;
 
-        /** 전술 타이머: 군인 톤 TTS (저음·느린 속도) */
+        /** 전술 타이머 TTS: 굵은 성인 남성 톤 · 빠른 템포 */
+        const CLASS_TIMER_VOICE_RATE = 1.1;
+        const CLASS_TIMER_VOICE_PITCH = 0.36;
+
         function pickMilitaryTimerVoice() {
             if (!window.speechSynthesis) return null;
             const voices = window.speechSynthesis.getVoices();
             const ko = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('ko'));
             if (!ko.length) return null;
-            const prefer = [/injoon/i, /in-joon/i, /hyunsu/i, /minho/i, /male/i, /남성/i, /google.*ko-kr.*b/i];
-            for (const re of prefer) {
-                const hit = ko.find((v) => re.test(v.name));
-                if (hit) return hit;
-            }
-            const notFemale = ko.find((v) => !/female|여성|yuna|sunhi|heami|neural.*female/i.test(v.name));
-            return notFemale || ko[0];
+            const femaleRe = /female|여성|여자|yuna|sunhi|heami|sora|neural.*f\b|아동|소년|child/i;
+            const maleScores = [
+                { re: /injoon|인준/i, score: 100 },
+                { re: /bongjin|봉진/i, score: 96 },
+                { re: /hyunsu|현수/i, score: 92 },
+                { re: /standard-b|ko-kr.*\bb\b|wavenet.*b/i, score: 88 },
+                { re: /minho|민호/i, score: 84 },
+                { re: /male|남성|남자|man\b/i, score: 72 },
+            ];
+            let best = null;
+            let bestScore = -1;
+            ko.forEach((v) => {
+                if (femaleRe.test(v.name)) return;
+                let score = 20;
+                maleScores.forEach((row) => {
+                    if (row.re.test(v.name)) score = Math.max(score, row.score);
+                });
+                if (!v.localService) score += 6;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = v;
+                }
+            });
+            if (best) return best;
+            return ko.find((v) => !femaleRe.test(v.name)) || ko[0];
         }
 
         function speakClassTimerVoice(text) {
@@ -1984,8 +2005,8 @@ function redrawPlazaGrantsUi() {
                     window.speechSynthesis.cancel();
                     const utter = new SpeechSynthesisUtterance(text);
                     utter.lang = 'ko-KR';
-                    utter.rate = 0.78;
-                    utter.pitch = 0.5;
+                    utter.rate = CLASS_TIMER_VOICE_RATE;
+                    utter.pitch = CLASS_TIMER_VOICE_PITCH;
                     utter.volume = 1;
                     let done = false;
                     const finish = () => {
@@ -2009,7 +2030,7 @@ function redrawPlazaGrantsUi() {
                         window.speechSynthesis.addEventListener('voiceschanged', onVoices);
                         setTimeout(doSpeak, 150);
                     }
-                    setTimeout(finish, 5000);
+                    setTimeout(finish, 3200);
                 } catch (_) {
                     resolve();
                 }

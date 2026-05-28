@@ -1499,6 +1499,20 @@ function redrawPlazaGrantsUi() {
             return Math.round(n * 10) / 10;
         }
 
+        /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
+        const EQUIPPED_ITEM_REFUND_RATE = 0.5;
+
+        function getEquippedSkinRefundBong(skin) {
+            const price = Math.max(0, Number(skin && skin.price) || 0);
+            return normalizeBongValue(price * EQUIPPED_ITEM_REFUND_RATE);
+        }
+
+        /** 퀘스트 무기는 구매가가 없어 등급 보너스를 기준가로 두고 50% 환불 */
+        function getEquippedWeaponRefundBong(wp) {
+            const bonus = Math.max(0, Number(wp && wp.bonus) || 0);
+            return normalizeBongValue(bonus * EQUIPPED_ITEM_REFUND_RATE);
+        }
+
         /** 퀘스트 기록이 남아 있다면 XP 숫자 필드는 최소한 기록 합계보다 낮아지면 안 됩니다. */
         function getQuestHistoryXpFloor(state) {
             const history = Array.isArray(state && state.questHistory) ? state.questHistory : [];
@@ -3813,11 +3827,23 @@ function redrawPlazaGrantsUi() {
                             : isEquipped
                               ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
                               : `${wp.border} ${wp.bg}`;
+                    const refundB = getEquippedWeaponRefundBong(wp);
+                    const canWeaponRefund =
+                        isEquipped
+                        && n > 0
+                        && refundB > 0
+                        && !window.playerState.isGuest
+                        && !window.playerState.isAdmin;
                     const click = n > 0 ? `onclick="window.equipWeapon('${wp.id}')"` : '';
                     const cursor = n > 0 ? 'cursor-pointer hover:scale-105' : 'cursor-default';
                     return `
                         <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
                             ${isEquipped && n > 0 ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
+                            ${
+                                canWeaponRefund
+                                    ? `<button type="button" onclick="event.stopPropagation();window.refundEquippedWeapon('${wp.id}')" class="absolute -bottom-1 left-0 right-0 z-10 mx-0.5 text-[7px] bg-amber-700 hover:bg-amber-600 text-white font-bold py-0.5 rounded border border-amber-500/50">환불${refundB}B</button>`
+                                    : ''
+                            }
                             <div class="text-lg sm:text-2xl mb-0.5 leading-none">${wp.emoji}</div>
                             <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${wp.name}</div>
                             <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">×${n}</div>
@@ -3968,9 +3994,20 @@ function redrawPlazaGrantsUi() {
                     
                     if (isOwned) {
                         item.classList.replace('unaffordable', 'affordable'); 
-                        item.classList.add('border-pink-500'); 
-                        status.innerHTML = isEquipped 
-                            ? '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>' 
+                        item.classList.add('border-pink-500');
+                        const refundB = getEquippedSkinRefundBong(skin);
+                        const canRefundEquipped =
+                            isEquipped
+                            && !window.playerState.isGuest
+                            && !window.playerState.isAdmin
+                            && refundB > 0;
+                        status.innerHTML = isEquipped
+                            ? (canRefundEquipped
+                                ? `<div class="flex flex-col items-end gap-1">
+                                    <span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>
+                                    <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${refundB}B</button>
+                                   </div>`
+                                : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>')
                             : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
                     } else {
                         item.classList.remove('border-pink-500');
@@ -4743,6 +4780,45 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.equippedWeapon === wpId) window.playerState.equippedWeapon = null; 
             else window.playerState.equippedWeapon = wpId; 
             updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
+        };
+
+        window.refundEquippedWeapon = async function(wpId) {
+            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isAdmin) return await window.customAlert('마스터 계정은 환불 대상이 아닙니다.');
+            if (window._weaponRefundRunning) return;
+            const wp = WEAPON_DATA.find((w) => w.id === wpId);
+            if (!wp) return await window.customAlert('무기 정보를 찾을 수 없어요.');
+            if (!window.playerState.inventory) window.playerState.inventory = [];
+            const idx = window.playerState.inventory.indexOf(wpId);
+            if (idx < 0) return await window.customAlert('보유하지 않은 무기입니다.');
+            if (window.playerState.equippedWeapon !== wpId) {
+                return await window.customAlert('장착 중인 무기만 환불할 수 있습니다.\n먼저 장착한 뒤 환불 버튼을 눌러 주세요.');
+            }
+            const refundB = getEquippedWeaponRefundBong(wp);
+            if (refundB <= 0) return await window.customAlert('환불할 수 없는 무기입니다.');
+
+            const ok = await window.customConfirm(
+                `[${wp.name}] 무기를 환불할까요?\n\n` +
+                `환불 규정: 기준가(등급 보너스 ${wp.bonus})의 50%\n` +
+                `돌려받는 삼봉: +${refundB} B\n` +
+                '환불 시 무기 1개가 사라지고 장착이 해제됩니다.'
+            );
+            if (!ok) return;
+
+            window._weaponRefundRunning = true;
+            try {
+                window.playerState.inventory.splice(idx, 1);
+                window.playerState.equippedWeapon = null;
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                playSfx('bong', true);
+                updateUI();
+                const saved = await saveDataToCloud({ operationLabel: `${wp.name} 무기 환불` });
+                if (!saved) return;
+                await window.customAlert(`♻️ [${wp.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.`);
+                window.switchTab('plaza');
+            } finally {
+                window._weaponRefundRunning = false;
+            }
         };
 
         async function handleQuestDrop(xp, opts = {}) {
@@ -5886,6 +5962,49 @@ function redrawPlazaGrantsUi() {
             else window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
             
             updateUI(); saveDataToCloud(); window.switchTab('plaza');
+        };
+
+        window.refundEquippedSkin = async function(skinId) {
+            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isAdmin) return await window.customAlert('마스터 계정은 환불 대상이 아닙니다.');
+            if (window._skinRefundRunning) return;
+            const skin = SKIN_DATA.find((s) => s.id === skinId);
+            if (!skin) return await window.customAlert('스킨 정보를 찾을 수 없어요.');
+
+            if (!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
+            if (!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
+            if (!window.playerState.ownedSkins[skinId]) {
+                return await window.customAlert('보유하지 않은 스킨입니다.');
+            }
+            if (!window.playerState.equippedSkins[skinId]) {
+                return await window.customAlert('장착 중인 스킨만 환불할 수 있습니다.\n먼저 장착한 뒤 환불 버튼을 눌러 주세요.');
+            }
+
+            const refundB = getEquippedSkinRefundBong(skin);
+            if (refundB <= 0) return await window.customAlert('환불할 수 없는 스킨입니다.');
+
+            const ok = await window.customConfirm(
+                `[${skin.name}] 스킨을 환불할까요?\n\n` +
+                `환불 규정: 구매가 ${skin.price}B의 50%\n` +
+                `돌려받는 삼봉: +${refundB} B\n` +
+                '환불 시 스킨은 사라지고 장착이 해제됩니다.'
+            );
+            if (!ok) return;
+
+            window._skinRefundRunning = true;
+            try {
+                delete window.playerState.ownedSkins[skinId];
+                window.playerState.equippedSkins[skinId] = false;
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                playSfx('bong', true);
+                updateUI();
+                const saved = await saveDataToCloud({ operationLabel: `${skin.name} 스킨 환불` });
+                if (!saved) return;
+                await window.customAlert(`♻️ [${skin.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.`);
+                window.switchTab('plaza');
+            } finally {
+                window._skinRefundRunning = false;
+            }
         };
 
         window.handleSkin = async function(skinId) {

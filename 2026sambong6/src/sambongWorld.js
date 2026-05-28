@@ -1891,6 +1891,10 @@ function redrawPlazaGrantsUi() {
             if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                 window.renderGoldenBellMasterLive();
             }
+            if (tabId === 'classtools') {
+                renderLotteryParticipantList();
+                renderLotteryResultsPanel();
+            }
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
         }
@@ -2065,6 +2069,377 @@ function redrawPlazaGrantsUi() {
             document.body.classList.add('class-timer-active');
             tickClassTimerDisplay();
             _classTimerTickId = setInterval(tickClassTimerDisplay, 200);
+        };
+
+        // ==========================================
+        // ★ 수업도구: 제비 뽑기 ★
+        // ==========================================
+        let _lotteryResults = [];
+        let _lotteryRunning = false;
+        let _lotterySpinTimer = null;
+
+        function escapeHtmlLottery(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function getLotteryStudentEmoji(sid) {
+            return STUDENT_GENDERS[String(sid)] === 'F' ? '👧' : '👦';
+        }
+
+        function getLotteryDisplayName(sid) {
+            return STUDENT_NAMES[String(sid)] || String(sid);
+        }
+
+        function delayMs(ms) {
+            return new Promise((resolve) => setTimeout(resolve, ms));
+        }
+
+        function renderLotteryParticipantList() {
+            const box = document.getElementById('lotteryParticipantList');
+            if (!box) return;
+            const ids = getActiveStudentIds();
+            if (!ids.length) {
+                box.innerHTML = '<p class="text-[10px] text-amber-200/60 col-span-full py-4 text-center">학생 명단을 불러오는 중이거나 비어 있습니다.</p>';
+                return;
+            }
+            box.innerHTML = ids
+                .map((sid) => {
+                    const name = escapeHtmlLottery(getLotteryDisplayName(sid));
+                    const emoji = getLotteryStudentEmoji(sid);
+                    return `<label class="lottery-participant-chip">
+                        <input type="checkbox" class="lottery-participant-cb" value="${escapeHtmlAttr(sid)}" checked />
+                        <span>${emoji} ${name}</span>
+                    </label>`;
+                })
+                .join('');
+        }
+
+        window.lotterySelectAllParticipants = function(checked) {
+            document.querySelectorAll('.lottery-participant-cb').forEach((cb) => {
+                cb.checked = !!checked;
+            });
+        };
+
+        function getLotterySelectedParticipantIds() {
+            return [...document.querySelectorAll('.lottery-participant-cb:checked')].map((cb) => cb.value);
+        }
+
+        function getLotterySettings() {
+            const count = Math.max(1, Math.min(50, parseInt(document.getElementById('lotteryDrawCount')?.value, 10) || 1));
+            const mode = document.querySelector('input[name="lotteryDrawMode"]:checked')?.value || 'sequential';
+            const poolPolicy = document.querySelector('input[name="lotteryPoolPolicy"]:checked')?.value || 'remove';
+            return { count, mode, poolPolicy };
+        }
+
+        function renderLotteryResultsPanel() {
+            const panel = document.getElementById('lotteryResultsPanel');
+            const list = document.getElementById('lotteryResultsList');
+            if (!panel || !list) return;
+            if (!_lotteryResults.length) {
+                panel.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+            panel.classList.remove('hidden');
+            list.innerHTML = _lotteryResults
+                .map((entry, i) => {
+                    const emoji = getLotteryStudentEmoji(entry.id);
+                    const name = escapeHtmlLottery(entry.name);
+                    return `<li class="flex items-center gap-2"><span class="text-amber-500 text-[10px]">${i + 1}위</span><span>${emoji} ${name}</span></li>`;
+                })
+                .join('');
+        }
+
+        window.resetLotterySession = function() {
+            if (_lotteryRunning) return;
+            _lotteryResults = [];
+            renderLotteryResultsPanel();
+        };
+
+        function pickRandomFromPool(pool) {
+            if (!pool.length) return null;
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        function computeLotteryWinners(selected, count, poolPolicy) {
+            const winners = [];
+            let pool = [...selected];
+            for (let i = 0; i < count; i++) {
+                const workingPool = poolPolicy === 'remove' ? pool : selected;
+                if (!workingPool.length) break;
+                const winner = pickRandomFromPool(workingPool);
+                if (!winner) break;
+                winners.push(winner);
+                if (poolPolicy === 'remove') {
+                    pool = pool.filter((id) => id !== winner);
+                }
+            }
+            return winners;
+        }
+
+        function playLotteryTickSfx() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(320 + Math.random() * 120, now);
+            gain.gain.setValueAtTime(0.06, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.06);
+        }
+
+        function playLotteryRevealSfx() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            [523, 659, 784, 1047].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                const t = now + i * 0.09;
+                osc.frequency.setValueAtTime(freq, t);
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.exponentialRampToValueAtTime(0.2, t + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(t);
+                osc.stop(t + 0.24);
+            });
+        }
+
+        function spawnLotteryConfetti(count = 48) {
+            const layer = document.getElementById('lotteryConfettiLayer');
+            if (!layer) return;
+            layer.innerHTML = '';
+            const colors = ['#fbbf24', '#f59e0b', '#ef4444', '#a3e635', '#38bdf8', '#f472b6', '#fde68a'];
+            for (let i = 0; i < count; i++) {
+                const el = document.createElement('div');
+                el.className = 'lottery-confetti-piece';
+                el.style.left = `${Math.random() * 100}%`;
+                el.style.background = colors[i % colors.length];
+                el.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
+                el.style.animationDelay = `${Math.random() * 0.4}s`;
+                layer.appendChild(el);
+            }
+            setTimeout(() => {
+                if (layer) layer.innerHTML = '';
+            }, 3500);
+        }
+
+        function setLotteryOverlayUi({ progress, hint, showBatch = false }) {
+            const progressEl = document.getElementById('lotterySpinProgress');
+            const hintEl = document.getElementById('lotterySpinHint');
+            const batchEl = document.getElementById('lotteryBatchWinners');
+            const nameEl = document.getElementById('lotterySpinName');
+            const drum = document.querySelector('.lottery-drum');
+            if (progressEl && progress != null) progressEl.textContent = progress;
+            if (hintEl && hint != null) hintEl.textContent = hint;
+            if (batchEl) {
+                if (showBatch) batchEl.classList.remove('hidden');
+                else {
+                    batchEl.classList.add('hidden');
+                    batchEl.innerHTML = '';
+                }
+            }
+            if (nameEl && !showBatch) nameEl.classList.remove('hidden');
+            if (drum && !showBatch) drum.classList.remove('hidden');
+        }
+
+        function clearLotterySpinTimer() {
+            if (_lotterySpinTimer) {
+                clearInterval(_lotterySpinTimer);
+                _lotterySpinTimer = null;
+            }
+        }
+
+        function runLotterySpinAnimation(pool, winnerId, durationMs) {
+            return new Promise((resolve) => {
+                const nameEl = document.getElementById('lotterySpinName');
+                const emojiEl = document.getElementById('lotterySpinEmoji');
+                const drum = document.querySelector('.lottery-drum');
+                if (!nameEl || !pool.length) {
+                    resolve(winnerId);
+                    return;
+                }
+
+                clearLotterySpinTimer();
+                nameEl.classList.remove('lottery-reveal-pop');
+                if (drum) drum.classList.add('lottery-drum-fast');
+                if (emojiEl) emojiEl.classList.add('lottery-drum-spin');
+
+                const start = Date.now();
+                let tickCount = 0;
+                const spin = () => {
+                    const fake = pool[Math.floor(Math.random() * pool.length)];
+                    nameEl.textContent = getLotteryDisplayName(fake);
+                    if (tickCount % 3 === 0) playLotteryTickSfx();
+                    tickCount++;
+                };
+                spin();
+                _lotterySpinTimer = setInterval(spin, 55);
+
+                const finish = () => {
+                    clearLotterySpinTimer();
+                    if (drum) drum.classList.remove('lottery-drum-fast');
+                    if (emojiEl) emojiEl.classList.remove('lottery-drum-spin');
+                    nameEl.textContent = getLotteryDisplayName(winnerId);
+                    void nameEl.offsetWidth;
+                    nameEl.classList.add('lottery-reveal-pop');
+                    const overlay = document.getElementById('lotteryDrawOverlay');
+                    if (overlay) {
+                        overlay.classList.add('lottery-flash');
+                        setTimeout(() => overlay.classList.remove('lottery-flash'), 450);
+                    }
+                    spawnLotteryConfetti();
+                    playLotteryRevealSfx();
+                    resolve(winnerId);
+                };
+
+                const slowDownAt = durationMs * 0.72;
+                setTimeout(() => {
+                    clearLotterySpinTimer();
+                    let step = 0;
+                    const slowSteps = 8;
+                    const slowInterval = setInterval(() => {
+                        spin();
+                        step++;
+                        if (step >= slowSteps) {
+                            clearInterval(slowInterval);
+                            finish();
+                        }
+                    }, 120 + step * 40);
+                }, slowDownAt);
+            });
+        }
+
+        function showLotteryBatchWinners(winnerIds) {
+            const batchEl = document.getElementById('lotteryBatchWinners');
+            const nameEl = document.getElementById('lotterySpinName');
+            const drum = document.querySelector('.lottery-drum');
+            if (nameEl) nameEl.classList.add('hidden');
+            if (drum) drum.classList.add('hidden');
+            if (!batchEl) return;
+            batchEl.classList.remove('hidden');
+            batchEl.innerHTML = winnerIds
+                .map((id, i) => {
+                    const emoji = getLotteryStudentEmoji(id);
+                    const name = escapeHtmlLottery(getLotteryDisplayName(id));
+                    return `<span class="lottery-winner-card" style="animation-delay:${i * 0.08}s">${emoji} ${name}</span>`;
+                })
+                .join('');
+        }
+
+        window.closeLotteryDrawOverlay = function() {
+            if (_lotteryRunning) return;
+            clearLotterySpinTimer();
+            const overlay = document.getElementById('lotteryDrawOverlay');
+            if (overlay) overlay.classList.add('hidden');
+            document.body.classList.remove('lottery-draw-active');
+            const layer = document.getElementById('lotteryConfettiLayer');
+            if (layer) layer.innerHTML = '';
+            const nameEl = document.getElementById('lotterySpinName');
+            const drum = document.querySelector('.lottery-drum');
+            const batchEl = document.getElementById('lotteryBatchWinners');
+            if (nameEl) {
+                nameEl.classList.remove('hidden', 'lottery-reveal-pop');
+                nameEl.textContent = '—';
+            }
+            if (drum) drum.classList.remove('hidden', 'lottery-drum-fast');
+            if (batchEl) {
+                batchEl.classList.add('hidden');
+                batchEl.innerHTML = '';
+            }
+        };
+
+        window.startLotteryDraw = async function() {
+            if (_lotteryRunning) return;
+
+            const selected = getLotterySelectedParticipantIds();
+            if (!selected.length) {
+                return await window.customAlert('참여할 사람을 1명 이상 선택해 주세요.');
+            }
+
+            const { count, mode, poolPolicy } = getLotterySettings();
+            if (poolPolicy === 'remove' && count > selected.length) {
+                return await window.customAlert(
+                    `「뽑힌 사람 빼기」일 때는 참여 ${selected.length}명 중 최대 ${selected.length}명까지 뽑을 수 있어요.`
+                );
+            }
+
+            const winners = computeLotteryWinners(selected, count, poolPolicy);
+            if (!winners.length) {
+                return await window.customAlert('뽑을 수 있는 인원이 없습니다. 설정을 확인해 주세요.');
+            }
+
+            const overlay = document.getElementById('lotteryDrawOverlay');
+            if (!overlay) return;
+
+            _lotteryRunning = true;
+            overlay.classList.remove('hidden');
+            document.body.classList.add('lottery-draw-active');
+            setLotteryOverlayUi({ progress: 'READY', hint: '두구두구…', showBatch: false });
+
+            try {
+                if (mode === 'batch') {
+                    setLotteryOverlayUi({
+                        progress: `한번에 ${winners.length}명 추첨`,
+                        hint: '운명의 제비가 돌아갑니다…',
+                        showBatch: false,
+                    });
+                    await runLotterySpinAnimation(selected, winners[winners.length - 1], 2600);
+                    showLotteryBatchWinners(winners);
+                    setLotteryOverlayUi({
+                        progress: '추첨 완료!',
+                        hint: '당첨을 축하합니다 🎉',
+                        showBatch: true,
+                    });
+                    winners.forEach((id) => {
+                        _lotteryResults.push({ id, name: getLotteryDisplayName(id) });
+                    });
+                } else {
+                    let pool = [...selected];
+                    for (let i = 0; i < winners.length; i++) {
+                        const workingPool = poolPolicy === 'remove' ? pool : selected;
+                        const winnerId = winners[i];
+                        setLotteryOverlayUi({
+                            progress: `${i + 1} / ${winners.length}번째 제비`,
+                            hint: '이름이 빠르게 지나갑니다…',
+                            showBatch: false,
+                        });
+                        await runLotterySpinAnimation(workingPool, winnerId, 2000 + i * 150);
+                        _lotteryResults.push({ id: winnerId, name: getLotteryDisplayName(winnerId) });
+                        renderLotteryResultsPanel();
+                        if (poolPolicy === 'remove') {
+                            pool = pool.filter((id) => id !== winnerId);
+                        }
+                        if (i < winners.length - 1) {
+                            setLotteryOverlayUi({
+                                progress: `${i + 1}번째 당첨!`,
+                                hint: '잠시 후 다음 제비…',
+                                showBatch: false,
+                            });
+                            await delayMs(1400);
+                        } else {
+                            setLotteryOverlayUi({
+                                progress: '추첨 완료!',
+                                hint: '모든 제비 뽑기가 끝났습니다 🎉',
+                                showBatch: false,
+                            });
+                        }
+                    }
+                }
+                renderLotteryResultsPanel();
+            } finally {
+                _lotteryRunning = false;
+            }
         };
 
 

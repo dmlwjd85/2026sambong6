@@ -1060,9 +1060,9 @@
             </div>
         </section>
 
-        <!-- ★ 수업도구 탭 (전술 타이머) ★ -->
+        <!-- ★ 수업도구 탭 (타이머 · 제비뽑기) ★ -->
         <section id="classtoolsSection" class="hidden">
-            <div class="max-w-lg mx-auto px-1 pb-10">
+            <div class="max-w-2xl mx-auto px-1 pb-10 space-y-6">
                 <div class="military-panel rounded-2xl p-4 sm:p-6 border-2 border-lime-700/60 shadow-[0_0_40px_rgba(74,93,50,0.35)]">
                     <div class="flex items-center gap-3 mb-4 border-b border-lime-800/50 pb-3">
                         <div class="w-12 h-12 rounded-lg bg-lime-950 border-2 border-lime-600/70 flex items-center justify-center text-2xl shadow-inner">⏱</div>
@@ -1092,6 +1092,53 @@
                     <button type="button" onclick="window.startClassTimer()" class="w-full py-4 rounded-xl font-display text-lg sm:text-xl tracking-widest bg-gradient-to-b from-lime-600 to-lime-800 hover:from-lime-500 hover:to-lime-700 text-lime-950 border-2 border-lime-400/80 shadow-[0_4px_0_#365314,inset_0_1px_0_rgba(255,255,255,0.25)] active:translate-y-0.5 active:shadow-none transition">
                         <i class="fa-solid fa-play mr-2"></i>작전 개시
                     </button>
+                </div>
+
+                <div class="lottery-panel rounded-2xl p-4 sm:p-6 border-2 border-amber-600/50 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+                    <div class="flex items-center gap-3 mb-4 border-b border-amber-800/40 pb-3">
+                        <div class="w-12 h-12 rounded-lg bg-amber-950 border-2 border-amber-500/70 flex items-center justify-center text-2xl shadow-inner">🎫</div>
+                        <div>
+                            <p class="text-[10px] font-black tracking-[0.35em] text-amber-400/90">CLASS OPS</p>
+                            <h2 class="text-xl sm:text-2xl font-display text-amber-100 tracking-wide">제비 뽑기</h2>
+                        </div>
+                    </div>
+                    <p class="text-[10px] sm:text-xs text-amber-200/70 mb-3 leading-relaxed">참여할 사람을 고르고, 뽑을 인원·방식·당첨자 처리 방식을 설정한 뒤 시작하세요.</p>
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <button type="button" onclick="window.lotterySelectAllParticipants(true)" class="lottery-mini-btn">전원 선택</button>
+                        <button type="button" onclick="window.lotterySelectAllParticipants(false)" class="lottery-mini-btn">전원 해제</button>
+                    </div>
+                    <div id="lotteryParticipantList" class="lottery-participant-grid mb-4 max-h-40 overflow-y-auto scrollbar-hide pr-1"></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                        <label class="block">
+                            <span class="text-[10px] font-bold text-amber-300/90 tracking-widest">뽑을 인원</span>
+                            <input type="number" id="lotteryDrawCount" min="1" max="50" value="1" class="lottery-input w-full mt-1 text-center text-xl font-black" />
+                        </label>
+                        <div class="text-[9px] text-amber-200/60 flex items-end pb-1 leading-relaxed">「뺀다」: 중복 없음 · 「다시 넣는다」: 같은 사람도 여러 번 당첨 가능</div>
+                    </div>
+                    <div class="space-y-2 mb-3">
+                        <p class="text-[10px] font-bold text-amber-300/90 tracking-widest">뽑기 방식</p>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="lottery-radio-chip"><input type="radio" name="lotteryDrawMode" value="sequential" checked /> 순차로 뽑기</label>
+                            <label class="lottery-radio-chip"><input type="radio" name="lotteryDrawMode" value="batch" /> 한번에 뽑기</label>
+                        </div>
+                    </div>
+                    <div class="space-y-2 mb-4">
+                        <p class="text-[10px] font-bold text-amber-300/90 tracking-widest">당첨자 처리</p>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="lottery-radio-chip"><input type="radio" name="lotteryPoolPolicy" value="remove" checked /> 뽑힌 사람 빼기</label>
+                            <label class="lottery-radio-chip"><input type="radio" name="lotteryPoolPolicy" value="return" /> 다시 넣기 (중복 가능)</label>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <button type="button" onclick="window.startLotteryDraw()" class="flex-1 min-w-[10rem] py-3.5 rounded-xl font-display text-base sm:text-lg tracking-wide bg-gradient-to-b from-amber-500 to-amber-700 hover:from-amber-400 hover:to-amber-600 text-amber-950 border-2 border-amber-300/80 shadow-[0_4px_0_#92400e] active:translate-y-0.5 transition">
+                            <i class="fa-solid fa-ticket mr-2"></i>제비 뽑기 시작
+                        </button>
+                        <button type="button" onclick="window.resetLotterySession()" class="lottery-mini-btn py-3.5 px-4">결과 초기화</button>
+                    </div>
+                    <div id="lotteryResultsPanel" class="hidden rounded-xl border border-amber-700/40 bg-amber-950/30 p-3">
+                        <p class="text-[10px] font-black text-amber-300 mb-2 tracking-widest">당첨 기록</p>
+                        <ul id="lotteryResultsList" class="space-y-1 text-sm font-bold text-amber-100"></ul>
+                    </div>
                 </div>
             </div>
         </section>
@@ -1252,6 +1299,26 @@
         <footer class="text-center text-slate-500 py-6 border-t border-slate-800 mt-10">
             <p class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
         </footer>
+    </div>
+
+    <!-- ★ 수업도구: 제비 뽑기 연출 전체 화면 ★ -->
+    <div id="lotteryDrawOverlay" class="hidden fixed inset-0 z-[565] lottery-draw-overlay flex items-center justify-center p-4 overflow-hidden" aria-live="polite">
+        <div id="lotteryConfettiLayer" class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true"></div>
+        <div class="absolute inset-0 lottery-draw-bg pointer-events-none" aria-hidden="true"></div>
+        <button type="button" onclick="window.closeLotteryDrawOverlay()" class="absolute top-4 right-4 z-30 lottery-draw-close-btn">
+            <i class="fa-solid fa-xmark mr-1"></i>닫기
+        </button>
+        <div class="relative z-20 w-full max-w-2xl text-center px-2">
+            <p id="lotterySpinProgress" class="text-[10px] sm:text-xs font-black tracking-[0.4em] text-amber-400/90 mb-3">READY</p>
+            <div class="lottery-drum mx-auto mb-4">
+                <div class="lottery-drum-inner">
+                    <div id="lotterySpinEmoji" class="text-4xl sm:text-5xl mb-2 lottery-drum-spin">🎰</div>
+                    <div id="lotterySpinName" class="lottery-spin-name font-display">—</div>
+                </div>
+            </div>
+            <div id="lotteryBatchWinners" class="hidden flex flex-wrap justify-center gap-2 mb-4"></div>
+            <p id="lotterySpinHint" class="text-[10px] text-amber-200/60 tracking-widest">두구두구…</p>
+        </div>
     </div>
 
     <!-- ★ 수업도구: 전술 카운트다운 전체 화면 ★ -->

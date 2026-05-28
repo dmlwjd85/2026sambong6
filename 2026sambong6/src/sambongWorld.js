@@ -171,11 +171,11 @@ function redrawPlazaGrantsUi() {
         const MARTIAL_LAW_PROCLAMATION = [
             { title: '제1조', text: '체육수업 전면 폐지 및 국어수학진도 100% 달성' },
             { title: '제2조', text: '쉬는 시간 5분' },
-            { title: '제3조', text: '계좌 동결' },
+            { title: '제3조', text: '은행 이용 금지' },
             { title: '제4조', text: '불만 표출 금지' },
             { title: '제5조', text: '주급 무기한 정지' },
             { title: '제6조', text: '사적인 대화 금지' },
-            { title: '제7조', text: '입법부 정지' },
+            { title: '제7조', text: '입법부 기능 정지' },
             { title: '제8조', text: '사법부 기능 중지' },
             { title: '제9조', text: '비상 안보세 징수' },
             { title: '제10조', text: '무기한 유지' }
@@ -199,10 +199,27 @@ function redrawPlazaGrantsUi() {
             osc.stop(now + 0.72);
         }
 
+        function isMartialLawSirenPlaying() {
+            return !!window._martialLawSirenTimer;
+        }
+
+        function refreshMartialLawSirenBtn() {
+            const btn = document.getElementById('martialLawMuteBtn');
+            if (!btn) return;
+            if (isMartialLawSirenPlaying()) {
+                btn.textContent = '사이렌 끄기';
+                btn.classList.remove('opacity-60');
+            } else {
+                btn.textContent = '사이렌 켜기';
+                btn.classList.add('opacity-60');
+            }
+        }
+
         function startMartialLawSiren() {
-            window.stopMartialLawSiren();
+            if (window._martialLawSirenTimer) return;
             playMartialLawSirenTick();
             window._martialLawSirenTimer = setInterval(playMartialLawSirenTick, 760);
+            refreshMartialLawSirenBtn();
         }
 
         window.stopMartialLawSiren = function() {
@@ -210,12 +227,24 @@ function redrawPlazaGrantsUi() {
                 clearInterval(window._martialLawSirenTimer);
                 window._martialLawSirenTimer = null;
             }
-            const btn = document.getElementById('martialLawMuteBtn');
-            if (btn) {
-                btn.textContent = '사이렌 꺼짐';
-                btn.classList.add('opacity-60');
-            }
+            refreshMartialLawSirenBtn();
         };
+
+        window.toggleMartialLawSiren = function() {
+            if (!window.playerState?.isGM) return;
+            if (isMartialLawSirenPlaying()) window.stopMartialLawSiren();
+            else startMartialLawSiren();
+        };
+
+        function getMartialLawSirenControlsHtml() {
+            if (!window.playerState?.isGM) return '';
+            const playing = isMartialLawSirenPlaying();
+            const label = playing ? '사이렌 끄기' : '사이렌 켜기';
+            const opacity = playing ? '' : ' opacity-60';
+            return `<button id="martialLawMuteBtn" type="button" onclick="window.toggleMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100${opacity}">${label}</button>`;
+        }
+
+        const MARTIAL_LAW_STUDENT_LOCK_MSG = '여러분은 아무것도 할 수 없습니다.';
 
         window.martialLawState = null;
         let unsubscribeMartialLaw = null;
@@ -315,7 +344,7 @@ function redrawPlazaGrantsUi() {
                 const isFirst = idx === 0;
                 const isLast = idx === MARTIAL_LAW_PROCLAMATION.length - 1;
                 const adminNav = readOnly
-                    ? '<p class="text-[10px] sm:text-xs font-black text-red-900/80">교사가 다음 단계로 넘기면 함께 바뀝니다</p>'
+                    ? `<p class="text-sm sm:text-lg font-black text-red-900 text-center w-full">${MARTIAL_LAW_STUDENT_LOCK_MSG}</p>`
                     : `<button type="button" onclick="window.prevMartialLawProclamation()" ${isFirst ? 'disabled' : ''} class="rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-[10px] sm:text-xs font-black text-white disabled:opacity-25 disabled:pointer-events-none">이전 포고문</button>
                                         <div class="text-xs sm:text-lg font-black text-red-900">마스터 포고령</div>
                                         ${isLast
@@ -334,7 +363,7 @@ function redrawPlazaGrantsUi() {
                                         <h2 class="font-display text-3xl sm:text-5xl text-white">비상계엄 포고문</h2>
                                     </div>
                                     <div class="flex gap-2">
-                                        <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100">사이렌 끄기</button>
+                                        ${getMartialLawSirenControlsHtml()}
                                         ${topClose}
                                     </div>
                                 </div>
@@ -380,9 +409,9 @@ function redrawPlazaGrantsUi() {
                             <p class="mt-8 text-lg sm:text-3xl font-black text-slate-100">(본 수업은 픽션이며 실존 인물과는 전혀 관련이 없습니다.)</p>
                         </div>
                     </div>
-                    <button id="martialLawMuteBtn" type="button" onclick="window.stopMartialLawSiren()" class="absolute left-4 top-4 z-20 rounded-full border border-red-300/60 bg-red-950/80 px-4 py-2 text-xs sm:text-sm font-black text-red-100 shadow-lg">사이렌 끄기</button>
+                    ${getMartialLawSirenControlsHtml() ? `<div class="absolute left-4 top-4 z-20">${getMartialLawSirenControlsHtml()}</div>` : ''}
                     ${readOnly
-                        ? '<p class="absolute bottom-4 left-0 right-0 z-20 text-center text-[10px] sm:text-xs font-black text-red-200/90 px-4">교사가 다음 단계를 누르면 포고문이 함께 표시됩니다</p>'
+                        ? `<p class="absolute bottom-4 left-0 right-0 z-20 text-center text-base sm:text-xl font-black text-red-200 px-4">${MARTIAL_LAW_STUDENT_LOCK_MSG}</p>`
                         : '<button type="button" onclick="window.showMartialLawProclamation()" class="absolute bottom-4 right-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] sm:text-xs font-black text-white hover:bg-white/20">다음단계</button>'}
                     ${readOnly
                         ? ''
@@ -424,10 +453,11 @@ function redrawPlazaGrantsUi() {
             const sessionId = st.sessionId != null ? String(st.sessionId) : '';
             if (sessionId && _martialLawSirenSessionId !== sessionId) {
                 _martialLawSirenSessionId = sessionId;
-                startMartialLawSiren();
+                if (window.playerState.isGM) startMartialLawSiren();
             }
 
             renderMartialLawStep(step, { readOnly });
+            if (window.playerState.isGM) refreshMartialLawSirenBtn();
         };
 
         window.showMartialLawProclamation = async function() {
@@ -2463,22 +2493,24 @@ function redrawPlazaGrantsUi() {
 
                         if(unsubscribeGoldenBell) unsubscribeGoldenBell();
                         unsubscribeGoldenBell = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), snap => {
-                            if(snap.exists()) {
+                            if (snap.exists()) {
                                 window.goldenbellState = snap.data();
-                                void sanitizeLegacyGoldenBellAnswers(window.goldenbellState);
-                                void maybeExpireGoldenBell();
-                                if (window.playerState && window.playerState.isAdmin) {
-                                    if(window._gbPreviewStudent) window.renderGoldenBellStudent();
-                                    else window.renderGoldenBellMasterLive();
-                                    window.updateGoldenBellAdminUI();
-                                } else {
-                                    window.renderGoldenBellStudent();
-                                }
-                                const gbAdminStatus = document.getElementById('gbAdminStatus');
-                                if (gbAdminStatus) {
-                                    gbAdminStatus.innerText = window.goldenbellState.isOpen ? '진행중' : '대기중';
-                                    gbAdminStatus.className = window.goldenbellState.isOpen ? 'text-[10px] bg-sb-blue text-white px-2 py-0.5 rounded border border-blue-600' : 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
-                                }
+                            } else {
+                                window.goldenbellState = { isOpen: false, questions: [], submissions: {} };
+                            }
+                            void sanitizeLegacyGoldenBellAnswers(window.goldenbellState);
+                            void maybeExpireGoldenBell();
+                            if (window.playerState && window.playerState.isAdmin) {
+                                if (window._gbPreviewStudent) window.renderGoldenBellStudent();
+                                else window.renderGoldenBellMasterLive();
+                                window.updateGoldenBellAdminUI();
+                            } else {
+                                window.renderGoldenBellStudent();
+                            }
+                            const gbAdminStatus = document.getElementById('gbAdminStatus');
+                            if (gbAdminStatus) {
+                                gbAdminStatus.innerText = window.goldenbellState.isOpen ? '진행중' : '대기중';
+                                gbAdminStatus.className = window.goldenbellState.isOpen ? 'text-[10px] bg-sb-blue text-white px-2 py-0.5 rounded border border-blue-600' : 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
                             }
                         });
 
@@ -7257,6 +7289,10 @@ function redrawPlazaGrantsUi() {
         window.renderGoldenBellStudent = function() {
             const container = document.getElementById('gbStudentContainer');
             if(!container) return;
+            if (isMartialLawLockingStudent()) {
+                container.innerHTML = '<div class="text-center p-6 text-red-200 glass-panel rounded-2xl font-bold">비상계엄 연출 중입니다. 연출이 끝난 뒤 골든벨을 이용할 수 있습니다.</div>';
+                return;
+            }
             const st = window.goldenbellState;
             const mId = localStorage.getItem('sambong_student_id');
             
@@ -7423,6 +7459,7 @@ function redrawPlazaGrantsUi() {
         /** 골든벨: 모든 문항 한 번에 채점·보상 (문항별 XP·봉 합산) */
         window.submitGoldenBellAll = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (isMartialLawLockingStudent()) return window.customAlert('비상계엄 연출 중에는 골든벨을 이용할 수 없습니다.');
             if(window._gbFinalSubmitting) return;
             window._gbFinalSubmitting = true;
 

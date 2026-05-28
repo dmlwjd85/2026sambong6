@@ -121,7 +121,7 @@ function redrawPlazaGrantsUi() {
         // ★ 웹 오디오 API 효과음 로직 ★
         // ==========================================
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        
+
         function playSfx(type, isPositive) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const osc = audioCtx.createOscillator();
@@ -1957,6 +1957,71 @@ function redrawPlazaGrantsUi() {
         let _classTimerEndAt = null;
         let _classTimerTickId = null;
         let _classTimerAlarmId = null;
+        let _classTimerFinishHandled = false;
+
+        /** 전술 타이머: 군인 톤 TTS (저음·느린 속도) */
+        function pickMilitaryTimerVoice() {
+            if (!window.speechSynthesis) return null;
+            const voices = window.speechSynthesis.getVoices();
+            const ko = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('ko'));
+            if (!ko.length) return null;
+            const prefer = [/injoon/i, /in-joon/i, /hyunsu/i, /minho/i, /male/i, /남성/i, /google.*ko-kr.*b/i];
+            for (const re of prefer) {
+                const hit = ko.find((v) => re.test(v.name));
+                if (hit) return hit;
+            }
+            const notFemale = ko.find((v) => !/female|여성|yuna|sunhi|heami|neural.*female/i.test(v.name));
+            return notFemale || ko[0];
+        }
+
+        function speakClassTimerVoice(text) {
+            return new Promise((resolve) => {
+                if (!window.speechSynthesis) {
+                    resolve();
+                    return;
+                }
+                try {
+                    window.speechSynthesis.cancel();
+                    const utter = new SpeechSynthesisUtterance(text);
+                    utter.lang = 'ko-KR';
+                    utter.rate = 0.78;
+                    utter.pitch = 0.5;
+                    utter.volume = 1;
+                    let done = false;
+                    const finish = () => {
+                        if (done) return;
+                        done = true;
+                        resolve();
+                    };
+                    utter.onend = finish;
+                    utter.onerror = finish;
+                    const doSpeak = () => {
+                        const voice = pickMilitaryTimerVoice();
+                        if (voice) utter.voice = voice;
+                        window.speechSynthesis.speak(utter);
+                    };
+                    if (window.speechSynthesis.getVoices().length) doSpeak();
+                    else {
+                        const onVoices = () => {
+                            window.speechSynthesis.removeEventListener('voiceschanged', onVoices);
+                            doSpeak();
+                        };
+                        window.speechSynthesis.addEventListener('voiceschanged', onVoices);
+                        setTimeout(doSpeak, 150);
+                    }
+                    setTimeout(finish, 5000);
+                } catch (_) {
+                    resolve();
+                }
+            });
+        }
+
+        if (window.speechSynthesis) {
+            window.speechSynthesis.getVoices();
+            window.speechSynthesis.addEventListener('voiceschanged', () => {
+                pickMilitaryTimerVoice();
+            }, { once: true });
+        }
 
         function formatClassTimerMs(ms) {
             const sec = Math.max(0, Math.ceil(ms / 1000));
@@ -2013,6 +2078,8 @@ function redrawPlazaGrantsUi() {
         }
 
         function onClassTimerFinished() {
+            if (_classTimerFinishHandled) return;
+            _classTimerFinishHandled = true;
             clearClassTimerTick();
             _classTimerEndAt = null;
             const overlay = document.getElementById('classTimerOverlay');
@@ -2021,19 +2088,25 @@ function redrawPlazaGrantsUi() {
                 overlay.classList.add('military-timer-complete');
                 overlay.classList.remove('military-timer-urgent');
             }
-            if (status) status.textContent = 'TIME ZERO — ALERT';
-            playClassTimerAlarmTick();
-            if (_classTimerAlarmId) clearInterval(_classTimerAlarmId);
-            _classTimerAlarmId = setInterval(playClassTimerAlarmTick, 950);
+            if (status) status.textContent = 'TIME ZERO';
+            void (async () => {
+                await speakClassTimerVoice('작전 종료');
+                if (status) status.textContent = 'TIME ZERO — ALERT';
+                playClassTimerAlarmTick();
+                if (_classTimerAlarmId) clearInterval(_classTimerAlarmId);
+                _classTimerAlarmId = setInterval(playClassTimerAlarmTick, 950);
+            })();
         }
 
         window.stopClassTimer = function() {
             clearClassTimerTick();
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
             if (_classTimerAlarmId) {
                 clearInterval(_classTimerAlarmId);
                 _classTimerAlarmId = null;
             }
             _classTimerEndAt = null;
+            _classTimerFinishHandled = false;
             const overlay = document.getElementById('classTimerOverlay');
             if (overlay) {
                 overlay.classList.add('hidden');
@@ -2064,9 +2137,20 @@ function redrawPlazaGrantsUi() {
                 return await window.customAlert('1초 이상 설정해 주세요.');
             }
 
-            _classTimerEndAt = Date.now() + totalSec * 1000;
+            _classTimerFinishHandled = false;
+            if (audioCtx.state === 'suspended') {
+                try {
+                    await audioCtx.resume();
+                } catch (_) {
+                    /* 사용자 제스처 직후 재시도는 startClassTimer 클릭으로 충분 */
+                }
+            }
+
             overlay.classList.remove('hidden', 'military-timer-complete');
             document.body.classList.add('class-timer-active');
+            await speakClassTimerVoice('작전 개시');
+
+            _classTimerEndAt = Date.now() + totalSec * 1000;
             tickClassTimerDisplay();
             _classTimerTickId = setInterval(tickClassTimerDisplay, 200);
         };

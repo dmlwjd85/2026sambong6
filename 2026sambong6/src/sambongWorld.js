@@ -1854,6 +1854,7 @@ function redrawPlazaGrantsUi() {
 
         window.switchTab = function(tabId) {
             if (isMartialLawLockingStudent()) return;
+            if (tabId === 'classtools' && (!window.playerState || !window.playerState.isAdmin)) return;
             TABS.forEach(t => {
                 const sec = document.getElementById(t + 'Section');
                 if(sec) sec.classList.add('hidden');
@@ -4189,6 +4190,18 @@ function redrawPlazaGrantsUi() {
                     if (prevKey !== satKey) {
                         window.playerState.dragonBallWeekendKey = satKey;
                         bankProcessingNeedSave = true;
+                    }
+                }
+            }
+
+            const classtoolsTab = document.getElementById('tab-classtools');
+            if (classtoolsTab) {
+                if (window.playerState.isAdmin) classtoolsTab.classList.remove('hidden');
+                else {
+                    classtoolsTab.classList.add('hidden');
+                    const classtoolsSec = document.getElementById('classtoolsSection');
+                    if (classtoolsSec && !classtoolsSec.classList.contains('hidden')) {
+                        window.switchTab('plaza');
                     }
                 }
             }

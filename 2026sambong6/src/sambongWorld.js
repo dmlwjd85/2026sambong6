@@ -1513,6 +1513,28 @@ function redrawPlazaGrantsUi() {
             return normalizeBongValue(bonus * EQUIPPED_ITEM_REFUND_RATE);
         }
 
+        /** 스킨 환불 시 보유·장착(얼굴/오버레이/테두리 오라) 데이터를 완전히 제거 */
+        function purgeRefundedSkinCompletely(skinId) {
+            const skin = SKIN_DATA.find((s) => s.id === skinId);
+            if (!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
+            if (!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
+
+            delete window.playerState.ownedSkins[skinId];
+            delete window.playerState.equippedSkins[skinId];
+
+            if (skin && (skin.type === 'aura' || skin.type === 'face')) {
+                SKIN_DATA.forEach((s) => {
+                    if (s.type === skin.type) delete window.playerState.equippedSkins[s.id];
+                });
+            }
+
+            [window.playerState.equippedSkins, window.playerState.ownedSkins].forEach((map) => {
+                Object.keys(map).forEach((key) => {
+                    if (!map[key]) delete map[key];
+                });
+            });
+        }
+
         /** 퀘스트 기록이 남아 있다면 XP 숫자 필드는 최소한 기록 합계보다 낮아지면 안 됩니다. */
         function getQuestHistoryXpFloor(state) {
             const history = Array.isArray(state && state.questHistory) ? state.questHistory : [];
@@ -6506,24 +6528,27 @@ function redrawPlazaGrantsUi() {
             const refundB = getEquippedSkinRefundBong(skin);
             if (refundB <= 0) return await window.customAlert('환불할 수 없는 스킨입니다.');
 
+            const typeLabel =
+                skin.type === 'aura' ? '테두리(오라)' : skin.type === 'face' ? '얼굴 스킨' : '장식 스킨';
             const ok = await window.customConfirm(
-                `[${skin.name}] 스킨을 환불할까요?\n\n` +
+                `[${skin.name}] ${typeLabel}을(를) 환불할까요?\n\n` +
                 `환불 규정: 구매가 ${skin.price}B의 50%\n` +
                 `돌려받는 삼봉: +${refundB} B\n` +
-                '환불 시 스킨은 사라지고 장착이 해제됩니다.'
+                '환불 시 장착이 즉시 해제되고 아이템이 완전히 삭제됩니다.'
             );
             if (!ok) return;
 
             window._skinRefundRunning = true;
             try {
-                delete window.playerState.ownedSkins[skinId];
-                window.playerState.equippedSkins[skinId] = false;
+                purgeRefundedSkinCompletely(skinId);
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
                 playSfx('bong', true);
                 updateUI();
                 const saved = await saveDataToCloud({ operationLabel: `${skin.name} 스킨 환불` });
                 if (!saved) return;
-                await window.customAlert(`♻️ [${skin.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.`);
+                await window.customAlert(
+                    `♻️ [${skin.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.\n(장착 해제 및 삭제됨)`
+                );
                 window.switchTab('plaza');
             } finally {
                 window._skinRefundRunning = false;

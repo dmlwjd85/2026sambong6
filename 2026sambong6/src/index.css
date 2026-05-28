@@ -16,6 +16,128 @@
         .bg-theme-admin { background-color: #1f0a12; background-image: radial-gradient(circle at 30% 0%, rgba(251, 113, 133, 0.15) 0%, #3f0f18 55%, #0f172a 100%); }
         .bg-theme-estate { background-color: #0f172a; background-image: radial-gradient(circle at 40% 10%, rgba(45, 212, 191, 0.12) 0%, #0f172a 55%, #020617 100%); }
         .bg-theme-bank { background-color: #0c1424; background-image: radial-gradient(ellipse 100% 60% at 50% -15%, rgba(56, 189, 248, 0.2) 0%, rgba(15, 23, 42, 0.95) 50%, #020617 100%); }
+        .bg-theme-classtools { background-color: #141a0f; background-image: radial-gradient(ellipse 90% 70% at 50% 0%, rgba(132, 204, 22, 0.12) 0%, rgba(30, 41, 22, 0.95) 45%, #0a0f08 100%); }
+
+        /* 수업도구 — 밀리터리 UI */
+        .military-panel {
+            background: linear-gradient(145deg, rgba(30, 38, 20, 0.95) 0%, rgba(15, 20, 10, 0.98) 100%);
+            box-shadow: inset 0 0 0 1px rgba(132, 204, 22, 0.15);
+        }
+        .military-input {
+            background: #0c1008;
+            border: 2px solid rgba(101, 163, 13, 0.45);
+            color: #d9f99d;
+            border-radius: 0.75rem;
+            padding: 0.5rem;
+        }
+        .military-input:focus {
+            outline: none;
+            border-color: #84cc16;
+            box-shadow: 0 0 0 2px rgba(132, 204, 22, 0.25);
+        }
+        .military-preset-btn {
+            flex: 1;
+            min-width: 3.5rem;
+            padding: 0.4rem 0.6rem;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            color: #bef264;
+            background: rgba(20, 28, 12, 0.9);
+            border: 1px solid rgba(101, 163, 13, 0.5);
+            border-radius: 0.5rem;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .military-preset-btn:hover {
+            background: rgba(54, 83, 20, 0.6);
+            border-color: #84cc16;
+        }
+
+        /* 전술 타이머 전체 화면 */
+        .military-timer-overlay {
+            background: #0a0c08;
+        }
+        .military-timer-camo {
+            background-color: #1a2214;
+            background-image:
+                repeating-linear-gradient(45deg, rgba(0,0,0,0.08) 0 8px, transparent 8px 16px),
+                repeating-linear-gradient(-45deg, rgba(74,93,50,0.15) 0 12px, transparent 12px 24px),
+                radial-gradient(circle at 30% 20%, rgba(101,163,13,0.08) 0%, transparent 50%),
+                radial-gradient(circle at 70% 80%, rgba(54,83,20,0.1) 0%, transparent 45%);
+        }
+        .military-timer-scanlines {
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 4px);
+            opacity: 0.35;
+        }
+        .military-timer-clock-frame {
+            border: 4px solid rgba(132, 204, 22, 0.55);
+            border-radius: 1.25rem;
+            background: linear-gradient(180deg, rgba(12, 16, 8, 0.98) 0%, rgba(20, 28, 14, 0.95) 100%);
+            box-shadow:
+                0 0 60px rgba(74, 93, 50, 0.35),
+                inset 0 0 40px rgba(0, 0, 0, 0.5),
+                inset 0 2px 0 rgba(190, 242, 100, 0.08);
+            position: relative;
+        }
+        .military-timer-clock-frame::before,
+        .military-timer-clock-frame::after {
+            content: '';
+            position: absolute;
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 3px solid rgba(163, 230, 53, 0.5);
+        }
+        .military-timer-clock-frame::before {
+            top: -3px; left: -3px;
+            border-right: none; border-bottom: none;
+        }
+        .military-timer-clock-frame::after {
+            bottom: -3px; right: -3px;
+            border-left: none; border-top: none;
+        }
+        .military-timer-digits {
+            font-size: clamp(4.5rem, 22vw, 11rem);
+            line-height: 1;
+            letter-spacing: 0.06em;
+            color: #ecfccb;
+            text-shadow:
+                0 0 20px rgba(132, 204, 22, 0.5),
+                0 4px 0 #365314,
+                0 0 80px rgba(74, 93, 50, 0.4);
+            font-variant-numeric: tabular-nums;
+        }
+        .military-timer-stop-btn {
+            padding: 0.5rem 1rem;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            color: #fecaca;
+            background: rgba(69, 10, 10, 0.85);
+            border: 2px solid rgba(248, 113, 113, 0.5);
+            border-radius: 0.5rem;
+        }
+        .military-timer-stop-btn:hover {
+            background: rgba(127, 29, 29, 0.9);
+        }
+        .military-timer-overlay.military-timer-urgent .military-timer-digits {
+            color: #fef08a;
+            animation: military-timer-pulse 0.8s ease-in-out infinite;
+            text-shadow: 0 0 30px rgba(250, 204, 21, 0.7), 0 0 60px rgba(239, 68, 68, 0.35);
+        }
+        .military-timer-overlay.military-timer-urgent .military-timer-clock-frame {
+            border-color: rgba(250, 204, 21, 0.7);
+        }
+        .military-timer-overlay.military-timer-complete .military-timer-digits {
+            color: #fca5a5;
+            animation: military-timer-pulse 0.5s ease-in-out infinite;
+        }
+        .military-timer-overlay.military-timer-complete {
+            background: #1a0808;
+        }
+        @keyframes military-timer-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.02); opacity: 0.92; }
+        }
 
         /* 봄 벚꽃 낙하 장식 (가벼운 시각 효과) */
         .sakura-petals { pointer-events: none; position: fixed; inset: 0; z-index: 1; overflow: hidden; }
@@ -29,6 +151,7 @@
         .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
 
         /* 비상계엄: 학생 화면 전면 잠금(교사 연출 화면만 조작 가능) */
+        body.class-timer-active { overflow: hidden !important; }
         body.martial-law-student-lock { overflow: hidden !important; touch-action: none; }
         body.martial-law-student-lock #martialLawLessonModal { pointer-events: auto; touch-action: auto; }
         #martialLawBlocker { pointer-events: auto; touch-action: none; }

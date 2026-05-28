@@ -1848,7 +1848,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'admin'];
+        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin'];
         /** 기본 탭: 광장(plaza) */
         let currentTabIndex = 2;
 
@@ -1860,7 +1860,7 @@ function redrawPlazaGrantsUi() {
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -1876,6 +1876,7 @@ function redrawPlazaGrantsUi() {
                 else if (tabId === 'estate') activeBtn.classList.add('border-teal-400', 'text-teal-400', 'bg-slate-800/50');
                 else if (tabId === 'bank') activeBtn.classList.add('border-sky-400', 'text-sky-400', 'bg-slate-800/50');
                 else if (tabId === 'constitution') activeBtn.classList.add('border-amber-300', 'text-amber-300', 'bg-slate-800/50');
+                else if (tabId === 'classtools') activeBtn.classList.add('border-lime-500', 'text-lime-400', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 
@@ -1945,6 +1946,126 @@ function redrawPlazaGrantsUi() {
                 }
             }
         });
+
+        // ==========================================
+        // ★ 수업도구: 전술 카운트다운 타이머 ★
+        // ==========================================
+        let _classTimerEndAt = null;
+        let _classTimerTickId = null;
+        let _classTimerAlarmId = null;
+
+        function formatClassTimerMs(ms) {
+            const sec = Math.max(0, Math.ceil(ms / 1000));
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        function playClassTimerAlarmTick() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            [0, 0.18, 0.42].forEach((off, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'square';
+                const freq = i === 2 ? 660 : 880;
+                osc.frequency.setValueAtTime(freq, now + off);
+                gain.gain.setValueAtTime(0.0001, now + off);
+                gain.gain.exponentialRampToValueAtTime(0.22, now + off + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + off + 0.14);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + off);
+                osc.stop(now + off + 0.16);
+            });
+        }
+
+        function clearClassTimerTick() {
+            if (_classTimerTickId) {
+                clearInterval(_classTimerTickId);
+                _classTimerTickId = null;
+            }
+        }
+
+        function tickClassTimerDisplay() {
+            const display = document.getElementById('classTimerDisplay');
+            const status = document.getElementById('classTimerStatus');
+            const overlay = document.getElementById('classTimerOverlay');
+            if (!_classTimerEndAt || !display || !overlay) return;
+
+            const left = _classTimerEndAt - Date.now();
+            if (left <= 0) {
+                display.textContent = '00:00';
+                onClassTimerFinished();
+                return;
+            }
+
+            display.textContent = formatClassTimerMs(left);
+            if (status) {
+                status.textContent = left <= 10000 ? 'FINAL COUNTDOWN' : 'OPERATION IN PROGRESS';
+            }
+            if (left <= 10000) overlay.classList.add('military-timer-urgent');
+            else overlay.classList.remove('military-timer-urgent');
+        }
+
+        function onClassTimerFinished() {
+            clearClassTimerTick();
+            _classTimerEndAt = null;
+            const overlay = document.getElementById('classTimerOverlay');
+            const status = document.getElementById('classTimerStatus');
+            if (overlay) {
+                overlay.classList.add('military-timer-complete');
+                overlay.classList.remove('military-timer-urgent');
+            }
+            if (status) status.textContent = 'TIME ZERO — ALERT';
+            playClassTimerAlarmTick();
+            if (_classTimerAlarmId) clearInterval(_classTimerAlarmId);
+            _classTimerAlarmId = setInterval(playClassTimerAlarmTick, 950);
+        }
+
+        window.stopClassTimer = function() {
+            clearClassTimerTick();
+            if (_classTimerAlarmId) {
+                clearInterval(_classTimerAlarmId);
+                _classTimerAlarmId = null;
+            }
+            _classTimerEndAt = null;
+            const overlay = document.getElementById('classTimerOverlay');
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('military-timer-urgent', 'military-timer-complete');
+            }
+            document.body.classList.remove('class-timer-active');
+        };
+
+        window.setClassTimerPreset = function(minutes) {
+            const minEl = document.getElementById('classTimerMinutes');
+            const secEl = document.getElementById('classTimerSeconds');
+            if (minEl) minEl.value = String(Math.max(0, Math.min(180, Number(minutes) || 0)));
+            if (secEl) secEl.value = '0';
+        };
+
+        window.startClassTimer = async function() {
+            const minEl = document.getElementById('classTimerMinutes');
+            const secEl = document.getElementById('classTimerSeconds');
+            const overlay = document.getElementById('classTimerOverlay');
+            if (!minEl || !secEl || !overlay) return;
+
+            window.stopClassTimer();
+
+            const mins = Math.max(0, Math.min(180, parseInt(minEl.value, 10) || 0));
+            const secs = Math.max(0, Math.min(59, parseInt(secEl.value, 10) || 0));
+            const totalSec = mins * 60 + secs;
+            if (totalSec <= 0) {
+                return await window.customAlert('1초 이상 설정해 주세요.');
+            }
+
+            _classTimerEndAt = Date.now() + totalSec * 1000;
+            overlay.classList.remove('hidden', 'military-timer-complete');
+            document.body.classList.add('class-timer-active');
+            tickClassTimerDisplay();
+            _classTimerTickId = setInterval(tickClassTimerDisplay, 200);
+        };
 
 
         // ==========================================

@@ -1959,31 +1959,61 @@ function redrawPlazaGrantsUi() {
         let _classTimerAlarmId = null;
         let _classTimerFinishHandled = false;
 
-        /** 전술 타이머 TTS: 굵은 성인 남성 톤 · 빠른 템포 */
+        /** 전술 타이머 TTS: 굵은 성인 남성 저음 · 빠른 템포 (Chrome Google 음성 우선) */
         const CLASS_TIMER_VOICE_RATE = 1.1;
-        const CLASS_TIMER_VOICE_PITCH = 0.36;
+        const CLASS_TIMER_VOICE_PITCH = 0.12;
+
+        function isChromeBrowser() {
+            const ua = navigator.userAgent || '';
+            return /Chrome|CriOS/i.test(ua) && !/Edg|OPR|SamsungBrowser/i.test(ua);
+        }
 
         function pickMilitaryTimerVoice() {
             if (!window.speechSynthesis) return null;
             const voices = window.speechSynthesis.getVoices();
             const ko = voices.filter((v) => (v.lang || '').toLowerCase().startsWith('ko'));
             if (!ko.length) return null;
-            const femaleRe = /female|여성|여자|yuna|sunhi|heami|sora|neural.*f\b|아동|소년|child/i;
+
+            const femaleRe =
+                /female|여성|여자|yuna|sunhi|heami|sora|아동|소년|child|standard-a|standard-c|wavenet-a|wavenet-c|neural2-a|neural2-c/i;
+            const chromeMaleUriRe = /ko-kr-(standard|wavenet|neural2)-(b|d)\b/i;
+            const uriKey = (v) => `${v.voiceURI || ''} ${v.name || ''}`;
+
+            if (isChromeBrowser()) {
+                const chromeMales = ko.filter((v) => chromeMaleUriRe.test(uriKey(v)));
+                const chromeMaleD = chromeMales.find((v) => /-(d)\b/i.test(v.voiceURI || ''));
+                if (chromeMaleD) return chromeMaleD;
+                if (chromeMales.length) return chromeMales[0];
+
+                const googleKo = ko.filter((v) => /google/i.test(v.name) || /google/i.test(v.voiceURI || ''));
+                const googleMale = googleKo.find(
+                    (v) => chromeMaleUriRe.test(uriKey(v)) || /standard-b|standard-d|wavenet-b|wavenet-d/i.test(uriKey(v))
+                );
+                if (googleMale) return googleMale;
+
+                const googleNonFemale = googleKo.filter(
+                    (v) => !femaleRe.test(v.name) && !femaleRe.test(v.voiceURI || '')
+                );
+                if (googleNonFemale.length) return googleNonFemale[googleNonFemale.length - 1];
+            }
+
             const maleScores = [
+                { re: /ko-kr-(standard|wavenet|neural2)-(b|d)\b/i, score: 110 },
                 { re: /injoon|인준/i, score: 100 },
                 { re: /bongjin|봉진/i, score: 96 },
                 { re: /hyunsu|현수/i, score: 92 },
-                { re: /standard-b|ko-kr.*\bb\b|wavenet.*b/i, score: 88 },
+                { re: /standard-b|standard-d|wavenet-b|wavenet-d/i, score: 88 },
                 { re: /minho|민호/i, score: 84 },
                 { re: /male|남성|남자|man\b/i, score: 72 },
             ];
             let best = null;
             let bestScore = -1;
             ko.forEach((v) => {
-                if (femaleRe.test(v.name)) return;
+                const key = uriKey(v);
+                if (femaleRe.test(v.name) || femaleRe.test(v.voiceURI || '')) return;
                 let score = 20;
                 maleScores.forEach((row) => {
-                    if (row.re.test(v.name)) score = Math.max(score, row.score);
+                    if (row.re.test(key)) score = Math.max(score, row.score);
                 });
                 if (!v.localService) score += 6;
                 if (score > bestScore) {
@@ -1992,7 +2022,7 @@ function redrawPlazaGrantsUi() {
                 }
             });
             if (best) return best;
-            return ko.find((v) => !femaleRe.test(v.name)) || ko[0];
+            return ko.find((v) => !femaleRe.test(v.name) && !femaleRe.test(v.voiceURI || '')) || ko[0];
         }
 
         function speakClassTimerVoice(text) {

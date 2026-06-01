@@ -1066,6 +1066,8 @@ function redrawPlazaGrantsUi() {
         window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
+        /** true 이후에는 오래된 Firestore 로컬 캐시 스냅샷으로 모금 UI를 덮지 않음 */
+        window._shopGroupBuyPoolGotServer = false;
         /** 초기화 직전 저장된 학생별 백업 (studentId → { savedAt, data }) */
         window.studentBackupMap = {};
         
@@ -3149,13 +3151,11 @@ function redrawPlazaGrantsUi() {
                         if (unsubscribeShopGroupBuy) unsubscribeShopGroupBuy();
                         unsubscribeShopGroupBuy = onSnapshot(
                             collection(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy'),
+                            { includeMetadataChanges: true },
                             (snap) => {
-                                window.shopGroupBuyPools = {};
-                                snap.forEach((d) => {
-                                    const data = d.data() || {};
-                                    data.contributions = buildSanitizedContributionsMap(data.contributions);
-                                    window.shopGroupBuyPools[d.id] = data;
-                                });
+                                if (snap.metadata.fromCache && window._shopGroupBuyPoolGotServer) return;
+                                if (!snap.metadata.fromCache) window._shopGroupBuyPoolGotServer = true;
+                                applyShopGroupBuyPoolsSnapshot(snap);
                                 if (typeof window._refreshShopGroupBuyModalIfOpen === 'function') {
                                     window._refreshShopGroupBuyModalIfOpen();
                                 }
@@ -5749,6 +5749,47 @@ function redrawPlazaGrantsUi() {
             return Object.keys(merged).reduce((s, k) => s + merged[k], 0);
         }
 
+        /** onSnapshot 수신 시 로컬 모금 캐시 갱신 */
+        function applyShopGroupBuyPoolsSnapshot(snap) {
+            if (!snap) return;
+            window.shopGroupBuyPools = {};
+            snap.forEach((d) => {
+                const data = d.data() || {};
+                data.contributions = buildSanitizedContributionsMap(data.contributions);
+                window.shopGroupBuyPools[d.id] = data;
+            });
+        }
+
+        /** 환불·입금 직후 UI가 즉시 맞도록 로컬 모금 캐시를 먼저 반영 */
+        function applyShopGroupBuyPoolLocal(shopId, contributions, extra = {}) {
+            if (!shopId) return;
+            if (!window.shopGroupBuyPools) window.shopGroupBuyPools = {};
+            const merged = buildSanitizedContributionsMap(contributions);
+            window.shopGroupBuyPools[shopId] = {
+                ...(window.shopGroupBuyPools[shopId] || {}),
+                ...extra,
+                contributions: merged,
+            };
+            if (!window._shopGroupBuyPoolWriteAt) window._shopGroupBuyPoolWriteAt = {};
+            window._shopGroupBuyPoolWriteAt[shopId] = Date.now();
+        }
+
+        /**
+         * 모금 문서를 통째로 저장(merge:false).
+         * merge:true는 map 필드가 기대와 다르게 남는 경우가 있어, 환불 시 contributions 전체 교체에 사용합니다.
+         */
+        function writeShopGroupBuyPoolInTransaction(transaction, poolRef, poolSnap, contributions, extra = {}) {
+            const base = poolSnap.exists() ? { ...(poolSnap.data() || {}) } : {};
+            const merged = buildSanitizedContributionsMap(contributions);
+            transaction.set(poolRef, {
+                ...base,
+                ...extra,
+                contributions: merged,
+                updatedAt: Date.now(),
+            });
+            return merged;
+        }
+
         /** 환불 직후 서버에서 모금 풀을 다시 읽어 로컬 캐시·UI와 맞춤 */
         async function refreshShopGroupBuyPoolFromServer(shopId) {
             if (!db || !shopId) return;
@@ -5796,11 +5837,13 @@ function redrawPlazaGrantsUi() {
                     window._shopGbPoolRepaired[shopId] = true;
                     return false;
                 }
-                await setDoc(
-                    poolRef,
-                    { contributions: merged, updatedAt: Date.now(), contributionsRepairedAt: Date.now() },
-                    { merge: true }
-                );
+                await setDoc(poolRef, {
+                    ...data,
+                    contributions: merged,
+                    updatedAt: Date.now(),
+                    contributionsRepairedAt: Date.now(),
+                });
+                applyShopGroupBuyPoolLocal(shopId, merged, { contributionsRepairedAt: Date.now() });
                 await refreshShopGroupBuyPoolFromServer(shopId);
                 window._shopGbPoolRepaired[shopId] = true;
                 return true;
@@ -5819,11 +5862,13 @@ function redrawPlazaGrantsUi() {
             const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
             const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + canonId);
             const refund = calcShopGroupBuyRefund(rawAmount);
+            let savedContributions = null;
 
             await runTransaction(db, async (transaction) => {
                 const poolSnap = await transaction.get(poolRef);
-                const poolData = poolSnap.exists() ? poolSnap.data() || {} : {};
-                const merged = buildSanitizedContributionsMap(poolData.contributions);
+                const merged = buildSanitizedContributionsMap(
+                    poolSnap.exists() ? poolSnap.data().contributions : {}
+                );
                 const serverCurrent = merged[canonId] || 0;
                 if (serverCurrent <= 0) throw new Error('no_refund');
                 if (rawAmount > serverCurrent) throw new Error('too_much');
@@ -5838,21 +5883,19 @@ function redrawPlazaGrantsUi() {
                     transaction.set(stuRef, { bong: increment(refund) }, { merge: true });
                 }
 
-                transaction.set(
-                    poolRef,
-                    {
-                        contributions: merged,
-                        updatedAt: Date.now(),
-                        lastRefundAt: Date.now(),
-                        lastRefundStudentId: canonId,
-                        lastRefundAmount: rawAmount,
-                    },
-                    { merge: true }
-                );
+                savedContributions = writeShopGroupBuyPoolInTransaction(transaction, poolRef, poolSnap, merged, {
+                    lastRefundAt: Date.now(),
+                    lastRefundStudentId: canonId,
+                    lastRefundAmount: rawAmount,
+                });
             });
 
+            applyShopGroupBuyPoolLocal(shopId, savedContributions || {});
             await refreshShopGroupBuyPoolFromServer(shopId);
-            return { refund, canonId, rawAmount };
+            if (window._groupBuyModalShopId === shopId && typeof window.renderShopGroupBuyModalContent === 'function') {
+                window.renderShopGroupBuyModalContent(shopId);
+            }
+            return { refund, canonId, rawAmount, contributions: savedContributions };
         }
 
         /** 랜덤박스 당첨 총액을 출자 비율로 분배(마지막 인원에게 반올림 오차 보정) */
@@ -6647,6 +6690,7 @@ function redrawPlazaGrantsUi() {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
 
+                let savedContributions = null;
                 await runTransaction(db, async (transaction) => {
                     const poolSnap = await transaction.get(poolRef);
                     const stuSnap = await transaction.get(stuRef);
@@ -6673,9 +6717,13 @@ function redrawPlazaGrantsUi() {
                         { bong: normalizeBongValue(bal - pay) },
                         { merge: true }
                     );
-                    transaction.set(poolRef, { contributions, updatedAt: Date.now() }, { merge: true });
+                    savedContributions = writeShopGroupBuyPoolInTransaction(transaction, poolRef, poolSnap, contributions, {
+                        lastContributeStudentId: canonId,
+                        lastContributeAmount: pay,
+                    });
                 });
 
+                applyShopGroupBuyPoolLocal(shopId, savedContributions || {});
                 await refreshShopGroupBuyPoolFromServer(shopId);
                 if (input) input.value = '';
                 window.renderShopGroupBuyModalContent(shopId);
@@ -6774,6 +6822,8 @@ function redrawPlazaGrantsUi() {
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const poolSnap = await getDocFromServer(poolRef);
+                const poolBase = poolSnap.exists() ? poolSnap.data() || {} : {};
                 const batch = writeBatch(db);
                 Object.keys(mergedContribs).forEach((sid) => {
                     const refund = calcShopGroupBuyRefund(mergedContribs[sid]);
@@ -6781,13 +6831,15 @@ function redrawPlazaGrantsUi() {
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
                 });
                 batch.set(poolRef, {
+                    ...poolBase,
                     contributions: {},
                     updatedAt: Date.now(),
                     lastResetAt: Date.now(),
                     lastResetRefundTotal: refundTotal,
                     lastResetOriginalTotal: total,
-                }, { merge: true });
+                });
                 await batch.commit();
+                applyShopGroupBuyPoolLocal(shopId, {});
                 await refreshShopGroupBuyPoolFromServer(shopId);
                 await refreshStudentsCacheFromServer();
                 window.renderShopGroupBuyAdminModal();
@@ -6886,8 +6938,10 @@ function redrawPlazaGrantsUi() {
                         const v = toNaturalShopContribution(contributions[k]);
                         if (v > 0) savedContribs[k] = v;
                     });
-                    transaction.set(poolRef, { contributions: {}, updatedAt: Date.now() }, { merge: true });
+                    writeShopGroupBuyPoolInTransaction(transaction, poolRef, poolSnap, {}, { lastExecuteAt: Date.now() });
                 });
+                applyShopGroupBuyPoolLocal(shopId, {});
+                await refreshShopGroupBuyPoolFromServer(shopId);
             } catch (e) {
                 const msg = e && e.message ? String(e.message) : String(e);
                 if (msg === 'not_enough') return await window.customAlert('다른 친구가 먼저 진행했거나 금액이 부족해요. 새로고침 후 확인해 주세요.');

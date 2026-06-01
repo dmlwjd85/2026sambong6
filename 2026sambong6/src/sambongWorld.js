@@ -612,9 +612,9 @@ function redrawPlazaGrantsUi() {
         ];
 
         const SHOP_DATA = [
-            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운을!', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
+            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
             { id: 'item_xp_pack', name: '경험치 팩', desc: '20B로 즉시 100 XP 획득', price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
-            { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 투자금의 5배!', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
+            { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
             { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' },
@@ -1047,7 +1047,7 @@ function redrawPlazaGrantsUi() {
         function buildInitialEstateSeats() {
             return Array.from({ length: 16 }, (_, i) => {
                 const hide = ESTATE_HIDDEN_SEAT_IDS.includes(i);
-                return { id: i, owner: null, price: 500, locked: hide, hidden: hide };
+                return { id: i, owner: null, assignee: null, price: 500, locked: hide, hidden: hide };
             });
         }
 
@@ -1056,6 +1056,7 @@ function redrawPlazaGrantsUi() {
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
+            shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
@@ -1573,6 +1574,57 @@ function redrawPlazaGrantsUi() {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
+        /** 랜덤 박스·미스테리 박스 1인 1일 구매 상한(각각) */
+        const SHOP_DAILY_PURCHASE_LIMIT = 3;
+        const SHOP_DAILY_LIMIT_ITEM_IDS = ['item_random', 'item_mystery_dice'];
+
+        /** 날짜가 바뀌면 상점 일일 구매 횟수 초기화 */
+        function ensureShopDailyPurchaseCounts(state) {
+            if (!state) return false;
+            const today = getLocalDateStr();
+            const cur = state.shopDailyPurchase;
+            if (!cur || cur.date !== today) {
+                state.shopDailyPurchase = { date: today, item_random: 0, item_mystery_dice: 0 };
+                return true;
+            }
+            return false;
+        }
+
+        function getShopDailyPurchaseUsed(state, itemId) {
+            if (!state || state.isAdmin) return 0;
+            ensureShopDailyPurchaseCounts(state);
+            const n = state.shopDailyPurchase && state.shopDailyPurchase[itemId];
+            return Math.max(0, Math.floor(Number(n) || 0));
+        }
+
+        function getShopDailyPurchaseRemaining(state, itemId) {
+            if (!state || state.isAdmin) return SHOP_DAILY_PURCHASE_LIMIT;
+            return Math.max(0, SHOP_DAILY_PURCHASE_LIMIT - getShopDailyPurchaseUsed(state, itemId));
+        }
+
+        function canShopItemBePurchasedToday(state, itemId) {
+            if (!SHOP_DAILY_LIMIT_ITEM_IDS.includes(itemId)) return true;
+            if (!state || state.isAdmin || state.isGuest) return true;
+            return getShopDailyPurchaseRemaining(state, itemId) > 0;
+        }
+
+        function incrementShopDailyPurchase(state, itemId) {
+            if (!state || state.isAdmin || !SHOP_DAILY_LIMIT_ITEM_IDS.includes(itemId)) return;
+            ensureShopDailyPurchaseCounts(state);
+            const cur = state.shopDailyPurchase[itemId] || 0;
+            state.shopDailyPurchase[itemId] = cur + 1;
+        }
+
+        function shuffleInPlace(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = arr[i];
+                arr[i] = arr[j];
+                arr[j] = tmp;
+            }
+            return arr;
+        }
+
         function getDailyQuestIds() {
             return getQuestCatalog().filter(q => q.type === 'daily').map(q => q.id);
         }
@@ -1624,11 +1676,14 @@ function redrawPlazaGrantsUi() {
                 });
                 window.playerState.quests = updatedQuests;
                 window.playerState.lastDailyReset = gameDateStr;
+                window.playerState.shopDailyPurchase = { date: gameDateStr, item_random: 0, item_mystery_dice: 0 };
                 if (window.playerState.dailyAllClearBonusDate === gameDateStr) window.playerState.dailyAllClearBonusDate = '';
                 return { needSave: true, alertNewDay: false };
             }
             if (window.playerState.lastDailyReset === gameDateStr) {
-                return { needSave: sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr), alertNewDay: false };
+                const shopReset = ensureShopDailyPurchaseCounts(window.playerState);
+                const questSanitized = sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr);
+                return { needSave: shopReset || questSanitized, alertNewDay: false };
             }
 
             const updatedQuests = { ...(window.playerState.quests || {}) };
@@ -1641,6 +1696,7 @@ function redrawPlazaGrantsUi() {
             });
             window.playerState.quests = updatedQuests;
             window.playerState.lastDailyReset = gameDateStr;
+            window.playerState.shopDailyPurchase = { date: gameDateStr, item_random: 0, item_mystery_dice: 0 };
 
             let lunchReset = false;
             if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== gameDateStr) {
@@ -2955,6 +3011,14 @@ function redrawPlazaGrantsUi() {
                             if(snap.exists()) {
                                 window.estateState = snap.data(); 
                                 if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
+                                if (Array.isArray(window.estateState.seats)) {
+                                    window.estateState.seats.forEach((s) => {
+                                        if (s.assignee === undefined) s.assignee = null;
+                                        if (s.owner || s.locked || s.hidden || ESTATE_HIDDEN_SEAT_IDS.includes(s.id)) {
+                                            s.assignee = null;
+                                        }
+                                    });
+                                }
                                 window.ensureEstateSeokRestore();
                                 window.ensureEstateHwangRestore();
                                 window.renderEstate(); 
@@ -3635,7 +3699,10 @@ function redrawPlazaGrantsUi() {
             const grid = document.getElementById('estateGrid');
             if(!grid || !window.estateState) return;
 
-            document.getElementById('btnEstateReset').style.display = window.playerState.isAdmin ? 'block' : 'none';
+            const estateAdmin = window.playerState.isAdmin;
+            document.getElementById('btnEstateReset').style.display = estateAdmin ? 'block' : 'none';
+            const shuffleBtn = document.getElementById('btnEstateShuffle');
+            if (shuffleBtn) shuffleBtn.style.display = estateAdmin ? 'block' : 'none';
 
             const logEl = document.getElementById('estatePurchaseLog');
             if (logEl) {
@@ -3654,8 +3721,19 @@ function redrawPlazaGrantsUi() {
                 if (seat.owner) {
                     const ownerName = STUDENT_NAMES[seat.owner] || '학생';
                     return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)]">
-                        <div class="text-teal-400 font-bold text-xs mb-1">판매완료</div>
+                        <div class="text-teal-400 font-bold text-xs mb-1">구매 완료</div>
                         <div class="text-white text-[10px]">${ownerName}</div>
+                    </div>`;
+                }
+                if (seat.assignee) {
+                    const assignName = STUDENT_NAMES[seat.assignee] || '학생';
+                    const clickAction = window.playerState.isAdmin
+                        ? `onclick="window.toggleSeatLock(${seat.id})"`
+                        : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
+                    return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
+                        <div class="text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
+                        <div class="text-white text-[10px]">${assignName}</div>
+                        <div class="text-sb-gold text-[9px] mt-1">${seat.price} B</div>
                     </div>`;
                 }
                 if (seat.locked) {
@@ -4588,11 +4666,39 @@ function redrawPlazaGrantsUi() {
                             item.classList.replace('affordable', 'unaffordable'); 
                         } 
                     } else {
-                        if (window.playerState.bong >= eff || window.playerState.isAdmin) { 
-                            item.classList.replace('unaffordable', 'affordable'); 
-                        } else { 
-                            item.classList.replace('affordable', 'unaffordable'); 
-                        } 
+                        let canAfford = window.playerState.bong >= eff || window.playerState.isAdmin;
+                        if (SHOP_DAILY_LIMIT_ITEM_IDS.includes(shop.id) && !canShopItemBePurchasedToday(window.playerState, shop.id)) {
+                            canAfford = false;
+                        }
+                        if (canAfford) {
+                            item.classList.replace('unaffordable', 'affordable');
+                        } else {
+                            item.classList.replace('affordable', 'unaffordable');
+                        }
+                        if (SHOP_DAILY_LIMIT_ITEM_IDS.includes(shop.id)) {
+                            let limitDiv = item.querySelector('.shop-daily-limit');
+                            if (!limitDiv) {
+                                limitDiv = document.createElement('div');
+                                limitDiv.className = 'shop-daily-limit text-[10px] font-bold mt-0.5';
+                                const fg = item.querySelector('.flex-grow');
+                                if (fg) fg.appendChild(limitDiv);
+                            }
+                            if (window.playerState.isAdmin) {
+                                limitDiv.innerText = '(마스터 무제한)';
+                                limitDiv.className = 'shop-daily-limit text-[10px] font-bold mt-0.5 text-slate-500';
+                            } else {
+                                const used = getShopDailyPurchaseUsed(window.playerState, shop.id);
+                                const remain = getShopDailyPurchaseRemaining(window.playerState, shop.id);
+                                limitDiv.innerText =
+                                    remain > 0
+                                        ? `(오늘 ${used}/${SHOP_DAILY_PURCHASE_LIMIT}회 · 남음 ${remain}회)`
+                                        : `(오늘 ${SHOP_DAILY_PURCHASE_LIMIT}회 모두 사용)`;
+                                limitDiv.className =
+                                    remain > 0
+                                        ? 'shop-daily-limit text-[10px] font-bold mt-0.5 text-amber-300'
+                                        : 'shop-daily-limit text-[10px] font-bold mt-0.5 text-red-400';
+                            }
+                        }
                     }
                 }
             });
@@ -4748,7 +4854,7 @@ function redrawPlazaGrantsUi() {
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [] };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 } };
                     await setDoc(docRef, data);
                 }
 
@@ -5274,6 +5380,11 @@ function redrawPlazaGrantsUi() {
             if (!saved) return;
             
             seat.owner = window.playerState.id;
+            seat.assignee = null;
+            const buyerId = String(window.playerState.id);
+            window.estateState.seats.forEach((s) => {
+                if (s !== seat && String(s.assignee) === buyerId) s.assignee = null;
+            });
             if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
             window.estateState.purchaseHistory.push({
                 studentId: String(window.playerState.id),
@@ -5293,7 +5404,75 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm(msg);
             if(ok) {
                 seat.locked = !seat.locked;
+                if (seat.locked) seat.assignee = null;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                window.renderEstate();
+            }
+        };
+
+        /** 구매 완료 자리는 유지하고, 미구매 학생만 빈 자리에 랜덤 배치 */
+        window.shuffleEstateSeatAssignments = async function() {
+            if (!window.playerState.isAdmin) return await window.customAlert('마스터만 자리 배치를 섞을 수 있습니다.');
+            if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) {
+                return await window.customAlert('자리표 데이터를 불러오지 못했습니다.');
+            }
+
+            const ownedIds = new Set();
+            window.estateState.seats.forEach((s) => {
+                if (s.owner) {
+                    ownedIds.add(String(s.owner));
+                    s.assignee = null;
+                }
+            });
+
+            const studentsNeeding = getActiveStudentIds()
+                .map((sid) => String(sid))
+                .filter((sid) => !ownedIds.has(sid));
+            const availableSeats = window.estateState.seats.filter(
+                (s) => !ESTATE_HIDDEN_SEAT_IDS.includes(s.id) && !s.hidden && !s.locked && !s.owner
+            );
+
+            availableSeats.forEach((s) => {
+                s.assignee = null;
+            });
+
+            if (studentsNeeding.length === 0) {
+                return await window.customAlert('자리를 구매하지 않은 학생이 없습니다.\n(구매 완료 자리만 있거나 전원 구매 상태)');
+            }
+            if (availableSeats.length === 0) {
+                return await window.customAlert('임시 배치할 빈 자리가 없습니다.\n(잠금·비활성·전부 구매됨)');
+            }
+
+            const ok = await window.customConfirm(
+                `구매 완료된 자리(${ownedIds.size}곳)는 그대로 두고,\n` +
+                `미구매 학생 ${studentsNeeding.length}명을 빈 자리 ${availableSeats.length}칸에 랜덤 배치할까요?`
+            );
+            if (!ok) return;
+
+            const shuffledStudents = [...studentsNeeding];
+            shuffleInPlace(shuffledStudents);
+            const seatOrder = availableSeats.map((s) => s.id);
+            shuffleInPlace(seatOrder);
+
+            const placeCount = Math.min(shuffledStudents.length, seatOrder.length);
+            for (let i = 0; i < placeCount; i++) {
+                const seat = window.estateState.seats.find((s) => s.id === seatOrder[i]);
+                if (seat) seat.assignee = shuffledStudents[i];
+            }
+
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                window.renderEstate();
+                let tail = '';
+                if (shuffledStudents.length > placeCount) {
+                    tail = `\n\n※ 학생이 자리보다 많아 ${shuffledStudents.length - placeCount}명은 배치되지 않았습니다.`;
+                } else if (seatOrder.length > placeCount) {
+                    tail = `\n\n※ 빈 자리 ${seatOrder.length - placeCount}칸은 비워 두었습니다.`;
+                }
+                await window.customAlert(`🔀 자리 랜덤 배치 완료!\n배치: ${placeCount}명${tail}`);
+            } catch (e) {
+                console.error('shuffleEstateSeatAssignments', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -5634,10 +5813,19 @@ function redrawPlazaGrantsUi() {
                 // 공동구매 랜덤박스는 executeShopGroupBuy → distributeGroupBuyRandomBox에서만 처리(출자 비율 분배)
                 if (groupEx) return;
 
+                if (!canShopItemBePurchasedToday(window.playerState, id)) {
+                    const used = getShopDailyPurchaseUsed(window.playerState, id);
+                    return await window.customAlert(
+                        `오늘 랜덤 박스는 1인당 ${SHOP_DAILY_PURCHASE_LIMIT}회까지만 구매할 수 있어요.\n(오늘 ${used}회 사용)`
+                    );
+                }
                 if (window.playerState.bong < price && !window.playerState.isAdmin) {
                     return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
                 }
-                const ok = await window.customConfirm(`[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능, 각 금액 균등 확률!)`);
+                const remainRb = getShopDailyPurchaseRemaining(window.playerState, id);
+                const ok = await window.customConfirm(
+                    `[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능, 각 금액 균등 확률!)\n오늘 남은 구매: ${remainRb}/${SHOP_DAILY_PURCHASE_LIMIT}회`
+                );
                 if (!ok) return;
                 if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                 const result = Math.floor(Math.random() * 11) * 10;
@@ -5650,9 +5838,16 @@ function redrawPlazaGrantsUi() {
                 document.body.appendChild(floater);
                 setTimeout(() => floater.remove(), 2500);
 
+                if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, id);
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '랜덤 박스 구매' });
-                if (!saved) return;
+                if (!saved) {
+                    if (!window.playerState.isAdmin) {
+                        const used = getShopDailyPurchaseUsed(window.playerState, id);
+                        if (used > 0) window.playerState.shopDailyPurchase[id] = used - 1;
+                    }
+                    return;
+                }
 
                 if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
                 else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
@@ -5661,7 +5856,17 @@ function redrawPlazaGrantsUi() {
             }
 
             if (id === 'item_mystery_dice') {
-                const betStr = await window.customPrompt(`[${name}]\n얼마를 투자할까요? (B)\n맞추면 투자금의 5배를 받습니다!`, 'number');
+                if (!canShopItemBePurchasedToday(window.playerState, id)) {
+                    const used = getShopDailyPurchaseUsed(window.playerState, id);
+                    return await window.customAlert(
+                        `오늘 미스테리 박스는 1인당 ${SHOP_DAILY_PURCHASE_LIMIT}회까지만 이용할 수 있어요.\n(오늘 ${used}회 사용)`
+                    );
+                }
+                const remainMb = getShopDailyPurchaseRemaining(window.playerState, id);
+                const betStr = await window.customPrompt(
+                    `[${name}]\n얼마를 투자할까요? (B)\n맞추면 투자금의 5배를 받습니다!\n오늘 남은 이용: ${remainMb}/${SHOP_DAILY_PURCHASE_LIMIT}회`,
+                    'number'
+                );
                 if (betStr === null) return;
                 const bet = Math.floor(parseFloat(betStr));
                 if (!Number.isFinite(bet) || bet <= 0) return await window.customAlert('투자금은 1 이상 숫자여야 합니다.');
@@ -5685,9 +5890,16 @@ function redrawPlazaGrantsUi() {
                 if (payout > 0) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payout);
 
                 playSfx('bong', win);
+                if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, id);
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: bet, requireServerBongBalance: true, operationLabel: '미스테리 박스 투자' });
-                if (!saved) return;
+                if (!saved) {
+                    if (!window.playerState.isAdmin) {
+                        const used = getShopDailyPurchaseUsed(window.playerState, id);
+                        if (used > 0) window.playerState.shopDailyPurchase[id] = used - 1;
+                    }
+                    return;
+                }
 
                 const floater = document.createElement('div');
                 floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-5xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(16,185,129,0.9)] text-emerald-400 whitespace-nowrap text-center`;
@@ -6618,7 +6830,7 @@ function redrawPlazaGrantsUi() {
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'classEventPurchases', 'lastDailyReset',
+            'classEventPurchases', 'lastDailyReset', 'shopDailyPurchase',
         ];
 
         function extractStudentGameData(existingData = {}) {

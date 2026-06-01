@@ -3152,7 +3152,9 @@ function redrawPlazaGrantsUi() {
                             (snap) => {
                                 window.shopGroupBuyPools = {};
                                 snap.forEach((d) => {
-                                    window.shopGroupBuyPools[d.id] = d.data();
+                                    const data = d.data() || {};
+                                    data.contributions = buildSanitizedContributionsMap(data.contributions);
+                                    window.shopGroupBuyPools[d.id] = data;
                                 });
                                 if (typeof window._refreshShopGroupBuyModalIfOpen === 'function') {
                                     window._refreshShopGroupBuyModalIfOpen();
@@ -5727,14 +5729,130 @@ function redrawPlazaGrantsUi() {
             return Math.floor(amt * 0.9);
         }
 
+        /** 학번 키 중복·공백을 합쳐 모금 맵을 정규화 (환불 후 잔액이 남는 버그 방지) */
+        function buildSanitizedContributionsMap(raw) {
+            const source = raw && typeof raw === 'object' ? raw : {};
+            const merged = {};
+            Object.keys(source).forEach((k) => {
+                const sid = String(k).trim();
+                if (!sid || sid === 'gm' || sid === 'gm_a') return;
+                const amt = toNaturalShopContribution(source[k]);
+                if (amt <= 0) return;
+                merged[sid] = (merged[sid] || 0) + amt;
+            });
+            return merged;
+        }
+
         /** 공동구매 풀 contributions 합계 */
         function sumShopPoolContributions(poolData) {
-            const c = poolData && poolData.contributions && typeof poolData.contributions === 'object' ? poolData.contributions : {};
-            let s = 0;
-            Object.keys(c).forEach((k) => {
-                s += toNaturalShopContribution(c[k]);
+            const merged = buildSanitizedContributionsMap(poolData && poolData.contributions);
+            return Object.keys(merged).reduce((s, k) => s + merged[k], 0);
+        }
+
+        /** 환불 직후 서버에서 모금 풀을 다시 읽어 로컬 캐시·UI와 맞춤 */
+        async function refreshShopGroupBuyPoolFromServer(shopId) {
+            if (!db || !shopId) return;
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            try {
+                const snap = await getDocFromServer(poolRef);
+                if (!window.shopGroupBuyPools) window.shopGroupBuyPools = {};
+                if (snap.exists()) {
+                    const data = snap.data() || {};
+                    data.contributions = buildSanitizedContributionsMap(data.contributions);
+                    window.shopGroupBuyPools[shopId] = data;
+                } else {
+                    window.shopGroupBuyPools[shopId] = { contributions: {} };
+                }
+            } catch (e) {
+                console.warn('refreshShopGroupBuyPoolFromServer', e);
+            }
+        }
+
+        /** Firestore contributions 키 중복·공백이 있으면 정규화 맵으로 문서를 맞춤 */
+        async function repairShopGroupBuyPoolContributionKeys(shopId) {
+            if (!db || !shopId) return false;
+            if (!window._shopGbPoolRepaired) window._shopGbPoolRepaired = {};
+            if (window._shopGbPoolRepaired[shopId]) return false;
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            try {
+                const snap = await getDocFromServer(poolRef);
+                if (!snap.exists()) {
+                    window._shopGbPoolRepaired[shopId] = true;
+                    return false;
+                }
+                const data = snap.data() || {};
+                const raw = data.contributions && typeof data.contributions === 'object' ? data.contributions : {};
+                const merged = buildSanitizedContributionsMap(raw);
+                let dirty = Object.keys(raw).length !== Object.keys(merged).length;
+                if (!dirty) {
+                    Object.keys(raw).forEach((k) => {
+                        const sid = String(k).trim();
+                        if (sid !== k) dirty = true;
+                        if (toNaturalShopContribution(raw[k]) !== (merged[sid] || 0)) dirty = true;
+                    });
+                }
+                if (!dirty) {
+                    window._shopGbPoolRepaired[shopId] = true;
+                    return false;
+                }
+                await setDoc(
+                    poolRef,
+                    { contributions: merged, updatedAt: Date.now(), contributionsRepairedAt: Date.now() },
+                    { merge: true }
+                );
+                await refreshShopGroupBuyPoolFromServer(shopId);
+                window._shopGbPoolRepaired[shopId] = true;
+                return true;
+            } catch (e) {
+                console.warn('repairShopGroupBuyPoolContributionKeys', shopId, e);
+                return false;
+            }
+        }
+
+        /** 공동구매 입금 환불: 삼봉 지급 + 모금 contributions에서 확실히 차감 */
+        async function executeShopGroupBuyRefund(shopId, studentId, rawAmount) {
+            const canonId = String(studentId).trim();
+            if (!shopId || !canonId || !db) throw new Error('invalid');
+            if (!Number.isInteger(rawAmount) || rawAmount <= 0) throw new Error('invalid_amount');
+
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + canonId);
+            const refund = calcShopGroupBuyRefund(rawAmount);
+
+            await runTransaction(db, async (transaction) => {
+                const poolSnap = await transaction.get(poolRef);
+                const poolData = poolSnap.exists() ? poolSnap.data() || {} : {};
+                const merged = buildSanitizedContributionsMap(poolData.contributions);
+                const serverCurrent = merged[canonId] || 0;
+                if (serverCurrent <= 0) throw new Error('no_refund');
+                if (rawAmount > serverCurrent) throw new Error('too_much');
+
+                const left = serverCurrent - rawAmount;
+                if (left > 0) merged[canonId] = left;
+                else delete merged[canonId];
+
+                if (refund > 0) {
+                    const stuSnap = await transaction.get(stuRef);
+                    if (!stuSnap.exists()) throw new Error('no_student');
+                    transaction.set(stuRef, { bong: increment(refund) }, { merge: true });
+                }
+
+                transaction.set(
+                    poolRef,
+                    {
+                        contributions: merged,
+                        updatedAt: Date.now(),
+                        lastRefundAt: Date.now(),
+                        lastRefundStudentId: canonId,
+                        lastRefundAmount: rawAmount,
+                    },
+                    { merge: true }
+                );
             });
-            return s;
+
+            await refreshShopGroupBuyPoolFromServer(shopId);
+            return { refund, canonId, rawAmount };
         }
 
         /** 랜덤박스 당첨 총액을 출자 비율로 분배(마지막 인원에게 반올림 오차 보정) */
@@ -6371,7 +6489,7 @@ function redrawPlazaGrantsUi() {
                 hint.textContent = shop
                     ? shopId === 'item_random'
                         ? `목표 ${getEffectiveShopPrice(shopId)}B가 모이면 실행 시, 랜덤 박스 당첨 삼봉(0~100B)이 출자 비율로 참여자에게 나뉩니다.`
-                        : `목표 금액(${getEffectiveShopPrice(shopId)}B)이 모이면 「구매 실행」으로 상품이 적용됩니다. 누가 얼마를 냈는지 아래에서 확인하세요.`
+                        : `목표 금액(${getEffectiveShopPrice(shopId)}B)이 모이면 「구매 실행」으로 상품이 적용됩니다. 내 입금은 10% 차감 후 환불할 수 있어요.`
                     : '';
             }
             window.renderShopGroupBuyModalContent(shopId);
@@ -6382,13 +6500,15 @@ function redrawPlazaGrantsUi() {
         window.renderShopGroupBuyModalContent = function (shopId) {
             const target = getEffectiveShopPrice(shopId);
             const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
-            const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+            const mergedContribs = buildSanitizedContributionsMap(pool.contributions);
             const sum = sumShopPoolContributions(pool);
             const curEl = document.getElementById('gbPoolCurrent');
             const tgtEl = document.getElementById('gbPoolTarget');
             const bar = document.getElementById('gbPoolBar');
             const listEl = document.getElementById('gbContributorList');
             const execBtn = document.getElementById('gbExecuteBtn');
+            const mySection = document.getElementById('gbMyRefundSection');
+            const myContribEl = document.getElementById('gbMyContrib');
             if (curEl) curEl.textContent = String(sum);
             if (tgtEl) tgtEl.textContent = String(target);
             if (bar) {
@@ -6396,12 +6516,12 @@ function redrawPlazaGrantsUi() {
                 bar.style.width = `${pct}%`;
             }
             if (listEl) {
-                const rows = Object.keys(contribs)
-                    .map((sid) => {
-                        const amt = toNaturalShopContribution(contribs[sid]);
-                        const nm = STUDENT_NAMES[String(sid)] || sid;
-                        return { sid, amt, nm };
-                    })
+                const rows = Object.keys(mergedContribs)
+                    .map((sid) => ({
+                        sid,
+                        amt: mergedContribs[sid],
+                        nm: STUDENT_NAMES[String(sid)] || sid,
+                    }))
                     .filter((r) => r.amt > 0)
                     .sort((a, b) => b.amt - a.amt);
                 listEl.innerHTML =
@@ -6410,6 +6530,19 @@ function redrawPlazaGrantsUi() {
                         : rows
                               .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt} B</span></div>`)
                               .join('');
+            }
+            const myId =
+                window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin
+                    ? localStorage.getItem('sambong_student_id')
+                    : null;
+            const myAmt = myId ? mergedContribs[String(myId)] || 0 : 0;
+            if (mySection) {
+                if (myAmt > 0) {
+                    mySection.classList.remove('hidden');
+                    if (myContribEl) myContribEl.textContent = String(myAmt);
+                } else {
+                    mySection.classList.add('hidden');
+                }
             }
             const ready = target > 0 && sum >= target - 0.0001;
             if (execBtn) {
@@ -6424,6 +6557,21 @@ function redrawPlazaGrantsUi() {
             if (!modal) return;
             modal.classList.remove('hidden');
             window.renderShopGroupBuyAdminModal();
+            if (!window._shopGbRepairBatchRunning) {
+                window._shopGbRepairBatchRunning = true;
+                void (async () => {
+                    try {
+                        const shops = getAllShopItems().filter((s) => s.id !== 'item_mystery_dice');
+                        let fixed = 0;
+                        for (const shop of shops) {
+                            if (await repairShopGroupBuyPoolContributionKeys(shop.id)) fixed++;
+                        }
+                        if (fixed > 0) window.renderShopGroupBuyAdminModal();
+                    } finally {
+                        window._shopGbRepairBatchRunning = false;
+                    }
+                })();
+            }
         };
 
         window.renderShopGroupBuyAdminModal = function () {
@@ -6436,14 +6584,14 @@ function redrawPlazaGrantsUi() {
                 .map((shop) => {
                     const target = getEffectiveShopPrice(shop.id);
                     const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shop.id]) || {};
-                    const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+                    const mergedContribs = buildSanitizedContributionsMap(pool.contributions);
                     const sum = sumShopPoolContributions(pool);
                     const pct = target > 0 ? Math.min(100, Math.round((sum / target) * 100)) : 0;
-                    const contributorRows = Object.keys(contribs)
+                    const contributorRows = Object.keys(mergedContribs)
                         .map((sid) => ({
                             sid,
                             name: STUDENT_NAMES[String(sid)] || sid,
-                            amount: toNaturalShopContribution(contribs[sid]),
+                            amount: mergedContribs[sid],
                         }))
                         .filter((r) => r.amount > 0)
                         .sort((a, b) => b.amount - a.amount);
@@ -6508,14 +6656,8 @@ function redrawPlazaGrantsUi() {
                     const integerBalance = Math.floor(bal);
 
                     const poolData = poolSnap.exists() ? poolSnap.data() : {};
-                    const contributions = { ...(poolData.contributions && typeof poolData.contributions === 'object' ? poolData.contributions : {}) };
-                    const currentSum = (() => {
-                        let s = 0;
-                        Object.keys(contributions).forEach((k) => {
-                            s += toNaturalShopContribution(contributions[k]);
-                        });
-                        return s;
-                    })();
+                    const contributions = buildSanitizedContributionsMap(poolData.contributions);
+                    const currentSum = Object.keys(contributions).reduce((s, k) => s + contributions[k], 0);
                     const remaining = Math.max(0, normalizeBongValue(target - currentSum));
                     if (remaining <= 0) throw new Error('full');
                     const integerRemaining = Math.max(0, Math.ceil(remaining));
@@ -6523,8 +6665,8 @@ function redrawPlazaGrantsUi() {
                     const pay = Math.min(amount, integerRemaining, integerBalance);
                     if (pay <= 0) throw new Error('no_pay');
 
-                    const prev = toNaturalShopContribution(contributions[String(myId)]);
-                    contributions[String(myId)] = prev + pay;
+                    const canonId = String(myId).trim();
+                    contributions[canonId] = (contributions[canonId] || 0) + pay;
 
                     transaction.set(
                         stuRef,
@@ -6534,6 +6676,7 @@ function redrawPlazaGrantsUi() {
                     transaction.set(poolRef, { contributions, updatedAt: Date.now() }, { merge: true });
                 });
 
+                await refreshShopGroupBuyPoolFromServer(shopId);
                 if (input) input.value = '';
                 window.renderShopGroupBuyModalContent(shopId);
                 await window.customAlert('입금이 반영되었습니다.');
@@ -6550,7 +6693,65 @@ function redrawPlazaGrantsUi() {
         };
 
         window.refundMyShopGroupBuy = async function () {
-            return await window.customAlert('공동구매 환불은 마스터가 공동구매 현황에서 학생별로 처리합니다.');
+            const shopId = window._groupBuyModalShopId;
+            if (!shopId || !db || !currentStudentDocRef) return;
+            if (window.playerState.isGuest || window.playerState.isAdmin) {
+                return await window.customAlert('학생만 내 입금을 환불할 수 있어요.');
+            }
+            const myId = localStorage.getItem('sambong_student_id');
+            if (!myId || myId === 'gm' || myId === 'gm_a') return;
+
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const merged = buildSanitizedContributionsMap(pool.contributions);
+            const current = merged[String(myId)] || 0;
+            if (current <= 0) {
+                return await window.customAlert('이 상품 공동구매에 내 입금 내역이 없어요.');
+            }
+
+            const input = document.getElementById('gbRefundAmount');
+            const rawStr = input && String(input.value).trim() !== '' ? input.value : String(current);
+            const rawAmount = Number(rawStr);
+            if (!Number.isInteger(rawAmount) || rawAmount <= 0) {
+                return await window.customAlert('환불할 입금액은 1 이상의 자연수로 입력해 주세요.');
+            }
+            if (rawAmount > current) {
+                return await window.customAlert(`환불할 입금액은 현재 입금액(${current}B)을 넘을 수 없습니다.`);
+            }
+
+            const refund = calcShopGroupBuyRefund(rawAmount);
+            const shop = getShopItemById(shopId);
+            const ok = await window.customConfirm(
+                `「${shop ? shop.name : shopId}」 공동구매\n내 입금 ${rawAmount}B를 환불할까요?\n\n` +
+                `10% 차감 후 지갑으로 +${refund} B\n모금액에서 ${rawAmount}B가 즉시 빠집니다.`
+            );
+            if (!ok) return;
+
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                const result = await executeShopGroupBuyRefund(shopId, myId, rawAmount);
+                if (input) input.value = '';
+                await refreshStudentsCacheFromServer();
+                updateUI();
+                window.renderShopGroupBuyModalContent(shopId);
+
+                const poolAfter = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+                const left = buildSanitizedContributionsMap(poolAfter.contributions)[String(myId)] || 0;
+                const poolSum = sumShopPoolContributions(poolAfter);
+                await window.customAlert(
+                    `♻️ 환불 완료! 지갑 +${result.refund} B\n` +
+                    `모금에서 ${rawAmount}B 차감됨 · 현재 모금 ${poolSum}B` +
+                    (left > 0 ? `\n내 남은 입금: ${left}B` : '\n내 입금은 모두 환불되었습니다.')
+                );
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'no_refund') return await window.customAlert('이미 환불되었거나 입금 내역이 없습니다. 새로고침 후 다시 확인해 주세요.');
+                if (code === 'too_much') return await window.customAlert('다른 처리로 입금액이 줄었습니다. 새로고침 후 다시 시도해 주세요.');
+                if (code === 'no_student') return await window.customAlert('학생 정보를 찾을 수 없어요.');
+                console.error('refundMyShopGroupBuy', e);
+                await window.customAlert('환불 처리 중 오류: ' + code);
+            }
         };
 
         window.resetShopGroupBuyAdmin = async function (shopId) {
@@ -6558,10 +6759,10 @@ function redrawPlazaGrantsUi() {
             if (!shopId || !db) return;
             const shop = getShopItemById(shopId);
             const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
-            const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
+            const mergedContribs = buildSanitizedContributionsMap(pool.contributions);
             const total = sumShopPoolContributions(pool);
             if (total <= 0) return await window.customAlert('초기화할 입금 내역이 없습니다.');
-            const refundTotal = Object.keys(contribs).reduce((s, sid) => s + calcShopGroupBuyRefund(contribs[sid]), 0);
+            const refundTotal = Object.keys(mergedContribs).reduce((s, sid) => s + calcShopGroupBuyRefund(mergedContribs[sid]), 0);
             const ok = await window.customConfirm(
                 `「${shop ? shop.name : shopId}」 공동구매를 초기화할까요?\n` +
                 `총 입금 ${total}B 중 10% 차감 환불 합계 ${refundTotal}B가 학생들에게 지급됩니다.\n` +
@@ -6574,8 +6775,8 @@ function redrawPlazaGrantsUi() {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 const batch = writeBatch(db);
-                Object.keys(contribs).forEach((sid) => {
-                    const refund = calcShopGroupBuyRefund(contribs[sid]);
+                Object.keys(mergedContribs).forEach((sid) => {
+                    const refund = calcShopGroupBuyRefund(mergedContribs[sid]);
                     if (refund <= 0) return;
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
                 });
@@ -6587,6 +6788,7 @@ function redrawPlazaGrantsUi() {
                     lastResetOriginalTotal: total,
                 }, { merge: true });
                 await batch.commit();
+                await refreshShopGroupBuyPoolFromServer(shopId);
                 await refreshStudentsCacheFromServer();
                 window.renderShopGroupBuyAdminModal();
                 if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
@@ -6600,48 +6802,43 @@ function redrawPlazaGrantsUi() {
         window.refundShopGroupBuyStudentAdmin = async function (shopId, studentId) {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 학생별 환불을 할 수 있습니다.');
             if (!shopId || !studentId || !db) return;
+            const canonId = String(studentId).trim();
             const input = document.getElementById(`gb_admin_refund_${shopId}_${studentId}`);
             const rawAmount = Number(input ? input.value : 0);
             if (!Number.isInteger(rawAmount) || rawAmount <= 0) return await window.customAlert('환불할 입금액은 1 이상의 자연수로 입력해 주세요.');
             const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
-            const contribs = pool.contributions && typeof pool.contributions === 'object' ? pool.contributions : {};
-            const current = toNaturalShopContribution(contribs[String(studentId)]);
+            const merged = buildSanitizedContributionsMap(pool.contributions);
+            const current = merged[canonId] || 0;
             if (current <= 0) return await window.customAlert('해당 학생의 입금 내역이 없습니다.');
             if (rawAmount > current) return await window.customAlert(`환불할 입금액은 현재 입금액(${current}B)을 넘을 수 없습니다.`);
             const refund = calcShopGroupBuyRefund(rawAmount);
-            const name = STUDENT_NAMES[String(studentId)] || studentId;
+            const name = STUDENT_NAMES[canonId] || canonId;
             const shop = getShopItemById(shopId);
-            const ok = await window.customConfirm(`[${name}] 학생의 「${shop ? shop.name : shopId}」 공동구매 입금 ${rawAmount}B를 부분 환불할까요?\n10% 차감 후 ${refund}B가 지급되고, 공동구매 입금액은 ${rawAmount}B만큼 줄어듭니다.`);
+            const ok = await window.customConfirm(
+                `[${name}] 학생의 「${shop ? shop.name : shopId}」 공동구매 입금 ${rawAmount}B를 환불할까요?\n` +
+                `10% 차감 후 ${refund}B 지급 · 모금액에서 ${rawAmount}B 차감`
+            );
             if (!ok) return;
 
-            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
-            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                await runTransaction(db, async (transaction) => {
-                    const poolSnap = await transaction.get(poolRef);
-                    if (!poolSnap.exists()) throw new Error('no_pool');
-                    const d = poolSnap.data() || {};
-                    const contributions = { ...(d.contributions && typeof d.contributions === 'object' ? d.contributions : {}) };
-                    const serverCurrent = toNaturalShopContribution(contributions[String(studentId)]);
-                    if (serverCurrent <= 0) throw new Error('no_refund');
-                    if (rawAmount > serverCurrent) throw new Error('too_much');
-                    const left = serverCurrent - rawAmount;
-                    if (left > 0) contributions[String(studentId)] = left;
-                    else delete contributions[String(studentId)];
-                    if (refund > 0) transaction.set(stuRef, { bong: increment(refund) }, { merge: true });
-                    transaction.set(poolRef, { contributions, updatedAt: Date.now(), lastAdminRefundAt: Date.now() }, { merge: true });
-                });
+                await executeShopGroupBuyRefund(shopId, canonId, rawAmount);
                 if (input) input.value = '';
                 await refreshStudentsCacheFromServer();
+                updateUI();
                 window.renderShopGroupBuyAdminModal();
                 if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
-                await window.customAlert(`${name} 학생에게 ${refund}B가 환불되었습니다. (10% 차감)`);
+                const poolAfter = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+                const poolSum = sumShopPoolContributions(poolAfter);
+                await window.customAlert(
+                    `${name} 학생에게 ${refund}B 환불 완료 (10% 차감)\n모금에서 ${rawAmount}B 차감 · 현재 모금 ${poolSum}B`
+                );
             } catch (e) {
                 const code = e && e.message ? String(e.message) : String(e);
                 if (code === 'no_refund') return await window.customAlert('이미 환불되었거나 입금 내역이 없습니다.');
                 if (code === 'too_much') return await window.customAlert('다른 처리로 입금액이 줄었습니다. 다시 확인해 주세요.');
+                if (code === 'no_student') return await window.customAlert('학생 정보를 찾을 수 없어요.');
                 console.error('refundShopGroupBuyStudentAdmin', e);
                 await window.customAlert('학생별 환불 실패: ' + code);
             }

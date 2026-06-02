@@ -1547,6 +1547,40 @@ function redrawPlazaGrantsUi() {
             }, 0);
         }
 
+        /** 학생 자가 저장·Firestore 규칙과 맞춘 1회 XP 상승 상한(퀘스트·일일보너스·무기버프 여유) */
+        const STUDENT_MAX_XP_INCREASE_PER_SAVE = 650;
+
+        /** 마스터가 학생 XP/B를 직접 설정한 뒤 광장·관리자 표를 즉시 맞춤 */
+        async function adminSetStudentStat(stuId, type, val) {
+            const sid = String(stuId);
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+            let stu = null;
+            try {
+                const snap = await readStudentDocPreferServer(ref);
+                if (snap.exists()) stu = snap.data() || {};
+            } catch (e) {
+                console.warn('adminSetStudentStat read', e);
+            }
+            if (!stu && window.allStudentsData && window.allStudentsData.length) {
+                const row = window.allStudentsData.find((s) => String(s.id) === sid);
+                if (row) stu = { ...row };
+            }
+            const payload = type === 'bong'
+                ? { bong: normalizeBongValue(val) }
+                : { xp: Math.max(0, Math.floor(Number(val) || 0)) };
+            await setDoc(ref, payload, { merge: true });
+            mergeStudentDocIntoPlazaCache(sid, { ...(stu || {}), ...payload });
+            if (typeof redrawPlazaGrantsUi === 'function') redrawPlazaGrantsUi();
+            if (window.allStudentsData && window.allStudentsData.length) {
+                const row = window.allStudentsData.find((s) => String(s.id) === sid);
+                if (row) {
+                    if (type === 'bong') row.bong = payload.bong;
+                    else row.xp = payload.xp;
+                }
+            }
+            if (window.renderAdminTable && window.allStudentsData) window.renderAdminTable(window.allStudentsData);
+        }
+
         /** 골든벨·스피드 퀴즈 공통: 앞뒤 공백 제거, 연속 공백 축소, 영문 소문자 통일 */
         function normalizeQuizAnswer(s) {
             if (s == null || s === undefined) return '';
@@ -3537,7 +3571,7 @@ function redrawPlazaGrantsUi() {
                             ${(Number(stu.bong)||0).toFixed(1)} B
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
-                            ${canEdit ? `<div class="flex gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
+                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
                         </td>
                         <td class="p-2 text-center border-l border-slate-700/50 min-w-[4.5rem]">
                             ${canEdit ? (() => {
@@ -4939,6 +4973,12 @@ function redrawPlazaGrantsUi() {
                                 dataToSave.xp = Math.max(0, Math.floor(Math.max(nextXp, serverXp - maxDrop)));
                             } else {
                                 dataToSave.xp = Math.floor(serverXp);
+                            }
+                        }
+                        if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && nextXp > serverXp) {
+                            const maxRise = STUDENT_MAX_XP_INCREASE_PER_SAVE;
+                            if (nextXp > serverXp + maxRise) {
+                                dataToSave.xp = Math.floor(serverXp + maxRise);
                             }
                         }
 
@@ -7654,21 +7694,56 @@ function redrawPlazaGrantsUi() {
         };
 
         window.editStudentStat = async function(stuId, type, stuName, currentVal) {
-            if (!window.playerState.isAdmin) return; 
+            if (!window.playerState.isAdmin) return;
             if (window.playerState.isGMA && stuId !== '13') return;
-            
-            const input = await window.customPrompt(`[${stuName}] 새로운 값 입력 (현재: ${currentVal}):`, "number");
-            if (input !== null && !isNaN(parseFloat(input))) {
-                const raw = parseFloat(input);
-                if (type === 'xp' && raw < 0) return await window.customAlert('경험치는 0 이상만 입력할 수 있어요.');
-                if (type === 'xp' && raw < Number(currentVal || 0)) {
-                    return await window.customAlert('경험치는 관리 화면에서 낮출 수 없어요.\n비정상 하락 방지를 위해 필요한 경우 Firebase 콘솔에서 직접 조정해 주세요.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+
+            const input = await window.customPrompt(`[${stuName}] 새로운 ${type === 'xp' ? '경험치(XP)' : '삼봉(B)'} 입력 (현재: ${currentVal}):`, 'number');
+            if (input === null || isNaN(parseFloat(input))) return;
+
+            const raw = parseFloat(input);
+            if (type === 'xp' && raw < 0) return await window.customAlert('경험치는 0 이상만 입력할 수 있어요.');
+            if (type === 'bong' && raw < -100) {
+                return await window.customAlert('삼봉은 -100B 아래로 직접 입력할 수 없어요.\n비정상 마이너스 저장을 막기 위한 제한입니다.');
+            }
+
+            const val = type === 'bong' ? parseFloat(raw.toFixed(1)) : Math.floor(raw);
+            const curNum = Number(currentVal) || 0;
+
+            if (type === 'xp' && val < curNum) {
+                let questFloor = 0;
+                try {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
+                    const snap = await readStudentDocPreferServer(ref);
+                    if (snap.exists()) questFloor = getQuestHistoryXpFloor(snap.data());
+                } catch (e) {
+                    console.warn('editStudentStat quest floor', e);
                 }
-                if (type === 'bong' && raw < -100) {
-                    return await window.customAlert('삼봉은 -100B 아래로 직접 입력할 수 없어요.\n비정상 마이너스 저장을 막기 위한 제한입니다.');
+                let msg = `[${stuName}] 경험치를 ${curNum} → ${val}(으)로 낮춥니다.\n비정상 상승·오류 수정용입니다.`;
+                if (questFloor > 0 && val < questFloor) {
+                    msg += `\n\n⚠ 퀘스트 기록 합계(${questFloor} XP)보다 낮습니다. 기록과 숫자가 어긋날 수 있어요.`;
                 }
-                const val = type === 'bong' ? parseFloat(raw.toFixed(1)) : Math.floor(raw);
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { [type]: val }, { merge: true });
+                const ok = await window.customConfirm(msg + '\n\n계속할까요?');
+                if (!ok) return;
+            } else if (type === 'xp' && val > curNum + STUDENT_MAX_XP_INCREASE_PER_SAVE) {
+                return await window.customAlert(
+                    `한 번에 ${STUDENT_MAX_XP_INCREASE_PER_SAVE} XP 이상 올릴 수 없어요.\n` +
+                    '비정상 상승 방지를 위해 +5X 버튼이나 여러 번 나눠 조정해 주세요.'
+                );
+            }
+
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await adminSetStudentStat(stuId, type, val);
+                await window.customAlert('✅ 저장되었습니다.');
+            } catch (e) {
+                console.error('editStudentStat', e);
+                const code = e && e.code ? String(e.code) : '';
+                const hint = code === 'permission-denied'
+                    ? '\n\n※ Firestore 규칙(1회 상승 상한)을 확인해 주세요.'
+                    : '';
+                await window.customAlert('저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)) + hint);
             }
         };
 

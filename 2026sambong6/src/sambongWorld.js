@@ -615,6 +615,7 @@ function redrawPlazaGrantsUi() {
             { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
             { id: 'item_xp_pack', name: '경험치 팩', desc: '20B로 즉시 100 XP 획득', price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
             { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
+            { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'fa-ticket', iconColor: 'text-lime-300', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
             { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' },
@@ -1057,13 +1058,14 @@ function redrawPlazaGrantsUi() {
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
+            lottoTickets: [],
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
         
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20 };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** true 이후에는 오래된 Firestore 로컬 캐시 스냅샷으로 모금 UI를 덮지 않음 */
@@ -1458,7 +1460,7 @@ function redrawPlazaGrantsUi() {
             const icon = shop.icon || (shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
             const iconColor = shop.iconColor || (shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
             const groupBuyBtn =
-                shop.id === 'item_mystery_dice'
+                shop.id === 'item_mystery_dice' || shop.id === LOTTO_SHOP_ID
                     ? ''
                     : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal('${shop.id}')">공동구매</button>`;
             return `
@@ -1649,6 +1651,154 @@ function redrawPlazaGrantsUi() {
             ensureShopDailyPurchaseCounts(state);
             const cur = state.shopDailyPurchase[itemId] || 0;
             state.shopDailyPurchase[itemId] = cur + 1;
+        }
+
+        const LOTTO_SHOP_ID = 'item_lotto';
+        const LOTTO_PICK_MIN = 1;
+        const LOTTO_PICK_MAX = 30;
+        const LOTTO_PICK_COUNT = 3;
+        const LOTTO_TAX_RATE = 0.4;
+
+        /** 월요일 날짜를 회차 키로 사용합니다. */
+        function getLottoRoundKey(d = new Date()) {
+            const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const day = x.getDay();
+            const diff = day === 0 ? -6 : 1 - day;
+            x.setDate(x.getDate() + diff);
+            return getLocalDateStr(x);
+        }
+
+        /** 월~목 전체, 금요일은 점심 전까지만 구매 가능 */
+        function isLottoPurchaseOpen(d = new Date()) {
+            const day = d.getDay();
+            if (day < 1 || day > 5) return false;
+            return !(day === 5 && d.getHours() >= 12);
+        }
+
+        function getLottoPurchaseWindowText(d = new Date()) {
+            const day = d.getDay();
+            if (day === 5 && d.getHours() >= 12) return '이번 주 구매 마감(금요일 점심 이후)';
+            if (day < 1 || day > 5) return '주말 구매 불가';
+            return '구매 가능(금요일 점심 전까지)';
+        }
+
+        function normalizeLottoNumbers(raw) {
+            const nums = String(raw || '')
+                .split(/[^0-9]+/)
+                .filter(Boolean)
+                .map((n) => parseInt(n, 10))
+                .filter((n) => Number.isInteger(n));
+            const uniq = Array.from(new Set(nums)).sort((a, b) => a - b);
+            if (
+                uniq.length !== LOTTO_PICK_COUNT ||
+                uniq.some((n) => n < LOTTO_PICK_MIN || n > LOTTO_PICK_MAX)
+            ) {
+                return null;
+            }
+            return uniq;
+        }
+
+        function formatLottoNumbers(nums) {
+            return (Array.isArray(nums) ? nums : []).map((n) => String(n).padStart(2, '0')).join(' · ');
+        }
+
+        function lottoNumbersKey(nums) {
+            return (Array.isArray(nums) ? nums : []).slice().sort((a, b) => a - b).join(',');
+        }
+
+        function drawRandomLottoNumbers() {
+            return shuffleInPlace(Array.from({ length: LOTTO_PICK_MAX }, (_, i) => i + 1))
+                .slice(0, LOTTO_PICK_COUNT)
+                .sort((a, b) => a - b);
+        }
+
+        function getSanitizedLottoState(raw) {
+            const src = raw && typeof raw === 'object' ? raw : {};
+            const tickets = Array.isArray(src.tickets) ? src.tickets : [];
+            return {
+                roundKey: src.roundKey ? String(src.roundKey) : getLottoRoundKey(),
+                poolB: normalizeBongValue(Math.max(0, Number(src.poolB) || 0)),
+                carryoverB: normalizeBongValue(Math.max(0, Number(src.carryoverB) || 0)),
+                tickets: tickets.filter((t) => t && t.ticketId && Array.isArray(t.numbers)).slice(-300),
+                drawnAt: src.drawnAt || null,
+                lastDraw: src.lastDraw || null,
+                updatedAt: src.updatedAt || 0,
+            };
+        }
+
+        function getCurrentLottoDisplayState() {
+            return getSanitizedLottoState(window.globalSettings && window.globalSettings.lotto);
+        }
+
+        function buildLottoStateForPurchase(raw, now = new Date()) {
+            const state = getSanitizedLottoState(raw);
+            const roundKey = getLottoRoundKey(now);
+            if (state.roundKey !== roundKey) {
+                return {
+                    roundKey,
+                    poolB: state.carryoverB,
+                    carryoverB: 0,
+                    tickets: [],
+                    drawnAt: null,
+                    lastDraw: state.lastDraw || null,
+                    updatedAt: Date.now(),
+                };
+            }
+            return state;
+        }
+
+        function renderLottoPanel() {
+            const el = document.getElementById('lottoPanel');
+            if (!el) return;
+            if (!window.playerState || window.playerState.isGuest) {
+                el.innerHTML = '';
+                el.classList.add('hidden');
+                return;
+            }
+            const state = getCurrentLottoDisplayState();
+            const currentRoundKey = getLottoRoundKey();
+            const sameRound = state.roundKey === currentRoundKey;
+            const activePool = sameRound && !state.drawnAt ? state.poolB : state.carryoverB;
+            const ticketCount = sameRound && !state.drawnAt ? state.tickets.length : 0;
+            const price = getEffectiveShopPrice(LOTTO_SHOP_ID);
+            const mine = Array.isArray(window.playerState.lottoTickets) ? window.playerState.lottoTickets : [];
+            const myRows = mine.slice(-6).reverse().map((t) => {
+                const d = t.at ? new Date(t.at) : null;
+                const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
+                return `<div class="flex justify-between gap-2 border-b border-slate-800/70 pb-1">
+                    <span class="text-lime-200 font-bold">${formatLottoNumbers(t.numbers)}</span>
+                    <span class="text-slate-500 shrink-0">${ds} · ${Number(t.price || 0).toFixed(1)}B</span>
+                </div>`;
+            }).join('');
+            const last = state.lastDraw;
+            const lastHtml = last
+                ? `<div class="mt-2 rounded-lg bg-slate-950/60 border border-slate-700 px-2 py-1.5">
+                    <div class="text-[10px] text-slate-400 font-bold">최근 추첨: <span class="text-lime-200">${formatLottoNumbers(last.numbers)}</span></div>
+                    <div class="text-[9px] text-slate-500">총 ${Number(last.poolB || 0).toFixed(1)}B · 세금 ${Number(last.taxB || 0).toFixed(1)}B · 지급 ${Number(last.payoutPoolB || 0).toFixed(1)}B</div>
+                    <div class="text-[9px] text-slate-400">${last.winners && last.winners.length ? `당첨: ${last.winners.map((w) => escapeConstitutionHtml(w.name || w.studentId)).join(', ')}` : '당첨자 없음 · 당첨금 이월'}</div>
+                </div>`
+                : '';
+            const adminBtn = window.playerState.isGM
+                ? `<button type="button" onclick="window.drawLottoAdmin()" class="mt-2 w-full sm:w-auto bg-lime-700 hover:bg-lime-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-wand-magic-sparkles"></i> 로또 추첨</button>`
+                : '';
+            el.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div>
+                        <h4 class="text-lime-300 font-black text-xs"><i class="fa-solid fa-ticket"></i> 삼봉 로또</h4>
+                        <p class="text-[9px] text-slate-400 leading-relaxed">1~30 중 3개를 고릅니다. ${getLottoPurchaseWindowText()} · 가격 ${price}B · 당첨 시 세금 40% 제외 후 지급</p>
+                    </div>
+                    <div class="text-right text-[10px] text-slate-300 shrink-0">
+                        <div>누적: <span class="text-sb-gold font-black">${Number(activePool || 0).toFixed(1)}B</span></div>
+                        <div>이번 회차 티켓: ${ticketCount}장</div>
+                    </div>
+                </div>
+                ${adminBtn}
+                ${lastHtml}
+                <div class="mt-3 pt-2 border-t border-slate-700/70">
+                    <div class="text-[10px] text-slate-500 font-bold mb-1">내 최근 구매 이력</div>
+                    <div class="space-y-1">${myRows || '<div class="text-[9px] text-slate-600">아직 구매한 복권이 없습니다.</div>'}</div>
+                </div>`;
+            el.classList.remove('hidden');
         }
 
         function shuffleInPlace(arr) {
@@ -3036,6 +3186,7 @@ function redrawPlazaGrantsUi() {
                                 renderQuestManagementAdminPanel();
                                 renderJobGrid();
                                 renderJobManagementAdminPanel();
+                                renderLottoPanel();
                                 if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
@@ -4758,6 +4909,7 @@ function redrawPlazaGrantsUi() {
                 }
             }
 
+            renderLottoPanel();
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
@@ -4890,7 +5042,7 @@ function redrawPlazaGrantsUi() {
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 } };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -6003,12 +6155,204 @@ function redrawPlazaGrantsUi() {
             await window.customAlert(`🎁 공동구매 랜덤 박스 결과: 총 ${result} B\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
         }
 
+        window.buyLottoTicket = async function () {
+            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isAdmin) return await window.customAlert('로또 복권은 학생 계정으로만 구매할 수 있어요.');
+            if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
+            if (!isLottoPurchaseOpen()) return await window.customAlert(`지금은 로또 구매 시간이 아닙니다.\n${getLottoPurchaseWindowText()}`);
+
+            const price = getEffectiveShopPrice(LOTTO_SHOP_ID);
+            if (!Number.isFinite(price) || price <= 0) return await window.customAlert('로또 가격이 올바르지 않습니다. 마스터에게 문의해 주세요.');
+            if ((Number(window.playerState.bong) || 0) < price) {
+                return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+            }
+
+            const raw = await window.customPrompt(
+                `삼봉 로또 번호 3개를 입력하세요.\n범위: 1~30 / 예: 3, 14, 27\n가격: ${price}B`,
+                'text'
+            );
+            if (raw === null) return;
+            const numbers = normalizeLottoNumbers(raw);
+            if (!numbers) {
+                return await window.customAlert('1부터 30까지 서로 다른 숫자 3개를 입력해 주세요.\n예: 3, 14, 27');
+            }
+
+            const ok = await window.customConfirm(
+                `삼봉 로또를 구매할까요?\n번호: ${formatLottoNumbers(numbers)}\n가격: ${price}B\n추첨: 금요일 점심 이후`
+            );
+            if (!ok) return;
+
+            const sid = String(localStorage.getItem('sambong_student_id') || '');
+            if (!sid || sid === 'gm' || sid === 'gm_a') return await window.customAlert('학생 로그인 정보를 찾지 못했습니다. 다시 로그인해 주세요.');
+
+            let savedTicket = null;
+            let savedLotto = null;
+            let nextBong = null;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                    const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const stuSnap = await transaction.get(stuRef);
+                    if (!stuSnap.exists()) throw new Error('student_not_found');
+                    const serverStudent = stuSnap.data() || {};
+                    const serverBong = normalizeBongValue(Number(serverStudent.bong) || 0);
+                    if (serverBong + 0.0001 < price) throw new Error('not_enough_bong');
+
+                    const nowMs = Date.now();
+                    const roundKey = getLottoRoundKey(new Date(nowMs));
+                    const rawLotto = settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null;
+                    const lotto = buildLottoStateForPurchase(rawLotto, new Date(nowMs));
+                    if (lotto.roundKey === roundKey && lotto.drawnAt) throw new Error('round_already_drawn');
+
+                    const ticket = {
+                        ticketId: `${sid}_${nowMs}_${Math.random().toString(36).slice(2, 7)}`,
+                        roundKey,
+                        studentId: sid,
+                        studentName: STUDENT_NAMES[sid] || sid,
+                        numbers,
+                        price,
+                        at: nowMs,
+                    };
+                    const activeTickets = Array.isArray(lotto.tickets) ? lotto.tickets : [];
+                    const nextTickets = [...activeTickets, ticket].slice(-300);
+                    savedLotto = {
+                        ...lotto,
+                        roundKey,
+                        drawnAt: null,
+                        poolB: normalizeBongValue((Number(lotto.poolB) || 0) + price),
+                        carryoverB: 0,
+                        tickets: nextTickets,
+                        updatedAt: nowMs,
+                    };
+
+                    const history = Array.isArray(serverStudent.lottoTickets) ? serverStudent.lottoTickets : [];
+                    nextBong = normalizeBongValue(serverBong - price);
+                    transaction.set(stuRef, {
+                        bong: nextBong,
+                        lottoTickets: [...history, ticket].slice(-50),
+                    }, { merge: true });
+                    transaction.set(settingsRef, { lotto: savedLotto }, { merge: true });
+                    savedTicket = ticket;
+                });
+
+                if (savedTicket) {
+                    window.playerState.bong = nextBong;
+                    window.playerState.lottoTickets = [...(Array.isArray(window.playerState.lottoTickets) ? window.playerState.lottoTickets : []), savedTicket].slice(-50);
+                    window.globalSettings.lotto = savedLotto;
+                }
+                playSfx('bong', true);
+                updateUI();
+                await window.customAlert(`🎟️ 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: ${Number(savedLotto && savedLotto.poolB || 0).toFixed(1)}B`);
+            } catch (e) {
+                console.error('buyLottoTicket', e);
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'not_enough_bong') return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
+                if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다. 다음 회차에 구매해 주세요.');
+                await window.customAlert('로또 구매 실패: ' + msg);
+            }
+        };
+
+        window.drawLottoAdmin = async function () {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추첨할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+
+            const state = getCurrentLottoDisplayState();
+            if (!state.tickets || state.tickets.length === 0) return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
+            if (state.drawnAt) return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
+            if (isLottoPurchaseOpen()) {
+                const okEarly = await window.customConfirm('아직 금요일 점심 전이라 구매 시간이 남아 있습니다.\n그래도 지금 추첨할까요?');
+                if (!okEarly) return;
+            }
+
+            const drawNumbers = drawRandomLottoNumbers();
+            const drawKey = lottoNumbersKey(drawNumbers);
+            const winnerMap = new Map();
+            state.tickets.forEach((ticket) => {
+                if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
+                const sid = String(ticket.studentId || '');
+                if (!sid || winnerMap.has(sid)) return;
+                winnerMap.set(sid, {
+                    studentId: sid,
+                    name: ticket.studentName || STUDENT_NAMES[sid] || sid,
+                });
+            });
+            const winners = Array.from(winnerMap.values());
+            const poolB = normalizeBongValue(Number(state.poolB) || 0);
+            const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
+            const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
+            const nowMs = Date.now();
+            const winnerPayouts = [];
+
+            if (winners.length > 0 && payoutPoolB > 0) {
+                let allocated = 0;
+                winners.forEach((winner, idx) => {
+                    const payout = idx === winners.length - 1
+                        ? normalizeBongValue(payoutPoolB - allocated)
+                        : normalizeBongValue(payoutPoolB / winners.length);
+                    allocated = normalizeBongValue(allocated + payout);
+                    winnerPayouts.push({ ...winner, payoutB: payout });
+                });
+            }
+
+            const lastDraw = {
+                roundKey: state.roundKey,
+                numbers: drawNumbers,
+                poolB,
+                taxB,
+                payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
+                winners: winnerPayouts,
+                drawnAt: nowMs,
+                ticketCount: state.tickets.length,
+                carryoverB: winners.length > 0 ? 0 : poolB,
+            };
+            const nextLotto = {
+                ...state,
+                poolB: 0,
+                carryoverB: winners.length > 0 ? 0 : poolB,
+                tickets: [],
+                drawnAt: nowMs,
+                lastDraw,
+                updatedAt: nowMs,
+            };
+
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                    transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
+                    winnerPayouts.forEach((winner) => {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + winner.studentId);
+                        transaction.set(ref, { bong: increment(winner.payoutB) }, { merge: true });
+                    });
+                });
+                window.globalSettings.lotto = nextLotto;
+                await refreshStudentsCacheFromServer();
+                renderLottoPanel();
+                const winnerText = winnerPayouts.length
+                    ? winnerPayouts.map((w) => `${w.name}: +${Number(w.payoutB).toFixed(1)}B`).join('\n')
+                    : `당첨자 없음\n${poolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
+                await window.customAlert(
+                    `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(drawNumbers)}\n` +
+                    `누적: ${poolB.toFixed(1)}B / 세금(40%): ${taxB.toFixed(1)}B\n\n${winnerText}`
+                );
+            } catch (e) {
+                console.error('drawLottoAdmin', e);
+                await window.customAlert('로또 추첨 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window.buyItem = async function (id, name, isConsumable, opts) {
             const groupEx = opts && opts.groupBuyExecute === true;
             const price = getEffectiveShopPrice(id);
             const currentShopItem = getShopItemById(id);
             if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
             if (groupEx && id === 'item_mystery_dice') return;
+            if (id === LOTTO_SHOP_ID) return await window.buyLottoTicket();
 
             if (id === 'item_random') {
                 // 공동구매 랜덤박스는 executeShopGroupBuy → distributeGroupBuyRandomBox에서만 처리(출자 비율 분배)
@@ -7121,7 +7465,7 @@ function redrawPlazaGrantsUi() {
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'classEventPurchases', 'lastDailyReset', 'shopDailyPurchase',
+            'classEventPurchases', 'lastDailyReset', 'shopDailyPurchase', 'lottoTickets',
         ];
 
         function extractStudentGameData(existingData = {}) {
@@ -7203,6 +7547,7 @@ function redrawPlazaGrantsUi() {
                 bankDailyBonusLastDate: '',
                 dailyAllClearBonusDate: '',
                 classEventPurchases: [],
+                lottoTickets: [],
             };
         }
 

@@ -14,6 +14,7 @@ import {
     writeBatch,
     increment,
     runTransaction,
+    deleteField,
     arrayUnion,
     deleteDoc,
     serverTimestamp,
@@ -66,6 +67,8 @@ async function refreshStudentsCacheFromServer() {
     if (myId && window.playerState && !window.playerState.isGuest) {
         const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
         if (myData) {
+            window._lastServerStudentXp = Number(myData.xp);
+            window._lastServerStudentBong = normalizeBongValue(Number(myData.bong) || 0);
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -1066,6 +1069,8 @@ function redrawPlazaGrantsUi() {
         window.gmData = null; 
         window.gmaData = null; 
         window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null };
+        window._lastServerStudentXp = null;
+        window._lastServerStudentBong = null;
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** true 이후에는 오래된 Firestore 로컬 캐시 스냅샷으로 모금 UI를 덮지 않음 */
@@ -1734,6 +1739,9 @@ function redrawPlazaGrantsUi() {
             const state = getSanitizedLottoState(raw);
             const roundKey = getLottoRoundKey(now);
             if (state.roundKey !== roundKey) {
+                if (!state.drawnAt && ((Array.isArray(state.tickets) && state.tickets.length > 0) || Number(state.poolB) > 0)) {
+                    throw new Error('previous_round_undrawn');
+                }
                 return {
                     roundKey,
                     poolB: state.carryoverB,
@@ -3114,6 +3122,8 @@ function redrawPlazaGrantsUi() {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     const nx = Number(myData.xp) || 0;
+                                    window._lastServerStudentXp = nx;
+                                    window._lastServerStudentBong = normalizeBongValue(Number(myData.bong) || 0);
 
                                     if (
                                         _prevXpFromSnapshot != null &&
@@ -5155,6 +5165,15 @@ function redrawPlazaGrantsUi() {
                                 dataToSave.bong = normalizeBongValue(serverBong);
                             }
                         }
+                        if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong > serverBong) {
+                            const lastSyncedBong = Number(window._lastServerStudentBong);
+                            if (Number.isFinite(lastSyncedBong)) {
+                                const localIncrease = normalizeBongValue(nextBong - lastSyncedBong);
+                                dataToSave.bong = localIncrease > 0
+                                    ? normalizeBongValue(serverBong + localIncrease)
+                                    : normalizeBongValue(serverBong);
+                            }
+                        }
                         if (!opts.allowBankFieldChanges) {
                             ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
                                 if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
@@ -5183,8 +5202,14 @@ function redrawPlazaGrantsUi() {
                     );
                     return false;
                 }
-                if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
-                if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) {
+                    window.playerState.xp = dataToSave.xp;
+                    window._lastServerStudentXp = Number(dataToSave.xp);
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
+                    window.playerState.bong = dataToSave.bong;
+                    window._lastServerStudentBong = normalizeBongValue(dataToSave.bong);
+                }
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
@@ -5232,6 +5257,7 @@ function redrawPlazaGrantsUi() {
                         }, { merge: true });
                     });
                     window.playerState.bong = nextBong;
+                    window._lastServerStudentBong = nextBong;
                     window.playerState.lunchBid = nextLunchBid;
                     updateUI();
                     playSfx('bong', false); 
@@ -6241,6 +6267,7 @@ function redrawPlazaGrantsUi() {
 
                 if (savedTicket) {
                     window.playerState.bong = nextBong;
+                    window._lastServerStudentBong = nextBong;
                     window.playerState.lottoTickets = [...(Array.isArray(window.playerState.lottoTickets) ? window.playerState.lottoTickets : []), savedTicket].slice(-50);
                     window.globalSettings.lotto = savedLotto;
                 }
@@ -6252,6 +6279,7 @@ function redrawPlazaGrantsUi() {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_enough_bong') return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
                 if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다. 다음 회차에 구매해 주세요.');
+                if (msg === 'previous_round_undrawn') return await window.customAlert('지난 회차 로또가 아직 추첨되지 않았습니다. 마스터 J 추첨 후 다음 회차를 구매해 주세요.');
                 await window.customAlert('로또 구매 실패: ' + msg);
             }
         };
@@ -6260,72 +6288,81 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추첨할 수 있습니다.');
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
 
-            const state = getCurrentLottoDisplayState();
-            if (!state.tickets || state.tickets.length === 0) return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
-            if (state.drawnAt) return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
             if (isLottoPurchaseOpen()) {
                 const okEarly = await window.customConfirm('아직 금요일 점심 전이라 구매 시간이 남아 있습니다.\n그래도 지금 추첨할까요?');
                 if (!okEarly) return;
             }
 
             const drawNumbers = drawRandomLottoNumbers();
-            const drawKey = lottoNumbersKey(drawNumbers);
-            const winnerMap = new Map();
-            state.tickets.forEach((ticket) => {
-                if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
-                const sid = String(ticket.studentId || '');
-                if (!sid || winnerMap.has(sid)) return;
-                winnerMap.set(sid, {
-                    studentId: sid,
-                    name: ticket.studentName || STUDENT_NAMES[sid] || sid,
-                });
-            });
-            const winners = Array.from(winnerMap.values());
-            const poolB = normalizeBongValue(Number(state.poolB) || 0);
-            const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
-            const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
-            const nowMs = Date.now();
-            const winnerPayouts = [];
-
-            if (winners.length > 0 && payoutPoolB > 0) {
-                let allocated = 0;
-                winners.forEach((winner, idx) => {
-                    const payout = idx === winners.length - 1
-                        ? normalizeBongValue(payoutPoolB - allocated)
-                        : normalizeBongValue(payoutPoolB / winners.length);
-                    allocated = normalizeBongValue(allocated + payout);
-                    winnerPayouts.push({ ...winner, payoutB: payout });
-                });
-            }
-
-            const lastDraw = {
-                roundKey: state.roundKey,
-                numbers: drawNumbers,
-                poolB,
-                taxB,
-                payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
-                winners: winnerPayouts,
-                drawnAt: nowMs,
-                ticketCount: state.tickets.length,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-            };
-            const nextLotto = {
-                ...state,
-                poolB: 0,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-                tickets: [],
-                drawnAt: nowMs,
-                lastDraw,
-                updatedAt: nowMs,
-            };
+            let winnerPayouts = [];
+            let poolB = 0;
+            let taxB = 0;
+            let lastDraw = null;
+            let nextLotto = null;
 
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 await runTransaction(db, async (transaction) => {
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const state = getSanitizedLottoState(settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null);
+                    if (!state.tickets || state.tickets.length === 0) throw new Error('no_tickets');
+                    if (state.drawnAt) throw new Error('round_already_drawn');
+
+                    const drawKey = lottoNumbersKey(drawNumbers);
+                    const winnerMap = new Map();
+                    state.tickets.forEach((ticket) => {
+                        if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
+                        const sid = String(ticket.studentId || '');
+                        if (!sid || winnerMap.has(sid)) return;
+                        winnerMap.set(sid, {
+                            studentId: sid,
+                            name: ticket.studentName || STUDENT_NAMES[sid] || sid,
+                        });
+                    });
+                    const winners = Array.from(winnerMap.values());
+                    poolB = normalizeBongValue(Number(state.poolB) || 0);
+                    taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
+                    const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
+                    const nowMs = Date.now();
+                    const computedWinnerPayouts = [];
+
+                    if (winners.length > 0 && payoutPoolB > 0) {
+                        let allocated = 0;
+                        winners.forEach((winner, idx) => {
+                            const payout = idx === winners.length - 1
+                                ? normalizeBongValue(payoutPoolB - allocated)
+                                : normalizeBongValue(payoutPoolB / winners.length);
+                            allocated = normalizeBongValue(allocated + payout);
+                            computedWinnerPayouts.push({ ...winner, payoutB: payout });
+                        });
+                    }
+
+                    lastDraw = {
+                        roundKey: state.roundKey,
+                        numbers: drawNumbers,
+                        poolB,
+                        taxB,
+                        payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
+                        winners: computedWinnerPayouts,
+                        drawnAt: nowMs,
+                        ticketCount: state.tickets.length,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                    };
+                    nextLotto = {
+                        ...state,
+                        poolB: 0,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                        tickets: [],
+                        drawnAt: nowMs,
+                        lastDraw,
+                        updatedAt: nowMs,
+                    };
+                    winnerPayouts = computedWinnerPayouts;
+
                     transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
-                    winnerPayouts.forEach((winner) => {
+                    computedWinnerPayouts.forEach((winner) => {
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + winner.studentId);
                         transaction.set(ref, { bong: increment(winner.payoutB) }, { merge: true });
                     });
@@ -6342,7 +6379,10 @@ function redrawPlazaGrantsUi() {
                 );
             } catch (e) {
                 console.error('drawLottoAdmin', e);
-                await window.customAlert('로또 추첨 실패: ' + (e && e.message ? e.message : String(e)));
+                const msg = e && e.message ? String(e.message) : String(e);
+                if (msg === 'no_tickets') return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
+                if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
+                await window.customAlert('로또 추첨 실패: ' + msg);
             }
         };
 
@@ -7190,11 +7230,19 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 초기화할 수 있습니다.');
             if (!shopId || !db) return;
             const shop = getShopItemById(shopId);
-            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
-            const mergedContribs = buildSanitizedContributionsMap(pool.contributions);
-            const total = sumShopPoolContributions(pool);
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            let latestPool = null;
+            try {
+                const poolSnap = await getDocFromServer(poolRef);
+                latestPool = poolSnap.exists() ? (poolSnap.data() || {}) : {};
+            } catch (e) {
+                console.warn('resetShopGroupBuyAdmin latest read', e);
+                latestPool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            }
+            const latestContribs = buildSanitizedContributionsMap(latestPool.contributions);
+            const total = Object.keys(latestContribs).reduce((s, sid) => s + latestContribs[sid], 0);
             if (total <= 0) return await window.customAlert('초기화할 입금 내역이 없습니다.');
-            const refundTotal = Object.keys(mergedContribs).reduce((s, sid) => s + calcShopGroupBuyRefund(mergedContribs[sid]), 0);
+            const refundTotal = Object.keys(latestContribs).reduce((s, sid) => s + calcShopGroupBuyRefund(latestContribs[sid]), 0);
             const ok = await window.customConfirm(
                 `「${shop ? shop.name : shopId}」 공동구매를 초기화할까요?\n` +
                 `총 입금 ${total}B 중 10% 차감 환불 합계 ${refundTotal}B가 학생들에게 지급됩니다.\n` +
@@ -7202,35 +7250,41 @@ function redrawPlazaGrantsUi() {
             );
             if (!ok) return;
 
-            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                const poolSnap = await getDocFromServer(poolRef);
-                const poolBase = poolSnap.exists() ? poolSnap.data() || {} : {};
-                const batch = writeBatch(db);
-                Object.keys(mergedContribs).forEach((sid) => {
-                    const refund = calcShopGroupBuyRefund(mergedContribs[sid]);
-                    if (refund <= 0) return;
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
+                let committedTotal = 0;
+                let committedRefundTotal = 0;
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    const poolBase = poolSnap.exists() ? (poolSnap.data() || {}) : {};
+                    const serverContribs = buildSanitizedContributionsMap(poolBase.contributions);
+                    committedTotal = Object.keys(serverContribs).reduce((s, sid) => s + serverContribs[sid], 0);
+                    if (committedTotal <= 0) throw new Error('no_contributions');
+                    committedRefundTotal = Object.keys(serverContribs).reduce((s, sid) => s + calcShopGroupBuyRefund(serverContribs[sid]), 0);
+                    Object.keys(serverContribs).forEach((sid) => {
+                        const refund = calcShopGroupBuyRefund(serverContribs[sid]);
+                        if (refund <= 0) return;
+                        transaction.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid), { bong: increment(refund) }, { merge: true });
+                    });
+                    transaction.set(poolRef, {
+                        ...poolBase,
+                        contributions: {},
+                        updatedAt: Date.now(),
+                        lastResetAt: Date.now(),
+                        lastResetRefundTotal: committedRefundTotal,
+                        lastResetOriginalTotal: committedTotal,
+                    });
                 });
-                batch.set(poolRef, {
-                    ...poolBase,
-                    contributions: {},
-                    updatedAt: Date.now(),
-                    lastResetAt: Date.now(),
-                    lastResetRefundTotal: refundTotal,
-                    lastResetOriginalTotal: total,
-                });
-                await batch.commit();
                 applyShopGroupBuyPoolLocal(shopId, {});
                 await refreshShopGroupBuyPoolFromServer(shopId);
                 await refreshStudentsCacheFromServer();
                 window.renderShopGroupBuyAdminModal();
                 if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
-                await window.customAlert('공동구매가 초기화되고 환불 처리되었습니다.');
+                await window.customAlert(`공동구매가 초기화되고 환불 처리되었습니다.\n총 입금 ${committedTotal}B / 환불 ${committedRefundTotal}B`);
             } catch (e) {
                 console.error('resetShopGroupBuyAdmin', e);
+                if (String(e && e.message ? e.message : e) === 'no_contributions') return await window.customAlert('이미 초기화되었거나 입금 내역이 없습니다.');
                 await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
@@ -7387,16 +7441,50 @@ function redrawPlazaGrantsUi() {
 
             window._skinRefundRunning = true;
             try {
+                if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                let nextBong = null;
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(currentStudentDocRef);
+                    if (!snap.exists()) throw new Error('student_not_found');
+                    const serverData = snap.data() || {};
+                    const serverOwned = serverData.ownedSkins && typeof serverData.ownedSkins === 'object' ? serverData.ownedSkins : {};
+                    const serverEquipped = serverData.equippedSkins && typeof serverData.equippedSkins === 'object' ? serverData.equippedSkins : {};
+                    if (!serverOwned[skinId]) throw new Error('skin_not_owned');
+                    if (!serverEquipped[skinId]) throw new Error('skin_not_equipped');
+
+                    nextBong = normalizeBongValue((Number(serverData.bong) || 0) + refundB);
+                    const updates = {
+                        bong: nextBong,
+                        [`ownedSkins.${skinId}`]: deleteField(),
+                        [`equippedSkins.${skinId}`]: deleteField(),
+                    };
+                    if (skin.type === 'aura' || skin.type === 'face') {
+                        SKIN_DATA.forEach((s) => {
+                            if (s.type === skin.type) updates[`equippedSkins.${s.id}`] = deleteField();
+                        });
+                    }
+                    transaction.update(currentStudentDocRef, updates);
+                });
+
                 purgeRefundedSkinCompletely(skinId);
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                window.playerState.bong = nextBong;
+                window._lastServerStudentBong = nextBong;
                 playSfx('bong', true);
                 updateUI();
-                const saved = await saveDataToCloud({ operationLabel: `${skin.name} 스킨 환불` });
-                if (!saved) return;
                 await window.customAlert(
                     `♻️ [${skin.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.\n(장착 해제 및 삭제됨)`
                 );
                 window.switchTab('plaza');
+            } catch (e) {
+                const msg = e && e.message ? String(e.message) : String(e);
+                if (msg === 'student_not_found') return await window.customAlert('학생 정보를 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.');
+                if (msg === 'skin_not_owned') return await window.customAlert('서버 기준으로 이미 보유하지 않은 스킨입니다. 새로고침 후 확인해 주세요.');
+                if (msg === 'skin_not_equipped') return await window.customAlert('서버 기준으로 장착 중인 스킨만 환불할 수 있습니다. 새로고침 후 확인해 주세요.');
+                console.error('refundEquippedSkin', e);
+                await window.customAlert('스킨 환불 실패: ' + msg);
             } finally {
                 window._skinRefundRunning = false;
             }

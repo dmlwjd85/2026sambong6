@@ -4318,17 +4318,20 @@ function redrawPlazaGrantsUi() {
                         <div class="text-[9px] text-slate-600 mt-1">배치 없음</div>
                     </div>`;
                 }
+                // 마스터는 어느 자리든 클릭 시 관리 모달(주인 변경·삭제, 가격, 잠금)을 연다
+                const adminClick = estateAdmin ? `onclick="window.openEstateSeatAdmin(${seat.id})"` : '';
                 if (seat.owner) {
                     const ownerName = STUDENT_NAMES[seat.owner] || '학생';
-                    return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)]">
+                    return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)] ${estateAdmin ? 'cursor-pointer transition hover:border-amber-400' : ''}" ${adminClick}>
                         <div class="text-teal-400 font-bold text-xs mb-1">구매 완료</div>
                         <div class="text-white text-[10px]">${ownerName}</div>
+                        ${estateAdmin ? `<div class="text-[9px] text-slate-400 mt-1">${seat.price} B · 관리</div>` : ''}
                     </div>`;
                 }
                 if (seat.assignee) {
                     const assignName = STUDENT_NAMES[seat.assignee] || '학생';
-                    const clickAction = window.playerState.isAdmin
-                        ? `onclick="window.toggleSeatLock(${seat.id})"`
+                    const clickAction = estateAdmin
+                        ? adminClick
                         : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
                     return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
                         <div class="text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
@@ -4337,13 +4340,12 @@ function redrawPlazaGrantsUi() {
                     </div>`;
                 }
                 if (seat.locked) {
-                    const gmOnClick = window.playerState.isAdmin ? `onclick="window.toggleSeatLock(${seat.id})"` : '';
-                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center transition ${window.playerState.isAdmin ? 'cursor-pointer hover:border-red-500' : ''}" ${gmOnClick}>
+                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center transition ${estateAdmin ? 'cursor-pointer hover:border-red-500' : ''}" ${adminClick}>
                         <div class="text-slate-500 font-bold text-xs mb-1"><i class="fa-solid fa-lock text-red-900"></i> 잠김</div>
                         <div class="text-slate-600 text-[10px]">${seat.id + 1}번 자리</div>
                     </div>`;
                 }
-                const clickAction = window.playerState.isAdmin ? `onclick="window.toggleSeatLock(${seat.id})"` : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
+                const clickAction = estateAdmin ? adminClick : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
                 return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-3 text-center cursor-pointer transition group" ${clickAction}>
                     <div class="text-slate-300 font-bold text-xs mb-1 group-hover:text-white">${seat.id + 1}번 자리</div>
                     <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${seat.price} B</div>
@@ -5944,7 +5946,8 @@ function redrawPlazaGrantsUi() {
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
             const idx = ESTATE_RESTORE_SEOK_SEAT_INDEX;
             const seat = window.estateState.seats[idx];
-            if (!seat || seat.locked || seat.owner) return;
+            // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
+            if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
             seat.owner = '13';
             if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
             window.estateState.purchaseHistory.push({
@@ -5961,7 +5964,8 @@ function redrawPlazaGrantsUi() {
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
             const idx = ESTATE_RESTORE_HHWANG_SEAT_INDEX;
             const seat = window.estateState.seats[idx];
-            if (!seat || seat.locked || seat.owner) return;
+            // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
+            if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
             seat.owner = '12';
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
@@ -6015,6 +6019,112 @@ function redrawPlazaGrantsUi() {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
                 window.renderEstate();
             }
+        };
+
+        /**
+         * ★ 마스터: 자리 관리 모달 ★
+         * 자리를 클릭하면 주인 변경·삭제(매물 전환), 가격 조정, 잠금/해제를 한 곳에서 처리.
+         * ※ 봉(B) 정산은 자동으로 하지 않음(필요 시 마스터 탭에서 직접 조정).
+         */
+        window.openEstateSeatAdmin = function(seatId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
+            const seat = (window.estateState && Array.isArray(window.estateState.seats)) ? window.estateState.seats[seatId] : null;
+            if (!seat) return;
+
+            const ownerName = seat.owner ? (STUDENT_NAMES[seat.owner] || seat.owner) : '없음 (매물)';
+            const assignName = seat.assignee ? (STUDENT_NAMES[seat.assignee] || seat.assignee) : '없음';
+            const ownerOptions = ['<option value="">(주인 없음 — 매물로 전환)</option>']
+                .concat(getActiveStudentIds().map((sid) => {
+                    const id = String(sid);
+                    const sel = String(seat.owner || '') === id ? 'selected' : '';
+                    return `<option value="${id}" ${sel}>${escapeHtmlGb(STUDENT_NAMES[id] || id)} (${id}번)</option>`;
+                }))
+                .join('');
+
+            const d = document.createElement('div');
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-teal-500/50 max-w-sm w-full space-y-3 shadow-2xl">
+                    <h3 class="text-lg font-display text-teal-300 text-center">🪑 ${seatId + 1}번 자리 관리</h3>
+                    <p class="text-[10px] text-slate-400 text-center leading-relaxed">
+                        현재 주인: <strong class="text-white">${escapeHtmlGb(ownerName)}</strong>
+                        · 임시 배치: ${escapeHtmlGb(assignName)}
+                        · 상태: ${seat.locked ? '<span class="text-rose-400 font-bold">잠김</span>' : '<span class="text-emerald-300 font-bold">열림</span>'}
+                    </p>
+                    <label class="block text-[10px] text-slate-300 font-bold">자리 주인
+                        <select id="estAdminOwner" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">${ownerOptions}</select>
+                    </label>
+                    <label class="block text-[10px] text-slate-300 font-bold">가격 (B)
+                        <input type="number" id="estAdminPrice" min="0" step="1" value="${Number(seat.price) || 0}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">
+                    </label>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">※ 주인 변경·삭제 시 봉(B)은 자동 정산되지 않습니다. 환불·차감이 필요하면 마스터 탭에서 직접 조정하세요.<br>※ 변경 내역은 구매 기록(감사 로그)에 남습니다.</p>
+                    <div class="flex gap-2">
+                        <button type="button" id="estAdminSave" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs">저장</button>
+                        <button type="button" id="estAdminLock" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">${seat.locked ? '🔓 잠금 해제' : '🔒 잠금'}</button>
+                        <button type="button" id="estAdminCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">취소</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(d);
+
+            document.getElementById('estAdminCancel').onclick = () => d.remove();
+            document.getElementById('estAdminLock').onclick = async () => {
+                d.remove();
+                await window.toggleSeatLock(seatId);
+            };
+            document.getElementById('estAdminSave').onclick = async () => {
+                const newOwner = document.getElementById('estAdminOwner').value || null;
+                let newPrice = parseInt(document.getElementById('estAdminPrice').value, 10);
+                if (isNaN(newPrice) || newPrice < 0) newPrice = Number(seat.price) || 0;
+
+                const ownerChanged = String(seat.owner || '') !== String(newOwner || '');
+                const priceChanged = Number(seat.price) !== newPrice;
+                if (!ownerChanged && !priceChanged) { d.remove(); return; }
+
+                const changeLines = [];
+                if (ownerChanged) {
+                    const newName = newOwner ? (STUDENT_NAMES[newOwner] || newOwner) : '없음 (매물로 전환)';
+                    changeLines.push(`- 주인: ${ownerName} → ${newName}`);
+                }
+                if (priceChanged) changeLines.push(`- 가격: ${Number(seat.price) || 0} B → ${newPrice} B`);
+                d.remove();
+                const ok = await window.customConfirm(`${seatId + 1}번 자리를 다음과 같이 변경할까요?\n\n${changeLines.join('\n')}\n\n※ 봉(B) 정산은 자동으로 되지 않습니다.`);
+                if (!ok) return;
+
+                const prevOwner = seat.owner ? String(seat.owner) : null;
+                if (ownerChanged) {
+                    seat.owner = newOwner;
+                    // 지정 복구 자리(자동 주인 복구)가 마스터 직권 변경을 되돌리지 않도록 표시
+                    seat.noAutoRestore = true;
+                    if (newOwner) {
+                        seat.assignee = null;
+                        // 새 주인이 다른 자리에 임시 배치돼 있었다면 그 배치를 해제
+                        window.estateState.seats.forEach((s) => {
+                            if (s !== seat && String(s.assignee || '') === String(newOwner)) s.assignee = null;
+                        });
+                    }
+                    if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
+                    window.estateState.purchaseHistory.push({
+                        studentId: newOwner || prevOwner || '',
+                        seatId: seatId,
+                        price: 0,
+                        at: Date.now(),
+                        note: newOwner
+                            ? `마스터 직권 주인 변경 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
+                            : `마스터 직권 주인 삭제 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
+                    });
+                }
+                if (priceChanged) seat.price = newPrice;
+
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                    window.renderEstate();
+                    await window.customAlert(`✅ ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
+                } catch (e) {
+                    console.error('openEstateSeatAdmin save', e);
+                    await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                }
+            };
         };
 
         /** 구매 완료 자리는 유지하고, 미구매 학생만 빈 자리에 랜덤 배치 */

@@ -219,6 +219,69 @@
             accent-color: #f59e0b;
         }
 
+        /* 수업도구 — 판서 모드(전자칠판) */
+        .chalk-launch-panel {
+            background: linear-gradient(145deg, rgba(13, 38, 28, 0.95) 0%, rgba(6, 20, 14, 0.98) 100%);
+            box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.15);
+        }
+        .chalk-tool-btn {
+            padding: 0.4rem 0.6rem;
+            font-size: 10px;
+            font-weight: 800;
+            color: #e2e8f0;
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid rgba(100, 116, 139, 0.5);
+            border-radius: 0.5rem;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .chalk-tool-btn:hover { background: rgba(51, 65, 85, 0.9); }
+        .chalk-tool-btn.chalk-active {
+            border-color: #a3e635;
+            color: #d9f99d;
+            background: rgba(63, 98, 18, 0.45);
+            box-shadow: 0 0 10px rgba(163, 230, 53, 0.2);
+        }
+        .chalk-tool-danger { border-color: rgba(239, 68, 68, 0.6); color: #fca5a5; }
+        .chalk-select {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid rgba(100, 116, 139, 0.5);
+            border-radius: 0.5rem;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 0.35rem 0.4rem;
+        }
+        .chalk-swatch {
+            width: 1.4rem;
+            height: 1.4rem;
+            border-radius: 9999px;
+            border: 2px solid rgba(255, 255, 255, 0.35);
+            cursor: pointer;
+            transition: transform 0.12s, border-color 0.12s;
+        }
+        .chalk-swatch.chalk-active {
+            border-color: #fff;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+            transform: scale(1.12);
+        }
+        .chalkboard-frame {
+            border: 10px solid #7c5a3a;
+            box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.55), 0 8px 30px rgba(0, 0, 0, 0.6);
+        }
+        .chalkboard-green { background: radial-gradient(ellipse 120% 100% at 50% 0%, #355e3f 0%, #2a4a33 55%, #20392a 100%); }
+        .chalkboard-dark { background: radial-gradient(ellipse 120% 100% at 50% 0%, #2c2f33 0%, #1f2226 55%, #15171a 100%); }
+        .chalkboard-text {
+            line-height: 1.5;
+            word-break: break-word;
+            text-shadow: 0 0 6px rgba(255, 255, 255, 0.18);
+            caret-color: #fde047;
+        }
+        .chalkboard-text:empty::before {
+            content: '여기를 눌러 판서를 시작하세요…';
+            color: rgba(255, 255, 255, 0.3);
+        }
+
         .lottery-draw-overlay {
             background: radial-gradient(ellipse at center, #2a1a08 0%, #0a0604 70%);
         }

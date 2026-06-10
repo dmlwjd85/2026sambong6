@@ -19,7 +19,7 @@
         const manifestUrl = URL.createObjectURL(manifestBlob);
         document.write(`<link rel="manifest" href="${manifestUrl}">`);
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gaegu:wght@400;700&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
@@ -1074,6 +1074,21 @@
         <!-- ★ 수업도구 탭 (타이머 · 제비뽑기) ★ -->
         <section id="classtoolsSection" class="hidden">
             <div class="max-w-2xl mx-auto px-1 pb-10 space-y-6">
+                <!-- 판서 모드 (전자칠판) -->
+                <div class="chalk-launch-panel rounded-2xl p-4 sm:p-6 border-2 border-emerald-700/60 shadow-[0_0_40px_rgba(16,93,61,0.3)]">
+                    <div class="flex items-center gap-3 mb-3 border-b border-emerald-800/50 pb-3">
+                        <div class="w-12 h-12 rounded-lg bg-emerald-950 border-2 border-emerald-600/70 flex items-center justify-center text-2xl shadow-inner">🖍️</div>
+                        <div>
+                            <p class="text-[10px] font-black tracking-[0.35em] text-emerald-500/90">CLASS OPS</p>
+                            <h2 class="text-xl sm:text-2xl font-display text-emerald-100 tracking-wide">판서 모드 (전자칠판)</h2>
+                        </div>
+                    </div>
+                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 전체 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트 변경, 분필·형광펜 자유 그리기, 지우개, 되돌리기, 전체화면을 지원합니다.</p>
+                    <button type="button" onclick="window.openChalkboard()" class="w-full py-4 rounded-xl font-display text-lg sm:text-xl tracking-widest bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-emerald-50 border-2 border-emerald-400/80 shadow-[0_4px_0_#064e3b,inset_0_1px_0_rgba(255,255,255,0.25)] active:translate-y-0.5 active:shadow-none transition">
+                        <i class="fa-solid fa-chalkboard mr-2"></i>칠판 열기
+                    </button>
+                </div>
+
                 <div class="military-panel rounded-2xl p-4 sm:p-6 border-2 border-lime-700/60 shadow-[0_0_40px_rgba(74,93,50,0.35)]">
                     <div class="flex items-center gap-3 mb-4 border-b border-lime-800/50 pb-3">
                         <div class="w-12 h-12 rounded-lg bg-lime-950 border-2 border-lime-600/70 flex items-center justify-center text-2xl shadow-inner">⏱</div>
@@ -1151,8 +1166,84 @@
                         <ul id="lotteryResultsList" class="space-y-1 text-sm font-bold text-amber-100"></ul>
                     </div>
                 </div>
+
+                <!-- 사회 수업 연출 (비상계엄) — 마스터 탭에서 이동 -->
+                <div class="glass-panel p-4 rounded-xl border border-red-600/70 bg-red-950/20">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation text-red-400"></i> 사회 수업 연출</h3>
+                            <p class="text-[9px] text-slate-400 leading-relaxed">비상계엄 선포 화면을 띄우면 <strong class="text-red-200">모든 학생 화면이 잠기고</strong> 연출만 보입니다. 다음 단계에서 포고문이 학생 화면에 동시에 표시됩니다.</p>
+                        </div>
+                        <button type="button" onclick="window.openMartialLawLesson()" class="bg-red-700 hover:bg-red-600 text-white font-black py-2.5 px-5 rounded-xl text-xs shadow-lg border border-red-400/40">
+                            비상계엄 버튼
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 아침활동시간 안내 — 마스터 탭에서 이동 -->
+                <div class="glass-panel p-4 rounded-xl border border-amber-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-mug-hot text-amber-300"></i> 아침활동시간 안내</h3>
+                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">평일 오전 8시 40분이 되면 TV에 띄워 둔 광장 화면이 아침활동 안내 화면으로 자동 전환됩니다.</p>
+                    <textarea id="gmMorningActivityNoticeInput" rows="3" placeholder="예: 아침활동 시간입니다. 오늘의 책을 꺼내고 조용히 독서/과제를 시작하세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" onclick="window.saveMorningActivityNotice()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded text-[10px]">안내 저장</button>
+                        <button type="button" onclick="window.previewMorningActivityNotice()" class="bg-slate-800 hover:bg-slate-700 text-amber-100 border border-amber-700/50 font-bold py-2 px-4 rounded text-[10px]">미리보기</button>
+                    </div>
+                </div>
             </div>
         </section>
+
+        <!-- ★ 판서 모드(전자칠판) 오버레이 — 마스터 전용 ★ -->
+        <div id="chalkboardOverlay" class="hidden fixed inset-0 z-[280] flex flex-col bg-[#0b0f0a]">
+            <div class="flex flex-wrap items-center gap-1.5 px-2 sm:px-3 py-2 bg-slate-900/95 border-b border-slate-700 shrink-0">
+                <div class="flex gap-1 mr-1">
+                    <button type="button" id="chalkModeText" onclick="window.setChalkboardMode('text')" class="chalk-tool-btn chalk-active">⌨️ 글쓰기</button>
+                    <button type="button" id="chalkModePen" onclick="window.setChalkboardMode('pen')" class="chalk-tool-btn">🖍️ 분필펜</button>
+                    <button type="button" id="chalkModeHighlight" onclick="window.setChalkboardMode('highlight')" class="chalk-tool-btn">🖊️ 형광펜</button>
+                    <button type="button" id="chalkModeEraser" onclick="window.setChalkboardMode('eraser')" class="chalk-tool-btn">🧽 지우개</button>
+                </div>
+                <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴">
+                    <option value="'Gaegu', cursive" selected>분필 손글씨</option>
+                    <option value="'Nanum Pen Script', cursive">펜글씨</option>
+                    <option value="'Black Han Sans', sans-serif">굵은 제목</option>
+                    <option value="'Noto Sans KR', sans-serif">고딕체</option>
+                </select>
+                <select id="chalkFontSize" onchange="window.setChalkboardFontSize(this.value)" class="chalk-select" title="글자 크기">
+                    <option value="24">24px</option>
+                    <option value="32">32px</option>
+                    <option value="40" selected>40px</option>
+                    <option value="56">56px</option>
+                    <option value="72">72px</option>
+                    <option value="96">96px</option>
+                </select>
+                <div class="flex gap-1 items-center" id="chalkColorSwatches" title="분필 색">
+                    <button type="button" class="chalk-swatch chalk-active" style="background:#f8fafc" onclick="window.setChalkboardColor('#f8fafc', this)" title="흰 분필"></button>
+                    <button type="button" class="chalk-swatch" style="background:#fde047" onclick="window.setChalkboardColor('#fde047', this)" title="노랑"></button>
+                    <button type="button" class="chalk-swatch" style="background:#f9a8d4" onclick="window.setChalkboardColor('#f9a8d4', this)" title="분홍"></button>
+                    <button type="button" class="chalk-swatch" style="background:#7dd3fc" onclick="window.setChalkboardColor('#7dd3fc', this)" title="하늘"></button>
+                    <button type="button" class="chalk-swatch" style="background:#bef264" onclick="window.setChalkboardColor('#bef264', this)" title="연두"></button>
+                    <button type="button" class="chalk-swatch" style="background:#fdba74" onclick="window.setChalkboardColor('#fdba74', this)" title="주황"></button>
+                </div>
+                <select id="chalkPenWidth" class="chalk-select" title="펜 굵기">
+                    <option value="3">가는 선</option>
+                    <option value="6" selected>보통 선</option>
+                    <option value="12">굵은 선</option>
+                    <option value="22">아주 굵게</option>
+                </select>
+                <div class="flex-grow"></div>
+                <button type="button" onclick="window.undoChalkboardStroke()" class="chalk-tool-btn" title="그리기 되돌리기">↩️ 되돌리기</button>
+                <button type="button" onclick="window.toggleChalkboardBoardColor()" class="chalk-tool-btn" title="초록 칠판 ↔ 블랙보드">🟩 칠판색</button>
+                <button type="button" onclick="window.clearChalkboard()" class="chalk-tool-btn" title="글씨·그림 모두 지우기">🗑️ 모두 지우기</button>
+                <button type="button" onclick="window.toggleChalkboardFullscreen()" class="chalk-tool-btn" title="전체화면">⛶ 전체화면</button>
+                <button type="button" onclick="window.closeChalkboard()" class="chalk-tool-btn chalk-tool-danger">✕ 닫기</button>
+            </div>
+            <div class="flex-1 min-h-0 p-2 sm:p-3">
+                <div id="chalkboardFrame" class="chalkboard-frame chalkboard-green w-full h-full relative overflow-hidden rounded-lg">
+                    <div id="chalkboardText" contenteditable="true" spellcheck="false" class="chalkboard-text absolute inset-0 p-5 sm:p-8 overflow-y-auto outline-none" style="font-size:40px; color:#f8fafc; font-family:'Gaegu', cursive;"></div>
+                    <canvas id="chalkboardCanvas" class="absolute inset-0" style="pointer-events:none"></canvas>
+                </div>
+            </div>
+        </div>
 
         <!-- ★ 8. 마스터 관리자 탭 ★ -->
         <section id="adminSection" class="hidden">
@@ -1217,27 +1308,7 @@
                 <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
             </div>
 
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-red-600/70 bg-red-950/20">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                        <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation text-red-400"></i> 사회 수업 연출</h3>
-                        <p class="text-[9px] text-slate-400 leading-relaxed">비상계엄 선포 화면을 띄우면 <strong class="text-red-200">모든 학생 화면이 잠기고</strong> 연출만 보입니다. 다음 단계에서 포고문이 학생 화면에 동시에 표시됩니다.</p>
-                    </div>
-                    <button type="button" onclick="window.openMartialLawLesson()" class="bg-red-700 hover:bg-red-600 text-white font-black py-2.5 px-5 rounded-xl text-xs shadow-lg border border-red-400/40">
-                        비상계엄 버튼
-                    </button>
-                </div>
-            </div>
-
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-amber-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-mug-hot text-amber-300"></i> 아침활동시간 안내</h3>
-                <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">평일 오전 8시 40분이 되면 TV에 띄워 둔 광장 화면이 아침활동 안내 화면으로 자동 전환됩니다.</p>
-                <textarea id="gmMorningActivityNoticeInput" rows="3" placeholder="예: 아침활동 시간입니다. 오늘의 책을 꺼내고 조용히 독서/과제를 시작하세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
-                <div class="flex flex-col sm:flex-row gap-2">
-                    <button type="button" onclick="window.saveMorningActivityNotice()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded text-[10px]">안내 저장</button>
-                    <button type="button" onclick="window.previewMorningActivityNotice()" class="bg-slate-800 hover:bg-slate-700 text-amber-100 border border-amber-700/50 font-bold py-2 px-4 rounded text-[10px]">미리보기</button>
-                </div>
-            </div>
+            <!-- (비상계엄·아침활동 안내 패널은 「수업도구」 탭으로 이동했습니다) -->
 
             <!-- PicBook 회원 (Firestore picbook_accounts) -->
             <div class="glass-panel p-4 rounded-xl mb-4 border border-indigo-500/50 bg-slate-900/80">

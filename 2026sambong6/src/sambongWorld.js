@@ -2723,6 +2723,243 @@ function redrawPlazaGrantsUi() {
 
 
         // ==========================================
+        // ★ 수업 도구: 판서 모드(전자칠판) ★
+        // ==========================================
+        let _chalkMode = 'text';
+        let _chalkColor = '#f8fafc';
+        let _chalkUndoStack = [];
+        let _chalkDrawing = false;
+        let _chalkLastPoint = null;
+        let _chalkBoardDark = false;
+        let _chalkEventsBound = false;
+
+        /** 캔버스를 칠판 프레임 크기에 맞추고, 이미 그린 내용은 보존해 다시 그림 */
+        function resizeChalkboardCanvas() {
+            const canvas = document.getElementById('chalkboardCanvas');
+            const frame = document.getElementById('chalkboardFrame');
+            if (!canvas || !frame) return;
+            const rect = frame.getBoundingClientRect();
+            const w = Math.max(1, Math.round(rect.width));
+            const h = Math.max(1, Math.round(rect.height));
+            if (canvas.width === w && canvas.height === h) return;
+            let snapshot = null;
+            if (canvas.width > 1 && canvas.height > 1) {
+                try { snapshot = canvas.toDataURL(); } catch (e) { snapshot = null; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            if (snapshot) {
+                const img = new Image();
+                img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                img.src = snapshot;
+            }
+        }
+
+        function getChalkPenWidth() {
+            const el = document.getElementById('chalkPenWidth');
+            return Math.max(1, parseInt(el ? el.value : '6', 10) || 6);
+        }
+
+        function drawChalkSegment(from, to) {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const width = getChalkPenWidth();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            if (_chalkMode === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.globalAlpha = 1;
+                ctx.lineWidth = width * 4;
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+            } else if (_chalkMode === 'highlight') {
+                // 형광펜: 반투명 굵은 선
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 0.35;
+                ctx.lineWidth = width * 3;
+                ctx.strokeStyle = _chalkColor;
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 0.95;
+                ctx.lineWidth = width;
+                ctx.strokeStyle = _chalkColor;
+            }
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            // 제자리 클릭(점 찍기)도 보이게 미세 이동
+            ctx.lineTo(to.x === from.x && to.y === from.y ? to.x + 0.1 : to.x, to.y);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        function pushChalkUndoSnapshot() {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas || canvas.width === 0) return;
+            try {
+                _chalkUndoStack.push(canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height));
+                if (_chalkUndoStack.length > 20) _chalkUndoStack.shift();
+            } catch (e) { /* 스냅샷 실패 시 되돌리기만 비활성 */ }
+        }
+
+        function bindChalkboardEventsOnce() {
+            if (_chalkEventsBound) return;
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas) return;
+            _chalkEventsBound = true;
+            const getPoint = (e) => {
+                const rect = canvas.getBoundingClientRect();
+                return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            };
+            canvas.addEventListener('pointerdown', (e) => {
+                if (_chalkMode === 'text') return;
+                e.preventDefault();
+                try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+                pushChalkUndoSnapshot();
+                _chalkDrawing = true;
+                _chalkLastPoint = getPoint(e);
+                drawChalkSegment(_chalkLastPoint, _chalkLastPoint);
+            });
+            canvas.addEventListener('pointermove', (e) => {
+                if (!_chalkDrawing || !_chalkLastPoint) return;
+                const p = getPoint(e);
+                drawChalkSegment(_chalkLastPoint, p);
+                _chalkLastPoint = p;
+            });
+            const endStroke = () => { _chalkDrawing = false; _chalkLastPoint = null; };
+            canvas.addEventListener('pointerup', endStroke);
+            canvas.addEventListener('pointercancel', endStroke);
+            window.addEventListener('resize', () => {
+                const overlay = document.getElementById('chalkboardOverlay');
+                if (overlay && !overlay.classList.contains('hidden')) resizeChalkboardCanvas();
+            });
+            document.addEventListener('fullscreenchange', () => {
+                setTimeout(resizeChalkboardCanvas, 80);
+            });
+        }
+
+        window.openChalkboard = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('판서 모드는 마스터만 사용할 수 있습니다.');
+            const overlay = document.getElementById('chalkboardOverlay');
+            if (!overlay) return;
+            overlay.classList.remove('hidden');
+            document.body.classList.add('overflow-hidden');
+            bindChalkboardEventsOnce();
+            requestAnimationFrame(() => {
+                resizeChalkboardCanvas();
+                window.setChalkboardMode('text');
+            });
+        };
+
+        window.closeChalkboard = function() {
+            const overlay = document.getElementById('chalkboardOverlay');
+            if (overlay) overlay.classList.add('hidden');
+            document.body.classList.remove('overflow-hidden');
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        };
+
+        window.setChalkboardMode = function(mode) {
+            _chalkMode = mode;
+            const canvas = document.getElementById('chalkboardCanvas');
+            const textEl = document.getElementById('chalkboardText');
+            const drawing = mode !== 'text';
+            if (canvas) canvas.style.pointerEvents = drawing ? 'auto' : 'none';
+            if (textEl) textEl.setAttribute('contenteditable', drawing ? 'false' : 'true');
+            ['text', 'pen', 'highlight', 'eraser'].forEach((m) => {
+                const btn = document.getElementById('chalkMode' + m.charAt(0).toUpperCase() + m.slice(1));
+                if (btn) btn.classList.toggle('chalk-active', m === mode);
+            });
+            if (mode === 'text' && textEl) textEl.focus();
+        };
+
+        /** 텍스트가 선택돼 있으면 선택 부분만, 아니면 칠판 기본값을 바꿈 */
+        function chalkSelectionInBoard() {
+            const textEl = document.getElementById('chalkboardText');
+            const sel = window.getSelection();
+            return !!(textEl && sel && !sel.isCollapsed && sel.anchorNode && textEl.contains(sel.anchorNode));
+        }
+
+        window.setChalkboardColor = function(color, btn) {
+            _chalkColor = color;
+            document.querySelectorAll('#chalkColorSwatches .chalk-swatch').forEach((b) => b.classList.toggle('chalk-active', b === btn));
+            if (_chalkMode !== 'text') return;
+            const textEl = document.getElementById('chalkboardText');
+            if (chalkSelectionInBoard()) {
+                document.execCommand('styleWithCSS', false, true);
+                document.execCommand('foreColor', false, color);
+            } else if (textEl) {
+                textEl.style.color = color;
+            }
+        };
+
+        window.setChalkboardFontFamily = function(family) {
+            const textEl = document.getElementById('chalkboardText');
+            if (!textEl) return;
+            if (chalkSelectionInBoard()) {
+                document.execCommand('styleWithCSS', false, true);
+                document.execCommand('fontName', false, family);
+            } else {
+                textEl.style.fontFamily = family;
+            }
+        };
+
+        window.setChalkboardFontSize = function(px) {
+            const textEl = document.getElementById('chalkboardText');
+            if (!textEl) return;
+            const size = Math.max(10, parseInt(px, 10) || 40);
+            if (chalkSelectionInBoard()) {
+                // execCommand fontSize는 1~7 단계만 지원 → 7로 찍은 뒤 실제 px로 치환
+                document.execCommand('styleWithCSS', false, true);
+                document.execCommand('fontSize', false, '7');
+                textEl.querySelectorAll('span[style*="xxx-large"], font[size="7"]').forEach((node) => {
+                    node.removeAttribute('size');
+                    node.style.fontSize = size + 'px';
+                });
+            } else {
+                textEl.style.fontSize = size + 'px';
+            }
+        };
+
+        window.undoChalkboardStroke = function() {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const prev = _chalkUndoStack.pop();
+            if (prev) ctx.putImageData(prev, 0, 0);
+            else ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+
+        window.clearChalkboard = async function() {
+            // 전체화면 중에는 모달이 보이지 않으므로 확인 없이 진행(되돌리기로 그림 복구 가능)
+            if (!document.fullscreenElement) {
+                const ok = await window.customConfirm('칠판의 글씨와 그림을 모두 지울까요?');
+                if (!ok) return;
+            }
+            pushChalkUndoSnapshot();
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            const textEl = document.getElementById('chalkboardText');
+            if (textEl) textEl.innerHTML = '';
+        };
+
+        window.toggleChalkboardBoardColor = function() {
+            _chalkBoardDark = !_chalkBoardDark;
+            const frame = document.getElementById('chalkboardFrame');
+            if (!frame) return;
+            frame.classList.toggle('chalkboard-green', !_chalkBoardDark);
+            frame.classList.toggle('chalkboard-dark', _chalkBoardDark);
+        };
+
+        window.toggleChalkboardFullscreen = function() {
+            const overlay = document.getElementById('chalkboardOverlay');
+            if (!overlay) return;
+            if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+            else if (overlay.requestFullscreen) overlay.requestFullscreen().catch(() => {});
+        };
+
+        // ==========================================
         // ★ 커스텀 모달 유틸리티 ★
         // ==========================================
         window.customAlert = (m) => new Promise(r => {
@@ -6157,9 +6394,15 @@ function redrawPlazaGrantsUi() {
 
         window.buyLottoTicket = async function () {
             if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
-            if (window.playerState.isAdmin) return await window.customAlert('로또 복권은 학생 계정으로만 구매할 수 있어요.');
             if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
-            if (!isLottoPurchaseOpen()) return await window.customAlert(`지금은 로또 구매 시간이 아닙니다.\n${getLottoPurchaseWindowText()}`);
+            if (!isLottoPurchaseOpen()) {
+                // 마스터는 구매 시간 밖에서도 확인 후 구매 가능(테스트·시연용)
+                if (!window.playerState.isAdmin) {
+                    return await window.customAlert(`지금은 로또 구매 시간이 아닙니다.\n${getLottoPurchaseWindowText()}`);
+                }
+                const okClosed = await window.customConfirm(`지금은 학생 구매 시간이 아닙니다.\n(${getLottoPurchaseWindowText()})\n마스터 권한으로 구매할까요?`);
+                if (!okClosed) return;
+            }
 
             const price = getEffectiveShopPrice(LOTTO_SHOP_ID);
             if (!Number.isFinite(price) || price <= 0) return await window.customAlert('로또 가격이 올바르지 않습니다. 마스터에게 문의해 주세요.');
@@ -6183,7 +6426,7 @@ function redrawPlazaGrantsUi() {
             if (!ok) return;
 
             const sid = String(localStorage.getItem('sambong_student_id') || '');
-            if (!sid || sid === 'gm' || sid === 'gm_a') return await window.customAlert('학생 로그인 정보를 찾지 못했습니다. 다시 로그인해 주세요.');
+            if (!sid) return await window.customAlert('로그인 정보를 찾지 못했습니다. 다시 로그인해 주세요.');
 
             let savedTicket = null;
             let savedLotto = null;

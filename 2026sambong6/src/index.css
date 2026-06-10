@@ -139,6 +139,111 @@
             50% { transform: scale(1.02); opacity: 0.92; }
         }
 
+        /* 타이머 모양 선택 버튼 활성 표시 */
+        .military-style-active {
+            background: rgba(132, 204, 22, 0.3) !important;
+            border-color: #a3e635 !important;
+            color: #f7fee7 !important;
+            box-shadow: 0 0 0 2px rgba(163, 230, 53, 0.25);
+        }
+
+        /* 아날로그 타이머 */
+        .analog-face {
+            fill: rgba(10, 16, 8, 0.92);
+            stroke: rgba(132, 204, 22, 0.6);
+            stroke-width: 3;
+        }
+        .analog-tick { stroke: rgba(190, 242, 100, 0.3); stroke-width: 1; }
+        .analog-tick-major { stroke: rgba(190, 242, 100, 0.85); stroke-width: 2.5; }
+        .analog-remain {
+            fill: none;
+            stroke: rgba(132, 204, 22, 0.4);
+            stroke-width: 14;
+            transition: stroke-dashoffset 0.2s linear;
+        }
+        .analog-hand {
+            stroke: #ecfccb;
+            stroke-width: 3.5;
+            stroke-linecap: round;
+            filter: drop-shadow(0 0 6px rgba(190, 242, 100, 0.8));
+        }
+        .analog-center { fill: #ecfccb; }
+        .analog-digits {
+            font-size: clamp(1.6rem, 6vw, 2.6rem);
+            color: #d9f99d;
+            letter-spacing: 0.2em;
+            text-shadow: 0 0 14px rgba(132, 204, 22, 0.55);
+            font-variant-numeric: tabular-nums;
+        }
+        .military-timer-urgent .analog-remain { stroke: rgba(239, 68, 68, 0.55); }
+        .military-timer-urgent .analog-hand { stroke: #fecaca; }
+        .military-timer-urgent .analog-digits,
+        .military-timer-complete .analog-digits {
+            color: #fef08a;
+            animation: military-timer-pulse 0.8s ease-in-out infinite;
+        }
+
+        /* 모래시계 타이머 */
+        .hourglass-shell {
+            width: clamp(160px, 32vw, 220px);
+            position: relative;
+            filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.55));
+        }
+        .hourglass-bulb {
+            position: relative;
+            width: 100%;
+            height: clamp(120px, 22vh, 170px);
+            overflow: hidden;
+            background: rgba(190, 242, 100, 0.08);
+            border: 2px solid rgba(132, 204, 22, 0.55);
+        }
+        .hourglass-top {
+            clip-path: polygon(0 0, 100% 0, 54% 100%, 46% 100%);
+            border-bottom: none;
+        }
+        .hourglass-bottom {
+            clip-path: polygon(46% 0, 54% 0, 100% 100%, 0 100%);
+            border-top: none;
+        }
+        .hourglass-sand-top,
+        .hourglass-sand-bottom {
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 60%, #d97706 100%);
+            transition: height 0.2s linear;
+            height: 100%;
+        }
+        .hourglass-sand-bottom { height: 0%; }
+        .hourglass-neck {
+            height: 14px;
+            width: 100%;
+            position: relative;
+        }
+        .hourglass-stream {
+            position: absolute;
+            left: 50%;
+            top: -4px;
+            width: 4px;
+            height: clamp(130px, 23vh, 180px);
+            margin-left: -2px;
+            background: repeating-linear-gradient(180deg, #fbbf24 0 6px, transparent 6px 10px);
+            opacity: 0;
+            z-index: 5;
+        }
+        .hourglass-running .hourglass-stream {
+            opacity: 1;
+            animation: hourglass-fall 0.45s linear infinite;
+        }
+        @keyframes hourglass-fall {
+            from { background-position-y: 0; }
+            to { background-position-y: 10px; }
+        }
+        .military-timer-urgent .hourglass-sand-top,
+        .military-timer-urgent .hourglass-sand-bottom {
+            background: linear-gradient(180deg, #fda4af 0%, #f43f5e 60%, #be123c 100%);
+        }
+        .military-timer-urgent .analog-digits { color: #fecaca; }
+
         /* 수업도구 — 제비 뽑기 */
         .lottery-panel {
             background: linear-gradient(145deg, rgba(45, 32, 12, 0.96) 0%, rgba(24, 16, 6, 0.98) 100%);
@@ -330,6 +435,44 @@
             border: 2px solid #854d0e;
             cursor: nwse-resize;
             touch-action: none;
+        }
+        /* 판서 페이지 표시 (예: 2/5) */
+        .chalk-page-indicator {
+            min-width: 2.4rem;
+            text-align: center;
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            color: #fde047;
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid rgba(250, 204, 21, 0.4);
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.3rem;
+            font-variant-numeric: tabular-nums;
+        }
+        /* 칠판 내부 알림 토스트 (전체화면 중에도 표시됨) */
+        .chalk-toast {
+            position: absolute;
+            left: 50%;
+            bottom: 28px;
+            transform: translateX(-50%);
+            z-index: 30;
+            padding: 0.6rem 1.2rem;
+            font-size: 13px;
+            font-weight: 800;
+            color: #f8fafc;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            border-radius: 9999px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            white-space: nowrap;
+            pointer-events: none;
+            animation: chalk-toast-in 2.2s ease forwards;
+        }
+        @keyframes chalk-toast-in {
+            0% { opacity: 0; transform: translate(-50%, 12px); }
+            10%, 80% { opacity: 1; transform: translate(-50%, 0); }
+            100% { opacity: 0; transform: translate(-50%, -8px); }
         }
 
         .lottery-draw-overlay {

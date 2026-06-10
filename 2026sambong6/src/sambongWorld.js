@@ -2119,6 +2119,9 @@ function redrawPlazaGrantsUi() {
         window.switchTab = function(tabId) {
             if (isMartialLawLockingStudent()) return;
             if (tabId === 'classtools' && (!window.playerState || !window.playerState.isAdmin)) return;
+            // 칠판(판서 모드)이 열린 채 탭을 누르면 칠판을 닫고 이동 (내용은 유지되어 다시 열면 그대로)
+            const chalkOverlay = document.getElementById('chalkboardOverlay');
+            if (chalkOverlay && !chalkOverlay.classList.contains('hidden')) window.closeChalkboard();
             TABS.forEach(t => {
                 const sec = document.getElementById(t + 'Section');
                 if(sec) sec.classList.add('hidden');
@@ -2223,12 +2226,83 @@ function redrawPlazaGrantsUi() {
         let _classTimerTickId = null;
         let _classTimerAlarmId = null;
         let _classTimerFinishHandled = false;
+        let _classTimerStyle = 'digital'; // 'digital' | 'analog' | 'hourglass'
+        let _classTimerTotalMs = 0;       // 아날로그·모래시계 진행률 계산용 전체 시간
 
         function formatClassTimerMs(ms) {
             const sec = Math.max(0, Math.ceil(ms / 1000));
             const m = Math.floor(sec / 60);
             const s = sec % 60;
             return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        /** 타이머 모양 선택 (수업도구 패널 버튼) */
+        window.setClassTimerStyle = function(style) {
+            if (!['digital', 'analog', 'hourglass'].includes(style)) return;
+            _classTimerStyle = style;
+            [['Digital', 'digital'], ['Analog', 'analog'], ['Hourglass', 'hourglass']].forEach(([suffix, key]) => {
+                const btn = document.getElementById('classTimerStyle' + suffix);
+                if (btn) btn.classList.toggle('military-style-active', key === style);
+            });
+            // 타이머가 떠 있는 중이면 즉시 모양 교체
+            if (_classTimerEndAt) {
+                updateClassTimerViewVisibility();
+                const overlay = document.getElementById('classTimerOverlay');
+                if (overlay && !overlay.classList.contains('hidden')) {
+                    overlay.classList.toggle('hourglass-running', style === 'hourglass');
+                }
+            }
+        };
+
+        /** 선택된 모양의 뷰만 표시 */
+        function updateClassTimerViewVisibility() {
+            const map = { digital: 'classTimerDigitalView', analog: 'classTimerAnalogView', hourglass: 'classTimerHourglassView' };
+            Object.keys(map).forEach((key) => {
+                const el = document.getElementById(map[key]);
+                if (el) el.classList.toggle('hidden', key !== _classTimerStyle);
+            });
+            if (_classTimerStyle === 'analog') ensureAnalogTimerTicks();
+        }
+
+        /** 아날로그 시계 눈금(60개, 5분 단위 굵게)을 1회 생성 */
+        function ensureAnalogTimerTicks() {
+            const g = document.getElementById('classTimerTicks');
+            if (!g || g.childElementCount > 0) return;
+            let html = '';
+            for (let i = 0; i < 60; i++) {
+                const ang = i * 6 * Math.PI / 180;
+                const r1 = i % 5 === 0 ? 83 : 88;
+                const r2 = 92;
+                const x1 = 100 + r1 * Math.sin(ang), y1 = 100 - r1 * Math.cos(ang);
+                const x2 = 100 + r2 * Math.sin(ang), y2 = 100 - r2 * Math.cos(ang);
+                html += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" class="${i % 5 === 0 ? 'analog-tick-major' : 'analog-tick'}"></line>`;
+            }
+            g.innerHTML = html;
+        }
+
+        /** 남은 시간(ms)·남은 비율(0~1)로 세 가지 타이머 뷰를 갱신 */
+        function updateClassTimerViews(leftMs, frac) {
+            const txt = formatClassTimerMs(leftMs);
+            const digital = document.getElementById('classTimerDisplay');
+            if (digital) digital.textContent = txt;
+
+            const analogDigits = document.getElementById('classTimerAnalogDigits');
+            if (analogDigits) analogDigits.textContent = txt;
+            const arc = document.getElementById('classTimerArc');
+            if (arc) {
+                const C = 2 * Math.PI * 78;
+                arc.style.strokeDasharray = String(C);
+                arc.style.strokeDashoffset = String(C * (1 - frac));
+            }
+            const hand = document.getElementById('classTimerHand');
+            if (hand) hand.setAttribute('transform', `rotate(${(360 * frac).toFixed(2)} 100 100)`);
+
+            const hgDigits = document.getElementById('classTimerHourglassDigits');
+            if (hgDigits) hgDigits.textContent = txt;
+            const sandTop = document.getElementById('hourglassSandTop');
+            const sandBottom = document.getElementById('hourglassSandBottom');
+            if (sandTop) sandTop.style.height = (frac * 100).toFixed(1) + '%';
+            if (sandBottom) sandBottom.style.height = ((1 - frac) * 100).toFixed(1) + '%';
         }
 
         function playClassTimerAlarmTick() {
@@ -2258,19 +2332,19 @@ function redrawPlazaGrantsUi() {
         }
 
         function tickClassTimerDisplay() {
-            const display = document.getElementById('classTimerDisplay');
             const status = document.getElementById('classTimerStatus');
             const overlay = document.getElementById('classTimerOverlay');
-            if (!_classTimerEndAt || !display || !overlay) return;
+            if (!_classTimerEndAt || !overlay) return;
 
             const left = _classTimerEndAt - Date.now();
             if (left <= 0) {
-                display.textContent = '00:00';
+                updateClassTimerViews(0, 0);
                 onClassTimerFinished();
                 return;
             }
 
-            display.textContent = formatClassTimerMs(left);
+            const frac = _classTimerTotalMs > 0 ? Math.max(0, Math.min(1, left / _classTimerTotalMs)) : 0;
+            updateClassTimerViews(left, frac);
             if (status) {
                 status.textContent = left <= 10000 ? 'FINAL COUNTDOWN' : 'OPERATION IN PROGRESS';
             }
@@ -2287,7 +2361,7 @@ function redrawPlazaGrantsUi() {
             const status = document.getElementById('classTimerStatus');
             if (overlay) {
                 overlay.classList.add('military-timer-complete');
-                overlay.classList.remove('military-timer-urgent');
+                overlay.classList.remove('military-timer-urgent', 'hourglass-running');
             }
             if (status) status.textContent = 'TIME ZERO — ALERT';
             playClassTimerAlarmTick();
@@ -2306,7 +2380,7 @@ function redrawPlazaGrantsUi() {
             const overlay = document.getElementById('classTimerOverlay');
             if (overlay) {
                 overlay.classList.add('hidden');
-                overlay.classList.remove('military-timer-urgent', 'military-timer-complete');
+                overlay.classList.remove('military-timer-urgent', 'military-timer-complete', 'hourglass-running');
             }
             document.body.classList.remove('class-timer-active');
         };
@@ -2343,9 +2417,12 @@ function redrawPlazaGrantsUi() {
             }
 
             overlay.classList.remove('hidden', 'military-timer-complete');
+            overlay.classList.toggle('hourglass-running', _classTimerStyle === 'hourglass');
             document.body.classList.add('class-timer-active');
 
-            _classTimerEndAt = Date.now() + totalSec * 1000;
+            _classTimerTotalMs = totalSec * 1000;
+            _classTimerEndAt = Date.now() + _classTimerTotalMs;
+            updateClassTimerViewVisibility();
             tickClassTimerDisplay();
             _classTimerTickId = setInterval(tickClassTimerDisplay, 200);
         };
@@ -2736,6 +2813,16 @@ function redrawPlazaGrantsUi() {
         let _chalkBoardDark = false;
         let _chalkEventsBound = false;
         let _chalkImgCounter = 0;     // 첨부 이미지 배치 오프셋용
+        // 도형 모드: 손으로 그린 궤적을 기록했다가 2초 유지 시 반듯한 도형으로 정렬
+        let _chalkShapePoints = [];   // 현재 스트로크의 궤적 포인트
+        let _chalkShapeBase = null;   // 도형 정렬 시 프리핸드 선을 지우기 위한 스냅샷
+        let _chalkShapeDone = false;  // 이번 스트로크에서 도형 정렬이 이미 실행됐는지
+        let _chalkShapeLastMoveAt = 0;// 마지막으로 의미 있게 움직인 시각
+        let _chalkShapeHoldId = null; // 2초 유지 감지 인터벌
+        // 판서 페이지: 각 항목은 { text, canvas(dataURL), images:[{src,left,top,width}], boardDark } 또는 null(빈 페이지)
+        let _chalkPages = [null];
+        let _chalkPageIndex = 0;
+        const CHALK_SAVE_KEY = 'sambong_chalk_save_v1';
 
         /**
          * 캔버스를 칠판 프레임 크기에 맞추고, 이미 그린 내용은 보존해 다시 그림.
@@ -2844,6 +2931,172 @@ function redrawPlazaGrantsUi() {
             } catch (e) { /* 스냅샷 실패 시 되돌리기만 비활성 */ }
         }
 
+        /** 스트로크 종료 시 공통 상태 초기화 (도형 유지 감지 인터벌 포함) */
+        function resetChalkStrokeState() {
+            _chalkDrawing = false;
+            _chalkLastPoint = null;
+            _chalkPrevMid = null;
+            _chalkStrokeStart = null;
+            _chalkStrokeBase = null;
+            _chalkShapePoints = [];
+            _chalkShapeBase = null;
+            _chalkShapeDone = false;
+            if (_chalkShapeHoldId) {
+                clearInterval(_chalkShapeHoldId);
+                _chalkShapeHoldId = null;
+            }
+        }
+
+        /** 도형 모드: 누른 채 2초간 움직이지 않으면 도형 정렬 실행 */
+        function startChalkShapeHoldWatch() {
+            if (_chalkShapeHoldId) clearInterval(_chalkShapeHoldId);
+            _chalkShapeHoldId = setInterval(() => {
+                if (!_chalkDrawing || _chalkMode !== 'shape' || _chalkShapeDone) return;
+                if (_chalkShapePoints.length < 6) return;
+                if (Date.now() - _chalkShapeLastMoveAt >= 2000) {
+                    finalizeChalkShape();
+                }
+            }, 150);
+        }
+
+        /** 두 점 사이 거리 */
+        function chalkDist(a, b) {
+            return Math.hypot(a.x - b.x, a.y - b.y);
+        }
+
+        /** 라머-더글라스-포이커 단순화: 구불구불한 궤적에서 꼭짓점만 추출 */
+        function rdpSimplify(pts, eps) {
+            if (pts.length < 3) return pts.slice();
+            const distToLine = (p, a, b) => {
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const len2 = dx * dx + dy * dy;
+                if (!len2) return chalkDist(p, a);
+                let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+                t = Math.max(0, Math.min(1, t));
+                return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+            };
+            const keep = new Array(pts.length).fill(false);
+            keep[0] = keep[pts.length - 1] = true;
+            const stack = [[0, pts.length - 1]];
+            while (stack.length) {
+                const [s, e] = stack.pop();
+                let maxD = 0, idx = -1;
+                for (let i = s + 1; i < e; i++) {
+                    const d = distToLine(pts[i], pts[s], pts[e]);
+                    if (d > maxD) { maxD = d; idx = i; }
+                }
+                if (maxD > eps && idx > 0) {
+                    keep[idx] = true;
+                    stack.push([s, idx], [idx, e]);
+                }
+            }
+            return pts.filter((_, i) => keep[i]);
+        }
+
+        /**
+         * 손으로 그린 궤적을 분석해 가장 가까운 기본 도형을 추정.
+         * 반환: { type:'line'|'polyline'|'polygon'|'ellipse', ... } 또는 null(너무 작음)
+         */
+        function recognizeChalkShape(points) {
+            if (!points || points.length < 4) return null;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            points.forEach((p) => {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+            });
+            const w = maxX - minX, h = maxY - minY;
+            const size = Math.max(w, h);
+            if (size < 15) return null;
+
+            // 둘레와 면적(슈레이스 공식)으로 원형도 계산
+            let per = 0, area = 0;
+            for (let i = 1; i < points.length; i++) per += chalkDist(points[i - 1], points[i]);
+            for (let i = 0; i < points.length; i++) {
+                const a = points[i], b = points[(i + 1) % points.length];
+                area += a.x * b.y - b.x * a.y;
+            }
+            area = Math.abs(area) / 2;
+            const circularity = per > 0 ? (4 * Math.PI * area) / (per * per) : 0;
+
+            const closed = chalkDist(points[0], points[points.length - 1]) < Math.max(25, size * 0.25);
+            const eps = Math.max(6, size * 0.05);
+            const simp = rdpSimplify(points, eps);
+
+            if (!closed) {
+                // 열린 도형: 직선 또는 꺾은선
+                if (simp.length <= 2) return { type: 'line', pts: [points[0], points[points.length - 1]] };
+                return { type: 'polyline', pts: simp };
+            }
+
+            // 닫힌 도형: 시작·끝이 겹치는 꼭짓점 정리
+            let corners = simp.slice();
+            if (corners.length > 1 && chalkDist(corners[0], corners[corners.length - 1]) < eps * 2.5) corners.pop();
+
+            // 원형도가 높으면 원/타원
+            if (circularity > 0.78 || (circularity > 0.65 && corners.length >= 6)) {
+                return { type: 'ellipse', cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, rx: w / 2, ry: h / 2 };
+            }
+            if (corners.length === 3) return { type: 'polygon', pts: corners };
+            if (corners.length === 4) {
+                // 네 변이 모두 수평·수직에 가까우면 바운딩 박스 직사각형으로 스냅
+                const axisAligned = corners.every((c, i) => {
+                    const n = corners[(i + 1) % 4];
+                    let ang = Math.abs(Math.atan2(n.y - c.y, n.x - c.x)) * 180 / Math.PI; // 0~180
+                    const dev = Math.min(ang, Math.abs(ang - 90), Math.abs(ang - 180));
+                    return dev < 20;
+                });
+                if (axisAligned) {
+                    return { type: 'polygon', pts: [
+                        { x: minX, y: minY }, { x: maxX, y: minY },
+                        { x: maxX, y: maxY }, { x: minX, y: maxY },
+                    ] };
+                }
+                return { type: 'polygon', pts: corners };
+            }
+            if (corners.length >= 5 && corners.length <= 8) return { type: 'polygon', pts: corners };
+            // 꼭짓점이 너무 많으면 원으로 간주
+            return { type: 'ellipse', cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, rx: w / 2, ry: h / 2 };
+        }
+
+        /** 인식된 도형을 현재 분필 색·굵기로 캔버스에 그림 */
+        function drawRecognizedShape(rec) {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas || !rec) return;
+            const ctx = canvas.getContext('2d');
+            applyChalkStrokeStyle(ctx);
+            ctx.beginPath();
+            if (rec.type === 'ellipse') {
+                ctx.ellipse(rec.cx, rec.cy, Math.max(2, rec.rx), Math.max(2, rec.ry), 0, 0, Math.PI * 2);
+            } else {
+                const pts = rec.pts;
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                if (rec.type === 'polygon') ctx.closePath();
+            }
+            ctx.stroke();
+            resetChalkStrokeStyle(ctx);
+        }
+
+        /** 2초 유지 감지 시: 프리핸드 선을 지우고 반듯한 도형으로 교체 */
+        function finalizeChalkShape() {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas) return;
+            const rec = recognizeChalkShape(_chalkShapePoints);
+            if (!rec) return; // 너무 작으면 정렬하지 않음
+            _chalkShapeDone = true;
+            if (_chalkShapeHoldId) {
+                clearInterval(_chalkShapeHoldId);
+                _chalkShapeHoldId = null;
+            }
+            // 손으로 그린 구불구불한 선 제거 후 정렬된 도형 그리기
+            if (_chalkShapeBase) {
+                try { canvas.getContext('2d').putImageData(_chalkShapeBase, 0, 0); } catch (e) { /* 무시 */ }
+            }
+            drawRecognizedShape(rec);
+        }
+
         function bindChalkboardEventsOnce() {
             if (_chalkEventsBound) return;
             const canvas = document.getElementById('chalkboardCanvas');
@@ -2867,6 +3120,18 @@ function redrawPlazaGrantsUi() {
                     try {
                         _chalkStrokeBase = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
                     } catch (err) { _chalkStrokeBase = null; }
+                } else if (_chalkMode === 'shape') {
+                    // 도형 모드: 궤적 기록 시작 + 정렬 시 프리핸드 선 제거용 스냅샷 저장
+                    _chalkShapePoints = [p];
+                    _chalkShapeDone = false;
+                    _chalkShapeLastMoveAt = Date.now();
+                    try {
+                        _chalkShapeBase = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+                    } catch (err) { _chalkShapeBase = null; }
+                    _chalkLastPoint = p;
+                    _chalkPrevMid = p;
+                    drawChalkSegment(p, p);
+                    startChalkShapeHoldWatch();
                 } else {
                     _chalkLastPoint = p;
                     _chalkPrevMid = p;
@@ -2881,6 +3146,19 @@ function redrawPlazaGrantsUi() {
                     // 직전 미리보기를 지우고 출발점→현재 위치 직선을 다시 그림
                     if (_chalkStrokeBase) canvas.getContext('2d').putImageData(_chalkStrokeBase, 0, 0);
                     drawChalkSegment(_chalkStrokeStart, p);
+                } else if (_chalkMode === 'shape') {
+                    if (_chalkShapeDone || !_chalkLastPoint) return;
+                    const events = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length)
+                        ? e.getCoalescedEvents() : [e];
+                    events.forEach((ev) => {
+                        const p = getPoint(ev);
+                        const last = _chalkShapePoints[_chalkShapePoints.length - 1];
+                        // 손떨림 수준의 미세 이동은 '유지 중'으로 간주(2초 카운트를 끊지 않음)
+                        if (last && Math.hypot(p.x - last.x, p.y - last.y) < 4) return;
+                        _chalkShapePoints.push(p);
+                        _chalkShapeLastMoveAt = Date.now();
+                        drawChalkCurveTo(p);
+                    });
                 } else {
                     if (!_chalkLastPoint) return;
                     // 코어레스드 이벤트로 샘플링을 높여 더 매끄러운 곡선 생성
@@ -2896,28 +3174,29 @@ function redrawPlazaGrantsUi() {
                     const p = getPoint(e);
                     if (_chalkStrokeBase) canvas.getContext('2d').putImageData(_chalkStrokeBase, 0, 0);
                     drawChalkSegment(_chalkStrokeStart, p);
+                } else if (_chalkMode === 'shape') {
+                    // 2초 유지 전에 손을 떼면 프리핸드 그대로 남김 (정렬은 유지 시에만)
+                    if (!_chalkShapeDone && _chalkLastPoint && _chalkPrevMid) {
+                        drawChalkSegment(_chalkPrevMid, _chalkLastPoint);
+                    }
                 } else if (_chalkLastPoint && _chalkPrevMid) {
                     // 곡선 끝부분을 실제 마지막 포인트까지 마감
                     drawChalkSegment(_chalkPrevMid, _chalkLastPoint);
                 }
-                _chalkDrawing = false;
-                _chalkLastPoint = null;
-                _chalkPrevMid = null;
-                _chalkStrokeStart = null;
-                _chalkStrokeBase = null;
+                resetChalkStrokeState();
             });
             canvas.addEventListener('pointercancel', () => {
-                _chalkDrawing = false;
-                _chalkLastPoint = null;
-                _chalkPrevMid = null;
-                _chalkStrokeStart = null;
-                _chalkStrokeBase = null;
+                resetChalkStrokeState();
             });
             window.addEventListener('resize', () => {
                 const overlay = document.getElementById('chalkboardOverlay');
-                if (overlay && !overlay.classList.contains('hidden')) resizeChalkboardCanvas();
+                if (overlay && !overlay.classList.contains('hidden')) {
+                    positionChalkboardBelowNav();
+                    resizeChalkboardCanvas();
+                }
             });
             document.addEventListener('fullscreenchange', () => {
+                positionChalkboardBelowNav();
                 setTimeout(resizeChalkboardCanvas, 80);
             });
 
@@ -2946,16 +3225,16 @@ function redrawPlazaGrantsUi() {
          * 글쓰기 모드에서 드래그로 이동, 우하단 손잡이로 크기 조절, ✕로 삭제.
          * 캔버스(그리기 레이어) 아래에 두어 분필·형광펜으로 이미지 위에 필기할 수 있다.
          */
-        function insertChalkboardImage(src) {
+        function insertChalkboardImage(src, opts = {}) {
             const frame = document.getElementById('chalkboardFrame');
             const canvas = document.getElementById('chalkboardCanvas');
             if (!frame || !canvas) return;
             const wrap = document.createElement('div');
             wrap.className = 'chalk-img-wrap';
             const offset = (_chalkImgCounter++ % 5) * 28;
-            wrap.style.left = (48 + offset) + 'px';
-            wrap.style.top = (48 + offset) + 'px';
-            wrap.style.width = '32%';
+            wrap.style.left = opts.left || (48 + offset) + 'px';
+            wrap.style.top = opts.top || (48 + offset) + 'px';
+            wrap.style.width = opts.width || '32%';
             wrap.innerHTML = `
                 <img src="${src}" alt="첨부 이미지" draggable="false">
                 <button type="button" class="chalk-img-del" title="이미지 삭제">✕</button>
@@ -3001,8 +3280,23 @@ function redrawPlazaGrantsUi() {
             wrap.addEventListener('pointerup', () => { dragOff = null; });
             wrap.addEventListener('pointercancel', () => { dragOff = null; });
 
-            // 이미지를 바로 움직일 수 있도록 글쓰기 모드로 전환
-            window.setChalkboardMode('text');
+            // 이미지를 바로 움직일 수 있도록 글쓰기 모드로 전환 (페이지 복원 시에는 생략)
+            if (!opts.silent) window.setChalkboardMode('text');
+        }
+
+        /**
+         * 칠판 오버레이를 상단 네비게이션 바로 아래부터 시작하게 배치.
+         * → 칠판이 열려 있어도 탭 버튼을 눌러 다른 탭으로 이동할 수 있다. (전체화면에서는 브라우저가 화면 전체를 덮음)
+         */
+        function positionChalkboardBelowNav() {
+            const overlay = document.getElementById('chalkboardOverlay');
+            if (!overlay) return;
+            if (document.fullscreenElement === overlay) {
+                overlay.style.top = '0px';
+                return;
+            }
+            const nav = document.querySelector('nav');
+            overlay.style.top = nav ? nav.offsetHeight + 'px' : '0px';
         }
 
         window.openChalkboard = function() {
@@ -3012,6 +3306,8 @@ function redrawPlazaGrantsUi() {
             overlay.classList.remove('hidden');
             document.body.classList.add('overflow-hidden');
             bindChalkboardEventsOnce();
+            positionChalkboardBelowNav();
+            updateChalkPageIndicator();
             requestAnimationFrame(() => {
                 resizeChalkboardCanvas();
                 window.setChalkboardMode('text');
@@ -3025,6 +3321,157 @@ function redrawPlazaGrantsUi() {
             if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
         };
 
+        // ----- 판서 페이지(여러 장) 관리 -----
+
+        /** 현재 칠판 화면을 페이지 데이터로 캡처 */
+        function captureChalkPage() {
+            const canvas = document.getElementById('chalkboardCanvas');
+            const textEl = document.getElementById('chalkboardText');
+            let canvasData = null;
+            if (canvas && canvas.width > 1) {
+                try { canvasData = canvas.toDataURL('image/png'); } catch (e) { canvasData = null; }
+            }
+            const images = Array.from(document.querySelectorAll('#chalkboardFrame .chalk-img-wrap')).map((w) => {
+                const img = w.querySelector('img');
+                return { src: img ? img.src : '', left: w.style.left, top: w.style.top, width: w.style.width };
+            }).filter((im) => im.src);
+            return {
+                text: textEl ? textEl.innerHTML : '',
+                canvas: canvasData,
+                images,
+                boardDark: _chalkBoardDark,
+            };
+        }
+
+        /** 페이지 데이터를 칠판 화면에 복원 (null이면 빈 페이지) */
+        function loadChalkPage(data) {
+            const canvas = document.getElementById('chalkboardCanvas');
+            const textEl = document.getElementById('chalkboardText');
+            const frame = document.getElementById('chalkboardFrame');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.save();
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            }
+            if (textEl) textEl.innerHTML = (data && data.text) || '';
+            document.querySelectorAll('#chalkboardFrame .chalk-img-wrap').forEach((el) => el.remove());
+            if (data && Array.isArray(data.images)) {
+                data.images.forEach((im) => insertChalkboardImage(im.src, { left: im.left, top: im.top, width: im.width, silent: true }));
+            }
+            if (data && data.canvas && canvas) {
+                const cssW = parseFloat(canvas.style.width) || canvas.width;
+                const cssH = parseFloat(canvas.style.height) || canvas.height;
+                const img = new Image();
+                img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, cssW, cssH);
+                img.src = data.canvas;
+            }
+            // 칠판 색 복원
+            _chalkBoardDark = !!(data && data.boardDark);
+            if (frame) {
+                frame.classList.toggle('chalkboard-green', !_chalkBoardDark);
+                frame.classList.toggle('chalkboard-dark', _chalkBoardDark);
+            }
+            // 다른 페이지의 그림이 되돌려지지 않게 페이지마다 되돌리기 스택 초기화
+            _chalkUndoStack = [];
+        }
+
+        /** 현재 페이지 내용을 페이지 배열에 반영 */
+        function saveCurrentChalkPage() {
+            _chalkPages[_chalkPageIndex] = captureChalkPage();
+        }
+
+        function updateChalkPageIndicator() {
+            const el = document.getElementById('chalkPageIndicator');
+            if (el) el.textContent = `${_chalkPageIndex + 1}/${_chalkPages.length}`;
+        }
+
+        /** 지정한 페이지로 이동 (마지막 페이지를 넘어가면 새 페이지 생성) */
+        function goToChalkPage(idx) {
+            if (idx < 0) return;
+            saveCurrentChalkPage();
+            if (idx >= _chalkPages.length) {
+                _chalkPages.push(null);
+                chalkboardToast('🆕 새 페이지가 추가되었습니다');
+            }
+            _chalkPageIndex = idx;
+            loadChalkPage(_chalkPages[idx]);
+            updateChalkPageIndicator();
+        }
+
+        window.chalkPrevPage = function() {
+            if (_chalkPageIndex <= 0) return chalkboardToast('첫 페이지입니다');
+            goToChalkPage(_chalkPageIndex - 1);
+        };
+
+        window.chalkNextPage = function() {
+            goToChalkPage(_chalkPageIndex + 1);
+        };
+
+        window.chalkDeletePage = async function() {
+            if (_chalkPages.length <= 1) {
+                // 마지막 한 장은 삭제 대신 내용만 비움
+                return window.clearChalkboard();
+            }
+            if (!document.fullscreenElement) {
+                const ok = await window.customConfirm(`현재 ${_chalkPageIndex + 1}쪽 페이지를 삭제할까요?`);
+                if (!ok) return;
+            }
+            _chalkPages.splice(_chalkPageIndex, 1);
+            if (_chalkPageIndex >= _chalkPages.length) _chalkPageIndex = _chalkPages.length - 1;
+            loadChalkPage(_chalkPages[_chalkPageIndex]);
+            updateChalkPageIndicator();
+            chalkboardToast('🗑️ 페이지를 삭제했습니다');
+        };
+
+        // ----- 판서 저장·불러오기 (이 기기 브라우저에 저장) -----
+
+        /** 전체화면에서도 보이도록 칠판 오버레이 안에 띄우는 간단 알림 */
+        function chalkboardToast(msg) {
+            const overlay = document.getElementById('chalkboardOverlay');
+            if (!overlay) return;
+            const t = document.createElement('div');
+            t.className = 'chalk-toast';
+            t.textContent = msg;
+            overlay.appendChild(t);
+            setTimeout(() => t.remove(), 2200);
+        }
+
+        window.saveChalkboardPages = function() {
+            saveCurrentChalkPage();
+            try {
+                localStorage.setItem(CHALK_SAVE_KEY, JSON.stringify({
+                    pages: _chalkPages,
+                    pageIndex: _chalkPageIndex,
+                    savedAt: Date.now(),
+                }));
+                chalkboardToast(`💾 판서 저장 완료 (${_chalkPages.length}페이지)`);
+            } catch (e) {
+                // localStorage 용량 초과 등
+                chalkboardToast('⚠️ 저장 실패: 용량 초과 (첨부 이미지가 너무 큽니다)');
+            }
+        };
+
+        window.loadChalkboardPages = async function() {
+            const raw = localStorage.getItem(CHALK_SAVE_KEY);
+            if (!raw) return chalkboardToast('저장된 판서가 없습니다');
+            if (!document.fullscreenElement) {
+                const ok = await window.customConfirm('저장해 둔 판서를 불러올까요?\n지금 칠판에 있는 내용은 사라집니다.');
+                if (!ok) return;
+            }
+            try {
+                const data = JSON.parse(raw);
+                _chalkPages = (Array.isArray(data.pages) && data.pages.length) ? data.pages : [null];
+                _chalkPageIndex = Math.min(Math.max(0, data.pageIndex || 0), _chalkPages.length - 1);
+                loadChalkPage(_chalkPages[_chalkPageIndex]);
+                updateChalkPageIndicator();
+                chalkboardToast(`📂 불러오기 완료 (${_chalkPages.length}페이지)`);
+            } catch (e) {
+                chalkboardToast('⚠️ 불러오기 실패: 저장 데이터가 손상되었습니다');
+            }
+        };
+
         window.setChalkboardMode = function(mode) {
             _chalkMode = mode;
             const canvas = document.getElementById('chalkboardCanvas');
@@ -3032,7 +3479,7 @@ function redrawPlazaGrantsUi() {
             const drawing = mode !== 'text';
             if (canvas) canvas.style.pointerEvents = drawing ? 'auto' : 'none';
             if (textEl) textEl.setAttribute('contenteditable', drawing ? 'false' : 'true');
-            ['text', 'pen', 'highlight', 'eraser'].forEach((m) => {
+            ['text', 'pen', 'highlight', 'eraser', 'shape'].forEach((m) => {
                 const btn = document.getElementById('chalkMode' + m.charAt(0).toUpperCase() + m.slice(1));
                 if (btn) btn.classList.toggle('chalk-active', m === mode);
             });

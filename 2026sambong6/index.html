@@ -1084,7 +1084,7 @@
                             <h2 class="text-xl sm:text-2xl font-display text-emerald-100 tracking-wide">판서 모드 (전자칠판)</h2>
                         </div>
                     </div>
-                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 전체 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트 변경, 분필 곡선 그리기, 형광펜 직선(출발점→도착점), 지우개, 되돌리기, 이미지 첨부, 전체화면을 지원합니다.</p>
+                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트, 분필·형광펜·지우개, 도형 그리기(그린 뒤 2초 유지 시 반듯하게 정렬), 여러 페이지 관리, 판서 저장·불러오기, 이미지 첨부, 전체화면을 지원합니다. 칠판이 열린 상태에서도 위쪽 탭을 눌러 다른 탭으로 이동할 수 있어요(내용은 유지됩니다).</p>
                     <button type="button" onclick="window.openChalkboard()" class="w-full py-4 rounded-xl font-display text-lg sm:text-xl tracking-widest bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-emerald-50 border-2 border-emerald-400/80 shadow-[0_4px_0_#064e3b,inset_0_1px_0_rgba(255,255,255,0.25)] active:translate-y-0.5 active:shadow-none transition">
                         <i class="fa-solid fa-chalkboard mr-2"></i>칠판 열기
                     </button>
@@ -1098,7 +1098,15 @@
                             <h2 class="text-xl sm:text-2xl font-display text-lime-100 tracking-wide">전술 카운트다운</h2>
                         </div>
                     </div>
-                    <p class="text-[10px] sm:text-xs text-lime-200/70 mb-4 leading-relaxed">시간을 설정하고 시작하면 화면 중앙에 군사 시계가 뜨며 거꾸로 줄어듭니다. 종료 시 전술 알람이 울립니다.</p>
+                    <p class="text-[10px] sm:text-xs text-lime-200/70 mb-4 leading-relaxed">시간을 설정하고 시작하면 화면 중앙에 타이머가 뜨며 거꾸로 줄어듭니다. 종료 시 전술 알람이 울립니다. 타이머 모양은 전자·아날로그·모래시계 중에서 고를 수 있어요.</p>
+                    <div class="mb-3">
+                        <span class="text-[10px] font-bold text-lime-400/90 tracking-widest">타이머 모양</span>
+                        <div class="flex flex-wrap gap-2 mt-1" id="classTimerStyleBtns">
+                            <button type="button" id="classTimerStyleDigital" onclick="window.setClassTimerStyle('digital')" class="military-preset-btn military-style-active">⏱ 전자</button>
+                            <button type="button" id="classTimerStyleAnalog" onclick="window.setClassTimerStyle('analog')" class="military-preset-btn">🕒 아날로그</button>
+                            <button type="button" id="classTimerStyleHourglass" onclick="window.setClassTimerStyle('hourglass')" class="military-preset-btn">⏳ 모래시계</button>
+                        </div>
+                    </div>
                     <div class="grid grid-cols-2 gap-3 mb-3">
                         <label class="block">
                             <span class="text-[10px] font-bold text-lime-400/90 tracking-widest">분</span>
@@ -1343,6 +1351,7 @@
                 <button type="button" id="chalkModePen" onclick="window.setChalkboardMode('pen')" class="chalk-tool-btn">🖍️ 분필펜</button>
                 <button type="button" id="chalkModeHighlight" onclick="window.setChalkboardMode('highlight')" class="chalk-tool-btn">🖊️ 형광펜</button>
                 <button type="button" id="chalkModeEraser" onclick="window.setChalkboardMode('eraser')" class="chalk-tool-btn">🧽 지우개</button>
+                <button type="button" id="chalkModeShape" onclick="window.setChalkboardMode('shape')" class="chalk-tool-btn" title="도형을 손으로 그린 뒤 마지막 위치에서 2초간 누르고 있으면 반듯한 도형으로 정렬됩니다">📐 도형</button>
             </div>
             <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴 (드래그 선택 시 그 부분만, 선택 없으면 전체)">
                 <option value="'Gaegu', cursive" selected>분필 손글씨</option>
@@ -1376,7 +1385,15 @@
             </select>
             <button type="button" onclick="window.addChalkboardImage()" class="chalk-tool-btn" title="이미지 첨부 (글쓰기 모드에서 드래그 이동·우하단 손잡이로 크기 조절)">🖼️ 이미지</button>
             <input type="file" id="chalkImageInput" accept="image/*" class="hidden">
+            <div class="flex gap-1 items-center ml-1" title="판서 페이지 관리">
+                <button type="button" onclick="window.chalkPrevPage()" class="chalk-tool-btn" title="이전 페이지">◀</button>
+                <span id="chalkPageIndicator" class="chalk-page-indicator">1/1</span>
+                <button type="button" onclick="window.chalkNextPage()" class="chalk-tool-btn" title="다음 페이지 (마지막 페이지에서 누르면 새 페이지 추가)">▶</button>
+                <button type="button" onclick="window.chalkDeletePage()" class="chalk-tool-btn" title="현재 페이지 삭제">－</button>
+            </div>
             <div class="flex-grow"></div>
+            <button type="button" onclick="window.saveChalkboardPages()" class="chalk-tool-btn" title="모든 페이지를 이 기기에 저장">💾 저장</button>
+            <button type="button" onclick="window.loadChalkboardPages()" class="chalk-tool-btn" title="저장해 둔 판서 불러오기">📂 불러오기</button>
             <button type="button" onclick="window.undoChalkboardStroke()" class="chalk-tool-btn" title="그리기 되돌리기">↩️ 되돌리기</button>
             <button type="button" onclick="window.toggleChalkboardBoardColor()" class="chalk-tool-btn" title="초록 칠판 ↔ 블랙보드">🟩 칠판색</button>
             <button type="button" onclick="window.clearChalkboard()" class="chalk-tool-btn" title="글씨·그림 모두 지우기">🗑️ 모두 지우기</button>
@@ -1420,8 +1437,31 @@
         </button>
         <div class="relative z-10 w-full max-w-4xl text-center">
             <p class="text-[10px] sm:text-xs font-black tracking-[0.45em] text-lime-500/90 mb-2">TACTICAL COUNTDOWN</p>
-            <div class="military-timer-clock-frame mx-auto px-6 py-8 sm:py-12">
-                <div id="classTimerDisplay" class="military-timer-digits font-display">00:00</div>
+            <!-- 전자(디지털) 타이머 -->
+            <div id="classTimerDigitalView">
+                <div class="military-timer-clock-frame mx-auto px-6 py-8 sm:py-12">
+                    <div id="classTimerDisplay" class="military-timer-digits font-display">00:00</div>
+                </div>
+            </div>
+            <!-- 아날로그 타이머 -->
+            <div id="classTimerAnalogView" class="hidden">
+                <svg viewBox="0 0 200 200" class="mx-auto w-64 sm:w-[360px]">
+                    <circle cx="100" cy="100" r="94" class="analog-face"></circle>
+                    <g id="classTimerTicks"></g>
+                    <circle cx="100" cy="100" r="78" class="analog-remain" id="classTimerArc" transform="rotate(-90 100 100)"></circle>
+                    <line id="classTimerHand" x1="100" y1="100" x2="100" y2="34" class="analog-hand"></line>
+                    <circle cx="100" cy="100" r="5" class="analog-center"></circle>
+                </svg>
+                <div id="classTimerAnalogDigits" class="analog-digits font-display mt-3">00:00</div>
+            </div>
+            <!-- 모래시계 타이머 -->
+            <div id="classTimerHourglassView" class="hidden">
+                <div class="hourglass-shell mx-auto">
+                    <div class="hourglass-bulb hourglass-top"><div id="hourglassSandTop" class="hourglass-sand-top"></div></div>
+                    <div class="hourglass-neck"><div id="hourglassStream" class="hourglass-stream"></div></div>
+                    <div class="hourglass-bulb hourglass-bottom"><div id="hourglassSandBottom" class="hourglass-sand-bottom"></div></div>
+                </div>
+                <div id="classTimerHourglassDigits" class="analog-digits font-display mt-3">00:00</div>
             </div>
             <p id="classTimerStatus" class="mt-4 text-xs sm:text-sm font-black tracking-[0.3em] text-lime-300/90">OPERATION IN PROGRESS</p>
         </div>

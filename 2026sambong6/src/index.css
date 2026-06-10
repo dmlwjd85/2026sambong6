@@ -281,6 +281,56 @@
             content: '여기를 눌러 판서를 시작하세요…';
             color: rgba(255, 255, 255, 0.3);
         }
+        /* 판서 모드 첨부 이미지 (글쓰기 모드에서 이동·크기 조절) */
+        .chalk-img-wrap {
+            position: absolute;
+            touch-action: none;
+            cursor: move;
+            border: 2px dashed transparent;
+            border-radius: 8px;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .chalk-img-wrap:hover {
+            border-color: rgba(250, 204, 21, 0.7);
+        }
+        .chalk-img-wrap img {
+            width: 100%;
+            height: auto;
+            display: block;
+            pointer-events: none;
+            border-radius: 6px;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+        }
+        .chalk-img-del {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            width: 22px;
+            height: 22px;
+            border-radius: 9999px;
+            background: #dc2626;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 900;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+        }
+        .chalk-img-resize {
+            position: absolute;
+            right: -8px;
+            bottom: -8px;
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            background: #facc15;
+            border: 2px solid #854d0e;
+            cursor: nwse-resize;
+            touch-action: none;
+        }
 
         .lottery-draw-overlay {
             background: radial-gradient(ellipse at center, #2a1a08 0%, #0a0604 70%);

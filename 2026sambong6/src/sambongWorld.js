@@ -2729,11 +2729,18 @@ function redrawPlazaGrantsUi() {
         let _chalkColor = '#f8fafc';
         let _chalkUndoStack = [];
         let _chalkDrawing = false;
-        let _chalkLastPoint = null;
+        let _chalkLastPoint = null;   // 분필펜·지우개: 직전 포인트
+        let _chalkPrevMid = null;     // 분필펜·지우개: 곡선 보간용 직전 중간점
+        let _chalkStrokeStart = null; // 형광펜: 출발점
+        let _chalkStrokeBase = null;  // 형광펜: 미리보기용 스트로크 시작 시점 캔버스 스냅샷
         let _chalkBoardDark = false;
         let _chalkEventsBound = false;
+        let _chalkImgCounter = 0;     // 첨부 이미지 배치 오프셋용
 
-        /** 캔버스를 칠판 프레임 크기에 맞추고, 이미 그린 내용은 보존해 다시 그림 */
+        /**
+         * 캔버스를 칠판 프레임 크기에 맞추고, 이미 그린 내용은 보존해 다시 그림.
+         * devicePixelRatio 배율로 실제 픽셀을 잡아 고해상도 화면에서 선이 계단처럼 깨지지 않게 한다.
+         */
         function resizeChalkboardCanvas() {
             const canvas = document.getElementById('chalkboardCanvas');
             const frame = document.getElementById('chalkboardFrame');
@@ -2741,18 +2748,24 @@ function redrawPlazaGrantsUi() {
             const rect = frame.getBoundingClientRect();
             const w = Math.max(1, Math.round(rect.width));
             const h = Math.max(1, Math.round(rect.height));
-            if (canvas.width === w && canvas.height === h) return;
+            const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+            const dw = Math.round(w * dpr);
+            const dh = Math.round(h * dpr);
+            if (canvas.width === dw && canvas.height === dh) return;
             let snapshot = null;
             if (canvas.width > 1 && canvas.height > 1) {
                 try { snapshot = canvas.toDataURL(); } catch (e) { snapshot = null; }
             }
-            canvas.width = w;
-            canvas.height = h;
+            canvas.width = dw;
+            canvas.height = dh;
             canvas.style.width = w + 'px';
             canvas.style.height = h + 'px';
+            const ctx = canvas.getContext('2d');
+            // 이후 모든 그리기는 CSS px 좌표로 수행(실픽셀은 dpr배)
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             if (snapshot) {
                 const img = new Image();
-                img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                img.onload = () => ctx.drawImage(img, 0, 0, w, h);
                 img.src = snapshot;
             }
         }
@@ -2762,10 +2775,8 @@ function redrawPlazaGrantsUi() {
             return Math.max(1, parseInt(el ? el.value : '6', 10) || 6);
         }
 
-        function drawChalkSegment(from, to) {
-            const canvas = document.getElementById('chalkboardCanvas');
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
+        /** 현재 모드(분필펜/형광펜/지우개)에 맞는 선 스타일을 컨텍스트에 적용 */
+        function applyChalkStrokeStyle(ctx) {
             const width = getChalkPenWidth();
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
@@ -2775,7 +2786,7 @@ function redrawPlazaGrantsUi() {
                 ctx.lineWidth = width * 4;
                 ctx.strokeStyle = 'rgba(0,0,0,1)';
             } else if (_chalkMode === 'highlight') {
-                // 형광펜: 반투명 굵은 선
+                // 형광펜: 반투명 굵은 선 (출발점→도착점 직선 1회 그리기 → 겹침 얼룩 없음)
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 0.35;
                 ctx.lineWidth = width * 3;
@@ -2786,13 +2797,42 @@ function redrawPlazaGrantsUi() {
                 ctx.lineWidth = width;
                 ctx.strokeStyle = _chalkColor;
             }
+        }
+
+        /** 스타일 적용 후 알파·합성 모드를 원복 */
+        function resetChalkStrokeStyle(ctx) {
+            ctx.globalAlpha = 1;
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        /** 분필펜·지우개: 중간점 2차 곡선 보간으로 꺾임 없이 부드럽게 잇기 */
+        function drawChalkCurveTo(p) {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas || !_chalkLastPoint || !_chalkPrevMid) return;
+            const ctx = canvas.getContext('2d');
+            applyChalkStrokeStyle(ctx);
+            const mid = { x: (_chalkLastPoint.x + p.x) / 2, y: (_chalkLastPoint.y + p.y) / 2 };
+            ctx.beginPath();
+            ctx.moveTo(_chalkPrevMid.x, _chalkPrevMid.y);
+            ctx.quadraticCurveTo(_chalkLastPoint.x, _chalkLastPoint.y, mid.x, mid.y);
+            ctx.stroke();
+            resetChalkStrokeStyle(ctx);
+            _chalkLastPoint = p;
+            _chalkPrevMid = mid;
+        }
+
+        /** 점 찍기(제자리 클릭)·형광펜 직선 등 단일 선분 그리기 */
+        function drawChalkSegment(from, to) {
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            applyChalkStrokeStyle(ctx);
             ctx.beginPath();
             ctx.moveTo(from.x, from.y);
             // 제자리 클릭(점 찍기)도 보이게 미세 이동
             ctx.lineTo(to.x === from.x && to.y === from.y ? to.x + 0.1 : to.x, to.y);
             ctx.stroke();
-            ctx.globalAlpha = 1;
-            ctx.globalCompositeOperation = 'source-over';
+            resetChalkStrokeStyle(ctx);
         }
 
         function pushChalkUndoSnapshot() {
@@ -2809,6 +2849,7 @@ function redrawPlazaGrantsUi() {
             const canvas = document.getElementById('chalkboardCanvas');
             if (!canvas) return;
             _chalkEventsBound = true;
+            canvas.style.touchAction = 'none'; // 터치 기기에서 스크롤 대신 그리기
             const getPoint = (e) => {
                 const rect = canvas.getBoundingClientRect();
                 return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -2819,18 +2860,59 @@ function redrawPlazaGrantsUi() {
                 try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
                 pushChalkUndoSnapshot();
                 _chalkDrawing = true;
-                _chalkLastPoint = getPoint(e);
-                drawChalkSegment(_chalkLastPoint, _chalkLastPoint);
+                const p = getPoint(e);
+                if (_chalkMode === 'highlight') {
+                    // 형광펜: 출발점만 기록하고, 미리보기 복원용 현재 화면 스냅샷 저장
+                    _chalkStrokeStart = p;
+                    try {
+                        _chalkStrokeBase = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+                    } catch (err) { _chalkStrokeBase = null; }
+                } else {
+                    _chalkLastPoint = p;
+                    _chalkPrevMid = p;
+                    drawChalkSegment(p, p);
+                }
             });
             canvas.addEventListener('pointermove', (e) => {
-                if (!_chalkDrawing || !_chalkLastPoint) return;
-                const p = getPoint(e);
-                drawChalkSegment(_chalkLastPoint, p);
-                _chalkLastPoint = p;
+                if (!_chalkDrawing) return;
+                if (_chalkMode === 'highlight') {
+                    if (!_chalkStrokeStart) return;
+                    const p = getPoint(e);
+                    // 직전 미리보기를 지우고 출발점→현재 위치 직선을 다시 그림
+                    if (_chalkStrokeBase) canvas.getContext('2d').putImageData(_chalkStrokeBase, 0, 0);
+                    drawChalkSegment(_chalkStrokeStart, p);
+                } else {
+                    if (!_chalkLastPoint) return;
+                    // 코어레스드 이벤트로 샘플링을 높여 더 매끄러운 곡선 생성
+                    const events = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length)
+                        ? e.getCoalescedEvents() : [e];
+                    events.forEach((ev) => drawChalkCurveTo(getPoint(ev)));
+                }
             });
-            const endStroke = () => { _chalkDrawing = false; _chalkLastPoint = null; };
-            canvas.addEventListener('pointerup', endStroke);
-            canvas.addEventListener('pointercancel', endStroke);
+            canvas.addEventListener('pointerup', (e) => {
+                if (!_chalkDrawing) return;
+                if (_chalkMode === 'highlight' && _chalkStrokeStart) {
+                    // 도착점 확정: 출발점→도착점 직선을 딱 1번만 칠해 균일한 농도 유지
+                    const p = getPoint(e);
+                    if (_chalkStrokeBase) canvas.getContext('2d').putImageData(_chalkStrokeBase, 0, 0);
+                    drawChalkSegment(_chalkStrokeStart, p);
+                } else if (_chalkLastPoint && _chalkPrevMid) {
+                    // 곡선 끝부분을 실제 마지막 포인트까지 마감
+                    drawChalkSegment(_chalkPrevMid, _chalkLastPoint);
+                }
+                _chalkDrawing = false;
+                _chalkLastPoint = null;
+                _chalkPrevMid = null;
+                _chalkStrokeStart = null;
+                _chalkStrokeBase = null;
+            });
+            canvas.addEventListener('pointercancel', () => {
+                _chalkDrawing = false;
+                _chalkLastPoint = null;
+                _chalkPrevMid = null;
+                _chalkStrokeStart = null;
+                _chalkStrokeBase = null;
+            });
             window.addEventListener('resize', () => {
                 const overlay = document.getElementById('chalkboardOverlay');
                 if (overlay && !overlay.classList.contains('hidden')) resizeChalkboardCanvas();
@@ -2838,6 +2920,89 @@ function redrawPlazaGrantsUi() {
             document.addEventListener('fullscreenchange', () => {
                 setTimeout(resizeChalkboardCanvas, 80);
             });
+
+            // 이미지 첨부 입력 연결
+            const imgInput = document.getElementById('chalkImageInput');
+            if (imgInput) {
+                imgInput.addEventListener('change', () => {
+                    const file = imgInput.files && imgInput.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => insertChalkboardImage(String(reader.result));
+                    reader.readAsDataURL(file);
+                    imgInput.value = '';
+                });
+            }
+        }
+
+        /** 툴바 [이미지] 버튼: 파일 선택 창 열기 */
+        window.addChalkboardImage = function() {
+            const input = document.getElementById('chalkImageInput');
+            if (input) input.click();
+        };
+
+        /**
+         * 선택한 이미지를 칠판 위에 띄움.
+         * 글쓰기 모드에서 드래그로 이동, 우하단 손잡이로 크기 조절, ✕로 삭제.
+         * 캔버스(그리기 레이어) 아래에 두어 분필·형광펜으로 이미지 위에 필기할 수 있다.
+         */
+        function insertChalkboardImage(src) {
+            const frame = document.getElementById('chalkboardFrame');
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (!frame || !canvas) return;
+            const wrap = document.createElement('div');
+            wrap.className = 'chalk-img-wrap';
+            const offset = (_chalkImgCounter++ % 5) * 28;
+            wrap.style.left = (48 + offset) + 'px';
+            wrap.style.top = (48 + offset) + 'px';
+            wrap.style.width = '32%';
+            wrap.innerHTML = `
+                <img src="${src}" alt="첨부 이미지" draggable="false">
+                <button type="button" class="chalk-img-del" title="이미지 삭제">✕</button>
+                <div class="chalk-img-resize" title="드래그하여 크기 조절"></div>`;
+            frame.insertBefore(wrap, canvas);
+
+            // 삭제 버튼
+            const delBtn = wrap.querySelector('.chalk-img-del');
+            delBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+            delBtn.addEventListener('click', (e) => { e.stopPropagation(); wrap.remove(); });
+
+            // 크기 조절 손잡이 (우하단)
+            const handle = wrap.querySelector('.chalk-img-resize');
+            let resizing = null;
+            handle.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                try { handle.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+                resizing = { x: e.clientX, w: wrap.getBoundingClientRect().width };
+            });
+            handle.addEventListener('pointermove', (e) => {
+                if (!resizing) return;
+                const w = Math.max(60, resizing.w + (e.clientX - resizing.x));
+                wrap.style.width = w + 'px';
+            });
+            handle.addEventListener('pointerup', () => { resizing = null; });
+            handle.addEventListener('pointercancel', () => { resizing = null; });
+
+            // 본체 드래그 이동
+            let dragOff = null;
+            wrap.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                try { wrap.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+                const r = wrap.getBoundingClientRect();
+                dragOff = { x: e.clientX - r.left, y: e.clientY - r.top };
+            });
+            wrap.addEventListener('pointermove', (e) => {
+                if (!dragOff) return;
+                const fr = frame.getBoundingClientRect();
+                wrap.style.left = (e.clientX - fr.left - dragOff.x) + 'px';
+                wrap.style.top = (e.clientY - fr.top - dragOff.y) + 'px';
+            });
+            wrap.addEventListener('pointerup', () => { dragOff = null; });
+            wrap.addEventListener('pointercancel', () => { dragOff = null; });
+
+            // 이미지를 바로 움직일 수 있도록 글쓰기 모드로 전환
+            window.setChalkboardMode('text');
         }
 
         window.openChalkboard = function() {
@@ -2898,11 +3063,15 @@ function redrawPlazaGrantsUi() {
             const textEl = document.getElementById('chalkboardText');
             if (!textEl) return;
             if (chalkSelectionInBoard()) {
+                // 드래그로 선택한 부분만 글꼴 변경
                 document.execCommand('styleWithCSS', false, true);
                 document.execCommand('fontName', false, family);
             } else {
+                // 선택이 없으면 칠판 전체 기본 글꼴 변경
                 textEl.style.fontFamily = family;
             }
+            // 글꼴 선택 후 바로 이어서 쓸 수 있게 칠판으로 포커스 복귀
+            if (_chalkMode === 'text') textEl.focus();
         };
 
         window.setChalkboardFontSize = function(px) {
@@ -2942,6 +3111,8 @@ function redrawPlazaGrantsUi() {
             if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
             const textEl = document.getElementById('chalkboardText');
             if (textEl) textEl.innerHTML = '';
+            // 첨부 이미지도 함께 제거
+            document.querySelectorAll('#chalkboardFrame .chalk-img-wrap').forEach((el) => el.remove());
         };
 
         window.toggleChalkboardBoardColor = function() {

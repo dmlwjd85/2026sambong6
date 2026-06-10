@@ -19,7 +19,7 @@
         const manifestUrl = URL.createObjectURL(manifestBlob);
         document.write(`<link rel="manifest" href="${manifestUrl}">`);
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gaegu:wght@400;700&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
@@ -1084,7 +1084,7 @@
                             <h2 class="text-xl sm:text-2xl font-display text-emerald-100 tracking-wide">판서 모드 (전자칠판)</h2>
                         </div>
                     </div>
-                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 전체 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트 변경, 분필·형광펜 자유 그리기, 지우개, 되돌리기, 전체화면을 지원합니다.</p>
+                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 전체 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트 변경, 분필 곡선 그리기, 형광펜 직선(출발점→도착점), 지우개, 되돌리기, 이미지 첨부, 전체화면을 지원합니다.</p>
                     <button type="button" onclick="window.openChalkboard()" class="w-full py-4 rounded-xl font-display text-lg sm:text-xl tracking-widest bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-emerald-50 border-2 border-emerald-400/80 shadow-[0_4px_0_#064e3b,inset_0_1px_0_rgba(255,255,255,0.25)] active:translate-y-0.5 active:shadow-none transition">
                         <i class="fa-solid fa-chalkboard mr-2"></i>칠판 열기
                     </button>
@@ -1344,9 +1344,11 @@
                 <button type="button" id="chalkModeHighlight" onclick="window.setChalkboardMode('highlight')" class="chalk-tool-btn">🖊️ 형광펜</button>
                 <button type="button" id="chalkModeEraser" onclick="window.setChalkboardMode('eraser')" class="chalk-tool-btn">🧽 지우개</button>
             </div>
-            <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴">
+            <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴 (드래그 선택 시 그 부분만, 선택 없으면 전체)">
                 <option value="'Gaegu', cursive" selected>분필 손글씨</option>
                 <option value="'Nanum Pen Script', cursive">펜글씨</option>
+                <option value="'Jua', sans-serif">동글동글(주아)</option>
+                <option value="'Do Hyeon', sans-serif">또박또박(도현)</option>
                 <option value="'Black Han Sans', sans-serif">굵은 제목</option>
                 <option value="'Noto Sans KR', sans-serif">고딕체</option>
             </select>
@@ -1372,6 +1374,8 @@
                 <option value="12">굵은 선</option>
                 <option value="22">아주 굵게</option>
             </select>
+            <button type="button" onclick="window.addChalkboardImage()" class="chalk-tool-btn" title="이미지 첨부 (글쓰기 모드에서 드래그 이동·우하단 손잡이로 크기 조절)">🖼️ 이미지</button>
+            <input type="file" id="chalkImageInput" accept="image/*" class="hidden">
             <div class="flex-grow"></div>
             <button type="button" onclick="window.undoChalkboardStroke()" class="chalk-tool-btn" title="그리기 되돌리기">↩️ 되돌리기</button>
             <button type="button" onclick="window.toggleChalkboardBoardColor()" class="chalk-tool-btn" title="초록 칠판 ↔ 블랙보드">🟩 칠판색</button>

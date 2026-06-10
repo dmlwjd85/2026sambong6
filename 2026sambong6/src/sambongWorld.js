@@ -3541,6 +3541,8 @@ function redrawPlazaGrantsUi() {
                                 window.updateGoldenBellAdminUI();
                             } else {
                                 window.renderGoldenBellStudent();
+                                // 마스터가 최종 채점 발표·초기화를 실행하면 학생 화면에 결과 팝업 1회 표시
+                                maybeShowGoldenBellResultsAnnounce(window.goldenbellState);
                             }
                             const gbAdminStatus = document.getElementById('gbAdminStatus');
                             if (gbAdminStatus) {
@@ -3647,15 +3649,18 @@ function redrawPlazaGrantsUi() {
             }
         }
 
-        async function resetGoldenBellState(reason = 'expired') {
+        async function resetGoldenBellState(reason = 'expired', extra = {}) {
             if (!db) return;
+            // 주의: merge:true에서는 submissions: {}(빈 맵)가 기존 제출 기록을 지우지 못해
+            // 다음 골든벨에서 학생이 "제출 완료" 상태로 잠기는 버그가 있었음 → 문서 전체 덮어쓰기로 완전 초기화
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), {
                 isOpen: false,
                 questions: [],
                 submissions: {},
                 closedAt: Date.now(),
-                closeReason: reason
-            }, { merge: true });
+                closeReason: reason,
+                ...extra
+            });
         }
 
         let _gbExpireRunning = false;
@@ -8993,6 +8998,8 @@ function redrawPlazaGrantsUi() {
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
             const openedAt = Date.now();
 
+            // merge 없이 전체 덮어쓰기: 이전 회차의 submissions(제출 기록)·발표 결과를 완전히 비워서
+            // 새 골든벨이 열리는 순간 학생 제출 상태와 마스터 답안 채점현황이 함께 초기화되게 한다.
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'state'), { 
                 isOpen: true, 
                 sessionId: openedAt,
@@ -9000,7 +9007,7 @@ function redrawPlazaGrantsUi() {
                 expiresAt: openedAt + 60 * 60 * 1000,
                 questions: qs, 
                 submissions: {} 
-            }, {merge: true}); 
+            }); 
             window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.`);
         };
 
@@ -9075,9 +9082,95 @@ function redrawPlazaGrantsUi() {
 
         window.closeGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
-            const ok = await window.customConfirm("골든벨을 종료하시겠습니까?\n(학생 화면에서 문제가 사라집니다)");
+            const ok = await window.customConfirm("골든벨을 종료하시겠습니까?\n(학생 화면에서 문제가 사라지고, 제출 기록도 초기화됩니다)");
             if(ok) await resetGoldenBellState('manual');
         };
+
+        /**
+         * ★ 마스터: 최종 채점 발표 및 초기화 ★
+         * 1) 현재 제출된 채점 결과(점수·보상)를 lastResults로 요약 저장
+         * 2) 같은 쓰기에서 골든벨 상태를 완전 초기화(isOpen:false, 문제·제출 기록 삭제)
+         * → 학생 화면에는 스냅샷 수신 시 결과 팝업이 1회 표시되고, 골든벨은 새로 열 수 있는 상태가 된다.
+         */
+        window.announceGoldenBellResults = async function() {
+            if(!window.playerState || !window.playerState.isAdmin) return;
+            const st = window.goldenbellState;
+            if (!st || !st.isOpen) return window.customAlert('현재 진행 중인 골든벨이 없습니다.');
+
+            const subs = getGoldenBellSubmissions(st);
+            const totalQuestions = Array.isArray(st.questions) ? st.questions.length : 0;
+            const submittedIds = Object.keys(subs).filter(sid => {
+                const s = subs[sid];
+                return s && (s.finalized || s.rewardsGiven);
+            });
+
+            const ok = await window.customConfirm(
+                `골든벨 최종 채점을 발표하고 초기화할까요?\n\n` +
+                `- 최종 제출 완료: ${submittedIds.length}명\n` +
+                `- 모든 학생 화면에 채점 결과 팝업이 표시됩니다.\n` +
+                `- 발표와 동시에 골든벨(문제·제출 기록)이 초기화됩니다.`
+            );
+            if (!ok) return;
+
+            // 학생별 결과 요약(점수·보상)만 저장 — 답안 원문은 저장하지 않음
+            const results = {};
+            submittedIds.forEach(sid => {
+                const s = subs[sid];
+                results[sid] = {
+                    score: (typeof s.score === 'number')
+                        ? s.score
+                        : (Array.isArray(s.results) ? s.results.filter(r => r === true).length : 0),
+                    rewardXp: s.rewardXpTotal != null ? Number(s.rewardXpTotal) : 0,
+                    rewardBong: s.rewardBongTotal != null ? Number(s.rewardBongTotal) : 0
+                };
+            });
+
+            await resetGoldenBellState('announced', {
+                lastResults: {
+                    sessionId: st.sessionId || st.openedAt || Date.now(),
+                    announcedAt: Date.now(),
+                    totalQuestions,
+                    results
+                }
+            });
+            window.customAlert(`📣 최종 채점 발표 완료! (제출 ${submittedIds.length}명)\n학생 화면에 결과 팝업이 표시되고, 골든벨이 초기화되었습니다.`);
+        };
+
+        /** 발표된 최종 결과를 학생에게 보여주는 팝업 */
+        function showGoldenBellAnnounceModal(mine, totalQuestions) {
+            const d = document.createElement('div');
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            const bodyHtml = mine
+                ? `<p class="text-center text-sm text-white font-bold mt-2">정답 ${mine.score} / ${totalQuestions}문항</p>
+                   <p class="text-center text-[11px] text-yellow-200/90 mt-1">획득 보상: +${mine.rewardXp} XP · +${mine.rewardBong} B (이미 지급됨)</p>`
+                : `<p class="text-center text-xs text-slate-300 mt-2">이번 골든벨에는 최종 제출 기록이 없어요.<br>다음 골든벨에 꼭 참여해 보세요!</p>`;
+            d.innerHTML = `
+                <div class="bg-sb-panel p-6 rounded-3xl border border-yellow-500/40 max-w-sm w-full text-center space-y-3 shadow-2xl">
+                    <h3 class="text-lg font-display text-yellow-300">🔔 골든벨 최종 결과 발표</h3>
+                    ${bodyHtml}
+                    <button type="button" id="gbAnnounceOk" class="bg-sb-blue hover:bg-blue-500 text-white font-bold py-2.5 px-8 rounded-full w-full">확인</button>
+                </div>`;
+            document.body.appendChild(d);
+            document.getElementById('gbAnnounceOk').onclick = () => d.remove();
+        }
+
+        /**
+         * 학생: 골든벨 스냅샷에서 lastResults(최종 발표)를 감지하면 결과 팝업을 1회만 표시.
+         * 발표 후 2시간이 지난 오래된 발표는 새 기기/재로그인에서도 띄우지 않는다.
+         */
+        function maybeShowGoldenBellResultsAnnounce(st) {
+            if (!st || !st.lastResults || !st.lastResults.announcedAt) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            const mId = localStorage.getItem('sambong_student_id');
+            if (!mId) return;
+            const announcedAt = Number(st.lastResults.announcedAt);
+            if (!announcedAt || Date.now() - announcedAt > 2 * 60 * 60 * 1000) return;
+            const seenKey = 'sambong_gb_results_seen';
+            if (localStorage.getItem(seenKey) === String(announcedAt)) return;
+            localStorage.setItem(seenKey, String(announcedAt));
+            const mine = (st.lastResults.results && st.lastResults.results[mId]) ? st.lastResults.results[mId] : null;
+            showGoldenBellAnnounceModal(mine, Number(st.lastResults.totalQuestions || 0));
+        }
 
         window.renderGoldenBellStudent = function() {
             const container = document.getElementById('gbStudentContainer');

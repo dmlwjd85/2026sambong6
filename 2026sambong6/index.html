@@ -1193,58 +1193,6 @@
             </div>
         </section>
 
-        <!-- ★ 판서 모드(전자칠판) 오버레이 — 마스터 전용 ★ -->
-        <div id="chalkboardOverlay" class="hidden fixed inset-0 z-[280] flex flex-col bg-[#0b0f0a]">
-            <div class="flex flex-wrap items-center gap-1.5 px-2 sm:px-3 py-2 bg-slate-900/95 border-b border-slate-700 shrink-0">
-                <div class="flex gap-1 mr-1">
-                    <button type="button" id="chalkModeText" onclick="window.setChalkboardMode('text')" class="chalk-tool-btn chalk-active">⌨️ 글쓰기</button>
-                    <button type="button" id="chalkModePen" onclick="window.setChalkboardMode('pen')" class="chalk-tool-btn">🖍️ 분필펜</button>
-                    <button type="button" id="chalkModeHighlight" onclick="window.setChalkboardMode('highlight')" class="chalk-tool-btn">🖊️ 형광펜</button>
-                    <button type="button" id="chalkModeEraser" onclick="window.setChalkboardMode('eraser')" class="chalk-tool-btn">🧽 지우개</button>
-                </div>
-                <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴">
-                    <option value="'Gaegu', cursive" selected>분필 손글씨</option>
-                    <option value="'Nanum Pen Script', cursive">펜글씨</option>
-                    <option value="'Black Han Sans', sans-serif">굵은 제목</option>
-                    <option value="'Noto Sans KR', sans-serif">고딕체</option>
-                </select>
-                <select id="chalkFontSize" onchange="window.setChalkboardFontSize(this.value)" class="chalk-select" title="글자 크기">
-                    <option value="24">24px</option>
-                    <option value="32">32px</option>
-                    <option value="40" selected>40px</option>
-                    <option value="56">56px</option>
-                    <option value="72">72px</option>
-                    <option value="96">96px</option>
-                </select>
-                <div class="flex gap-1 items-center" id="chalkColorSwatches" title="분필 색">
-                    <button type="button" class="chalk-swatch chalk-active" style="background:#f8fafc" onclick="window.setChalkboardColor('#f8fafc', this)" title="흰 분필"></button>
-                    <button type="button" class="chalk-swatch" style="background:#fde047" onclick="window.setChalkboardColor('#fde047', this)" title="노랑"></button>
-                    <button type="button" class="chalk-swatch" style="background:#f9a8d4" onclick="window.setChalkboardColor('#f9a8d4', this)" title="분홍"></button>
-                    <button type="button" class="chalk-swatch" style="background:#7dd3fc" onclick="window.setChalkboardColor('#7dd3fc', this)" title="하늘"></button>
-                    <button type="button" class="chalk-swatch" style="background:#bef264" onclick="window.setChalkboardColor('#bef264', this)" title="연두"></button>
-                    <button type="button" class="chalk-swatch" style="background:#fdba74" onclick="window.setChalkboardColor('#fdba74', this)" title="주황"></button>
-                </div>
-                <select id="chalkPenWidth" class="chalk-select" title="펜 굵기">
-                    <option value="3">가는 선</option>
-                    <option value="6" selected>보통 선</option>
-                    <option value="12">굵은 선</option>
-                    <option value="22">아주 굵게</option>
-                </select>
-                <div class="flex-grow"></div>
-                <button type="button" onclick="window.undoChalkboardStroke()" class="chalk-tool-btn" title="그리기 되돌리기">↩️ 되돌리기</button>
-                <button type="button" onclick="window.toggleChalkboardBoardColor()" class="chalk-tool-btn" title="초록 칠판 ↔ 블랙보드">🟩 칠판색</button>
-                <button type="button" onclick="window.clearChalkboard()" class="chalk-tool-btn" title="글씨·그림 모두 지우기">🗑️ 모두 지우기</button>
-                <button type="button" onclick="window.toggleChalkboardFullscreen()" class="chalk-tool-btn" title="전체화면">⛶ 전체화면</button>
-                <button type="button" onclick="window.closeChalkboard()" class="chalk-tool-btn chalk-tool-danger">✕ 닫기</button>
-            </div>
-            <div class="flex-1 min-h-0 p-2 sm:p-3">
-                <div id="chalkboardFrame" class="chalkboard-frame chalkboard-green w-full h-full relative overflow-hidden rounded-lg">
-                    <div id="chalkboardText" contenteditable="true" spellcheck="false" class="chalkboard-text absolute inset-0 p-5 sm:p-8 overflow-y-auto outline-none" style="font-size:40px; color:#f8fafc; font-family:'Gaegu', cursive;"></div>
-                    <canvas id="chalkboardCanvas" class="absolute inset-0" style="pointer-events:none"></canvas>
-                </div>
-            </div>
-        </div>
-
         <!-- ★ 8. 마스터 관리자 탭 ★ -->
         <section id="adminSection" class="hidden">
             <div class="mb-4 flex justify-between items-end">
@@ -1382,6 +1330,60 @@
         <footer class="text-center text-slate-500 py-6 border-t border-slate-800 mt-10">
             <p class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
         </footer>
+    </div>
+
+    <!-- ★ 판서 모드(전자칠판) 오버레이 — 마스터 전용 ★
+         주의: swipeWrapper(relative z-[2]) 안에 두면 스태킹 컨텍스트에 갇혀
+         상단 고정 내비게이션(z-50)에 도구 패널이 가려지므로 반드시 body 직속에 둘 것 -->
+    <div id="chalkboardOverlay" class="hidden fixed inset-0 z-[280] flex flex-col bg-[#0b0f0a]">
+        <div class="flex flex-wrap items-center gap-1.5 px-2 sm:px-3 py-2 bg-slate-900/95 border-b border-slate-700 shrink-0">
+            <div class="flex gap-1 mr-1">
+                <button type="button" id="chalkModeText" onclick="window.setChalkboardMode('text')" class="chalk-tool-btn chalk-active">⌨️ 글쓰기</button>
+                <button type="button" id="chalkModePen" onclick="window.setChalkboardMode('pen')" class="chalk-tool-btn">🖍️ 분필펜</button>
+                <button type="button" id="chalkModeHighlight" onclick="window.setChalkboardMode('highlight')" class="chalk-tool-btn">🖊️ 형광펜</button>
+                <button type="button" id="chalkModeEraser" onclick="window.setChalkboardMode('eraser')" class="chalk-tool-btn">🧽 지우개</button>
+            </div>
+            <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴">
+                <option value="'Gaegu', cursive" selected>분필 손글씨</option>
+                <option value="'Nanum Pen Script', cursive">펜글씨</option>
+                <option value="'Black Han Sans', sans-serif">굵은 제목</option>
+                <option value="'Noto Sans KR', sans-serif">고딕체</option>
+            </select>
+            <select id="chalkFontSize" onchange="window.setChalkboardFontSize(this.value)" class="chalk-select" title="글자 크기">
+                <option value="24">24px</option>
+                <option value="32">32px</option>
+                <option value="40" selected>40px</option>
+                <option value="56">56px</option>
+                <option value="72">72px</option>
+                <option value="96">96px</option>
+            </select>
+            <div class="flex gap-1 items-center" id="chalkColorSwatches" title="분필 색">
+                <button type="button" class="chalk-swatch chalk-active" style="background:#f8fafc" onclick="window.setChalkboardColor('#f8fafc', this)" title="흰 분필"></button>
+                <button type="button" class="chalk-swatch" style="background:#fde047" onclick="window.setChalkboardColor('#fde047', this)" title="노랑"></button>
+                <button type="button" class="chalk-swatch" style="background:#f9a8d4" onclick="window.setChalkboardColor('#f9a8d4', this)" title="분홍"></button>
+                <button type="button" class="chalk-swatch" style="background:#7dd3fc" onclick="window.setChalkboardColor('#7dd3fc', this)" title="하늘"></button>
+                <button type="button" class="chalk-swatch" style="background:#bef264" onclick="window.setChalkboardColor('#bef264', this)" title="연두"></button>
+                <button type="button" class="chalk-swatch" style="background:#fdba74" onclick="window.setChalkboardColor('#fdba74', this)" title="주황"></button>
+            </div>
+            <select id="chalkPenWidth" class="chalk-select" title="펜 굵기">
+                <option value="3">가는 선</option>
+                <option value="6" selected>보통 선</option>
+                <option value="12">굵은 선</option>
+                <option value="22">아주 굵게</option>
+            </select>
+            <div class="flex-grow"></div>
+            <button type="button" onclick="window.undoChalkboardStroke()" class="chalk-tool-btn" title="그리기 되돌리기">↩️ 되돌리기</button>
+            <button type="button" onclick="window.toggleChalkboardBoardColor()" class="chalk-tool-btn" title="초록 칠판 ↔ 블랙보드">🟩 칠판색</button>
+            <button type="button" onclick="window.clearChalkboard()" class="chalk-tool-btn" title="글씨·그림 모두 지우기">🗑️ 모두 지우기</button>
+            <button type="button" onclick="window.toggleChalkboardFullscreen()" class="chalk-tool-btn" title="전체화면">⛶ 전체화면</button>
+            <button type="button" onclick="window.closeChalkboard()" class="chalk-tool-btn chalk-tool-danger">✕ 닫기</button>
+        </div>
+        <div class="flex-1 min-h-0 p-2 sm:p-3">
+            <div id="chalkboardFrame" class="chalkboard-frame chalkboard-green w-full h-full relative overflow-hidden rounded-lg">
+                <div id="chalkboardText" contenteditable="true" spellcheck="false" class="chalkboard-text absolute inset-0 p-5 sm:p-8 overflow-y-auto outline-none" style="font-size:40px; color:#f8fafc; font-family:'Gaegu', cursive;"></div>
+                <canvas id="chalkboardCanvas" class="absolute inset-0" style="pointer-events:none"></canvas>
+            </div>
+        </div>
     </div>
 
     <!-- ★ 수업도구: 제비 뽑기 연출 전체 화면 ★ -->

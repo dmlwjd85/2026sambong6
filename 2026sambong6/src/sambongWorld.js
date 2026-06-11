@@ -2823,6 +2823,24 @@ function redrawPlazaGrantsUi() {
         let _chalkPages = [null];
         let _chalkPageIndex = 0;
         const CHALK_SAVE_KEY = 'sambong_chalk_save_v1';
+        let _chalkCanvasRestoreToken = 0;
+        let _chalkCanvasRestoring = false;
+
+        function isChalkboardVisible() {
+            const overlay = document.getElementById('chalkboardOverlay');
+            return !!(overlay && !overlay.classList.contains('hidden'));
+        }
+
+        function isChalkCanvasBusy() {
+            if (!_chalkCanvasRestoring) return false;
+            chalkboardToast('페이지 그림을 복원하는 중입니다. 잠시 후 다시 시도해 주세요.');
+            return true;
+        }
+
+        async function confirmChalkboardDanger(message) {
+            if (document.fullscreenElement) return window.confirm(message);
+            return window.customConfirm(message);
+        }
 
         /**
          * 캔버스를 칠판 프레임 크기에 맞추고, 이미 그린 내용은 보존해 다시 그림.
@@ -2832,9 +2850,11 @@ function redrawPlazaGrantsUi() {
             const canvas = document.getElementById('chalkboardCanvas');
             const frame = document.getElementById('chalkboardFrame');
             if (!canvas || !frame) return;
+            if (!isChalkboardVisible() || _chalkCanvasRestoring) return;
             const rect = frame.getBoundingClientRect();
-            const w = Math.max(1, Math.round(rect.width));
-            const h = Math.max(1, Math.round(rect.height));
+            const w = Math.round(rect.width);
+            const h = Math.round(rect.height);
+            if (w <= 1 || h <= 1) return;
             const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
             const dw = Math.round(w * dpr);
             const dh = Math.round(h * dpr);
@@ -2843,6 +2863,8 @@ function redrawPlazaGrantsUi() {
             if (canvas.width > 1 && canvas.height > 1) {
                 try { snapshot = canvas.toDataURL(); } catch (e) { snapshot = null; }
             }
+            const restoreToken = ++_chalkCanvasRestoreToken;
+            _chalkCanvasRestoring = !!snapshot;
             canvas.width = dw;
             canvas.height = dh;
             canvas.style.width = w + 'px';
@@ -2852,7 +2874,14 @@ function redrawPlazaGrantsUi() {
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             if (snapshot) {
                 const img = new Image();
-                img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+                img.onload = () => {
+                    if (restoreToken !== _chalkCanvasRestoreToken) return;
+                    ctx.drawImage(img, 0, 0, w, h);
+                    _chalkCanvasRestoring = false;
+                };
+                img.onerror = () => {
+                    if (restoreToken === _chalkCanvasRestoreToken) _chalkCanvasRestoring = false;
+                };
                 img.src = snapshot;
             }
         }
@@ -3189,15 +3218,16 @@ function redrawPlazaGrantsUi() {
                 resetChalkStrokeState();
             });
             window.addEventListener('resize', () => {
-                const overlay = document.getElementById('chalkboardOverlay');
-                if (overlay && !overlay.classList.contains('hidden')) {
+                if (isChalkboardVisible()) {
                     positionChalkboardBelowNav();
                     resizeChalkboardCanvas();
                 }
             });
             document.addEventListener('fullscreenchange', () => {
                 positionChalkboardBelowNav();
-                setTimeout(resizeChalkboardCanvas, 80);
+                setTimeout(() => {
+                    if (isChalkboardVisible()) resizeChalkboardCanvas();
+                }, 80);
             });
 
             // 이미지 첨부 입력 연결
@@ -3316,6 +3346,8 @@ function redrawPlazaGrantsUi() {
 
         window.closeChalkboard = function() {
             const overlay = document.getElementById('chalkboardOverlay');
+            resetChalkStrokeState();
+            saveCurrentChalkPage();
             if (overlay) overlay.classList.add('hidden');
             document.body.classList.remove('overflow-hidden');
             if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -3360,12 +3392,23 @@ function redrawPlazaGrantsUi() {
             if (data && Array.isArray(data.images)) {
                 data.images.forEach((im) => insertChalkboardImage(im.src, { left: im.left, top: im.top, width: im.width, silent: true }));
             }
+            const restoreToken = ++_chalkCanvasRestoreToken;
             if (data && data.canvas && canvas) {
+                _chalkCanvasRestoring = true;
                 const cssW = parseFloat(canvas.style.width) || canvas.width;
                 const cssH = parseFloat(canvas.style.height) || canvas.height;
                 const img = new Image();
-                img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, cssW, cssH);
+                img.onload = () => {
+                    if (restoreToken !== _chalkCanvasRestoreToken) return;
+                    canvas.getContext('2d').drawImage(img, 0, 0, cssW, cssH);
+                    _chalkCanvasRestoring = false;
+                };
+                img.onerror = () => {
+                    if (restoreToken === _chalkCanvasRestoreToken) _chalkCanvasRestoring = false;
+                };
                 img.src = data.canvas;
+            } else {
+                _chalkCanvasRestoring = false;
             }
             // 칠판 색 복원
             _chalkBoardDark = !!(data && data.boardDark);
@@ -3378,8 +3421,18 @@ function redrawPlazaGrantsUi() {
         }
 
         /** 현재 페이지 내용을 페이지 배열에 반영 */
-        function saveCurrentChalkPage() {
+        function saveCurrentChalkPage(opts = {}) {
+            if (_chalkCanvasRestoring) {
+                if (opts.notify) chalkboardToast('페이지 그림을 복원하는 중이라 아직 저장할 수 없습니다.');
+                return false;
+            }
+            const canvas = document.getElementById('chalkboardCanvas');
+            if (canvas && (canvas.width <= 1 || canvas.height <= 1)) {
+                if (opts.notify) chalkboardToast('칠판 크기를 확인한 뒤 다시 저장해 주세요.');
+                return false;
+            }
             _chalkPages[_chalkPageIndex] = captureChalkPage();
+            return true;
         }
 
         function updateChalkPageIndicator() {
@@ -3390,7 +3443,9 @@ function redrawPlazaGrantsUi() {
         /** 지정한 페이지로 이동 (마지막 페이지를 넘어가면 새 페이지 생성) */
         function goToChalkPage(idx) {
             if (idx < 0) return;
-            saveCurrentChalkPage();
+            if (isChalkCanvasBusy()) return;
+            resetChalkStrokeState();
+            if (!saveCurrentChalkPage({ notify: true })) return;
             if (idx >= _chalkPages.length) {
                 _chalkPages.push(null);
                 chalkboardToast('🆕 새 페이지가 추가되었습니다');
@@ -3414,10 +3469,9 @@ function redrawPlazaGrantsUi() {
                 // 마지막 한 장은 삭제 대신 내용만 비움
                 return window.clearChalkboard();
             }
-            if (!document.fullscreenElement) {
-                const ok = await window.customConfirm(`현재 ${_chalkPageIndex + 1}쪽 페이지를 삭제할까요?`);
-                if (!ok) return;
-            }
+            if (isChalkCanvasBusy()) return;
+            const ok = await confirmChalkboardDanger(`현재 ${_chalkPageIndex + 1}쪽 페이지를 삭제할까요?`);
+            if (!ok) return;
             _chalkPages.splice(_chalkPageIndex, 1);
             if (_chalkPageIndex >= _chalkPages.length) _chalkPageIndex = _chalkPages.length - 1;
             loadChalkPage(_chalkPages[_chalkPageIndex]);
@@ -3439,7 +3493,7 @@ function redrawPlazaGrantsUi() {
         }
 
         window.saveChalkboardPages = function() {
-            saveCurrentChalkPage();
+            if (!saveCurrentChalkPage({ notify: true })) return;
             try {
                 localStorage.setItem(CHALK_SAVE_KEY, JSON.stringify({
                     pages: _chalkPages,
@@ -3456,10 +3510,9 @@ function redrawPlazaGrantsUi() {
         window.loadChalkboardPages = async function() {
             const raw = localStorage.getItem(CHALK_SAVE_KEY);
             if (!raw) return chalkboardToast('저장된 판서가 없습니다');
-            if (!document.fullscreenElement) {
-                const ok = await window.customConfirm('저장해 둔 판서를 불러올까요?\n지금 칠판에 있는 내용은 사라집니다.');
-                if (!ok) return;
-            }
+            if (isChalkCanvasBusy()) return;
+            const ok = await confirmChalkboardDanger('저장해 둔 판서를 불러올까요?\n지금 칠판에 있는 내용은 사라집니다.');
+            if (!ok) return;
             try {
                 const data = JSON.parse(raw);
                 _chalkPages = (Array.isArray(data.pages) && data.pages.length) ? data.pages : [null];
@@ -3548,11 +3601,9 @@ function redrawPlazaGrantsUi() {
         };
 
         window.clearChalkboard = async function() {
-            // 전체화면 중에는 모달이 보이지 않으므로 확인 없이 진행(되돌리기로 그림 복구 가능)
-            if (!document.fullscreenElement) {
-                const ok = await window.customConfirm('칠판의 글씨와 그림을 모두 지울까요?');
-                if (!ok) return;
-            }
+            if (isChalkCanvasBusy()) return;
+            const ok = await confirmChalkboardDanger('칠판의 글씨와 그림을 모두 지울까요?');
+            if (!ok) return;
             pushChalkUndoSnapshot();
             const canvas = document.getElementById('chalkboardCanvas');
             if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
@@ -5840,8 +5891,10 @@ function redrawPlazaGrantsUi() {
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
             if(isOk) {
                 const classId = localStorage.getItem('sambong_class_id');
+                const chalkSave = localStorage.getItem(CHALK_SAVE_KEY);
                 localStorage.clear();
                 if (classId) localStorage.setItem('sambong_class_id', classId);
+                if (chalkSave) localStorage.setItem(CHALK_SAVE_KEY, chalkSave);
                 location.reload();
             }
         };

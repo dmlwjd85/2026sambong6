@@ -2813,6 +2813,9 @@ function redrawPlazaGrantsUi() {
         let _chalkBoardDark = false;
         let _chalkEventsBound = false;
         let _chalkImgCounter = 0;     // 첨부 이미지 배치 오프셋용
+        let _chalkCanvasRestoreToken = 0; // 비동기 캔버스 복원 순서를 구분하는 토큰
+        let _chalkCanvasRestorePending = false; // 복원 중 빈 캔버스가 저장되는 것을 막는 상태
+        let _chalkResizeAfterRestore = false; // 복원 중 발생한 리사이즈를 완료 후 한 번 재시도
         // 도형 모드: 손으로 그린 궤적을 기록했다가 2초 유지 시 반듯한 도형으로 정렬
         let _chalkShapePoints = [];   // 현재 스트로크의 궤적 포인트
         let _chalkShapeBase = null;   // 도형 정렬 시 프리핸드 선을 지우기 위한 스냅샷
@@ -2824,6 +2827,37 @@ function redrawPlazaGrantsUi() {
         let _chalkPageIndex = 0;
         const CHALK_SAVE_KEY = 'sambong_chalk_save_v1';
 
+        /** 캔버스 이미지 복원을 시작하고, 이전 복원 작업은 무효화 */
+        function beginChalkCanvasRestore() {
+            _chalkCanvasRestorePending = true;
+            _chalkCanvasRestoreToken += 1;
+            return _chalkCanvasRestoreToken;
+        }
+
+        /** 현재 토큰의 복원이 끝났을 때만 저장 차단 상태 해제 */
+        function finishChalkCanvasRestore(token) {
+            if (token !== _chalkCanvasRestoreToken) return;
+            _chalkCanvasRestorePending = false;
+            if (_chalkResizeAfterRestore) {
+                _chalkResizeAfterRestore = false;
+                requestAnimationFrame(resizeChalkboardCanvas);
+            }
+        }
+
+        /** 사용자가 내용을 직접 바꾸는 동작이 시작되면 늦게 도착한 복원 이미지를 폐기 */
+        function cancelChalkCanvasRestore() {
+            _chalkCanvasRestoreToken += 1;
+            _chalkCanvasRestorePending = false;
+            _chalkResizeAfterRestore = false;
+        }
+
+        /** 복원 중 저장·페이지 이동은 빈 캔버스를 저장할 수 있으므로 잠시 막음 */
+        function ensureChalkCanvasReadyForCapture() {
+            if (!_chalkCanvasRestorePending) return true;
+            chalkboardToast('판서 그림을 복원 중입니다. 잠시 후 다시 시도해 주세요.');
+            return false;
+        }
+
         /**
          * 캔버스를 칠판 프레임 크기에 맞추고, 이미 그린 내용은 보존해 다시 그림.
          * devicePixelRatio 배율로 실제 픽셀을 잡아 고해상도 화면에서 선이 계단처럼 깨지지 않게 한다.
@@ -2832,6 +2866,11 @@ function redrawPlazaGrantsUi() {
             const canvas = document.getElementById('chalkboardCanvas');
             const frame = document.getElementById('chalkboardFrame');
             if (!canvas || !frame) return;
+            // 복원 중 리사이즈가 빈 스냅샷으로 원본 복원을 덮지 않게 완료 후 다시 처리
+            if (_chalkCanvasRestorePending) {
+                _chalkResizeAfterRestore = true;
+                return;
+            }
             const rect = frame.getBoundingClientRect();
             const w = Math.max(1, Math.round(rect.width));
             const h = Math.max(1, Math.round(rect.height));
@@ -2851,8 +2890,14 @@ function redrawPlazaGrantsUi() {
             // 이후 모든 그리기는 CSS px 좌표로 수행(실픽셀은 dpr배)
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             if (snapshot) {
+                const restoreToken = beginChalkCanvasRestore();
                 const img = new Image();
-                img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+                img.onload = () => {
+                    if (restoreToken !== _chalkCanvasRestoreToken) return;
+                    ctx.drawImage(img, 0, 0, w, h);
+                    finishChalkCanvasRestore(restoreToken);
+                };
+                img.onerror = () => finishChalkCanvasRestore(restoreToken);
                 img.src = snapshot;
             }
         }
@@ -3110,6 +3155,8 @@ function redrawPlazaGrantsUi() {
             canvas.addEventListener('pointerdown', (e) => {
                 if (_chalkMode === 'text') return;
                 e.preventDefault();
+                if (!ensureChalkCanvasReadyForCapture()) return;
+                cancelChalkCanvasRestore();
                 try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
                 pushChalkUndoSnapshot();
                 _chalkDrawing = true;
@@ -3348,6 +3395,7 @@ function redrawPlazaGrantsUi() {
             const canvas = document.getElementById('chalkboardCanvas');
             const textEl = document.getElementById('chalkboardText');
             const frame = document.getElementById('chalkboardFrame');
+            cancelChalkCanvasRestore();
             if (canvas) {
                 const ctx = canvas.getContext('2d');
                 ctx.save();
@@ -3361,10 +3409,16 @@ function redrawPlazaGrantsUi() {
                 data.images.forEach((im) => insertChalkboardImage(im.src, { left: im.left, top: im.top, width: im.width, silent: true }));
             }
             if (data && data.canvas && canvas) {
-                const cssW = parseFloat(canvas.style.width) || canvas.width;
-                const cssH = parseFloat(canvas.style.height) || canvas.height;
+                const restoreToken = beginChalkCanvasRestore();
                 const img = new Image();
-                img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, cssW, cssH);
+                img.onload = () => {
+                    if (restoreToken !== _chalkCanvasRestoreToken) return;
+                    const cssW = parseFloat(canvas.style.width) || canvas.width;
+                    const cssH = parseFloat(canvas.style.height) || canvas.height;
+                    canvas.getContext('2d').drawImage(img, 0, 0, cssW, cssH);
+                    finishChalkCanvasRestore(restoreToken);
+                };
+                img.onerror = () => finishChalkCanvasRestore(restoreToken);
                 img.src = data.canvas;
             }
             // 칠판 색 복원
@@ -3379,7 +3433,9 @@ function redrawPlazaGrantsUi() {
 
         /** 현재 페이지 내용을 페이지 배열에 반영 */
         function saveCurrentChalkPage() {
+            if (!ensureChalkCanvasReadyForCapture()) return false;
             _chalkPages[_chalkPageIndex] = captureChalkPage();
+            return true;
         }
 
         function updateChalkPageIndicator() {
@@ -3390,7 +3446,7 @@ function redrawPlazaGrantsUi() {
         /** 지정한 페이지로 이동 (마지막 페이지를 넘어가면 새 페이지 생성) */
         function goToChalkPage(idx) {
             if (idx < 0) return;
-            saveCurrentChalkPage();
+            if (!saveCurrentChalkPage()) return;
             if (idx >= _chalkPages.length) {
                 _chalkPages.push(null);
                 chalkboardToast('🆕 새 페이지가 추가되었습니다');
@@ -3439,7 +3495,7 @@ function redrawPlazaGrantsUi() {
         }
 
         window.saveChalkboardPages = function() {
-            saveCurrentChalkPage();
+            if (!saveCurrentChalkPage()) return;
             try {
                 localStorage.setItem(CHALK_SAVE_KEY, JSON.stringify({
                     pages: _chalkPages,
@@ -3539,6 +3595,8 @@ function redrawPlazaGrantsUi() {
         };
 
         window.undoChalkboardStroke = function() {
+            if (!ensureChalkCanvasReadyForCapture()) return;
+            cancelChalkCanvasRestore();
             const canvas = document.getElementById('chalkboardCanvas');
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
@@ -3554,6 +3612,7 @@ function redrawPlazaGrantsUi() {
                 if (!ok) return;
             }
             pushChalkUndoSnapshot();
+            cancelChalkCanvasRestore();
             const canvas = document.getElementById('chalkboardCanvas');
             if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
             const textEl = document.getElementById('chalkboardText');

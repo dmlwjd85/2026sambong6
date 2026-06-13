@@ -6388,6 +6388,22 @@ function redrawPlazaGrantsUi() {
         // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
 
+        function getEstateStateRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state');
+        }
+
+        /** 공유 부동산 문서는 최신 서버 문서를 복제한 뒤 필요한 자리만 바꿔 덮어쓴다. */
+        function cloneEstateStateForWrite(raw) {
+            const src = raw && typeof raw === 'object' ? raw : {};
+            return {
+                ...src,
+                seats: Array.isArray(src.seats) ? src.seats.map((s) => ({ ...(s || {}) })) : [],
+                purchaseHistory: Array.isArray(src.purchaseHistory)
+                    ? src.purchaseHistory.map((h) => ({ ...(h || {}) }))
+                    : [],
+            };
+        }
+
         /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구하고, 구매 기록에 남깁니다. (다른 자리를 이미 사도 복구 가능) */
         window.ensureEstateSeokRestore = async function() {
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
@@ -6395,14 +6411,25 @@ function redrawPlazaGrantsUi() {
             const seat = window.estateState.seats[idx];
             // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
             if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
-            seat.owner = '13';
-            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-            window.estateState.purchaseHistory.push({
-                studentId: '13', seatId: idx, price: seat.price || 500, at: Date.now(),
-                note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
-            });
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                let restoredState = null;
+                await runTransaction(db, async (transaction) => {
+                    const estateRef = getEstateStateRef();
+                    const estateSnap = await transaction.get(estateRef);
+                    if (!estateSnap.exists()) return;
+                    const latestState = cloneEstateStateForWrite(estateSnap.data());
+                    const latestSeat = latestState.seats[idx];
+                    if (!latestSeat || latestSeat.locked || latestSeat.owner || latestSeat.noAutoRestore) return;
+
+                    latestSeat.owner = '13';
+                    latestState.purchaseHistory.push({
+                        studentId: '13', seatId: idx, price: latestSeat.price || 500, at: Date.now(),
+                        note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
+                    });
+                    transaction.set(estateRef, latestState);
+                    restoredState = latestState;
+                });
+                if (restoredState) window.estateState = restoredState;
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
 
@@ -6413,58 +6440,140 @@ function redrawPlazaGrantsUi() {
             const seat = window.estateState.seats[idx];
             // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
             if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
-            seat.owner = '12';
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                let restoredState = null;
+                await runTransaction(db, async (transaction) => {
+                    const estateRef = getEstateStateRef();
+                    const estateSnap = await transaction.get(estateRef);
+                    if (!estateSnap.exists()) return;
+                    const latestState = cloneEstateStateForWrite(estateSnap.data());
+                    const latestSeat = latestState.seats[idx];
+                    if (!latestSeat || latestSeat.locked || latestSeat.owner || latestSeat.noAutoRestore) return;
+
+                    latestSeat.owner = '12';
+                    transaction.set(estateRef, latestState);
+                    restoredState = latestState;
+                });
+                if (restoredState) window.estateState = restoredState;
             } catch (e) { console.warn('ensureEstateHwangRestore', e); }
         };
         
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
+            if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
             if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             if(!window.estateState || !window.estateState.seats[seatId]) return;
             
             const seat = window.estateState.seats[seatId];
+            const purchasePrice = normalizeBongValue(Number(price) || 0);
+            if (purchasePrice <= 0) return window.customAlert('자리 가격이 올바르지 않습니다. 마스터에게 문의해 주세요.');
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
             if(seat.locked) return window.customAlert('현재 잠겨있는 자리입니다.');
             
-            if(window.playerState.bong < price) return window.customAlert(`자산(B)이 부족합니다! (${price} B 필요)`);
+            if(window.playerState.bong < purchasePrice) return window.customAlert(`자산(B)이 부족합니다! (${purchasePrice} B 필요)`);
 
-            const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 구매하시겠습니까?`);
+            const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${purchasePrice}B에 구매하시겠습니까?`);
             if(!ok) return;
 
-            window.playerState.bong -= price;
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '부동산 구매' });
-            if (!saved) return;
-            
-            seat.owner = window.playerState.id;
-            seat.assignee = null;
             const buyerId = String(window.playerState.id);
-            window.estateState.seats.forEach((s) => {
-                if (s !== seat && String(s.assignee) === buyerId) s.assignee = null;
-            });
-            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-            window.estateState.purchaseHistory.push({
-                studentId: String(window.playerState.id),
-                seatId: seatId,
-                price: price,
-                at: Date.now()
-            });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
-            window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            let savedEstateState = null;
+            let nextBong = null;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                await runTransaction(db, async (transaction) => {
+                    const estateRef = getEstateStateRef();
+                    const estateSnap = await transaction.get(estateRef);
+                    const stuSnap = await transaction.get(currentStudentDocRef);
+                    if (!estateSnap.exists()) throw new Error('estate_missing');
+                    if (!stuSnap.exists()) throw new Error('student_not_found');
+
+                    const latestState = cloneEstateStateForWrite(estateSnap.data());
+                    const latestSeat = latestState.seats[seatId];
+                    if (!latestSeat || ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) throw new Error('seat_unavailable');
+                    if (latestSeat.owner) throw new Error('seat_sold');
+                    if (latestSeat.locked) throw new Error('seat_locked');
+
+                    const latestPrice = normalizeBongValue(Number(latestSeat.price) || 0);
+                    if (Math.abs(latestPrice - purchasePrice) > 0.0001) throw new Error('estate_price_changed');
+
+                    const serverStudent = stuSnap.data() || {};
+                    const serverBong = normalizeBongValue(Number(serverStudent.bong) || 0);
+                    if (serverBong + 0.0001 < purchasePrice) throw new Error('not_enough_bong');
+
+                    nextBong = normalizeBongValue(serverBong - purchasePrice);
+                    latestSeat.owner = buyerId;
+                    latestSeat.assignee = null;
+                    latestState.seats.forEach((s) => {
+                        if (s !== latestSeat && String(s.assignee) === buyerId) s.assignee = null;
+                    });
+                    latestState.purchaseHistory.push({
+                        studentId: buyerId,
+                        seatId: seatId,
+                        price: purchasePrice,
+                        at: Date.now()
+                    });
+
+                    transaction.set(currentStudentDocRef, { bong: nextBong }, { merge: true });
+                    transaction.set(estateRef, latestState);
+                    savedEstateState = latestState;
+                });
+
+                if (savedEstateState) window.estateState = savedEstateState;
+                if (nextBong != null) {
+                    window.playerState.bong = nextBong;
+                    mergeStudentDocIntoPlazaCache(buyerId, { bong: nextBong });
+                }
+                updateUI();
+                window.renderEstate();
+                window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            } catch (e) {
+                console.error('buyEstateSeat', e);
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'seat_sold') return window.customAlert('다른 친구가 먼저 구매한 자리입니다. 새로고침 후 다시 확인해 주세요.');
+                if (msg === 'seat_locked' || msg === 'seat_unavailable') return window.customAlert('현재 구매할 수 없는 자리입니다. 새로고침 후 다시 확인해 주세요.');
+                if (msg === 'estate_price_changed') return window.customAlert('자리 가격이 바뀌었습니다. 새로고침 후 다시 구매해 주세요.');
+                if (msg === 'not_enough_bong') return window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
+                return window.customAlert('자리 구매 실패: ' + msg);
+            }
         };
 
         window.toggleSeatLock = async function(seatId) {
             if(!window.playerState.isAdmin) return;
+            if (!db) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
             if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             const seat = window.estateState.seats[seatId];
             const msg = seat.locked ? `${seatId+1}번 자리 잠금을 해제할까요?` : `${seatId+1}번 자리를 학생이 구매할 수 없도록 잠글까요?`;
             const ok = await window.customConfirm(msg);
             if(ok) {
-                seat.locked = !seat.locked;
-                if (seat.locked) seat.assignee = null;
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
-                window.renderEstate();
+                const expectedOwner = seat.owner ? String(seat.owner) : '';
+                const expectedLocked = !!seat.locked;
+                try {
+                    let savedEstateState = null;
+                    await runTransaction(db, async (transaction) => {
+                        const estateRef = getEstateStateRef();
+                        const estateSnap = await transaction.get(estateRef);
+                        if (!estateSnap.exists()) throw new Error('estate_missing');
+                        const latestState = cloneEstateStateForWrite(estateSnap.data());
+                        const latestSeat = latestState.seats[seatId];
+                        if (!latestSeat || ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) throw new Error('seat_unavailable');
+                        const latestOwner = latestSeat.owner ? String(latestSeat.owner) : '';
+                        if (latestOwner !== expectedOwner || !!latestSeat.locked !== expectedLocked) throw new Error('estate_seat_changed');
+
+                        latestSeat.locked = !expectedLocked;
+                        if (latestSeat.locked) latestSeat.assignee = null;
+                        transaction.set(estateRef, latestState);
+                        savedEstateState = latestState;
+                    });
+                    if (savedEstateState) window.estateState = savedEstateState;
+                    window.renderEstate();
+                } catch (e) {
+                    console.error('toggleSeatLock', e);
+                    const errMsg = String(e && e.message ? e.message : e);
+                    if (errMsg === 'estate_seat_changed') return await window.customAlert('그 사이 자리 상태가 바뀌었습니다. 새로고침 후 다시 시도해 주세요.');
+                    await window.customAlert('저장 실패: ' + errMsg);
+                }
             }
         };
 
@@ -6479,12 +6588,15 @@ function redrawPlazaGrantsUi() {
             const seat = (window.estateState && Array.isArray(window.estateState.seats)) ? window.estateState.seats[seatId] : null;
             if (!seat) return;
 
-            const ownerName = seat.owner ? (STUDENT_NAMES[seat.owner] || seat.owner) : '없음 (매물)';
-            const assignName = seat.assignee ? (STUDENT_NAMES[seat.assignee] || seat.assignee) : '없음';
+            const originalOwnerId = seat.owner ? String(seat.owner) : '';
+            const originalAssigneeId = seat.assignee ? String(seat.assignee) : '';
+            const originalPrice = normalizeBongValue(Number(seat.price) || 0);
+            const ownerName = originalOwnerId ? (STUDENT_NAMES[originalOwnerId] || originalOwnerId) : '없음 (매물)';
+            const assignName = originalAssigneeId ? (STUDENT_NAMES[originalAssigneeId] || originalAssigneeId) : '없음';
             const ownerOptions = ['<option value="">(주인 없음 — 매물로 전환)</option>']
                 .concat(getActiveStudentIds().map((sid) => {
                     const id = String(sid);
-                    const sel = String(seat.owner || '') === id ? 'selected' : '';
+                    const sel = originalOwnerId === id ? 'selected' : '';
                     return `<option value="${id}" ${sel}>${escapeHtmlGb(STUDENT_NAMES[id] || id)} (${id}번)</option>`;
                 }))
                 .join('');
@@ -6503,7 +6615,7 @@ function redrawPlazaGrantsUi() {
                         <select id="estAdminOwner" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">${ownerOptions}</select>
                     </label>
                     <label class="block text-[10px] text-slate-300 font-bold">가격 (B)
-                        <input type="number" id="estAdminPrice" min="0" step="1" value="${Number(seat.price) || 0}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">
+                        <input type="number" id="estAdminPrice" min="0" step="1" value="${originalPrice}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">
                     </label>
                     <p class="text-[9px] text-slate-500 leading-relaxed">※ 주인 변경·삭제 시 봉(B)은 자동 정산되지 않습니다. 환불·차감이 필요하면 마스터 탭에서 직접 조정하세요.<br>※ 변경 내역은 구매 기록(감사 로그)에 남습니다.</p>
                     <div class="flex gap-2">
@@ -6522,10 +6634,10 @@ function redrawPlazaGrantsUi() {
             document.getElementById('estAdminSave').onclick = async () => {
                 const newOwner = document.getElementById('estAdminOwner').value || null;
                 let newPrice = parseInt(document.getElementById('estAdminPrice').value, 10);
-                if (isNaN(newPrice) || newPrice < 0) newPrice = Number(seat.price) || 0;
+                if (isNaN(newPrice) || newPrice < 0) newPrice = originalPrice;
 
-                const ownerChanged = String(seat.owner || '') !== String(newOwner || '');
-                const priceChanged = Number(seat.price) !== newPrice;
+                const ownerChanged = originalOwnerId !== String(newOwner || '');
+                const priceChanged = originalPrice !== newPrice;
                 if (!ownerChanged && !priceChanged) { d.remove(); return; }
 
                 const changeLines = [];
@@ -6533,43 +6645,60 @@ function redrawPlazaGrantsUi() {
                     const newName = newOwner ? (STUDENT_NAMES[newOwner] || newOwner) : '없음 (매물로 전환)';
                     changeLines.push(`- 주인: ${ownerName} → ${newName}`);
                 }
-                if (priceChanged) changeLines.push(`- 가격: ${Number(seat.price) || 0} B → ${newPrice} B`);
+                if (priceChanged) changeLines.push(`- 가격: ${originalPrice} B → ${newPrice} B`);
                 d.remove();
                 const ok = await window.customConfirm(`${seatId + 1}번 자리를 다음과 같이 변경할까요?\n\n${changeLines.join('\n')}\n\n※ 봉(B) 정산은 자동으로 되지 않습니다.`);
                 if (!ok) return;
 
-                const prevOwner = seat.owner ? String(seat.owner) : null;
-                if (ownerChanged) {
-                    seat.owner = newOwner;
-                    // 지정 복구 자리(자동 주인 복구)가 마스터 직권 변경을 되돌리지 않도록 표시
-                    seat.noAutoRestore = true;
-                    if (newOwner) {
-                        seat.assignee = null;
-                        // 새 주인이 다른 자리에 임시 배치돼 있었다면 그 배치를 해제
-                        window.estateState.seats.forEach((s) => {
-                            if (s !== seat && String(s.assignee || '') === String(newOwner)) s.assignee = null;
-                        });
-                    }
-                    if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-                    window.estateState.purchaseHistory.push({
-                        studentId: newOwner || prevOwner || '',
-                        seatId: seatId,
-                        price: 0,
-                        at: Date.now(),
-                        note: newOwner
-                            ? `마스터 직권 주인 변경 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
-                            : `마스터 직권 주인 삭제 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
-                    });
-                }
-                if (priceChanged) seat.price = newPrice;
-
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                    let savedEstateState = null;
+                    await runTransaction(db, async (transaction) => {
+                        const estateRef = getEstateStateRef();
+                        const estateSnap = await transaction.get(estateRef);
+                        if (!estateSnap.exists()) throw new Error('estate_missing');
+                        const latestState = cloneEstateStateForWrite(estateSnap.data());
+                        const latestSeat = latestState.seats[seatId];
+                        if (!latestSeat || ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) throw new Error('seat_unavailable');
+
+                        const latestOwnerId = latestSeat.owner ? String(latestSeat.owner) : '';
+                        const latestPrice = normalizeBongValue(Number(latestSeat.price) || 0);
+                        if (latestOwnerId !== originalOwnerId || latestPrice !== originalPrice) throw new Error('estate_seat_changed');
+
+                        const prevOwner = latestOwnerId || null;
+                        if (ownerChanged) {
+                            latestSeat.owner = newOwner;
+                            // 지정 복구 자리(자동 주인 복구)가 마스터 직권 변경을 되돌리지 않도록 표시
+                            latestSeat.noAutoRestore = true;
+                            if (newOwner) {
+                                latestSeat.assignee = null;
+                                // 새 주인이 다른 자리에 임시 배치돼 있었다면 그 배치를 해제
+                                latestState.seats.forEach((s) => {
+                                    if (s !== latestSeat && String(s.assignee || '') === String(newOwner)) s.assignee = null;
+                                });
+                            }
+                            latestState.purchaseHistory.push({
+                                studentId: newOwner || prevOwner || '',
+                                seatId: seatId,
+                                price: 0,
+                                at: Date.now(),
+                                note: newOwner
+                                    ? `마스터 직권 주인 변경 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
+                                    : `마스터 직권 주인 삭제 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
+                            });
+                        }
+                        if (priceChanged) latestSeat.price = newPrice;
+
+                        transaction.set(estateRef, latestState);
+                        savedEstateState = latestState;
+                    });
+                    if (savedEstateState) window.estateState = savedEstateState;
                     window.renderEstate();
                     await window.customAlert(`✅ ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
                 } catch (e) {
                     console.error('openEstateSeatAdmin save', e);
-                    await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                    const errMsg = String(e && e.message ? e.message : e);
+                    if (errMsg === 'estate_seat_changed') return await window.customAlert('그 사이 자리 주인 또는 가격이 바뀌었습니다. 새로고침 후 다시 시도해 주세요.');
+                    await window.customAlert('저장 실패: ' + errMsg);
                 }
             };
         };
@@ -6613,30 +6742,67 @@ function redrawPlazaGrantsUi() {
             );
             if (!ok) return;
 
-            const shuffledStudents = [...studentsNeeding];
-            shuffleInPlace(shuffledStudents);
-            const seatOrder = availableSeats.map((s) => s.id);
-            shuffleInPlace(seatOrder);
-
-            const placeCount = Math.min(shuffledStudents.length, seatOrder.length);
-            for (let i = 0; i < placeCount; i++) {
-                const seat = window.estateState.seats.find((s) => s.id === seatOrder[i]);
-                if (seat) seat.assignee = shuffledStudents[i];
-            }
-
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                let savedEstateState = null;
+                let placeCount = 0;
+                let unplacedCount = 0;
+                let emptySeatCount = 0;
+                await runTransaction(db, async (transaction) => {
+                    const estateRef = getEstateStateRef();
+                    const estateSnap = await transaction.get(estateRef);
+                    if (!estateSnap.exists()) throw new Error('estate_missing');
+                    const latestState = cloneEstateStateForWrite(estateSnap.data());
+                    const latestOwnedIds = new Set();
+                    latestState.seats.forEach((s) => {
+                        if (s.owner) {
+                            latestOwnedIds.add(String(s.owner));
+                            s.assignee = null;
+                        }
+                    });
+
+                    const latestStudentsNeeding = getActiveStudentIds()
+                        .map((sid) => String(sid))
+                        .filter((sid) => !latestOwnedIds.has(sid));
+                    const latestAvailableSeats = latestState.seats.filter(
+                        (s) => !ESTATE_HIDDEN_SEAT_IDS.includes(s.id) && !s.hidden && !s.locked && !s.owner
+                    );
+                    latestAvailableSeats.forEach((s) => {
+                        s.assignee = null;
+                    });
+                    if (latestStudentsNeeding.length === 0) throw new Error('no_students');
+                    if (latestAvailableSeats.length === 0) throw new Error('no_seats');
+
+                    const shuffledStudents = [...latestStudentsNeeding];
+                    shuffleInPlace(shuffledStudents);
+                    const seatOrder = latestAvailableSeats.map((s) => s.id);
+                    shuffleInPlace(seatOrder);
+
+                    placeCount = Math.min(shuffledStudents.length, seatOrder.length);
+                    for (let i = 0; i < placeCount; i++) {
+                        const targetSeat = latestState.seats.find((s) => s.id === seatOrder[i]);
+                        if (targetSeat) targetSeat.assignee = shuffledStudents[i];
+                    }
+                    unplacedCount = Math.max(0, shuffledStudents.length - placeCount);
+                    emptySeatCount = Math.max(0, seatOrder.length - placeCount);
+                    transaction.set(estateRef, latestState);
+                    savedEstateState = latestState;
+                });
+
+                if (savedEstateState) window.estateState = savedEstateState;
                 window.renderEstate();
                 let tail = '';
-                if (shuffledStudents.length > placeCount) {
-                    tail = `\n\n※ 학생이 자리보다 많아 ${shuffledStudents.length - placeCount}명은 배치되지 않았습니다.`;
-                } else if (seatOrder.length > placeCount) {
-                    tail = `\n\n※ 빈 자리 ${seatOrder.length - placeCount}칸은 비워 두었습니다.`;
+                if (unplacedCount > 0) {
+                    tail = `\n\n※ 학생이 자리보다 많아 ${unplacedCount}명은 배치되지 않았습니다.`;
+                } else if (emptySeatCount > 0) {
+                    tail = `\n\n※ 빈 자리 ${emptySeatCount}칸은 비워 두었습니다.`;
                 }
                 await window.customAlert(`🔀 자리 랜덤 배치 완료!\n배치: ${placeCount}명${tail}`);
             } catch (e) {
                 console.error('shuffleEstateSeatAssignments', e);
-                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                const errMsg = String(e && e.message ? e.message : e);
+                if (errMsg === 'no_students') return await window.customAlert('자리를 구매하지 않은 학생이 없습니다.\n(구매 완료 자리만 있거나 전원 구매 상태)');
+                if (errMsg === 'no_seats') return await window.customAlert('임시 배치할 빈 자리가 없습니다.\n(잠금·비활성·전부 구매됨)');
+                await window.customAlert('저장 실패: ' + errMsg);
             }
         };
 
@@ -7245,80 +7411,98 @@ function redrawPlazaGrantsUi() {
             }
 
             const drawNumbers = drawRandomLottoNumbers();
-            const drawKey = lottoNumbersKey(drawNumbers);
-            const winnerMap = new Map();
-            state.tickets.forEach((ticket) => {
-                if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
-                const sid = String(ticket.studentId || '');
-                if (!sid || winnerMap.has(sid)) return;
-                winnerMap.set(sid, {
-                    studentId: sid,
-                    name: ticket.studentName || STUDENT_NAMES[sid] || sid,
-                });
-            });
-            const winners = Array.from(winnerMap.values());
-            const poolB = normalizeBongValue(Number(state.poolB) || 0);
-            const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
-            const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
             const nowMs = Date.now();
-            const winnerPayouts = [];
-
-            if (winners.length > 0 && payoutPoolB > 0) {
-                let allocated = 0;
-                winners.forEach((winner, idx) => {
-                    const payout = idx === winners.length - 1
-                        ? normalizeBongValue(payoutPoolB - allocated)
-                        : normalizeBongValue(payoutPoolB / winners.length);
-                    allocated = normalizeBongValue(allocated + payout);
-                    winnerPayouts.push({ ...winner, payoutB: payout });
-                });
-            }
-
-            const lastDraw = {
-                roundKey: state.roundKey,
-                numbers: drawNumbers,
-                poolB,
-                taxB,
-                payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
-                winners: winnerPayouts,
-                drawnAt: nowMs,
-                ticketCount: state.tickets.length,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-            };
-            const nextLotto = {
-                ...state,
-                poolB: 0,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-                tickets: [],
-                drawnAt: nowMs,
-                lastDraw,
-                updatedAt: nowMs,
-            };
+            let committedNextLotto = null;
+            let committedWinnerPayouts = [];
+            let committedPoolB = 0;
+            let committedTaxB = 0;
 
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 await runTransaction(db, async (transaction) => {
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const rawLotto = settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null;
+                    const latestState = buildLottoStateForPurchase(rawLotto, new Date(nowMs));
+                    if (!latestState.tickets || latestState.tickets.length === 0) throw new Error('lotto_no_tickets');
+                    if (latestState.drawnAt) throw new Error('lotto_already_drawn');
+
+                    const drawKey = lottoNumbersKey(drawNumbers);
+                    const winnerMap = new Map();
+                    latestState.tickets.forEach((ticket) => {
+                        if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
+                        const sid = String(ticket.studentId || '');
+                        if (!sid || winnerMap.has(sid)) return;
+                        winnerMap.set(sid, {
+                            studentId: sid,
+                            name: ticket.studentName || STUDENT_NAMES[sid] || sid,
+                        });
+                    });
+                    const winners = Array.from(winnerMap.values());
+                    const poolB = normalizeBongValue(Number(latestState.poolB) || 0);
+                    const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
+                    const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
+                    const winnerPayouts = [];
+
+                    if (winners.length > 0 && payoutPoolB > 0) {
+                        let allocated = 0;
+                        winners.forEach((winner, idx) => {
+                            const payout = idx === winners.length - 1
+                                ? normalizeBongValue(payoutPoolB - allocated)
+                                : normalizeBongValue(payoutPoolB / winners.length);
+                            allocated = normalizeBongValue(allocated + payout);
+                            winnerPayouts.push({ ...winner, payoutB: payout });
+                        });
+                    }
+
+                    const lastDraw = {
+                        roundKey: latestState.roundKey,
+                        numbers: drawNumbers,
+                        poolB,
+                        taxB,
+                        payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
+                        winners: winnerPayouts,
+                        drawnAt: nowMs,
+                        ticketCount: latestState.tickets.length,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                    };
+                    const nextLotto = {
+                        ...latestState,
+                        poolB: 0,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                        tickets: [],
+                        drawnAt: nowMs,
+                        lastDraw,
+                        updatedAt: nowMs,
+                    };
+
                     transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
                     winnerPayouts.forEach((winner) => {
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + winner.studentId);
                         transaction.set(ref, { bong: increment(winner.payoutB) }, { merge: true });
                     });
+                    committedNextLotto = nextLotto;
+                    committedWinnerPayouts = winnerPayouts;
+                    committedPoolB = poolB;
+                    committedTaxB = taxB;
                 });
-                window.globalSettings.lotto = nextLotto;
+                window.globalSettings.lotto = committedNextLotto;
                 await refreshStudentsCacheFromServer();
                 renderLottoPanel();
-                const winnerText = winnerPayouts.length
-                    ? winnerPayouts.map((w) => `${w.name}: +${Number(w.payoutB).toFixed(1)}B`).join('\n')
-                    : `당첨자 없음\n${poolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
+                const winnerText = committedWinnerPayouts.length
+                    ? committedWinnerPayouts.map((w) => `${w.name}: +${Number(w.payoutB).toFixed(1)}B`).join('\n')
+                    : `당첨자 없음\n${committedPoolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
                 await window.customAlert(
                     `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(drawNumbers)}\n` +
-                    `누적: ${poolB.toFixed(1)}B / 세금(40%): ${taxB.toFixed(1)}B\n\n${winnerText}`
+                    `누적: ${committedPoolB.toFixed(1)}B / 세금(40%): ${committedTaxB.toFixed(1)}B\n\n${winnerText}`
                 );
             } catch (e) {
                 console.error('drawLottoAdmin', e);
-                await window.customAlert('로또 추첨 실패: ' + (e && e.message ? e.message : String(e)));
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'lotto_no_tickets') return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
+                if (msg === 'lotto_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
+                await window.customAlert('로또 추첨 실패: ' + msg);
             }
         };
 

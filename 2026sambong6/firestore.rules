@@ -45,9 +45,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    match /artifacts/{appId}/public/{document=**} {
+    // 학생 문서는 위의 제한 규칙만 적용되도록 public/data 하위 매치를 분리합니다.
+    // Firestore는 하나라도 허용하는 규칙이 있으면 쓰기가 통과하므로, broad public 규칙이 students를 다시 열면 안 됩니다.
+    match /artifacts/{appId}/public/data/{collectionId}/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && collectionId != 'students';
+    }
+
+    match /artifacts/{appId}/public/{collectionId}/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null && collectionId != 'data';
     }
 
     match /classes/{classId} {

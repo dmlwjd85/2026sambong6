@@ -1052,6 +1052,58 @@ function redrawPlazaGrantsUi() {
             });
         }
 
+        function getEstateStateRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state');
+        }
+
+        /** 서버 최신 부동산 문서를 기준으로 누락 필드를 채우고 쓰기 가능한 복사본을 만듭니다. */
+        function cloneEstateStateForWrite(src) {
+            const source = (src && typeof src === 'object') ? src : {};
+            const defaults = buildInitialEstateSeats();
+            const rawSeats = Array.isArray(source.seats) ? source.seats : [];
+            const seats = defaults.map((defaultSeat, i) => {
+                const raw = (rawSeats[i] && typeof rawSeats[i] === 'object') ? rawSeats[i] : {};
+                const seat = { ...defaultSeat, ...raw };
+                const nId = Number(seat.id);
+                seat.id = Number.isFinite(nId) ? nId : i;
+                seat.owner = seat.owner == null || seat.owner === '' ? null : String(seat.owner);
+                seat.assignee = seat.assignee == null || seat.assignee === '' ? null : String(seat.assignee);
+                seat.price = Math.max(0, Number(seat.price) || 0);
+                seat.locked = !!seat.locked;
+                seat.hidden = !!seat.hidden || ESTATE_HIDDEN_SEAT_IDS.includes(seat.id);
+                if (ESTATE_HIDDEN_SEAT_IDS.includes(seat.id)) {
+                    seat.locked = true;
+                    seat.hidden = true;
+                    seat.assignee = null;
+                }
+                if (seat.owner || seat.locked || seat.hidden) seat.assignee = null;
+                return seat;
+            });
+            return {
+                ...source,
+                seats,
+                purchaseHistory: Array.isArray(source.purchaseHistory)
+                    ? source.purchaseHistory.map((h) => ({ ...(h || {}) }))
+                    : [],
+            };
+        }
+
+        async function runEstateStateTransaction(mutator) {
+            const estateRef = getEstateStateRef();
+            let nextState = null;
+            const result = await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(estateRef);
+                const state = cloneEstateStateForWrite(snap.exists() ? snap.data() : { seats: buildInitialEstateSeats(), purchaseHistory: [] });
+                const outcome = await mutator(state);
+                if (outcome && outcome.skipWrite) return outcome;
+                transaction.set(estateRef, state);
+                nextState = state;
+                return outcome || {};
+            });
+            if (nextState) window.estateState = nextState;
+            return { ...(result || {}), state: nextState };
+        }
+
         window.playerState = { 
             xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
@@ -6395,14 +6447,19 @@ function redrawPlazaGrantsUi() {
             const seat = window.estateState.seats[idx];
             // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
             if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
-            seat.owner = '13';
-            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-            window.estateState.purchaseHistory.push({
-                studentId: '13', seatId: idx, price: seat.price || 500, at: Date.now(),
-                note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
-            });
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                await runEstateStateTransaction((state) => {
+                    const latestSeat = state.seats[idx];
+                    // 스냅샷 이후 다른 사용자가 구매했다면 복구 쓰기로 덮어쓰지 않습니다.
+                    if (!latestSeat || latestSeat.locked || latestSeat.owner || latestSeat.noAutoRestore) return { skipWrite: true };
+                    latestSeat.owner = '13';
+                    if (!Array.isArray(state.purchaseHistory)) state.purchaseHistory = [];
+                    state.purchaseHistory.push({
+                        studentId: '13', seatId: idx, price: latestSeat.price || 500, at: Date.now(),
+                        note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
+                    });
+                    return {};
+                });
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
 
@@ -6413,9 +6470,14 @@ function redrawPlazaGrantsUi() {
             const seat = window.estateState.seats[idx];
             // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
             if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
-            seat.owner = '12';
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                await runEstateStateTransaction((state) => {
+                    const latestSeat = state.seats[idx];
+                    // 스냅샷 이후 다른 사용자가 구매했다면 복구 쓰기로 덮어쓰지 않습니다.
+                    if (!latestSeat || latestSeat.locked || latestSeat.owner || latestSeat.noAutoRestore) return { skipWrite: true };
+                    latestSeat.owner = '12';
+                    return {};
+                });
             } catch (e) { console.warn('ensureEstateHwangRestore', e); }
         };
         
@@ -6423,6 +6485,7 @@ function redrawPlazaGrantsUi() {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
             if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             if(!window.estateState || !window.estateState.seats[seatId]) return;
+            if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
             
             const seat = window.estateState.seats[seatId];
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
@@ -6433,25 +6496,61 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 구매하시겠습니까?`);
             if(!ok) return;
 
-            window.playerState.bong -= price;
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '부동산 구매' });
-            if (!saved) return;
-            
-            seat.owner = window.playerState.id;
-            seat.assignee = null;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
             const buyerId = String(window.playerState.id);
-            window.estateState.seats.forEach((s) => {
-                if (s !== seat && String(s.assignee) === buyerId) s.assignee = null;
-            });
-            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-            window.estateState.purchaseHistory.push({
-                studentId: String(window.playerState.id),
-                seatId: seatId,
-                price: price,
-                at: Date.now()
-            });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
-            window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            const estateRef = getEstateStateRef();
+            let nextBong = window.playerState.bong;
+            let nextEstateState = null;
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const estateSnap = await transaction.get(estateRef);
+                    const studentSnap = await transaction.get(currentStudentDocRef);
+                    const state = cloneEstateStateForWrite(estateSnap.exists() ? estateSnap.data() : { seats: buildInitialEstateSeats(), purchaseHistory: [] });
+                    const latestSeat = state.seats[seatId];
+                    if (!latestSeat || ESTATE_HIDDEN_SEAT_IDS.includes(latestSeat.id)) throw new Error('estate-seat-invalid');
+                    if (latestSeat.owner) throw new Error('estate-seat-sold');
+                    if (latestSeat.locked) throw new Error('estate-seat-locked');
+
+                    const latestPrice = Math.max(0, Number(latestSeat.price) || 0);
+                    if (latestPrice !== Math.max(0, Number(price) || 0)) throw new Error('estate-price-changed');
+                    if (!studentSnap.exists()) throw new Error('estate-student-missing');
+                    const serverData = studentSnap.data() || {};
+                    const serverBong = normalizeBongValue(Number(serverData.bong) || 0);
+                    if (serverBong + 0.0001 < latestPrice) throw new Error('estate-insufficient-bong');
+
+                    nextBong = normalizeBongValue(serverBong - latestPrice);
+                    latestSeat.owner = buyerId;
+                    latestSeat.assignee = null;
+                    state.seats.forEach((s) => {
+                        if (s !== latestSeat && String(s.assignee || '') === buyerId) s.assignee = null;
+                    });
+                    if (!Array.isArray(state.purchaseHistory)) state.purchaseHistory = [];
+                    state.purchaseHistory.push({
+                        studentId: buyerId,
+                        seatId: seatId,
+                        price: latestPrice,
+                        at: Date.now()
+                    });
+
+                    transaction.set(currentStudentDocRef, { bong: nextBong }, { merge: true });
+                    transaction.set(estateRef, state);
+                    nextEstateState = state;
+                });
+                window.playerState.bong = nextBong;
+                if (nextEstateState) window.estateState = nextEstateState;
+                updateUI();
+                window.renderEstate();
+                window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            } catch (e) {
+                if (e && e.message === 'estate-seat-sold') return window.customAlert('이미 판매 완료된 자리입니다. 자리표를 새로 확인해 주세요.');
+                if (e && e.message === 'estate-seat-locked') return window.customAlert('현재 잠겨있는 자리입니다. 자리표를 새로 확인해 주세요.');
+                if (e && e.message === 'estate-price-changed') return window.customAlert('자리 가격이 방금 변경되었습니다. 자리표를 확인한 뒤 다시 구매해 주세요.');
+                if (e && e.message === 'estate-insufficient-bong') return window.customAlert(`서버 최신 잔액 기준으로 부동산 구매에 필요한 삼봉이 부족합니다.\n오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다.`);
+                console.error('buyEstateSeat', e);
+                return window.customAlert('부동산 구매 저장 중 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.');
+            }
         };
 
         window.toggleSeatLock = async function(seatId) {
@@ -6461,10 +6560,19 @@ function redrawPlazaGrantsUi() {
             const msg = seat.locked ? `${seatId+1}번 자리 잠금을 해제할까요?` : `${seatId+1}번 자리를 학생이 구매할 수 없도록 잠글까요?`;
             const ok = await window.customConfirm(msg);
             if(ok) {
-                seat.locked = !seat.locked;
-                if (seat.locked) seat.assignee = null;
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
-                window.renderEstate();
+                try {
+                    await runEstateStateTransaction((state) => {
+                        const latestSeat = state.seats[seatId];
+                        if (!latestSeat || ESTATE_HIDDEN_SEAT_IDS.includes(latestSeat.id)) return { skipWrite: true };
+                        latestSeat.locked = !latestSeat.locked;
+                        if (latestSeat.locked) latestSeat.assignee = null;
+                        return {};
+                    });
+                    window.renderEstate();
+                } catch (e) {
+                    console.error('toggleSeatLock', e);
+                    await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                }
             }
         };
 
@@ -6538,33 +6646,46 @@ function redrawPlazaGrantsUi() {
                 const ok = await window.customConfirm(`${seatId + 1}번 자리를 다음과 같이 변경할까요?\n\n${changeLines.join('\n')}\n\n※ 봉(B) 정산은 자동으로 되지 않습니다.`);
                 if (!ok) return;
 
-                const prevOwner = seat.owner ? String(seat.owner) : null;
-                if (ownerChanged) {
-                    seat.owner = newOwner;
-                    // 지정 복구 자리(자동 주인 복구)가 마스터 직권 변경을 되돌리지 않도록 표시
-                    seat.noAutoRestore = true;
-                    if (newOwner) {
-                        seat.assignee = null;
-                        // 새 주인이 다른 자리에 임시 배치돼 있었다면 그 배치를 해제
-                        window.estateState.seats.forEach((s) => {
-                            if (s !== seat && String(s.assignee || '') === String(newOwner)) s.assignee = null;
-                        });
-                    }
-                    if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-                    window.estateState.purchaseHistory.push({
-                        studentId: newOwner || prevOwner || '',
-                        seatId: seatId,
-                        price: 0,
-                        at: Date.now(),
-                        note: newOwner
-                            ? `마스터 직권 주인 변경 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
-                            : `마스터 직권 주인 삭제 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
-                    });
-                }
-                if (priceChanged) seat.price = newPrice;
-
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                    await runEstateStateTransaction((state) => {
+                        const latestSeat = state.seats[seatId];
+                        if (!latestSeat || ESTATE_HIDDEN_SEAT_IDS.includes(latestSeat.id)) return { skipWrite: true };
+
+                        const prevOwner = latestSeat.owner ? String(latestSeat.owner) : null;
+                        const latestOwnerChanged = String(latestSeat.owner || '') !== String(newOwner || '');
+                        const latestPriceChanged = Number(latestSeat.price) !== newPrice;
+                        if (!latestOwnerChanged && !latestPriceChanged) return { skipWrite: true };
+
+                        if (latestOwnerChanged) {
+                            latestSeat.owner = newOwner;
+                            // 지정 복구 자리(자동 주인 복구)가 마스터 직권 변경을 되돌리지 않도록 표시
+                            latestSeat.noAutoRestore = true;
+                            if (newOwner) {
+                                latestSeat.assignee = null;
+                                // 새 주인이 다른 자리에 있었다면 임시 배치와 기존 영구 소유를 모두 해제해 중복 주인을 막습니다.
+                                state.seats.forEach((s) => {
+                                    if (s === latestSeat) return;
+                                    if (String(s.assignee || '') === String(newOwner)) s.assignee = null;
+                                    if (String(s.owner || '') === String(newOwner)) {
+                                        s.owner = null;
+                                        s.noAutoRestore = true;
+                                    }
+                                });
+                            }
+                            if (!Array.isArray(state.purchaseHistory)) state.purchaseHistory = [];
+                            state.purchaseHistory.push({
+                                studentId: newOwner || prevOwner || '',
+                                seatId: seatId,
+                                price: 0,
+                                at: Date.now(),
+                                note: newOwner
+                                    ? `마스터 직권 주인 변경 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
+                                    : `마스터 직권 주인 삭제 (이전: ${prevOwner ? (STUDENT_NAMES[prevOwner] || prevOwner) : '없음'})`
+                            });
+                        }
+                        if (latestPriceChanged) latestSeat.price = newPrice;
+                        return {};
+                    });
                     window.renderEstate();
                     await window.customAlert(`✅ ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
                 } catch (e) {
@@ -6615,25 +6736,46 @@ function redrawPlazaGrantsUi() {
 
             const shuffledStudents = [...studentsNeeding];
             shuffleInPlace(shuffledStudents);
-            const seatOrder = availableSeats.map((s) => s.id);
+            const seedSeatOrder = availableSeats.map((s) => s.id);
+            const seedStudentOrder = [...shuffledStudents];
+            const seatOrder = [...seedSeatOrder];
             shuffleInPlace(seatOrder);
 
-            const placeCount = Math.min(shuffledStudents.length, seatOrder.length);
-            for (let i = 0; i < placeCount; i++) {
-                const seat = window.estateState.seats.find((s) => s.id === seatOrder[i]);
-                if (seat) seat.assignee = shuffledStudents[i];
-            }
-
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                let placedCount = 0;
+                let studentsLeft = 0;
+                let seatsLeft = 0;
+                await runEstateStateTransaction((state) => {
+                    const latestOwnedIds = new Set();
+                    state.seats.forEach((s) => {
+                        if (s.owner) {
+                            latestOwnedIds.add(String(s.owner));
+                            s.assignee = null;
+                        }
+                    });
+                    const latestStudentsNeeding = seedStudentOrder.filter((sid) => !latestOwnedIds.has(String(sid)));
+                    const latestAvailableSeats = seatOrder
+                        .map((id) => state.seats.find((s) => s.id === id))
+                        .filter((s) => s && !ESTATE_HIDDEN_SEAT_IDS.includes(s.id) && !s.hidden && !s.locked && !s.owner);
+                    latestAvailableSeats.forEach((s) => {
+                        s.assignee = null;
+                    });
+                    placedCount = Math.min(latestStudentsNeeding.length, latestAvailableSeats.length);
+                    for (let i = 0; i < placedCount; i++) {
+                        latestAvailableSeats[i].assignee = latestStudentsNeeding[i];
+                    }
+                    studentsLeft = Math.max(0, latestStudentsNeeding.length - placedCount);
+                    seatsLeft = Math.max(0, latestAvailableSeats.length - placedCount);
+                    return {};
+                });
                 window.renderEstate();
                 let tail = '';
-                if (shuffledStudents.length > placeCount) {
-                    tail = `\n\n※ 학생이 자리보다 많아 ${shuffledStudents.length - placeCount}명은 배치되지 않았습니다.`;
-                } else if (seatOrder.length > placeCount) {
-                    tail = `\n\n※ 빈 자리 ${seatOrder.length - placeCount}칸은 비워 두었습니다.`;
+                if (studentsLeft > 0) {
+                    tail = `\n\n※ 학생이 자리보다 많아 ${studentsLeft}명은 배치되지 않았습니다.`;
+                } else if (seatsLeft > 0) {
+                    tail = `\n\n※ 빈 자리 ${seatsLeft}칸은 비워 두었습니다.`;
                 }
-                await window.customAlert(`🔀 자리 랜덤 배치 완료!\n배치: ${placeCount}명${tail}`);
+                await window.customAlert(`🔀 자리 랜덤 배치 완료!\n배치: ${placedCount}명${tail}`);
             } catch (e) {
                 console.error('shuffleEstateSeatAssignments', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -6645,22 +6787,31 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?\n\n※ 자리 구매 기록(감사 로그)은 삭제되지 않습니다.\n※ 석서영 학생 지정 자리는 규칙에 따라 다시 부여됩니다.');
             if(!ok) return;
 
-            const prevHistory = (window.estateState && Array.isArray(window.estateState.purchaseHistory))
-                ? [...window.estateState.purchaseHistory] : [];
-            const initialSeats = buildInitialEstateSeats();
-            initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
-            initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
-            initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
-            initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
-            prevHistory.push({
-                studentId: '13',
-                seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,
-                price: 500,
-                at: Date.now(),
-                note: '전체 초기화 후 석서영 자리 복구'
-            });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: prevHistory });
-            window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록은 보존되었습니다.)");
+            try {
+                await runEstateStateTransaction((state) => {
+                    const prevHistory = Array.isArray(state.purchaseHistory) ? [...state.purchaseHistory] : [];
+                    const initialSeats = buildInitialEstateSeats();
+                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
+                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
+                    prevHistory.push({
+                        studentId: '13',
+                        seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,
+                        price: 500,
+                        at: Date.now(),
+                        note: '전체 초기화 후 석서영 자리 복구'
+                    });
+                    state.seats = initialSeats;
+                    state.purchaseHistory = prevHistory;
+                    return {};
+                });
+                window.renderEstate();
+                window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록은 보존되었습니다.)");
+            } catch (e) {
+                console.error('masterResetEstate', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.equipWeapon = async function(wpId) {

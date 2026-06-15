@@ -1778,6 +1778,11 @@ function redrawPlazaGrantsUi() {
             };
         }
 
+        function hasUndrawnLottoRound(state) {
+            if (!state || state.drawnAt) return false;
+            return (Array.isArray(state.tickets) && state.tickets.length > 0) || normalizeBongValue(Number(state.poolB) || 0) > 0;
+        }
+
         function getCurrentLottoDisplayState() {
             return getSanitizedLottoState(window.globalSettings && window.globalSettings.lotto);
         }
@@ -1786,6 +1791,8 @@ function redrawPlazaGrantsUi() {
             const state = getSanitizedLottoState(raw);
             const roundKey = getLottoRoundKey(now);
             if (state.roundKey !== roundKey) {
+                // 지난 회차가 아직 추첨되지 않았다면 새 구매로 티켓/풀을 초기화하지 않습니다.
+                if (hasUndrawnLottoRound(state)) return state;
                 return {
                     roundKey,
                     poolB: state.carryoverB,
@@ -7333,7 +7340,8 @@ function redrawPlazaGrantsUi() {
                     const roundKey = getLottoRoundKey(new Date(nowMs));
                     const rawLotto = settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null;
                     const lotto = buildLottoStateForPurchase(rawLotto, new Date(nowMs));
-                    if (lotto.roundKey === roundKey && lotto.drawnAt) throw new Error('round_already_drawn');
+                    if (lotto.roundKey !== roundKey) throw new Error('previous_round_not_drawn');
+                    if (lotto.drawnAt) throw new Error('round_already_drawn');
 
                     const ticket = {
                         ticketId: `${sid}_${nowMs}_${Math.random().toString(36).slice(2, 7)}`,
@@ -7379,6 +7387,7 @@ function redrawPlazaGrantsUi() {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_enough_bong') return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
                 if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다. 다음 회차에 구매해 주세요.');
+                if (msg === 'previous_round_not_drawn') return await window.customAlert('지난 회차 로또가 아직 추첨되지 않아 새 회차 구매를 시작할 수 없습니다. 마스터가 먼저 추첨해야 합니다.');
                 await window.customAlert('로또 구매 실패: ' + msg);
             }
         };
@@ -7388,7 +7397,6 @@ function redrawPlazaGrantsUi() {
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
 
             const state = getCurrentLottoDisplayState();
-            if (!state.tickets || state.tickets.length === 0) return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
             if (state.drawnAt) return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
             if (isLottoPurchaseOpen()) {
                 const okEarly = await window.customConfirm('아직 금요일 점심 전이라 구매 시간이 남아 있습니다.\n그래도 지금 추첨할까요?');
@@ -7397,60 +7405,69 @@ function redrawPlazaGrantsUi() {
 
             const drawNumbers = drawRandomLottoNumbers();
             const drawKey = lottoNumbersKey(drawNumbers);
-            const winnerMap = new Map();
-            state.tickets.forEach((ticket) => {
-                if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
-                const sid = String(ticket.studentId || '');
-                if (!sid || winnerMap.has(sid)) return;
-                winnerMap.set(sid, {
-                    studentId: sid,
-                    name: ticket.studentName || STUDENT_NAMES[sid] || sid,
-                });
-            });
-            const winners = Array.from(winnerMap.values());
-            const poolB = normalizeBongValue(Number(state.poolB) || 0);
-            const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
-            const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
             const nowMs = Date.now();
-            const winnerPayouts = [];
-
-            if (winners.length > 0 && payoutPoolB > 0) {
-                let allocated = 0;
-                winners.forEach((winner, idx) => {
-                    const payout = idx === winners.length - 1
-                        ? normalizeBongValue(payoutPoolB - allocated)
-                        : normalizeBongValue(payoutPoolB / winners.length);
-                    allocated = normalizeBongValue(allocated + payout);
-                    winnerPayouts.push({ ...winner, payoutB: payout });
-                });
-            }
-
-            const lastDraw = {
-                roundKey: state.roundKey,
-                numbers: drawNumbers,
-                poolB,
-                taxB,
-                payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
-                winners: winnerPayouts,
-                drawnAt: nowMs,
-                ticketCount: state.tickets.length,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-            };
-            const nextLotto = {
-                ...state,
-                poolB: 0,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-                tickets: [],
-                drawnAt: nowMs,
-                lastDraw,
-                updatedAt: nowMs,
-            };
+            let nextLotto = null;
+            let lastDraw = null;
+            let winnerPayouts = [];
 
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 await runTransaction(db, async (transaction) => {
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const serverState = getSanitizedLottoState(settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null);
+                    if (serverState.drawnAt) throw new Error('round_already_drawn');
+                    if (!serverState.tickets || serverState.tickets.length === 0) throw new Error('no_lotto_tickets');
+
+                    const winnerMap = new Map();
+                    serverState.tickets.forEach((ticket) => {
+                        if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
+                        const sid = String(ticket.studentId || '');
+                        if (!sid || winnerMap.has(sid)) return;
+                        winnerMap.set(sid, {
+                            studentId: sid,
+                            name: ticket.studentName || STUDENT_NAMES[sid] || sid,
+                        });
+                    });
+                    const winners = Array.from(winnerMap.values());
+                    const poolB = normalizeBongValue(Number(serverState.poolB) || 0);
+                    const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
+                    const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
+                    const payouts = [];
+
+                    if (winners.length > 0 && payoutPoolB > 0) {
+                        let allocated = 0;
+                        winners.forEach((winner, idx) => {
+                            const payout = idx === winners.length - 1
+                                ? normalizeBongValue(payoutPoolB - allocated)
+                                : normalizeBongValue(payoutPoolB / winners.length);
+                            allocated = normalizeBongValue(allocated + payout);
+                            payouts.push({ ...winner, payoutB: payout });
+                        });
+                    }
+
+                    lastDraw = {
+                        roundKey: serverState.roundKey,
+                        numbers: drawNumbers,
+                        poolB,
+                        taxB,
+                        payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
+                        winners: payouts,
+                        drawnAt: nowMs,
+                        ticketCount: serverState.tickets.length,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                    };
+                    nextLotto = {
+                        ...serverState,
+                        poolB: 0,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                        tickets: [],
+                        drawnAt: nowMs,
+                        lastDraw,
+                        updatedAt: nowMs,
+                    };
+                    winnerPayouts = payouts;
                     transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
                     winnerPayouts.forEach((winner) => {
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + winner.studentId);
@@ -7460,6 +7477,8 @@ function redrawPlazaGrantsUi() {
                 window.globalSettings.lotto = nextLotto;
                 await refreshStudentsCacheFromServer();
                 renderLottoPanel();
+                const poolB = Number(lastDraw && lastDraw.poolB || 0);
+                const taxB = Number(lastDraw && lastDraw.taxB || 0);
                 const winnerText = winnerPayouts.length
                     ? winnerPayouts.map((w) => `${w.name}: +${Number(w.payoutB).toFixed(1)}B`).join('\n')
                     : `당첨자 없음\n${poolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
@@ -7469,6 +7488,9 @@ function redrawPlazaGrantsUi() {
                 );
             } catch (e) {
                 console.error('drawLottoAdmin', e);
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
+                if (msg === 'no_lotto_tickets') return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
                 await window.customAlert('로또 추첨 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };

@@ -1745,6 +1745,40 @@ function redrawPlazaGrantsUi() {
                 .sort((a, b) => a - b);
         }
 
+        function isLottoAutoDrawTime(d = new Date()) {
+            return d.getDay() === 5 && (d.getHours() > 13 || (d.getHours() === 13 && d.getMinutes() >= 5));
+        }
+
+        function getLottoDrawSeenKey(lastDraw) {
+            if (!lastDraw || !lastDraw.drawnAt) return '';
+            return `sambong_seen_lotto_draw_${String(lastDraw.roundKey || '')}_${String(lastDraw.drawnAt)}`;
+        }
+
+        function buildLottoResultMessage(lastDraw) {
+            if (!lastDraw) return '';
+            const winners = Array.isArray(lastDraw.winners) ? lastDraw.winners : [];
+            const poolB = normalizeBongValue(Number(lastDraw.poolB) || 0);
+            const taxB = normalizeBongValue(Number(lastDraw.taxB) || 0);
+            const winnerText = winners.length
+                ? winners.map((w) => `${w.name || w.studentId}: +${Number(w.payoutB || 0).toFixed(1)}B`).join('\n')
+                : `당첨자 없음\n${poolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
+            return `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(lastDraw.numbers)}\n` +
+                `누적: ${poolB.toFixed(1)}B / 세금(40%): ${taxB.toFixed(1)}B\n\n${winnerText}`;
+        }
+
+        function maybeShowLottoResultPopup() {
+            if (!window.playerState || window.playerState.isGuest) return;
+            const state = getCurrentLottoDisplayState();
+            const lastDraw = state.lastDraw;
+            const seenKey = getLottoDrawSeenKey(lastDraw);
+            if (!seenKey) return;
+            if (localStorage.getItem(seenKey) === '1') return;
+            localStorage.setItem(seenKey, '1');
+            setTimeout(() => {
+                void window.customAlert(buildLottoResultMessage(lastDraw));
+            }, 250);
+        }
+
         function getSanitizedLottoState(raw) {
             const src = raw && typeof raw === 'object' ? raw : {};
             const tickets = Array.isArray(src.tickets) ? src.tickets : [];
@@ -1755,6 +1789,7 @@ function redrawPlazaGrantsUi() {
                 tickets: tickets.filter((t) => t && t.ticketId && Array.isArray(t.numbers)).slice(-300),
                 drawnAt: src.drawnAt || null,
                 lastDraw: src.lastDraw || null,
+                lastAutoDrawKey: src.lastAutoDrawKey || '',
                 updatedAt: src.updatedAt || 0,
             };
         }
@@ -1774,6 +1809,7 @@ function redrawPlazaGrantsUi() {
                     tickets: [],
                     drawnAt: null,
                     lastDraw: state.lastDraw || null,
+                    lastAutoDrawKey: state.lastAutoDrawKey || '',
                     updatedAt: Date.now(),
                 };
             }
@@ -3786,6 +3822,13 @@ function redrawPlazaGrantsUi() {
                 .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
         }
 
+        function getConvenienceOrderRequestHtml(order) {
+            const note = String(order && order.requestNote ? order.requestNote : '').trim();
+            return note
+                ? `<div class="mt-1 text-[9px] text-orange-100/90 bg-orange-950/35 border border-orange-500/20 rounded px-2 py-1">요청: ${escapeConvenienceHtml(note)}</div>`
+                : '<div class="mt-1 text-[9px] text-slate-600">요청사항 없음</div>';
+        }
+
         function renderConvenienceStore() {
             const container = document.getElementById('convenienceStoreContainer');
             if (!container) return;
@@ -3864,6 +3907,7 @@ function redrawPlazaGrantsUi() {
                             <div class="min-w-0">
                                 <div class="text-white text-[10px] font-bold truncate">${escapeConvenienceHtml(order.itemName)}</div>
                                 <div class="text-slate-400 text-[9px] truncate">${escapeConvenienceHtml(order.studentName)} · ${order.price}B</div>
+                                ${getConvenienceOrderRequestHtml(order)}
                             </div>
                             <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded text-[9px] font-bold">완료</button>
                         </div>
@@ -3876,8 +3920,8 @@ function redrawPlazaGrantsUi() {
             if (!body) return;
             const pending = getPendingConvenienceOrders();
             const done = (Array.isArray(window.convenienceOrders) ? window.convenienceOrders : [])
-                .filter((order) => order && order.status === 'done')
-                .sort((a, b) => (Number(b.completedAt) || Number(b.createdAt) || 0) - (Number(a.completedAt) || Number(a.createdAt) || 0))
+                .filter((order) => order && (order.status === 'done' || order.status === 'refunded'))
+                .sort((a, b) => (Number(b.completedAt || b.refundedAt) || Number(b.createdAt) || 0) - (Number(a.completedAt || a.refundedAt) || Number(a.createdAt) || 0))
                 .slice(0, 8);
             body.innerHTML = `
                 <div class="mb-3">
@@ -3889,9 +3933,13 @@ function redrawPlazaGrantsUi() {
                                     <div class="min-w-0">
                                         <div class="text-white font-bold text-sm">${escapeConvenienceHtml(order.itemName)}</div>
                                         <div class="text-[10px] text-slate-400 mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${order.price}B</div>
+                                        ${getConvenienceOrderRequestHtml(order)}
                                         <div class="text-[9px] text-slate-500 mt-1">${formatConvenienceTime(order.createdAt)}</div>
                                     </div>
-                                    <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-lg text-[10px]">처리완료</button>
+                                    <div class="shrink-0 flex flex-col gap-1">
+                                        <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-lg text-[10px]">처리완료</button>
+                                        <button type="button" onclick="window.refundConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="bg-red-900/70 hover:bg-red-800 text-red-100 font-bold py-2 px-3 rounded-lg text-[10px] border border-red-700">재고없음·환불</button>
+                                    </div>
                                 </div>
                             </div>
                         `).join('') || '<div class="text-slate-500 text-center text-[10px] py-5 border border-dashed border-slate-700 rounded-xl">대기 주문이 없습니다.</div>'}
@@ -3901,9 +3949,12 @@ function redrawPlazaGrantsUi() {
                     <h4 class="text-[11px] font-bold text-slate-300 mb-2">최근 완료 주문</h4>
                     <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
                         ${done.map((order) => `
-                            <div class="flex justify-between gap-2 text-[9px] text-slate-400 rounded bg-slate-900/70 px-2 py-1">
-                                <span class="truncate">${escapeConvenienceHtml(order.itemName)} · ${escapeConvenienceHtml(order.studentName)}</span>
-                                <span class="shrink-0">${formatConvenienceTime(order.completedAt || order.createdAt)}</span>
+                            <div class="text-[9px] text-slate-400 rounded bg-slate-900/70 px-2 py-1">
+                                <div class="flex justify-between gap-2">
+                                    <span class="truncate">${escapeConvenienceHtml(order.itemName)} · ${escapeConvenienceHtml(order.studentName)} ${order.status === 'refunded' ? '<span class="text-red-300">(환불)</span>' : '<span class="text-emerald-300">(완료)</span>'}</span>
+                                    <span class="shrink-0">${formatConvenienceTime(order.completedAt || order.refundedAt || order.createdAt)}</span>
+                                </div>
+                                ${getConvenienceOrderRequestHtml(order)}
                             </div>
                         `).join('') || '<div class="text-[9px] text-slate-600 text-center py-2">최근 완료 주문이 없습니다.</div>'}
                     </div>
@@ -3985,6 +4036,12 @@ function redrawPlazaGrantsUi() {
             }
             const ok = await window.customConfirm(`[${item.name}]을(를) ${price}B에 편의점 주문할까요?\n주문 후 편의점 매니저에게 주문창이 뜹니다.`);
             if (!ok) return;
+            const requestRaw = await window.customPrompt(
+                `[${item.name}] 요청사항을 적어 주세요.\n예: 포카칩 오리지널, 새콤달콤 딸기맛\n없으면 빈칸으로 확인하세요.`,
+                'text'
+            );
+            if (requestRaw === null) return;
+            const requestNote = String(requestRaw || '').trim().slice(0, 80);
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
 
@@ -4000,13 +4057,14 @@ function redrawPlazaGrantsUi() {
                     if (!window.playerState.isAdmin && serverBong + 0.0001 < price) throw new Error('insufficient');
                     nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - price);
                     const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice(-24) : [];
-                    purchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, price, at: Date.now(), status: 'pending' });
+                    purchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, price, requestNote, at: Date.now(), status: 'pending' });
                     transaction.set(currentStudentDocRef, { bong: nextBong, conveniencePurchases: purchases }, { merge: true });
                     transaction.set(orderRef, {
                         id: orderRef.id,
                         itemId: item.id,
                         itemName: item.name,
                         itemDesc: item.desc || '',
+                        requestNote,
                         price,
                         studentId,
                         studentName,
@@ -4016,11 +4074,11 @@ function redrawPlazaGrantsUi() {
                 });
                 window.playerState.bong = nextBong;
                 if (!Array.isArray(window.playerState.conveniencePurchases)) window.playerState.conveniencePurchases = [];
-                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, price, at: Date.now(), status: 'pending' });
+                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, price, requestNote, at: Date.now(), status: 'pending' });
                 window.playerState.conveniencePurchases = window.playerState.conveniencePurchases.slice(-25);
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`✅ [${item.name}] 주문이 접수되었습니다.\n편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+                await window.customAlert(`✅ [${item.name}] 주문이 접수되었습니다.\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -4050,6 +4108,55 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('completeConvenienceOrder', e);
                 await window.customAlert('처리완료 저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.refundConvenienceOrder = async function(orderId) {
+            if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
+            const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
+            if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
+            const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${Number(order.price || 0).toFixed(1)}B가 돌아갑니다.`);
+            if (!ok) return;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            const managerId = String(localStorage.getItem('sambong_student_id') || '');
+            const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
+            const refundB = normalizeBongValue(Number(order.price) || 0);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
+                    const orderSnap = await transaction.get(orderRef);
+                    const latestOrder = orderSnap.exists() ? (orderSnap.data() || {}) : null;
+                    if (!latestOrder || latestOrder.status !== 'pending') throw new Error('not_pending');
+                    const stuId = String(latestOrder.studentId || order.studentId || '');
+                    if (!stuId) throw new Error('student_not_found');
+                    const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
+                    const stuSnap = await transaction.get(stuRef);
+                    const serverData = stuSnap.exists() ? (stuSnap.data() || {}) : {};
+                    const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice() : [];
+                    const nextPurchases = purchases.map((p) => String(p.orderId) === String(orderId) ? { ...p, status: 'refunded', refundedAt: Date.now() } : p);
+                    transaction.set(stuRef, {
+                        bong: increment(refundB),
+                        conveniencePurchases: nextPurchases,
+                    }, { merge: true });
+                    transaction.set(orderRef, {
+                        status: 'refunded',
+                        refundedAt: Date.now(),
+                        refundedBy: managerId,
+                        refundedByName: managerName,
+                    }, { merge: true });
+                });
+                if (String(order.studentId) === String(localStorage.getItem('sambong_student_id') || '')) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                }
+                renderConvenienceManagerUi();
+                renderConvenienceOrderModalBody();
+                await window.customAlert(`환불 완료: ${order.studentName}에게 ${refundB.toFixed(1)}B가 반환되었습니다.`);
+            } catch (e) {
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'not_pending') return await window.customAlert('이미 처리된 주문입니다.');
+                console.error('refundConvenienceOrder', e);
+                await window.customAlert('환불 처리 실패: ' + msg);
             }
         };
 
@@ -4450,6 +4557,7 @@ function redrawPlazaGrantsUi() {
                                 renderJobGrid();
                                 renderJobManagementAdminPanel();
                                 renderLottoPanel();
+                                maybeShowLottoResultPopup();
                                 if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
@@ -4689,6 +4797,14 @@ function redrawPlazaGrantsUi() {
             // 수업 종료 XP: 마스터 J 접속 시에만(기존 설계 유지)
             if (window.playerState && window.playerState.isGM && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 void window.checkAndDistributeClassXP();
+            }
+            // 삼봉 로또: 금요일 13:05 이후 누군가 앱을 켜면 서버 트랜잭션으로 회차당 1회 자동 추첨
+            if (typeof db !== 'undefined' && db && isLottoAutoDrawTime(now)) {
+                const state = getCurrentLottoDisplayState();
+                const roundKey = getLottoRoundKey(now);
+                if (state.roundKey === roundKey && !state.drawnAt && state.lastAutoDrawKey !== roundKey) {
+                    void executeLottoDraw({ auto: true });
+                }
             }
         }
 
@@ -7667,94 +7783,128 @@ function redrawPlazaGrantsUi() {
             }
         };
 
-        window.drawLottoAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추첨할 수 있습니다.');
-            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
-
-            const state = getCurrentLottoDisplayState();
-            if (!state.tickets || state.tickets.length === 0) return await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
-            if (state.drawnAt) return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다.');
-            if (isLottoPurchaseOpen()) {
+        async function executeLottoDraw({ auto = false } = {}) {
+            if (!auto && (!window.playerState || !window.playerState.isGM)) return await window.customAlert('마스터 J만 추첨할 수 있습니다.');
+            if (!db) {
+                if (!auto) await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+                return null;
+            }
+            if (!auto && isLottoPurchaseOpen()) {
                 const okEarly = await window.customConfirm('아직 금요일 점심 전이라 구매 시간이 남아 있습니다.\n그래도 지금 추첨할까요?');
-                if (!okEarly) return;
+                if (!okEarly) return null;
             }
 
-            const drawNumbers = drawRandomLottoNumbers();
-            const drawKey = lottoNumbersKey(drawNumbers);
-            const winnerMap = new Map();
-            state.tickets.forEach((ticket) => {
-                if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
-                const sid = String(ticket.studentId || '');
-                if (!sid || winnerMap.has(sid)) return;
-                winnerMap.set(sid, {
-                    studentId: sid,
-                    name: ticket.studentName || STUDENT_NAMES[sid] || sid,
-                });
-            });
-            const winners = Array.from(winnerMap.values());
-            const poolB = normalizeBongValue(Number(state.poolB) || 0);
-            const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
-            const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
             const nowMs = Date.now();
-            const winnerPayouts = [];
-
-            if (winners.length > 0 && payoutPoolB > 0) {
-                let allocated = 0;
-                winners.forEach((winner, idx) => {
-                    const payout = idx === winners.length - 1
-                        ? normalizeBongValue(payoutPoolB - allocated)
-                        : normalizeBongValue(payoutPoolB / winners.length);
-                    allocated = normalizeBongValue(allocated + payout);
-                    winnerPayouts.push({ ...winner, payoutB: payout });
-                });
-            }
-
-            const lastDraw = {
-                roundKey: state.roundKey,
-                numbers: drawNumbers,
-                poolB,
-                taxB,
-                payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
-                winners: winnerPayouts,
-                drawnAt: nowMs,
-                ticketCount: state.tickets.length,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-            };
-            const nextLotto = {
-                ...state,
-                poolB: 0,
-                carryoverB: winners.length > 0 ? 0 : poolB,
-                tickets: [],
-                drawnAt: nowMs,
-                lastDraw,
-                updatedAt: nowMs,
-            };
-
+            const now = new Date(nowMs);
+            const roundKey = getLottoRoundKey(now);
+            let nextLotto = null;
+            let lastDraw = null;
+            let noTicket = false;
             try {
                 const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                if (!authOk) {
+                    if (!auto) await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                    return null;
+                }
                 await runTransaction(db, async (transaction) => {
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const rawSettings = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
+                    const state = buildLottoStateForPurchase(rawSettings.lotto || null, now);
+                    if (auto && state.lastAutoDrawKey === roundKey) throw new Error('already_auto_checked');
+                    if (state.roundKey !== roundKey) throw new Error('not_current_round');
+                    if (state.drawnAt) throw new Error('already_drawn');
+                    if (!Array.isArray(state.tickets) || state.tickets.length === 0) {
+                        noTicket = true;
+                        nextLotto = { ...state, lastAutoDrawKey: auto ? roundKey : state.lastAutoDrawKey, updatedAt: nowMs };
+                        transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
+                        return;
+                    }
+
+                    const drawNumbers = drawRandomLottoNumbers();
+                    const drawKey = lottoNumbersKey(drawNumbers);
+                    const winnerMap = new Map();
+                    state.tickets.forEach((ticket) => {
+                        if (!ticket || lottoNumbersKey(ticket.numbers) !== drawKey) return;
+                        const sid = String(ticket.studentId || '');
+                        if (!sid || winnerMap.has(sid)) return;
+                        winnerMap.set(sid, {
+                            studentId: sid,
+                            name: ticket.studentName || STUDENT_NAMES[sid] || sid,
+                        });
+                    });
+                    const winners = Array.from(winnerMap.values());
+                    const poolB = normalizeBongValue(Number(state.poolB) || 0);
+                    const taxB = normalizeBongValue(poolB * LOTTO_TAX_RATE);
+                    const payoutPoolB = normalizeBongValue(Math.max(0, poolB - taxB));
+                    const winnerPayouts = [];
+                    if (winners.length > 0 && payoutPoolB > 0) {
+                        let allocated = 0;
+                        winners.forEach((winner, idx) => {
+                            const payout = idx === winners.length - 1
+                                ? normalizeBongValue(payoutPoolB - allocated)
+                                : normalizeBongValue(payoutPoolB / winners.length);
+                            allocated = normalizeBongValue(allocated + payout);
+                            winnerPayouts.push({ ...winner, payoutB: payout });
+                        });
+                    }
+
+                    lastDraw = {
+                        roundKey: state.roundKey,
+                        numbers: drawNumbers,
+                        poolB,
+                        taxB,
+                        payoutPoolB: winners.length > 0 ? payoutPoolB : 0,
+                        winners: winnerPayouts,
+                        drawnAt: nowMs,
+                        ticketCount: state.tickets.length,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                        auto,
+                    };
+                    nextLotto = {
+                        ...state,
+                        poolB: 0,
+                        carryoverB: winners.length > 0 ? 0 : poolB,
+                        tickets: [],
+                        drawnAt: nowMs,
+                        lastDraw,
+                        lastAutoDrawKey: auto ? roundKey : state.lastAutoDrawKey,
+                        updatedAt: nowMs,
+                    };
                     transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
                     winnerPayouts.forEach((winner) => {
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + winner.studentId);
                         transaction.set(ref, { bong: increment(winner.payoutB) }, { merge: true });
                     });
                 });
-                window.globalSettings.lotto = nextLotto;
-                await refreshStudentsCacheFromServer();
-                renderLottoPanel();
-                const winnerText = winnerPayouts.length
-                    ? winnerPayouts.map((w) => `${w.name}: +${Number(w.payoutB).toFixed(1)}B`).join('\n')
-                    : `당첨자 없음\n${poolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
-                await window.customAlert(
-                    `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(drawNumbers)}\n` +
-                    `누적: ${poolB.toFixed(1)}B / 세금(40%): ${taxB.toFixed(1)}B\n\n${winnerText}`
-                );
+                if (nextLotto) {
+                    window.globalSettings.lotto = nextLotto;
+                    renderLottoPanel();
+                }
+                if (lastDraw) {
+                    await refreshStudentsCacheFromServer();
+                    if (auto) {
+                        maybeShowLottoResultPopup();
+                    } else {
+                        const seenKey = getLottoDrawSeenKey(lastDraw);
+                        if (seenKey) localStorage.setItem(seenKey, '1');
+                        await window.customAlert(buildLottoResultMessage(lastDraw));
+                    }
+                } else if (noTicket && !auto) {
+                    await window.customAlert('이번 회차에 구매된 복권이 없습니다.');
+                }
+                return lastDraw;
             } catch (e) {
-                console.error('drawLottoAdmin', e);
-                await window.customAlert('로또 추첨 실패: ' + (e && e.message ? e.message : String(e)));
+                const msg = String(e && e.message ? e.message : e);
+                if (['already_auto_checked', 'already_drawn', 'not_current_round'].includes(msg)) return null;
+                console.error('executeLottoDraw', e);
+                if (!auto) await window.customAlert('로또 추첨 실패: ' + msg);
+                return null;
             }
+        }
+
+        window.drawLottoAdmin = async function () {
+            return executeLottoDraw({ auto: false });
         };
 
         window.buyItem = async function (id, name, isConsumable, opts) {

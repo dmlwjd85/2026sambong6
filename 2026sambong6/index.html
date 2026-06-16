@@ -89,7 +89,8 @@
             <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">월드맵</button>
             <button id="tab-constitution" onclick="window.switchTab('constitution')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-amber-300">헌법</button>
             <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">광장</button>
-            <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">상점/퀘스트</button>
+            <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">퀘스트</button>
+            <button id="tab-shop" onclick="window.switchTab('shop')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-pink-400">상점</button>
             <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
             <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
             <button id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-yellow-400">골든벨</button>
@@ -402,7 +403,14 @@
                 <div onclick="window.switchTab('quests')" class="island-hover absolute top-[25%] left-[25%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.2s;">📜</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-purple-400 to-purple-600 rounded-[100%] border-b-6 border-purple-900 shadow-xl"></div>
-                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">상점/퀘스트</div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-slate-900 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-slate-200 whitespace-nowrap">퀘스트</div>
+                </div>
+
+                <!-- 2-1. Shop -->
+                <div onclick="window.switchTab('shop')" class="island-hover absolute top-[42%] left-[33%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                    <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-lg avatar-float pointer-events-none" style="animation-delay: 0.35s;">🏪</div>
+                    <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-pink-300 to-pink-600 rounded-[100%] border-b-6 border-pink-950 shadow-xl"></div>
+                    <div class="worldmap-label mt-2 bg-white/95 text-pink-700 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-pink-200 whitespace-nowrap">상점</div>
                 </div>
 
                 <!-- 3. Top Right: Pirate Island (난지도 분교) -->
@@ -733,79 +741,35 @@
             </div>
         </section>
 
-        <!-- ★ 3. 퀘스트/상점 탭 ★ -->
+        <!-- ★ 3. 퀘스트 탭 ★ -->
         <section id="questsSection" class="hidden space-y-4">
-            <div class="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] gap-4">
-                <!-- Quests -->
-                <div class="grid md:grid-cols-2 gap-3">
-                    <!-- 레이드 -->
-                    <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-3 rounded-2xl border border-purple-500 shadow-lg md:col-span-2">
-                        <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
-                            <div class="flex-1">
-                                <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 주말 협동 레이드</h3>
-                                <div class="text-[10px] text-yellow-500 font-bold" id="raidTimeStatusText">상태 확인 중...</div>
-                            </div>
-                            <div class="w-full sm:w-auto text-center shrink-0">
-                                <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed" disabled>모집 대기중</button>
-                                <button id="btnSpectateRaid" onclick="window.spectateRaid()" class="hidden w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-pointer">관전하기</button>
-                                <div id="raidJoinCount" class="text-[10px] text-purple-300 mt-1 font-bold hidden">모집: <span id="rCount">0</span>/5 명</div>
-                            </div>
+            <div class="grid md:grid-cols-2 gap-3">
+                <!-- 레이드 -->
+                <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-3 rounded-2xl border border-purple-500 shadow-lg md:col-span-2">
+                    <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
+                        <div class="flex-1">
+                            <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 주말 협동 레이드</h3>
+                            <div class="text-[10px] text-yellow-500 font-bold" id="raidTimeStatusText">상태 확인 중...</div>
                         </div>
-                    </div>
-                    
-                    <div class="glass-panel p-3 rounded-2xl">
-                        <h3 class="font-bold text-sm text-slate-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
-                        <div id="dailyQuestContainer" class="space-y-2"></div>
-                    </div>
-                    <div class="glass-panel p-3 rounded-2xl">
-                        <h3 class="font-bold text-sm text-yellow-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
-                        <div id="weeklyQuestContainer" class="space-y-2"></div>
-                    </div>
-                    <div class="glass-panel p-3 rounded-2xl md:col-span-2 xl:col-span-1">
-                        <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
-                        <div id="specialQuestContainer" class="space-y-2"></div>
+                        <div class="w-full sm:w-auto text-center shrink-0">
+                            <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed" disabled>모집 대기중</button>
+                            <button id="btnSpectateRaid" onclick="window.spectateRaid()" class="hidden w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-pointer">관전하기</button>
+                            <div id="raidJoinCount" class="text-[10px] text-purple-300 mt-1 font-bold hidden">모집: <span id="rCount">0</span>/5 명</div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Shop -->
-                <div class="space-y-3" id="shopArea">
-                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-500">
-                        <h3 class="font-bold text-sm text-pink-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
-                        <p class="text-[9px] text-slate-500 mb-2">장착 중인 스킨은 구매가의 50%로 환불할 수 있습니다.</p>
-                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 xl:max-h-56 overflow-y-auto scrollbar-hide"></div>
-                    </div>
-                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-sb-gold">
-                        <h3 class="font-bold text-sm text-sb-gold mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
-                        <p class="text-[9px] text-slate-500 mb-2">위쪽은 즉시 사용, 아래는 삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목이에요.</p>
-                        <div id="shopContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
-                        <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
-                        <div id="lottoPanel" class="hidden mt-3 pt-3 border-t border-lime-500/30 text-[9px] text-slate-400"></div>
-                    </div>
-
-                    <!-- 아이템 상점 관리 (마스터 J) -->
-                    <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl border border-pink-500/50 bg-slate-900/80">
-                        <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 관리</h3>
-                        <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정하고, 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
-                        <button type="button" onclick="window.openShopGroupBuyAdminModal()" class="mb-3 w-full sm:w-auto bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-people-group"></i> 공동구매 현황 보기</button>
-                        <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
-                        <div class="mt-3 pt-3 border-t border-slate-700/70">
-                            <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                                <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                                <input type="number" id="gmCustomShopPrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                                <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
-                                <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
-                                    <option value="class">학급 활동 예약</option>
-                                    <option value="xp">경험치 지급</option>
-                                </select>
-                                <input type="number" id="gmCustomShopXp" min="0" step="1" placeholder="지급 XP(경험치 아이템)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                            </div>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
-                                <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
-                            </div>
-                        </div>
-                    </div>
+                <div class="glass-panel p-3 rounded-2xl">
+                    <h3 class="font-bold text-sm text-slate-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
+                    <div id="dailyQuestContainer" class="space-y-2"></div>
+                </div>
+                <div class="glass-panel p-3 rounded-2xl">
+                    <h3 class="font-bold text-sm text-yellow-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
+                    <div id="weeklyQuestContainer" class="space-y-2"></div>
+                </div>
+                <div class="glass-panel p-3 rounded-2xl md:col-span-2">
+                    <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
+                    <div id="specialQuestContainer" class="space-y-2"></div>
                 </div>
             </div>
 
@@ -839,7 +803,84 @@
 
         </section>
 
-        <!-- ★ 4. 직업 탭 ★ -->
+        <!-- ★ 4. 상점 탭 ★ -->
+        <section id="shopSection" class="hidden space-y-4">
+            <div class="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
+                <div class="space-y-3" id="shopArea">
+                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-500">
+                        <h3 class="font-bold text-sm text-pink-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
+                        <p class="text-[9px] text-slate-500 mb-2">장착 중인 스킨은 구매가의 50%로 환불할 수 있습니다.</p>
+                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 xl:max-h-56 overflow-y-auto scrollbar-hide"></div>
+                    </div>
+                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-sb-gold">
+                        <h3 class="font-bold text-sm text-sb-gold mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
+                        <p class="text-[9px] text-slate-500 mb-2">위쪽은 즉시 사용, 아래는 삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목이에요.</p>
+                        <div id="shopContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
+                        <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
+                        <div id="lottoPanel" class="hidden mt-3 pt-3 border-t border-lime-500/30 text-[9px] text-slate-400"></div>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-orange-400 bg-gradient-to-b from-orange-950/30 to-slate-900/90">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 border-b border-orange-500/30 pb-2">
+                            <div>
+                                <h3 class="font-bold text-sm text-orange-300"><i class="fa-solid fa-store mr-1"></i> 편의점 구역</h3>
+                                <p class="text-[9px] text-orange-100/60 mt-1">등록된 물품을 주문하면 편의점 매니저에게 실시간 주문창이 뜹니다.</p>
+                            </div>
+                            <button type="button" onclick="window.openConvenienceOrderPanel()" class="hidden convenience-manager-only bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-xl text-[10px] border border-orange-500">
+                                <i class="fa-solid fa-clipboard-list"></i> 주문 목록
+                            </button>
+                        </div>
+                        <div id="convenienceStoreContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                        <div id="convenienceOrderMiniPanel" class="hidden mt-3 pt-3 border-t border-orange-500/30"></div>
+                    </div>
+
+                    <!-- 편의점 물품 관리 (마스터 J) -->
+                    <div id="gmConveniencePanel" class="hidden glass-panel p-4 rounded-xl border border-orange-500/50 bg-slate-900/80">
+                        <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-basket-shopping text-orange-300"></i> 편의점 물품 관리</h3>
+                        <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">편의점 구역에 표시할 물품명·가격·설명을 설정합니다. 학생이 구매하면 주문 목록에 대기 상태로 올라갑니다.</p>
+                        <div id="gmConvenienceItemList" class="max-h-52 overflow-y-auto scrollbar-hide mb-3 pr-1 text-[10px] space-y-2"></div>
+                        <div class="mt-3 pt-3 border-t border-slate-700/70">
+                            <h4 class="text-[10px] text-orange-200 font-bold mb-2">새 편의점 물품 추가</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                                <input type="text" id="gmConvenienceName" placeholder="물품 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                <input type="number" id="gmConveniencePrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                <input type="text" id="gmConvenienceDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                            </div>
+                            <button type="button" onclick="window.addConvenienceItemAdmin()" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">편의점 물품 추가</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 아이템 상점 관리 (마스터 J) -->
+            <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl border border-pink-500/50 bg-slate-900/80">
+                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 관리</h3>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 삼봉(B) 가격을 수정하고, 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
+                <button type="button" onclick="window.openShopGroupBuyAdminModal()" class="mb-3 w-full sm:w-auto bg-cyan-700 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-people-group"></i> 공동구매 현황 보기</button>
+                <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
+                <div class="mt-3 pt-3 border-t border-slate-700/70">
+                    <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                        <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="number" id="gmCustomShopPrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                        <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                            <option value="class">학급 활동 예약</option>
+                            <option value="xp">경험치 지급</option>
+                        </select>
+                        <input type="number" id="gmCustomShopXp" min="0" step="1" placeholder="지급 XP(경험치 아이템)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
+                        <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ★ 5. 직업 탭 ★ -->
         <section id="jobsSection" class="hidden">
             <div class="mb-4">
                 <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 직업 목록</h2>

@@ -10,6 +10,7 @@
         .bg-theme-constitution { background-color: #1c1206; background-image: radial-gradient(circle at 50% -10%, rgba(251, 191, 36, 0.24) 0%, rgba(67, 20, 7, 0.86) 46%, #0f172a 100%); }
         .bg-theme-plaza { background-color: #1e1030; background-image: radial-gradient(circle at 80% 10%, rgba(244, 114, 182, 0.25) 0%, #1a1035 55%, #0f172a 100%); }
         .bg-theme-quests { background-color: #0c1f1a; background-image: radial-gradient(circle at 20% 0%, rgba(167, 243, 208, 0.2) 0%, #052e26 50%, #0f172a 100%); }
+        .bg-theme-shop { background-color: #23101a; background-image: radial-gradient(circle at 70% 0%, rgba(251, 113, 133, 0.2) 0%, #3b1222 48%, #0f172a 100%); }
         .bg-theme-jobs { background-color: #1f1408; background-image: radial-gradient(circle at 50% 0%, rgba(253, 230, 138, 0.18) 0%, #29200f 60%, #0f172a 100%); }
         .bg-theme-lunch { background-color: #151528; background-image: radial-gradient(circle at 70% 20%, rgba(196, 181, 253, 0.22) 0%, #1e1b3a 55%, #0f172a 100%); }
         .bg-theme-goldenbell { background-color: #2a1a08; background-image: radial-gradient(circle at 50% 0%, rgba(252, 211, 77, 0.2) 0%, #422006 55%, #0f172a 100%); }

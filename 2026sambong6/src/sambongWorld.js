@@ -1058,6 +1058,7 @@ function redrawPlazaGrantsUi() {
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
+            conveniencePurchases: [],
             lottoTickets: [],
             isGuest: false, isGM: false, isGMA: false, isAdmin: false 
         };
@@ -1065,9 +1066,11 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
+        /** 편의점 주문 목록 스냅샷: 최신순 배열 */
+        window.convenienceOrders = [];
         /** true 이후에는 오래된 Firestore 로컬 캐시 스냅샷으로 모금 UI를 덮지 않음 */
         window._shopGroupBuyPoolGotServer = false;
         /** 초기화 직전 저장된 학생별 백업 (studentId → { savedAt, data }) */
@@ -1077,6 +1080,7 @@ function redrawPlazaGrantsUi() {
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
         let unsubscribeShopGroupBuy = null;
+        let unsubscribeConvenienceOrders = null;
         let unsubscribeStudentBackups = null;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
         const appId = resolveClassId();
@@ -1118,6 +1122,35 @@ function redrawPlazaGrantsUi() {
                 ? window.globalSettings.customShopItems
                 : [];
             return items.filter((item) => item && item.id && item.name);
+        }
+
+        /** 편의점 구역에 표시할 물품 목록 (마스터가 globalSettings.convenienceItems에 저장) */
+        function getConvenienceItems() {
+            const items = window.globalSettings && Array.isArray(window.globalSettings.convenienceItems)
+                ? window.globalSettings.convenienceItems
+                : [];
+            return items
+                .filter((item) => item && item.id && item.name && item.hidden !== true)
+                .map((item) => ({
+                    id: String(item.id),
+                    name: String(item.name || '').trim(),
+                    desc: String(item.desc || '').trim(),
+                    price: normalizeBongValue(Math.max(0, Number(item.price) || 0)),
+                    createdAt: Number(item.createdAt) || 0,
+                }))
+                .filter((item) => item.name);
+        }
+
+        function getConvenienceItemById(itemId) {
+            return getConvenienceItems().find((item) => String(item.id) === String(itemId));
+        }
+
+        /** 마스터 또는 직업에 '편의점 매니저'가 있는 학생은 주문을 확인·처리할 수 있음 */
+        function isConvenienceManager() {
+            if (!window.playerState || window.playerState.isGuest) return false;
+            if (window.playerState.isAdmin) return true;
+            const jobs = Array.isArray(window.playerState.jobs) ? window.playerState.jobs : [];
+            return jobs.some((job) => String(job).includes('편의점 매니저'));
         }
 
         function getDeletedQuestIds() {
@@ -2112,7 +2145,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin'];
+        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'shop', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin'];
         /** 기본 탭: 광장(plaza) */
         let currentTabIndex = 2;
 
@@ -2128,7 +2161,7 @@ function redrawPlazaGrantsUi() {
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -2145,6 +2178,7 @@ function redrawPlazaGrantsUi() {
                 else if (tabId === 'bank') activeBtn.classList.add('border-sky-400', 'text-sky-400', 'bg-slate-800/50');
                 else if (tabId === 'constitution') activeBtn.classList.add('border-amber-300', 'text-amber-300', 'bg-slate-800/50');
                 else if (tabId === 'classtools') activeBtn.classList.add('border-lime-500', 'text-lime-400', 'bg-slate-800/50');
+                else if (tabId === 'shop') activeBtn.classList.add('border-pink-500', 'text-pink-400', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 
@@ -2162,6 +2196,13 @@ function redrawPlazaGrantsUi() {
             if (tabId === 'classtools') {
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
+            }
+            if (tabId === 'shop') {
+                renderShopCatalog();
+                renderConvenienceStore();
+                renderConvenienceAdminPanel();
+                renderConvenienceManagerUi();
+                renderLottoPanel();
             }
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
@@ -3726,6 +3767,368 @@ function redrawPlazaGrantsUi() {
             }).join('');
         }
 
+        function escapeConvenienceHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function getConvenienceOrdersCollectionRef() {
+            return collection(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders');
+        }
+
+        function getPendingConvenienceOrders() {
+            return (Array.isArray(window.convenienceOrders) ? window.convenienceOrders : [])
+                .filter((order) => order && order.status === 'pending')
+                .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+        }
+
+        function renderConvenienceStore() {
+            const container = document.getElementById('convenienceStoreContainer');
+            if (!container) return;
+            const items = getConvenienceItems();
+            if (!items.length) {
+                container.innerHTML = `
+                    <div class="sm:col-span-2 rounded-xl border border-dashed border-orange-500/40 bg-slate-900/70 p-4 text-center text-[10px] text-orange-100/70">
+                        등록된 편의점 물품이 없습니다. 마스터가 아래 관리 패널에서 물품을 추가해 주세요.
+                    </div>`;
+                return;
+            }
+            container.innerHTML = items.map((item) => `
+                <div class="bg-slate-800/80 p-3 rounded-xl border border-orange-500/30 flex flex-col gap-2">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-orange-950 border border-orange-500/50 flex items-center justify-center text-orange-200 shrink-0">
+                            <i class="fa-solid fa-basket-shopping"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-bold text-white truncate">${escapeConvenienceHtml(item.name)}</div>
+                            <div class="text-[10px] text-slate-400 truncate">${escapeConvenienceHtml(item.desc || '편의점 주문 물품')}</div>
+                        </div>
+                        <div class="text-orange-200 bg-slate-950 px-2 py-1 rounded border border-orange-500/40 text-xs font-bold shrink-0">${item.price} B</div>
+                    </div>
+                    <button type="button" onclick="window.buyConvenienceItem('${escapeHtmlAttr(item.id)}')" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-lg text-[10px] border border-orange-500">
+                        주문하기
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function renderConvenienceAdminPanel() {
+            const listEl = document.getElementById('gmConvenienceItemList');
+            if (!listEl) return;
+            const items = window.globalSettings && Array.isArray(window.globalSettings.convenienceItems)
+                ? window.globalSettings.convenienceItems
+                : [];
+            if (!items.length) {
+                listEl.innerHTML = '<div class="text-slate-500 text-center py-3 border border-dashed border-slate-700 rounded-lg">등록된 편의점 물품이 없습니다.</div>';
+                return;
+            }
+            listEl.innerHTML = items.map((item) => {
+                const id = String(item.id);
+                return `
+                    <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_6rem_auto] gap-2 items-center">
+                            <input type="text" id="conv_name_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.name || '')}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="number" id="conv_price_${escapeHtmlAttr(id)}" min="0" step="0.1" value="${normalizeBongValue(Number(item.price) || 0)}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <button type="button" onclick="window.deleteConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1.5 rounded text-[9px] font-bold">삭제</button>
+                        </div>
+                        <input type="text" id="conv_desc_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.desc || '')}" placeholder="설명" class="mt-2 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <button type="button" onclick="window.saveConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="mt-2 w-full bg-orange-800 hover:bg-orange-700 text-white font-bold py-1.5 px-3 rounded text-[9px]">수정 저장</button>
+                    </div>`;
+            }).join('');
+        }
+
+        function renderConvenienceManagerUi() {
+            const isManager = isConvenienceManager();
+            document.querySelectorAll('.convenience-manager-only').forEach((el) => {
+                el.classList.toggle('hidden', !isManager);
+            });
+
+            const mini = document.getElementById('convenienceOrderMiniPanel');
+            if (!mini) return;
+            mini.classList.toggle('hidden', !isManager);
+            if (!isManager) return;
+
+            const pending = getPendingConvenienceOrders();
+            mini.innerHTML = `
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <div class="text-[10px] font-bold text-orange-200">대기 주문 ${pending.length}건</div>
+                    <button type="button" onclick="window.openConvenienceOrderPanel()" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-2 py-1 rounded text-[9px] font-bold">전체 보기</button>
+                </div>
+                <div class="space-y-1 max-h-36 overflow-y-auto scrollbar-hide">
+                    ${pending.slice(0, 5).map((order) => `
+                        <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 border border-orange-500/20 px-2 py-1.5">
+                            <div class="min-w-0">
+                                <div class="text-white text-[10px] font-bold truncate">${escapeConvenienceHtml(order.itemName)}</div>
+                                <div class="text-slate-400 text-[9px] truncate">${escapeConvenienceHtml(order.studentName)} · ${order.price}B</div>
+                            </div>
+                            <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded text-[9px] font-bold">완료</button>
+                        </div>
+                    `).join('') || '<div class="text-[10px] text-slate-500 text-center py-2">대기 주문이 없습니다.</div>'}
+                </div>`;
+        }
+
+        function renderConvenienceOrderModalBody() {
+            const body = document.getElementById('convenienceOrderModalBody');
+            if (!body) return;
+            const pending = getPendingConvenienceOrders();
+            const done = (Array.isArray(window.convenienceOrders) ? window.convenienceOrders : [])
+                .filter((order) => order && order.status === 'done')
+                .sort((a, b) => (Number(b.completedAt) || Number(b.createdAt) || 0) - (Number(a.completedAt) || Number(a.createdAt) || 0))
+                .slice(0, 8);
+            body.innerHTML = `
+                <div class="mb-3">
+                    <h4 class="text-[11px] font-bold text-orange-200 mb-2">처리 대기 (${pending.length})</h4>
+                    <div class="space-y-2 max-h-[42vh] overflow-y-auto scrollbar-hide pr-1">
+                        ${pending.map((order) => `
+                            <div class="rounded-xl border border-orange-500/30 bg-slate-950/70 p-3">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <div class="text-white font-bold text-sm">${escapeConvenienceHtml(order.itemName)}</div>
+                                        <div class="text-[10px] text-slate-400 mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${order.price}B</div>
+                                        <div class="text-[9px] text-slate-500 mt-1">${formatConvenienceTime(order.createdAt)}</div>
+                                    </div>
+                                    <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-lg text-[10px]">처리완료</button>
+                                </div>
+                            </div>
+                        `).join('') || '<div class="text-slate-500 text-center text-[10px] py-5 border border-dashed border-slate-700 rounded-xl">대기 주문이 없습니다.</div>'}
+                    </div>
+                </div>
+                <div class="pt-3 border-t border-slate-700">
+                    <h4 class="text-[11px] font-bold text-slate-300 mb-2">최근 완료 주문</h4>
+                    <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
+                        ${done.map((order) => `
+                            <div class="flex justify-between gap-2 text-[9px] text-slate-400 rounded bg-slate-900/70 px-2 py-1">
+                                <span class="truncate">${escapeConvenienceHtml(order.itemName)} · ${escapeConvenienceHtml(order.studentName)}</span>
+                                <span class="shrink-0">${formatConvenienceTime(order.completedAt || order.createdAt)}</span>
+                            </div>
+                        `).join('') || '<div class="text-[9px] text-slate-600 text-center py-2">최근 완료 주문이 없습니다.</div>'}
+                    </div>
+                </div>`;
+        }
+
+        function formatConvenienceTime(ms) {
+            if (!ms) return '';
+            const d = new Date(Number(ms));
+            return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+
+        function ensureConvenienceOrderModal() {
+            let modal = document.getElementById('convenienceOrderModal');
+            if (modal) return modal;
+            modal = document.createElement('div');
+            modal.id = 'convenienceOrderModal';
+            modal.className = 'hidden fixed inset-0 z-[270] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6';
+            modal.innerHTML = `
+                <div class="w-full max-w-lg bg-slate-900 border border-orange-500/50 rounded-2xl shadow-2xl p-4">
+                    <div class="flex items-center justify-between gap-3 mb-3 border-b border-slate-700 pb-3">
+                        <h3 class="text-lg font-display text-orange-100"><i class="fa-solid fa-clipboard-list text-orange-300"></i> 편의점 주문창</h3>
+                        <button type="button" onclick="window.closeConvenienceOrderPanel()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+                    </div>
+                    <div id="convenienceOrderModalBody"></div>
+                </div>`;
+            document.body.appendChild(modal);
+            return modal;
+        }
+
+        function getSeenConvenienceOrderIds() {
+            try {
+                const raw = localStorage.getItem('sambong_seen_convenience_orders') || '[]';
+                const arr = JSON.parse(raw);
+                return new Set(Array.isArray(arr) ? arr.map(String) : []);
+            } catch (e) {
+                return new Set();
+            }
+        }
+
+        function markSeenConvenienceOrderIds(ids) {
+            const seen = getSeenConvenienceOrderIds();
+            ids.forEach((id) => seen.add(String(id)));
+            const arr = Array.from(seen).slice(-80);
+            localStorage.setItem('sambong_seen_convenience_orders', JSON.stringify(arr));
+        }
+
+        function maybeShowConvenienceOrderPopup() {
+            if (!isConvenienceManager()) return;
+            const pending = getPendingConvenienceOrders();
+            if (!pending.length) return;
+            const seen = getSeenConvenienceOrderIds();
+            const fresh = pending.filter((order) => !seen.has(String(order.id)));
+            if (!fresh.length) return;
+            markSeenConvenienceOrderIds(fresh.map((order) => order.id));
+            window.openConvenienceOrderPanel();
+        }
+
+        window.openConvenienceOrderPanel = function() {
+            if (!isConvenienceManager()) return window.customAlert('편의점 매니저만 주문 목록을 확인할 수 있습니다.');
+            const modal = ensureConvenienceOrderModal();
+            renderConvenienceOrderModalBody();
+            modal.classList.remove('hidden');
+        };
+
+        window.closeConvenienceOrderPanel = function() {
+            const modal = document.getElementById('convenienceOrderModal');
+            if (modal) modal.classList.add('hidden');
+        };
+
+        window.buyConvenienceItem = async function(itemId) {
+            if (!window.playerState || window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
+            const item = getConvenienceItemById(itemId);
+            if (!item) return await window.customAlert('편의점 물품 정보를 찾을 수 없습니다.');
+            const price = normalizeBongValue(Number(item.price) || 0);
+            if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < price) {
+                return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+            }
+            const ok = await window.customConfirm(`[${item.name}]을(를) ${price}B에 편의점 주문할까요?\n주문 후 편의점 매니저에게 주문창이 뜹니다.`);
+            if (!ok) return;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+            const studentId = String(localStorage.getItem('sambong_student_id') || '');
+            const studentName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[studentId] || studentId);
+            const orderRef = doc(getConvenienceOrdersCollectionRef());
+            let nextBong = normalizeBongValue(Number(window.playerState.bong) || 0);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(currentStudentDocRef);
+                    const serverData = snap.exists() ? (snap.data() || {}) : {};
+                    const serverBong = normalizeBongValue(Number(serverData.bong) || 0);
+                    if (!window.playerState.isAdmin && serverBong + 0.0001 < price) throw new Error('insufficient');
+                    nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - price);
+                    const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice(-24) : [];
+                    purchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, price, at: Date.now(), status: 'pending' });
+                    transaction.set(currentStudentDocRef, { bong: nextBong, conveniencePurchases: purchases }, { merge: true });
+                    transaction.set(orderRef, {
+                        id: orderRef.id,
+                        itemId: item.id,
+                        itemName: item.name,
+                        itemDesc: item.desc || '',
+                        price,
+                        studentId,
+                        studentName,
+                        status: 'pending',
+                        createdAt: Date.now(),
+                    });
+                });
+                window.playerState.bong = nextBong;
+                if (!Array.isArray(window.playerState.conveniencePurchases)) window.playerState.conveniencePurchases = [];
+                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, price, at: Date.now(), status: 'pending' });
+                window.playerState.conveniencePurchases = window.playerState.conveniencePurchases.slice(-25);
+                playSfx('bong', true);
+                updateUI();
+                await window.customAlert(`✅ [${item.name}] 주문이 접수되었습니다.\n편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+            } catch (e) {
+                if (e && e.message === 'insufficient') {
+                    return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
+                }
+                console.error('buyConvenienceItem', e);
+                await window.customAlert('편의점 주문 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.completeConvenienceOrder = async function(orderId) {
+            if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 처리할 수 있습니다.');
+            const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
+            if (!order || order.status !== 'pending') return await window.customAlert('대기 중인 주문을 찾을 수 없습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            const managerId = String(localStorage.getItem('sambong_student_id') || '');
+            const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId)), {
+                    status: 'done',
+                    completedAt: Date.now(),
+                    completedBy: managerId,
+                    completedByName: managerName,
+                });
+                renderConvenienceManagerUi();
+                renderConvenienceOrderModalBody();
+            } catch (e) {
+                console.error('completeConvenienceOrder', e);
+                await window.customAlert('처리완료 저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.addConvenienceItemAdmin = async function() {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추가할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const nameEl = document.getElementById('gmConvenienceName');
+            const priceEl = document.getElementById('gmConveniencePrice');
+            const descEl = document.getElementById('gmConvenienceDesc');
+            const name = String(nameEl?.value || '').trim();
+            const desc = String(descEl?.value || '').trim();
+            const price = normalizeBongValue(Number(priceEl?.value || 0));
+            if (!name) return await window.customAlert('물품 이름을 입력해 주세요.');
+            if (!Number.isFinite(price) || price < 0) return await window.customAlert('가격은 0 이상의 숫자로 입력해 주세요.');
+            const id = `conv_${Date.now().toString(36)}`;
+            const convenienceItems = [...(window.globalSettings.convenienceItems || []), { id, name, desc, price, createdAt: Date.now() }];
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceItems }, { merge: true });
+                window.globalSettings.convenienceItems = convenienceItems;
+                if (nameEl) nameEl.value = '';
+                if (priceEl) priceEl.value = '';
+                if (descEl) descEl.value = '';
+                renderConvenienceStore();
+                renderConvenienceAdminPanel();
+                await window.customAlert('✅ 편의점 물품이 추가되었습니다.');
+            } catch (e) {
+                console.error('addConvenienceItemAdmin', e);
+                await window.customAlert('편의점 물품 추가 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.saveConvenienceItemAdmin = async function(itemId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 수정할 수 있습니다.');
+            const items = Array.isArray(window.globalSettings.convenienceItems) ? window.globalSettings.convenienceItems.slice() : [];
+            const idx = items.findIndex((item) => String(item.id) === String(itemId));
+            if (idx < 0) return await window.customAlert('수정할 물품을 찾지 못했습니다.');
+            const name = String(document.getElementById('conv_name_' + itemId)?.value || '').trim();
+            const desc = String(document.getElementById('conv_desc_' + itemId)?.value || '').trim();
+            const price = normalizeBongValue(Number(document.getElementById('conv_price_' + itemId)?.value || 0));
+            if (!name) return await window.customAlert('물품 이름을 입력해 주세요.');
+            if (!Number.isFinite(price) || price < 0) return await window.customAlert('가격은 0 이상의 숫자로 입력해 주세요.');
+            items[idx] = { ...items[idx], name, desc, price, updatedAt: Date.now() };
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceItems: items }, { merge: true });
+                window.globalSettings.convenienceItems = items;
+                renderConvenienceStore();
+                renderConvenienceAdminPanel();
+                await window.customAlert('✅ 편의점 물품이 저장되었습니다.');
+            } catch (e) {
+                console.error('saveConvenienceItemAdmin', e);
+                await window.customAlert('편의점 물품 저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.deleteConvenienceItemAdmin = async function(itemId) {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            const items = Array.isArray(window.globalSettings.convenienceItems) ? window.globalSettings.convenienceItems.slice() : [];
+            const item = items.find((x) => String(x.id) === String(itemId));
+            if (!item) return await window.customAlert('삭제할 물품을 찾지 못했습니다.');
+            if (!await window.customConfirm(`[${item.name}] 편의점 물품을 삭제할까요?\n이미 접수된 주문 기록은 유지됩니다.`)) return;
+            const convenienceItems = items.filter((x) => String(x.id) !== String(itemId));
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceItems }, { merge: true });
+                window.globalSettings.convenienceItems = convenienceItems;
+                renderConvenienceStore();
+                renderConvenienceAdminPanel();
+                await window.customAlert('삭제되었습니다.');
+            } catch (e) {
+                console.error('deleteConvenienceItemAdmin', e);
+                await window.customAlert('편의점 물품 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         function renderQuestManagementAdminPanel() {
             const listEl = document.getElementById('gmQuestManageList');
             if (!listEl) return;
@@ -3797,6 +4200,7 @@ function redrawPlazaGrantsUi() {
             renderJobGrid();
 
             renderShopCatalog();
+            renderConvenienceStore();
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
@@ -3840,6 +4244,7 @@ function redrawPlazaGrantsUi() {
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
 
             renderShopManagementAdminPanel();
+            renderConvenienceAdminPanel();
             renderQuestManagementAdminPanel();
             renderJobManagementAdminPanel();
 
@@ -4038,6 +4443,9 @@ function redrawPlazaGrantsUi() {
                                 }
                                 renderShopCatalog();
                                 renderShopManagementAdminPanel();
+                                renderConvenienceStore();
+                                renderConvenienceAdminPanel();
+                                renderConvenienceManagerUi();
                                 renderQuestManagementAdminPanel();
                                 renderJobGrid();
                                 renderJobManagementAdminPanel();
@@ -4203,6 +4611,23 @@ function redrawPlazaGrantsUi() {
                                 }
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateUI();
+                            }
+                        );
+
+                        if (unsubscribeConvenienceOrders) unsubscribeConvenienceOrders();
+                        unsubscribeConvenienceOrders = onSnapshot(
+                            collection(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders'),
+                            { includeMetadataChanges: true },
+                            (snap) => {
+                                window.convenienceOrders = [];
+                                snap.forEach((d) => {
+                                    const data = d.data() || {};
+                                    window.convenienceOrders.push({ ...data, id: data.id || d.id });
+                                });
+                                window.convenienceOrders.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+                                renderConvenienceManagerUi();
+                                renderConvenienceOrderModalBody();
+                                if (!snap.metadata.fromCache) maybeShowConvenienceOrderPopup();
                             }
                         );
 
@@ -5307,6 +5732,7 @@ function redrawPlazaGrantsUi() {
             if(!window.playerState.lunchBid) window.playerState.lunchBid = {date: '', amount: 0};
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             if(!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
+            if(!window.playerState.conveniencePurchases) window.playerState.conveniencePurchases = [];
             const bankMigrateTouched = migrateBankPlayerFields();
             let bankProcessingNeedSave = bankMigrateTouched;
             if (canRunBankSideEffects) {
@@ -5369,6 +5795,8 @@ function redrawPlazaGrantsUi() {
                     if (dbRec) dbRec.classList.remove('hidden');
                     const shopPricePanel = document.getElementById('gmShopPricePanel');
                     if (shopPricePanel) shopPricePanel.classList.remove('hidden');
+                    const conveniencePanel = document.getElementById('gmConveniencePanel');
+                    if (conveniencePanel) conveniencePanel.classList.remove('hidden');
                     const questPanel = document.getElementById('gmQuestManagePanel');
                     if (questPanel) questPanel.classList.remove('hidden');
                     const jobPanel = document.getElementById('gmJobManagePanel');
@@ -5387,6 +5815,8 @@ function redrawPlazaGrantsUi() {
                     if (dbRec) dbRec.classList.add('hidden');
                     const shopPricePanel = document.getElementById('gmShopPricePanel');
                     if (shopPricePanel) shopPricePanel.classList.add('hidden');
+                    const conveniencePanel = document.getElementById('gmConveniencePanel');
+                    if (conveniencePanel) conveniencePanel.classList.add('hidden');
                     const questPanel = document.getElementById('gmQuestManagePanel');
                     if (questPanel) questPanel.classList.add('hidden');
                     const jobPanel = document.getElementById('gmJobManagePanel');
@@ -5411,6 +5841,8 @@ function redrawPlazaGrantsUi() {
                 if (dbRec) dbRec.classList.add('hidden');
                 const shopPricePanel = document.getElementById('gmShopPricePanel');
                 if (shopPricePanel) shopPricePanel.classList.add('hidden');
+                const conveniencePanel = document.getElementById('gmConveniencePanel');
+                if (conveniencePanel) conveniencePanel.classList.add('hidden');
                 const questPanel = document.getElementById('gmQuestManagePanel');
                 if (questPanel) questPanel.classList.add('hidden');
                 const jobPanel = document.getElementById('gmJobManagePanel');
@@ -5426,6 +5858,8 @@ function redrawPlazaGrantsUi() {
             }
             
             checkTimeEvents();
+            renderConvenienceManagerUi();
+            maybeShowConvenienceOrderPopup();
             
             const xp = window.playerState.xp || 0;
             const lvInfo = getLevelInfo(xp); 
@@ -5904,7 +6338,7 @@ function redrawPlazaGrantsUi() {
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [] };
+                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -5918,6 +6352,7 @@ function redrawPlazaGrantsUi() {
                     if (dq.needSave) await saveDataToCloud();
                 }
                 if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
+                if (!window.playerState.conveniencePurchases) window.playerState.conveniencePurchases = [];
                 if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
                 _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
                 window._suppressXpSyncToast = true;
@@ -8441,7 +8876,7 @@ function redrawPlazaGrantsUi() {
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'classEventPurchases', 'lastDailyReset', 'shopDailyPurchase', 'lottoTickets',
+            'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'shopDailyPurchase', 'lottoTickets',
         ];
 
         function extractStudentGameData(existingData = {}) {
@@ -8523,6 +8958,7 @@ function redrawPlazaGrantsUi() {
                 bankDailyBonusLastDate: '',
                 dailyAllClearBonusDate: '',
                 classEventPurchases: [],
+                conveniencePurchases: [],
                 lottoTickets: [],
             };
         }

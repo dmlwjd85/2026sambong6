@@ -1806,6 +1806,20 @@ function redrawPlazaGrantsUi() {
             return getSanitizedLottoState(window.globalSettings && window.globalSettings.lotto);
         }
 
+        function hasUndrawnPastLottoRound(raw, now = new Date()) {
+            const state = getSanitizedLottoState(raw);
+            const currentRoundKey = getLottoRoundKey(now);
+            const hasValueAtRisk = (Array.isArray(state.tickets) && state.tickets.length > 0) || (Number(state.poolB) || 0) > 0;
+            return state.roundKey !== currentRoundKey && !state.drawnAt && hasValueAtRisk;
+        }
+
+        function getLottoStateForDraw(raw, now = new Date()) {
+            const state = getSanitizedLottoState(raw);
+            const currentRoundKey = getLottoRoundKey(now);
+            if (state.roundKey !== currentRoundKey && !state.drawnAt) return state;
+            return buildLottoStateForPurchase(raw, now);
+        }
+
         function buildLottoStateForPurchase(raw, now = new Date()) {
             const state = getSanitizedLottoState(raw);
             const roundKey = getLottoRoundKey(now);
@@ -7810,6 +7824,7 @@ function redrawPlazaGrantsUi() {
                     const nowMs = Date.now();
                     const roundKey = getLottoRoundKey(new Date(nowMs));
                     const rawLotto = settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null;
+                    if (hasUndrawnPastLottoRound(rawLotto, new Date(nowMs))) throw new Error('previous_round_undrawn');
                     const lotto = buildLottoStateForPurchase(rawLotto, new Date(nowMs));
                     if (lotto.roundKey === roundKey && lotto.drawnAt) throw new Error('round_already_drawn');
 
@@ -7857,6 +7872,7 @@ function redrawPlazaGrantsUi() {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_enough_bong') return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
                 if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다. 다음 회차에 구매해 주세요.');
+                if (msg === 'previous_round_undrawn') return await window.customAlert('이전 로또 회차가 아직 추첨되지 않았습니다. 마스터 J가 먼저 추첨한 뒤 구매해 주세요.');
                 await window.customAlert('로또 구매 실패: ' + msg);
             }
         };
@@ -7888,9 +7904,8 @@ function redrawPlazaGrantsUi() {
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
                     const settingsSnap = await transaction.get(settingsRef);
                     const rawSettings = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
-                    const state = buildLottoStateForPurchase(rawSettings.lotto || null, now);
-                    if (auto && state.lastAutoDrawKey === roundKey) throw new Error('already_auto_checked');
-                    if (state.roundKey !== roundKey) throw new Error('not_current_round');
+                    const state = getLottoStateForDraw(rawSettings.lotto || null, now);
+                    if (auto && (state.roundKey !== roundKey || state.lastAutoDrawKey === roundKey)) throw new Error('already_auto_checked');
                     if (state.drawnAt) throw new Error('already_drawn');
                     if (!Array.isArray(state.tickets) || state.tickets.length === 0) {
                         noTicket = true;

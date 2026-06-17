@@ -1158,7 +1158,10 @@ function redrawPlazaGrantsUi() {
             if (!window.playerState || window.playerState.isGuest) return false;
             if (window.playerState.isAdmin) return true;
             const jobs = Array.isArray(window.playerState.jobs) ? window.playerState.jobs : [];
-            return jobs.some((job) => String(job).includes('편의점 매니저'));
+            return jobs.some((job) => {
+                const name = (job && typeof job === 'object') ? job.name : job;
+                return String(name || '').trim() === '편의점 매니저';
+            });
         }
 
         function getDeletedQuestIds() {
@@ -1822,6 +1825,12 @@ function redrawPlazaGrantsUi() {
                 };
             }
             return state;
+        }
+
+        function hasUnresolvedLottoRound(state) {
+            if (!state || state.drawnAt) return false;
+            const ticketCount = Array.isArray(state.tickets) ? state.tickets.length : 0;
+            return ticketCount > 0 || normalizeBongValue(Number(state.poolB) || 0) > 0;
         }
 
         function renderLottoPanel() {
@@ -4156,17 +4165,25 @@ function redrawPlazaGrantsUi() {
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
             try {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId)), {
-                    status: 'done',
-                    completedAt: Date.now(),
-                    completedBy: managerId,
-                    completedByName: managerName,
+                await runTransaction(db, async (transaction) => {
+                    const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
+                    const orderSnap = await transaction.get(orderRef);
+                    const latestOrder = orderSnap.exists() ? (orderSnap.data() || {}) : null;
+                    if (!latestOrder || latestOrder.status !== 'pending') throw new Error('not_pending');
+                    transaction.set(orderRef, {
+                        status: 'done',
+                        completedAt: Date.now(),
+                        completedBy: managerId,
+                        completedByName: managerName,
+                    }, { merge: true });
                 });
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
             } catch (e) {
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'not_pending') return await window.customAlert('이미 처리된 주문입니다.');
                 console.error('completeConvenienceOrder', e);
-                await window.customAlert('처리완료 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('처리완료 저장 실패: ' + msg);
             }
         };
 
@@ -7810,6 +7827,8 @@ function redrawPlazaGrantsUi() {
                     const nowMs = Date.now();
                     const roundKey = getLottoRoundKey(new Date(nowMs));
                     const rawLotto = settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null;
+                    const serverLotto = getSanitizedLottoState(rawLotto);
+                    if (serverLotto.roundKey !== roundKey && hasUnresolvedLottoRound(serverLotto)) throw new Error('previous_round_unresolved');
                     const lotto = buildLottoStateForPurchase(rawLotto, new Date(nowMs));
                     if (lotto.roundKey === roundKey && lotto.drawnAt) throw new Error('round_already_drawn');
 
@@ -7857,6 +7876,7 @@ function redrawPlazaGrantsUi() {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_enough_bong') return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
                 if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다. 다음 회차에 구매해 주세요.');
+                if (msg === 'previous_round_unresolved') return await window.customAlert('지난 로또 회차가 아직 추첨되지 않았습니다. 마스터 J가 먼저 추첨한 뒤 구매해 주세요.');
                 await window.customAlert('로또 구매 실패: ' + msg);
             }
         };
@@ -7888,13 +7908,25 @@ function redrawPlazaGrantsUi() {
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
                     const settingsSnap = await transaction.get(settingsRef);
                     const rawSettings = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
-                    const state = buildLottoStateForPurchase(rawSettings.lotto || null, now);
+                    const rawState = getSanitizedLottoState(rawSettings.lotto || null);
+                    const state = (!auto && rawState.roundKey !== roundKey && hasUnresolvedLottoRound(rawState))
+                        ? rawState
+                        : buildLottoStateForPurchase(rawSettings.lotto || null, now);
                     if (auto && state.lastAutoDrawKey === roundKey) throw new Error('already_auto_checked');
-                    if (state.roundKey !== roundKey) throw new Error('not_current_round');
+                    if (state.roundKey !== roundKey && (auto || !hasUnresolvedLottoRound(state))) throw new Error('not_current_round');
                     if (state.drawnAt) throw new Error('already_drawn');
                     if (!Array.isArray(state.tickets) || state.tickets.length === 0) {
                         noTicket = true;
-                        nextLotto = { ...state, lastAutoDrawKey: auto ? roundKey : state.lastAutoDrawKey, updatedAt: nowMs };
+                        const emptyCarryoverB = normalizeBongValue((Number(state.carryoverB) || 0) + (Number(state.poolB) || 0));
+                        nextLotto = {
+                            ...state,
+                            poolB: 0,
+                            carryoverB: emptyCarryoverB,
+                            tickets: [],
+                            drawnAt: nowMs,
+                            lastAutoDrawKey: auto ? roundKey : state.lastAutoDrawKey,
+                            updatedAt: nowMs,
+                        };
                         transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
                         return;
                     }

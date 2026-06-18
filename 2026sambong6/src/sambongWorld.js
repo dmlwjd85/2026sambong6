@@ -1053,7 +1053,7 @@ function redrawPlazaGrantsUi() {
         }
 
         window.playerState = { 
-            xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
+            xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
@@ -1071,6 +1071,8 @@ function redrawPlazaGrantsUi() {
         window.shopGroupBuyPools = {};
         /** 편의점 주문 목록 스냅샷: 최신순 배열 */
         window.convenienceOrders = [];
+        /** 삼봉 편의점 장바구니: itemId → 수량 */
+        window.convenienceCart = {};
         /** true 이후에는 오래된 Firestore 로컬 캐시 스냅샷으로 모금 UI를 덮지 않음 */
         window._shopGroupBuyPoolGotServer = false;
         /** 초기화 직전 저장된 학생별 백업 (studentId → { savedAt, data }) */
@@ -1159,6 +1161,21 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.isAdmin) return true;
             const jobs = Array.isArray(window.playerState.jobs) ? window.playerState.jobs : [];
             return jobs.some((job) => String(job).includes('편의점 매니저'));
+        }
+
+        /** 배달비 자동 지급 대상: 실제 학생 중 '편의점 매니저' 직업을 가진 사람 */
+        function getConvenienceManagerStudents() {
+            const rows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
+            const map = new Map();
+            rows.forEach((stu) => {
+                const sid = String(stu && stu.id || '');
+                if (!sid || sid === 'gm' || sid === 'gm_a') return;
+                const jobs = Array.isArray(stu.jobs) ? stu.jobs : [];
+                if (jobs.some((job) => String(job).includes('편의점 매니저'))) {
+                    map.set(sid, { id: sid, name: STUDENT_NAMES[sid] || stu.name || sid });
+                }
+            });
+            return Array.from(map.values());
         }
 
         function getDeletedQuestIds() {
@@ -1592,6 +1609,20 @@ function redrawPlazaGrantsUi() {
 
         /** 학생 자가 저장·Firestore 규칙과 맞춘 1회 XP 상승 상한(퀘스트·일일보너스·무기버프 여유) */
         const STUDENT_MAX_XP_INCREASE_PER_SAVE = 650;
+        const XP_CHANGE_LOG_LIMIT = 40;
+
+        function buildXpChangeLogEntry(reason, beforeXp, afterXp, extra = {}) {
+            const before = Math.max(0, Math.floor(Number(beforeXp) || 0));
+            const after = Math.max(0, Math.floor(Number(afterXp) || 0));
+            return {
+                at: Date.now(),
+                reason: String(reason || 'XP 변경'),
+                before,
+                after,
+                delta: after - before,
+                ...extra,
+            };
+        }
 
         /** 마스터가 학생 XP/B를 직접 설정한 뒤 광장·관리자 표를 즉시 맞춤 */
         async function adminSetStudentStat(stuId, type, val) {
@@ -1611,6 +1642,10 @@ function redrawPlazaGrantsUi() {
             const payload = type === 'bong'
                 ? { bong: normalizeBongValue(val) }
                 : { xp: Math.max(0, Math.floor(Number(val) || 0)) };
+            if (type === 'xp') {
+                const beforeXp = Math.max(0, Math.floor(Number(stu && stu.xp) || 0));
+                payload.xpChangeLog = arrayUnion(buildXpChangeLogEntry('마스터 직접 XP 수정', beforeXp, payload.xp, { actor: window.playerState?.isGM ? 'gm' : 'admin' }));
+            }
             await setDoc(ref, payload, { merge: true });
             mergeStudentDocIntoPlazaCache(sid, { ...(stu || {}), ...payload });
             if (typeof redrawPlazaGrantsUi === 'function') redrawPlazaGrantsUi();
@@ -3830,6 +3865,41 @@ function redrawPlazaGrantsUi() {
                 .sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
         }
 
+        function getConvenienceCartEntries() {
+            const cart = window.convenienceCart || {};
+            return Object.keys(cart)
+                .map((itemId) => {
+                    const item = getConvenienceItemById(itemId);
+                    const qty = Math.max(0, Math.min(20, Math.floor(Number(cart[itemId]) || 0)));
+                    return item && qty > 0 ? { item, qty, lineTotal: normalizeBongValue(item.price * qty) } : null;
+                })
+                .filter(Boolean);
+        }
+
+        function getConvenienceCartTotals() {
+            const entries = getConvenienceCartEntries();
+            const itemTotal = normalizeBongValue(entries.reduce((sum, entry) => sum + entry.lineTotal, 0));
+            const itemCount = entries.reduce((sum, entry) => sum + entry.qty, 0);
+            return { entries, itemTotal, itemCount };
+        }
+
+        function getConvenienceOrderTitle(order) {
+            if (order && Array.isArray(order.items) && order.items.length > 0) {
+                const first = order.items[0];
+                const rest = order.items.length - 1;
+                return `${first.name || order.itemName || '편의점 주문'} ${first.qty || 1}개${rest > 0 ? ` 외 ${rest}종` : ''}`;
+            }
+            return String(order && order.itemName ? order.itemName : '편의점 주문');
+        }
+
+        function getConvenienceOrderItemsHtml(order) {
+            const items = Array.isArray(order && order.items) ? order.items : [];
+            if (!items.length) return '';
+            return `<div class="mt-1 text-[9px] text-slate-300 bg-slate-900/70 border border-slate-700 rounded px-2 py-1 space-y-0.5">
+                ${items.map((item) => `<div class="flex justify-between gap-2"><span class="truncate">${escapeConvenienceHtml(item.name)} × ${Math.max(1, Number(item.qty) || 1)}</span><span class="shrink-0">${Number(item.lineTotal || 0).toFixed(1)}B</span></div>`).join('')}
+            </div>`;
+        }
+
         function getConvenienceOrderRequestHtml(order) {
             const note = String(order && order.requestNote ? order.requestNote : '').trim();
             return note
@@ -3840,8 +3910,12 @@ function redrawPlazaGrantsUi() {
         function getConvenienceOrderDeliveryHtml(order) {
             const delivery = !!(order && order.deliveryRequested);
             const fee = normalizeBongValue(Number(order && order.deliveryFee) || 0);
+            const payouts = Array.isArray(order && order.deliveryPayouts) ? order.deliveryPayouts : [];
+            const payoutText = payouts.length
+                ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} ${Number(p.payoutB || 0).toFixed(1)}B`).join(', ')}`
+                : '';
             return delivery
-                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee.toFixed(1)}B 포함</div>`
+                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee.toFixed(1)}B 포함${payoutText}</div>`
                 : '<div class="mt-1 text-[9px] text-slate-600">직접 수령</div>';
         }
 
@@ -3878,6 +3952,36 @@ function redrawPlazaGrantsUi() {
                     </div>`;
                 return;
             }
+            const { entries, itemTotal, itemCount } = getConvenienceCartTotals();
+            const cartHtml = `
+                <div class="sm:col-span-2 rounded-2xl border border-orange-500/40 bg-slate-950/80 p-3 sticky bottom-2 z-10 shadow-2xl">
+                    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-sm font-black text-orange-200"><i class="fa-solid fa-cart-shopping"></i> 장바구니</span>
+                                <span class="text-[10px] text-slate-400">${itemCount}개 · ${itemTotal.toFixed(1)}B</span>
+                            </div>
+                            <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
+                                ${entries.map(({ item, qty, lineTotal }) => `
+                                    <div class="flex items-center justify-between gap-2 text-[10px] bg-slate-900/80 rounded-lg border border-slate-700 px-2 py-1">
+                                        <span class="truncate text-white">${escapeConvenienceHtml(item.name)}</span>
+                                        <div class="flex items-center gap-1 shrink-0">
+                                            <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', -1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">-</button>
+                                            <input type="number" min="1" max="20" value="${qty}" onchange="window.setConvenienceCartQty('${escapeHtmlAttr(item.id)}', this.value)" class="w-12 bg-slate-950 border border-slate-600 rounded px-1 py-0.5 text-center text-white font-bold" />
+                                            <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', 1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">+</button>
+                                            <span class="w-14 text-right text-orange-200 font-bold">${lineTotal.toFixed(1)}B</span>
+                                        </div>
+                                    </div>
+                                `).join('') || '<div class="text-[10px] text-slate-500 py-1">담은 물품이 없습니다.</div>'}
+                            </div>
+                        </div>
+                        <div class="flex sm:flex-col gap-2 shrink-0">
+                            <button type="button" onclick="window.checkoutConvenienceCart()" class="flex-1 sm:flex-none bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px] border border-orange-500 ${entries.length ? '' : 'opacity-50 cursor-not-allowed'}">주문하기</button>
+                            <button type="button" onclick="window.clearConvenienceCart()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-3 rounded-xl text-[10px]">비우기</button>
+                        </div>
+                    </div>
+                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${deliveryFee.toFixed(1)}B가 추가되고, 편의점 매니저에게 자동 지급됩니다.</p>
+                </div>`;
             container.innerHTML = items.map((item) => `
                 <div class="bg-slate-800/80 p-3 rounded-xl border border-orange-500/30 flex flex-col gap-2">
                     <div class="flex items-center gap-3">
@@ -3891,11 +3995,11 @@ function redrawPlazaGrantsUi() {
                         </div>
                         <div class="text-orange-200 bg-slate-950 px-2 py-1 rounded border border-orange-500/40 text-xs font-bold shrink-0">${item.price} B</div>
                     </div>
-                    <button type="button" onclick="window.buyConvenienceItem('${escapeHtmlAttr(item.id)}')" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-lg text-[10px] border border-orange-500">
-                        주문하기
+                    <button type="button" onclick="window.addConvenienceToCart('${escapeHtmlAttr(item.id)}')" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-lg text-[10px] border border-orange-500">
+                        담기
                     </button>
                 </div>
-            `).join('');
+            `).join('') + cartHtml;
         }
 
         function renderConvenienceAdminPanel() {
@@ -3946,8 +4050,9 @@ function redrawPlazaGrantsUi() {
                     ${pending.slice(0, 5).map((order) => `
                         <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 border border-orange-500/20 px-2 py-1.5">
                             <div class="min-w-0">
-                                <div class="text-white text-[10px] font-bold truncate">${escapeConvenienceHtml(order.itemName)}</div>
+                                <div class="text-white text-[10px] font-bold truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
                                 <div class="text-slate-400 text-[9px] truncate">${escapeConvenienceHtml(order.studentName)} · ${order.price}B</div>
+                                ${getConvenienceOrderItemsHtml(order)}
                                 ${getConvenienceOrderDeliveryHtml(order)}
                                 ${getConvenienceOrderRequestHtml(order)}
                             </div>
@@ -3973,8 +4078,9 @@ function redrawPlazaGrantsUi() {
                             <div class="rounded-xl border border-orange-500/30 bg-slate-950/70 p-3">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
-                                        <div class="text-white font-bold text-sm">${escapeConvenienceHtml(order.itemName)}</div>
+                                        <div class="text-white font-bold text-sm">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
                                         <div class="text-[10px] text-slate-400 mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${order.price}B</div>
+                                        ${getConvenienceOrderItemsHtml(order)}
                                         ${getConvenienceOrderDeliveryHtml(order)}
                                         ${getConvenienceOrderRequestHtml(order)}
                                         <div class="text-[9px] text-slate-500 mt-1">${formatConvenienceTime(order.createdAt)}</div>
@@ -3994,9 +4100,10 @@ function redrawPlazaGrantsUi() {
                         ${done.map((order) => `
                             <div class="text-[9px] text-slate-400 rounded bg-slate-900/70 px-2 py-1">
                                 <div class="flex justify-between gap-2">
-                                    <span class="truncate">${escapeConvenienceHtml(order.itemName)} · ${escapeConvenienceHtml(order.studentName)} ${order.status === 'refunded' ? '<span class="text-red-300">(환불)</span>' : '<span class="text-emerald-300">(완료)</span>'}</span>
+                                    <span class="truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))} · ${escapeConvenienceHtml(order.studentName)} ${order.status === 'refunded' ? '<span class="text-red-300">(환불)</span>' : '<span class="text-emerald-300">(완료)</span>'}</span>
                                     <span class="shrink-0">${formatConvenienceTime(order.completedAt || order.refundedAt || order.createdAt)}</span>
                                 </div>
+                                ${getConvenienceOrderItemsHtml(order)}
                                 ${getConvenienceOrderDeliveryHtml(order)}
                                 ${getConvenienceOrderRequestHtml(order)}
                             </div>
@@ -4069,32 +4176,91 @@ function redrawPlazaGrantsUi() {
             if (modal) modal.classList.add('hidden');
         };
 
+        window.addConvenienceToCart = function(itemId) {
+            const item = getConvenienceItemById(itemId);
+            if (!item) return window.customAlert('편의점 물품 정보를 찾을 수 없습니다.');
+            if (!window.convenienceCart) window.convenienceCart = {};
+            const nextQty = Math.min(20, Math.max(1, (Number(window.convenienceCart[item.id]) || 0) + 1));
+            window.convenienceCart[item.id] = nextQty;
+            renderConvenienceStore();
+        };
+
+        window.changeConvenienceCartQty = function(itemId, delta) {
+            if (!window.convenienceCart) window.convenienceCart = {};
+            const item = getConvenienceItemById(itemId);
+            if (!item) return;
+            const nextQty = Math.max(0, Math.min(20, (Number(window.convenienceCart[item.id]) || 0) + Number(delta || 0)));
+            if (nextQty <= 0) delete window.convenienceCart[item.id];
+            else window.convenienceCart[item.id] = nextQty;
+            renderConvenienceStore();
+        };
+
+        window.setConvenienceCartQty = function(itemId, qty) {
+            if (!window.convenienceCart) window.convenienceCart = {};
+            const item = getConvenienceItemById(itemId);
+            if (!item) return;
+            const nextQty = Math.max(0, Math.min(20, Math.floor(Number(qty) || 0)));
+            if (nextQty <= 0) delete window.convenienceCart[item.id];
+            else window.convenienceCart[item.id] = nextQty;
+            renderConvenienceStore();
+        };
+
+        window.clearConvenienceCart = function() {
+            window.convenienceCart = {};
+            renderConvenienceStore();
+        };
+
+        function buildConvenienceDeliveryPayouts(deliveryFee) {
+            const managers = getConvenienceManagerStudents();
+            const fee = normalizeBongValue(Number(deliveryFee) || 0);
+            if (fee <= 0 || managers.length === 0) return [];
+            let allocated = 0;
+            return managers.map((manager, idx) => {
+                const payoutB = idx === managers.length - 1
+                    ? normalizeBongValue(fee - allocated)
+                    : normalizeBongValue(fee / managers.length);
+                allocated = normalizeBongValue(allocated + payoutB);
+                return { studentId: manager.id, name: manager.name, payoutB };
+            }).filter((p) => p.payoutB > 0);
+        }
+
+        /** 이전 단일 주문 버튼 호환: 누르면 장바구니에 1개 담음 */
         window.buyConvenienceItem = async function(itemId) {
+            window.addConvenienceToCart(itemId);
+            await window.customAlert('장바구니에 담았습니다. 여러 물품과 수량을 고른 뒤 [주문하기]를 눌러 주세요.');
+        };
+
+        window.checkoutConvenienceCart = async function() {
             if (!window.playerState || window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
             if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
-            const item = getConvenienceItemById(itemId);
-            if (!item) return await window.customAlert('편의점 물품 정보를 찾을 수 없습니다.');
-            const itemPrice = normalizeBongValue(Number(item.price) || 0);
+            const { entries, itemTotal, itemCount } = getConvenienceCartTotals();
+            if (!entries.length) return await window.customAlert('장바구니에 물품을 먼저 담아 주세요.');
             const deliveryFee = getConvenienceDeliveryFee();
-            const deliveryChoice = await window.customDeliveryChoice(item.name, deliveryFee);
+            const deliveryChoice = await window.customDeliveryChoice(`삼봉 편의점 장바구니 ${itemCount}개`, deliveryFee);
             if (deliveryChoice === null) return;
             const deliveryRequested = deliveryChoice === true;
-            const price = normalizeBongValue(itemPrice + (deliveryRequested ? deliveryFee : 0));
+            const deliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
+            if (deliveryRequested && deliveryFee > 0 && deliveryPayouts.length === 0) {
+                return await window.customAlert('현재 편의점 매니저 직업을 가진 학생이 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
+            }
+            const price = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
             if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < price) {
                 return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
             }
             const requestRaw = await window.customPrompt(
-                `[${item.name}] 요청사항을 적어 주세요.\n예: 포카칩 오리지널, 새콤달콤 딸기맛\n없으면 빈칸으로 확인하세요.`,
+                `삼봉 편의점 요청사항을 적어 주세요.\n예: 포카칩 오리지널, 새콤달콤 딸기맛\n없으면 빈칸으로 확인하세요.`,
                 'text'
             );
             if (requestRaw === null) return;
             const requestNote = String(requestRaw || '').trim().slice(0, 80);
+            const itemLines = entries.map(({ item, qty, lineTotal }) => `- ${item.name} × ${qty}: ${lineTotal.toFixed(1)}B`).join('\n');
             const ok = await window.customConfirm(
-                `[${item.name}]을(를) 편의점 주문할까요?\n` +
-                `- 물품 가격: ${itemPrice.toFixed(1)}B\n` +
+                `삼봉 편의점 장바구니를 주문할까요?\n${itemLines}\n` +
+                `- 물품 합계: ${itemTotal.toFixed(1)}B\n` +
                 `- 수령 방법: ${deliveryRequested ? `배달(+${deliveryFee.toFixed(1)}B)` : '직접 수령'}\n` +
                 `- 총 결제: ${price.toFixed(1)}B\n` +
                 `${requestNote ? `- 요청사항: ${requestNote}\n` : ''}` +
+                (deliveryPayouts.length ? `- 배달비 지급: ${deliveryPayouts.map((p) => `${p.name} ${p.payoutB.toFixed(1)}B`).join(', ')}\n` : '') +
                 '주문 후 편의점 매니저에게 주문창이 뜹니다.'
             );
             if (!ok) return;
@@ -4105,6 +4271,15 @@ function redrawPlazaGrantsUi() {
             const studentName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[studentId] || studentId);
             const orderRef = doc(getConvenienceOrdersCollectionRef());
             let nextBong = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const orderItems = entries.map(({ item, qty, lineTotal }) => ({
+                itemId: item.id,
+                name: item.name,
+                desc: item.desc || '',
+                unitPrice: item.price,
+                qty,
+                lineTotal,
+            }));
+            const itemName = getConvenienceOrderTitle({ items: orderItems });
             try {
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(currentStudentDocRef);
@@ -4113,31 +4288,38 @@ function redrawPlazaGrantsUi() {
                     if (!window.playerState.isAdmin && serverBong + 0.0001 < price) throw new Error('insufficient');
                     nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - price);
                     const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice(-24) : [];
-                    purchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, itemPrice, deliveryRequested, deliveryFee: deliveryRequested ? deliveryFee : 0, price, requestNote, at: Date.now(), status: 'pending' });
+                    purchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: deliveryRequested ? deliveryFee : 0, deliveryPayouts, price, requestNote, at: Date.now(), status: 'pending' });
                     transaction.set(currentStudentDocRef, { bong: nextBong, conveniencePurchases: purchases }, { merge: true });
                     transaction.set(orderRef, {
                         id: orderRef.id,
-                        itemId: item.id,
-                        itemName: item.name,
-                        itemDesc: item.desc || '',
+                        items: orderItems,
+                        itemId: orderItems[0]?.itemId || '',
+                        itemName,
+                        itemDesc: orderItems.map((item) => `${item.name}×${item.qty}`).join(', '),
                         requestNote,
-                        itemPrice,
+                        itemPrice: itemTotal,
                         deliveryRequested,
                         deliveryFee: deliveryRequested ? deliveryFee : 0,
+                        deliveryPayouts,
                         price,
                         studentId,
                         studentName,
                         status: 'pending',
                         createdAt: Date.now(),
                     });
+                    deliveryPayouts.forEach((payout) => {
+                        const managerRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + payout.studentId);
+                        transaction.set(managerRef, { bong: increment(payout.payoutB) }, { merge: true });
+                    });
                 });
                 window.playerState.bong = nextBong;
                 if (!Array.isArray(window.playerState.conveniencePurchases)) window.playerState.conveniencePurchases = [];
-                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, itemId: item.id, name: item.name, itemPrice, deliveryRequested, deliveryFee: deliveryRequested ? deliveryFee : 0, price, requestNote, at: Date.now(), status: 'pending' });
+                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: deliveryRequested ? deliveryFee : 0, deliveryPayouts, price, requestNote, at: Date.now(), status: 'pending' });
                 window.playerState.conveniencePurchases = window.playerState.conveniencePurchases.slice(-25);
+                window.convenienceCart = {};
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`✅ [${item.name}] 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${price.toFixed(1)}B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${price.toFixed(1)}B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -4198,6 +4380,14 @@ function redrawPlazaGrantsUi() {
                         bong: increment(refundB),
                         conveniencePurchases: nextPurchases,
                     }, { merge: true });
+                    const payouts = Array.isArray(latestOrder.deliveryPayouts) ? latestOrder.deliveryPayouts : [];
+                    payouts.forEach((payout) => {
+                        const managerId = String(payout.studentId || '');
+                        const payoutB = normalizeBongValue(Number(payout.payoutB) || 0);
+                        if (!managerId || payoutB <= 0) return;
+                        const managerRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + managerId);
+                        transaction.set(managerRef, { bong: increment(-payoutB) }, { merge: true });
+                    });
                     transaction.set(orderRef, {
                         status: 'refunded',
                         refundedAt: Date.now(),
@@ -6532,7 +6722,7 @@ function redrawPlazaGrantsUi() {
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -6653,6 +6843,17 @@ function redrawPlazaGrantsUi() {
                         }
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
+                        }
+                        const finalXp = Number(dataToSave.xp);
+                        if (Number.isFinite(serverXp) && Number.isFinite(finalXp) && Math.floor(finalXp) !== Math.floor(serverXp)) {
+                            const logs = Array.isArray(serverData.xpChangeLog) ? serverData.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
+                            logs.push(buildXpChangeLogEntry(opts.operationLabel, serverXp, finalXp, {
+                                source: 'saveDataToCloud',
+                                allowXpDecrease: !!opts.allowXpDecrease,
+                            }));
+                            dataToSave.xpChangeLog = logs;
+                        } else if (Object.prototype.hasOwnProperty.call(serverData, 'xpChangeLog')) {
+                            dataToSave.xpChangeLog = serverData.xpChangeLog;
                         }
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
@@ -7474,7 +7675,7 @@ function redrawPlazaGrantsUi() {
                     return;
                 }
                 /** 퀘스트 직후 playerState가 이미 최종값이므로 전체 merge 저장(서버 재읽기·델타 계산 없음 — 실패 알림 오판 방지) */
-                await saveDataToCloud();
+                await saveDataToCloud({ operationLabel: `퀘스트 완료: ${qInfo ? qInfo.name : qId}` });
             } catch (e) {
                 console.error('attemptQuest persist', e);
                 await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -7500,7 +7701,7 @@ function redrawPlazaGrantsUi() {
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - (Number(bong) + 0.5));
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
-                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: Number(bong) + 0.5 });
+                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: Number(bong) + 0.5, operationLabel: `퀘스트 취소: ${qId}` });
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();
@@ -9100,7 +9301,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
         const STUDENT_GAME_FIELD_KEYS = [
-            'pin', 'xp', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins',
+            'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins',
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
@@ -9163,6 +9364,7 @@ function redrawPlazaGrantsUi() {
             return {
                 pin: existingData.pin || '',
                 xp: 0,
+                xpChangeLog: [],
                 bong: 0.0,
                 quests: {},
                 unlockedQuests: {},
@@ -9332,7 +9534,10 @@ function redrawPlazaGrantsUi() {
 
                     for (const stu of stuList) {
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
-                        transaction.set(ref, { xp: increment(5) }, { merge: true });
+                        transaction.set(ref, {
+                            xp: increment(5),
+                            xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, Number(stu.xp) || 0, (Number(stu.xp) || 0) + 5, { source: 'class-end-auto' })),
+                        }, { merge: true });
                     }
                     transaction.set(settingsRef, {
                         lastAutoXpTime: todayKey,

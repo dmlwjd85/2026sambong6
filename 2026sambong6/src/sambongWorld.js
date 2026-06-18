@@ -1147,12 +1147,50 @@ function redrawPlazaGrantsUi() {
             return getConvenienceItems().find((item) => String(item.id) === String(itemId));
         }
 
-        /** 편의점 배달 선택 시 추가되는 배달비 */
-        function getConvenienceDeliveryFee() {
-            const fee = window.globalSettings && window.globalSettings.convenienceDeliveryFee != null
-                ? Number(window.globalSettings.convenienceDeliveryFee)
-                : 0;
+        function getGlobalSettingsDocRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+        }
+
+        /** Firestore settings.global에 저장된 배달비를 0 이상 소수 1자리로 정규화 */
+        function normalizeConvenienceDeliveryFee(raw) {
+            const fee = raw != null ? Number(raw) : 0;
             return normalizeBongValue(Math.max(0, Number.isFinite(fee) ? fee : 0));
+        }
+
+        /** 편의점 배달 선택 시 추가되는 배달비 (로컬 globalSettings 기준) */
+        function getConvenienceDeliveryFee() {
+            return normalizeConvenienceDeliveryFee(
+                window.globalSettings && window.globalSettings.convenienceDeliveryFee
+            );
+        }
+
+        /** globalSettings에 배달비를 반영하고 정규화된 값을 반환 */
+        function applyConvenienceDeliveryFeeToGlobalSettings(fee) {
+            const normalized = normalizeConvenienceDeliveryFee(fee);
+            if (!window.globalSettings) window.globalSettings = {};
+            window.globalSettings.convenienceDeliveryFee = normalized;
+            return normalized;
+        }
+
+        /** 주문·결제 직전 Firestore 서버 기준 최신 배달비를 읽어 반영 */
+        async function refreshConvenienceDeliveryFeeFromServer() {
+            if (!db) return getConvenienceDeliveryFee();
+            try {
+                const snap = await getDocFromServer(getGlobalSettingsDocRef());
+                if (snap.exists()) {
+                    return applyConvenienceDeliveryFeeToGlobalSettings(snap.data().convenienceDeliveryFee);
+                }
+            } catch (e) {
+                try {
+                    const snap = await getDoc(getGlobalSettingsDocRef());
+                    if (snap.exists()) {
+                        return applyConvenienceDeliveryFeeToGlobalSettings(snap.data().convenienceDeliveryFee);
+                    }
+                } catch (e2) {
+                    console.warn('refreshConvenienceDeliveryFeeFromServer', e2);
+                }
+            }
+            return getConvenienceDeliveryFee();
         }
 
         /** 마스터 또는 직업에 '편의점 매니저'가 있는 학생은 주문을 확인·처리할 수 있음 */
@@ -4005,7 +4043,14 @@ function redrawPlazaGrantsUi() {
         function renderConvenienceAdminPanel() {
             const listEl = document.getElementById('gmConvenienceItemList');
             const feeEl = document.getElementById('gmConvenienceDeliveryFee');
-            if (feeEl && document.activeElement !== feeEl) feeEl.value = String(getConvenienceDeliveryFee());
+            if (feeEl && document.activeElement !== feeEl) {
+                const savedFee = getConvenienceDeliveryFee();
+                const inputFee = normalizeConvenienceDeliveryFee(feeEl.value);
+                // 마스터가 입력 중인 미저장 값은 스냅샷 갱신으로 덮어쓰지 않음
+                if (feeEl.value.trim() === '' || inputFee === savedFee) {
+                    feeEl.value = String(savedFee);
+                }
+            }
             if (!listEl) return;
             const items = window.globalSettings && Array.isArray(window.globalSettings.convenienceItems)
                 ? window.globalSettings.convenienceItems
@@ -4235,7 +4280,7 @@ function redrawPlazaGrantsUi() {
             if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
             const { entries, itemTotal, itemCount } = getConvenienceCartTotals();
             if (!entries.length) return await window.customAlert('장바구니에 물품을 먼저 담아 주세요.');
-            const deliveryFee = getConvenienceDeliveryFee();
+            let deliveryFee = await refreshConvenienceDeliveryFeeFromServer();
             const deliveryChoice = await window.customDeliveryChoice(`삼봉 편의점 장바구니 ${itemCount}개`, deliveryFee);
             if (deliveryChoice === null) return;
             const deliveryRequested = deliveryChoice === true;
@@ -4266,6 +4311,12 @@ function redrawPlazaGrantsUi() {
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            deliveryFee = await refreshConvenienceDeliveryFeeFromServer();
+            const finalDeliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
+            if (deliveryRequested && deliveryFee > 0 && finalDeliveryPayouts.length === 0) {
+                return await window.customAlert('현재 편의점 매니저 직업을 가진 학생이 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
+            }
+            const finalPrice = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
 
             const studentId = String(localStorage.getItem('sambong_student_id') || '');
             const studentName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[studentId] || studentId);
@@ -4280,15 +4331,26 @@ function redrawPlazaGrantsUi() {
                 lineTotal,
             }));
             const itemName = getConvenienceOrderTitle({ items: orderItems });
+            let chargedDeliveryFee = deliveryRequested ? deliveryFee : 0;
+            let chargedDeliveryPayouts = finalDeliveryPayouts;
+            let chargedPrice = finalPrice;
             try {
                 await runTransaction(db, async (transaction) => {
+                    const settingsSnap = await transaction.get(getGlobalSettingsDocRef());
+                    const serverDeliveryFee = normalizeConvenienceDeliveryFee(
+                        settingsSnap.exists() ? settingsSnap.data().convenienceDeliveryFee : deliveryFee
+                    );
+                    chargedDeliveryFee = deliveryRequested ? serverDeliveryFee : 0;
+                    chargedDeliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(chargedDeliveryFee) : [];
+                    chargedPrice = normalizeBongValue(itemTotal + chargedDeliveryFee);
+
                     const snap = await transaction.get(currentStudentDocRef);
                     const serverData = snap.exists() ? (snap.data() || {}) : {};
                     const serverBong = normalizeBongValue(Number(serverData.bong) || 0);
-                    if (!window.playerState.isAdmin && serverBong + 0.0001 < price) throw new Error('insufficient');
-                    nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - price);
+                    if (!window.playerState.isAdmin && serverBong + 0.0001 < chargedPrice) throw new Error('insufficient');
+                    nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - chargedPrice);
                     const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice(-24) : [];
-                    purchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: deliveryRequested ? deliveryFee : 0, deliveryPayouts, price, requestNote, at: Date.now(), status: 'pending' });
+                    purchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
                     transaction.set(currentStudentDocRef, { bong: nextBong, conveniencePurchases: purchases }, { merge: true });
                     transaction.set(orderRef, {
                         id: orderRef.id,
@@ -4299,27 +4361,27 @@ function redrawPlazaGrantsUi() {
                         requestNote,
                         itemPrice: itemTotal,
                         deliveryRequested,
-                        deliveryFee: deliveryRequested ? deliveryFee : 0,
-                        deliveryPayouts,
-                        price,
+                        deliveryFee: chargedDeliveryFee,
+                        deliveryPayouts: chargedDeliveryPayouts,
+                        price: chargedPrice,
                         studentId,
                         studentName,
                         status: 'pending',
                         createdAt: Date.now(),
                     });
-                    deliveryPayouts.forEach((payout) => {
+                    chargedDeliveryPayouts.forEach((payout) => {
                         const managerRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + payout.studentId);
                         transaction.set(managerRef, { bong: increment(payout.payoutB) }, { merge: true });
                     });
                 });
                 window.playerState.bong = nextBong;
                 if (!Array.isArray(window.playerState.conveniencePurchases)) window.playerState.conveniencePurchases = [];
-                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: deliveryRequested ? deliveryFee : 0, deliveryPayouts, price, requestNote, at: Date.now(), status: 'pending' });
+                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
                 window.playerState.conveniencePurchases = window.playerState.conveniencePurchases.slice(-25);
                 window.convenienceCart = {};
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${price.toFixed(1)}B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${chargedPrice.toFixed(1)}B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -4409,22 +4471,35 @@ function redrawPlazaGrantsUi() {
             }
         };
 
-        window.saveConvenienceDeliveryFeeAdmin = async function() {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
-            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+        window.saveConvenienceDeliveryFeeAdmin = async function(options = {}) {
+            const silent = !!(options && options.silent);
+            if (!window.playerState || !window.playerState.isGM) {
+                if (!silent) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
+                return false;
+            }
+            if (!db) {
+                if (!silent) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+                return false;
+            }
             const feeEl = document.getElementById('gmConvenienceDeliveryFee');
-            const fee = normalizeBongValue(Math.max(0, Number(feeEl ? feeEl.value : 0) || 0));
+            const fee = normalizeConvenienceDeliveryFee(feeEl ? feeEl.value : 0);
             try {
                 const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceDeliveryFee: fee }, { merge: true });
-                window.globalSettings.convenienceDeliveryFee = fee;
+                if (!authOk) {
+                    if (!silent) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                    return false;
+                }
+                await setDoc(getGlobalSettingsDocRef(), { convenienceDeliveryFee: fee }, { merge: true });
+                applyConvenienceDeliveryFeeToGlobalSettings(fee);
+                if (feeEl) feeEl.value = String(fee);
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
-                await window.customAlert(`✅ 편의점 배달비가 ${fee.toFixed(1)}B로 저장되었습니다.`);
+                if (!silent) await window.customAlert(`✅ 편의점 배달비가 ${fee.toFixed(1)}B로 저장되었습니다.`);
+                return true;
             } catch (e) {
                 console.error('saveConvenienceDeliveryFeeAdmin', e);
-                await window.customAlert('배달비 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                if (!silent) await window.customAlert('배달비 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
             }
         };
 
@@ -4792,7 +4867,11 @@ function redrawPlazaGrantsUi() {
                         if(unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), snap => {
                             if (snap.exists()) {
-                                window.globalSettings = { ...window.globalSettings, ...(snap.data() || {}) };
+                                const settingsData = snap.data() || {};
+                                window.globalSettings = { ...window.globalSettings, ...settingsData };
+                                if (settingsData.convenienceDeliveryFee != null) {
+                                    applyConvenienceDeliveryFeeToGlobalSettings(settingsData.convenienceDeliveryFee);
+                                }
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
                                 

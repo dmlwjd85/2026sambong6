@@ -1066,7 +1066,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], convenienceDeliveryFee: 0, deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** 편의점 주문 목록 스냅샷: 최신순 배열 */
@@ -1151,25 +1151,46 @@ function redrawPlazaGrantsUi() {
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
         }
 
+        /** 마스터가 Firestore에 저장하기 전까지 적용되는 기본 배달비 */
+        const DEFAULT_CONVENIENCE_DELIVERY_FEE = 1;
+
         /** Firestore settings.global에 저장된 배달비를 0 이상 소수 1자리로 정규화 */
         function normalizeConvenienceDeliveryFee(raw) {
             const fee = raw != null ? Number(raw) : 0;
             return normalizeBongValue(Math.max(0, Number.isFinite(fee) ? fee : 0));
         }
 
-        /** 편의점 배달 선택 시 추가되는 배달비 (로컬 globalSettings 기준) */
-        function getConvenienceDeliveryFee() {
-            return normalizeConvenienceDeliveryFee(
-                window.globalSettings && window.globalSettings.convenienceDeliveryFee
-            );
+        function hasConfiguredConvenienceDeliveryFee(source) {
+            return !!(source && Object.prototype.hasOwnProperty.call(source, 'convenienceDeliveryFee'));
         }
 
-        /** globalSettings에 배달비를 반영하고 정규화된 값을 반환 */
-        function applyConvenienceDeliveryFeeToGlobalSettings(fee) {
-            const normalized = normalizeConvenienceDeliveryFee(fee);
+        /** Firestore/로컬 settings 객체에서 실제 적용할 배달비를 계산 (미설정 시 기본 1B) */
+        function readConvenienceDeliveryFeeFromSettingsData(settingsData) {
+            if (!hasConfiguredConvenienceDeliveryFee(settingsData)) {
+                return DEFAULT_CONVENIENCE_DELIVERY_FEE;
+            }
+            return normalizeConvenienceDeliveryFee(settingsData.convenienceDeliveryFee);
+        }
+
+        /** 편의점 배달 선택 시 추가되는 배달비 */
+        function getConvenienceDeliveryFee() {
+            return readConvenienceDeliveryFeeFromSettingsData(window.globalSettings || {});
+        }
+
+        /** globalSettings에 서버 배달비 상태를 반영하고 실제 적용값을 반환 */
+        function applyConvenienceDeliveryFeeFromSettingsData(settingsData) {
             if (!window.globalSettings) window.globalSettings = {};
-            window.globalSettings.convenienceDeliveryFee = normalized;
-            return normalized;
+            if (hasConfiguredConvenienceDeliveryFee(settingsData)) {
+                window.globalSettings.convenienceDeliveryFee = normalizeConvenienceDeliveryFee(settingsData.convenienceDeliveryFee);
+            } else {
+                delete window.globalSettings.convenienceDeliveryFee;
+            }
+            return readConvenienceDeliveryFeeFromSettingsData(settingsData || {});
+        }
+
+        function formatConvenienceDeliveryFeeLabel(fee) {
+            const normalized = normalizeConvenienceDeliveryFee(fee);
+            return normalized > 0 ? `+${normalized.toFixed(1)}B` : '무료';
         }
 
         /** 주문·결제 직전 Firestore 서버 기준 최신 배달비를 읽어 반영 */
@@ -1178,13 +1199,13 @@ function redrawPlazaGrantsUi() {
             try {
                 const snap = await getDocFromServer(getGlobalSettingsDocRef());
                 if (snap.exists()) {
-                    return applyConvenienceDeliveryFeeToGlobalSettings(snap.data().convenienceDeliveryFee);
+                    return applyConvenienceDeliveryFeeFromSettingsData(snap.data() || {});
                 }
             } catch (e) {
                 try {
                     const snap = await getDoc(getGlobalSettingsDocRef());
                     if (snap.exists()) {
-                        return applyConvenienceDeliveryFeeToGlobalSettings(snap.data().convenienceDeliveryFee);
+                        return applyConvenienceDeliveryFeeFromSettingsData(snap.data() || {});
                     }
                 } catch (e2) {
                     console.warn('refreshConvenienceDeliveryFeeFromServer', e2);
@@ -3953,7 +3974,7 @@ function redrawPlazaGrantsUi() {
                 ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} ${Number(p.payoutB || 0).toFixed(1)}B`).join(', ')}`
                 : '';
             return delivery
-                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee.toFixed(1)}B 포함${payoutText}</div>`
+                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `${fee.toFixed(1)}B 포함` : '무료'}${payoutText}</div>`
                 : '<div class="mt-1 text-[9px] text-slate-600">직접 수령</div>';
         }
 
@@ -3965,7 +3986,7 @@ function redrawPlazaGrantsUi() {
                 <div class="bg-slate-900 p-6 rounded-3xl border border-orange-500/50 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-orange-100">수령 방법 선택</h3>
                     <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">[${escapeConvenienceHtml(itemName)}]\n어떻게 받을까요?</p>
-                    <p class="text-[10px] text-slate-500">배달 선택 시 배달비 ${Number(deliveryFee || 0).toFixed(1)}B가 추가됩니다.</p>
+                    <p class="text-[10px] text-slate-500">배달 선택 시 배달비 ${formatConvenienceDeliveryFeeLabel(deliveryFee)}가 추가됩니다.</p>
                     <div class="flex gap-3">
                         <button id="deliveryNo" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-xl text-xs">직접 수령</button>
                         <button id="deliveryYes" class="flex-1 bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 rounded-xl text-xs">배달</button>
@@ -4044,7 +4065,10 @@ function redrawPlazaGrantsUi() {
             const listEl = document.getElementById('gmConvenienceItemList');
             const feeEl = document.getElementById('gmConvenienceDeliveryFee');
             if (feeEl && document.activeElement !== feeEl) {
-                const savedFee = getConvenienceDeliveryFee();
+                const configured = hasConfiguredConvenienceDeliveryFee(window.globalSettings || {});
+                const savedFee = configured
+                    ? normalizeConvenienceDeliveryFee(window.globalSettings.convenienceDeliveryFee)
+                    : DEFAULT_CONVENIENCE_DELIVERY_FEE;
                 const inputFee = normalizeConvenienceDeliveryFee(feeEl.value);
                 // 마스터가 입력 중인 미저장 값은 스냅샷 갱신으로 덮어쓰지 않음
                 if (feeEl.value.trim() === '' || inputFee === savedFee) {
@@ -4302,7 +4326,7 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm(
                 `삼봉 편의점 장바구니를 주문할까요?\n${itemLines}\n` +
                 `- 물품 합계: ${itemTotal.toFixed(1)}B\n` +
-                `- 수령 방법: ${deliveryRequested ? `배달(+${deliveryFee.toFixed(1)}B)` : '직접 수령'}\n` +
+                `- 수령 방법: ${deliveryRequested ? `배달 (${formatConvenienceDeliveryFeeLabel(deliveryFee)})` : '직접 수령'}\n` +
                 `- 총 결제: ${price.toFixed(1)}B\n` +
                 `${requestNote ? `- 요청사항: ${requestNote}\n` : ''}` +
                 (deliveryPayouts.length ? `- 배달비 지급: ${deliveryPayouts.map((p) => `${p.name} ${p.payoutB.toFixed(1)}B`).join(', ')}\n` : '') +
@@ -4337,8 +4361,8 @@ function redrawPlazaGrantsUi() {
             try {
                 await runTransaction(db, async (transaction) => {
                     const settingsSnap = await transaction.get(getGlobalSettingsDocRef());
-                    const serverDeliveryFee = normalizeConvenienceDeliveryFee(
-                        settingsSnap.exists() ? settingsSnap.data().convenienceDeliveryFee : deliveryFee
+                    const serverDeliveryFee = readConvenienceDeliveryFeeFromSettingsData(
+                        settingsSnap.exists() ? (settingsSnap.data() || {}) : { convenienceDeliveryFee: deliveryFee }
                     );
                     chargedDeliveryFee = deliveryRequested ? serverDeliveryFee : 0;
                     chargedDeliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(chargedDeliveryFee) : [];
@@ -4482,7 +4506,9 @@ function redrawPlazaGrantsUi() {
                 return false;
             }
             const feeEl = document.getElementById('gmConvenienceDeliveryFee');
-            const fee = normalizeConvenienceDeliveryFee(feeEl ? feeEl.value : 0);
+            const raw = feeEl ? String(feeEl.value || '').trim() : '';
+            if (silent && !raw) return false;
+            const fee = normalizeConvenienceDeliveryFee(raw !== '' ? raw : DEFAULT_CONVENIENCE_DELIVERY_FEE);
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
@@ -4490,7 +4516,7 @@ function redrawPlazaGrantsUi() {
                     return false;
                 }
                 await setDoc(getGlobalSettingsDocRef(), { convenienceDeliveryFee: fee }, { merge: true });
-                applyConvenienceDeliveryFeeToGlobalSettings(fee);
+                applyConvenienceDeliveryFeeFromSettingsData({ convenienceDeliveryFee: fee });
                 if (feeEl) feeEl.value = String(fee);
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
@@ -4869,9 +4895,7 @@ function redrawPlazaGrantsUi() {
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
-                                if (settingsData.convenienceDeliveryFee != null) {
-                                    applyConvenienceDeliveryFeeToGlobalSettings(settingsData.convenienceDeliveryFee);
-                                }
+                                applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
                                 

@@ -2002,29 +2002,39 @@ function redrawPlazaGrantsUi() {
             title: '대한민국 vs 멕시코',
         };
 
-        /** 분석 확률 기반 배당 (승무패: 한국 24% · 무 26% · 멕시코 50%) */
+        /** 분석 확률 (표시용) · 배당은 북메이커 마진 적용 */
+        const WORLD_CUP_HOUSE_MARGIN = 0.15;
+
+        /** 확률 기반 배당에 마진을 더해, 단일·전체 베팅 모두 기대값이 손해가 되게 조정 */
+        function computeWorldCupOdds(prob) {
+            const adjusted = Math.min(0.95, Number(prob) * (1 + WORLD_CUP_HOUSE_MARGIN));
+            return Math.max(1.05, Math.round((1 / adjusted) * 100) / 100);
+        }
+
         const WORLD_CUP_ODDS = {
             wdl: {
-                korea: { label: '대한민국 승', prob: 0.24, odds: 4.2 },
-                draw: { label: '무승부', prob: 0.26, odds: 3.8 },
-                mexico: { label: '멕시코 승', prob: 0.50, odds: 2.0 },
+                korea: { label: '대한민국 승', prob: 0.24, odds: computeWorldCupOdds(0.24) },
+                draw: { label: '무승부', prob: 0.26, odds: computeWorldCupOdds(0.26) },
+                mexico: { label: '멕시코 승', prob: 0.50, odds: computeWorldCupOdds(0.50) },
             },
             total25: {
-                over: { label: '2.5골 이상', prob: 0.58, odds: 1.75 },
-                under: { label: '2.5골 미만', prob: 0.42, odds: 2.1 },
+                over: { label: '2.5골 이상', prob: 0.58, odds: computeWorldCupOdds(0.58) },
+                under: { label: '2.5골 미만', prob: 0.42, odds: computeWorldCupOdds(0.42) },
             },
             firstGoal: {
-                korea: { label: '대한민국 선제골', prob: 0.22, odds: 4.5 },
-                none: { label: '무득점(0-0)', prob: 0.28, odds: 3.6 },
-                mexico: { label: '멕시코 선제골', prob: 0.50, odds: 2.0 },
+                korea: { label: '대한민국 선제골', prob: 0.22, odds: computeWorldCupOdds(0.22) },
+                none: { label: '무득점(0-0)', prob: 0.28, odds: computeWorldCupOdds(0.28) },
+                mexico: { label: '멕시코 선제골', prob: 0.50, odds: computeWorldCupOdds(0.50) },
             },
         };
 
         const WORLD_CUP_MARKET_LABELS = {
             wdl: '승무패',
-            total25: '득점 2.5',
+            total25: '언오버',
             firstGoal: '선제골',
         };
+
+        const WORLD_CUP_MARKET_ORDER = ['wdl', 'total25', 'firstGoal'];
 
         /** 1회 베팅 최대 금액 */
         const WORLD_CUP_MAX_STAKE = 300;
@@ -2042,7 +2052,37 @@ function redrawPlazaGrantsUi() {
                 return `<span class="text-emerald-300">적중 +${Number(bet.payout || 0).toFixed(1)}B</span>`;
             }
             if (bet.status === 'lost') return '<span class="text-slate-500">미적중</span>';
+            if (bet.status === 'cancelled') return '<span class="text-slate-400">취소·환불</span>';
             return '<span class="text-amber-300">대기</span>';
+        }
+
+        /** 승무패 · 언오버 · 선제골 항목별로 베팅 내역 HTML 생성 */
+        function buildWorldCupBetHistoryGroupedHtml(bets, { showStudent = false, emptyText = '베팅 내역이 없습니다.' } = {}) {
+            const list = Array.isArray(bets) ? bets : [];
+            if (!list.length) {
+                return `<div class="text-[9px] text-slate-600 py-2 text-center border border-dashed border-slate-700 rounded-lg">${emptyText}</div>`;
+            }
+            const grouped = { wdl: [], total25: [], firstGoal: [] };
+            list.forEach((bet) => {
+                if (bet && grouped[bet.market]) grouped[bet.market].push(bet);
+            });
+            WORLD_CUP_MARKET_ORDER.forEach((market) => {
+                grouped[market].sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+            });
+            const sections = WORLD_CUP_MARKET_ORDER.map((market) => {
+                const rows = grouped[market];
+                if (!rows.length) return '';
+                const summary = getWorldCupBetHistorySummary(rows);
+                const rowHtml = rows.map((b) => buildWorldCupBetRowHtml(b, { showStudent })).join('');
+                return `<div class="rounded-lg border border-slate-700/80 bg-slate-950/40 p-2 mb-2">
+                    <div class="text-[10px] font-bold text-red-200 mb-1.5 flex flex-wrap items-center justify-between gap-1">
+                        <span>${WORLD_CUP_MARKET_LABELS[market]}</span>
+                        <span class="text-[9px] text-slate-500 font-normal">${rows.length}건 · 대기 ${summary.pending} · ${summary.totalStake.toFixed(1)}B</span>
+                    </div>
+                    <div class="space-y-1">${rowHtml}</div>
+                </div>`;
+            }).filter(Boolean);
+            return sections.join('') || `<div class="text-[9px] text-slate-600 py-2 text-center border border-dashed border-slate-700 rounded-lg">${emptyText}</div>`;
         }
 
         function buildWorldCupBetRowHtml(bet, { showStudent = false } = {}) {
@@ -2161,10 +2201,10 @@ function redrawPlazaGrantsUi() {
                 : (state.bettingOpen ? '베팅 접수 중' : '베팅 마감');
             const statusClass = state.settled ? 'text-emerald-300' : (state.bettingOpen ? 'text-red-300' : 'text-amber-300');
             const myBets = getMyWorldCupBets().slice().reverse();
-            const myBetRows = myBets.map((b) => buildWorldCupBetRowHtml(b)).join('');
+            const myBetRows = buildWorldCupBetHistoryGroupedHtml(myBets, { emptyText: '아직 베팅한 내역이 없습니다.' });
             const classBets = getAllClassWorldCupBets();
             const classSummary = getWorldCupBetHistorySummary(classBets);
-            const classBetPreview = classBets.slice(0, 15).map((b) => buildWorldCupBetRowHtml(b, { showStudent: true })).join('');
+            const classBetPreview = buildWorldCupBetHistoryGroupedHtml(classBets.slice(0, 30), { showStudent: true, emptyText: '아직 학급 베팅 내역이 없습니다.' });
             const classHistoryHtml = `
                 <div class="mt-3 pt-2 border-t border-slate-700/70">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
@@ -2174,15 +2214,15 @@ function redrawPlazaGrantsUi() {
                         </div>
                         <button type="button" onclick="window.openWorldCupBetHistoryPanel()" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold py-1.5 px-3 rounded-lg text-[9px]">전체 보기</button>
                     </div>
-                    <div class="max-h-44 overflow-y-auto scrollbar-hide space-y-1 pr-1">
-                        ${classBetPreview || '<div class="text-[9px] text-slate-600 py-2 text-center border border-dashed border-slate-700 rounded-lg">아직 학급 베팅 내역이 없습니다.</div>'}
+                    <div class="max-h-52 overflow-y-auto scrollbar-hide pr-1">
+                        ${classBetPreview}
                     </div>
                 </div>`;
             const resultHtml = state.settled && state.result
                 ? `<div class="mt-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-2 py-1.5 text-[10px] text-emerald-100">
                     <div class="font-bold mb-1">경기 결과</div>
                     <div>승무패: ${getWorldCupPickLabel('wdl', state.result.wdl)}</div>
-                    <div>득점 2.5: ${getWorldCupPickLabel('total25', state.result.total25)}</div>
+                    <div>언오버: ${getWorldCupPickLabel('total25', state.result.total25)}</div>
                     <div>선제골: ${getWorldCupPickLabel('firstGoal', state.result.firstGoal)}</div>
                 </div>`
                 : '';
@@ -2197,7 +2237,7 @@ function redrawPlazaGrantsUi() {
                                 <option value="mexico">멕시코 승</option>
                             </select>
                         </label>
-                        <label class="text-[9px] text-slate-400">득점 2.5
+                        <label class="text-[9px] text-slate-400">언오버
                             <select id="wcAdminTotal25" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
                                 <option value="over">2.5골 이상</option>
                                 <option value="under">2.5골 미만</option>
@@ -2211,17 +2251,18 @@ function redrawPlazaGrantsUi() {
                             </select>
                         </label>
                     </div>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(false)" class="flex-1 bg-amber-800 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 마감</button>
-                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(true)" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 재개</button>
-                        <button type="button" onclick="window.settleWorldCupBetAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">결과 확정·배당 지급</button>
+                    <div class="flex flex-col sm:flex-row gap-2 flex-wrap">
+                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(false)" class="flex-1 min-w-[7rem] bg-amber-800 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 마감</button>
+                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(true)" class="flex-1 min-w-[7rem] bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 재개</button>
+                        <button type="button" onclick="window.cancelAllWorldCupBetsAdmin()" class="flex-1 min-w-[7rem] bg-rose-900 hover:bg-rose-800 text-white font-bold py-2 px-3 rounded-xl text-[10px]">전체 취소·환불</button>
+                        <button type="button" onclick="window.settleWorldCupBetAdmin()" class="flex-1 min-w-[7rem] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">결과 확정·배당 지급</button>
                     </div>
                 </div>` : '';
             el.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
                         <h4 class="text-red-300 font-black text-xs"><i class="fa-solid fa-futbol"></i> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 3가지 항목에 베팅합니다. 1회 최대 ${WORLD_CUP_MAX_STAKE}B · 적중 시 <span class="text-sb-gold">베팅금 × 배당</span> 지급</p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 승무패·언오버·선제골 각 1건만 베팅 (최대 ${WORLD_CUP_MAX_STAKE}B). 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
                     </div>
                     <div class="text-right text-[10px] shrink-0 ${statusClass} font-bold">${statusText}</div>
                 </div>
@@ -2230,31 +2271,31 @@ function redrawPlazaGrantsUi() {
                     <div>
                         <div class="text-[10px] text-red-200 font-bold mb-1">1. 승무패 <span class="text-slate-500 font-normal">(한국 24% · 무 26% · 멕시코 50%)</span></div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                            ${buildWorldCupBetButton('wdl', 'korea', !canBet)}
-                            ${buildWorldCupBetButton('wdl', 'draw', !canBet)}
-                            ${buildWorldCupBetButton('wdl', 'mexico', !canBet)}
+                            ${buildWorldCupBetButton('wdl', 'korea', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
+                            ${buildWorldCupBetButton('wdl', 'draw', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
+                            ${buildWorldCupBetButton('wdl', 'mexico', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
                         </div>
                     </div>
                     <div>
-                        <div class="text-[10px] text-red-200 font-bold mb-1">2. 득점 2.5 <span class="text-slate-500 font-normal">(총 골 2.5개 기준)</span></div>
+                        <div class="text-[10px] text-red-200 font-bold mb-1">2. 언오버 <span class="text-slate-500 font-normal">(총 골 2.5개 기준)</span></div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                            ${buildWorldCupBetButton('total25', 'over', !canBet)}
-                            ${buildWorldCupBetButton('total25', 'under', !canBet)}
+                            ${buildWorldCupBetButton('total25', 'over', !canBet || hasPendingWorldCupBetOnMarket('total25'))}
+                            ${buildWorldCupBetButton('total25', 'under', !canBet || hasPendingWorldCupBetOnMarket('total25'))}
                         </div>
                     </div>
                     <div>
                         <div class="text-[10px] text-red-200 font-bold mb-1">3. 선제골 <span class="text-slate-500 font-normal">(첫 골 팀 / 0-0)</span></div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                            ${buildWorldCupBetButton('firstGoal', 'korea', !canBet)}
-                            ${buildWorldCupBetButton('firstGoal', 'none', !canBet)}
-                            ${buildWorldCupBetButton('firstGoal', 'mexico', !canBet)}
+                            ${buildWorldCupBetButton('firstGoal', 'korea', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
+                            ${buildWorldCupBetButton('firstGoal', 'none', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
+                            ${buildWorldCupBetButton('firstGoal', 'mexico', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
                         </div>
                     </div>
                 </div>
                 ${adminHtml}
                 <div class="mt-3 pt-2 border-t border-slate-700/70">
                     <div class="text-[10px] text-slate-500 font-bold mb-1">내 베팅 내역</div>
-                    <div class="max-h-36 overflow-y-auto scrollbar-hide space-y-1 pr-1">${myBetRows || '<div class="text-[9px] text-slate-600">아직 베팅한 내역이 없습니다.</div>'}</div>
+                    <div class="max-h-44 overflow-y-auto scrollbar-hide pr-1">${myBetRows}</div>
                 </div>
                 ${classHistoryHtml}`;
             el.classList.remove('hidden');
@@ -2287,10 +2328,7 @@ function redrawPlazaGrantsUi() {
                 <div class="text-[10px] text-slate-400 mb-3 rounded-lg bg-slate-950/70 border border-slate-700 px-2 py-1.5">
                     ${WORLD_CUP_MATCH.title} · 총 ${summary.count}건 · 대기 ${summary.pending} · 적중 ${summary.won} · 베팅 합계 ${summary.totalStake.toFixed(1)}B
                 </div>
-                <div class="space-y-1">
-                    ${classBets.map((b) => buildWorldCupBetRowHtml(b, { showStudent: true })).join('')
-                        || '<div class="text-[10px] text-slate-600 text-center py-8 border border-dashed border-slate-700 rounded-xl">베팅 내역이 없습니다.</div>'}
-                </div>`;
+                ${buildWorldCupBetHistoryGroupedHtml(classBets, { showStudent: true })}`;
         }
 
         window.openWorldCupBetHistoryPanel = function() {
@@ -2315,6 +2353,14 @@ function redrawPlazaGrantsUi() {
             const wcState = getWorldCupBetState();
             if (!wcState.bettingOpen || wcState.settled) {
                 return await window.customAlert('지금은 승부예측 베팅 접수 시간이 아닙니다.');
+            }
+            const hasPendingOnMarket = getMyWorldCupBets().some((b) => b && b.market === market && b.status === 'pending');
+            if (hasPendingOnMarket) {
+                return await window.customAlert(
+                    `이미 [${WORLD_CUP_MARKET_LABELS[market]}] 항목에 베팅한 내역이 있습니다.\n\n` +
+                    '같은 항목에 두 군데 이상 걸어 손실을 막는 보험베팅은 할 수 없어요.\n' +
+                    '(실제 도박 사이트도 이런 식으로 수익을 보장할 수 없습니다.)'
+                );
             }
             const balance = normalizeBongValue(Number(window.playerState.bong) || 0);
             const maxStake = Math.min(WORLD_CUP_MAX_STAKE, balance);
@@ -2359,6 +2405,8 @@ function redrawPlazaGrantsUi() {
                     if (!window.playerState.isAdmin && serverBong + 0.0001 < stake) throw new Error('insufficient');
                     nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - stake);
                     const bets = Array.isArray(serverData.worldCupBets) ? serverData.worldCupBets.slice() : [];
+                    const hasDuplicate = bets.some((b) => b && String(b.matchId) === WORLD_CUP_MATCH.id && b.market === market && b.status === 'pending');
+                    if (hasDuplicate) throw new Error('duplicate_market');
                     bets.push({
                         id: betId,
                         matchId: WORLD_CUP_MATCH.id,
@@ -2404,6 +2452,11 @@ function redrawPlazaGrantsUi() {
                 if (e && e.message === 'closed') {
                     return await window.customAlert('베팅 접수가 마감되었습니다.');
                 }
+                if (e && e.message === 'duplicate_market') {
+                    return await window.customAlert(
+                        `이미 [${WORLD_CUP_MARKET_LABELS[market]}] 항목에 베팅한 내역이 있습니다.\n같은 항목 보험베팅은 할 수 없어요.`
+                    );
+                }
                 console.error('placeWorldCupBet', e);
                 await window.customAlert('베팅 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -2443,7 +2496,7 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm(
                 `승부예측 결과를 확정하고 배당을 지급할까요?\n\n` +
                 `- 승무패: ${getWorldCupPickLabel('wdl', wdl)}\n` +
-                `- 득점 2.5: ${getWorldCupPickLabel('total25', total25)}\n` +
+                `- 언오버: ${getWorldCupPickLabel('total25', total25)}\n` +
                 `- 선제골: ${getWorldCupPickLabel('firstGoal', firstGoal)}\n\n` +
                 '적중한 베팅에 배당금이 자동 지급됩니다.'
             );
@@ -2504,6 +2557,116 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        /** 해당 항목에 대기 중인 내 베팅이 있는지 */
+        function hasPendingWorldCupBetOnMarket(market) {
+            return getMyWorldCupBets().some((b) => b && b.market === market && b.status === 'pending');
+        }
+
+        /** 학급 전체 대기 베팅 취소 및 베팅금 환불 */
+        async function cancelPendingWorldCupBetsForAllStudents() {
+            if (!db) return { cancelled: 0, refunded: 0, students: 0 };
+            const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+            let snap;
+            try {
+                snap = await getDocsFromServer(studentsRef);
+            } catch (e) {
+                snap = await getDocs(studentsRef);
+            }
+            const batch = writeBatch(db);
+            let cancelled = 0;
+            let refunded = 0;
+            let students = 0;
+            const mySid = String(localStorage.getItem('sambong_student_id') || '');
+            const cancelledAt = Date.now();
+            snap.forEach((studentDoc) => {
+                if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
+                const data = studentDoc.data() || {};
+                const bets = Array.isArray(data.worldCupBets) ? data.worldCupBets.slice() : [];
+                let refundSum = 0;
+                let changed = false;
+                const nextBets = bets.map((bet) => {
+                    if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
+                    changed = true;
+                    cancelled += 1;
+                    const stake = normalizeBongValue(Number(bet.stake) || 0);
+                    refundSum = normalizeBongValue(refundSum + stake);
+                    return { ...bet, status: 'cancelled', payout: 0, cancelledAt, refund: stake };
+                });
+                if (!changed) return;
+                students += 1;
+                refunded = normalizeBongValue(refunded + refundSum);
+                const payload = { worldCupBets: nextBets.slice(-40) };
+                if (refundSum > 0) payload.bong = increment(refundSum);
+                batch.set(studentDoc.ref, payload, { merge: true });
+                const sid = studentDoc.id.replace(/^student_/, '');
+                if (sid === mySid && window.playerState) {
+                    window.playerState.worldCupBets = nextBets.slice(-40);
+                    if (refundSum > 0) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundSum);
+                    }
+                }
+            });
+            if (cancelled > 0) await batch.commit();
+            return { cancelled, refunded, students };
+        }
+
+        /** 배포 직후 1회 — 배당 조정 전 대기 베팅 전량 취소·환불 */
+        async function applyWorldCupBetCancelMigration() {
+            if (!db) return;
+            const markerId = 'worldcup_bet_cancel_odds_v2_20260618';
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                const result = await cancelPendingWorldCupBetsForAllStudents();
+                await setDoc(markerRef, {
+                    done: true,
+                    cancelled: result.cancelled,
+                    refunded: result.refunded,
+                    students: result.students,
+                    note: '배당 조정 전 대기 베팅 전량 취소·환불',
+                    sanitizedAt: new Date().toISOString(),
+                }, { merge: true });
+                if (result.cancelled > 0) {
+                    await refreshStudentsCacheFromServer();
+                    if (window.playerState && !window.playerState.isGuest) {
+                        updateUI();
+                        renderWorldCupBetPanel();
+                    }
+                }
+            } catch (e) {
+                console.warn('applyWorldCupBetCancelMigration', e);
+            }
+        }
+
+        window.cancelAllWorldCupBetsAdmin = async function() {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 실행할 수 있습니다.');
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const wc = getWorldCupBetState();
+            if (wc.settled) return await window.customAlert('이미 정산된 경기입니다.');
+            const ok = await window.customConfirm(
+                '대기 중인 승부예측 베팅을 전부 취소하고 베팅금을 환불할까요?\n\n' +
+                '취소된 내역은 기록에 남지만, 결과 정산 대상에서는 제외됩니다.'
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다.');
+                const result = await cancelPendingWorldCupBetsForAllStudents();
+                await refreshStudentsCacheFromServer();
+                updateUI();
+                renderWorldCupBetPanel();
+                await window.customAlert(
+                    result.cancelled > 0
+                        ? `✅ ${result.cancelled}건 취소 · ${result.students}명에게 ${result.refunded.toFixed(1)}B 환불했습니다.`
+                        : '취소할 대기 베팅이 없습니다.'
+                );
+            } catch (e) {
+                console.error('cancelAllWorldCupBetsAdmin', e);
+                await window.customAlert('취소 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -5345,6 +5508,7 @@ function redrawPlazaGrantsUi() {
                 await loadClassMeta();
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
+                void applyWorldCupBetCancelMigration();
 
                 onAuthStateChanged(auth, user => {
                     if (user) {

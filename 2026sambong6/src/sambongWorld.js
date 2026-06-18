@@ -1214,27 +1214,47 @@ function redrawPlazaGrantsUi() {
             return getConvenienceDeliveryFee();
         }
 
+        /** 학생 jobs 배열 항목에서 직업 이름 추출 (문자열/객체 모두 지원) */
+        function getStudentJobName(job) {
+            if (!job) return '';
+            if (typeof job === 'string') return job.trim();
+            if (typeof job === 'object' && job.name != null) return String(job.name).trim();
+            return String(job).trim();
+        }
+
+        /** 편의점 매니저 뱃지(직업)를 표시 중인지 확인 */
+        function hasConvenienceManagerJob(jobs) {
+            const list = Array.isArray(jobs) ? jobs : [];
+            return list.some((job) => getStudentJobName(job) === '편의점 매니저');
+        }
+
         /** 마스터 또는 직업에 '편의점 매니저'가 있는 학생은 주문을 확인·처리할 수 있음 */
         function isConvenienceManager() {
             if (!window.playerState || window.playerState.isGuest) return false;
             if (window.playerState.isAdmin) return true;
-            const jobs = Array.isArray(window.playerState.jobs) ? window.playerState.jobs : [];
-            return jobs.some((job) => String(job).includes('편의점 매니저'));
+            return hasConvenienceManagerJob(window.playerState.jobs);
         }
 
-        /** 배달비 자동 지급 대상: 실제 학생 중 '편의점 매니저' 직업을 가진 사람 */
+        /** 배달비 수령 대상: 편의점 매니저 뱃지를 단 1명만 (학번 오름차순 우선) */
         function getConvenienceManagerStudents() {
             const rows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-            const map = new Map();
-            rows.forEach((stu) => {
-                const sid = String(stu && stu.id || '');
-                if (!sid || sid === 'gm' || sid === 'gm_a') return;
-                const jobs = Array.isArray(stu.jobs) ? stu.jobs : [];
-                if (jobs.some((job) => String(job).includes('편의점 매니저'))) {
-                    map.set(sid, { id: sid, name: STUDENT_NAMES[sid] || stu.name || sid });
-                }
-            });
-            return Array.from(map.values());
+            return rows
+                .filter((stu) => {
+                    const sid = String(stu && stu.id || '');
+                    if (!sid || sid === 'gm' || sid === 'gm_a') return false;
+                    return hasConvenienceManagerJob(stu.jobs);
+                })
+                .map((stu) => ({
+                    id: String(stu.id),
+                    name: STUDENT_NAMES[String(stu.id)] || stu.name || String(stu.id),
+                }))
+                .sort((a, b) => Number(a.id) - Number(b.id));
+        }
+
+        /** 배달비는 뱃지를 단 1명에게 전액 지급 */
+        function getConvenienceDeliveryPayee() {
+            const managers = getConvenienceManagerStudents();
+            return managers.length ? managers[0] : null;
         }
 
         function getDeletedQuestIds() {
@@ -4039,7 +4059,7 @@ function redrawPlazaGrantsUi() {
                             <button type="button" onclick="window.clearConvenienceCart()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-3 rounded-xl text-[10px]">비우기</button>
                         </div>
                     </div>
-                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${deliveryFee.toFixed(1)}B가 추가되고, 편의점 매니저에게 자동 지급됩니다.</p>
+                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${deliveryFee.toFixed(1)}B가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
                 </div>`;
             container.innerHTML = items.map((item) => `
                 <div class="bg-slate-800/80 p-3 rounded-xl border border-orange-500/30 flex flex-col gap-2">
@@ -4280,17 +4300,10 @@ function redrawPlazaGrantsUi() {
         };
 
         function buildConvenienceDeliveryPayouts(deliveryFee) {
-            const managers = getConvenienceManagerStudents();
+            const payee = getConvenienceDeliveryPayee();
             const fee = normalizeBongValue(Number(deliveryFee) || 0);
-            if (fee <= 0 || managers.length === 0) return [];
-            let allocated = 0;
-            return managers.map((manager, idx) => {
-                const payoutB = idx === managers.length - 1
-                    ? normalizeBongValue(fee - allocated)
-                    : normalizeBongValue(fee / managers.length);
-                allocated = normalizeBongValue(allocated + payoutB);
-                return { studentId: manager.id, name: manager.name, payoutB };
-            }).filter((p) => p.payoutB > 0);
+            if (fee <= 0 || !payee) return [];
+            return [{ studentId: payee.id, name: payee.name, payoutB: fee }];
         }
 
         /** 이전 단일 주문 버튼 호환: 누르면 장바구니에 1개 담음 */
@@ -4310,7 +4323,7 @@ function redrawPlazaGrantsUi() {
             const deliveryRequested = deliveryChoice === true;
             const deliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
             if (deliveryRequested && deliveryFee > 0 && deliveryPayouts.length === 0) {
-                return await window.customAlert('현재 편의점 매니저 직업을 가진 학생이 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
+                return await window.customAlert('현재 편의점 매니저 뱃지를 단 1명도 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
             }
             const price = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
             if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < price) {
@@ -4338,7 +4351,7 @@ function redrawPlazaGrantsUi() {
             deliveryFee = await refreshConvenienceDeliveryFeeFromServer();
             const finalDeliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
             if (deliveryRequested && deliveryFee > 0 && finalDeliveryPayouts.length === 0) {
-                return await window.customAlert('현재 편의점 매니저 직업을 가진 학생이 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
+                return await window.customAlert('현재 편의점 매니저 뱃지를 단 1명도 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
             }
             const finalPrice = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
 

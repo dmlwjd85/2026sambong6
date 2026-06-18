@@ -2,21 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-        body { color: #fdf4ff; overflow-x: hidden; transition: background 0.5s ease-in-out; }
+        body { color: #ecfeff; overflow-x: hidden; transition: background 0.5s ease-in-out; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
-        /* ★ 4월 봄·벚꽃 테마 (탭별 배경) ★ */
-        .bg-theme-dashboard { background-color: #1a0a14; background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(251, 207, 232, 0.35) 0%, rgba(15, 23, 42, 0.9) 45%, #0f172a 100%); }
-        .bg-theme-constitution { background-color: #1c1206; background-image: radial-gradient(circle at 50% -10%, rgba(251, 191, 36, 0.24) 0%, rgba(67, 20, 7, 0.86) 46%, #0f172a 100%); }
-        .bg-theme-plaza { background-color: #1e1030; background-image: radial-gradient(circle at 80% 10%, rgba(244, 114, 182, 0.25) 0%, #1a1035 55%, #0f172a 100%); }
-        .bg-theme-quests { background-color: #0c1f1a; background-image: radial-gradient(circle at 20% 0%, rgba(167, 243, 208, 0.2) 0%, #052e26 50%, #0f172a 100%); }
-        .bg-theme-shop { background-color: #23101a; background-image: radial-gradient(circle at 70% 0%, rgba(251, 113, 133, 0.2) 0%, #3b1222 48%, #0f172a 100%); }
-        .bg-theme-jobs { background-color: #1f1408; background-image: radial-gradient(circle at 50% 0%, rgba(253, 230, 138, 0.18) 0%, #29200f 60%, #0f172a 100%); }
-        .bg-theme-lunch { background-color: #151528; background-image: radial-gradient(circle at 70% 20%, rgba(196, 181, 253, 0.22) 0%, #1e1b3a 55%, #0f172a 100%); }
-        .bg-theme-goldenbell { background-color: #2a1a08; background-image: radial-gradient(circle at 50% 0%, rgba(252, 211, 77, 0.2) 0%, #422006 55%, #0f172a 100%); }
-        .bg-theme-admin { background-color: #1f0a12; background-image: radial-gradient(circle at 30% 0%, rgba(251, 113, 133, 0.15) 0%, #3f0f18 55%, #0f172a 100%); }
-        .bg-theme-estate { background-color: #0f172a; background-image: radial-gradient(circle at 40% 10%, rgba(45, 212, 191, 0.12) 0%, #0f172a 55%, #020617 100%); }
-        .bg-theme-bank { background-color: #0c1424; background-image: radial-gradient(ellipse 100% 60% at 50% -15%, rgba(56, 189, 248, 0.2) 0%, rgba(15, 23, 42, 0.95) 50%, #020617 100%); }
+        /* ★ 6월 여름·바다 테마 (탭별 배경) ★ */
+        .bg-theme-dashboard { background-color: #0a1628; background-image: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(56, 189, 248, 0.3) 0%, rgba(14, 116, 144, 0.25) 40%, #0f172a 100%); }
+        .bg-theme-constitution { background-color: #1a1408; background-image: radial-gradient(circle at 50% -10%, rgba(251, 191, 36, 0.28) 0%, rgba(120, 53, 15, 0.72) 46%, #0f172a 100%); }
+        .bg-theme-plaza { background-color: #0c1a24; background-image: radial-gradient(circle at 80% 10%, rgba(34, 211, 238, 0.24) 0%, #0e2938 55%, #0f172a 100%); }
+        .bg-theme-quests { background-color: #0a1f14; background-image: radial-gradient(circle at 20% 0%, rgba(74, 222, 128, 0.18) 0%, #052e1a 50%, #0f172a 100%); }
+        .bg-theme-shop { background-color: #1a1010; background-image: radial-gradient(circle at 70% 0%, rgba(251, 146, 60, 0.2) 0%, #3b1f12 48%, #0f172a 100%); }
+        .bg-theme-jobs { background-color: #1a1808; background-image: radial-gradient(circle at 50% 0%, rgba(253, 224, 71, 0.22) 0%, #292510 60%, #0f172a 100%); }
+        .bg-theme-lunch { background-color: #121828; background-image: radial-gradient(circle at 70% 20%, rgba(129, 140, 248, 0.2) 0%, #1a1b3a 55%, #0f172a 100%); }
+        .bg-theme-goldenbell { background-color: #2a1a08; background-image: radial-gradient(circle at 50% 0%, rgba(252, 211, 77, 0.25) 0%, #422006 55%, #0f172a 100%); }
+        .bg-theme-admin { background-color: #0a1420; background-image: radial-gradient(circle at 30% 0%, rgba(56, 189, 248, 0.15) 0%, #0f2847 55%, #0f172a 100%); }
+        .bg-theme-estate { background-color: #0a1a18; background-image: radial-gradient(circle at 40% 10%, rgba(45, 212, 191, 0.18) 0%, #0f172a 55%, #020617 100%); }
+        .bg-theme-bank { background-color: #0c1424; background-image: radial-gradient(ellipse 100% 60% at 50% -15%, rgba(56, 189, 248, 0.28) 0%, rgba(15, 23, 42, 0.95) 50%, #020617 100%); }
         .bg-theme-classtools { background-color: #141a0f; background-image: radial-gradient(ellipse 90% 70% at 50% 0%, rgba(132, 204, 22, 0.12) 0%, rgba(30, 41, 22, 0.95) 45%, #0a0f08 100%); }
 
         /* 수업도구 — 밀리터리 UI */
@@ -589,10 +589,27 @@
         }
         body.lottery-draw-active { overflow: hidden !important; }
 
-        /* 봄 벚꽃 낙하 장식 (가벼운 시각 효과) */
-        .sakura-petals { pointer-events: none; position: fixed; inset: 0; z-index: 1; overflow: hidden; }
-        .sakura-petals span { position: absolute; top: -10%; width: 8px; height: 12px; background: linear-gradient(135deg, #fbcfe8 40%, #f9a8d4 100%); border-radius: 50% 50% 50% 0; opacity: 0.45; animation: sakura-fall linear infinite; }
-        @keyframes sakura-fall { 0% { transform: translate(0, 0) rotate(0deg); } 100% { transform: translate(20px, 110vh) rotate(360deg); } }
+        /* 여름 물방울·거품 장식 (시원한 시각 효과) */
+        .summer-bubbles { pointer-events: none; position: fixed; inset: 0; z-index: 1; overflow: hidden; }
+        .summer-bubbles span {
+            position: absolute; bottom: -8%;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.6) 0%, rgba(125, 211, 252, 0.3) 45%, rgba(56, 189, 248, 0.08) 100%);
+            border: 1px solid rgba(186, 230, 253, 0.35);
+            animation: summer-bubble-rise linear infinite;
+        }
+        @keyframes summer-bubble-rise {
+            0% { transform: translate(0, 0) scale(0.8); opacity: 0; }
+            8% { opacity: 0.5; }
+            85% { opacity: 0.35; }
+            100% { transform: translate(var(--drift, 18px), -115vh) scale(1.15); opacity: 0; }
+        }
+        /* 여름 햇살 글로우 (상단) */
+        .summer-sun-glow {
+            pointer-events: none; position: fixed; top: -20%; left: 50%; transform: translateX(-50%);
+            width: 140%; height: 45vh; z-index: 0;
+            background: radial-gradient(ellipse 50% 80% at 50% 100%, rgba(56, 189, 248, 0.12) 0%, rgba(251, 191, 36, 0.06) 35%, transparent 70%);
+        }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -650,7 +667,7 @@
         .shake-screen { animation: shake 0.3s; }
 
         /* ★ 월드맵 전용 스타일 ★ */
-        .night-sky { background: linear-gradient(180deg, #1e1b2e 0%, #2d1f3d 40%, #3b2f4a 100%); position: relative; }
+        .night-sky { background: linear-gradient(180deg, #0c4a6e 0%, #155e75 35%, #164e63 70%, #0f172a 100%); position: relative; }
 
         /* 미스테리 주사위 굴림 애니메이션 */
         @keyframes dice-spin-shake { 0%, 100% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-18deg) scale(1.08); } 50% { transform: rotate(14deg) scale(1.05); } 75% { transform: rotate(-10deg) scale(1.1); } }

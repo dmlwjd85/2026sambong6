@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>2026 삼봉 월드: 시즌 1</title>
-    <meta name="theme-color" content="#fce7f3">
+    <meta name="theme-color" content="#0ea5e9">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="삼봉월드">
@@ -12,7 +12,7 @@
     <script>
         const manifest = {
             "name": "2026 삼봉 월드 플레이어 가이드", "short_name": "삼봉월드", "start_url": window.location.pathname,
-            "display": "standalone", "background_color": "#fdf2f8", "theme_color": "#fce7f3",
+            "display": "standalone", "background_color": "#f0f9ff", "theme_color": "#0ea5e9",
             "icons": [{"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%25' y='50%25' font-size='65' dominant-baseline='central' text-anchor='middle'>👑</text></svg>", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable"}]
         };
         const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
@@ -22,29 +22,30 @@
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
-<body class="antialiased selection:bg-pink-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
-    <!-- 봄 벚꽃·꽃잎 배경 (장식) -->
-    <div class="sakura-petals" aria-hidden="true">
-        <span style="left:3%;animation-duration:16s;animation-delay:0s;"></span>
-        <span style="left:12%;animation-duration:13s;animation-delay:2s;"></span>
-        <span style="left:22%;animation-duration:15s;animation-delay:1s;"></span>
-        <span style="left:38%;animation-duration:14s;animation-delay:3s;"></span>
-        <span style="left:55%;animation-duration:17s;animation-delay:0.5s;"></span>
-        <span style="left:68%;animation-duration:12s;animation-delay:2.5s;"></span>
-        <span style="left:82%;animation-duration:15s;animation-delay:1.5s;"></span>
-        <span style="left:92%;animation-duration:18s;animation-delay:0.2s;"></span>
+<body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
+    <!-- 여름 물방울·햇살 배경 (장식) -->
+    <div class="summer-sun-glow" aria-hidden="true"></div>
+    <div class="summer-bubbles" aria-hidden="true">
+        <span style="left:5%;width:10px;height:10px;--drift:12px;animation-duration:14s;animation-delay:0s;"></span>
+        <span style="left:15%;width:14px;height:14px;--drift:-8px;animation-duration:18s;animation-delay:2s;"></span>
+        <span style="left:28%;width:8px;height:8px;--drift:20px;animation-duration:12s;animation-delay:1s;"></span>
+        <span style="left:42%;width:16px;height:16px;--drift:-15px;animation-duration:16s;animation-delay:3s;"></span>
+        <span style="left:58%;width:11px;height:11px;--drift:10px;animation-duration:15s;animation-delay:0.5s;"></span>
+        <span style="left:72%;width:9px;height:9px;--drift:-18px;animation-duration:13s;animation-delay:2.5s;"></span>
+        <span style="left:85%;width:13px;height:13px;--drift:14px;animation-duration:17s;animation-delay:1.5s;"></span>
+        <span style="left:94%;width:7px;height:7px;--drift:-6px;animation-duration:19s;animation-delay:0.2s;"></span>
     </div>
 
     <!-- ★ 로그인 화면 ★ -->
-    <div id="loginOverlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center px-4 transition-opacity duration-500 bg-gradient-to-b from-pink-950/95 via-fuchsia-950/90 to-slate-950 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDIwNSwgMjMwLCAwLjA4KSIvPjwvc3ZnPg==')]">
+    <div id="loginOverlay" class="fixed inset-0 z-[100] flex flex-col items-center justify-center px-4 transition-opacity duration-500 bg-gradient-to-b from-cyan-950/95 via-sky-950/90 to-slate-950 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgxMjUsIDIxMSwgMjUyLCAwLjA4KSIvPjwvc3ZnPg==')]">
         <div class="text-center mb-8 relative">
-            <div class="absolute inset-0 bg-pink-400/15 blur-[100px] rounded-full"></div>
-            <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-pink-200 mb-4 animate-bounce relative z-10"></i>
-            <h1 class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(251,182,206,0.6)] relative z-10">SAMBONG WORLD</h1>
-            <p class="text-sm sm:text-base text-pink-200/90 mt-2 font-bold tracking-widest relative z-10">🌸 [시즌 1 : 봄맞이 모험]</p>
+            <div class="absolute inset-0 bg-cyan-400/15 blur-[100px] rounded-full"></div>
+            <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-cyan-200 mb-4 animate-bounce relative z-10"></i>
+            <h1 class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(56,189,248,0.6)] relative z-10">SAMBONG WORLD</h1>
+            <p class="text-sm sm:text-base text-cyan-200/90 mt-2 font-bold tracking-widest relative z-10">🌊 [시즌 1 : 여름 바다 모험]</p>
         </div>
 
-        <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-pink-400/80 relative z-10">
+        <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-cyan-400/80 relative z-10">
             <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-4">삼봉월드 로그인</h2>
             <div class="space-y-4">
                 <div class="space-y-1">
@@ -73,7 +74,7 @@
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex items-center justify-between h-14">
             <div class="flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md"></i>
-                <span class="font-display text-lg text-white tracking-widest">SAMBONG <span class="text-emerald-400">S1</span></span>
+                <span class="font-display text-lg text-white tracking-widest">SAMBONG <span class="text-cyan-400">S1</span></span>
                 <span id="navClassLabel" class="hidden sm:inline text-[10px] text-emerald-300/80 font-bold truncate max-w-[8rem]" title="">우리 반</span>
             </div>
             <div class="flex items-center space-x-2">
@@ -310,7 +311,7 @@
                     <i class="fa-solid fa-hourglass-half text-sb-gold animate-pulse text-sm"></i>
                     <span class="text-xs font-bold text-slate-300">시즌 1 종료까지</span>
                 </div>
-                <div id="seasonTimerDisplay" class="font-display text-emerald-400 tracking-wider text-sm sm:text-base">계산중...</div>
+                <div id="seasonTimerDisplay" class="font-display text-cyan-400 tracking-wider text-sm sm:text-base">계산중...</div>
             </div>
 
             <!-- ★ 추가된 3D 월드맵 영역 ★ -->

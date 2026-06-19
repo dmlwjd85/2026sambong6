@@ -1643,6 +1643,247 @@ function redrawPlazaGrantsUi() {
 
         /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
         const EQUIPPED_ITEM_REFUND_RATE = 0.5;
+        const BONG_CHANGE_LOG_LIMIT = 80;
+        /** 하루 정상 획득 상한(퀘스트·랜덤박스 3회 등)을 크게 넘으면 마스터에게 경고 */
+        const BONG_ANOMALY_DAILY_GAIN_WARN = 200;
+        /** 보유 삼봉이 이 값을 넘으면 경고 (비정상 복사·누적 의심) */
+        const BONG_ANOMALY_TOTAL_HOLD_WARN = 500;
+        /** 단일 기록에서 이 이상 증가하면 경고 */
+        const BONG_ANOMALY_SINGLE_DELTA_WARN = 120;
+
+        function buildBongChangeLogEntry(reason, beforeBong, afterBong, extra = {}) {
+            const before = normalizeBongValue(Number(beforeBong) || 0);
+            const after = normalizeBongValue(Number(afterBong) || 0);
+            return {
+                at: Date.now(),
+                reason: String(reason || '봉 변경'),
+                before,
+                after,
+                delta: normalizeBongValue(after - before),
+                ...extra,
+            };
+        }
+
+        function getMaxSkinRefundBong() {
+            let max = 0;
+            SKIN_DATA.forEach((skin) => {
+                max = Math.max(max, getEquippedSkinRefundBong(skin));
+            });
+            return normalizeBongValue(max);
+        }
+
+        function getMaxWeaponRefundBong() {
+            let max = 0;
+            WEAPON_DATA.forEach((wp) => {
+                max = Math.max(max, getEquippedWeaponRefundBong(wp));
+            });
+            return normalizeBongValue(max);
+        }
+
+        /** 서버 문서 기준 스킨 환불 패치 (미보유·미장착이면 예외) */
+        function buildSkinRefundServerPatch(data, skinId) {
+            const skin = SKIN_DATA.find((s) => s.id === skinId);
+            const ownedSkins = { ...(data.ownedSkins || {}) };
+            const equippedSkins = { ...(data.equippedSkins || {}) };
+            const ownedSkinInstances = { ...(data.ownedSkinInstances || {}) };
+            if (!ownedSkins[skinId] || !equippedSkins[skinId]) throw new Error('not_equipped');
+            const instanceId = ownedSkinInstances[skinId] || `legacy_${skinId}`;
+            delete ownedSkins[skinId];
+            delete equippedSkins[skinId];
+            delete ownedSkinInstances[skinId];
+            if (skin && (skin.type === 'aura' || skin.type === 'face')) {
+                SKIN_DATA.forEach((s) => {
+                    if (s.type === skin.type) delete equippedSkins[s.id];
+                });
+            }
+            return { ownedSkins, equippedSkins, ownedSkinInstances, instanceId };
+        }
+
+        /** 서버 문서 기준 무기 환불 패치 */
+        function buildWeaponRefundServerPatch(data, wpId) {
+            const inventory = Array.isArray(data.inventory) ? data.inventory.slice() : [];
+            const idx = inventory.indexOf(wpId);
+            if (idx < 0 || String(data.equippedWeapon) !== String(wpId)) throw new Error('not_equipped');
+            inventory.splice(idx, 1);
+            return { inventory, equippedWeapon: null };
+        }
+
+        /**
+         * 장착 아이템 환불 — Firestore 트랜잭션으로 1회만 처리 (로컬 선반영·중복 클릭 방지)
+         */
+        async function executeEquippedItemRefund({ kind, itemId, label, refundB }) {
+            if (!db || !currentStudentDocRef) throw new Error('no_db');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) throw new Error('auth');
+            const amount = normalizeBongValue(Number(refundB) || 0);
+            const maxRefund = kind === 'skin' ? getMaxSkinRefundBong() : getMaxWeaponRefundBong();
+            if (amount <= 0 || amount > maxRefund + 0.001) throw new Error('invalid_refund_amount');
+
+            const refundId = `rf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+            let synced = null;
+
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(currentStudentDocRef);
+                if (!snap.exists()) throw new Error('not_found');
+                const data = snap.data() || {};
+                const ledger = Array.isArray(data.itemRefundLedger) ? data.itemRefundLedger.slice() : [];
+                if (ledger.some((row) => row && row.refundId === refundId)) throw new Error('duplicate_refund');
+
+                let itemPatch = {};
+                let instanceId = null;
+                if (kind === 'skin') {
+                    const built = buildSkinRefundServerPatch(data, itemId);
+                    instanceId = built.instanceId;
+                    itemPatch = {
+                        ownedSkins: built.ownedSkins,
+                        equippedSkins: built.equippedSkins,
+                        ownedSkinInstances: built.ownedSkinInstances,
+                    };
+                } else if (kind === 'weapon') {
+                    itemPatch = buildWeaponRefundServerPatch(data, itemId);
+                } else {
+                    throw new Error('bad_kind');
+                }
+
+                const serverBong = normalizeBongValue(Number(data.bong) || 0);
+                const nextBong = normalizeBongValue(serverBong + amount);
+                const bongLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                bongLogs.push(buildBongChangeLogEntry(`${label} 환불`, serverBong, nextBong, { kind, itemId, refundId, source: 'itemRefund' }));
+
+                ledger.push({
+                    refundId,
+                    kind,
+                    itemId,
+                    instanceId: instanceId || null,
+                    refundB: amount,
+                    at: Date.now(),
+                    label: label || '',
+                });
+
+                transaction.set(currentStudentDocRef, {
+                    ...itemPatch,
+                    bong: increment(amount),
+                    itemRefundLedger: ledger.slice(-60),
+                    bongChangeLog: bongLogs,
+                }, { merge: true });
+
+                synced = { nextBong, itemPatch, ledgerEntry: ledger[ledger.length - 1], bongLog: bongLogs[bongLogs.length - 1] };
+            });
+
+            return synced;
+        }
+
+        function syncLocalStateAfterItemRefund({ kind, itemId, synced }) {
+            if (!synced || !window.playerState) return;
+            window.playerState.bong = synced.nextBong;
+            if (kind === 'skin') {
+                purgeRefundedSkinCompletely(itemId);
+                if (synced.itemPatch.ownedSkinInstances) {
+                    window.playerState.ownedSkinInstances = { ...(synced.itemPatch.ownedSkinInstances) };
+                }
+            } else if (kind === 'weapon') {
+                window.playerState.inventory = Array.isArray(synced.itemPatch.inventory) ? synced.itemPatch.inventory.slice() : [];
+                window.playerState.equippedWeapon = synced.itemPatch.equippedWeapon;
+            }
+            if (!Array.isArray(window.playerState.itemRefundLedger)) window.playerState.itemRefundLedger = [];
+            window.playerState.itemRefundLedger.push(synced.ledgerEntry);
+            window.playerState.itemRefundLedger = window.playerState.itemRefundLedger.slice(-60);
+            if (!Array.isArray(window.playerState.bongChangeLog)) window.playerState.bongChangeLog = [];
+            window.playerState.bongChangeLog.push(synced.bongLog);
+            window.playerState.bongChangeLog = window.playerState.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT);
+        }
+
+        function getStudentBongGainToday(bongChangeLog, gameDateStr) {
+            const logs = Array.isArray(bongChangeLog) ? bongChangeLog : [];
+            let gain = 0;
+            logs.forEach((row) => {
+                if (!row || !row.at) return;
+                const d = new Date(Number(row.at));
+                if (isNaN(d.getTime())) return;
+                const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                if (ds !== gameDateStr) return;
+                const delta = normalizeBongValue(Number(row.delta) || 0);
+                if (delta > 0) gain = normalizeBongValue(gain + delta);
+            });
+            return gain;
+        }
+
+        function getStudentSuspiciousBongLogRows(bongChangeLog) {
+            const logs = Array.isArray(bongChangeLog) ? bongChangeLog : [];
+            return logs.filter((row) => {
+                const delta = normalizeBongValue(Number(row && row.delta) || 0);
+                return delta >= BONG_ANOMALY_SINGLE_DELTA_WARN;
+            }).slice(-5);
+        }
+
+        function buildBongAnomalyReport(studentsData) {
+            const today = getLocalDateStr();
+            const rows = Array.isArray(studentsData) ? studentsData : [];
+            const alerts = [];
+            rows.forEach((stu) => {
+                const sid = String(stu && stu.id || '');
+                if (!sid || sid === 'gm' || sid === 'gm_a' || sid === 'guest') return;
+                const name = STUDENT_NAMES[sid] || stu.name || sid;
+                const totalBong = normalizeBongValue(Number(stu.bong) || 0);
+                const todayGain = getStudentBongGainToday(stu.bongChangeLog, today);
+                const bigDeltas = getStudentSuspiciousBongLogRows(stu.bongChangeLog);
+                const refundCount = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger.length : 0;
+                const reasons = [];
+                if (totalBong >= BONG_ANOMALY_TOTAL_HOLD_WARN) {
+                    reasons.push(`보유 ${totalBong.toFixed(1)}B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`);
+                }
+                if (todayGain >= BONG_ANOMALY_DAILY_GAIN_WARN) {
+                    reasons.push(`오늘 +${todayGain.toFixed(1)}B 획득 (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`);
+                }
+                if (bigDeltas.length) {
+                    const last = bigDeltas[bigDeltas.length - 1];
+                    reasons.push(`단일 +${normalizeBongValue(last.delta).toFixed(1)}B (${last.reason || '기록'})`);
+                }
+                if (refundCount >= 8) {
+                    reasons.push(`환불 ${refundCount}회 누적 (의심)`);
+                }
+                if (reasons.length) {
+                    alerts.push({ sid, name, totalBong, todayGain, refundCount, reasons, bigDeltas });
+                }
+            });
+            alerts.sort((a, b) => b.totalBong - a.totalBong);
+            return { today, alerts, alertCount: alerts.length };
+        }
+
+        function renderBongAnomalyPanel(studentsData) {
+            const el = document.getElementById('bongAnomalyPanel');
+            if (!el) return;
+            if (!window.playerState || !window.playerState.isGM) {
+                el.classList.add('hidden');
+                return;
+            }
+            el.classList.remove('hidden');
+            const report = buildBongAnomalyReport(studentsData);
+            if (!report.alertCount) {
+                el.innerHTML = `
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-emerald-400"></i> 삼봉(B) 이상 감시</h3>
+                        <span class="text-[9px] text-emerald-300 font-bold">오늘 이상 없음</span>
+                    </div>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">보유 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B↑ · 오늘 획득 ${BONG_ANOMALY_DAILY_GAIN_WARN}B↑ · 단일 +${BONG_ANOMALY_SINGLE_DELTA_WARN}B↑ 시 경고합니다.</p>`;
+                return;
+            }
+            const rowsHtml = report.alerts.map((a) => `
+                <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
+                    <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
+                    <div class="text-amber-200/90 mt-0.5">보유 ${a.totalBong.toFixed(1)}B · 오늘 +${a.todayGain.toFixed(1)}B · 환불 ${a.refundCount}회</div>
+                    <ul class="list-disc list-inside text-amber-100/80 mt-1 space-y-0.5">${a.reasons.map((r) => `<li>${escapeConvenienceHtml(r)}</li>`).join('')}</ul>
+                </div>`).join('');
+            el.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-triangle-exclamation text-amber-400"></i> 삼봉(B) 이상 감시</h3>
+                    <span class="text-[9px] bg-amber-900/60 text-amber-100 px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 주의</span>
+                    <button type="button" onclick="window.renderBongAnomalyPanel(window.allStudentsData)" class="ml-auto text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded border border-slate-600">새로고침</button>
+                </div>
+                <p class="text-[9px] text-slate-500 mb-2 leading-relaxed">랜덤박스·퀘스트 등 정상 범위를 크게 벗어난 보유·획득·환불 패턴입니다. 아이템 환불 복사 의심 시 해당 학생 잔액을 확인하세요.</p>
+                <div class="space-y-2 max-h-52 overflow-y-auto scrollbar-hide">${rowsHtml}</div>`;
+        }
+        window.renderBongAnomalyPanel = renderBongAnomalyPanel;
 
         function getEquippedSkinRefundBong(skin) {
             const price = Math.max(0, Number(skin && skin.price) || 0);
@@ -6205,6 +6446,7 @@ function redrawPlazaGrantsUi() {
                     </tr>`;
                 }
             });
+            renderBongAnomalyPanel(studentsData);
         };
 
         window.renderAdminQuestBoard = function(studentsData) {
@@ -7520,7 +7762,7 @@ function redrawPlazaGrantsUi() {
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -7633,6 +7875,32 @@ function redrawPlazaGrantsUi() {
                             } else {
                                 dataToSave.bong = normalizeBongValue(serverBong);
                             }
+                        }
+                        const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
+                        if (
+                            maxBongRise > 0 &&
+                            Number.isFinite(serverBong) &&
+                            Number.isFinite(Number(dataToSave.bong)) &&
+                            Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
+                        ) {
+                            dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                        }
+                        const finalBong = normalizeBongValue(Number(dataToSave.bong));
+                        if (Number.isFinite(serverBong) && Math.abs(finalBong - serverBong) > 0.0001) {
+                            const bongLogs = Array.isArray(serverData.bongChangeLog) ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                            bongLogs.push(buildBongChangeLogEntry(opts.operationLabel, serverBong, finalBong, {
+                                source: 'saveDataToCloud',
+                                allowBongDecrease: !!opts.allowBongDecrease,
+                            }));
+                            dataToSave.bongChangeLog = bongLogs;
+                        } else if (Object.prototype.hasOwnProperty.call(serverData, 'bongChangeLog')) {
+                            dataToSave.bongChangeLog = serverData.bongChangeLog;
+                        }
+                        if (Object.prototype.hasOwnProperty.call(serverData, 'itemRefundLedger') && !Object.prototype.hasOwnProperty.call(dataToSave, 'itemRefundLedger')) {
+                            dataToSave.itemRefundLedger = serverData.itemRefundLedger;
+                        }
+                        if (Object.prototype.hasOwnProperty.call(serverData, 'ownedSkinInstances') && !Object.prototype.hasOwnProperty.call(dataToSave, 'ownedSkinInstances')) {
+                            dataToSave.ownedSkinInstances = serverData.ownedSkinInstances;
                         }
                         if (!opts.allowBankFieldChanges) {
                             ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
@@ -8323,15 +8591,27 @@ function redrawPlazaGrantsUi() {
 
             window._weaponRefundRunning = true;
             try {
-                window.playerState.inventory.splice(idx, 1);
-                window.playerState.equippedWeapon = null;
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                const synced = await executeEquippedItemRefund({
+                    kind: 'weapon',
+                    itemId: wpId,
+                    label: wp.name,
+                    refundB,
+                });
+                syncLocalStateAfterItemRefund({ kind: 'weapon', itemId: wpId, synced });
                 playSfx('bong', true);
                 updateUI();
-                const saved = await saveDataToCloud({ operationLabel: `${wp.name} 무기 환불` });
-                if (!saved) return;
                 await window.customAlert(`♻️ [${wp.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.`);
                 window.switchTab('plaza');
+            } catch (e) {
+                const code = e && e.message ? e.message : String(e);
+                if (code === 'not_equipped') {
+                    return await window.customAlert('이미 환불되었거나 장착 중인 무기가 아닙니다. 새로고침 후 다시 확인해 주세요.');
+                }
+                if (code === 'duplicate_refund') {
+                    return await window.customAlert('이미 처리된 환불 요청입니다.');
+                }
+                console.error('refundEquippedWeapon', e);
+                await window.customAlert('환불 실패: ' + code);
             } finally {
                 window._weaponRefundRunning = false;
             }
@@ -8473,7 +8753,7 @@ function redrawPlazaGrantsUi() {
                     return;
                 }
                 /** 퀘스트 직후 playerState가 이미 최종값이므로 전체 merge 저장(서버 재읽기·델타 계산 없음 — 실패 알림 오판 방지) */
-                await saveDataToCloud({ operationLabel: `퀘스트 완료: ${qInfo ? qInfo.name : qId}` });
+                await saveDataToCloud({ operationLabel: `퀘스트 완료: ${qInfo ? qInfo.name : qId}`, maxBongIncrease: 350 });
             } catch (e) {
                 console.error('attemptQuest persist', e);
                 await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -9023,12 +9303,14 @@ function redrawPlazaGrantsUi() {
 
                 if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, id);
                 updateUI();
-                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '랜덤 박스 구매' });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, maxBongIncrease: 100, requireServerBongBalance: true, operationLabel: '랜덤 박스 구매' });
                 if (!saved) {
                     if (!window.playerState.isAdmin) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - result + price);
                         const used = getShopDailyPurchaseUsed(window.playerState, id);
                         if (used > 0) window.playerState.shopDailyPurchase[id] = used - 1;
                     }
+                    updateUI();
                     return;
                 }
 
@@ -10025,16 +10307,29 @@ function redrawPlazaGrantsUi() {
 
             window._skinRefundRunning = true;
             try {
-                purgeRefundedSkinCompletely(skinId);
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                const synced = await executeEquippedItemRefund({
+                    kind: 'skin',
+                    itemId: skinId,
+                    label: skin.name,
+                    refundB,
+                });
+                syncLocalStateAfterItemRefund({ kind: 'skin', itemId: skinId, synced });
                 playSfx('bong', true);
                 updateUI();
-                const saved = await saveDataToCloud({ operationLabel: `${skin.name} 스킨 환불` });
-                if (!saved) return;
                 await window.customAlert(
                     `♻️ [${skin.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.\n(장착 해제 및 삭제됨)`
                 );
                 window.switchTab('plaza');
+            } catch (e) {
+                const code = e && e.message ? e.message : String(e);
+                if (code === 'not_equipped') {
+                    return await window.customAlert('이미 환불되었거나 장착 중인 스킨이 아닙니다. 새로고침 후 다시 확인해 주세요.');
+                }
+                if (code === 'duplicate_refund') {
+                    return await window.customAlert('이미 처리된 환불 요청입니다.');
+                }
+                console.error('refundEquippedSkin', e);
+                await window.customAlert('환불 실패: ' + code);
             } finally {
                 window._skinRefundRunning = false;
             }
@@ -10059,6 +10354,8 @@ function redrawPlazaGrantsUi() {
                     if (isOk) {
                         if (!window.playerState.isAdmin) window.playerState.bong -= skin.price;
                         window.playerState.ownedSkins[skinId] = true;
+                        if (!window.playerState.ownedSkinInstances) window.playerState.ownedSkinInstances = {};
+                        window.playerState.ownedSkinInstances[skinId] = `ski_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
                         
                         if (skin.type === 'aura') SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
                         else if (skin.type === 'face') SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
@@ -10104,6 +10401,7 @@ function redrawPlazaGrantsUi() {
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
+            'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
         ];
 
         function extractStudentGameData(existingData = {}) {

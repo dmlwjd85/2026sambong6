@@ -1127,9 +1127,9 @@ function redrawPlazaGrantsUi() {
         }
 
         /** 편의점 구역에 표시할 물품 목록 (마스터가 globalSettings.convenienceItems에 저장) */
-        function getConvenienceItems() {
-            const items = window.globalSettings && Array.isArray(window.globalSettings.convenienceItems)
-                ? window.globalSettings.convenienceItems
+        function getConvenienceItemsFromSettingsData(settingsData) {
+            const items = settingsData && Array.isArray(settingsData.convenienceItems)
+                ? settingsData.convenienceItems
                 : [];
             return items
                 .filter((item) => item && item.id && item.name && item.hidden !== true)
@@ -1143,8 +1143,12 @@ function redrawPlazaGrantsUi() {
                 .filter((item) => item.name);
         }
 
-        function getConvenienceItemById(itemId) {
-            return getConvenienceItems().find((item) => String(item.id) === String(itemId));
+        function getConvenienceItems() {
+            return getConvenienceItemsFromSettingsData(window.globalSettings || {});
+        }
+
+        function getConvenienceItemById(itemId, settingsData = window.globalSettings || {}) {
+            return getConvenienceItemsFromSettingsData(settingsData).find((item) => String(item.id) === String(itemId));
         }
 
         function getGlobalSettingsDocRef() {
@@ -1716,8 +1720,7 @@ function redrawPlazaGrantsUi() {
             const authOk = await ensureAnonAuthReady();
             if (!authOk) throw new Error('auth');
             const amount = normalizeBongValue(Number(refundB) || 0);
-            const maxRefund = kind === 'skin' ? getMaxSkinRefundBong() : getMaxWeaponRefundBong();
-            if (amount <= 0 || amount > maxRefund + 0.001) throw new Error('invalid_refund_amount');
+            if (amount <= 0) throw new Error('invalid_refund_amount');
 
             const refundId = `rf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
             let synced = null;
@@ -1731,8 +1734,11 @@ function redrawPlazaGrantsUi() {
 
                 let itemPatch = {};
                 let instanceId = null;
+                let expectedAmount = 0;
                 if (kind === 'skin') {
+                    const skin = SKIN_DATA.find((s) => s.id === itemId);
                     const built = buildSkinRefundServerPatch(data, itemId);
+                    expectedAmount = getEquippedSkinRefundBong(skin);
                     instanceId = built.instanceId;
                     itemPatch = {
                         ownedSkins: built.ownedSkins,
@@ -1740,9 +1746,14 @@ function redrawPlazaGrantsUi() {
                         ownedSkinInstances: built.ownedSkinInstances,
                     };
                 } else if (kind === 'weapon') {
+                    const wp = WEAPON_DATA.find((w) => w.id === itemId);
+                    expectedAmount = getEquippedWeaponRefundBong(wp);
                     itemPatch = buildWeaponRefundServerPatch(data, itemId);
                 } else {
                     throw new Error('bad_kind');
+                }
+                if (expectedAmount <= 0 || Math.abs(amount - expectedAmount) > 0.001) {
+                    throw new Error('invalid_refund_amount');
                 }
 
                 const serverBong = normalizeBongValue(Number(data.bong) || 0);
@@ -2745,6 +2756,12 @@ function redrawPlazaGrantsUi() {
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
+                const studentsSnap = await getDocsFromServer(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
+                const studentRefs = [];
+                studentsSnap.forEach((studentDoc) => {
+                    if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
+                    studentRefs.push(studentDoc.ref);
+                });
                 const settledAt = Date.now();
                 const nextWc = {
                     matchId: WORLD_CUP_MATCH.id,
@@ -2755,40 +2772,64 @@ function redrawPlazaGrantsUi() {
                 };
                 let winnerCount = 0;
                 let totalPayout = 0;
-                const batch = writeBatch(db);
-                const rows = (window.allStudentsData || []).filter((s) => s && s.id !== 'gm' && s.id !== 'gm_a');
-                rows.forEach((stu) => {
-                    const sid = String(stu.id);
-                    const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
-                    let payoutSum = 0;
-                    let changed = false;
-                    const nextBets = bets.map((bet) => {
-                        if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
-                        changed = true;
-                        const won = String(bet.pick) === String(result[bet.market]);
-                        const payout = won ? normalizeBongValue(Number(bet.stake || 0) * Number(bet.odds || 0)) : 0;
-                        if (won) {
-                            payoutSum = normalizeBongValue(payoutSum + payout);
-                            winnerCount += 1;
-                        }
-                        return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
-                    });
-                    if (!changed) return;
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-                    const payload = { worldCupBets: nextBets.slice(-40) };
-                    if (payoutSum > 0) payload.bong = increment(payoutSum);
-                    batch.set(ref, payload, { merge: true });
-                    totalPayout = normalizeBongValue(totalPayout + payoutSum);
-                    if (sid === String(localStorage.getItem('sambong_student_id') || '')) {
-                        window.playerState.worldCupBets = nextBets.slice(-40);
-                        if (payoutSum > 0) {
-                            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payoutSum);
-                        }
+                let myNextBets = null;
+                let myPayout = 0;
+                const mySid = String(localStorage.getItem('sambong_student_id') || '');
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const latestWc = getSanitizedWorldCupBetState(settingsSnap.exists() ? settingsSnap.data().worldCupBet : null);
+                    if (latestWc.settled) throw new Error('already_settled');
+
+                    const rows = [];
+                    for (const ref of studentRefs) {
+                        const stuSnap = await transaction.get(ref);
+                        if (stuSnap.exists()) rows.push({ ref, id: ref.id.replace(/^student_/, ''), data: stuSnap.data() || {} });
                     }
+
+                    let txWinnerCount = 0;
+                    let txTotalPayout = 0;
+                    let txMyNextBets = null;
+                    let txMyPayout = 0;
+                    rows.forEach((stu) => {
+                        const sid = String(stu.id);
+                        const bets = Array.isArray(stu.data.worldCupBets) ? stu.data.worldCupBets.slice() : [];
+                        let payoutSum = 0;
+                        let changed = false;
+                        const nextBets = bets.map((bet) => {
+                            if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
+                            changed = true;
+                            const won = String(bet.pick) === String(result[bet.market]);
+                            const payout = won ? normalizeBongValue(Number(bet.stake || 0) * Number(bet.odds || 0)) : 0;
+                            if (won) {
+                                payoutSum = normalizeBongValue(payoutSum + payout);
+                                txWinnerCount += 1;
+                            }
+                            return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
+                        });
+                        if (!changed) return;
+                        const payload = { worldCupBets: nextBets.slice(-40) };
+                        if (payoutSum > 0) payload.bong = increment(payoutSum);
+                        transaction.set(stu.ref, payload, { merge: true });
+                        txTotalPayout = normalizeBongValue(txTotalPayout + payoutSum);
+                        if (sid === mySid) {
+                            txMyNextBets = nextBets.slice(-40);
+                            txMyPayout = payoutSum;
+                        }
+                    });
+                    transaction.set(settingsRef, { worldCupBet: nextWc }, { merge: true });
+                    winnerCount = txWinnerCount;
+                    totalPayout = txTotalPayout;
+                    myNextBets = txMyNextBets;
+                    myPayout = txMyPayout;
                 });
-                batch.set(getGlobalSettingsDocRef(), { worldCupBet: nextWc }, { merge: true });
-                await batch.commit();
                 window.globalSettings.worldCupBet = nextWc;
+                if (myNextBets && window.playerState) {
+                    window.playerState.worldCupBets = myNextBets;
+                    if (myPayout > 0) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + myPayout);
+                    }
+                }
                 await refreshStudentsCacheFromServer();
                 updateUI();
                 renderWorldCupBetPanel();
@@ -2796,6 +2837,9 @@ function redrawPlazaGrantsUi() {
                     `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${totalPayout.toFixed(1)}B`
                 );
             } catch (e) {
+                if (e && e.message === 'already_settled') {
+                    return await window.customAlert('이미 정산된 경기입니다.');
+                }
                 console.error('settleWorldCupBetAdmin', e);
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -4882,6 +4926,31 @@ function redrawPlazaGrantsUi() {
             return { entries, itemTotal, itemCount };
         }
 
+        /** 결제 직전 Firestore settings 기준으로 장바구니 가격을 다시 계산해 조작된 로컬 가격을 배제 */
+        function buildConvenienceOrderFromServerCart(cartEntries, settingsData) {
+            const serverItems = getConvenienceItemsFromSettingsData(settingsData);
+            const itemById = new Map(serverItems.map((item) => [String(item.id), item]));
+            const orderItems = (Array.isArray(cartEntries) ? cartEntries : []).map((entry) => {
+                const itemId = String(entry && entry.itemId || '');
+                const serverItem = itemById.get(itemId);
+                const qty = Math.max(0, Math.min(20, Math.floor(Number(entry && entry.qty) || 0)));
+                if (!serverItem || qty <= 0) throw new Error('item_unavailable');
+                const lineTotal = normalizeBongValue(serverItem.price * qty);
+                return {
+                    itemId: serverItem.id,
+                    name: serverItem.name,
+                    desc: serverItem.desc || '',
+                    unitPrice: serverItem.price,
+                    qty,
+                    lineTotal,
+                };
+            });
+            if (!orderItems.length) throw new Error('item_unavailable');
+            const itemTotal = normalizeBongValue(orderItems.reduce((sum, item) => sum + item.lineTotal, 0));
+            const itemCount = orderItems.reduce((sum, item) => sum + item.qty, 0);
+            return { orderItems, itemTotal, itemCount };
+        }
+
         function getConvenienceOrderTitle(order) {
             if (order && Array.isArray(order.items) && order.items.length > 0) {
                 const first = order.items[0];
@@ -5241,8 +5310,8 @@ function redrawPlazaGrantsUi() {
             const deliveryChoice = await window.customDeliveryChoice(`삼봉 편의점 장바구니 ${itemCount}개`, deliveryFee);
             if (deliveryChoice === null) return;
             const deliveryRequested = deliveryChoice === true;
-            const deliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
-            if (deliveryRequested && deliveryFee > 0 && deliveryPayouts.length === 0) {
+            const deliveryPayouts = (!window.playerState.isAdmin && deliveryRequested) ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
+            if (!window.playerState.isAdmin && deliveryRequested && deliveryFee > 0 && deliveryPayouts.length === 0) {
                 return await window.customAlert('현재 편의점 매니저 뱃지를 단 1명도 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
             }
             const price = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
@@ -5269,8 +5338,8 @@ function redrawPlazaGrantsUi() {
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             deliveryFee = await refreshConvenienceDeliveryFeeFromServer();
-            const finalDeliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
-            if (deliveryRequested && deliveryFee > 0 && finalDeliveryPayouts.length === 0) {
+            const finalDeliveryPayouts = (!window.playerState.isAdmin && deliveryRequested) ? buildConvenienceDeliveryPayouts(deliveryFee) : [];
+            if (!window.playerState.isAdmin && deliveryRequested && deliveryFee > 0 && finalDeliveryPayouts.length === 0) {
                 return await window.customAlert('현재 편의점 매니저 뱃지를 단 1명도 없어 배달 주문을 받을 수 없습니다.\n직접 수령으로 주문해 주세요.');
             }
             const finalPrice = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
@@ -5279,7 +5348,8 @@ function redrawPlazaGrantsUi() {
             const studentName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[studentId] || studentId);
             const orderRef = doc(getConvenienceOrdersCollectionRef());
             let nextBong = normalizeBongValue(Number(window.playerState.bong) || 0);
-            const orderItems = entries.map(({ item, qty, lineTotal }) => ({
+            const cartEntriesForServer = entries.map(({ item, qty }) => ({ itemId: item.id, qty }));
+            let orderItems = entries.map(({ item, qty, lineTotal }) => ({
                 itemId: item.id,
                 name: item.name,
                 desc: item.desc || '',
@@ -5287,19 +5357,25 @@ function redrawPlazaGrantsUi() {
                 qty,
                 lineTotal,
             }));
-            const itemName = getConvenienceOrderTitle({ items: orderItems });
+            let itemName = getConvenienceOrderTitle({ items: orderItems });
             let chargedDeliveryFee = deliveryRequested ? deliveryFee : 0;
             let chargedDeliveryPayouts = finalDeliveryPayouts;
+            let chargedItemTotal = itemTotal;
             let chargedPrice = finalPrice;
             try {
                 await runTransaction(db, async (transaction) => {
                     const settingsSnap = await transaction.get(getGlobalSettingsDocRef());
+                    const settingsData = settingsSnap.exists() ? (settingsSnap.data() || {}) : { convenienceDeliveryFee: deliveryFee };
+                    const serverCart = buildConvenienceOrderFromServerCart(cartEntriesForServer, settingsData);
+                    orderItems = serverCart.orderItems;
+                    chargedItemTotal = serverCart.itemTotal;
+                    itemName = getConvenienceOrderTitle({ items: orderItems });
                     const serverDeliveryFee = readConvenienceDeliveryFeeFromSettingsData(
-                        settingsSnap.exists() ? (settingsSnap.data() || {}) : { convenienceDeliveryFee: deliveryFee }
+                        settingsData
                     );
                     chargedDeliveryFee = deliveryRequested ? serverDeliveryFee : 0;
-                    chargedDeliveryPayouts = deliveryRequested ? buildConvenienceDeliveryPayouts(chargedDeliveryFee) : [];
-                    chargedPrice = normalizeBongValue(itemTotal + chargedDeliveryFee);
+                    chargedDeliveryPayouts = (!window.playerState.isAdmin && deliveryRequested) ? buildConvenienceDeliveryPayouts(chargedDeliveryFee) : [];
+                    chargedPrice = window.playerState.isAdmin ? 0 : normalizeBongValue(chargedItemTotal + chargedDeliveryFee);
 
                     const snap = await transaction.get(currentStudentDocRef);
                     const serverData = snap.exists() ? (snap.data() || {}) : {};
@@ -5307,7 +5383,7 @@ function redrawPlazaGrantsUi() {
                     if (!window.playerState.isAdmin && serverBong + 0.0001 < chargedPrice) throw new Error('insufficient');
                     nextBong = window.playerState.isAdmin ? serverBong : normalizeBongValue(serverBong - chargedPrice);
                     const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice(-24) : [];
-                    purchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
+                    purchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: chargedItemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
                     transaction.set(currentStudentDocRef, { bong: nextBong, conveniencePurchases: purchases }, { merge: true });
                     transaction.set(orderRef, {
                         id: orderRef.id,
@@ -5316,7 +5392,7 @@ function redrawPlazaGrantsUi() {
                         itemName,
                         itemDesc: orderItems.map((item) => `${item.name}×${item.qty}`).join(', '),
                         requestNote,
-                        itemPrice: itemTotal,
+                        itemPrice: chargedItemTotal,
                         deliveryRequested,
                         deliveryFee: chargedDeliveryFee,
                         deliveryPayouts: chargedDeliveryPayouts,
@@ -5333,7 +5409,7 @@ function redrawPlazaGrantsUi() {
                 });
                 window.playerState.bong = nextBong;
                 if (!Array.isArray(window.playerState.conveniencePurchases)) window.playerState.conveniencePurchases = [];
-                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
+                window.playerState.conveniencePurchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: chargedItemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
                 window.playerState.conveniencePurchases = window.playerState.conveniencePurchases.slice(-25);
                 window.convenienceCart = {};
                 playSfx('bong', true);
@@ -5342,6 +5418,9 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
+                }
+                if (e && e.message === 'item_unavailable') {
+                    return await window.customAlert('서버 최신 편의점 물품 정보와 장바구니가 맞지 않습니다. 새로고침 후 다시 주문해 주세요.');
                 }
                 console.error('buyConvenienceItem', e);
                 await window.customAlert('편의점 주문 실패: ' + (e && e.message ? e.message : String(e)));
@@ -5357,15 +5436,22 @@ function redrawPlazaGrantsUi() {
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
             try {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId)), {
-                    status: 'done',
-                    completedAt: Date.now(),
-                    completedBy: managerId,
-                    completedByName: managerName,
+                await runTransaction(db, async (transaction) => {
+                    const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
+                    const orderSnap = await transaction.get(orderRef);
+                    const latestOrder = orderSnap.exists() ? (orderSnap.data() || {}) : null;
+                    if (!latestOrder || latestOrder.status !== 'pending') throw new Error('not_pending');
+                    transaction.set(orderRef, {
+                        status: 'done',
+                        completedAt: Date.now(),
+                        completedBy: managerId,
+                        completedByName: managerName,
+                    }, { merge: true });
                 });
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
             } catch (e) {
+                if (e && e.message === 'not_pending') return await window.customAlert('이미 처리된 주문입니다.');
                 console.error('completeConvenienceOrder', e);
                 await window.customAlert('처리완료 저장 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -5381,7 +5467,7 @@ function redrawPlazaGrantsUi() {
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
-            const refundB = normalizeBongValue(Number(order.price) || 0);
+            let refundedB = 0;
             try {
                 await runTransaction(db, async (transaction) => {
                     const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
@@ -5394,6 +5480,12 @@ function redrawPlazaGrantsUi() {
                     const stuSnap = await transaction.get(stuRef);
                     const serverData = stuSnap.exists() ? (stuSnap.data() || {}) : {};
                     const purchases = Array.isArray(serverData.conveniencePurchases) ? serverData.conveniencePurchases.slice() : [];
+                    const purchase = purchases.find((p) => p && String(p.orderId) === String(orderId));
+                    const orderPrice = normalizeBongValue(Number(latestOrder.price) || 0);
+                    const purchasePrice = purchase ? normalizeBongValue(Number(purchase.price) || 0) : orderPrice;
+                    if (purchase && Math.abs(orderPrice - purchasePrice) > 0.001) throw new Error('price_mismatch');
+                    const refundB = purchase ? purchasePrice : orderPrice;
+                    refundedB = refundB;
                     const nextPurchases = purchases.map((p) => String(p.orderId) === String(orderId) ? { ...p, status: 'refunded', refundedAt: Date.now() } : p);
                     transaction.set(stuRef, {
                         bong: increment(refundB),
@@ -5415,14 +5507,15 @@ function redrawPlazaGrantsUi() {
                     }, { merge: true });
                 });
                 if (String(order.studentId) === String(localStorage.getItem('sambong_student_id') || '')) {
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundedB);
                 }
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
-                await window.customAlert(`환불 완료: ${order.studentName}에게 ${refundB.toFixed(1)}B가 반환되었습니다.`);
+                await window.customAlert(`환불 완료: ${order.studentName}에게 ${refundedB.toFixed(1)}B가 반환되었습니다.`);
             } catch (e) {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_pending') return await window.customAlert('이미 처리된 주문입니다.');
+                if (msg === 'price_mismatch') return await window.customAlert('주문 금액 기록이 서로 맞지 않아 환불을 중단했습니다. 새로고침 후 관리자에게 확인해 주세요.');
                 console.error('refundConvenienceOrder', e);
                 await window.customAlert('환불 처리 실패: ' + msg);
             }
@@ -7808,6 +7901,8 @@ function redrawPlazaGrantsUi() {
                 requireServerBongBalance: false,
                 allowBankFieldChanges: false,
                 allowLunchBidChanges: false,
+                allowWorldCupBetChanges: false,
+                allowConveniencePurchaseChanges: false,
                 operationLabel: '저장',
                 ...options,
             };
@@ -7896,11 +7991,28 @@ function redrawPlazaGrantsUi() {
                         } else if (Object.prototype.hasOwnProperty.call(serverData, 'bongChangeLog')) {
                             dataToSave.bongChangeLog = serverData.bongChangeLog;
                         }
-                        if (Object.prototype.hasOwnProperty.call(serverData, 'itemRefundLedger') && !Object.prototype.hasOwnProperty.call(dataToSave, 'itemRefundLedger')) {
-                            dataToSave.itemRefundLedger = serverData.itemRefundLedger;
+                        const serverRefundLedger = Array.isArray(serverData.itemRefundLedger) ? serverData.itemRefundLedger : [];
+                        const localRefundLedger = Array.isArray(dataToSave.itemRefundLedger) ? dataToSave.itemRefundLedger : [];
+                        const localRefundIds = new Set(localRefundLedger.map((row) => String(row && row.refundId || '')));
+                        const hasServerOnlyRefund = serverRefundLedger.some((row) => row && row.refundId && !localRefundIds.has(String(row.refundId)));
+                        if (hasServerOnlyRefund) {
+                            // 다른 탭에서 이미 환불한 아이템을 낡은 일반 저장이 다시 보유 상태로 되살리지 않게 서버 장부를 우선합니다.
+                            ['ownedSkins', 'equippedSkins', 'ownedSkinInstances', 'inventory', 'equippedWeapon', 'itemRefundLedger'].forEach((key) => {
+                                if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
+                            });
+                        } else {
+                            if (Object.prototype.hasOwnProperty.call(serverData, 'itemRefundLedger') && !Object.prototype.hasOwnProperty.call(dataToSave, 'itemRefundLedger')) {
+                                dataToSave.itemRefundLedger = serverData.itemRefundLedger;
+                            }
+                            if (Object.prototype.hasOwnProperty.call(serverData, 'ownedSkinInstances') && !Object.prototype.hasOwnProperty.call(dataToSave, 'ownedSkinInstances')) {
+                                dataToSave.ownedSkinInstances = serverData.ownedSkinInstances;
+                            }
                         }
-                        if (Object.prototype.hasOwnProperty.call(serverData, 'ownedSkinInstances') && !Object.prototype.hasOwnProperty.call(dataToSave, 'ownedSkinInstances')) {
-                            dataToSave.ownedSkinInstances = serverData.ownedSkinInstances;
+                        if (!opts.allowWorldCupBetChanges && Object.prototype.hasOwnProperty.call(serverData, 'worldCupBets')) {
+                            dataToSave.worldCupBets = serverData.worldCupBets;
+                        }
+                        if (!opts.allowConveniencePurchaseChanges && Object.prototype.hasOwnProperty.call(serverData, 'conveniencePurchases')) {
+                            dataToSave.conveniencePurchases = serverData.conveniencePurchases;
                         }
                         if (!opts.allowBankFieldChanges) {
                             ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {

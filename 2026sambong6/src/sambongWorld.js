@@ -617,7 +617,7 @@ function redrawPlazaGrantsUi() {
             { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
             { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'fa-ticket', iconColor: 'text-lime-300', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
-            { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
+            { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기 (구매 시 곡명 입력)', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
             { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' },
             { id: 's_movie', name: '영화시간', desc: '다같이 영화 시청', price: 400, icon: 'fa-film', iconColor: 'text-blue-400' },
             { id: 's4', name: '체육시간', desc: '다같이 뛰놀기', price: 500, icon: 'fa-volleyball', iconColor: 'text-orange-400' },
@@ -1066,7 +1066,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [] };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** 편의점 주문 목록 스냅샷: 최신순 배열 */
@@ -1350,6 +1350,178 @@ function redrawPlazaGrantsUi() {
             const item = getShopItemById(id);
             return !!(item && !item.isConsumable);
         }
+
+        // ==========================================
+        // ★ 뮤직 타임 신청곡 큐 (학급 공용) ★
+        // ==========================================
+        const MUSIC_TIME_SHOP_ID = 's1';
+        const MUSIC_TIME_SONG_MAX_LEN = 80;
+        const MUSIC_TIME_QUEUE_MAX = 50;
+
+        function sanitizeMusicTimeQueue(raw) {
+            if (!Array.isArray(raw)) return [];
+            return raw
+                .filter((row) => row && typeof row === 'object' && String(row.song || '').trim())
+                .map((row, idx) => ({
+                    id: String(row.id || `mt_legacy_${idx}_${Number(row.at) || 0}`),
+                    studentId: String(row.studentId || ''),
+                    studentName: String(row.studentName || row.studentId || '?'),
+                    song: String(row.song || '').trim().slice(0, MUSIC_TIME_SONG_MAX_LEN),
+                    at: Number(row.at) || Date.now(),
+                }))
+                .slice(-MUSIC_TIME_QUEUE_MAX);
+        }
+
+        function getMusicTimeQueue() {
+            return sanitizeMusicTimeQueue(window.globalSettings && window.globalSettings.musicTimeQueue);
+        }
+
+        function formatMusicTimeAt(ms) {
+            if (!ms) return '';
+            const d = new Date(Number(ms));
+            if (isNaN(d.getTime())) return '';
+            return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+
+        async function appendMusicTimeRequest({ studentId, studentName, song }) {
+            if (!db) throw new Error('no_db');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) throw new Error('auth');
+            const songText = String(song || '').trim().slice(0, MUSIC_TIME_SONG_MAX_LEN);
+            if (!songText) throw new Error('empty_song');
+            const entry = {
+                id: `mt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                studentId: String(studentId || ''),
+                studentName: String(studentName || studentId || '?'),
+                song: songText,
+                at: Date.now(),
+            };
+            await runTransaction(db, async (transaction) => {
+                const ref = getGlobalSettingsDocRef();
+                const snap = await transaction.get(ref);
+                const data = snap.exists() ? snap.data() || {} : {};
+                const queue = sanitizeMusicTimeQueue(data.musicTimeQueue);
+                queue.push(entry);
+                transaction.set(ref, { musicTimeQueue: queue.slice(-MUSIC_TIME_QUEUE_MAX) }, { merge: true });
+            });
+            if (!window.globalSettings) window.globalSettings = {};
+            const localQueue = sanitizeMusicTimeQueue(window.globalSettings.musicTimeQueue);
+            localQueue.push(entry);
+            window.globalSettings.musicTimeQueue = localQueue.slice(-MUSIC_TIME_QUEUE_MAX);
+            return entry;
+        }
+
+        function renderMusicTimeQueueBar() {
+            const el = document.getElementById('musicTimeQueueBar');
+            if (!el) return;
+            const queue = getMusicTimeQueue();
+            const count = queue.length;
+            el.innerHTML = `
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div class="text-[9px] text-slate-500">
+                        <i class="fa-solid fa-music text-pink-400 mr-1"></i>
+                        뮤직 타임 신청곡은 구매 시 입력되며, 아래에서 대기 목록을 볼 수 있어요.
+                    </div>
+                    <button type="button" onclick="window.openMusicTimeQueuePanel()"
+                        class="shrink-0 bg-pink-900/70 hover:bg-pink-800 text-pink-100 font-bold py-2 px-3 rounded-xl text-[10px] border border-pink-500/50">
+                        <i class="fa-solid fa-list-music"></i> 신청곡 리스트 보기
+                        ${count > 0 ? `<span class="ml-1 bg-pink-500 text-white px-1.5 py-0.5 rounded-full text-[9px]">${count}</span>` : ''}
+                    </button>
+                </div>`;
+        }
+
+        function ensureMusicTimeQueueModal() {
+            let modal = document.getElementById('musicTimeQueueModal');
+            if (modal) return modal;
+            modal = document.createElement('div');
+            modal.id = 'musicTimeQueueModal';
+            modal.className = 'hidden fixed inset-0 z-[270] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6';
+            modal.innerHTML = `
+                <div class="w-full max-w-md bg-slate-900 border border-pink-500/50 rounded-2xl shadow-2xl p-4 max-h-[85vh] flex flex-col">
+                    <div class="flex items-center justify-between gap-3 mb-3 border-b border-slate-700 pb-3 shrink-0">
+                        <h3 class="text-lg font-display text-pink-100"><i class="fa-solid fa-music text-pink-300"></i> 뮤직 타임 신청곡</h3>
+                        <button type="button" onclick="window.closeMusicTimeQueuePanel()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+                    </div>
+                    <div id="musicTimeQueueModalBody" class="overflow-y-auto scrollbar-hide pr-1 flex-1"></div>
+                </div>`;
+            document.body.appendChild(modal);
+            return modal;
+        }
+
+        function renderMusicTimeQueueModalBody() {
+            const body = document.getElementById('musicTimeQueueModalBody');
+            if (!body) return;
+            const queue = getMusicTimeQueue().slice().sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
+            const isGM = !!(window.playerState && window.playerState.isGM);
+            if (!queue.length) {
+                body.innerHTML = '<div class="text-[10px] text-slate-500 text-center py-10 border border-dashed border-slate-700 rounded-xl">대기 중인 신청곡이 없습니다.</div>';
+                return;
+            }
+            body.innerHTML = `
+                <div class="text-[9px] text-slate-400 mb-3">총 ${queue.length}곡 · 먼저 신청한 순서대로 표시</div>
+                <div class="space-y-2">
+                    ${queue.map((row, idx) => `
+                        <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-[9px] text-pink-300/80 font-bold mb-0.5">#${idx + 1} · ${escapeConvenienceHtml(row.studentName)} <span class="text-slate-500 font-normal">(${escapeConvenienceHtml(row.studentId)}번)</span></div>
+                                    <div class="text-sm text-white font-bold break-words">🎵 ${escapeConvenienceHtml(row.song)}</div>
+                                    <div class="text-[9px] text-slate-500 mt-1">${formatMusicTimeAt(row.at)}</div>
+                                </div>
+                                ${isGM ? `<button type="button" onclick="window.completeMusicTimeRequestAdmin('${escapeHtmlAttr(row.id)}')" class="shrink-0 bg-emerald-800 hover:bg-emerald-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-emerald-600">재생완료</button>` : ''}
+                            </div>
+                        </div>`).join('')}
+                </div>
+                ${isGM ? '<p class="text-[9px] text-slate-500 mt-3 leading-relaxed">마스터 J만 「재생완료」를 누를 수 있습니다. 완료 처리하면 목록에서 사라집니다.</p>' : ''}`;
+        }
+
+        window.openMusicTimeQueuePanel = function() {
+            const modal = ensureMusicTimeQueueModal();
+            renderMusicTimeQueueModalBody();
+            modal.classList.remove('hidden');
+        };
+
+        window.closeMusicTimeQueuePanel = function() {
+            const modal = document.getElementById('musicTimeQueueModal');
+            if (modal) modal.classList.add('hidden');
+        };
+
+        window.completeMusicTimeRequestAdmin = async function(requestId) {
+            if (!window.playerState || !window.playerState.isGM) {
+                return await window.customAlert('마스터 J만 재생 완료 처리할 수 있습니다.');
+            }
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const rid = String(requestId || '');
+            const target = getMusicTimeQueue().find((row) => String(row.id) === rid);
+            if (!target) return await window.customAlert('이미 처리되었거나 신청곡을 찾을 수 없습니다.');
+            const ok = await window.customConfirm(
+                `재생 완료 처리할까요?\n\n` +
+                `- 신청: ${target.studentName}\n` +
+                `- 곡: ${target.song}\n\n` +
+                '목록에서 삭제됩니다.'
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다.');
+                await runTransaction(db, async (transaction) => {
+                    const ref = getGlobalSettingsDocRef();
+                    const snap = await transaction.get(ref);
+                    const data = snap.exists() ? snap.data() || {} : {};
+                    const queue = sanitizeMusicTimeQueue(data.musicTimeQueue).filter((row) => String(row.id) !== rid);
+                    transaction.set(ref, { musicTimeQueue: queue }, { merge: true });
+                });
+                if (!window.globalSettings) window.globalSettings = {};
+                window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(
+                    (window.globalSettings.musicTimeQueue || []).filter((row) => String(row.id) !== rid)
+                );
+                renderMusicTimeQueueBar();
+                renderMusicTimeQueueModalBody();
+            } catch (e) {
+                console.error('completeMusicTimeRequestAdmin', e);
+                await window.customAlert('처리 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
 
         /** 상점 기본가(SHOP_DATA) — 마스터가 저장한 shopPrices와 병합 시 기준 */
         function getDefaultShopPrice(shopId) {
@@ -4824,6 +4996,7 @@ function redrawPlazaGrantsUi() {
                 ${shopClass.map((shop) => buildShopCardHtml(shop)).join('')}
             `;
             updateShopPriceLabels();
+            renderMusicTimeQueueBar();
         }
 
         function renderShopManagementAdminPanel() {
@@ -5829,6 +6002,9 @@ function redrawPlazaGrantsUi() {
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
+                                if (settingsData.musicTimeQueue !== undefined) {
+                                    window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
+                                }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
@@ -5863,6 +6039,9 @@ function redrawPlazaGrantsUi() {
                                 renderJobManagementAdminPanel();
                                 renderLottoPanel();
                                 renderWorldCupBetPanel();
+                                renderMusicTimeQueueBar();
+                                const musicModal = document.getElementById('musicTimeQueueModal');
+                                if (musicModal && !musicModal.classList.contains('hidden')) renderMusicTimeQueueModalBody();
                                 maybeShowLottoResultPopup();
                                 if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
@@ -7618,7 +7797,8 @@ function redrawPlazaGrantsUi() {
                     const lines = arr.slice(-5).reverse().map((entry) => {
                         const d = entry.at ? new Date(entry.at) : null;
                         const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
-                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}</span><span class="text-slate-500 shrink-0">${ds} · ${entry.price}B</span></div>`;
+                        const songPart = entry.songTitle ? ` · 🎵 ${escapeConvenienceHtml(String(entry.songTitle).slice(0, 24))}` : '';
+                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}${songPart}</span><span class="text-slate-500 shrink-0">${ds} · ${entry.price}B</span></div>`;
                     });
                     logEl.innerHTML = '<div class="text-[10px] text-slate-500 font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
                     logEl.classList.remove('hidden');
@@ -7630,6 +7810,7 @@ function redrawPlazaGrantsUi() {
 
             renderLottoPanel();
             renderWorldCupBetPanel();
+            renderMusicTimeQueueBar();
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
@@ -9418,20 +9599,35 @@ function redrawPlazaGrantsUi() {
                 const shop = getShopItemById(id);
                 if (!shop) return await window.customAlert('상품 정보를 찾을 수 없어요.');
                 const eff = getEffectiveShopPrice(id);
+                let musicSongTitle = null;
+                if (String(id) === MUSIC_TIME_SHOP_ID && !groupEx) {
+                    const songRaw = await window.customPrompt(
+                        `[${shop.name}] 신청곡을 입력해 주세요.\n` +
+                        `(가수 - 곡명, 유튜브 제목 등 · 최대 ${MUSIC_TIME_SONG_MAX_LEN}자)\n\n` +
+                        `구매가: ${eff}B`,
+                        'text'
+                    );
+                    if (songRaw === null) return;
+                    musicSongTitle = String(songRaw).trim().slice(0, MUSIC_TIME_SONG_MAX_LEN);
+                    if (!musicSongTitle) return await window.customAlert('신청곡을 입력해야 뮤직 타임을 구매할 수 있어요.');
+                }
                 if (!groupEx) {
                     if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < eff) {
                         return await window.customAlert(`❌ 돈이 부족해요. ${(eff - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
                     }
-                    const ok = await window.customConfirm(
-                        `[${shop.name}] ${eff}B를 내고 학급 활동 예약을 할까요?\n` + '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.'
-                    );
+                    const confirmMsg = String(id) === MUSIC_TIME_SHOP_ID && musicSongTitle
+                        ? `[${shop.name}] ${eff}B를 내고 신청곡을 등록할까요?\n\n🎵 ${musicSongTitle}\n\n삼봉은 즉시 차감되며, 신청곡 리스트에 추가됩니다.`
+                        : `[${shop.name}] ${eff}B를 내고 학급 활동 예약을 할까요?\n` + '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.';
+                    const ok = await window.customConfirm(confirmMsg);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) {
                         window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - eff);
                     }
                 }
                 if (!window.playerState.classEventPurchases) window.playerState.classEventPurchases = [];
-                window.playerState.classEventPurchases.push({ id: shop.id, name: shop.name, price: eff, at: Date.now() });
+                const purchaseEntry = { id: shop.id, name: shop.name, price: eff, at: Date.now() };
+                if (musicSongTitle) purchaseEntry.songTitle = musicSongTitle;
+                window.playerState.classEventPurchases.push(purchaseEntry);
                 if (window.playerState.classEventPurchases.length > 25) {
                     window.playerState.classEventPurchases = window.playerState.classEventPurchases.slice(-25);
                 }
@@ -9439,6 +9635,26 @@ function redrawPlazaGrantsUi() {
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : eff, requireServerBongBalance: !groupEx, operationLabel: `${shop.name} 구매` });
                 if (!saved) return;
+                if (musicSongTitle) {
+                    try {
+                        const studentId = String(localStorage.getItem('sambong_student_id') || '');
+                        const studentName = window.playerState.isAdmin
+                            ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A')
+                            : (STUDENT_NAMES[studentId] || studentId);
+                        await appendMusicTimeRequest({ studentId, studentName, song: musicSongTitle });
+                        renderMusicTimeQueueBar();
+                        const modal = document.getElementById('musicTimeQueueModal');
+                        if (modal && !modal.classList.contains('hidden')) renderMusicTimeQueueModalBody();
+                        return await window.customAlert(
+                            `✅ [${shop.name}] 신청 완료!\n\n🎵 ${musicSongTitle}\n\n신청곡 리스트에 추가되었어요.\n「신청곡 리스트 보기」에서 확인할 수 있습니다.`
+                        );
+                    } catch (e) {
+                        console.error('appendMusicTimeRequest', e);
+                        return await window.customAlert(
+                            `구매는 완료되었지만 신청곡 등록에 실패했습니다.\n선생님께 「${musicSongTitle}」을 알려 주세요.\n\n(${e && e.message ? e.message : String(e)})`
+                        );
+                    }
+                }
                 return await window.customAlert(`✅ [${shop.name}] 구매가 기록되었습니다!\n선생님께 일정을 요청해 주세요.\n(아래 '최근 학급 활동 예약'에 남습니다)`);
             }
 

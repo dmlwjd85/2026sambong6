@@ -3400,7 +3400,10 @@ function redrawPlazaGrantsUi() {
 
         window.switchTab = function(tabId) {
             if (isMartialLawLockingStudent()) return;
-            if (tabId === 'classtools' && (!window.playerState || !window.playerState.isAdmin)) return;
+            if (tabId === 'classtools' && (!canAccessClassTools())) {
+                enforceClassToolsAccess();
+                return;
+            }
             // 칠판(판서 모드)이 열린 채 탭을 누르면 칠판을 닫고 이동 (내용은 유지되어 다시 열면 그대로)
             const chalkOverlay = document.getElementById('chalkboardOverlay');
             if (chalkOverlay && !chalkOverlay.classList.contains('hidden')) window.closeChalkboard();
@@ -3498,7 +3501,7 @@ function redrawPlazaGrantsUi() {
             let diffY = touchstartY - touchendY;
             
             if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
-                if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs')) return;
+                if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs') || e.target.closest('.learning-thermometer-stage')) return;
                 
                 let visibleTabs = TABS.filter(t => !document.getElementById('tab-' + t).classList.contains('hidden'));
                 let cIdx = visibleTabs.indexOf(TABS[currentTabIndex]);
@@ -3520,6 +3523,25 @@ function redrawPlazaGrantsUi() {
         const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
         let _learningThermometerSaveTimer = null;
         let _learningThermometerSettlementRunning = false;
+
+        function canAccessClassTools() {
+            return !!(window.playerState && window.playerState.isAdmin);
+        }
+
+        function enforceClassToolsAccess() {
+            const tab = document.getElementById('tab-classtools');
+            const section = document.getElementById('classtoolsSection');
+            if (canAccessClassTools()) {
+                if (tab) tab.classList.remove('hidden');
+                return true;
+            }
+            if (tab) tab.classList.add('hidden');
+            if (section && !section.classList.contains('hidden')) {
+                section.classList.add('hidden');
+                window.switchTab('plaza');
+            }
+            return false;
+        }
 
         function sanitizeLearningThermometerState(raw) {
             const today = getLocalDateStr();
@@ -3580,7 +3602,7 @@ function redrawPlazaGrantsUi() {
             const minEl = document.getElementById('learningThermometerMin');
             const maxEl = document.getElementById('learningThermometerMax');
             if (!box || !status) return;
-            if (!window.playerState || !window.playerState.isAdmin) {
+            if (!canAccessClassTools()) {
                 box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">마스터만 학습 온도계를 조정할 수 있습니다.</div>';
                 return;
             }
@@ -3615,7 +3637,6 @@ function redrawPlazaGrantsUi() {
                 return `
                     <div class="learning-thermometer-card" data-sid="${escapeHtmlAttr(id)}">
                         <div class="learning-thermometer-name truncate" title="${escapeHtmlAttr(label)}">${escapeConvenienceHtml(label)}</div>
-                        <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', ${state.max})" class="text-[10px] text-sky-100 bg-sky-800/70 hover:bg-sky-700 rounded-lg px-2 py-1 font-black border border-sky-400/30">천국</button>
                         <input type="range"
                             min="${state.min}"
                             max="${state.max}"
@@ -3630,7 +3651,6 @@ function redrawPlazaGrantsUi() {
                             <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', 0)">0</button>
                             <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', 1)">+</button>
                         </div>
-                        <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', ${state.min})" class="text-[10px] text-red-100 bg-red-900/70 hover:bg-red-800 rounded-lg px-2 py-1 font-black border border-red-400/30">지옥</button>
                     </div>`;
             }).join('');
         }
@@ -3663,6 +3683,7 @@ function redrawPlazaGrantsUi() {
         }
 
         window.updateLearningThermometerStudent = function(sid, rawValue, options = {}) {
+            if (!canAccessClassTools()) return;
             const state = getLearningThermometerState();
             const id = String(sid);
             const next = Math.max(state.min, Math.min(state.max, Math.round(Number(rawValue) || 0)));
@@ -3688,12 +3709,14 @@ function redrawPlazaGrantsUi() {
         };
 
         window.adjustLearningThermometerStudent = function(sid, delta) {
+            if (!canAccessClassTools()) return;
             const state = getLearningThermometerState();
             const cur = Number(state.values[String(sid)]) || 0;
             window.setLearningThermometerStudent(sid, cur + Number(delta || 0));
         };
 
         window.setLearningThermometerStudent = function(sid, value) {
+            if (!canAccessClassTools()) return;
             window.updateLearningThermometerStudent(sid, value, { save: true });
         };
 
@@ -3726,6 +3749,42 @@ function redrawPlazaGrantsUi() {
             renderLearningThermometerPanel();
             await saveLearningThermometerState({ silent: true });
         };
+
+        /** 배포 직후 1회: 김라희(2번) 온도계 값이 버그로 최고치에 고정된 경우 초기화 */
+        async function applyLearningThermometerRahiMaxHotfix() {
+            if (!db) return;
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'learning_thermometer_rahi_max_hotfix_v1');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                await runTransaction(db, async (transaction) => {
+                    const markerSnap = await transaction.get(markerRef);
+                    if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const data = settingsSnap.exists() ? settingsSnap.data() || {} : {};
+                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const values = { ...(state.values || {}) };
+                    const wasMax = Number(values['2']) === Number(state.max);
+                    if (wasMax) delete values['2'];
+                    transaction.set(settingsRef, {
+                        learningThermometer: {
+                            ...state,
+                            values,
+                            date: getLocalDateStr(),
+                        },
+                    }, { merge: true });
+                    transaction.set(markerRef, {
+                        done: true,
+                        touched: wasMax,
+                        sanitizedAt: new Date().toISOString(),
+                        note: '김라희 학습 온도계 최고치 고정 보정',
+                    }, { merge: true });
+                });
+            } catch (e) {
+                console.warn('applyLearningThermometerRahiMaxHotfix', e);
+            }
+        }
 
         function getLearningThermometerStudentSnapshot(sid, serverRows) {
             const id = String(sid);
@@ -6293,6 +6352,7 @@ function redrawPlazaGrantsUi() {
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyWorldCupBetCancelMigration();
+                void applyLearningThermometerRahiMaxHotfix();
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
@@ -7752,14 +7812,7 @@ function redrawPlazaGrantsUi() {
 
             const classtoolsTab = document.getElementById('tab-classtools');
             if (classtoolsTab) {
-                if (window.playerState.isAdmin) classtoolsTab.classList.remove('hidden');
-                else {
-                    classtoolsTab.classList.add('hidden');
-                    const classtoolsSec = document.getElementById('classtoolsSection');
-                    if (classtoolsSec && !classtoolsSec.classList.contains('hidden')) {
-                        window.switchTab('plaza');
-                    }
-                }
+                enforceClassToolsAccess();
             }
 
             if (window.playerState.isAdmin) {

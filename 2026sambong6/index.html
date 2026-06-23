@@ -1151,10 +1151,10 @@
                             <label class="text-[10px] text-sky-100/80 font-bold">최고 XP
                                 <input type="number" id="learningThermometerMax" value="20" step="1" class="learning-thermometer-input mt-1 w-full">
                             </label>
-                            <button type="button" onclick="window.saveLearningThermometerRange()" class="learning-thermometer-btn bg-sky-700 hover:bg-sky-600">범위 저장</button>
-                            <button type="button" onclick="window.resetLearningThermometerValues()" class="learning-thermometer-btn bg-slate-700 hover:bg-slate-600">값 0으로</button>
+                            <button type="button" id="learningThermometerSaveRangeBtn" onclick="window.saveLearningThermometerRange()" class="learning-thermometer-btn bg-sky-700 hover:bg-sky-600">범위 저장</button>
+                            <button type="button" id="learningThermometerResetBtn" onclick="window.resetLearningThermometerValues()" class="learning-thermometer-btn bg-slate-700 hover:bg-slate-600">값 0으로</button>
                         </div>
-                        <button type="button" onclick="window.settleLearningThermometerNow()" class="learning-thermometer-btn bg-emerald-700 hover:bg-emerald-600 lg:w-40">
+                        <button type="button" id="learningThermometerSettleBtn" onclick="window.settleLearningThermometerNow()" class="learning-thermometer-btn bg-emerald-700 hover:bg-emerald-600 lg:w-40">
                             지금 XP 반영
                         </button>
                     </div>

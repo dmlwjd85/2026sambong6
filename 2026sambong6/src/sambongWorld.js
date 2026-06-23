@@ -3400,7 +3400,7 @@ function redrawPlazaGrantsUi() {
 
         window.switchTab = function(tabId) {
             if (isMartialLawLockingStudent()) return;
-            if (tabId === 'classtools' && (!canAccessClassTools())) {
+            if (tabId === 'classtools' && (!canViewClassTools())) {
                 enforceClassToolsAccess();
                 return;
             }
@@ -3524,15 +3524,30 @@ function redrawPlazaGrantsUi() {
         let _learningThermometerSaveTimer = null;
         let _learningThermometerSettlementRunning = false;
 
-        function canAccessClassTools() {
+        function canViewClassTools() {
+            return !!(window.playerState && !window.playerState.isGuest);
+        }
+
+        function canEditLearningThermometer() {
             return !!(window.playerState && window.playerState.isAdmin);
+        }
+
+        function updateClassToolsPanelVisibility() {
+            const section = document.getElementById('classtoolsSection');
+            const content = section && section.firstElementChild;
+            if (!content) return;
+            Array.from(content.children).forEach((child, index) => {
+                if (index === 0) child.classList.remove('hidden');
+                else child.classList.toggle('hidden', !canEditLearningThermometer());
+            });
         }
 
         function enforceClassToolsAccess() {
             const tab = document.getElementById('tab-classtools');
             const section = document.getElementById('classtoolsSection');
-            if (canAccessClassTools()) {
+            if (canViewClassTools()) {
                 if (tab) tab.classList.remove('hidden');
+                updateClassToolsPanelVisibility();
                 return true;
             }
             if (tab) tab.classList.add('hidden');
@@ -3541,6 +3556,21 @@ function redrawPlazaGrantsUi() {
                 window.switchTab('plaza');
             }
             return false;
+        }
+
+        function getLearningThermometerValueForStudent(sid) {
+            const state = getLearningThermometerState();
+            return Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[String(sid)]) || 0)));
+        }
+
+        function buildPlazaLearningThermometerHtml(sid) {
+            const value = getLearningThermometerValueForStudent(sid);
+            const cls = value > 0
+                ? 'text-sky-200 border-sky-400/40 bg-sky-950/60'
+                : value < 0
+                    ? 'text-red-200 border-red-400/40 bg-red-950/60'
+                    : 'text-slate-300 border-slate-500/40 bg-slate-900/60';
+            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP">🌡 ${value >= 0 ? '+' : ''}${value}</span>`;
         }
 
         function sanitizeLearningThermometerState(raw) {
@@ -3602,14 +3632,26 @@ function redrawPlazaGrantsUi() {
             const minEl = document.getElementById('learningThermometerMin');
             const maxEl = document.getElementById('learningThermometerMax');
             if (!box || !status) return;
-            if (!canAccessClassTools()) {
-                box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">마스터만 학습 온도계를 조정할 수 있습니다.</div>';
+            updateClassToolsPanelVisibility();
+            if (!canViewClassTools()) {
+                box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">로그인 후 학습 온도계를 볼 수 있습니다.</div>';
                 return;
             }
 
             const state = getLearningThermometerState();
+            const canEdit = canEditLearningThermometer();
             if (minEl && document.activeElement !== minEl) minEl.value = String(state.min);
             if (maxEl && document.activeElement !== maxEl) maxEl.value = String(state.max);
+            if (minEl) minEl.disabled = !canEdit;
+            if (maxEl) maxEl.disabled = !canEdit;
+            [minEl, maxEl].forEach((el) => {
+                const label = el && el.closest('label');
+                if (label) label.classList.toggle('hidden', !canEdit);
+            });
+            ['learningThermometerSaveRangeBtn', 'learningThermometerResetBtn', 'learningThermometerSettleBtn'].forEach((id) => {
+                const btn = document.getElementById(id);
+                if (btn) btn.classList.toggle('hidden', !canEdit);
+            });
 
             const ids = getActiveStudentIds();
             if (!ids.length) {
@@ -3634,10 +3676,8 @@ function redrawPlazaGrantsUi() {
                 const id = String(sid);
                 const label = getStudentDisplayLabel(id);
                 const value = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[id]) || 0)));
-                return `
-                    <div class="learning-thermometer-card" data-sid="${escapeHtmlAttr(id)}">
-                        <div class="learning-thermometer-name truncate" title="${escapeHtmlAttr(label)}">${escapeConvenienceHtml(label)}</div>
-                        <input type="range"
+                const controlHtml = canEdit
+                    ? `<input type="range"
                             min="${state.min}"
                             max="${state.max}"
                             step="1"
@@ -3650,7 +3690,17 @@ function redrawPlazaGrantsUi() {
                             <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', -1)">-</button>
                             <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', 0)">0</button>
                             <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', 1)">+</button>
+                        </div>`
+                    : `<div class="learning-thermometer-readonly-track" aria-hidden="true">
+                            <div class="learning-thermometer-readonly-fill ${value >= 0 ? 'from-sky-400 to-cyan-200' : 'from-red-500 to-orange-300'}"
+                                style="${value >= 0 ? `bottom:50%;height:${Math.min(50, Math.abs(value) / Math.max(1, state.max) * 50)}%;` : `top:50%;height:${Math.min(50, Math.abs(value) / Math.max(1, Math.abs(state.min)) * 50)}%;`}"></div>
+                            <div class="learning-thermometer-readonly-zero"></div>
                         </div>
+                        <div id="lt_value_${escapeHtmlAttr(id)}" class="learning-thermometer-value ${getLearningThermometerValueClass(value)}">${value >= 0 ? '+' : ''}${value}</div>`;
+                return `
+                    <div class="learning-thermometer-card" data-sid="${escapeHtmlAttr(id)}">
+                        <div class="learning-thermometer-name truncate" title="${escapeHtmlAttr(label)}">${escapeConvenienceHtml(label)}</div>
+                        ${controlHtml}
                     </div>`;
             }).join('');
         }
@@ -3683,7 +3733,7 @@ function redrawPlazaGrantsUi() {
         }
 
         window.updateLearningThermometerStudent = function(sid, rawValue, options = {}) {
-            if (!canAccessClassTools()) return;
+            if (!canEditLearningThermometer()) return;
             const state = getLearningThermometerState();
             const id = String(sid);
             const next = Math.max(state.min, Math.min(state.max, Math.round(Number(rawValue) || 0)));
@@ -3705,18 +3755,21 @@ function redrawPlazaGrantsUi() {
                 const total = getActiveStudentIds().reduce((sum, x) => sum + (Number(state.values[String(x)]) || 0), 0);
                 status.innerHTML = `<span class="font-bold text-sky-100">${state.date}</span> · 범위 ${state.min} ~ +${state.max} XP · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span> · 변경사항 저장 중...`;
             }
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
             if (options.save !== false) scheduleLearningThermometerSave();
         };
 
         window.adjustLearningThermometerStudent = function(sid, delta) {
-            if (!canAccessClassTools()) return;
+            if (!canEditLearningThermometer()) return;
             const state = getLearningThermometerState();
             const cur = Number(state.values[String(sid)]) || 0;
             window.setLearningThermometerStudent(sid, cur + Number(delta || 0));
         };
 
         window.setLearningThermometerStudent = function(sid, value) {
-            if (!canAccessClassTools()) return;
+            if (!canEditLearningThermometer()) return;
             window.updateLearningThermometerStudent(sid, value, { save: true });
         };
 
@@ -6475,6 +6528,9 @@ function redrawPlazaGrantsUi() {
                                 renderWorldCupBetPanel();
                                 renderMusicTimeQueueBar();
                                 renderLearningThermometerPanel();
+                                if (typeof window.renderPlaza === 'function') {
+                                    window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                                }
                                 const musicModal = document.getElementById('musicTimeQueueModal');
                                 if (musicModal && !musicModal.classList.contains('hidden')) renderMusicTimeQueueModalBody();
                                 maybeShowLottoResultPopup();
@@ -6990,6 +7046,7 @@ function redrawPlazaGrantsUi() {
                     <!-- XP 및 B 동시 표기 -->
                     <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
+                        ${buildPlazaLearningThermometerHtml(targetId)}
                         <span class="text-[9px] sm:text-[10px] font-black ${(Number(displayData.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}">${(Number(displayData.bong)||0).toFixed(1)}B</span>
                     </div>
 

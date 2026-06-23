@@ -3449,6 +3449,7 @@ function redrawPlazaGrantsUi() {
                 renderLearningThermometerPanel();
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
+                renderClassWheelPanel();
             }
             if (tabId === 'shop') {
                 renderShopCatalog();
@@ -3523,6 +3524,9 @@ function redrawPlazaGrantsUi() {
         const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
         let _learningThermometerSaveTimer = null;
         let _learningThermometerSettlementRunning = false;
+        let _learningThermometerEditActive = false;
+        let _learningThermometerSavePending = false;
+        let _learningThermometerIgnoreRemoteUntil = 0;
 
         function canViewClassTools() {
             return !!(window.playerState && !window.playerState.isGuest);
@@ -3572,6 +3576,20 @@ function redrawPlazaGrantsUi() {
                     : 'text-slate-300 border-slate-500/40 bg-slate-900/60';
             return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP">🌡 ${value >= 0 ? '+' : ''}${value}</span>`;
         }
+
+        function isLearningThermometerLocallyBusy() {
+            return _learningThermometerEditActive || _learningThermometerSavePending || Date.now() < _learningThermometerIgnoreRemoteUntil;
+        }
+
+        window.beginLearningThermometerEdit = function() {
+            if (!canEditLearningThermometer()) return;
+            _learningThermometerEditActive = true;
+        };
+
+        window.endLearningThermometerEdit = function() {
+            _learningThermometerEditActive = false;
+            _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
+        };
 
         function sanitizeLearningThermometerState(raw) {
             const today = getLocalDateStr();
@@ -3683,6 +3701,11 @@ function redrawPlazaGrantsUi() {
                             step="1"
                             value="${value}"
                             class="learning-thermometer-slider"
+                            onpointerdown="window.beginLearningThermometerEdit()"
+                            onpointerup="window.endLearningThermometerEdit()"
+                            onpointercancel="window.endLearningThermometerEdit()"
+                            ontouchstart="window.beginLearningThermometerEdit()"
+                            ontouchend="window.endLearningThermometerEdit()"
                             oninput="window.updateLearningThermometerStudent('${escapeHtmlAttr(id)}', this.value, { save: false })"
                             onchange="window.updateLearningThermometerStudent('${escapeHtmlAttr(id)}', this.value, { save: true })" />
                         <div id="lt_value_${escapeHtmlAttr(id)}" class="learning-thermometer-value ${getLearningThermometerValueClass(value)}">${value >= 0 ? '+' : ''}${value}</div>
@@ -3706,27 +3729,36 @@ function redrawPlazaGrantsUi() {
         }
 
         async function saveLearningThermometerState({ silent = true } = {}) {
-            if (!window.playerState || !window.playerState.isAdmin) return false;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                _learningThermometerSavePending = false;
+                return false;
+            }
             if (!db) {
+                _learningThermometerSavePending = false;
                 if (!silent) await window.customAlert('데이터베이스에 연결되지 않았습니다.');
                 return false;
             }
             try {
+                _learningThermometerSavePending = true;
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
                 const state = getLearningThermometerState();
                 await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
+                _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 return true;
             } catch (e) {
                 console.error('saveLearningThermometerState', e);
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;
+            } finally {
+                _learningThermometerSavePending = false;
             }
         }
 
         function scheduleLearningThermometerSave() {
             clearTimeout(_learningThermometerSaveTimer);
+            _learningThermometerSavePending = true;
             _learningThermometerSaveTimer = setTimeout(() => {
                 void saveLearningThermometerState({ silent: true });
             }, 550);
@@ -3734,6 +3766,7 @@ function redrawPlazaGrantsUi() {
 
         window.updateLearningThermometerStudent = function(sid, rawValue, options = {}) {
             if (!canEditLearningThermometer()) return;
+            _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
             const state = getLearningThermometerState();
             const id = String(sid);
             const next = Math.max(state.min, Math.min(state.max, Math.round(Number(rawValue) || 0)));
@@ -4569,6 +4602,225 @@ function redrawPlazaGrantsUi() {
             } finally {
                 _lotteryRunning = false;
             }
+        };
+
+        // ==========================================
+        // ★ 수업도구: 원형 돌림판 ★
+        // ==========================================
+        const CLASS_WHEEL_STORAGE_KEY = 'sambong_class_wheel_v1';
+        const CLASS_WHEEL_COLORS = ['#f472b6', '#a78bfa', '#60a5fa', '#22d3ee', '#34d399', '#facc15', '#fb923c', '#f87171'];
+        let _classWheelItems = ['발표하기', '문제 풀기', '친구 칭찬', '한 번 더 기회', '자리 바꾸기', '선생님 선택'];
+        let _classWheelRotation = 0;
+        let _classWheelSpinning = false;
+
+        function clampClassWheelCount(raw) {
+            return Math.max(2, Math.min(24, Math.floor(Number(raw) || 6)));
+        }
+
+        function sanitizeClassWheelItems(rawItems, count) {
+            const src = Array.isArray(rawItems) ? rawItems : [];
+            const items = [];
+            for (let i = 0; i < count; i++) {
+                const text = String(src[i] || '').trim();
+                items.push(text || `${i + 1}번`);
+            }
+            return items;
+        }
+
+        function loadClassWheelConfig() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(CLASS_WHEEL_STORAGE_KEY) || 'null');
+                if (!raw || typeof raw !== 'object') return;
+                const count = clampClassWheelCount(raw.count || (Array.isArray(raw.items) ? raw.items.length : 6));
+                _classWheelItems = sanitizeClassWheelItems(raw.items, count);
+            } catch (e) {
+                console.warn('loadClassWheelConfig', e);
+            }
+        }
+
+        function persistClassWheelConfig() {
+            try {
+                localStorage.setItem(CLASS_WHEEL_STORAGE_KEY, JSON.stringify({
+                    count: _classWheelItems.length,
+                    items: _classWheelItems,
+                }));
+            } catch (e) {
+                console.warn('persistClassWheelConfig', e);
+            }
+        }
+
+        function getClassWheelItemsFromInputs() {
+            const countEl = document.getElementById('classWheelSegmentCount');
+            const count = clampClassWheelCount(countEl ? countEl.value : _classWheelItems.length);
+            const items = [];
+            for (let i = 0; i < count; i++) {
+                const el = document.getElementById(`classWheelItem_${i}`);
+                items.push(String(el && el.value ? el.value : '').trim() || `${i + 1}번`);
+            }
+            return items;
+        }
+
+        function renderClassWheelItemInputs() {
+            const box = document.getElementById('classWheelItemInputs');
+            const countEl = document.getElementById('classWheelSegmentCount');
+            if (!box) return;
+            if (countEl) countEl.value = String(_classWheelItems.length);
+            box.innerHTML = _classWheelItems.map((item, i) => `
+                <label class="class-wheel-item-row">
+                    <span>${i + 1}</span>
+                    <input type="text" id="classWheelItem_${i}" value="${escapeHtmlAttr(item)}" maxlength="30" placeholder="${i + 1}번 항목" />
+                </label>
+            `).join('');
+        }
+
+        function renderClassWheelDisc() {
+            const disc = document.getElementById('classWheelDisc');
+            const labels = document.getElementById('classWheelLabels');
+            if (!disc || !labels) return;
+            const items = _classWheelItems.length ? _classWheelItems : ['1번', '2번'];
+            const segment = 360 / items.length;
+            const gradient = items.map((_, i) => {
+                const start = (i * segment).toFixed(3);
+                const end = ((i + 1) * segment).toFixed(3);
+                const color = CLASS_WHEEL_COLORS[i % CLASS_WHEEL_COLORS.length];
+                const nextColor = CLASS_WHEEL_COLORS[(i + 1) % CLASS_WHEEL_COLORS.length];
+                return `${color} ${start}deg ${Math.max(Number(start), Number(end) - 1.2).toFixed(3)}deg, ${nextColor} ${Math.max(Number(start), Number(end) - 1.2).toFixed(3)}deg ${end}deg`;
+            }).join(', ');
+            disc.style.background = `conic-gradient(from 0deg, ${gradient})`;
+            disc.style.transform = `rotate(${_classWheelRotation}deg)`;
+            labels.innerHTML = items.map((item, i) => {
+                const angle = i * segment + segment / 2;
+                return `<span class="class-wheel-label" style="transform: rotate(${angle}deg) translateY(-7.2rem) rotate(${-angle}deg);">${escapeConvenienceHtml(item)}</span>`;
+            }).join('');
+        }
+
+        function renderClassWheelPanel() {
+            const disc = document.getElementById('classWheelDisc');
+            if (!disc) return;
+            loadClassWheelConfig();
+            renderClassWheelItemInputs();
+            renderClassWheelDisc();
+        }
+
+        window.updateClassWheelSegmentInputs = function() {
+            if (_classWheelSpinning) return;
+            const nextCount = clampClassWheelCount(document.getElementById('classWheelSegmentCount')?.value);
+            _classWheelItems = sanitizeClassWheelItems(getClassWheelItemsFromInputs(), nextCount);
+            renderClassWheelItemInputs();
+            renderClassWheelDisc();
+        };
+
+        window.saveClassWheelConfig = async function() {
+            if (_classWheelSpinning) return;
+            _classWheelItems = sanitizeClassWheelItems(getClassWheelItemsFromInputs(), clampClassWheelCount(document.getElementById('classWheelSegmentCount')?.value));
+            persistClassWheelConfig();
+            renderClassWheelItemInputs();
+            renderClassWheelDisc();
+            const result = document.getElementById('classWheelResult');
+            if (result) result.textContent = `항목 ${_classWheelItems.length}개를 저장했습니다.`;
+        };
+
+        window.resetClassWheelConfig = function() {
+            if (_classWheelSpinning) return;
+            _classWheelItems = ['발표하기', '문제 풀기', '친구 칭찬', '한 번 더 기회', '자리 바꾸기', '선생님 선택'];
+            _classWheelRotation = 0;
+            persistClassWheelConfig();
+            renderClassWheelItemInputs();
+            renderClassWheelDisc();
+            const result = document.getElementById('classWheelResult');
+            if (result) result.textContent = '기본 돌림판으로 되돌렸습니다.';
+        };
+
+        function playClassWheelTickSfx(step = 0) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(520 + (step % 5) * 35, now);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.09, now + 0.012);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.055);
+        }
+
+        function playClassWheelRevealSfx() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            [392, 523, 659, 784, 1047].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const t = now + i * 0.08;
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, t);
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.exponentialRampToValueAtTime(0.16, t + 0.025);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(t);
+                osc.stop(t + 0.24);
+            });
+        }
+
+        window.spinClassWheel = async function() {
+            if (_classWheelSpinning) return;
+            _classWheelItems = sanitizeClassWheelItems(getClassWheelItemsFromInputs(), clampClassWheelCount(document.getElementById('classWheelSegmentCount')?.value));
+            if (_classWheelItems.length < 2) return await window.customAlert('돌림판은 2칸 이상 필요합니다.');
+            persistClassWheelConfig();
+
+            const disc = document.getElementById('classWheelDisc');
+            const btn = document.getElementById('classWheelSpinBtn');
+            const result = document.getElementById('classWheelResult');
+            const fx = document.getElementById('classWheelSpinFx');
+            if (!disc) return;
+
+            const targetIndex = Math.floor(Math.random() * _classWheelItems.length);
+            const segment = 360 / _classWheelItems.length;
+            const targetCenter = targetIndex * segment + segment / 2;
+            const normalizedStop = (270 - targetCenter + 360) % 360;
+            const currentBase = Math.ceil(_classWheelRotation / 360) * 360;
+            const turns = 6 + Math.floor(Math.random() * 3);
+            const finalRotation = currentBase + turns * 360 + normalizedStop;
+            const duration = 4700 + Math.floor(Math.random() * 700);
+
+            _classWheelSpinning = true;
+            if (btn) btn.disabled = true;
+            if (result) {
+                result.classList.remove('class-wheel-result-pop');
+                result.textContent = '두구두구... 운명의 돌림판이 돌아갑니다!';
+            }
+            if (fx) fx.classList.remove('hidden');
+            disc.classList.add('class-wheel-spinning');
+            disc.style.transition = `transform ${duration}ms cubic-bezier(0.12, 0.78, 0.08, 1)`;
+            void disc.offsetWidth;
+            disc.style.transform = `rotate(${finalRotation}deg)`;
+
+            let tick = 0;
+            const tickId = setInterval(() => {
+                playClassWheelTickSfx(tick);
+                tick++;
+            }, 95);
+
+            setTimeout(() => {
+                clearInterval(tickId);
+                _classWheelRotation = finalRotation % 360;
+                disc.style.transition = '';
+                disc.style.transform = `rotate(${_classWheelRotation}deg)`;
+                disc.classList.remove('class-wheel-spinning');
+                if (fx) fx.classList.add('hidden');
+                if (btn) btn.disabled = false;
+                if (result) {
+                    result.textContent = `결과: ${_classWheelItems[targetIndex]}`;
+                    void result.offsetWidth;
+                    result.classList.add('class-wheel-result-pop');
+                }
+                playClassWheelRevealSfx();
+                _classWheelSpinning = false;
+            }, duration + 80);
         };
 
 
@@ -6474,7 +6726,7 @@ function redrawPlazaGrantsUi() {
                             if (window.playerState && window.playerState.isAdmin) {
                                 window.renderAdminTable(students);
                                 window.renderAdminQuestBoard(students);
-                                renderLearningThermometerPanel();
+                                if (!isLearningThermometerLocallyBusy()) renderLearningThermometerPanel();
                             }
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
@@ -6485,12 +6737,16 @@ function redrawPlazaGrantsUi() {
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), snap => {
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
+                                const keepLocalLearningThermometer = settingsData.learningThermometer !== undefined && isLearningThermometerLocallyBusy();
+                                const localLearningThermometer = window.globalSettings && window.globalSettings.learningThermometer;
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
                                 if (settingsData.musicTimeQueue !== undefined) {
                                     window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
                                 }
                                 if (settingsData.learningThermometer !== undefined) {
-                                    window.globalSettings.learningThermometer = sanitizeLearningThermometerState(settingsData.learningThermometer);
+                                    window.globalSettings.learningThermometer = keepLocalLearningThermometer
+                                        ? localLearningThermometer
+                                        : sanitizeLearningThermometerState(settingsData.learningThermometer);
                                 }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
@@ -6527,7 +6783,7 @@ function redrawPlazaGrantsUi() {
                                 renderLottoPanel();
                                 renderWorldCupBetPanel();
                                 renderMusicTimeQueueBar();
-                                renderLearningThermometerPanel();
+                                if (!isLearningThermometerLocallyBusy()) renderLearningThermometerPanel();
                                 if (typeof window.renderPlaza === 'function') {
                                     window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
                                 }

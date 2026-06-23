@@ -54,6 +54,144 @@
             border-color: #84cc16;
         }
 
+        /* 수업도구 — 학습 온도계 */
+        .learning-thermometer-panel {
+            background:
+                radial-gradient(circle at 50% 0%, rgba(186, 230, 253, 0.18), transparent 32%),
+                radial-gradient(circle at 50% 100%, rgba(239, 68, 68, 0.18), transparent 34%),
+                linear-gradient(180deg, rgba(8, 47, 73, 0.92) 0%, rgba(15, 23, 42, 0.96) 48%, rgba(69, 10, 10, 0.92) 100%);
+        }
+        .learning-thermometer-input {
+            background: rgba(2, 6, 23, 0.9);
+            border: 1px solid rgba(125, 211, 252, 0.45);
+            color: #e0f2fe;
+            border-radius: 0.75rem;
+            padding: 0.55rem 0.7rem;
+            font-size: 0.85rem;
+            font-weight: 900;
+            text-align: center;
+        }
+        .learning-thermometer-btn {
+            min-height: 2.75rem;
+            border-radius: 0.8rem;
+            padding: 0.65rem 0.8rem;
+            color: white;
+            font-size: 10px;
+            font-weight: 900;
+            border: 1px solid rgba(255,255,255,0.14);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+        }
+        .learning-thermometer-stage {
+            position: relative;
+            min-height: 26rem;
+            background:
+                linear-gradient(180deg, rgba(224, 242, 254, 0.92) 0%, rgba(125, 211, 252, 0.45) 30%, rgba(15, 23, 42, 0.72) 50%, rgba(127, 29, 29, 0.72) 72%, rgba(69, 10, 10, 0.95) 100%);
+        }
+        .learning-thermometer-heaven,
+        .learning-thermometer-hell {
+            height: 3.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            pointer-events: none;
+            user-select: none;
+        }
+        .learning-thermometer-heaven {
+            background: linear-gradient(180deg, rgba(240, 249, 255, 0.96), rgba(186, 230, 253, 0.45));
+        }
+        .learning-thermometer-hell {
+            background: linear-gradient(180deg, rgba(127, 29, 29, 0.45), rgba(69, 10, 10, 0.96));
+        }
+        .learning-thermometer-zero-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            z-index: 2;
+            border-top: 2px dashed rgba(255,255,255,0.8);
+            text-align: center;
+            pointer-events: none;
+        }
+        .learning-thermometer-zero-line span {
+            display: inline-flex;
+            transform: translateY(-50%);
+            background: rgba(15, 23, 42, 0.92);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            border-radius: 999px;
+            min-width: 2rem;
+            height: 2rem;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 0.75rem;
+        }
+        .learning-thermometer-students {
+            position: relative;
+            min-height: 19.5rem;
+            display: flex;
+            align-items: stretch;
+            gap: 0.65rem;
+            padding: 1rem 1rem 1.15rem;
+            z-index: 3;
+        }
+        .learning-thermometer-card {
+            min-width: 4.85rem;
+            width: 4.85rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.45rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(2, 6, 23, 0.56);
+            backdrop-filter: blur(8px);
+            padding: 0.65rem 0.45rem;
+        }
+        .learning-thermometer-name {
+            max-width: 100%;
+            font-size: 10px;
+            font-weight: 900;
+            color: #f8fafc;
+            text-align: center;
+            line-height: 1.1;
+        }
+        .learning-thermometer-value {
+            min-width: 2.75rem;
+            border-radius: 999px;
+            padding: 0.2rem 0.35rem;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 900;
+            border: 1px solid rgba(255,255,255,0.22);
+            background: rgba(15, 23, 42, 0.82);
+        }
+        .learning-thermometer-slider {
+            writing-mode: vertical-rl;
+            direction: rtl;
+            width: 2.1rem;
+            height: 12.5rem;
+            accent-color: #38bdf8;
+            cursor: pointer;
+        }
+        .learning-thermometer-stepper {
+            width: 100%;
+            display: flex;
+            gap: 0.25rem;
+        }
+        .learning-thermometer-stepper button {
+            flex: 1;
+            border-radius: 0.45rem;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(255,255,255,0.16);
+            color: white;
+            font-size: 11px;
+            font-weight: 900;
+            line-height: 1.8;
+        }
+
         /* 전술 타이머 전체 화면 */
         .military-timer-overlay {
             background: #0a0c08;

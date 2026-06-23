@@ -1126,7 +1126,54 @@
 
         <!-- ★ 수업도구 탭 (타이머 · 제비뽑기) ★ -->
         <section id="classtoolsSection" class="hidden">
-            <div class="max-w-2xl mx-auto px-1 pb-10 space-y-6">
+            <div class="max-w-7xl mx-auto px-1 pb-10 space-y-6">
+                <!-- 학습 온도계 -->
+                <div class="learning-thermometer-panel rounded-2xl p-4 sm:p-6 border-2 border-sky-500/50 shadow-[0_0_45px_rgba(14,165,233,0.22)]">
+                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4 border-b border-sky-500/30 pb-3">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-lg bg-sky-950 border-2 border-sky-500/70 flex items-center justify-center text-2xl shadow-inner">🌡️</div>
+                            <div>
+                                <p class="text-[10px] font-black tracking-[0.35em] text-sky-300/90">CLASS TEMPERATURE</p>
+                                <h2 class="text-xl sm:text-2xl font-display text-sky-50 tracking-wide">학습 온도계</h2>
+                            </div>
+                        </div>
+                        <div class="text-[9px] sm:text-[10px] text-sky-100/70 leading-relaxed lg:text-right">
+                            학생별 수업태도·과제 결과를 위아래로 조절합니다.<br>
+                            매일 15:00 이후 1회 실제 XP에 반영되고 자동 초기화됩니다.
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-3 mb-4">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <label class="text-[10px] text-sky-100/80 font-bold">최저 XP
+                                <input type="number" id="learningThermometerMin" value="-20" step="1" class="learning-thermometer-input mt-1 w-full">
+                            </label>
+                            <label class="text-[10px] text-sky-100/80 font-bold">최고 XP
+                                <input type="number" id="learningThermometerMax" value="20" step="1" class="learning-thermometer-input mt-1 w-full">
+                            </label>
+                            <button type="button" onclick="window.saveLearningThermometerRange()" class="learning-thermometer-btn bg-sky-700 hover:bg-sky-600">범위 저장</button>
+                            <button type="button" onclick="window.resetLearningThermometerValues()" class="learning-thermometer-btn bg-slate-700 hover:bg-slate-600">값 0으로</button>
+                        </div>
+                        <button type="button" onclick="window.settleLearningThermometerNow()" class="learning-thermometer-btn bg-emerald-700 hover:bg-emerald-600 lg:w-40">
+                            지금 XP 반영
+                        </button>
+                    </div>
+
+                    <div id="learningThermometerStatus" class="text-[10px] text-sky-100/70 mb-3 min-h-[1rem]">학습 온도계를 불러오는 중...</div>
+                    <div class="learning-thermometer-stage rounded-2xl border border-white/10 overflow-hidden">
+                        <div class="learning-thermometer-heaven" aria-hidden="true">
+                            <span class="text-2xl sm:text-3xl">☁️ 😇 ✨</span>
+                            <span class="text-[10px] font-black tracking-[0.4em] text-sky-950/70">천국</span>
+                        </div>
+                        <div class="learning-thermometer-zero-line" aria-hidden="true"><span>0</span></div>
+                        <div id="learningThermometerStudents" class="learning-thermometer-students overflow-x-auto scrollbar-hide"></div>
+                        <div class="learning-thermometer-hell" aria-hidden="true">
+                            <span class="text-[10px] font-black tracking-[0.4em] text-red-100/80">지옥</span>
+                            <span class="text-2xl sm:text-3xl">🔥 😈 🌋</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 판서 모드 (전자칠판) -->
                 <div class="chalk-launch-panel rounded-2xl p-4 sm:p-6 border-2 border-emerald-700/60 shadow-[0_0_40px_rgba(16,93,61,0.3)]">
                     <div class="flex items-center gap-3 mb-3 border-b border-emerald-800/50 pb-3">

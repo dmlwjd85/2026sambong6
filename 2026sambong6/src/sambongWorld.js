@@ -1066,7 +1066,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [] };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** 편의점 주문 목록 스냅샷: 최신순 배열 */
@@ -3443,6 +3443,7 @@ function redrawPlazaGrantsUi() {
                 window.renderGoldenBellMasterLive();
             }
             if (tabId === 'classtools') {
+                renderLearningThermometerPanel();
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
             }
@@ -3509,6 +3510,375 @@ function redrawPlazaGrantsUi() {
                 }
             }
         });
+
+        // ==========================================
+        // ★ 수업도구: 학습 온도계 ★
+        // ==========================================
+        const LEARNING_THERMOMETER_DEFAULT_MIN = -20;
+        const LEARNING_THERMOMETER_DEFAULT_MAX = 20;
+        const LEARNING_THERMOMETER_AUTO_HOUR = 15;
+        const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
+        let _learningThermometerSaveTimer = null;
+        let _learningThermometerSettlementRunning = false;
+
+        function sanitizeLearningThermometerState(raw) {
+            const today = getLocalDateStr();
+            const src = raw && typeof raw === 'object' ? raw : {};
+            let min = Math.floor(Number(src.min));
+            let max = Math.floor(Number(src.max));
+            if (!Number.isFinite(min)) min = LEARNING_THERMOMETER_DEFAULT_MIN;
+            if (!Number.isFinite(max)) max = LEARNING_THERMOMETER_DEFAULT_MAX;
+            min = Math.max(-500, Math.min(0, min));
+            max = Math.min(500, Math.max(0, max));
+            if (min >= max) {
+                min = LEARNING_THERMOMETER_DEFAULT_MIN;
+                max = LEARNING_THERMOMETER_DEFAULT_MAX;
+            }
+
+            const values = {};
+            const rawValues = src.values && typeof src.values === 'object' ? src.values : {};
+            Object.keys(rawValues).forEach((sid) => {
+                const id = String(sid);
+                const val = Math.max(min, Math.min(max, Math.round(Number(rawValues[id]) || 0)));
+                if (val !== 0) values[id] = val;
+            });
+
+            const stateDate = src.date ? String(src.date) : today;
+            return {
+                date: stateDate,
+                min,
+                max,
+                values: stateDate === today ? values : {},
+                settledDate: src.settledDate ? String(src.settledDate) : '',
+                lastSettlementAt: Number(src.lastSettlementAt) || 0,
+                settlementKey: src.settlementKey ? String(src.settlementKey) : '',
+                settlementStatus: src.settlementStatus ? String(src.settlementStatus) : '',
+                settlementStartedAt: Number(src.settlementStartedAt) || 0,
+                settlementAppliedCount: Math.max(0, Math.floor(Number(src.settlementAppliedCount) || 0)),
+                settlementTotalDelta: Math.floor(Number(src.settlementTotalDelta) || 0),
+            };
+        }
+
+        function getLearningThermometerState() {
+            return sanitizeLearningThermometerState(window.globalSettings && window.globalSettings.learningThermometer);
+        }
+
+        function setLocalLearningThermometerState(next) {
+            if (!window.globalSettings) window.globalSettings = {};
+            window.globalSettings.learningThermometer = sanitizeLearningThermometerState(next);
+        }
+
+        function getLearningThermometerValueClass(value) {
+            if (value > 0) return 'text-sky-200';
+            if (value < 0) return 'text-red-200';
+            return 'text-slate-200';
+        }
+
+        function renderLearningThermometerPanel() {
+            const box = document.getElementById('learningThermometerStudents');
+            const status = document.getElementById('learningThermometerStatus');
+            const minEl = document.getElementById('learningThermometerMin');
+            const maxEl = document.getElementById('learningThermometerMax');
+            if (!box || !status) return;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">마스터만 학습 온도계를 조정할 수 있습니다.</div>';
+                return;
+            }
+
+            const state = getLearningThermometerState();
+            if (minEl && document.activeElement !== minEl) minEl.value = String(state.min);
+            if (maxEl && document.activeElement !== maxEl) maxEl.value = String(state.max);
+
+            const ids = getActiveStudentIds();
+            if (!ids.length) {
+                box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">학생 명단을 불러오는 중입니다.</div>';
+                return;
+            }
+
+            const total = ids.reduce((sum, sid) => sum + (Number(state.values[String(sid)]) || 0), 0);
+            const now = new Date();
+            const today = getLocalDateStr();
+            const autoText = now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR
+                ? (state.settledDate === today ? '오늘 15시 정산 완료' : '15시 이후입니다. 곧 자동 정산됩니다.')
+                : '15:00 이후 자동 정산';
+            status.innerHTML = `
+                <span class="font-bold text-sky-100">${today}</span>
+                · 범위 ${state.min} ~ +${state.max} XP
+                · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span>
+                · ${autoText}
+            `;
+
+            box.innerHTML = ids.map((sid) => {
+                const id = String(sid);
+                const label = getStudentDisplayLabel(id);
+                const value = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[id]) || 0)));
+                return `
+                    <div class="learning-thermometer-card" data-sid="${escapeHtmlAttr(id)}">
+                        <div class="learning-thermometer-name truncate" title="${escapeHtmlAttr(label)}">${escapeConvenienceHtml(label)}</div>
+                        <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', ${state.max})" class="text-[10px] text-sky-100 bg-sky-800/70 hover:bg-sky-700 rounded-lg px-2 py-1 font-black border border-sky-400/30">천국</button>
+                        <input type="range"
+                            min="${state.min}"
+                            max="${state.max}"
+                            step="1"
+                            value="${value}"
+                            class="learning-thermometer-slider"
+                            oninput="window.updateLearningThermometerStudent('${escapeHtmlAttr(id)}', this.value, { save: false })"
+                            onchange="window.updateLearningThermometerStudent('${escapeHtmlAttr(id)}', this.value, { save: true })" />
+                        <div id="lt_value_${escapeHtmlAttr(id)}" class="learning-thermometer-value ${getLearningThermometerValueClass(value)}">${value >= 0 ? '+' : ''}${value}</div>
+                        <div class="learning-thermometer-stepper">
+                            <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', -1)">-</button>
+                            <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', 0)">0</button>
+                            <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', 1)">+</button>
+                        </div>
+                        <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', ${state.min})" class="text-[10px] text-red-100 bg-red-900/70 hover:bg-red-800 rounded-lg px-2 py-1 font-black border border-red-400/30">지옥</button>
+                    </div>`;
+            }).join('');
+        }
+
+        async function saveLearningThermometerState({ silent = true } = {}) {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            if (!db) {
+                if (!silent) await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+                return false;
+            }
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+                const state = getLearningThermometerState();
+                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
+                if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
+                return true;
+            } catch (e) {
+                console.error('saveLearningThermometerState', e);
+                if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
+            }
+        }
+
+        function scheduleLearningThermometerSave() {
+            clearTimeout(_learningThermometerSaveTimer);
+            _learningThermometerSaveTimer = setTimeout(() => {
+                void saveLearningThermometerState({ silent: true });
+            }, 550);
+        }
+
+        window.updateLearningThermometerStudent = function(sid, rawValue, options = {}) {
+            const state = getLearningThermometerState();
+            const id = String(sid);
+            const next = Math.max(state.min, Math.min(state.max, Math.round(Number(rawValue) || 0)));
+            if (next === 0) delete state.values[id];
+            else state.values[id] = next;
+            state.date = getLocalDateStr();
+            setLocalLearningThermometerState(state);
+
+            const valueEl = document.getElementById(`lt_value_${id}`);
+            if (valueEl) {
+                valueEl.textContent = `${next >= 0 ? '+' : ''}${next}`;
+                valueEl.className = `learning-thermometer-value ${getLearningThermometerValueClass(next)}`;
+            }
+            const card = document.querySelector(`.learning-thermometer-card[data-sid="${id.replace(/"/g, '\\"')}"]`);
+            const slider = card && card.querySelector('input[type="range"]');
+            if (slider && Number(slider.value) !== next) slider.value = String(next);
+            const status = document.getElementById('learningThermometerStatus');
+            if (status) {
+                const total = getActiveStudentIds().reduce((sum, x) => sum + (Number(state.values[String(x)]) || 0), 0);
+                status.innerHTML = `<span class="font-bold text-sky-100">${state.date}</span> · 범위 ${state.min} ~ +${state.max} XP · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span> · 변경사항 저장 중...`;
+            }
+            if (options.save !== false) scheduleLearningThermometerSave();
+        };
+
+        window.adjustLearningThermometerStudent = function(sid, delta) {
+            const state = getLearningThermometerState();
+            const cur = Number(state.values[String(sid)]) || 0;
+            window.setLearningThermometerStudent(sid, cur + Number(delta || 0));
+        };
+
+        window.setLearningThermometerStudent = function(sid, value) {
+            window.updateLearningThermometerStudent(sid, value, { save: true });
+        };
+
+        window.saveLearningThermometerRange = async function() {
+            const minEl = document.getElementById('learningThermometerMin');
+            const maxEl = document.getElementById('learningThermometerMax');
+            let min = Math.floor(Number(minEl && minEl.value));
+            let max = Math.floor(Number(maxEl && maxEl.value));
+            if (!Number.isFinite(min) || !Number.isFinite(max) || min >= 0 || max <= 0 || min >= max) {
+                return await window.customAlert('범위는 최저값 < 0 < 최고값 형태로 입력해 주세요.');
+            }
+            min = Math.max(-500, min);
+            max = Math.min(500, max);
+            const state = getLearningThermometerState();
+            const values = {};
+            Object.keys(state.values).forEach((sid) => {
+                const v = Math.max(min, Math.min(max, Math.round(Number(state.values[sid]) || 0)));
+                if (v !== 0) values[sid] = v;
+            });
+            setLocalLearningThermometerState({ ...state, min, max, values, date: getLocalDateStr() });
+            renderLearningThermometerPanel();
+            await saveLearningThermometerState({ silent: false });
+        };
+
+        window.resetLearningThermometerValues = async function() {
+            const ok = await window.customConfirm('학습 온도계 값을 모두 0으로 초기화할까요?\nXP에는 반영되지 않습니다.');
+            if (!ok) return;
+            const state = getLearningThermometerState();
+            setLocalLearningThermometerState({ ...state, values: {}, date: getLocalDateStr() });
+            renderLearningThermometerPanel();
+            await saveLearningThermometerState({ silent: true });
+        };
+
+        function getLearningThermometerStudentSnapshot(sid, serverRows) {
+            const id = String(sid);
+            const row = Array.isArray(serverRows) ? serverRows.find((s) => String(s.id) === id) : null;
+            return row || {};
+        }
+
+        async function settleLearningThermometer({ manual = false } = {}) {
+            if (_learningThermometerSettlementRunning) return { status: 'running' };
+            if (!db) return { status: 'no_db' };
+            const today = getLocalDateStr();
+            const now = new Date();
+            if (!manual && now.getHours() < LEARNING_THERMOMETER_AUTO_HOUR) return { status: 'too_early' };
+            if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
+
+            _learningThermometerSettlementRunning = true;
+            let claimed = null;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+
+                await runTransaction(db, async (transaction) => {
+                    const ref = getGlobalSettingsDocRef();
+                    const snap = await transaction.get(ref);
+                    const data = snap.exists() ? snap.data() || {} : {};
+                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const lockIsFresh =
+                        state.settlementKey === today &&
+                        state.settlementStatus === 'running' &&
+                        Date.now() - Number(state.settlementStartedAt || 0) < LEARNING_THERMOMETER_LOCK_STALE_MS;
+                    if (state.settledDate === today) {
+                        claimed = { status: 'already_done', state };
+                        return;
+                    }
+                    if (lockIsFresh) {
+                        claimed = { status: 'locked', state };
+                        return;
+                    }
+                    const values = {};
+                    getActiveStudentIds().forEach((sid) => {
+                        const v = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[String(sid)]) || 0)));
+                        if (v !== 0) values[String(sid)] = v;
+                    });
+                    claimed = { status: 'claimed', state: { ...state, values } };
+                    transaction.set(ref, {
+                        learningThermometer: {
+                            ...state,
+                            values,
+                            date: today,
+                            settlementKey: today,
+                            settlementStatus: 'running',
+                            settlementStartedAt: Date.now(),
+                        }
+                    }, { merge: true });
+                });
+
+                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
+
+                const values = claimed.state.values || {};
+                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                let serverRows = [];
+                try {
+                    await refreshStudentsCacheFromServer();
+                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
+                } catch (e) {
+                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
+                }
+
+                let appliedCount = 0;
+                let totalDelta = 0;
+                if (entries.length) {
+                    const batch = writeBatch(db);
+                    entries.forEach(([sid, deltaRaw]) => {
+                        const delta = Math.round(Number(deltaRaw) || 0);
+                        if (!delta) return;
+                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
+                        const afterXp = Math.max(0, beforeXp + delta);
+                        const actualDelta = afterXp - beforeXp;
+                        if (!actualDelta) return;
+                        const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
+                        logs.push(buildXpChangeLogEntry('학습 온도계 15시 정산', beforeXp, afterXp, {
+                            source: 'learningThermometer',
+                            rawDelta: delta,
+                            settledDate: today,
+                        }));
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            { xp: afterXp, xpChangeLog: logs },
+                            { merge: true }
+                        );
+                        appliedCount++;
+                        totalDelta += actualDelta;
+                    });
+                    if (appliedCount > 0) await batch.commit();
+                }
+
+                const resetState = {
+                    ...claimed.state,
+                    values: {},
+                    date: today,
+                    settledDate: today,
+                    lastSettlementAt: Date.now(),
+                    settlementKey: today,
+                    settlementStatus: 'done',
+                    settlementStartedAt: 0,
+                    settlementAppliedCount: appliedCount,
+                    settlementTotalDelta: totalDelta,
+                };
+                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
+                setLocalLearningThermometerState(resetState);
+                await refreshStudentsCacheFromServer();
+                renderLearningThermometerPanel();
+                updateUI();
+                return { status: 'done', appliedCount, totalDelta };
+            } catch (e) {
+                console.error('settleLearningThermometer', e);
+                throw e;
+            } finally {
+                _learningThermometerSettlementRunning = false;
+            }
+        }
+
+        function checkLearningThermometerAutoSettlement() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const now = new Date();
+            if (now.getHours() < LEARNING_THERMOMETER_AUTO_HOUR) return;
+            const state = getLearningThermometerState();
+            const today = getLocalDateStr();
+            if (state.settledDate === today) return;
+            void settleLearningThermometer({ manual: false });
+        }
+
+        window.settleLearningThermometerNow = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return await window.customAlert('마스터만 실행할 수 있습니다.');
+            const state = getLearningThermometerState();
+            const total = Object.values(state.values || {}).reduce((sum, v) => sum + (Number(v) || 0), 0);
+            const ok = await window.customConfirm(
+                `학습 온도계를 지금 실제 XP에 반영하고 0으로 초기화할까요?\n\n` +
+                `- 적용 학생: ${Object.keys(state.values || {}).length}명\n` +
+                `- 합계: ${total >= 0 ? '+' : ''}${total} XP\n\n` +
+                '15시 자동 정산과 같은 방식으로 하루 정산 완료 처리됩니다.'
+            );
+            if (!ok) return;
+            try {
+                const result = await settleLearningThermometer({ manual: true });
+                if (result.status === 'already_done') return await window.customAlert('오늘은 이미 정산되었습니다.');
+                if (result.status === 'locked') return await window.customAlert('다른 화면에서 정산 중입니다. 잠시 후 확인해 주세요.');
+                await window.customAlert(`정산 완료!\n적용 ${result.appliedCount || 0}명 · 합계 ${result.totalDelta >= 0 ? '+' : ''}${result.totalDelta || 0} XP`);
+            } catch (e) {
+                await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
 
         // ==========================================
         // ★ 수업도구: 전술 카운트다운 타이머 ★
@@ -5991,6 +6361,7 @@ function redrawPlazaGrantsUi() {
                             if (window.playerState && window.playerState.isAdmin) {
                                 window.renderAdminTable(students);
                                 window.renderAdminQuestBoard(students);
+                                renderLearningThermometerPanel();
                             }
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
@@ -6004,6 +6375,9 @@ function redrawPlazaGrantsUi() {
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
                                 if (settingsData.musicTimeQueue !== undefined) {
                                     window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
+                                }
+                                if (settingsData.learningThermometer !== undefined) {
+                                    window.globalSettings.learningThermometer = sanitizeLearningThermometerState(settingsData.learningThermometer);
                                 }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
@@ -6040,6 +6414,7 @@ function redrawPlazaGrantsUi() {
                                 renderLottoPanel();
                                 renderWorldCupBetPanel();
                                 renderMusicTimeQueueBar();
+                                renderLearningThermometerPanel();
                                 const musicModal = document.getElementById('musicTimeQueueModal');
                                 if (musicModal && !musicModal.classList.contains('hidden')) renderMusicTimeQueueModalBody();
                                 maybeShowLottoResultPopup();
@@ -6282,6 +6657,10 @@ function redrawPlazaGrantsUi() {
             // 수업 종료 XP: 마스터 J 접속 시에만(기존 설계 유지)
             if (window.playerState && window.playerState.isGM && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
                 void window.checkAndDistributeClassXP();
+            }
+            // 학습 온도계: 15:00 이후 마스터 접속 상태에서 하루 1회 실제 XP 반영 및 초기화
+            if (window.playerState && window.playerState.isAdmin && typeof db !== 'undefined' && db && window.allStudentsData && window.allStudentsData.length > 0) {
+                checkLearningThermometerAutoSettlement();
             }
             // 삼봉 로또: 금요일 13:05 이후 누군가 앱을 켜면 서버 트랜잭션으로 회차당 1회 자동 추첨
             if (typeof db !== 'undefined' && db && isLottoAutoDrawTime(now)) {

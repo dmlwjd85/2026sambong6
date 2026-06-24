@@ -3909,83 +3909,81 @@ function redrawPlazaGrantsUi() {
                         claimed = { status: 'locked', state };
                         return;
                     }
+
                     const values = {};
                     getActiveStudentIds().forEach((sid) => {
                         const v = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[String(sid)]) || 0)));
                         if (v !== 0) values[String(sid)] = v;
                     });
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
-
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                    const studentReads = [];
+                    for (const [sid, deltaRaw] of entries) {
                         const delta = Math.round(Number(deltaRaw) || 0);
-                        if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        if (!delta) continue;
+                        const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        const stuSnap = await transaction.get(stuRef);
+                        studentReads.push({
+                            sid,
+                            delta,
+                            ref: stuRef,
+                            data: stuSnap.exists() ? (stuSnap.data() || {}) : {},
+                        });
+                    }
+
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    studentReads.forEach(({ sid, delta, ref: stuRef, data: stu }) => {
+                        const existingLogs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog : [];
+                        const alreadySettledToday = existingLogs.some((log) =>
+                            log &&
+                            log.source === 'learningThermometer' &&
+                            String(log.settledDate || '') === today
+                        );
+                        if (alreadySettledToday) return;
+
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
                         if (!actualDelta) return;
-                        const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
+                        const logs = existingLogs.slice(-XP_CHANGE_LOG_LIMIT + 1);
                         logs.push(buildXpChangeLogEntry('학습 온도계 15시 정산', beforeXp, afterXp, {
                             source: 'learningThermometer',
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        transaction.set(
+                            stuRef,
                             { xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
+                    const resetState = {
+                        ...state,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(ref, { learningThermometer: resetState }, { merge: true });
+                    claimed = { status: 'done', appliedCount, totalDelta, state: resetState };
+                });
+
+                if (!claimed || claimed.status !== 'done') return claimed || { status: 'not_claimed' };
+
+                const resetState = claimed.state;
                 setLocalLearningThermometerState(resetState);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return { status: 'done', appliedCount: claimed.appliedCount || 0, totalDelta: claimed.totalDelta || 0 };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;

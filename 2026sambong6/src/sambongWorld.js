@@ -2406,13 +2406,13 @@ function redrawPlazaGrantsUi() {
         }
 
         // ==========================================
-        // ★ 월드컵 승부예측 (대한민국 vs 멕시코) ★
+        // ★ 월드컵 승부예측 (대한민국 vs 남아공) ★
         // ==========================================
         const WORLD_CUP_MATCH = {
-            id: 'kr_mex_2026',
+            id: 'kr_rsa_2026',
             home: '대한민국',
-            away: '멕시코',
-            title: '대한민국 vs 멕시코',
+            away: '남아공',
+            title: '대한민국 vs 남아공',
         };
 
         /** 분석 확률 (표시용) · 배당은 북메이커 마진 적용 */
@@ -2426,18 +2426,18 @@ function redrawPlazaGrantsUi() {
 
         const WORLD_CUP_ODDS = {
             wdl: {
-                korea: { label: '대한민국 승', prob: 0.24, odds: computeWorldCupOdds(0.24) },
-                draw: { label: '무승부', prob: 0.26, odds: computeWorldCupOdds(0.26) },
-                mexico: { label: '멕시코 승', prob: 0.50, odds: computeWorldCupOdds(0.50) },
+                korea: { label: '대한민국 승', prob: 0.58, odds: computeWorldCupOdds(0.58) },
+                draw: { label: '무승부', prob: 0.22, odds: computeWorldCupOdds(0.22) },
+                southAfrica: { label: '남아공 승', prob: 0.18, odds: computeWorldCupOdds(0.18) },
             },
             total25: {
-                over: { label: '2.5골 이상', prob: 0.58, odds: computeWorldCupOdds(0.58) },
-                under: { label: '2.5골 미만', prob: 0.42, odds: computeWorldCupOdds(0.42) },
+                over: { label: '2.5골 이상', prob: 0.47, odds: computeWorldCupOdds(0.47) },
+                under: { label: '2.5골 미만', prob: 0.53, odds: computeWorldCupOdds(0.53) },
             },
             firstGoal: {
-                korea: { label: '대한민국 선제골', prob: 0.22, odds: computeWorldCupOdds(0.22) },
-                none: { label: '무득점(0-0)', prob: 0.28, odds: computeWorldCupOdds(0.28) },
-                mexico: { label: '멕시코 선제골', prob: 0.50, odds: computeWorldCupOdds(0.50) },
+                korea: { label: '대한민국 선제골', prob: 0.54, odds: computeWorldCupOdds(0.54) },
+                none: { label: '무득점(0-0)', prob: 0.10, odds: computeWorldCupOdds(0.10) },
+                southAfrica: { label: '남아공 선제골', prob: 0.36, odds: computeWorldCupOdds(0.36) },
             },
         };
 
@@ -2551,9 +2551,10 @@ function redrawPlazaGrantsUi() {
                 settledAt: null,
             };
             if (!raw || typeof raw !== 'object') return base;
+            if (raw.matchId && String(raw.matchId) !== WORLD_CUP_MATCH.id) return base;
             const result = raw.result && typeof raw.result === 'object' ? raw.result : null;
             return {
-                matchId: String(raw.matchId || WORLD_CUP_MATCH.id),
+                matchId: WORLD_CUP_MATCH.id,
                 bettingOpen: raw.settled ? false : raw.bettingOpen !== false,
                 settled: !!raw.settled,
                 result: result ? {
@@ -2647,7 +2648,7 @@ function redrawPlazaGrantsUi() {
                             <select id="wcAdminWdl" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
                                 <option value="korea">대한민국 승</option>
                                 <option value="draw">무승부</option>
-                                <option value="mexico">멕시코 승</option>
+                                <option value="southAfrica">남아공 승</option>
                             </select>
                         </label>
                         <label class="text-[9px] text-slate-400">언오버
@@ -2660,7 +2661,7 @@ function redrawPlazaGrantsUi() {
                             <select id="wcAdminFirstGoal" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
                                 <option value="korea">대한민국 선제골</option>
                                 <option value="none">무득점(0-0)</option>
-                                <option value="mexico">멕시코 선제골</option>
+                                <option value="southAfrica">남아공 선제골</option>
                             </select>
                         </label>
                     </div>
@@ -2682,11 +2683,11 @@ function redrawPlazaGrantsUi() {
                 ${resultHtml}
                 <div class="mt-3 space-y-3">
                     <div>
-                        <div class="text-[10px] text-red-200 font-bold mb-1">1. 승무패 <span class="text-slate-500 font-normal">(한국 24% · 무 26% · 멕시코 50%)</span></div>
+                        <div class="text-[10px] text-red-200 font-bold mb-1">1. 승무패 <span class="text-slate-500 font-normal">(한국 58% · 무 22% · 남아공 18%)</span></div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                             ${buildWorldCupBetButton('wdl', 'korea', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
                             ${buildWorldCupBetButton('wdl', 'draw', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
-                            ${buildWorldCupBetButton('wdl', 'mexico', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
+                            ${buildWorldCupBetButton('wdl', 'southAfrica', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
                         </div>
                     </div>
                     <div>
@@ -2701,7 +2702,7 @@ function redrawPlazaGrantsUi() {
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                             ${buildWorldCupBetButton('firstGoal', 'korea', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
                             ${buildWorldCupBetButton('firstGoal', 'none', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
-                            ${buildWorldCupBetButton('firstGoal', 'mexico', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
+                            ${buildWorldCupBetButton('firstGoal', 'southAfrica', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
                         </div>
                     </div>
                 </div>
@@ -2902,9 +2903,9 @@ function redrawPlazaGrantsUi() {
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산된 경기입니다.');
-            const wdl = document.getElementById('wcAdminWdl')?.value || 'mexico';
+            const wdl = document.getElementById('wcAdminWdl')?.value || 'southAfrica';
             const total25 = document.getElementById('wcAdminTotal25')?.value || 'over';
-            const firstGoal = document.getElementById('wcAdminFirstGoal')?.value || 'mexico';
+            const firstGoal = document.getElementById('wcAdminFirstGoal')?.value || 'southAfrica';
             const result = { wdl, total25, firstGoal };
             const ok = await window.customConfirm(
                 `승부예측 결과를 확정하고 배당을 지급할까요?\n\n` +

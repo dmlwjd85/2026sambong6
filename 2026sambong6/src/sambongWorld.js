@@ -2581,6 +2581,44 @@ function redrawPlazaGrantsUi() {
             return entry ? entry.label : String(pick || '');
         }
 
+        let _worldCupAdminResultDraft = { wdl: '', total25: '', firstGoal: '' };
+
+        function sanitizeWorldCupResultValue(market, value) {
+            const table = WORLD_CUP_ODDS[market];
+            const key = String(value || '');
+            return table && table[key] ? key : '';
+        }
+
+        function getWorldCupAdminResultValue(market, state) {
+            return sanitizeWorldCupResultValue(market, _worldCupAdminResultDraft[market])
+                || sanitizeWorldCupResultValue(market, state && state.result && state.result[market]);
+        }
+
+        function buildWorldCupAdminResultOptionsHtml(market, state) {
+            const table = WORLD_CUP_ODDS[market] || {};
+            const selected = getWorldCupAdminResultValue(market, state);
+            const placeholder = `<option value="" ${selected ? '' : 'selected'} disabled>결과 선택</option>`;
+            return placeholder + Object.keys(table).map((pick) => {
+                const entry = table[pick];
+                return `<option value="${escapeHtmlAttr(pick)}" ${selected === pick ? 'selected' : ''}>${escapeConvenienceHtml(entry.label)}</option>`;
+            }).join('');
+        }
+
+        function readWorldCupAdminResultFromForm() {
+            const result = {
+                wdl: sanitizeWorldCupResultValue('wdl', document.getElementById('wcAdminWdl')?.value),
+                total25: sanitizeWorldCupResultValue('total25', document.getElementById('wcAdminTotal25')?.value),
+                firstGoal: sanitizeWorldCupResultValue('firstGoal', document.getElementById('wcAdminFirstGoal')?.value),
+            };
+            if (!result.wdl || !result.total25 || !result.firstGoal) return null;
+            return result;
+        }
+
+        window.updateWorldCupAdminResultDraft = function(market, value) {
+            if (!Object.prototype.hasOwnProperty.call(_worldCupAdminResultDraft, market)) return;
+            _worldCupAdminResultDraft[market] = sanitizeWorldCupResultValue(market, value);
+        };
+
         function getMyWorldCupBets() {
             const list = window.playerState && Array.isArray(window.playerState.worldCupBets)
                 ? window.playerState.worldCupBets
@@ -2640,28 +2678,26 @@ function redrawPlazaGrantsUi() {
                     <div>선제골: ${getWorldCupPickLabel('firstGoal', state.result.firstGoal)}</div>
                 </div>`
                 : '';
+            const adminWdlOptions = buildWorldCupAdminResultOptionsHtml('wdl', state);
+            const adminTotal25Options = buildWorldCupAdminResultOptionsHtml('total25', state);
+            const adminFirstGoalOptions = buildWorldCupAdminResultOptionsHtml('firstGoal', state);
             const adminHtml = window.playerState.isGM ? `
                 <div class="mt-3 pt-3 border-t border-red-500/30 rounded-xl bg-red-950/20 p-2">
                     <div class="text-[10px] text-red-200 font-bold mb-2"><i class="fa-solid fa-flag-checkered"></i> 마스터 · 승부예측 관리</div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                         <label class="text-[9px] text-slate-400">승무패 결과
-                            <select id="wcAdminWdl" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
-                                <option value="korea">대한민국 승</option>
-                                <option value="draw">무승부</option>
-                                <option value="southAfrica">남아공 승</option>
+                            <select id="wcAdminWdl" onchange="window.updateWorldCupAdminResultDraft('wdl', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
+                                ${adminWdlOptions}
                             </select>
                         </label>
                         <label class="text-[9px] text-slate-400">언오버
-                            <select id="wcAdminTotal25" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
-                                <option value="over">2.5골 이상</option>
-                                <option value="under">2.5골 미만</option>
+                            <select id="wcAdminTotal25" onchange="window.updateWorldCupAdminResultDraft('total25', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
+                                ${adminTotal25Options}
                             </select>
                         </label>
                         <label class="text-[9px] text-slate-400">선제골
-                            <select id="wcAdminFirstGoal" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
-                                <option value="korea">대한민국 선제골</option>
-                                <option value="none">무득점(0-0)</option>
-                                <option value="southAfrica">남아공 선제골</option>
+                            <select id="wcAdminFirstGoal" onchange="window.updateWorldCupAdminResultDraft('firstGoal', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
+                                ${adminFirstGoalOptions}
                             </select>
                         </label>
                     </div>
@@ -2903,10 +2939,9 @@ function redrawPlazaGrantsUi() {
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산된 경기입니다.');
-            const wdl = document.getElementById('wcAdminWdl')?.value || 'southAfrica';
-            const total25 = document.getElementById('wcAdminTotal25')?.value || 'over';
-            const firstGoal = document.getElementById('wcAdminFirstGoal')?.value || 'southAfrica';
-            const result = { wdl, total25, firstGoal };
+            const result = readWorldCupAdminResultFromForm();
+            if (!result) return await window.customAlert('승무패·언오버·선제골 결과를 모두 선택한 뒤 정산해 주세요.');
+            const { wdl, total25, firstGoal } = result;
             const ok = await window.customConfirm(
                 `승부예측 결과를 확정하고 배당을 지급할까요?\n\n` +
                 `- 승무패: ${getWorldCupPickLabel('wdl', wdl)}\n` +

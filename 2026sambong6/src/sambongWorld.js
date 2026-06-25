@@ -4645,6 +4645,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         const CLASS_WHEEL_STORAGE_KEY = 'sambong_class_wheel_v1';
         const CLASS_WHEEL_COLORS = ['#f472b6', '#a78bfa', '#60a5fa', '#22d3ee', '#34d399', '#facc15', '#fb923c', '#f87171'];
+        const CLASS_WHEEL_POINTER_ANGLE = 0; // 12시 방향 화살표 기준
         let _classWheelItems = ['발표하기', '문제 풀기', '친구 칭찬', '한 번 더 기회', '자리 바꾸기', '선생님 선택'];
         let _classWheelRotation = 0;
         let _classWheelSpinning = false;
@@ -4661,6 +4662,17 @@ function redrawPlazaGrantsUi() {
                 items.push(text || `${i + 1}번`);
             }
             return items;
+        }
+
+        function normalizeWheelAngle(angle) {
+            return ((Number(angle) || 0) % 360 + 360) % 360;
+        }
+
+        function getClassWheelIndexAtPointer(rotation, count) {
+            const safeCount = Math.max(1, Number(count) || 1);
+            const segment = 360 / safeCount;
+            const pointerOnWheel = normalizeWheelAngle(CLASS_WHEEL_POINTER_ANGLE - rotation);
+            return Math.min(safeCount - 1, Math.floor(pointerOnWheel / segment));
         }
 
         function loadClassWheelConfig() {
@@ -4817,7 +4829,7 @@ function redrawPlazaGrantsUi() {
             const targetIndex = Math.floor(Math.random() * _classWheelItems.length);
             const segment = 360 / _classWheelItems.length;
             const targetCenter = targetIndex * segment + segment / 2;
-            const normalizedStop = (270 - targetCenter + 360) % 360;
+            const normalizedStop = normalizeWheelAngle(CLASS_WHEEL_POINTER_ANGLE - targetCenter);
             const currentBase = Math.ceil(_classWheelRotation / 360) * 360;
             const turns = 6 + Math.floor(Math.random() * 3);
             const finalRotation = currentBase + turns * 360 + normalizedStop;
@@ -4844,13 +4856,14 @@ function redrawPlazaGrantsUi() {
             setTimeout(() => {
                 clearInterval(tickId);
                 _classWheelRotation = finalRotation % 360;
+                const selectedIndex = getClassWheelIndexAtPointer(_classWheelRotation, _classWheelItems.length);
                 disc.style.transition = '';
                 disc.style.transform = `rotate(${_classWheelRotation}deg)`;
                 disc.classList.remove('class-wheel-spinning');
                 if (fx) fx.classList.add('hidden');
                 if (btn) btn.disabled = false;
                 if (result) {
-                    result.textContent = `결과: ${_classWheelItems[targetIndex]}`;
+                    result.textContent = `결과: ${_classWheelItems[selectedIndex]}`;
                     void result.offsetWidth;
                     result.classList.add('class-wheel-result-pop');
                 }

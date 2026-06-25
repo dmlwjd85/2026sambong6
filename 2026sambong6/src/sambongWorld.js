@@ -2414,6 +2414,8 @@ function redrawPlazaGrantsUi() {
             away: '남아공',
             title: '대한민국 vs 남아공',
         };
+        const PREVIOUS_WORLD_CUP_MATCH_IDS = ['kr_mex_2026'];
+        const WORLD_CUP_MAINTENANCE_LOCK_STALE_MS = 2 * 60 * 1000;
 
         /** 분석 확률 (표시용) · 배당은 북메이커 마진 적용 */
         const WORLD_CUP_HOUSE_MARGIN = 0.15;
@@ -2547,6 +2549,8 @@ function redrawPlazaGrantsUi() {
                 matchId: WORLD_CUP_MATCH.id,
                 bettingOpen: true,
                 settled: false,
+                settling: false,
+                settlingAt: null,
                 result: null,
                 settledAt: null,
             };
@@ -2557,6 +2561,8 @@ function redrawPlazaGrantsUi() {
                 matchId: WORLD_CUP_MATCH.id,
                 bettingOpen: raw.settled ? false : raw.bettingOpen !== false,
                 settled: !!raw.settled,
+                settling: !raw.settled && !!raw.settling,
+                settlingAt: raw.settlingAt || null,
                 result: result ? {
                     wdl: result.wdl ? String(result.wdl) : null,
                     total25: result.total25 ? String(result.total25) : null,
@@ -2647,11 +2653,11 @@ function redrawPlazaGrantsUi() {
                 return;
             }
             const state = getWorldCupBetState();
-            const canBet = state.bettingOpen && !state.settled;
+            const canBet = state.bettingOpen && !state.settled && !state.settling;
             const statusText = state.settled
                 ? '정산 완료'
-                : (state.bettingOpen ? '베팅 접수 중' : '베팅 마감');
-            const statusClass = state.settled ? 'text-emerald-300' : (state.bettingOpen ? 'text-red-300' : 'text-amber-300');
+                : (state.settling ? '처리 중' : (state.bettingOpen ? '베팅 접수 중' : '베팅 마감'));
+            const statusClass = state.settled ? 'text-emerald-300' : (state.settling ? 'text-sky-300' : (state.bettingOpen ? 'text-red-300' : 'text-amber-300'));
             const myBets = getMyWorldCupBets().slice().reverse();
             const myBetRows = buildWorldCupBetHistoryGroupedHtml(myBets, { emptyText: '아직 베팅한 내역이 없습니다.' });
             const classBets = getAllClassWorldCupBets();
@@ -2917,18 +2923,42 @@ function redrawPlazaGrantsUi() {
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산이 끝난 경기입니다.');
+            if (wc.settling) return await window.customAlert('승부예측 처리가 진행 중입니다. 잠시 후 다시 시도해 주세요.');
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
-                const next = {
-                    ...wc,
-                    bettingOpen: !!open,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { worldCupBet: next }, { merge: true });
+                let next = null;
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const rawWc = settingsSnap.exists() ? settingsSnap.data().worldCupBet : null;
+                    const latestWc = getSanitizedWorldCupBetState(rawWc);
+                    const rawObj = rawWc && typeof rawWc === 'object' ? rawWc : {};
+                    const rawSettlingAt = Number(rawObj.settlingAt) || 0;
+                    if (latestWc.settled) throw new Error('already_settled');
+                    if (rawObj.settling && Date.now() - rawSettlingAt < WORLD_CUP_MAINTENANCE_LOCK_STALE_MS) {
+                        throw new Error('settling');
+                    }
+                    next = {
+                        ...latestWc,
+                        bettingOpen: !!open,
+                        settling: false,
+                        settlingAt: null,
+                        settlingResult: null,
+                        settlingReason: null,
+                    };
+                    transaction.set(settingsRef, { worldCupBet: next }, { merge: true });
+                });
                 window.globalSettings.worldCupBet = next;
                 renderWorldCupBetPanel();
                 await window.customAlert(open ? '✅ 승부예측 베팅 접수를 재개했습니다.' : '⏸️ 승부예측 베팅 접수를 마감했습니다.');
             } catch (e) {
+                if (e && e.message === 'already_settled') {
+                    return await window.customAlert('이미 정산이 끝난 경기입니다.');
+                }
+                if (e && e.message === 'settling') {
+                    return await window.customAlert('다른 승부예측 처리가 진행 중입니다. 잠시 후 다시 확인해 주세요.');
+                }
                 console.error('toggleWorldCupBettingAdmin', e);
                 await window.customAlert('설정 저장 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -2950,24 +2980,55 @@ function redrawPlazaGrantsUi() {
                 '적중한 베팅에 배당금이 자동 지급됩니다.'
             );
             if (!ok) return;
+            let settleLockAt = 0;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
+                const settingsRef = getGlobalSettingsDocRef();
+                settleLockAt = Date.now();
+                await runTransaction(db, async (transaction) => {
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const rawWc = settingsSnap.exists() ? settingsSnap.data().worldCupBet : null;
+                    const latestWc = getSanitizedWorldCupBetState(rawWc);
+                    const rawObj = rawWc && typeof rawWc === 'object' ? rawWc : {};
+                    const rawSettlingAt = Number(rawObj.settlingAt) || 0;
+                    if (latestWc.settled) throw new Error('already_settled');
+                    if (rawObj.settling && Date.now() - rawSettlingAt < WORLD_CUP_MAINTENANCE_LOCK_STALE_MS) {
+                        throw new Error('settling');
+                    }
+                    transaction.set(settingsRef, {
+                        worldCupBet: {
+                            ...latestWc,
+                            bettingOpen: false,
+                            settled: false,
+                            settling: true,
+                            settlingAt: settleLockAt,
+                            settlingResult: result,
+                        },
+                    }, { merge: true });
+                });
                 const settledAt = Date.now();
                 const nextWc = {
                     matchId: WORLD_CUP_MATCH.id,
                     bettingOpen: false,
                     settled: true,
+                    settling: false,
+                    settlingAt: null,
+                    settlingResult: null,
+                    settlingReason: null,
                     result,
                     settledAt,
                 };
                 let winnerCount = 0;
                 let totalPayout = 0;
                 const batch = writeBatch(db);
-                const rows = (window.allStudentsData || []).filter((s) => s && s.id !== 'gm' && s.id !== 'gm_a');
-                rows.forEach((stu) => {
-                    const sid = String(stu.id);
-                    const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
+                const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                const snap = await getDocsFromServer(studentsRef);
+                snap.forEach((studentDoc) => {
+                    if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
+                    const sid = String(studentDoc.id.replace(/^student_/, ''));
+                    const data = studentDoc.data() || {};
+                    const bets = Array.isArray(data.worldCupBets) ? data.worldCupBets.slice() : [];
                     let payoutSum = 0;
                     let changed = false;
                     const nextBets = bets.map((bet) => {
@@ -2982,10 +3043,9 @@ function redrawPlazaGrantsUi() {
                         return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
                     });
                     if (!changed) return;
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
                     const payload = { worldCupBets: nextBets.slice(-40) };
                     if (payoutSum > 0) payload.bong = increment(payoutSum);
-                    batch.set(ref, payload, { merge: true });
+                    batch.set(studentDoc.ref, payload, { merge: true });
                     totalPayout = normalizeBongValue(totalPayout + payoutSum);
                     if (sid === String(localStorage.getItem('sambong_student_id') || '')) {
                         window.playerState.worldCupBets = nextBets.slice(-40);
@@ -3004,6 +3064,19 @@ function redrawPlazaGrantsUi() {
                     `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${totalPayout.toFixed(1)}B`
                 );
             } catch (e) {
+                if (e && e.message === 'already_settled') {
+                    return await window.customAlert('이미 정산된 경기입니다.');
+                }
+                if (e && e.message === 'settling') {
+                    return await window.customAlert('다른 정산 처리가 진행 중입니다. 잠시 후 다시 확인해 주세요.');
+                }
+                if (settleLockAt) {
+                    try {
+                        await releaseWorldCupOperationLock(settleLockAt);
+                    } catch (unlockError) {
+                        console.warn('settleWorldCupBetAdmin unlock', unlockError);
+                    }
+                }
                 console.error('settleWorldCupBetAdmin', e);
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -3014,16 +3087,40 @@ function redrawPlazaGrantsUi() {
             return getMyWorldCupBets().some((b) => b && b.market === market && b.status === 'pending');
         }
 
+        async function releaseWorldCupOperationLock(lockAt) {
+            if (!lockAt) return;
+            await runTransaction(db, async (transaction) => {
+                const settingsRef = getGlobalSettingsDocRef();
+                const settingsSnap = await transaction.get(settingsRef);
+                const rawWc = settingsSnap.exists() ? settingsSnap.data().worldCupBet : null;
+                const rawObj = rawWc && typeof rawWc === 'object' ? rawWc : {};
+                if (Number(rawObj.settlingAt) !== lockAt) return;
+                const fallbackWc = getSanitizedWorldCupBetState(rawWc);
+                transaction.set(settingsRef, {
+                    worldCupBet: {
+                        ...fallbackWc,
+                        bettingOpen: false,
+                        settling: false,
+                        settlingAt: null,
+                        settlingResult: null,
+                        settlingReason: null,
+                    },
+                }, { merge: true });
+            });
+        }
+
         /** 학급 전체 대기 베팅 취소 및 베팅금 환불 */
-        async function cancelPendingWorldCupBetsForAllStudents() {
+        function getWorldCupCancelTargetMatchIds(matchIds) {
+            const source = Array.isArray(matchIds) && matchIds.length ? matchIds : [WORLD_CUP_MATCH.id];
+            return new Set(source.map((id) => String(id || '')).filter(Boolean));
+        }
+
+        async function cancelPendingWorldCupBetsForAllStudents(matchIds = [WORLD_CUP_MATCH.id]) {
             if (!db) return { cancelled: 0, refunded: 0, students: 0 };
+            const targetMatchIds = getWorldCupCancelTargetMatchIds(matchIds);
+            if (!targetMatchIds.size) return { cancelled: 0, refunded: 0, students: 0 };
             const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
-            let snap;
-            try {
-                snap = await getDocsFromServer(studentsRef);
-            } catch (e) {
-                snap = await getDocs(studentsRef);
-            }
+            const snap = await getDocsFromServer(studentsRef);
             const batch = writeBatch(db);
             let cancelled = 0;
             let refunded = 0;
@@ -3037,7 +3134,7 @@ function redrawPlazaGrantsUi() {
                 let refundSum = 0;
                 let changed = false;
                 const nextBets = bets.map((bet) => {
-                    if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
+                    if (!bet || !targetMatchIds.has(String(bet.matchId)) || bet.status !== 'pending') return bet;
                     changed = true;
                     cancelled += 1;
                     const stake = normalizeBongValue(Number(bet.stake) || 0);
@@ -3062,17 +3159,38 @@ function redrawPlazaGrantsUi() {
             return { cancelled, refunded, students };
         }
 
+        async function claimWorldCupMaintenance(markerRef, note) {
+            let claimed = false;
+            const claimedAt = Date.now();
+            await runTransaction(db, async (transaction) => {
+                const markerSnap = await transaction.get(markerRef);
+                const marker = markerSnap.exists() ? (markerSnap.data() || {}) : {};
+                if (marker.done) return;
+                const runningAt = Number(marker.claimedAt) || 0;
+                if (marker.running && claimedAt - runningAt < WORLD_CUP_MAINTENANCE_LOCK_STALE_MS) return;
+                transaction.set(markerRef, {
+                    done: false,
+                    running: true,
+                    claimedAt,
+                    note,
+                }, { merge: true });
+                claimed = true;
+            });
+            return claimed;
+        }
+
         /** 배포 직후 1회 — 배당 조정 전 대기 베팅 전량 취소·환불 */
         async function applyWorldCupBetCancelMigration() {
             if (!db) return;
             const markerId = 'worldcup_bet_cancel_odds_v2_20260618';
             const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
             try {
-                const markerSnap = await getDoc(markerRef);
-                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                const claimed = await claimWorldCupMaintenance(markerRef, '배당 조정 전 대기 베팅 전량 취소·환불');
+                if (!claimed) return;
                 const result = await cancelPendingWorldCupBetsForAllStudents();
                 await setDoc(markerRef, {
                     done: true,
+                    running: false,
                     cancelled: result.cancelled,
                     refunded: result.refunded,
                     students: result.students,
@@ -3088,6 +3206,47 @@ function redrawPlazaGrantsUi() {
                 }
             } catch (e) {
                 console.warn('applyWorldCupBetCancelMigration', e);
+                try {
+                    await setDoc(markerRef, { running: false, failedAt: new Date().toISOString() }, { merge: true });
+                } catch (unlockError) {
+                    console.warn('applyWorldCupBetCancelMigration unlock', unlockError);
+                }
+            }
+        }
+
+        /** 경기 교체 직후 1회 — 이전 경기의 대기 베팅을 숨기지 않고 환불 처리 */
+        async function applyPreviousWorldCupBetCancelMigration() {
+            if (!db || !PREVIOUS_WORLD_CUP_MATCH_IDS.length) return;
+            const markerId = 'worldcup_bet_cancel_previous_matches_20260625';
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            try {
+                const claimed = await claimWorldCupMaintenance(markerRef, '이전 월드컵 경기 대기 베팅 취소·환불');
+                if (!claimed) return;
+                const result = await cancelPendingWorldCupBetsForAllStudents(PREVIOUS_WORLD_CUP_MATCH_IDS);
+                await setDoc(markerRef, {
+                    done: true,
+                    running: false,
+                    matchIds: PREVIOUS_WORLD_CUP_MATCH_IDS,
+                    cancelled: result.cancelled,
+                    refunded: result.refunded,
+                    students: result.students,
+                    note: '이전 월드컵 경기 대기 베팅 취소·환불',
+                    sanitizedAt: new Date().toISOString(),
+                }, { merge: true });
+                if (result.cancelled > 0) {
+                    await refreshStudentsCacheFromServer();
+                    if (window.playerState && !window.playerState.isGuest) {
+                        updateUI();
+                        renderWorldCupBetPanel();
+                    }
+                }
+            } catch (e) {
+                console.warn('applyPreviousWorldCupBetCancelMigration', e);
+                try {
+                    await setDoc(markerRef, { running: false, failedAt: new Date().toISOString() }, { merge: true });
+                } catch (unlockError) {
+                    console.warn('applyPreviousWorldCupBetCancelMigration unlock', unlockError);
+                }
             }
         }
 
@@ -3101,10 +3260,36 @@ function redrawPlazaGrantsUi() {
                 '취소된 내역은 기록에 남지만, 결과 정산 대상에서는 제외됩니다.'
             );
             if (!ok) return;
+            let cancelLockAt = 0;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
+                cancelLockAt = Date.now();
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const rawWc = settingsSnap.exists() ? settingsSnap.data().worldCupBet : null;
+                    const latestWc = getSanitizedWorldCupBetState(rawWc);
+                    const rawObj = rawWc && typeof rawWc === 'object' ? rawWc : {};
+                    const rawSettlingAt = Number(rawObj.settlingAt) || 0;
+                    if (latestWc.settled) throw new Error('already_settled');
+                    if (rawObj.settling && Date.now() - rawSettlingAt < WORLD_CUP_MAINTENANCE_LOCK_STALE_MS) {
+                        throw new Error('settling');
+                    }
+                    transaction.set(settingsRef, {
+                        worldCupBet: {
+                            ...latestWc,
+                            bettingOpen: false,
+                            settled: false,
+                            settling: true,
+                            settlingAt: cancelLockAt,
+                            settlingReason: 'cancel',
+                        },
+                    }, { merge: true });
+                });
                 const result = await cancelPendingWorldCupBetsForAllStudents();
+                await releaseWorldCupOperationLock(cancelLockAt);
+                cancelLockAt = 0;
                 await refreshStudentsCacheFromServer();
                 updateUI();
                 renderWorldCupBetPanel();
@@ -3114,6 +3299,19 @@ function redrawPlazaGrantsUi() {
                         : '취소할 대기 베팅이 없습니다.'
                 );
             } catch (e) {
+                if (e && e.message === 'already_settled') {
+                    return await window.customAlert('이미 정산된 경기입니다.');
+                }
+                if (e && e.message === 'settling') {
+                    return await window.customAlert('다른 승부예측 처리가 진행 중입니다. 잠시 후 다시 확인해 주세요.');
+                }
+                if (cancelLockAt) {
+                    try {
+                        await releaseWorldCupOperationLock(cancelLockAt);
+                    } catch (unlockError) {
+                        console.warn('cancelAllWorldCupBetsAdmin unlock', unlockError);
+                    }
+                }
                 console.error('cancelAllWorldCupBetsAdmin', e);
                 await window.customAlert('취소 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -6706,6 +6904,7 @@ function redrawPlazaGrantsUi() {
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyWorldCupBetCancelMigration();
+                void applyPreviousWorldCupBetCancelMigration();
                 void applyLearningThermometerRahiMaxHotfix();
 
                 onAuthStateChanged(auth, user => {

@@ -74,6 +74,7 @@ async function refreshStudentsCacheFromServer() {
                 isAdmin: myId === 'gm' || myId === 'gm_a',
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+            rememberPlayerEconomyAsServerSynced(window.playerState);
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
             updateUI();
         }
@@ -1813,6 +1814,19 @@ function redrawPlazaGrantsUi() {
             return Math.round(n * 10) / 10;
         }
 
+        /** 서버 스냅샷 기준 XP/B를 기억해 오래 열린 탭의 전체 저장이 최신 서버 차감·정산을 되돌리지 않게 합니다. */
+        function rememberPlayerEconomyAsServerSynced(state = window.playerState) {
+            if (!state || typeof state !== 'object') return;
+            if (Object.prototype.hasOwnProperty.call(state, 'xp')) {
+                const xp = Number(state.xp);
+                if (Number.isFinite(xp)) window._lastServerSyncedXp = Math.max(0, Math.floor(xp));
+            }
+            if (Object.prototype.hasOwnProperty.call(state, 'bong')) {
+                const bong = Number(state.bong);
+                if (Number.isFinite(bong)) window._lastServerSyncedBong = normalizeBongValue(bong);
+            }
+        }
+
         /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
         const EQUIPPED_ITEM_REFUND_RATE = 0.5;
         const BONG_CHANGE_LOG_LIMIT = 80;
@@ -2891,6 +2905,7 @@ function redrawPlazaGrantsUi() {
                     payout: 0,
                 });
                 window.playerState.worldCupBets = window.playerState.worldCupBets.slice(-40);
+                rememberPlayerEconomyAsServerSynced(window.playerState);
                 playSfx('bong', true);
                 updateUI();
                 renderWorldCupBetPanel();
@@ -2961,12 +2976,38 @@ function redrawPlazaGrantsUi() {
                     result,
                     settledAt,
                 };
-                let winnerCount = 0;
-                let totalPayout = 0;
-                const batch = writeBatch(db);
-                const rows = (window.allStudentsData || []).filter((s) => s && s.id !== 'gm' && s.id !== 'gm_a');
-                rows.forEach((stu) => {
-                    const sid = String(stu.id);
+                const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                let studentsSnap;
+                try {
+                    studentsSnap = await getDocsFromServer(studentsRef);
+                } catch (e) {
+                    console.warn('settleWorldCupBetAdmin getDocsFromServer', e);
+                    studentsSnap = await getDocs(studentsRef);
+                }
+                const studentRefs = [];
+                studentsSnap.forEach((studentDoc) => {
+                    if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
+                    studentRefs.push(studentDoc.ref);
+                });
+                const mySid = String(localStorage.getItem('sambong_student_id') || '');
+                let summary = { winnerCount: 0, totalPayout: 0, myNextBets: null, myPayout: 0 };
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const latestWc = getSanitizedWorldCupBetState(settingsSnap.exists() ? settingsSnap.data().worldCupBet : null);
+                    if (latestWc.settled) throw new Error('already_settled');
+
+                    let winnerCount = 0;
+                    let totalPayout = 0;
+                    let myNextBets = null;
+                    let myPayout = 0;
+                    const studentSnaps = [];
+                    for (const studentRef of studentRefs) {
+                        studentSnaps.push([studentRef, await transaction.get(studentRef)]);
+                    }
+                    studentSnaps.forEach(([studentRef, studentSnap]) => {
+                        const stu = studentSnap.exists() ? (studentSnap.data() || {}) : {};
+                        const sid = studentRef.id.replace(/^student_/, '');
                     const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
                     let payoutSum = 0;
                     let changed = false;
@@ -2982,29 +3023,35 @@ function redrawPlazaGrantsUi() {
                         return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
                     });
                     if (!changed) return;
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
                     const payload = { worldCupBets: nextBets.slice(-40) };
                     if (payoutSum > 0) payload.bong = increment(payoutSum);
-                    batch.set(ref, payload, { merge: true });
+                        transaction.set(studentRef, payload, { merge: true });
                     totalPayout = normalizeBongValue(totalPayout + payoutSum);
-                    if (sid === String(localStorage.getItem('sambong_student_id') || '')) {
-                        window.playerState.worldCupBets = nextBets.slice(-40);
-                        if (payoutSum > 0) {
-                            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payoutSum);
+                        if (sid === mySid) {
+                            myNextBets = nextBets.slice(-40);
+                            myPayout = payoutSum;
                         }
-                    }
+                    });
+                    transaction.set(settingsRef, { worldCupBet: nextWc }, { merge: true });
+                    summary = { winnerCount, totalPayout, myNextBets, myPayout };
                 });
-                batch.set(getGlobalSettingsDocRef(), { worldCupBet: nextWc }, { merge: true });
-                await batch.commit();
+                if (summary.myNextBets && window.playerState) {
+                    window.playerState.worldCupBets = summary.myNextBets;
+                    if (summary.myPayout > 0) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + summary.myPayout);
+                        rememberPlayerEconomyAsServerSynced(window.playerState);
+                    }
+                }
                 window.globalSettings.worldCupBet = nextWc;
                 await refreshStudentsCacheFromServer();
                 updateUI();
                 renderWorldCupBetPanel();
                 await window.customAlert(
-                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${totalPayout.toFixed(1)}B`
+                    `✅ 승부예측 정산 완료!\n적중 ${summary.winnerCount}건 · 총 지급 ${summary.totalPayout.toFixed(1)}B`
                 );
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
+                if (e && e.message === 'already_settled') return await window.customAlert('이미 정산된 경기입니다.');
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
@@ -3056,6 +3103,7 @@ function redrawPlazaGrantsUi() {
                     if (refundSum > 0) {
                         window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundSum);
                     }
+                    rememberPlayerEconomyAsServerSynced(window.playerState);
                 }
             });
             if (cancelled > 0) await batch.commit();
@@ -3650,12 +3698,13 @@ function redrawPlazaGrantsUi() {
             });
 
             const stateDate = src.date ? String(src.date) : today;
+            const settledDate = src.settledDate ? String(src.settledDate) : '';
             return {
                 date: stateDate,
                 min,
                 max,
-                values: stateDate === today ? values : {},
-                settledDate: src.settledDate ? String(src.settledDate) : '',
+                values: settledDate === stateDate ? {} : values,
+                settledDate,
                 lastSettlementAt: Number(src.lastSettlementAt) || 0,
                 settlementKey: src.settlementKey ? String(src.settlementKey) : '',
                 settlementStatus: src.settlementStatus ? String(src.settlementStatus) : '',
@@ -3779,7 +3828,33 @@ function redrawPlazaGrantsUi() {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
                 const state = getLearningThermometerState();
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
+                let skippedByNewerSettlement = false;
+                let serverStateAfterSkip = null;
+                await runTransaction(db, async (transaction) => {
+                    const ref = getGlobalSettingsDocRef();
+                    const snap = await transaction.get(ref);
+                    const data = snap.exists() ? snap.data() || {} : {};
+                    const serverState = sanitizeLearningThermometerState(data.learningThermometer);
+                    const serverSettledAt = Number(serverState.lastSettlementAt || 0);
+                    const localSettledAt = Number(state.lastSettlementAt || 0);
+                    if (
+                        serverState.settledDate &&
+                        serverState.settledDate === state.date &&
+                        serverSettledAt > localSettledAt
+                    ) {
+                        skippedByNewerSettlement = true;
+                        serverStateAfterSkip = serverState;
+                        return;
+                    }
+                    transaction.set(ref, { learningThermometer: state }, { merge: true });
+                });
+                if (skippedByNewerSettlement) {
+                    if (serverStateAfterSkip) {
+                        setLocalLearningThermometerState(serverStateAfterSkip);
+                        renderLearningThermometerPanel();
+                    }
+                    return false;
+                }
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 return true;
@@ -3809,6 +3884,12 @@ function redrawPlazaGrantsUi() {
             if (next === 0) delete state.values[id];
             else state.values[id] = next;
             state.date = getLocalDateStr();
+            if (state.settledDate === state.date) {
+                state.settledDate = '';
+                state.settlementStatus = '';
+                state.settlementKey = '';
+                state.settlementStartedAt = 0;
+            }
             setLocalLearningThermometerState(state);
 
             const valueEl = document.getElementById(`lt_value_${id}`);
@@ -3923,7 +4004,10 @@ function redrawPlazaGrantsUi() {
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
+            clearTimeout(_learningThermometerSaveTimer);
+            _learningThermometerSavePending = false;
+            _learningThermometerIgnoreRemoteUntil = 0;
+            let result = { status: 'not_claimed' };
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
@@ -3933,16 +4017,17 @@ function redrawPlazaGrantsUi() {
                     const snap = await transaction.get(ref);
                     const data = snap.exists() ? snap.data() || {} : {};
                     const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const targetDate = state.date || today;
                     const lockIsFresh =
-                        state.settlementKey === today &&
+                        state.settlementKey === targetDate &&
                         state.settlementStatus === 'running' &&
                         Date.now() - Number(state.settlementStartedAt || 0) < LEARNING_THERMOMETER_LOCK_STALE_MS;
-                    if (state.settledDate === today) {
-                        claimed = { status: 'already_done', state };
+                    if (state.settledDate === targetDate) {
+                        result = { status: 'already_done', state };
                         return;
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
+                        result = { status: 'locked', state };
                         return;
                     }
                     const values = {};
@@ -3950,78 +4035,64 @@ function redrawPlazaGrantsUi() {
                         const v = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[String(sid)]) || 0)));
                         if (v !== 0) values[String(sid)] = v;
                     });
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const claimedState = { ...state, values };
+                    const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                    const studentSnaps = [];
+                    for (const [sid, deltaRaw] of entries) {
+                        const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        studentSnaps.push([sid, deltaRaw, stuRef, await transaction.get(stuRef)]);
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    studentSnaps.forEach(([sid, deltaRaw, stuRef, stuSnap]) => {
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const stu = stuSnap.exists() ? (stuSnap.data() || {}) : {};
+                        const existingLogs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog : [];
+                        const alreadyApplied = existingLogs.some((log) => (
+                            log &&
+                            log.source === 'learningThermometer' &&
+                            String(log.settledDate || '') === String(targetDate)
+                        ));
+                        if (alreadyApplied) return;
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
                         if (!actualDelta) return;
-                        const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
+                        const logs = existingLogs.slice(-XP_CHANGE_LOG_LIMIT + 1);
                         logs.push(buildXpChangeLogEntry('학습 온도계 15시 정산', beforeXp, afterXp, {
                             source: 'learningThermometer',
                             rawDelta: delta,
-                            settledDate: today,
+                            settledDate: targetDate,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { xp: afterXp, xpChangeLog: logs },
-                            { merge: true }
-                        );
+                        transaction.set(stuRef, { xp: afterXp, xpChangeLog: logs }, { merge: true });
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...claimedState,
+                        values: {},
+                        date: today,
+                        settledDate: targetDate,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: targetDate,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(ref, { learningThermometer: resetState }, { merge: true });
+                    result = { status: 'done', appliedCount, totalDelta, state: resetState };
+                });
+
+                if (!result || result.status !== 'done') return result || { status: 'not_claimed' };
+                setLocalLearningThermometerState(result.state);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return result;
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -6291,6 +6362,7 @@ function redrawPlazaGrantsUi() {
                 if (!Array.isArray(window.playerState.conveniencePurchases)) window.playerState.conveniencePurchases = [];
                 window.playerState.conveniencePurchases.push({ orderId: orderRef.id, items: orderItems, name: itemName, itemPrice: itemTotal, deliveryRequested, deliveryFee: chargedDeliveryFee, deliveryPayouts: chargedDeliveryPayouts, price: chargedPrice, requestNote, at: Date.now(), status: 'pending' });
                 window.playerState.conveniencePurchases = window.playerState.conveniencePurchases.slice(-25);
+                rememberPlayerEconomyAsServerSynced(window.playerState);
                 window.convenienceCart = {};
                 playSfx('bong', true);
                 updateUI();
@@ -6372,6 +6444,7 @@ function redrawPlazaGrantsUi() {
                 });
                 if (String(order.studentId) === String(localStorage.getItem('sambong_student_id') || '')) {
                     window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refundB);
+                    rememberPlayerEconomyAsServerSynced(window.playerState);
                 }
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
@@ -6755,6 +6828,7 @@ function redrawPlazaGrantsUi() {
                                         ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a')
                                     };
                                     if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+                                    rememberPlayerEconomyAsServerSynced(window.playerState);
                                     /** 스냅샷이 어제 quests·lastDailyReset을 다시 주면 자정 초기화가 덮어씌워지는 문제 보정(학생만, 알림 없음) */
                                     if (myId !== 'gm' && myId !== 'gm_a' && !window.playerState.isAdmin) {
                                         const dq = applyDailyQuestResetIfNewDay({ silent: true });
@@ -8745,6 +8819,8 @@ function redrawPlazaGrantsUi() {
                 localStorage.setItem('sambong_student_id', studentId);
                 localStorage.setItem('sambong_student_pin', pin);
                 currentStudentDocRef = docRef;
+                if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+                rememberPlayerEconomyAsServerSynced(window.playerState);
                 /** 로그인 직후에도 checkTimeEvents·스냅샷과 동일한 일일 퀘스트 달력 동기화 */
                 if (!isAdmin) {
                     const dq = applyDailyQuestResetIfNewDay({ silent: true });
@@ -8814,7 +8890,13 @@ function redrawPlazaGrantsUi() {
                     if (snap.exists()) {
                         const serverData = snap.data() || {};
                         const serverXp = Number(serverData.xp);
-                        const nextXp = Number(dataToSave.xp);
+                        let nextXp = Number(dataToSave.xp);
+                        const lastSyncedXp = Number(window._lastServerSyncedXp);
+                        if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && Number.isFinite(lastSyncedXp)) {
+                            const localXpDelta = Math.floor(nextXp) - Math.floor(lastSyncedXp);
+                            dataToSave.xp = Math.max(0, Math.floor(serverXp + localXpDelta));
+                            nextXp = Number(dataToSave.xp);
+                        }
                         if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && nextXp < serverXp) {
                             if (opts.allowXpDecrease) {
                                 const maxDrop = Math.max(0, Math.floor(Number(opts.maxXpDecrease) || 0));
@@ -8831,7 +8913,13 @@ function redrawPlazaGrantsUi() {
                         }
 
                         const serverBong = Number(serverData.bong);
-                        const nextBong = Number(dataToSave.bong);
+                        let nextBong = Number(dataToSave.bong);
+                        const lastSyncedBong = Number(window._lastServerSyncedBong);
+                        if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && Number.isFinite(lastSyncedBong)) {
+                            const localBongDelta = normalizeBongValue(nextBong - lastSyncedBong);
+                            dataToSave.bong = normalizeBongValue(serverBong + localBongDelta);
+                            nextBong = Number(dataToSave.bong);
+                        }
                         const maxBongDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
                         if (
                             opts.allowBongDecrease &&
@@ -8877,6 +8965,9 @@ function redrawPlazaGrantsUi() {
                         if (Object.prototype.hasOwnProperty.call(serverData, 'ownedSkinInstances') && !Object.prototype.hasOwnProperty.call(dataToSave, 'ownedSkinInstances')) {
                             dataToSave.ownedSkinInstances = serverData.ownedSkinInstances;
                         }
+                        ['worldCupBets', 'conveniencePurchases'].forEach((key) => {
+                            if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
+                        });
                         if (!opts.allowBankFieldChanges) {
                             ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
                                 if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
@@ -8908,6 +8999,7 @@ function redrawPlazaGrantsUi() {
                             isAdmin: window.playerState.isAdmin,
                         };
                         window.playerState = { ...serverRestoreData, ...roleFlags };
+                        rememberPlayerEconomyAsServerSynced(window.playerState);
                         if (typeof updateUI === 'function') updateUI();
                     }
                     await window.customAlert(
@@ -8918,6 +9010,7 @@ function redrawPlazaGrantsUi() {
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                rememberPlayerEconomyAsServerSynced(dataToSave);
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);

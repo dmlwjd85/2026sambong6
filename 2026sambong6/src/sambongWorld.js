@@ -2007,14 +2007,14 @@ function redrawPlazaGrantsUi() {
                 const refundCount = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger.length : 0;
                 const reasons = [];
                 if (totalBong >= BONG_ANOMALY_TOTAL_HOLD_WARN) {
-                    reasons.push(`보유 B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`);
+                    reasons.push(`보유 ${formatBongDisplay(totalBong)}B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`);
                 }
                 if (todayGain >= BONG_ANOMALY_DAILY_GAIN_WARN) {
-                    reasons.push(`오늘 +B 획득 (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`);
+                    reasons.push(`오늘 +${formatBongDisplay(todayGain)}B 획득 (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`);
                 }
                 if (bigDeltas.length) {
                     const last = bigDeltas[bigDeltas.length - 1];
-                    reasons.push(`단일 +B (${last.reason || '기록'})`);
+                    reasons.push(`단일 +${formatBongDisplay(normalizeBongValue(last.delta))}B (${last.reason || '기록'})`);
                 }
                 if (refundCount >= 8) {
                     reasons.push(`환불 ${refundCount}회 누적 (의심)`);
@@ -2048,7 +2048,7 @@ function redrawPlazaGrantsUi() {
             const rowsHtml = report.alerts.map((a) => `
                 <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
                     <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
-                    <div class="text-amber-200/90 mt-0.5">보유 B · 오늘 +B · 환불 ${a.refundCount}회</div>
+                    <div class="text-amber-200/90 mt-0.5">보유 ${formatBongDisplay(a.totalBong)}B · 오늘 +${formatBongDisplay(a.todayGain)}B · 환불 ${a.refundCount}회</div>
                     <ul class="list-disc list-inside text-amber-100/80 mt-1 space-y-0.5">${a.reasons.map((r) => `<li>${escapeConvenienceHtml(r)}</li>`).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
@@ -3305,9 +3305,176 @@ function redrawPlazaGrantsUi() {
         /** 일반예금 + 적금 원금 합계 (주기 보너스 기준) */
         function getBankTotalDeposits() {
             if (!window.playerState) return 0;
-            const reg = Number(window.playerState.bankRegularSavings) || 0;
-            const termSum = (window.playerState.bankTermDeposits || []).reduce((s, t) => s + (Number(t && t.amount) || 0), 0);
-            return reg + termSum;
+            const reg = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
+            const termSum = sanitizeBankTermDeposits(window.playerState.bankTermDeposits).reduce((s, t) => s + t.amount, 0);
+            return normalizeBongValue(reg + termSum);
+        }
+
+        /** 적금 항목 정규화 */
+        function sanitizeBankTermDepositEntry(td) {
+            if (!td || typeof td !== 'object') return null;
+            const amount = normalizeBongValue(Number(td.amount) || 0);
+            const startDate = String(td.startDate || '');
+            const id = String(td.id || '');
+            if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(startDate) || amount <= 0) return null;
+            return { id, amount, startDate };
+        }
+
+        function sanitizeBankTermDeposits(arr) {
+            if (!Array.isArray(arr)) return [];
+            const out = [];
+            const seen = new Set();
+            arr.forEach((td) => {
+                const clean = sanitizeBankTermDepositEntry(td);
+                if (!clean || seen.has(clean.id)) return;
+                seen.add(clean.id);
+                out.push(clean);
+            });
+            return out;
+        }
+
+        function sumBankTermDeposits(terms) {
+            return normalizeBongValue(sanitizeBankTermDeposits(terms).reduce((s, t) => s + t.amount, 0));
+        }
+
+        function parseBankAmountInput(raw) {
+            const n = typeof raw === 'string' || typeof raw === 'number' ? Number(raw) : NaN;
+            if (!Number.isFinite(n) || n <= 0) return null;
+            const amt = normalizeBongValue(n);
+            return amt >= 1 ? amt : null;
+        }
+
+        function termDepositMapsEqual(a, b) {
+            const sa = sanitizeBankTermDeposits(a);
+            const sb = sanitizeBankTermDeposits(b);
+            if (sa.length !== sb.length) return false;
+            const mapB = new Map(sb.map((t) => [t.id, t.amount]));
+            return sa.every((t) => mapB.get(t.id) === t.amount);
+        }
+
+        function findNewTermDeposits(before, after) {
+            const beforeIds = new Set(sanitizeBankTermDeposits(before).map((t) => t.id));
+            return sanitizeBankTermDeposits(after).filter((t) => !beforeIds.has(t.id));
+        }
+
+        function findRemovedTermDeposits(before, after) {
+            const afterIds = new Set(sanitizeBankTermDeposits(after).map((t) => t.id));
+            return sanitizeBankTermDeposits(before).filter((t) => !afterIds.has(t.id));
+        }
+
+        /** 적금 만기 처리(서버 기준) */
+        function computeTermDepositMaturityCredit(terms, ratePercent) {
+            const left = [];
+            let credit = 0;
+            const msgs = [];
+            sanitizeBankTermDeposits(terms).forEach((td) => {
+                const elapsed = bankCalendarDaysElapsed(td.startDate);
+                if (elapsed >= 30) {
+                    const principal = td.amount;
+                    const interest = Math.max(0, Math.round(principal * (Number(ratePercent) / 100)));
+                    const total = normalizeBongValue(principal + interest);
+                    credit = normalizeBongValue(credit + total);
+                    msgs.push(`원금 ${formatBongDisplay(principal)} B + 이자 ${interest} B → 지갑 ${formatBongDisplay(total)} B`);
+                } else {
+                    left.push(td);
+                }
+            });
+            return { left, credit, msgs };
+        }
+
+        /** 수동 은행 조작(입출금·적금 가입/해지) 1건만 허용 — 지갑+예금+적금 원금 합계 보존 */
+        function validateManualBankTransition(base, target) {
+            const bReg = normalizeBongValue(Number(base.bankRegularSavings) || 0);
+            const tReg = normalizeBongValue(Number(target.bankRegularSavings) || 0);
+            const bBong = normalizeBongValue(Number(base.bong) || 0);
+            const tBong = normalizeBongValue(Number(target.bong) || 0);
+            const bTerms = sanitizeBankTermDeposits(base.bankTermDeposits);
+            const tTerms = sanitizeBankTermDeposits(target.bankTermDeposits);
+            const regD = normalizeBongValue(tReg - bReg);
+            const bongD = normalizeBongValue(tBong - bBong);
+            const bTermSum = sumBankTermDeposits(bTerms);
+            const tTermSum = sumBankTermDeposits(tTerms);
+            const termSumD = normalizeBongValue(tTermSum - bTermSum);
+            const totalB = normalizeBongValue(bBong + bReg + bTermSum);
+            const totalC = normalizeBongValue(tBong + tReg + tTermSum);
+
+            if (regD === 0 && bongD === 0 && termDepositMapsEqual(bTerms, tTerms)) {
+                return { ok: true, kind: 'none' };
+            }
+            if (termDepositMapsEqual(bTerms, tTerms) && regD !== 0 && bongD === -regD && totalC === totalB) {
+                return { ok: true, kind: regD > 0 ? 'deposit' : 'withdraw' };
+            }
+            if (regD === 0 && tTerms.length === bTerms.length + 1) {
+                const added = findNewTermDeposits(bTerms, tTerms);
+                if (added.length === 1 && bongD < 0 && termSumD === -bongD && totalC === totalB) {
+                    return { ok: true, kind: 'term_open' };
+                }
+            }
+            if (regD === 0 && tTerms.length === bTerms.length - 1) {
+                const removed = findRemovedTermDeposits(bTerms, tTerms);
+                if (removed.length === 1 && bongD > 0 && bongD === removed[0].amount && termSumD === -bongD && totalC === totalB) {
+                    return { ok: true, kind: 'term_early' };
+                }
+            }
+            return { ok: false, kind: 'invalid' };
+        }
+
+        /** 서버 문서 기준 만기·주기 보너스 반영 후, 클라이언트 수동 조작 검증 */
+        function reconcileBankStateForSave(serverData, clientData, globalSettings, { isAdmin = false } = {}) {
+            const today = getLocalDateStr();
+            const rate = Number(globalSettings && globalSettings.bankInterestPercent) || 0;
+            let accrued = {
+                bankRegularSavings: normalizeBongValue(Number(serverData.bankRegularSavings) || 0),
+                bankTermDeposits: sanitizeBankTermDeposits(serverData.bankTermDeposits),
+                bong: normalizeBongValue(Number(serverData.bong) || 0),
+                bankDailyBonusLastDate: String(serverData.bankDailyBonusLastDate || ''),
+                maturityMsgs: [],
+                maturityCredit: 0,
+                bonusGranted: 0,
+            };
+            const maturity = computeTermDepositMaturityCredit(accrued.bankTermDeposits, rate);
+            if (maturity.credit > 0) {
+                accrued.bankTermDeposits = maturity.left;
+                accrued.bong = normalizeBongValue(accrued.bong + maturity.credit);
+                accrued.maturityCredit = maturity.credit;
+                accrued.maturityMsgs = maturity.msgs;
+            }
+            if (!isAdmin) {
+                const totalDep = normalizeBongValue(accrued.bankRegularSavings + sumBankTermDeposits(accrued.bankTermDeposits));
+                if (totalDep >= 100) {
+                    const last = accrued.bankDailyBonusLastDate;
+                    const canBonus = !last || bankDaysBetweenLocalDateStr(last, today) >= 3;
+                    if (canBonus) {
+                        accrued.bong = normalizeBongValue(accrued.bong + 1);
+                        accrued.bankDailyBonusLastDate = today;
+                        accrued.bonusGranted = 1;
+                    }
+                }
+            }
+            const target = {
+                bankRegularSavings: normalizeBongValue(Number(clientData.bankRegularSavings) || 0),
+                bankTermDeposits: sanitizeBankTermDeposits(clientData.bankTermDeposits),
+                bong: normalizeBongValue(Number(clientData.bong) || 0),
+                bankDailyBonusLastDate: String(clientData.bankDailyBonusLastDate || ''),
+            };
+            const validation = validateManualBankTransition(accrued, target);
+            if (!validation.ok) {
+                return { ...accrued, rejected: true };
+            }
+            let bonusDate = accrued.bankDailyBonusLastDate;
+            if (target.bankDailyBonusLastDate === accrued.bankDailyBonusLastDate || accrued.bonusGranted > 0) {
+                bonusDate = accrued.bankDailyBonusLastDate;
+            }
+            return {
+                bankRegularSavings: target.bankRegularSavings,
+                bankTermDeposits: target.bankTermDeposits,
+                bong: target.bong,
+                bankDailyBonusLastDate: bonusDate,
+                maturityMsgs: accrued.maturityMsgs,
+                maturityCredit: accrued.maturityCredit,
+                bonusGranted: accrued.bonusGranted,
+                rejected: false,
+            };
         }
 
         /** 로컬 기준 주말(토·일) 여부 */
@@ -7727,31 +7894,16 @@ function redrawPlazaGrantsUi() {
             return touched;
         }
 
-        /**
-         * 적금 만기(가입일 기준 30일 경과): 만기 시점의 마스터 설정 이자율(%)로 이자를 반올림하여 원금+이자를 지갑으로 지급.
-         * @returns {{ changed: boolean, msgs: string[] }}
-         */
         function applyBankTermDepositMaturity() {
             const out = { changed: false, msgs: [] };
             if (!window.playerState || window.playerState.isGuest) return out;
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-            const arr = window.playerState.bankTermDeposits || [];
-            const left = [];
-            for (const td of arr) {
-                if (!td || td.amount == null || !td.startDate) continue;
-                const elapsed = bankCalendarDaysElapsed(td.startDate);
-                if (elapsed >= 30) {
-                    const principal = Number(td.amount) || 0;
-                    const interest = Math.round(principal * (rate / 100));
-                    const total = normalizeBongValue(principal + interest);
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + total);
-                    out.changed = true;
-                    out.msgs.push(`원금  B + 이자 ${interest} B → 지갑  B`);
-                } else {
-                    left.push(td);
-                }
-            }
-            if (out.changed) window.playerState.bankTermDeposits = left;
+            const maturity = computeTermDepositMaturityCredit(window.playerState.bankTermDeposits || [], rate);
+            if (maturity.credit <= 0) return out;
+            window.playerState.bankTermDeposits = maturity.left;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + maturity.credit);
+            out.changed = true;
+            out.msgs = maturity.msgs;
             return out;
         }
 
@@ -7762,10 +7914,7 @@ function redrawPlazaGrantsUi() {
             if (total < 100) return false;
             const today = getLocalDateStr();
             const last = window.playerState.bankDailyBonusLastDate || '';
-            if (last) {
-                const diff = bankDaysBetweenLocalDateStr(last, today);
-                if (diff < 3) return false;
-            }
+            if (last && bankDaysBetweenLocalDateStr(last, today) < 3) return false;
             window.playerState.bankDailyBonusLastDate = today;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + 1);
             return true;
@@ -7779,8 +7928,10 @@ function redrawPlazaGrantsUi() {
             const termList = document.getElementById('bankTermDepositsList');
             if (!w || !s || !r) return;
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-            w.textContent = ` B`;
-            s.textContent = ` B`;
+            const walletBal = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const regularBal = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
+            w.textContent = `${formatBongDisplay(walletBal)} B`;
+            s.textContent = `${formatBongDisplay(regularBal)} B`;
             r.textContent = `${rate.toFixed(1)}`;
             if (dailyLine) {
                 const total = getBankTotalDeposits();
@@ -7815,7 +7966,7 @@ function redrawPlazaGrantsUi() {
                             <div class="flex justify-between items-start gap-2">
                                 <div class="min-w-0 flex-1">
                                     <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold"> B</span></div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${formatBongDisplay(td.amount)} B</span></div>
                                     <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
                                     <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${interestPrev} B · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
                                 </div>
@@ -7839,9 +7990,9 @@ function redrawPlazaGrantsUi() {
                         const termTotal = normalizeBongValue(terms.reduce((sum, t) => sum + (Number(t && t.amount) || 0), 0));
                         rows.push(`<div class="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right text-sb-gold tabular-nums">B</div>
-                            <div class="text-right text-sky-300 tabular-nums">B</div>
-                            <div class="text-right text-amber-200 tabular-nums">B</div>
+                            <div class="text-right text-sb-gold tabular-nums">${formatBongDisplay(wallet)}B</div>
+                            <div class="text-right text-sky-300 tabular-nums">${formatBongDisplay(regular)}B</div>
+                            <div class="text-right text-amber-200 tabular-nums">${formatBongDisplay(termTotal)}B</div>
                         </div>`);
                     });
                     adminList.innerHTML = `<div class="grid grid-cols-4 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700">
@@ -7855,12 +8006,11 @@ function redrawPlazaGrantsUi() {
         window.depositBank = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankDepositInput');
-            const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
-            if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
-            const amt = Math.round(raw * 10) / 10;
-            const wallet = Number(window.playerState.bong) || 0;
-            if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재  B)`);
-            const ok = await window.customConfirm(`일반예금 통장에 ${amt} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
+            const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
+            if (amt == null) return window.customAlert('1B 이상 정수 금액을 입력하세요.');
+            const wallet = normalizeBongValue(Number(window.playerState.bong) || 0);
+            if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${formatBongDisplay(wallet)} B)`);
+            const ok = await window.customConfirm(`일반예금 통장에 ${formatBongDisplay(amt)} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
             if (!ok) return;
             window.playerState.bong = normalizeBongValue(wallet - amt);
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
@@ -7868,42 +8018,43 @@ function redrawPlazaGrantsUi() {
             updateUI();
             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
             if (!saved) return;
-            window.customAlert(`🏦 일반예금에 ${amt} B를 넣었습니다.`);
+            window.customAlert(`🏦 일반예금에 ${formatBongDisplay(amt)} B를 넣었습니다.`);
         };
 
         /** 일반예금 출금 */
         window.withdrawBank = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankWithdrawInput');
-            const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
-            if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
-            const amt = Math.round(raw * 10) / 10;
-            const sav = Number(window.playerState.bankRegularSavings) || 0;
+            const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
+            if (amt == null) return window.customAlert('1B 이상 정수 금액을 입력하세요.');
+            const sav = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             if (sav < amt) return window.customAlert('일반예금 잔액이 부족합니다.');
-            const ok = await window.customConfirm(`일반예금에서 ${amt} B를 지갑으로 출금할까요?`);
+            const ok = await window.customConfirm(`일반예금에서 ${formatBongDisplay(amt)} B를 지갑으로 출금할까요?`);
             if (!ok) return;
             window.playerState.bankRegularSavings = normalizeBongValue(sav - amt);
-            window.playerState.bong = normalizeBongValue(window.playerState.bong + amt);
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud({ allowBankFieldChanges: true });
-            window.customAlert(`💵 ${amt} B를 찾았습니다.`);
+            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금' });
+            if (!saved) return;
+            window.customAlert(`💵 ${formatBongDisplay(amt)} B를 찾았습니다.`);
         };
 
         /** 일반예금 전액을 지갑으로 출금 */
         window.withdrawBankAll = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const sav = Number(window.playerState.bankRegularSavings) || 0;
+            const sav = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             if (sav <= 0) return window.customAlert('일반예금에 출금할 잔액이 없습니다.');
-            const ok = await window.customConfirm(`일반예금  B를 전부 지갑으로 출금할까요?`);
+            const ok = await window.customConfirm(`일반예금 ${formatBongDisplay(sav)} B를 전부 지갑으로 출금할까요?`);
             if (!ok) return;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sav);
             window.playerState.bankRegularSavings = 0;
             const inp = document.getElementById('bankWithdrawInput');
             if (inp) inp.value = '';
             updateUI();
-            await saveDataToCloud({ allowBankFieldChanges: true });
-            await window.customAlert(`💵  B를 모두 찾았습니다.`);
+            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금' });
+            if (!saved) return;
+            await window.customAlert(`💵 ${formatBongDisplay(sav)} B를 모두 찾았습니다.`);
         };
 
         /** 적금(보물상자) 가입 — 안내 후 확인 */
@@ -7920,11 +8071,10 @@ function redrawPlazaGrantsUi() {
             const ok = await window.customConfirm('위 내용을 확인했고, 적금에 가입할까요?');
             if (!ok) return;
             const inp = document.getElementById('bankTermDepositInput');
-            const raw = inp && inp.value !== '' ? parseFloat(inp.value) : NaN;
-            if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
-            const amt = Math.round(raw * 10) / 10;
-            const w0 = Number(window.playerState.bong) || 0;
-            if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재  B)`);
+            const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
+            if (amt == null) return window.customAlert('1B 이상 정수 금액을 입력하세요.');
+            const w0 = normalizeBongValue(Number(window.playerState.bong) || 0);
+            if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${formatBongDisplay(w0)} B)`);
             if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
             window.playerState.bong = normalizeBongValue(w0 - amt);
             const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -7933,7 +8083,7 @@ function redrawPlazaGrantsUi() {
             updateUI();
             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '보물상자 적금 가입' });
             if (!saved) return;
-            await window.customAlert(`🎁 보물상자 적금 ${amt} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
+            await window.customAlert(`🎁 보물상자 적금 ${formatBongDisplay(amt)} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
 
         /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음 */
@@ -7944,16 +8094,17 @@ function redrawPlazaGrantsUi() {
             if (idx < 0) return window.customAlert('해당 적금을 찾을 수 없어요.');
             const td = arr[idx];
             const ok = await window.customConfirm(
-                `중도 해지 시 이자는 지급되지 않고 원금  B만 지갑으로 돌아갑니다.\n해지할까요?`
+                `중도 해지 시 이자는 지급되지 않고 원금 ${formatBongDisplay(td.amount)} B만 지갑으로 돌아갑니다.\n해지할까요?`
             );
             if (!ok) return;
-            const principal = Number(td.amount) || 0;
+            const principal = normalizeBongValue(Number(td.amount) || 0);
             arr.splice(idx, 1);
             window.playerState.bankTermDeposits = arr;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
             updateUI();
-            await saveDataToCloud({ allowBankFieldChanges: true });
-            await window.customAlert(`💰 원금  B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+            const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지' });
+            if (!saved) return;
+            await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
         window.saveBankInterestRate = async function() {
@@ -8870,6 +9021,7 @@ function redrawPlazaGrantsUi() {
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
+            let blockedByBankReconcile = false;
             let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -8896,6 +9048,40 @@ function redrawPlazaGrantsUi() {
                             if (nextXp > serverXp + maxRise) {
                                 dataToSave.xp = Math.floor(serverXp + maxRise);
                             }
+                        }
+
+                        if (opts.allowBankFieldChanges) {
+                            if (opts.requireServerBankRegularBalance) {
+                                const serverReg = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
+                                const maxRegDrop = Math.max(0, Number(opts.maxBankRegularDecrease) || 0);
+                                if (maxRegDrop > 0 && serverReg < maxRegDrop) {
+                                    blockedByServerBalance = true;
+                                    serverRestoreData = serverData;
+                                    return;
+                                }
+                            }
+                            const reconciled = reconcileBankStateForSave(serverData, dataToSave, window.globalSettings, {
+                                isAdmin: !!window.playerState.isAdmin,
+                            });
+                            if (reconciled.rejected) {
+                                blockedByBankReconcile = true;
+                                serverRestoreData = {
+                                    ...serverData,
+                                    bong: reconciled.bong,
+                                    bankRegularSavings: reconciled.bankRegularSavings,
+                                    bankTermDeposits: reconciled.bankTermDeposits,
+                                    bankDailyBonusLastDate: reconciled.bankDailyBonusLastDate,
+                                };
+                                return;
+                            }
+                            dataToSave.bong = reconciled.bong;
+                            dataToSave.bankRegularSavings = reconciled.bankRegularSavings;
+                            dataToSave.bankTermDeposits = reconciled.bankTermDeposits;
+                            dataToSave.bankDailyBonusLastDate = reconciled.bankDailyBonusLastDate;
+                        } else {
+                            ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
+                                if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
+                            });
                         }
 
                         const serverBong = Number(serverData.bong);
@@ -8945,11 +9131,6 @@ function redrawPlazaGrantsUi() {
                         if (Object.prototype.hasOwnProperty.call(serverData, 'ownedSkinInstances') && !Object.prototype.hasOwnProperty.call(dataToSave, 'ownedSkinInstances')) {
                             dataToSave.ownedSkinInstances = serverData.ownedSkinInstances;
                         }
-                        if (!opts.allowBankFieldChanges) {
-                            ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
-                                if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
-                            });
-                        }
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
                         }
@@ -8979,13 +9160,24 @@ function redrawPlazaGrantsUi() {
                         if (typeof updateUI === 'function') updateUI();
                     }
                     await window.customAlert(
-                        `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
-                        '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
+                        blockedByBankReconcile
+                            ? '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.'
+                            : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
+                                '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
                     );
                     return false;
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankRegularSavings')) {
+                    window.playerState.bankRegularSavings = dataToSave.bankRegularSavings;
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankTermDeposits')) {
+                    window.playerState.bankTermDeposits = dataToSave.bankTermDeposits;
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankDailyBonusLastDate')) {
+                    window.playerState.bankDailyBonusLastDate = dataToSave.bankDailyBonusLastDate;
+                }
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);

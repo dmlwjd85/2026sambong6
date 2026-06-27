@@ -1949,14 +1949,6 @@ function redrawPlazaGrantsUi() {
             return normalizeBongValue(max);
         }
 
-        function getMaxWeaponRefundBong() {
-            let max = 0;
-            WEAPON_DATA.forEach((wp) => {
-                max = Math.max(max, getEquippedWeaponRefundBong(wp));
-            });
-            return normalizeBongValue(max);
-        }
-
         /** 서버 문서 기준 스킨 환불 패치 (미보유·미장착이면 예외) */
         function buildSkinRefundServerPatch(data, skinId) {
             const skin = SKIN_DATA.find((s) => s.id === skinId);
@@ -1976,24 +1968,16 @@ function redrawPlazaGrantsUi() {
             return { ownedSkins, equippedSkins, ownedSkinInstances, instanceId };
         }
 
-        /** 서버 문서 기준 무기 환불 패치 */
-        function buildWeaponRefundServerPatch(data, wpId) {
-            const inventory = Array.isArray(data.inventory) ? data.inventory.slice() : [];
-            const idx = inventory.indexOf(wpId);
-            if (idx < 0 || String(data.equippedWeapon) !== String(wpId)) throw new Error('not_equipped');
-            inventory.splice(idx, 1);
-            return { inventory, equippedWeapon: null };
-        }
-
         /**
-         * 장착 아이템 환불 — Firestore 트랜잭션으로 1회만 처리 (로컬 선반영·중복 클릭 방지)
+         * 장착 스킨 환불 — Firestore 트랜잭션으로 1회만 처리 (로컬 선반영·중복 클릭 방지)
          */
         async function executeEquippedItemRefund({ kind, itemId, label, refundB }) {
             if (!db || !currentStudentDocRef) throw new Error('no_db');
+            if (kind !== 'skin') throw new Error('bad_kind');
             const authOk = await ensureAnonAuthReady();
             if (!authOk) throw new Error('auth');
             const amount = normalizeBongValue(Number(refundB) || 0);
-            const maxRefund = kind === 'skin' ? getMaxSkinRefundBong() : getMaxWeaponRefundBong();
+            const maxRefund = getMaxSkinRefundBong();
             if (amount <= 0 || amount > maxRefund + 0.001) throw new Error('invalid_refund_amount');
 
             const refundId = `rf_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -2006,21 +1990,12 @@ function redrawPlazaGrantsUi() {
                 const ledger = Array.isArray(data.itemRefundLedger) ? data.itemRefundLedger.slice() : [];
                 if (ledger.some((row) => row && row.refundId === refundId)) throw new Error('duplicate_refund');
 
-                let itemPatch = {};
-                let instanceId = null;
-                if (kind === 'skin') {
-                    const built = buildSkinRefundServerPatch(data, itemId);
-                    instanceId = built.instanceId;
-                    itemPatch = {
-                        ownedSkins: built.ownedSkins,
-                        equippedSkins: built.equippedSkins,
-                        ownedSkinInstances: built.ownedSkinInstances,
-                    };
-                } else if (kind === 'weapon') {
-                    itemPatch = buildWeaponRefundServerPatch(data, itemId);
-                } else {
-                    throw new Error('bad_kind');
-                }
+                const built = buildSkinRefundServerPatch(data, itemId);
+                const itemPatch = {
+                    ownedSkins: built.ownedSkins,
+                    equippedSkins: built.equippedSkins,
+                    ownedSkinInstances: built.ownedSkinInstances,
+                };
 
                 const serverBong = normalizeBongValue(Number(data.bong) || 0);
                 const nextBong = normalizeBongValue(serverBong + amount);
@@ -2031,7 +2006,7 @@ function redrawPlazaGrantsUi() {
                     refundId,
                     kind,
                     itemId,
-                    instanceId: instanceId || null,
+                    instanceId: built.instanceId || null,
                     refundB: amount,
                     at: Date.now(),
                     label: label || '',
@@ -2058,9 +2033,6 @@ function redrawPlazaGrantsUi() {
                 if (synced.itemPatch.ownedSkinInstances) {
                     window.playerState.ownedSkinInstances = { ...(synced.itemPatch.ownedSkinInstances) };
                 }
-            } else if (kind === 'weapon') {
-                window.playerState.inventory = Array.isArray(synced.itemPatch.inventory) ? synced.itemPatch.inventory.slice() : [];
-                window.playerState.equippedWeapon = synced.itemPatch.equippedWeapon;
             }
             if (!Array.isArray(window.playerState.itemRefundLedger)) window.playerState.itemRefundLedger = [];
             window.playerState.itemRefundLedger.push(synced.ledgerEntry);
@@ -2201,12 +2173,6 @@ function redrawPlazaGrantsUi() {
         function getEquippedSkinRefundBong(skin) {
             const price = Math.max(0, Number(skin && skin.price) || 0);
             return normalizeBongValue(price * EQUIPPED_ITEM_REFUND_RATE);
-        }
-
-        /** 퀘스트 무기는 구매가가 없어 등급 보너스를 기준가로 두고 50% 환불 */
-        function getEquippedWeaponRefundBong(wp) {
-            const bonus = Math.max(0, Number(wp && wp.bonus) || 0);
-            return normalizeBongValue(bonus * EQUIPPED_ITEM_REFUND_RATE);
         }
 
         /** 스킨 환불 시 보유·장착(얼굴/오버레이/테두리 오라) 데이터를 완전히 제거 */
@@ -8684,23 +8650,11 @@ function redrawPlazaGrantsUi() {
                             : isEquipped
                               ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
                               : `${wp.border} ${wp.bg}`;
-                    const refundB = getEquippedWeaponRefundBong(wp);
-                    const canWeaponRefund =
-                        isEquipped
-                        && n > 0
-                        && refundB > 0
-                        && !window.playerState.isGuest
-                        && !window.playerState.isAdmin;
                     const click = n > 0 ? `onclick="window.equipWeapon('${wp.id}')"` : '';
                     const cursor = n > 0 ? 'cursor-pointer hover:scale-105' : 'cursor-default';
                     return `
                         <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
                             ${isEquipped && n > 0 ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
-                            ${
-                                canWeaponRefund
-                                    ? `<button type="button" onclick="event.stopPropagation();window.refundEquippedWeapon('${wp.id}')" class="absolute -bottom-1 left-0 right-0 z-10 mx-0.5 text-[7px] bg-amber-700 hover:bg-amber-600 text-white font-bold py-0.5 rounded border border-amber-500/50">환불${refundB}B</button>`
-                                    : ''
-                            }
                             <div class="text-lg sm:text-2xl mb-0.5 leading-none">${wp.emoji}</div>
                             <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${wp.name}</div>
                             <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">×${n}</div>
@@ -9938,57 +9892,6 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.equippedWeapon === wpId) window.playerState.equippedWeapon = null; 
             else window.playerState.equippedWeapon = wpId; 
             updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
-        };
-
-        window.refundEquippedWeapon = async function(wpId) {
-            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
-            if (window.playerState.isAdmin) return await window.customAlert('마스터 계정은 환불 대상이 아닙니다.');
-            if (window._weaponRefundRunning) return;
-            const wp = WEAPON_DATA.find((w) => w.id === wpId);
-            if (!wp) return await window.customAlert('무기 정보를 찾을 수 없어요.');
-            if (!window.playerState.inventory) window.playerState.inventory = [];
-            const idx = window.playerState.inventory.indexOf(wpId);
-            if (idx < 0) return await window.customAlert('보유하지 않은 무기입니다.');
-            if (window.playerState.equippedWeapon !== wpId) {
-                return await window.customAlert('장착 중인 무기만 환불할 수 있습니다.\n먼저 장착한 뒤 환불 버튼을 눌러 주세요.');
-            }
-            const refundB = getEquippedWeaponRefundBong(wp);
-            if (refundB <= 0) return await window.customAlert('환불할 수 없는 무기입니다.');
-
-            const ok = await window.customConfirm(
-                `[${wp.name}] 무기를 환불할까요?\n\n` +
-                `환불 규정: 기준가(등급 보너스 ${wp.bonus})의 50%\n` +
-                `돌려받는 삼봉: +${refundB} B\n` +
-                '환불 시 무기 1개가 사라지고 장착이 해제됩니다.'
-            );
-            if (!ok) return;
-
-            window._weaponRefundRunning = true;
-            try {
-                const synced = await executeEquippedItemRefund({
-                    kind: 'weapon',
-                    itemId: wpId,
-                    label: wp.name,
-                    refundB,
-                });
-                syncLocalStateAfterItemRefund({ kind: 'weapon', itemId: wpId, synced });
-                playSfx('bong', true);
-                updateUI();
-                await window.customAlert(`♻️ [${wp.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.`);
-                window.switchTab('plaza');
-            } catch (e) {
-                const code = e && e.message ? e.message : String(e);
-                if (code === 'not_equipped') {
-                    return await window.customAlert('이미 환불되었거나 장착 중인 무기가 아닙니다. 새로고침 후 다시 확인해 주세요.');
-                }
-                if (code === 'duplicate_refund') {
-                    return await window.customAlert('이미 처리된 환불 요청입니다.');
-                }
-                console.error('refundEquippedWeapon', e);
-                await window.customAlert('환불 실패: ' + code);
-            } finally {
-                window._weaponRefundRunning = false;
-            }
         };
 
         async function handleQuestDrop(xp, opts = {}) {

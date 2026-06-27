@@ -2406,13 +2406,11 @@ function redrawPlazaGrantsUi() {
         }
 
         // ==========================================
-        // ★ 월드컵 승부예측 (대한민국 vs 남아공) ★
+        // ★ 월드컵 승부예측 (대한민국 32강 진출) ★
         // ==========================================
         const WORLD_CUP_MATCH = {
-            id: 'kr_rsa_2026',
-            home: '대한민국',
-            away: '남아공',
-            title: '대한민국 vs 남아공',
+            id: 'kr_r32_2026',
+            title: '대한민국 32강 진출 예측',
         };
 
         /** 분석 확률 (표시용) · 배당은 북메이커 마진 적용 */
@@ -2425,29 +2423,17 @@ function redrawPlazaGrantsUi() {
         }
 
         const WORLD_CUP_ODDS = {
-            wdl: {
-                korea: { label: '대한민국 승', prob: 0.58, odds: computeWorldCupOdds(0.58) },
-                draw: { label: '무승부', prob: 0.22, odds: computeWorldCupOdds(0.22) },
-                southAfrica: { label: '남아공 승', prob: 0.18, odds: computeWorldCupOdds(0.18) },
-            },
-            total25: {
-                over: { label: '2.5골 이상', prob: 0.47, odds: computeWorldCupOdds(0.47) },
-                under: { label: '2.5골 미만', prob: 0.53, odds: computeWorldCupOdds(0.53) },
-            },
-            firstGoal: {
-                korea: { label: '대한민국 선제골', prob: 0.54, odds: computeWorldCupOdds(0.54) },
-                none: { label: '무득점(0-0)', prob: 0.10, odds: computeWorldCupOdds(0.10) },
-                southAfrica: { label: '남아공 선제골', prob: 0.36, odds: computeWorldCupOdds(0.36) },
+            r32: {
+                advance: { label: '32강 진출', prob: 0.38, odds: computeWorldCupOdds(0.38) },
+                eliminate: { label: '탈락', prob: 0.62, odds: computeWorldCupOdds(0.62) },
             },
         };
 
         const WORLD_CUP_MARKET_LABELS = {
-            wdl: '승무패',
-            total25: '언오버',
-            firstGoal: '선제골',
+            r32: '32강 진출',
         };
 
-        const WORLD_CUP_MARKET_ORDER = ['wdl', 'total25', 'firstGoal'];
+        const WORLD_CUP_MARKET_ORDER = ['r32'];
 
         /** 1회 베팅 최대 금액 */
         const WORLD_CUP_MAX_STAKE = 300;
@@ -2475,7 +2461,7 @@ function redrawPlazaGrantsUi() {
             if (!list.length) {
                 return `<div class="text-[9px] text-slate-600 py-2 text-center border border-dashed border-slate-700 rounded-lg">${emptyText}</div>`;
             }
-            const grouped = { wdl: [], total25: [], firstGoal: [] };
+            const grouped = { r32: [] };
             list.forEach((bet) => {
                 if (bet && grouped[bet.market]) grouped[bet.market].push(bet);
             });
@@ -2558,9 +2544,7 @@ function redrawPlazaGrantsUi() {
                 bettingOpen: raw.settled ? false : raw.bettingOpen !== false,
                 settled: !!raw.settled,
                 result: result ? {
-                    wdl: result.wdl ? String(result.wdl) : null,
-                    total25: result.total25 ? String(result.total25) : null,
-                    firstGoal: result.firstGoal ? String(result.firstGoal) : null,
+                    r32: result.r32 ? String(result.r32) : null,
                 } : null,
                 settledAt: raw.settledAt || null,
             };
@@ -2581,7 +2565,7 @@ function redrawPlazaGrantsUi() {
             return entry ? entry.label : String(pick || '');
         }
 
-        let _worldCupAdminResultDraft = { wdl: '', total25: '', firstGoal: '' };
+        let _worldCupAdminResultDraft = { r32: '' };
 
         function sanitizeWorldCupResultValue(market, value) {
             const table = WORLD_CUP_ODDS[market];
@@ -2605,13 +2589,10 @@ function redrawPlazaGrantsUi() {
         }
 
         function readWorldCupAdminResultFromForm() {
-            const result = {
-                wdl: sanitizeWorldCupResultValue('wdl', document.getElementById('wcAdminWdl')?.value),
-                total25: sanitizeWorldCupResultValue('total25', document.getElementById('wcAdminTotal25')?.value),
-                firstGoal: sanitizeWorldCupResultValue('firstGoal', document.getElementById('wcAdminFirstGoal')?.value),
-            };
-            if (!result.wdl || !result.total25 || !result.firstGoal) return null;
-            return result;
+            const r32 = sanitizeWorldCupResultValue('r32', document.getElementById('wcAdminR32')?.value)
+                || sanitizeWorldCupResultValue('r32', _worldCupAdminResultDraft.r32);
+            if (!r32) return null;
+            return { r32 };
         }
 
         window.updateWorldCupAdminResultDraft = function(market, value) {
@@ -2673,31 +2654,17 @@ function redrawPlazaGrantsUi() {
             const resultHtml = state.settled && state.result
                 ? `<div class="mt-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-2 py-1.5 text-[10px] text-emerald-100">
                     <div class="font-bold mb-1">경기 결과</div>
-                    <div>승무패: ${getWorldCupPickLabel('wdl', state.result.wdl)}</div>
-                    <div>언오버: ${getWorldCupPickLabel('total25', state.result.total25)}</div>
-                    <div>선제골: ${getWorldCupPickLabel('firstGoal', state.result.firstGoal)}</div>
+                    <div>32강 진출: ${getWorldCupPickLabel('r32', state.result.r32)}</div>
                 </div>`
                 : '';
-            const adminWdlOptions = buildWorldCupAdminResultOptionsHtml('wdl', state);
-            const adminTotal25Options = buildWorldCupAdminResultOptionsHtml('total25', state);
-            const adminFirstGoalOptions = buildWorldCupAdminResultOptionsHtml('firstGoal', state);
+            const adminR32Options = buildWorldCupAdminResultOptionsHtml('r32', state);
             const adminHtml = window.playerState.isGM ? `
                 <div class="mt-3 pt-3 border-t border-red-500/30 rounded-xl bg-red-950/20 p-2">
                     <div class="text-[10px] text-red-200 font-bold mb-2"><i class="fa-solid fa-flag-checkered"></i> 마스터 · 승부예측 관리</div>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
-                        <label class="text-[9px] text-slate-400">승무패 결과
-                            <select id="wcAdminWdl" onchange="window.updateWorldCupAdminResultDraft('wdl', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
-                                ${adminWdlOptions}
-                            </select>
-                        </label>
-                        <label class="text-[9px] text-slate-400">언오버
-                            <select id="wcAdminTotal25" onchange="window.updateWorldCupAdminResultDraft('total25', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
-                                ${adminTotal25Options}
-                            </select>
-                        </label>
-                        <label class="text-[9px] text-slate-400">선제골
-                            <select id="wcAdminFirstGoal" onchange="window.updateWorldCupAdminResultDraft('firstGoal', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
-                                ${adminFirstGoalOptions}
+                    <div class="mb-2">
+                        <label class="text-[9px] text-slate-400">32강 진출 결과
+                            <select id="wcAdminR32" onchange="window.updateWorldCupAdminResultDraft('r32', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
+                                ${adminR32Options}
                             </select>
                         </label>
                     </div>
@@ -2712,34 +2679,16 @@ function redrawPlazaGrantsUi() {
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
                         <h4 class="text-red-300 font-black text-xs"><i class="fa-solid fa-futbol"></i> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 승무패·언오버·선제골 각 1건만 베팅 (최대 ${WORLD_CUP_MAX_STAKE}B). 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 32강 진출·탈락 중 1건만 베팅 (최대 ${WORLD_CUP_MAX_STAKE}B). 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
                     </div>
                     <div class="text-right text-[10px] shrink-0 ${statusClass} font-bold">${statusText}</div>
                 </div>
                 ${resultHtml}
-                <div class="mt-3 space-y-3">
-                    <div>
-                        <div class="text-[10px] text-red-200 font-bold mb-1">1. 승무패 <span class="text-slate-500 font-normal">(한국 58% · 무 22% · 남아공 18%)</span></div>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                            ${buildWorldCupBetButton('wdl', 'korea', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
-                            ${buildWorldCupBetButton('wdl', 'draw', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
-                            ${buildWorldCupBetButton('wdl', 'southAfrica', !canBet || hasPendingWorldCupBetOnMarket('wdl'))}
-                        </div>
-                    </div>
-                    <div>
-                        <div class="text-[10px] text-red-200 font-bold mb-1">2. 언오버 <span class="text-slate-500 font-normal">(총 골 2.5개 기준)</span></div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                            ${buildWorldCupBetButton('total25', 'over', !canBet || hasPendingWorldCupBetOnMarket('total25'))}
-                            ${buildWorldCupBetButton('total25', 'under', !canBet || hasPendingWorldCupBetOnMarket('total25'))}
-                        </div>
-                    </div>
-                    <div>
-                        <div class="text-[10px] text-red-200 font-bold mb-1">3. 선제골 <span class="text-slate-500 font-normal">(첫 골 팀 / 0-0)</span></div>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                            ${buildWorldCupBetButton('firstGoal', 'korea', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
-                            ${buildWorldCupBetButton('firstGoal', 'none', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
-                            ${buildWorldCupBetButton('firstGoal', 'southAfrica', !canBet || hasPendingWorldCupBetOnMarket('firstGoal'))}
-                        </div>
+                <div class="mt-3">
+                    <div class="text-[10px] text-red-200 font-bold mb-1">32강 진출 예측 <span class="text-slate-500 font-normal">(진출 38% · 탈락 62%)</span></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        ${buildWorldCupBetButton('r32', 'advance', !canBet || hasPendingWorldCupBetOnMarket('r32'))}
+                        ${buildWorldCupBetButton('r32', 'eliminate', !canBet || hasPendingWorldCupBetOnMarket('r32'))}
                     </div>
                 </div>
                 ${adminHtml}
@@ -2940,13 +2889,11 @@ function redrawPlazaGrantsUi() {
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산된 경기입니다.');
             const result = readWorldCupAdminResultFromForm();
-            if (!result) return await window.customAlert('승무패·언오버·선제골 결과를 모두 선택한 뒤 정산해 주세요.');
-            const { wdl, total25, firstGoal } = result;
+            if (!result) return await window.customAlert('32강 진출 결과를 선택한 뒤 정산해 주세요.');
+            const { r32 } = result;
             const ok = await window.customConfirm(
                 `승부예측 결과를 확정하고 배당을 지급할까요?\n\n` +
-                `- 승무패: ${getWorldCupPickLabel('wdl', wdl)}\n` +
-                `- 언오버: ${getWorldCupPickLabel('total25', total25)}\n` +
-                `- 선제골: ${getWorldCupPickLabel('firstGoal', firstGoal)}\n\n` +
+                `- 32강 진출: ${getWorldCupPickLabel('r32', r32)}\n\n` +
                 '적중한 베팅에 배당금이 자동 지급됩니다.'
             );
             if (!ok) return;
@@ -3014,9 +2961,11 @@ function redrawPlazaGrantsUi() {
             return getMyWorldCupBets().some((b) => b && b.market === market && b.status === 'pending');
         }
 
-        /** 학급 전체 대기 베팅 취소 및 베팅금 환불 */
-        async function cancelPendingWorldCupBetsForAllStudents() {
+        /** 지정 matchId 대기 베팅 취소 및 베팅금 환불 */
+        async function cancelPendingWorldCupBetsForMatchIds(matchIds) {
             if (!db) return { cancelled: 0, refunded: 0, students: 0 };
+            const idSet = new Set((matchIds || []).map(String));
+            if (idSet.size === 0) return { cancelled: 0, refunded: 0, students: 0 };
             const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
             let snap;
             try {
@@ -3037,7 +2986,7 @@ function redrawPlazaGrantsUi() {
                 let refundSum = 0;
                 let changed = false;
                 const nextBets = bets.map((bet) => {
-                    if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
+                    if (!bet || !idSet.has(String(bet.matchId)) || bet.status !== 'pending') return bet;
                     changed = true;
                     cancelled += 1;
                     const stake = normalizeBongValue(Number(bet.stake) || 0);
@@ -3060,6 +3009,57 @@ function redrawPlazaGrantsUi() {
             });
             if (cancelled > 0) await batch.commit();
             return { cancelled, refunded, students };
+        }
+
+        /** 학급 전체 대기 베팅 취소 및 베팅금 환불 (현재 경기) */
+        async function cancelPendingWorldCupBetsForAllStudents() {
+            return cancelPendingWorldCupBetsForMatchIds([WORLD_CUP_MATCH.id]);
+        }
+
+        /** 배포 직후 1회 — 32강 진출 시장 전환: 이전 경기 대기 베팅 환불·설정 초기화 */
+        async function applyWorldCupBetR32Migration() {
+            if (!db) return;
+            const markerId = 'worldcup_r32_advance_20260627_v1';
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                const legacyMatchIds = ['kr_rsa_2026', 'kr_mex_2026'];
+                const result = await cancelPendingWorldCupBetsForMatchIds(legacyMatchIds);
+                const settingsRef = getGlobalSettingsDocRef();
+                const settingsSnap = await getDoc(settingsRef);
+                const wc = settingsSnap.exists() ? settingsSnap.data().worldCupBet : null;
+                let resetSettings = false;
+                if (wc && wc.matchId && String(wc.matchId) !== WORLD_CUP_MATCH.id) {
+                    resetSettings = true;
+                    await setDoc(settingsRef, {
+                        worldCupBet: getSanitizedWorldCupBetState(null),
+                    }, { merge: true });
+                    if (window.globalSettings) {
+                        window.globalSettings.worldCupBet = getSanitizedWorldCupBetState(null);
+                    }
+                }
+                await setDoc(markerRef, {
+                    done: true,
+                    cancelled: result.cancelled,
+                    refunded: result.refunded,
+                    students: result.students,
+                    resetSettings,
+                    note: '32강 진출 시장 전환 — 이전 경기 대기 베팅 환불',
+                    sanitizedAt: new Date().toISOString(),
+                }, { merge: true });
+                if (result.cancelled > 0 || resetSettings) {
+                    await refreshStudentsCacheFromServer();
+                    if (window.playerState && !window.playerState.isGuest) {
+                        updateUI();
+                        renderWorldCupBetPanel();
+                    }
+                }
+            } catch (e) {
+                console.warn('applyWorldCupBetR32Migration', e);
+            }
         }
 
         /** 배포 직후 1회 — 배당 조정 전 대기 베팅 전량 취소·환불 */
@@ -6706,6 +6706,7 @@ function redrawPlazaGrantsUi() {
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyWorldCupBetCancelMigration();
+                void applyWorldCupBetR32Migration();
                 void applyLearningThermometerRahiMaxHotfix();
 
                 onAuthStateChanged(auth, user => {

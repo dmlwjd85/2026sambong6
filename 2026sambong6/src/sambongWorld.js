@@ -1821,12 +1821,112 @@ function redrawPlazaGrantsUi() {
         /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
         const EQUIPPED_ITEM_REFUND_RATE = 0.5;
         const BONG_CHANGE_LOG_LIMIT = 80;
-        /** 하루 정상 획득 상한(퀘스트·랜덤박스 3회 등)을 크게 넘으면 마스터에게 경고 */
+        /** 삼봉 금융감독 — 하루 정상 획득 상한을 크게 넘으면 경고 */
         const BONG_ANOMALY_DAILY_GAIN_WARN = 200;
-        /** 보유 삼봉이 이 값을 넘으면 경고 (비정상 복사·누적 의심) */
+        /** 삼봉 금융감독 — 보유 삼봉이 이 값을 넘으면 경고 */
         const BONG_ANOMALY_TOTAL_HOLD_WARN = 500;
-        /** 단일 기록에서 이 이상 증가하면 경고 */
+        /** 삼봉 금융감독 — 단일 기록에서 이 이상 증가하면 경고 */
         const BONG_ANOMALY_SINGLE_DELTA_WARN = 120;
+        /** 삼봉 금융감독 — 아이템 환불 누적 의심 기준 */
+        const BONG_SUPERVISION_REFUND_WARN = 8;
+
+        function formatSupervisionDateTime(ms) {
+            const d = new Date(Number(ms));
+            if (isNaN(d.getTime())) return '날짜 미상';
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+
+        /** 학생 1명의 금융감독 이상 거래 목록 (날짜·행위 포함) */
+        function buildStudentSupervisionIncidents(stu, today) {
+            if (!stu) return [];
+            const incidents = [];
+            const totalBong = normalizeBongValue(Number(stu.bong) || 0);
+            const logs = Array.isArray(stu.bongChangeLog) ? stu.bongChangeLog : [];
+            const ledger = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger : [];
+
+            if (totalBong >= BONG_ANOMALY_TOTAL_HOLD_WARN) {
+                incidents.push({
+                    id: `hold_${today}_${totalBong}`,
+                    date: today,
+                    dateLabel: today,
+                    category: '과다 보유',
+                    action: `보유 삼봉 ${formatBongDisplay(totalBong)}B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`,
+                });
+            }
+
+            let todayGain = 0;
+            const todayGainRows = [];
+            logs.forEach((row) => {
+                if (!row || !row.at) return;
+                const ds = getLocalDateStr(new Date(Number(row.at)));
+                if (ds !== today) return;
+                const delta = normalizeBongValue(Number(row.delta) || 0);
+                if (delta > 0) {
+                    todayGain = normalizeBongValue(todayGain + delta);
+                    todayGainRows.push(row);
+                }
+            });
+            if (todayGain >= BONG_ANOMALY_DAILY_GAIN_WARN) {
+                incidents.push({
+                    id: `daily_${today}_${todayGain}`,
+                    date: today,
+                    dateLabel: today,
+                    category: '과다 일일 획득',
+                    action: `당일 누적 +${formatBongDisplay(todayGain)}B (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`,
+                    details: todayGainRows.slice(-8).map((row) => ({
+                        dateLabel: formatSupervisionDateTime(row.at),
+                        action: `${row.reason || '봉 변경'} (+${formatBongDisplay(row.delta)}B)`,
+                    })),
+                });
+            }
+
+            logs.forEach((row, idx) => {
+                const delta = normalizeBongValue(Number(row && row.delta) || 0);
+                if (delta < BONG_ANOMALY_SINGLE_DELTA_WARN) return;
+                incidents.push({
+                    id: `single_${row.at || idx}_${delta}`,
+                    date: row.at ? getLocalDateStr(new Date(Number(row.at))) : today,
+                    dateLabel: formatSupervisionDateTime(row.at),
+                    category: '단일 대량 증가',
+                    action: `${row.reason || '봉 변경'} — 단일 +${formatBongDisplay(delta)}B (기준 ${BONG_ANOMALY_SINGLE_DELTA_WARN}B 초과)`,
+                });
+            });
+
+            if (ledger.length >= BONG_SUPERVISION_REFUND_WARN) {
+                const recentRefunds = ledger.slice(-5);
+                incidents.push({
+                    id: `refund_${ledger.length}`,
+                    date: today,
+                    dateLabel: recentRefunds.length ? formatSupervisionDateTime(recentRefunds[recentRefunds.length - 1].at) : today,
+                    category: '환불 누적',
+                    action: `아이템 환불 ${ledger.length}회 누적 (기준 ${BONG_SUPERVISION_REFUND_WARN}회 이상)`,
+                    details: recentRefunds.map((row) => ({
+                        dateLabel: formatSupervisionDateTime(row.at),
+                        action: `${row.label || row.kind || '환불'} +${formatBongDisplay(row.refundB)}B`,
+                    })),
+                });
+            }
+
+            return incidents;
+        }
+
+        function buildSupervisionIncidentSummaryLine(inc) {
+            return `[${inc.dateLabel}] ${inc.category}: ${inc.action}`;
+        }
+
+        function buildSupervisionIncidentHtml(inc) {
+            const detailHtml = Array.isArray(inc.details) && inc.details.length
+                ? `<ul class="list-disc list-inside ml-2 mt-0.5 text-[8px] sm:text-[9px] text-slate-400 space-y-0.5">${inc.details.map((d) =>
+                    `<li><span class="text-slate-500">${escapeConvenienceHtml(d.dateLabel)}</span> · ${escapeConvenienceHtml(d.action)}</li>`
+                ).join('')}</ul>`
+                : '';
+            return `<li class="text-amber-100/90">
+                <span class="text-amber-300/90 font-bold">${escapeConvenienceHtml(inc.dateLabel)}</span>
+                <span class="text-amber-200"> ${escapeConvenienceHtml(inc.category)}</span> —
+                ${escapeConvenienceHtml(inc.action)}
+                ${detailHtml}
+            </li>`;
+        }
 
         function buildBongChangeLogEntry(reason, beforeBong, afterBong, extra = {}) {
             const before = normalizeBongValue(Number(beforeBong) || 0);
@@ -1985,14 +2085,6 @@ function redrawPlazaGrantsUi() {
             return gain;
         }
 
-        function getStudentSuspiciousBongLogRows(bongChangeLog) {
-            const logs = Array.isArray(bongChangeLog) ? bongChangeLog : [];
-            return logs.filter((row) => {
-                const delta = normalizeBongValue(Number(row && row.delta) || 0);
-                return delta >= BONG_ANOMALY_SINGLE_DELTA_WARN;
-            }).slice(-5);
-        }
-
         function buildBongAnomalyReport(studentsData) {
             const today = getLocalDateStr();
             const rows = Array.isArray(studentsData) ? studentsData : [];
@@ -2001,33 +2093,27 @@ function redrawPlazaGrantsUi() {
                 const sid = String(stu && stu.id || '');
                 if (!sid || sid === 'gm' || sid === 'gm_a' || sid === 'guest') return;
                 const name = STUDENT_NAMES[sid] || stu.name || sid;
+                const incidents = buildStudentSupervisionIncidents(stu, today);
+                if (!incidents.length) return;
                 const totalBong = normalizeBongValue(Number(stu.bong) || 0);
                 const todayGain = getStudentBongGainToday(stu.bongChangeLog, today);
-                const bigDeltas = getStudentSuspiciousBongLogRows(stu.bongChangeLog);
                 const refundCount = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger.length : 0;
-                const reasons = [];
-                if (totalBong >= BONG_ANOMALY_TOTAL_HOLD_WARN) {
-                    reasons.push(`보유 ${formatBongDisplay(totalBong)}B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`);
-                }
-                if (todayGain >= BONG_ANOMALY_DAILY_GAIN_WARN) {
-                    reasons.push(`오늘 +${formatBongDisplay(todayGain)}B 획득 (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`);
-                }
-                if (bigDeltas.length) {
-                    const last = bigDeltas[bigDeltas.length - 1];
-                    reasons.push(`단일 +${formatBongDisplay(normalizeBongValue(last.delta))}B (${last.reason || '기록'})`);
-                }
-                if (refundCount >= 8) {
-                    reasons.push(`환불 ${refundCount}회 누적 (의심)`);
-                }
-                if (reasons.length) {
-                    alerts.push({ sid, name, totalBong, todayGain, refundCount, reasons, bigDeltas });
-                }
+                alerts.push({
+                    sid,
+                    name,
+                    totalBong,
+                    todayGain,
+                    refundCount,
+                    incidents,
+                    reasons: incidents.map(buildSupervisionIncidentSummaryLine),
+                });
             });
             alerts.sort((a, b) => b.totalBong - a.totalBong);
             return { today, alerts, alertCount: alerts.length };
         }
 
-        function renderBongAnomalyPanel(studentsData) {
+        /** 삼봉 금융감독 — 마스터 J 패널 */
+        function renderSamBongFinancialSupervisionPanel(studentsData) {
             const el = document.getElementById('bongAnomalyPanel');
             if (!el) return;
             if (!window.playerState || !window.playerState.isGM) {
@@ -2036,31 +2122,81 @@ function redrawPlazaGrantsUi() {
             }
             el.classList.remove('hidden');
             const report = buildBongAnomalyReport(studentsData);
+            const criteriaText = `보유 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B↑ · 당일 +${BONG_ANOMALY_DAILY_GAIN_WARN}B↑ · 단일 +${BONG_ANOMALY_SINGLE_DELTA_WARN}B↑ · 환불 ${BONG_SUPERVISION_REFUND_WARN}회↑`;
             if (!report.alertCount) {
                 el.innerHTML = `
                     <div class="flex items-center gap-2 mb-1">
-                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-emerald-400"></i> 삼봉(B) 이상 감시</h3>
-                        <span class="text-[9px] text-emerald-300 font-bold">오늘 이상 없음</span>
+                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-building-columns text-emerald-400"></i> 삼봉 금융감독 시스템</h3>
+                        <span class="text-[9px] text-emerald-300 font-bold">이상 없음</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">보유 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B↑ · 오늘 획득 ${BONG_ANOMALY_DAILY_GAIN_WARN}B↑ · 단일 +${BONG_ANOMALY_SINGLE_DELTA_WARN}B↑ 시 경고합니다.</p>`;
+                    <p class="text-[9px] text-slate-500 leading-relaxed">학급 삼봉(B) 거래를 실시간 감시합니다. ${criteriaText} 시 경고·기록됩니다.</p>`;
                 return;
             }
             const rowsHtml = report.alerts.map((a) => `
                 <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
                     <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
                     <div class="text-amber-200/90 mt-0.5">보유 ${formatBongDisplay(a.totalBong)}B · 오늘 +${formatBongDisplay(a.todayGain)}B · 환불 ${a.refundCount}회</div>
-                    <ul class="list-disc list-inside text-amber-100/80 mt-1 space-y-0.5">${a.reasons.map((r) => `<li>${escapeConvenienceHtml(r)}</li>`).join('')}</ul>
+                    <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
                 <div class="flex flex-wrap items-center gap-2 mb-2">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-triangle-exclamation text-amber-400"></i> 삼봉(B) 이상 감시</h3>
-                    <span class="text-[9px] bg-amber-900/60 text-amber-100 px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 주의</span>
-                    <button type="button" onclick="window.renderBongAnomalyPanel(window.allStudentsData)" class="ml-auto text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded border border-slate-600">새로고침</button>
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-building-columns text-amber-400"></i> 삼봉 금융감독 시스템</h3>
+                    <span class="text-[9px] bg-amber-900/60 text-amber-100 px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 감독 대상</span>
+                    <button type="button" onclick="window.renderSamBongFinancialSupervisionPanel(window.allStudentsData)" class="ml-auto text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded border border-slate-600">새로고침</button>
                 </div>
-                <p class="text-[9px] text-slate-500 mb-2 leading-relaxed">랜덤박스·퀘스트 등 정상 범위를 크게 벗어난 보유·획득·환불 패턴입니다. 아이템 환불 복사 의심 시 해당 학생 잔액을 확인하세요.</p>
+                <p class="text-[9px] text-slate-500 mb-2 leading-relaxed">비정상 보유·과다 획득·대량 환불 등 의심 거래를 날짜·행위와 함께 표시합니다. 당사자에게도 경고 알림이 전달됩니다.</p>
                 <div class="space-y-2 max-h-52 overflow-y-auto scrollbar-hide">${rowsHtml}</div>`;
         }
-        window.renderBongAnomalyPanel = renderBongAnomalyPanel;
+
+        window.renderSamBongFinancialSupervisionPanel = renderSamBongFinancialSupervisionPanel;
+        window.renderBongAnomalyPanel = renderSamBongFinancialSupervisionPanel;
+
+        let _supervisionStudentAlertRunning = false;
+
+        /** 삼봉 금융감독 — 이상 감지 시 당사자에게 1회 경고 알림 */
+        async function maybeAlertStudentBongSupervision() {
+            if (_supervisionStudentAlertRunning) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            const sid = String(localStorage.getItem('sambong_student_id') || '');
+            if (!sid) return;
+            const today = getLocalDateStr();
+            const incidents = buildStudentSupervisionIncidents(window.playerState, today);
+            if (!incidents.length) return;
+
+            const storageKey = `sambong_supervision_seen_${sid}`;
+            let seen = {};
+            try {
+                seen = JSON.parse(localStorage.getItem(storageKey) || '{}');
+            } catch (e) {
+                seen = {};
+            }
+            const newOnes = incidents.filter((inc) => !seen[inc.id]);
+            if (!newOnes.length) return;
+
+            _supervisionStudentAlertRunning = true;
+            try {
+                const lines = newOnes.map((inc) => {
+                    let block = `· ${buildSupervisionIncidentSummaryLine(inc)}`;
+                    if (inc.details && inc.details.length) {
+                        block += '\n' + inc.details.slice(0, 4).map((d) => `   ↳ ${d.dateLabel} ${d.action}`).join('\n');
+                    }
+                    return block;
+                }).join('\n\n');
+                await window.customAlert(
+                    '⚠️ 삼봉 금융감독 경고\n\n' +
+                    '비정상으로 의심되는 삼봉(B) 거래가 감지되었습니다.\n' +
+                    '허용되지 않은 방법으로 획득·환불한 경우 마스터 J가 확인할 수 있습니다.\n\n' +
+                    '[감지 내역]\n' +
+                    lines +
+                    '\n\n정상 활동이라면 마스터 J에게 문의하세요.'
+                );
+                newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
+                localStorage.setItem(storageKey, JSON.stringify(seen));
+            } finally {
+                _supervisionStudentAlertRunning = false;
+            }
+        }
+        window.maybeAlertStudentBongSupervision = maybeAlertStudentBongSupervision;
 
         function getEquippedSkinRefundBong(skin) {
             const price = Math.max(0, Number(skin && skin.price) || 0);
@@ -8833,6 +8969,9 @@ function redrawPlazaGrantsUi() {
             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
             if (typeof updateDragonBallUI === 'function') updateDragonBallUI();
             if (typeof updateRaidEntryUI === 'function') updateRaidEntryUI();
+            if (canRunBankSideEffects) {
+                setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
+            }
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가

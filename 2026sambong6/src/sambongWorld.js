@@ -3412,6 +3412,14 @@ function redrawPlazaGrantsUi() {
             return normalizeBongValue(reg + termSum);
         }
 
+        /** 학생의 현금성 삼봉 — 지갑 + 일반예금 (적금·만기 전 원금 제외) */
+        function getStudentCashBong(stu) {
+            if (!stu) return 0;
+            const wallet = normalizeBongValue(Number(stu.bong) || 0);
+            const regular = normalizeBongValue(Number(stu.bankRegularSavings) || 0);
+            return normalizeBongValue(wallet + regular);
+        }
+
         /** 적금 항목 정규화 */
         function sanitizeBankTermDepositEntry(td) {
             if (!td || typeof td !== 'object') return null;
@@ -7675,6 +7683,8 @@ function redrawPlazaGrantsUi() {
                     </div>`;
                 }
 
+                const cashBong = getStudentCashBong(displayData);
+
                 return `
                 <div ${gmOnClick} class="flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
                     ${shieldHtml}${jobHtml}${condHtml}
@@ -7689,7 +7699,7 @@ function redrawPlazaGrantsUi() {
                     <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="text-[9px] sm:text-[10px] font-black ${(Number(displayData.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}">B</span>
+                        <span class="text-[9px] sm:text-[10px] font-black ${cashBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(cashBong)}B</span>
                     </div>
 
                     ${gmControls}

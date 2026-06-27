@@ -2438,6 +2438,19 @@ function redrawPlazaGrantsUi() {
         /** 1회 베팅 최대 금액 */
         const WORLD_CUP_MAX_STAKE = 300;
 
+        /** 베팅 자동 마감: 2026-06-28(일) 오전 10:00 (로컬 시간) */
+        const WORLD_CUP_BETTING_CLOSE_AT_MS = new Date(2026, 5, 28, 10, 0, 0, 0).getTime();
+
+        function isWorldCupBettingPastDeadline(now = new Date()) {
+            return now.getTime() >= WORLD_CUP_BETTING_CLOSE_AT_MS;
+        }
+
+        function formatWorldCupBettingDeadlineLabel() {
+            const d = new Date(WORLD_CUP_BETTING_CLOSE_AT_MS);
+            const dow = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+            return `${d.getMonth() + 1}/${d.getDate()}(${dow}) ${String(d.getHours()).padStart(2, '0')}:00`;
+        }
+
         function formatWorldCupBetTime(ms) {
             if (!ms) return '';
             const d = new Date(Number(ms));
@@ -2531,22 +2544,26 @@ function redrawPlazaGrantsUi() {
         function getSanitizedWorldCupBetState(raw) {
             const base = {
                 matchId: WORLD_CUP_MATCH.id,
-                bettingOpen: true,
+                bettingOpen: !isWorldCupBettingPastDeadline(),
                 settled: false,
                 result: null,
                 settledAt: null,
+                bettingDeadlineMs: WORLD_CUP_BETTING_CLOSE_AT_MS,
             };
             if (!raw || typeof raw !== 'object') return base;
             if (raw.matchId && String(raw.matchId) !== WORLD_CUP_MATCH.id) return base;
             const result = raw.result && typeof raw.result === 'object' ? raw.result : null;
+            const adminOpen = raw.bettingOpen !== false;
+            const timeOpen = !isWorldCupBettingPastDeadline();
             return {
                 matchId: WORLD_CUP_MATCH.id,
-                bettingOpen: raw.settled ? false : raw.bettingOpen !== false,
+                bettingOpen: raw.settled ? false : (adminOpen && timeOpen),
                 settled: !!raw.settled,
                 result: result ? {
                     r32: result.r32 ? String(result.r32) : null,
                 } : null,
                 settledAt: raw.settledAt || null,
+                bettingDeadlineMs: WORLD_CUP_BETTING_CLOSE_AT_MS,
             };
         }
 
@@ -2679,7 +2696,7 @@ function redrawPlazaGrantsUi() {
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
                         <h4 class="text-red-300 font-black text-xs"><i class="fa-solid fa-futbol"></i> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 32강 진출·탈락 중 1건만 베팅 (최대 ${WORLD_CUP_MAX_STAKE}B). 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 32강 진출·탈락 중 1건만 베팅 (최대 ${WORLD_CUP_MAX_STAKE}B). <span class="text-amber-300/90">베팅 마감: ${formatWorldCupBettingDeadlineLabel()} (자동)</span>. 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
                     </div>
                     <div class="text-right text-[10px] shrink-0 ${statusClass} font-bold">${statusText}</div>
                 </div>
@@ -2751,6 +2768,9 @@ function redrawPlazaGrantsUi() {
             if (!entry) return await window.customAlert('선택한 베팅 항목을 찾을 수 없습니다.');
             const wcState = getWorldCupBetState();
             if (!wcState.bettingOpen || wcState.settled) {
+                if (isWorldCupBettingPastDeadline() && !wcState.settled) {
+                    return await window.customAlert(`베팅 접수가 ${formatWorldCupBettingDeadlineLabel()}에 자동 마감되었습니다.`);
+                }
                 return await window.customAlert('지금은 승부예측 베팅 접수 시간이 아닙니다.');
             }
             const hasPendingOnMarket = getMyWorldCupBets().some((b) => b && b.market === market && b.status === 'pending');
@@ -2796,7 +2816,7 @@ function redrawPlazaGrantsUi() {
                     const settingsRef = getGlobalSettingsDocRef();
                     const settingsSnap = await transaction.get(settingsRef);
                     const latestWc = getSanitizedWorldCupBetState(settingsSnap.exists() ? settingsSnap.data().worldCupBet : null);
-                    if (!latestWc.bettingOpen || latestWc.settled) throw new Error('closed');
+                    if (!latestWc.bettingOpen || latestWc.settled || isWorldCupBettingPastDeadline()) throw new Error('closed');
                     const stuSnap = await transaction.get(currentStudentDocRef);
                     if (!stuSnap.exists()) throw new Error('student_not_found');
                     const serverData = stuSnap.data() || {};
@@ -2866,6 +2886,9 @@ function redrawPlazaGrantsUi() {
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산이 끝난 경기입니다.');
+            if (open && isWorldCupBettingPastDeadline()) {
+                return await window.customAlert(`베팅 마감 시한(${formatWorldCupBettingDeadlineLabel()})이 지나 재개할 수 없습니다.`);
+            }
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
@@ -3014,6 +3037,41 @@ function redrawPlazaGrantsUi() {
         /** 학급 전체 대기 베팅 취소 및 베팅금 환불 (현재 경기) */
         async function cancelPendingWorldCupBetsForAllStudents() {
             return cancelPendingWorldCupBetsForMatchIds([WORLD_CUP_MATCH.id]);
+        }
+
+        let _worldCupAutoCloseRunning = false;
+
+        /** 마감 시각 이후 누군가 앱을 켜면 Firestore에 베팅 마감 상태를 1회 반영 */
+        async function maybeAutoCloseWorldCupBetting(now = new Date()) {
+            if (!db || _worldCupAutoCloseRunning || !isWorldCupBettingPastDeadline(now)) return;
+            const raw = window.globalSettings && window.globalSettings.worldCupBet;
+            if (!raw || typeof raw !== 'object') return;
+            if (raw.settled) return;
+            if (raw.matchId && String(raw.matchId) !== WORLD_CUP_MATCH.id) return;
+            if (raw.bettingOpen === false) return;
+            _worldCupAutoCloseRunning = true;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                const settingsRef = getGlobalSettingsDocRef();
+                const closedAt = now.getTime();
+                const nextWc = {
+                    ...raw,
+                    matchId: WORLD_CUP_MATCH.id,
+                    bettingOpen: false,
+                    bettingClosedAt: closedAt,
+                    autoClosedReason: 'deadline_20260628_1000',
+                };
+                await setDoc(settingsRef, { worldCupBet: nextWc }, { merge: true });
+                if (window.globalSettings) window.globalSettings.worldCupBet = nextWc;
+                if (window.playerState && !window.playerState.isGuest) {
+                    renderWorldCupBetPanel();
+                }
+            } catch (e) {
+                console.warn('maybeAutoCloseWorldCupBetting', e);
+            } finally {
+                _worldCupAutoCloseRunning = false;
+            }
         }
 
         /** 배포 직후 1회 — 32강 진출 시장 전환: 이전 경기 대기 베팅 환불·설정 초기화 */
@@ -7091,6 +7149,10 @@ function redrawPlazaGrantsUi() {
                 if (state.roundKey === roundKey && !state.drawnAt && state.lastAutoDrawKey !== roundKey) {
                     void executeLottoDraw({ auto: true });
                 }
+            }
+            // 월드컵 승부예측: 6/28(일) 10:00 이후 누군가 앱을 켜면 Firestore에 베팅 마감 반영
+            if (typeof db !== 'undefined' && db && isWorldCupBettingPastDeadline(now)) {
+                void maybeAutoCloseWorldCupBetting(now);
             }
         }
 

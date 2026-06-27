@@ -788,7 +788,7 @@
                     </select>
                     <input type="text" id="gmQuestDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
                     <input type="number" id="gmQuestXp" min="0" step="1" placeholder="보상 XP" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <input type="number" id="gmQuestBong" min="0" step="0.1" placeholder="보상 B" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                    <input type="number" id="gmQuestBong" min="0" step="1" placeholder="보상 B" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                     <input type="text" id="gmQuestIcon" placeholder="아이콘 예: fa-star" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                     <select id="gmQuestColor" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
                         <option value="text-emerald-300">초록</option>
@@ -846,7 +846,7 @@
                         <div class="mb-3 rounded-xl border border-orange-500/30 bg-orange-950/20 p-3">
                             <label class="block text-[10px] text-orange-200 font-bold mb-1">배달비(B)</label>
                             <div class="flex flex-col sm:flex-row gap-2">
-                                <input type="number" id="gmConvenienceDeliveryFee" min="0" step="0.1" placeholder="예: 1" onblur="window.saveConvenienceDeliveryFeeAdmin({ silent: true })" class="flex-1 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                <input type="number" id="gmConvenienceDeliveryFee" min="0" step="1" placeholder="예: 1" onblur="window.saveConvenienceDeliveryFeeAdmin({ silent: true })" class="flex-1 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                                 <button type="button" onclick="window.saveConvenienceDeliveryFeeAdmin()" class="bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">배달비 저장</button>
                             </div>
                             <p class="text-[9px] text-slate-500 mt-1">저장 전에는 기본 배달비 1.0B가 적용됩니다. 값을 입력한 뒤 포커스를 빼면 자동 저장됩니다.</p>
@@ -856,7 +856,7 @@
                             <h4 class="text-[10px] text-orange-200 font-bold mb-2">새 편의점 물품 추가</h4>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                                 <input type="text" id="gmConvenienceName" placeholder="물품 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                                <input type="number" id="gmConveniencePrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                <input type="number" id="gmConveniencePrice" min="0" step="1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                                 <input type="text" id="gmConvenienceDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
                             </div>
                             <button type="button" onclick="window.addConvenienceItemAdmin()" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">편의점 물품 추가</button>
@@ -875,7 +875,7 @@
                     <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                         <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <input type="number" id="gmCustomShopPrice" min="0" step="0.1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="number" id="gmCustomShopPrice" min="0" step="1" placeholder="가격(B)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                         <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
                         <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
                             <option value="class">학급 활동 예약</option>
@@ -1035,7 +1035,7 @@
                             <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
                         </label>
                         <label class="text-[10px] text-slate-300">최대 보상 B
-                            <input type="number" id="raidRewardBongInput" min="0" step="0.1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="number" id="raidRewardBongInput" min="0" step="1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
                         </label>
                     </div>
                     <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
@@ -1087,11 +1087,11 @@
                     <h3 class="text-sky-200 font-bold text-sm"><i class="fa-solid fa-piggy-bank"></i> 일반예금</h3>
                     <p class="text-[9px] text-slate-500">이자 없음. 입·출금 자유.</p>
                     <div class="flex gap-2 flex-wrap items-center">
-                        <input type="number" id="bankDepositInput" min="0" step="0.1" placeholder="넣을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <input type="number" id="bankDepositInput" min="0" step="1" placeholder="넣을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="window.depositBank()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">입금</button>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center">
-                        <input type="number" id="bankWithdrawInput" min="0" step="0.1" placeholder="출금할 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <input type="number" id="bankWithdrawInput" min="0" step="1" placeholder="출금할 B" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="window.withdrawBank()" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">출금</button>
                         <button type="button" onclick="window.withdrawBankAll()" class="bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold py-2 px-3 rounded-xl text-[10px] shrink-0 border border-slate-500">전액 출금</button>
                     </div>
@@ -1101,7 +1101,7 @@
                     <p class="text-[9px] text-slate-500">건당 30일 잠금 · 만기 시 이자 지급 · 중도 해지는 원금만</p>
                     <div id="bankTermDepositsList" class="min-h-[2rem]"></div>
                     <div class="flex gap-2 flex-wrap items-end pt-1">
-                        <input type="number" id="bankTermDepositInput" min="0" step="0.1" placeholder="적금 넣을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <input type="number" id="bankTermDepositInput" min="0" step="1" placeholder="적금 넣을 B" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="window.openTermDeposit()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">적금 가입</button>
                     </div>
                 </div>
@@ -1395,7 +1395,7 @@
                         <input type="number" id="mq_adminXp" min="0" step="1" value="50" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs" />
                     </label>
                     <label class="w-full sm:w-24 text-[10px] text-slate-300">보상 B
-                        <input type="number" id="mq_adminBong" min="0" step="0.1" value="3" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs" />
+                        <input type="number" id="mq_adminBong" min="0" step="1" value="3" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs" />
                     </label>
                 </div>
                 <div id="mqWinnerLine" class="text-[10px] text-emerald-300 font-bold mb-2 min-h-[1.25rem]"></div>

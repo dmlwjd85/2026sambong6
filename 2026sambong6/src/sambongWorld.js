@@ -1154,7 +1154,7 @@ function redrawPlazaGrantsUi() {
         /** 마스터가 Firestore에 저장하기 전까지 적용되는 기본 배달비 */
         const DEFAULT_CONVENIENCE_DELIVERY_FEE = 1;
 
-        /** Firestore settings.global에 저장된 배달비를 0 이상 소수 1자리로 정규화 */
+        /** Firestore settings.global에 저장된 배달비를 0 이상 정수(버림)로 정규화 */
         function normalizeConvenienceDeliveryFee(raw) {
             const fee = raw != null ? Number(raw) : 0;
             return normalizeBongValue(Math.max(0, Number.isFinite(fee) ? fee : 0));
@@ -1190,7 +1190,7 @@ function redrawPlazaGrantsUi() {
 
         function formatConvenienceDeliveryFeeLabel(fee) {
             const normalized = normalizeConvenienceDeliveryFee(fee);
-            return normalized > 0 ? `+${normalized.toFixed(1)}B` : '무료';
+            return normalized > 0 ? `+${formatBongDisplay(normalized)}B` : '무료';
         }
 
         /** 주문·결제 직전 Firestore 서버 기준 최신 배달비를 읽어 반영 */
@@ -1806,11 +1806,16 @@ function redrawPlazaGrantsUi() {
 
         function calculateExactLevel(xp) { return Math.min(100, Math.max(1, Math.floor(1 + Math.sqrt((xp || 0) / 4.04)))); }
 
-        /** 봉(B) 값을 소수 1자리로 맞춤 (마이너스 잔액·점심 차감 등 일관 표시) */
+        /** 봉(B) 값을 정수로 맞춤 — 소수 발생 시 버림(floor) */
         function normalizeBongValue(v) {
             const n = Number(v);
             if (!Number.isFinite(n)) return 0;
-            return Math.round(n * 10) / 10;
+            return Math.floor(n);
+        }
+
+        /** UI 표시용 삼봉(B) 문자열 */
+        function formatBongDisplay(v) {
+            return String(normalizeBongValue(v));
         }
 
         /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
@@ -2002,14 +2007,14 @@ function redrawPlazaGrantsUi() {
                 const refundCount = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger.length : 0;
                 const reasons = [];
                 if (totalBong >= BONG_ANOMALY_TOTAL_HOLD_WARN) {
-                    reasons.push(`보유 ${totalBong.toFixed(1)}B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`);
+                    reasons.push(`보유 B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`);
                 }
                 if (todayGain >= BONG_ANOMALY_DAILY_GAIN_WARN) {
-                    reasons.push(`오늘 +${todayGain.toFixed(1)}B 획득 (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`);
+                    reasons.push(`오늘 +B 획득 (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`);
                 }
                 if (bigDeltas.length) {
                     const last = bigDeltas[bigDeltas.length - 1];
-                    reasons.push(`단일 +${normalizeBongValue(last.delta).toFixed(1)}B (${last.reason || '기록'})`);
+                    reasons.push(`단일 +B (${last.reason || '기록'})`);
                 }
                 if (refundCount >= 8) {
                     reasons.push(`환불 ${refundCount}회 누적 (의심)`);
@@ -2043,7 +2048,7 @@ function redrawPlazaGrantsUi() {
             const rowsHtml = report.alerts.map((a) => `
                 <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
                     <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
-                    <div class="text-amber-200/90 mt-0.5">보유 ${a.totalBong.toFixed(1)}B · 오늘 +${a.todayGain.toFixed(1)}B · 환불 ${a.refundCount}회</div>
+                    <div class="text-amber-200/90 mt-0.5">보유 B · 오늘 +B · 환불 ${a.refundCount}회</div>
                     <ul class="list-disc list-inside text-amber-100/80 mt-1 space-y-0.5">${a.reasons.map((r) => `<li>${escapeConvenienceHtml(r)}</li>`).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
@@ -2295,10 +2300,10 @@ function redrawPlazaGrantsUi() {
             const poolB = normalizeBongValue(Number(lastDraw.poolB) || 0);
             const taxB = normalizeBongValue(Number(lastDraw.taxB) || 0);
             const winnerText = winners.length
-                ? winners.map((w) => `${w.name || w.studentId}: +${Number(w.payoutB || 0).toFixed(1)}B`).join('\n')
-                : `당첨자 없음\n${poolB.toFixed(1)}B는 다음 회차로 이월됩니다.`;
+                ? winners.map((w) => `${w.name || w.studentId}: +B`).join('\n')
+                : `당첨자 없음\nB는 다음 회차로 이월됩니다.`;
             return `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(lastDraw.numbers)}\n` +
-                `누적: ${poolB.toFixed(1)}B / 세금(40%): ${taxB.toFixed(1)}B\n\n${winnerText}`;
+                `누적: B / 세금(40%): B\n\n${winnerText}`;
         }
 
         function maybeShowLottoResultPopup() {
@@ -2371,14 +2376,14 @@ function redrawPlazaGrantsUi() {
                 const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
                 return `<div class="flex justify-between gap-2 border-b border-slate-800/70 pb-1">
                     <span class="text-lime-200 font-bold">${formatLottoNumbers(t.numbers)}</span>
-                    <span class="text-slate-500 shrink-0">${ds} · ${Number(t.price || 0).toFixed(1)}B</span>
+                    <span class="text-slate-500 shrink-0">${ds} · B</span>
                 </div>`;
             }).join('');
             const last = state.lastDraw;
             const lastHtml = last
                 ? `<div class="mt-2 rounded-lg bg-slate-950/60 border border-slate-700 px-2 py-1.5">
                     <div class="text-[10px] text-slate-400 font-bold">최근 추첨: <span class="text-lime-200">${formatLottoNumbers(last.numbers)}</span></div>
-                    <div class="text-[9px] text-slate-500">총 ${Number(last.poolB || 0).toFixed(1)}B · 세금 ${Number(last.taxB || 0).toFixed(1)}B · 지급 ${Number(last.payoutPoolB || 0).toFixed(1)}B</div>
+                    <div class="text-[9px] text-slate-500">총 B · 세금 B · 지급 B</div>
                     <div class="text-[9px] text-slate-400">${last.winners && last.winners.length ? `당첨: ${last.winners.map((w) => escapeConstitutionHtml(w.name || w.studentId)).join(', ')}` : '당첨자 없음 · 당첨금 이월'}</div>
                 </div>`
                 : '';
@@ -2392,7 +2397,7 @@ function redrawPlazaGrantsUi() {
                         <p class="text-[9px] text-slate-400 leading-relaxed">1~30 중 3개를 고릅니다. ${getLottoPurchaseWindowText()} · 가격 ${price}B · 당첨 시 세금 40% 제외 후 지급</p>
                     </div>
                     <div class="text-right text-[10px] text-slate-300 shrink-0">
-                        <div>누적: <span class="text-sb-gold font-black">${Number(activePool || 0).toFixed(1)}B</span></div>
+                        <div>누적: <span class="text-sb-gold font-black">B</span></div>
                         <div>이번 회차 티켓: ${ticketCount}장</div>
                     </div>
                 </div>
@@ -2461,7 +2466,7 @@ function redrawPlazaGrantsUi() {
         function formatWorldCupBetStatusHtml(bet) {
             if (!bet) return '';
             if (bet.status === 'won') {
-                return `<span class="text-emerald-300">적중 +${Number(bet.payout || 0).toFixed(1)}B</span>`;
+                return `<span class="text-emerald-300">적중 +B</span>`;
             }
             if (bet.status === 'lost') return '<span class="text-slate-500">미적중</span>';
             if (bet.status === 'cancelled') return '<span class="text-slate-400">취소·환불</span>';
@@ -2489,7 +2494,7 @@ function redrawPlazaGrantsUi() {
                 return `<div class="rounded-lg border border-slate-700/80 bg-slate-950/40 p-2 mb-2">
                     <div class="text-[10px] font-bold text-red-200 mb-1.5 flex flex-wrap items-center justify-between gap-1">
                         <span>${WORLD_CUP_MARKET_LABELS[market]}</span>
-                        <span class="text-[9px] text-slate-500 font-normal">${rows.length}건 · 대기 ${summary.pending} · ${summary.totalStake.toFixed(1)}B</span>
+                        <span class="text-[9px] text-slate-500 font-normal">${rows.length}건 · 대기 ${summary.pending} · B</span>
                     </div>
                     <div class="space-y-1">${rowHtml}</div>
                 </div>`;
@@ -2506,7 +2511,7 @@ function redrawPlazaGrantsUi() {
                 <div class="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px]">
                     ${studentPart}
                     <span class="text-slate-500 shrink-0">${formatWorldCupBetTime(bet.at)}</span>
-                    <span class="text-red-100">${WORLD_CUP_MARKET_LABELS[bet.market] || bet.market} · ${escapeConvenienceHtml(getWorldCupPickLabel(bet.market, bet.pick))} · ${Number(bet.stake || 0).toFixed(1)}B × ${Number(bet.odds || 0).toFixed(2)}</span>
+                    <span class="text-red-100">${WORLD_CUP_MARKET_LABELS[bet.market] || bet.market} · ${escapeConvenienceHtml(getWorldCupPickLabel(bet.market, bet.pick))} · B × ${Number(bet.odds || 0).toFixed(2)}</span>
                 </div>
                 <span class="shrink-0 text-[9px] sm:text-[10px]">${formatWorldCupBetStatusHtml(bet)}</span>
             </div>`;
@@ -2660,7 +2665,7 @@ function redrawPlazaGrantsUi() {
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
                         <div>
                             <div class="text-[10px] text-slate-300 font-bold">학급 베팅 내역</div>
-                            <div class="text-[9px] text-slate-500">총 ${classSummary.count}건 · 대기 ${classSummary.pending} · 적중 ${classSummary.won} · 누적 ${classSummary.totalStake.toFixed(1)}B</div>
+                            <div class="text-[9px] text-slate-500">총 ${classSummary.count}건 · 대기 ${classSummary.pending} · 적중 ${classSummary.won} · 누적 B</div>
                         </div>
                         <button type="button" onclick="window.openWorldCupBetHistoryPanel()" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold py-1.5 px-3 rounded-lg text-[9px]">전체 보기</button>
                     </div>
@@ -2742,7 +2747,7 @@ function redrawPlazaGrantsUi() {
             const summary = getWorldCupBetHistorySummary(classBets);
             body.innerHTML = `
                 <div class="text-[10px] text-slate-400 mb-3 rounded-lg bg-slate-950/70 border border-slate-700 px-2 py-1.5">
-                    ${WORLD_CUP_MATCH.title} · 총 ${summary.count}건 · 대기 ${summary.pending} · 적중 ${summary.won} · 베팅 합계 ${summary.totalStake.toFixed(1)}B
+                    ${WORLD_CUP_MATCH.title} · 총 ${summary.count}건 · 대기 ${summary.pending} · 적중 ${summary.won} · 베팅 합계 B
                 </div>
                 ${buildWorldCupBetHistoryGroupedHtml(classBets, { showStudent: true })}`;
         }
@@ -2784,7 +2789,7 @@ function redrawPlazaGrantsUi() {
             const balance = normalizeBongValue(Number(window.playerState.bong) || 0);
             const maxStake = Math.min(WORLD_CUP_MAX_STAKE, balance);
             const rawStake = await window.customPrompt(
-                `[${WORLD_CUP_MARKET_LABELS[market]}] ${entry.label}\n배당 ${entry.odds.toFixed(2)}x · 분석 ${Math.round(entry.prob * 100)}%\n\n베팅할 삼봉(B) 금액을 입력하세요.\n(최소 1B · 최대 ${maxStake.toFixed(1)}B)`,
+                `[${WORLD_CUP_MARKET_LABELS[market]}] ${entry.label}\n배당 ${entry.odds.toFixed(2)}x · 분석 ${Math.round(entry.prob * 100)}%\n\n베팅할 삼봉(B) 금액을 입력하세요.\n(최소 1B · 최대 B)`,
                 'number'
             );
             if (rawStake === null) return;
@@ -2792,15 +2797,15 @@ function redrawPlazaGrantsUi() {
             if (!Number.isFinite(stake) || stake < 1) return await window.customAlert('1B 이상 숫자로 입력해 주세요.');
             if (stake > WORLD_CUP_MAX_STAKE) return await window.customAlert(`1회 최대 ${WORLD_CUP_MAX_STAKE}B까지 베팅할 수 있습니다.`);
             if (!window.playerState.isAdmin && balance + 0.0001 < stake) {
-                return await window.customAlert(`❌ 돈이 부족해요. ${(stake - balance).toFixed(1)}B가 더 필요해요.`);
+                return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
             }
             const potential = normalizeBongValue(stake * entry.odds);
             const ok = await window.customConfirm(
                 `승부예측 베팅을 확정할까요?\n` +
                 `- 경기: ${WORLD_CUP_MATCH.title}\n` +
                 `- 항목: ${WORLD_CUP_MARKET_LABELS[market]} · ${entry.label}\n` +
-                `- 베팅: ${stake.toFixed(1)}B × ${entry.odds.toFixed(2)}배\n` +
-                `- 적중 시 예상 수령: ${potential.toFixed(1)}B`
+                `- 베팅: B × ${entry.odds.toFixed(2)}배\n` +
+                `- 적중 시 예상 수령: B`
             );
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
@@ -2863,7 +2868,7 @@ function redrawPlazaGrantsUi() {
                 playSfx('bong', true);
                 updateUI();
                 renderWorldCupBetPanel();
-                await window.customAlert(`✅ 베팅 접수 완료!\n${entry.label} · ${stake.toFixed(1)}B × ${entry.odds.toFixed(2)}배`);
+                await window.customAlert(`✅ 베팅 접수 완료!\n${entry.label} · B × ${entry.odds.toFixed(2)}배`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -2971,7 +2976,7 @@ function redrawPlazaGrantsUi() {
                 updateUI();
                 renderWorldCupBetPanel();
                 await window.customAlert(
-                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${totalPayout.toFixed(1)}B`
+                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 B`
                 );
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
@@ -3168,7 +3173,7 @@ function redrawPlazaGrantsUi() {
                 renderWorldCupBetPanel();
                 await window.customAlert(
                     result.cancelled > 0
-                        ? `✅ ${result.cancelled}건 취소 · ${result.students}명에게 ${result.refunded.toFixed(1)}B 환불했습니다.`
+                        ? `✅ ${result.cancelled}건 취소 · ${result.students}명에게 B 환불했습니다.`
                         : '취소할 대기 베팅이 없습니다.'
                 );
             } catch (e) {
@@ -5852,7 +5857,7 @@ function redrawPlazaGrantsUi() {
                 return `
                     <div class="flex flex-wrap gap-2 items-center mb-2">
                         <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
-                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="0.1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                         <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${Number(s.price) || 0})</span></span>
                         ${deleteBtn}
                     </div>`;
@@ -5909,7 +5914,7 @@ function redrawPlazaGrantsUi() {
             const items = Array.isArray(order && order.items) ? order.items : [];
             if (!items.length) return '';
             return `<div class="mt-1 text-[9px] text-slate-300 bg-slate-900/70 border border-slate-700 rounded px-2 py-1 space-y-0.5">
-                ${items.map((item) => `<div class="flex justify-between gap-2"><span class="truncate">${escapeConvenienceHtml(item.name)} × ${Math.max(1, Number(item.qty) || 1)}</span><span class="shrink-0">${Number(item.lineTotal || 0).toFixed(1)}B</span></div>`).join('')}
+                ${items.map((item) => `<div class="flex justify-between gap-2"><span class="truncate">${escapeConvenienceHtml(item.name)} × ${Math.max(1, Number(item.qty) || 1)}</span><span class="shrink-0">B</span></div>`).join('')}
             </div>`;
         }
 
@@ -5925,10 +5930,10 @@ function redrawPlazaGrantsUi() {
             const fee = normalizeBongValue(Number(order && order.deliveryFee) || 0);
             const payouts = Array.isArray(order && order.deliveryPayouts) ? order.deliveryPayouts : [];
             const payoutText = payouts.length
-                ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} ${Number(p.payoutB || 0).toFixed(1)}B`).join(', ')}`
+                ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} B`).join(', ')}`
                 : '';
             return delivery
-                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `${fee.toFixed(1)}B 포함` : '무료'}${payoutText}</div>`
+                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `B 포함` : '무료'}${payoutText}</div>`
                 : '<div class="mt-1 text-[9px] text-slate-600">직접 수령</div>';
         }
 
@@ -5972,7 +5977,7 @@ function redrawPlazaGrantsUi() {
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2 mb-1">
                                 <span class="text-sm font-black text-orange-200"><i class="fa-solid fa-cart-shopping"></i> 장바구니</span>
-                                <span class="text-[10px] text-slate-400">${itemCount}개 · ${itemTotal.toFixed(1)}B</span>
+                                <span class="text-[10px] text-slate-400">${itemCount}개 · B</span>
                             </div>
                             <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
                                 ${entries.map(({ item, qty, lineTotal }) => `
@@ -5982,7 +5987,7 @@ function redrawPlazaGrantsUi() {
                                             <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', -1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">-</button>
                                             <input type="number" min="1" max="20" value="${qty}" onchange="window.setConvenienceCartQty('${escapeHtmlAttr(item.id)}', this.value)" class="w-12 bg-slate-950 border border-slate-600 rounded px-1 py-0.5 text-center text-white font-bold" />
                                             <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', 1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">+</button>
-                                            <span class="w-14 text-right text-orange-200 font-bold">${lineTotal.toFixed(1)}B</span>
+                                            <span class="w-14 text-right text-orange-200 font-bold">B</span>
                                         </div>
                                     </div>
                                 `).join('') || '<div class="text-[10px] text-slate-500 py-1">담은 물품이 없습니다.</div>'}
@@ -5993,7 +5998,7 @@ function redrawPlazaGrantsUi() {
                             <button type="button" onclick="window.clearConvenienceCart()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-3 rounded-xl text-[10px]">비우기</button>
                         </div>
                     </div>
-                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${deliveryFee.toFixed(1)}B가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
+                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 B가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
                 </div>`;
             container.innerHTML = items.map((item) => `
                 <div class="bg-slate-800/80 p-3 rounded-xl border border-orange-500/30 flex flex-col gap-2">
@@ -6004,7 +6009,7 @@ function redrawPlazaGrantsUi() {
                         <div class="flex-1 min-w-0">
                             <div class="text-sm font-bold text-white truncate">${escapeConvenienceHtml(item.name)}</div>
                             <div class="text-[10px] text-slate-400 truncate">${escapeConvenienceHtml(item.desc || '편의점 주문 물품')}</div>
-                            <div class="text-[9px] text-sky-300/80">배달 선택 가능 · 배달비 ${deliveryFee.toFixed(1)}B</div>
+                            <div class="text-[9px] text-sky-300/80">배달 선택 가능 · 배달비 B</div>
                         </div>
                         <div class="text-orange-200 bg-slate-950 px-2 py-1 rounded border border-orange-500/40 text-xs font-bold shrink-0">${item.price} B</div>
                     </div>
@@ -6043,7 +6048,7 @@ function redrawPlazaGrantsUi() {
                     <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">
                         <div class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_6rem_auto] gap-2 items-center">
                             <input type="text" id="conv_name_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.name || '')}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                            <input type="number" id="conv_price_${escapeHtmlAttr(id)}" min="0" step="0.1" value="${normalizeBongValue(Number(item.price) || 0)}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="number" id="conv_price_${escapeHtmlAttr(id)}" min="0" step="1" value="${normalizeBongValue(Number(item.price) || 0)}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                             <button type="button" onclick="window.deleteConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1.5 rounded text-[9px] font-bold">삭제</button>
                         </div>
                         <input type="text" id="conv_desc_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.desc || '')}" placeholder="설명" class="mt-2 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
@@ -6261,7 +6266,7 @@ function redrawPlazaGrantsUi() {
             }
             const price = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
             if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < price) {
-                return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+                return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
             }
             const requestRaw = await window.customPrompt(
                 `삼봉 편의점 요청사항을 적어 주세요.\n예: 포카칩 오리지널, 새콤달콤 딸기맛\n없으면 빈칸으로 확인하세요.`,
@@ -6269,14 +6274,14 @@ function redrawPlazaGrantsUi() {
             );
             if (requestRaw === null) return;
             const requestNote = String(requestRaw || '').trim().slice(0, 80);
-            const itemLines = entries.map(({ item, qty, lineTotal }) => `- ${item.name} × ${qty}: ${lineTotal.toFixed(1)}B`).join('\n');
+            const itemLines = entries.map(({ item, qty, lineTotal }) => `- ${item.name} × ${qty}: B`).join('\n');
             const ok = await window.customConfirm(
                 `삼봉 편의점 장바구니를 주문할까요?\n${itemLines}\n` +
-                `- 물품 합계: ${itemTotal.toFixed(1)}B\n` +
+                `- 물품 합계: B\n` +
                 `- 수령 방법: ${deliveryRequested ? `배달 (${formatConvenienceDeliveryFeeLabel(deliveryFee)})` : '직접 수령'}\n` +
-                `- 총 결제: ${price.toFixed(1)}B\n` +
+                `- 총 결제: B\n` +
                 `${requestNote ? `- 요청사항: ${requestNote}\n` : ''}` +
-                (deliveryPayouts.length ? `- 배달비 지급: ${deliveryPayouts.map((p) => `${p.name} ${p.payoutB.toFixed(1)}B`).join(', ')}\n` : '') +
+                (deliveryPayouts.length ? `- 배달비 지급: ${deliveryPayouts.map((p) => `${p.name} B`).join(', ')}\n` : '') +
                 '주문 후 편의점 매니저에게 주문창이 뜹니다.'
             );
             if (!ok) return;
@@ -6352,7 +6357,7 @@ function redrawPlazaGrantsUi() {
                 window.convenienceCart = {};
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${chargedPrice.toFixed(1)}B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -6389,7 +6394,7 @@ function redrawPlazaGrantsUi() {
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
-            const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${Number(order.price || 0).toFixed(1)}B가 돌아갑니다.`);
+            const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 B가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
@@ -6433,7 +6438,7 @@ function redrawPlazaGrantsUi() {
                 }
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
-                await window.customAlert(`환불 완료: ${order.studentName}에게 ${refundB.toFixed(1)}B가 반환되었습니다.`);
+                await window.customAlert(`환불 완료: ${order.studentName}에게 B가 반환되었습니다.`);
             } catch (e) {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_pending') return await window.customAlert('이미 처리된 주문입니다.');
@@ -6467,7 +6472,7 @@ function redrawPlazaGrantsUi() {
                 if (feeEl) feeEl.value = String(fee);
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
-                if (!silent) await window.customAlert(`✅ 편의점 배달비가 ${fee.toFixed(1)}B로 저장되었습니다.`);
+                if (!silent) await window.customAlert(`✅ 편의점 배달비가 B로 저장되었습니다.`);
                 return true;
             } catch (e) {
                 console.error('saveConvenienceDeliveryFeeAdmin', e);
@@ -6661,7 +6666,7 @@ function redrawPlazaGrantsUi() {
                     <span class="text-[10px] text-slate-500 shrink-0">XP</span>
                     <input type="number" id="gb_admin_xp_${i}" min="0" step="1" value="10" title="이 문항 정답 시 지급 XP" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
                     <span class="text-[10px] text-slate-500 shrink-0">B</span>
-                    <input type="number" id="gb_admin_bong_${i}" min="0" step="0.1" value="1" title="이 문항 정답 시 지급 봉" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
+                    <input type="number" id="gb_admin_bong_${i}" min="0" step="1" value="1" title="이 문항 정답 시 지급 봉" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
                 </div>`;
             }
             document.getElementById('gbAdminInputs').innerHTML = gbHtml;
@@ -7415,7 +7420,7 @@ function redrawPlazaGrantsUi() {
                     <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="text-[9px] sm:text-[10px] font-black ${(Number(displayData.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}">${(Number(displayData.bong)||0).toFixed(1)}B</span>
+                        <span class="text-[9px] sm:text-[10px] font-black ${(Number(displayData.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}">B</span>
                     </div>
 
                     ${gmControls}
@@ -7469,7 +7474,7 @@ function redrawPlazaGrantsUi() {
                             ${(stu.xp||0)}
                         </td>
                         <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
-                            ${(Number(stu.bong)||0).toFixed(1)} B
+                             B
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
                             ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
@@ -7741,7 +7746,7 @@ function redrawPlazaGrantsUi() {
                     const total = normalizeBongValue(principal + interest);
                     window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + total);
                     out.changed = true;
-                    out.msgs.push(`원금 ${principal.toFixed(1)} B + 이자 ${interest} B → 지갑 ${total.toFixed(1)} B`);
+                    out.msgs.push(`원금  B + 이자 ${interest} B → 지갑  B`);
                 } else {
                     left.push(td);
                 }
@@ -7774,8 +7779,8 @@ function redrawPlazaGrantsUi() {
             const termList = document.getElementById('bankTermDepositsList');
             if (!w || !s || !r) return;
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-            w.textContent = `${(window.playerState.bong != null ? Number(window.playerState.bong) : 0).toFixed(1)} B`;
-            s.textContent = `${(Number(window.playerState.bankRegularSavings) || 0).toFixed(1)} B`;
+            w.textContent = ` B`;
+            s.textContent = ` B`;
             r.textContent = `${rate.toFixed(1)}`;
             if (dailyLine) {
                 const total = getBankTotalDeposits();
@@ -7810,7 +7815,7 @@ function redrawPlazaGrantsUi() {
                             <div class="flex justify-between items-start gap-2">
                                 <div class="min-w-0 flex-1">
                                     <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${(Number(td.amount) || 0).toFixed(1)} B</span></div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold"> B</span></div>
                                     <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
                                     <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${interestPrev} B · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
                                 </div>
@@ -7834,9 +7839,9 @@ function redrawPlazaGrantsUi() {
                         const termTotal = normalizeBongValue(terms.reduce((sum, t) => sum + (Number(t && t.amount) || 0), 0));
                         rows.push(`<div class="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right text-sb-gold tabular-nums">${wallet.toFixed(1)}B</div>
-                            <div class="text-right text-sky-300 tabular-nums">${regular.toFixed(1)}B</div>
-                            <div class="text-right text-amber-200 tabular-nums">${termTotal.toFixed(1)}B</div>
+                            <div class="text-right text-sb-gold tabular-nums">B</div>
+                            <div class="text-right text-sky-300 tabular-nums">B</div>
+                            <div class="text-right text-amber-200 tabular-nums">B</div>
                         </div>`);
                     });
                     adminList.innerHTML = `<div class="grid grid-cols-4 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700">
@@ -7854,7 +7859,7 @@ function redrawPlazaGrantsUi() {
             if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
             const amt = Math.round(raw * 10) / 10;
             const wallet = Number(window.playerState.bong) || 0;
-            if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${wallet.toFixed(1)} B)`);
+            if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재  B)`);
             const ok = await window.customConfirm(`일반예금 통장에 ${amt} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
             if (!ok) return;
             window.playerState.bong = normalizeBongValue(wallet - amt);
@@ -7890,7 +7895,7 @@ function redrawPlazaGrantsUi() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const sav = Number(window.playerState.bankRegularSavings) || 0;
             if (sav <= 0) return window.customAlert('일반예금에 출금할 잔액이 없습니다.');
-            const ok = await window.customConfirm(`일반예금 ${sav.toFixed(1)} B를 전부 지갑으로 출금할까요?`);
+            const ok = await window.customConfirm(`일반예금  B를 전부 지갑으로 출금할까요?`);
             if (!ok) return;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sav);
             window.playerState.bankRegularSavings = 0;
@@ -7898,7 +7903,7 @@ function redrawPlazaGrantsUi() {
             if (inp) inp.value = '';
             updateUI();
             await saveDataToCloud({ allowBankFieldChanges: true });
-            await window.customAlert(`💵 ${sav.toFixed(1)} B를 모두 찾았습니다.`);
+            await window.customAlert(`💵  B를 모두 찾았습니다.`);
         };
 
         /** 적금(보물상자) 가입 — 안내 후 확인 */
@@ -7919,7 +7924,7 @@ function redrawPlazaGrantsUi() {
             if (!Number.isFinite(raw) || raw <= 0) return window.customAlert('0보다 큰 금액을 입력하세요.');
             const amt = Math.round(raw * 10) / 10;
             const w0 = Number(window.playerState.bong) || 0;
-            if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${w0.toFixed(1)} B)`);
+            if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재  B)`);
             if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
             window.playerState.bong = normalizeBongValue(w0 - amt);
             const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -7939,7 +7944,7 @@ function redrawPlazaGrantsUi() {
             if (idx < 0) return window.customAlert('해당 적금을 찾을 수 없어요.');
             const td = arr[idx];
             const ok = await window.customConfirm(
-                `중도 해지 시 이자는 지급되지 않고 원금 ${(Number(td.amount) || 0).toFixed(1)} B만 지갑으로 돌아갑니다.\n해지할까요?`
+                `중도 해지 시 이자는 지급되지 않고 원금  B만 지갑으로 돌아갑니다.\n해지할까요?`
             );
             if (!ok) return;
             const principal = Number(td.amount) || 0;
@@ -7948,7 +7953,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
             updateUI();
             await saveDataToCloud({ allowBankFieldChanges: true });
-            await window.customAlert(`💰 원금 ${principal.toFixed(1)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+            await window.customAlert(`💰 원금  B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
         window.saveBankInterestRate = async function() {
@@ -8356,7 +8361,7 @@ function redrawPlazaGrantsUi() {
             const dashBongEl = document.getElementById('dashBong');
             if (dashBongEl) {
                 const bBal = Number(window.playerState.bong) || 0;
-                dashBongEl.innerText = bBal.toFixed(1);
+                dashBongEl.innerText = formatBongDisplay(bBal);
                 dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
                 dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
             }
@@ -8518,7 +8523,7 @@ function redrawPlazaGrantsUi() {
                         </div>
                         <div class="shrink-0 bg-slate-900 px-2 py-1 rounded text-right">
                             <span class="text-sb-blue font-bold text-[10px] block">+${q.xp}X</span>
-                            <span class="text-sb-gold font-bold text-[10px] block">+${q.bong.toFixed(1)}B</span>
+                            <span class="text-sb-gold font-bold text-[10px] block">+B</span>
                         </div>
                     </button>`;
                 }).join('');
@@ -10057,15 +10062,15 @@ function redrawPlazaGrantsUi() {
                 .map((sid) => {
                     const nm = STUDENT_NAMES[String(sid)] || sid;
                     const v = shares[sid];
-                    return `${nm}: +${Number(v).toFixed(1)} B`;
+                    return `${nm}: + B`;
                 })
                 .join('\n');
             const myId = localStorage.getItem('sambong_student_id');
-            const mine = myId && shares[myId] != null ? `\n\n내 지분: +${Number(shares[myId]).toFixed(1)} B` : '';
+            const mine = myId && shares[myId] != null ? `\n\n내 지분: + B` : '';
             const profit = result - target;
             let tail = '';
-            if (result > target) tail = `\n\n모둠 순이익: +${profit.toFixed(1)} B (총 당첨 − 목표 ${target}B)`;
-            else if (result < target) tail = `\n\n모둠 순손실: ${profit.toFixed(1)} B`;
+            if (result > target) tail = `\n\n모둠 순이익: + B (총 당첨 − 목표 ${target}B)`;
+            else if (result < target) tail = `\n\n모둠 순손실:  B`;
             else tail = `\n\n모둠 본전 (총 당첨 = 목표 ${target}B)`;
 
             await window.customAlert(`🎁 공동구매 랜덤 박스 결과: 총 ${result} B\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
@@ -10086,7 +10091,7 @@ function redrawPlazaGrantsUi() {
             const price = getEffectiveShopPrice(LOTTO_SHOP_ID);
             if (!Number.isFinite(price) || price <= 0) return await window.customAlert('로또 가격이 올바르지 않습니다. 마스터에게 문의해 주세요.');
             if ((Number(window.playerState.bong) || 0) < price) {
-                return await window.customAlert(`❌ 돈이 부족해요. ${(price - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+                return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
             }
 
             const raw = await window.customPrompt(
@@ -10168,7 +10173,7 @@ function redrawPlazaGrantsUi() {
                 }
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`🎟️ 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: ${Number(savedLotto && savedLotto.poolB || 0).toFixed(1)}B`);
+                await window.customAlert(`🎟️ 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: B`);
             } catch (e) {
                 console.error('buyLottoTicket', e);
                 const msg = String(e && e.message ? e.message : e);
@@ -10321,7 +10326,7 @@ function redrawPlazaGrantsUi() {
                     );
                 }
                 if (window.playerState.bong < price && !window.playerState.isAdmin) {
-                    return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                    return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
                 }
                 const remainRb = getShopDailyPurchaseRemaining(window.playerState, id);
                 const ok = await window.customConfirm(
@@ -10374,7 +10379,7 @@ function redrawPlazaGrantsUi() {
                 const bet = Math.floor(parseFloat(betStr));
                 if (!Number.isFinite(bet) || bet <= 0) return await window.customAlert('투자금은 1 이상 숫자여야 합니다.');
                 if (!window.playerState.isAdmin && (window.playerState.bong || 0) < bet) {
-                    return await window.customAlert(`❌ 돈이 부족해요. ${(bet - (window.playerState.bong || 0)).toFixed(1)}B가 더 필요해요.`);
+                    return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
                 }
 
                 const pick = await window.customPick1to6(`1~6 중에 하나를 선택하세요. (맞추면 ${bet * 5}B)`);
@@ -10419,7 +10424,7 @@ function redrawPlazaGrantsUi() {
                 const gainXp = 100;
                 if (!groupEx) {
                     if (window.playerState.bong < packPrice && !window.playerState.isAdmin) {
-                        return await window.customAlert(`❌ 돈이 부족해요. ${(packPrice - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                        return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
                     }
                     const ok = await window.customConfirm(`[경험치 팩]\n${packPrice}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
                     if (!ok) return;
@@ -10438,7 +10443,7 @@ function redrawPlazaGrantsUi() {
                 if (gainXp <= 0) return await window.customAlert('지급 XP가 설정되지 않은 아이템입니다.');
                 if (!groupEx) {
                     if (window.playerState.bong < price && !window.playerState.isAdmin) {
-                        return await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                        return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
                     }
                     const ok = await window.customConfirm(`[${currentShopItem.name}]\n${price}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
                     if (!ok) return;
@@ -10470,7 +10475,7 @@ function redrawPlazaGrantsUi() {
                 }
                 if (!groupEx) {
                     if (!window.playerState.isAdmin && (Number(window.playerState.bong) || 0) < eff) {
-                        return await window.customAlert(`❌ 돈이 부족해요. ${(eff - (Number(window.playerState.bong) || 0)).toFixed(1)}B가 더 필요해요.`);
+                        return await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
                     }
                     const confirmMsg = String(id) === MUSIC_TIME_SHOP_ID && musicSongTitle
                         ? `[${shop.name}] ${eff}B를 내고 신청곡을 등록할까요?\n\n🎵 ${musicSongTitle}\n\n삼봉은 즉시 차감되며, 신청곡 리스트에 추가됩니다.`
@@ -10560,12 +10565,12 @@ function redrawPlazaGrantsUi() {
                             if (!saved) return;
                         }
                     }
-                } else await window.customAlert(`❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`);
+                } else await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`);
             } else {
                 const msg =
                     window.playerState.bong >= price || window.playerState.isAdmin
                         ? '🎉 [구매 가능] 선생님께 말씀해주세요!'
-                        : `❌ 돈이 부족해요. ${(price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`;
+                        : `❌ 돈이 부족해요. B가 더 필요해요.`;
                 await window.customAlert(msg);
             }
         };
@@ -11440,7 +11445,7 @@ function redrawPlazaGrantsUi() {
                         if (!saved) return;
                         window.switchTab('plaza');
                     }
-                } else await window.customAlert(`❌ 돈이 부족해요. ${(skin.price - window.playerState.bong).toFixed(1)}B가 더 필요해요.`); 
+                } else await window.customAlert(`❌ 돈이 부족해요. B가 더 필요해요.`); 
             }
         };
 
@@ -12066,7 +12071,7 @@ function redrawPlazaGrantsUi() {
                 return await window.customAlert('삼봉은 -100B 아래로 직접 입력할 수 없어요.\n비정상 마이너스 저장을 막기 위한 제한입니다.');
             }
 
-            const val = type === 'bong' ? parseFloat(raw.toFixed(1)) : Math.floor(raw);
+            const val = type === 'bong' ? normalizeBongValue(raw) : Math.floor(raw);
             const curNum = Number(currentVal) || 0;
 
             if (type === 'xp' && val < curNum) {
@@ -12247,7 +12252,7 @@ function redrawPlazaGrantsUi() {
                     </div>
                     <div class="text-right shrink-0">
                         <div class="text-sb-blue text-[10px] font-bold">+${q.xp} XP</div>
-                        <div class="text-sb-gold text-[10px] font-bold">+${q.bong.toFixed(1)} B</div>
+                        <div class="text-sb-gold text-[10px] font-bold">+ B</div>
                     </div>
                 </div>
             `).join('');

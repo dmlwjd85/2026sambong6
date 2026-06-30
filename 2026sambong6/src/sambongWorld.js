@@ -3318,11 +3318,78 @@ function redrawPlazaGrantsUi() {
             });
             if (changed) {
                 state.quests = quests;
-                if (state.dailyAllClearBonusDate === gameDateStr && !dailyQuestIds.every((qId) => quests[qId])) {
-                    state.dailyAllClearBonusDate = '';
-                }
+                /** stale 플래그만 해제 — 당일 전부 완료 보너스 수령 기록은 유지(중복 +10 B 방지) */
             }
             return changed;
+        }
+
+        /** questHistory 기준 오늘 해당 일일퀘스트 보상을 이미 받았는지 */
+        function questBongAlreadyEarnedToday(state, qId, gameDateStr) {
+            if (!state || !qId || !gameDateStr) return false;
+            const history = Array.isArray(state.questHistory) ? state.questHistory : [];
+            return history.some((h) => h && h.id === qId && h.date === gameDateStr);
+        }
+
+        /** 오늘 일일퀘스트 전부 완료 보너스(+10 B)를 이미 받았는지 — history·보너스일 기준 */
+        function hadDailyAllClearBonusToday(state, todayStr) {
+            if (!state || !todayStr) return false;
+            if (state.dailyAllClearBonusDate === todayStr) return true;
+            const dailyIds = getDailyQuestIds();
+            const history = Array.isArray(state.questHistory) ? state.questHistory : [];
+            const doneFromHistory = new Set(
+                history.filter((h) => h && h.date === todayStr && dailyIds.includes(h.id)).map((h) => h.id)
+            );
+            return dailyIds.length > 0 && dailyIds.every((id) => doneFromHistory.has(id));
+        }
+
+        /** questHistory 중복 완료로 과다 지급된 삼봉(지갑) 추정 */
+        function computeDuplicateQuestBongExcess(questHistory) {
+            const seen = new Set();
+            let excess = 0;
+            (Array.isArray(questHistory) ? questHistory : []).forEach((entry) => {
+                if (!entry || !entry.id || !entry.date) return;
+                const key = `${entry.date}|${entry.id}`;
+                const bong = normalizeBongValue(Number(entry.bong) || 0);
+                if (seen.has(key)) excess += bong;
+                else seen.add(key);
+            });
+            return excess;
+        }
+
+        /** 같은 날 일일퀘스트 전부 완료 보너스(+10 B) 중복 횟수 추정 */
+        function computeDuplicateDailyAllClearExcess(state) {
+            const dailyIds = getDailyQuestIds();
+            if (!dailyIds.length) return 0;
+            const history = Array.isArray(state && state.questHistory) ? state.questHistory : [];
+            const byDate = {};
+            history.forEach((entry) => {
+                if (!entry || !entry.date || !dailyIds.includes(entry.id)) return;
+                if (!byDate[entry.date]) byDate[entry.date] = {};
+                byDate[entry.date][entry.id] = (byDate[entry.date][entry.id] || 0) + 1;
+            });
+            let excess = 0;
+            Object.keys(byDate).forEach((date) => {
+                const counts = byDate[date];
+                const minCount = Math.min(...dailyIds.map((id) => counts[id] || 0));
+                if (minCount > 1) excess += (minCount - 1) * 10;
+            });
+            return excess;
+        }
+
+        function dedupeQuestHistory(questHistory) {
+            const seen = new Set();
+            const out = [];
+            (Array.isArray(questHistory) ? questHistory : []).forEach((entry) => {
+                if (!entry || !entry.id || !entry.date) {
+                    out.push(entry);
+                    return;
+                }
+                const key = `${entry.date}|${entry.id}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                out.push(entry);
+            });
+            return out;
         }
 
         /**
@@ -3711,6 +3778,70 @@ function redrawPlazaGrantsUi() {
                 await batch.commit();
             } catch (e) {
                 console.warn('applyDailyQuestEmergencySanitization', e);
+            }
+        }
+
+        /**
+         * 배포 직후 1회: questHistory 중복으로 과다 지급된 삼봉 회수(백시율 등 포함 전체 학생).
+         */
+        async function applyDuplicateQuestBongHotfix() {
+            if (!db) return;
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'duplicate_quest_bong_hotfix_v1');
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+
+                const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                let snap;
+                try {
+                    snap = await getDocsFromServer(studentsRef);
+                } catch (e) {
+                    snap = await getDocs(studentsRef);
+                }
+
+                const batch = writeBatch(db);
+                let touched = 0;
+                let totalRecovered = 0;
+                snap.forEach((studentDoc) => {
+                    if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
+                    const data = { ...(studentDoc.data() || {}) };
+                    const questExcess = computeDuplicateQuestBongExcess(data.questHistory);
+                    const allClearExcess = computeDuplicateDailyAllClearExcess(data);
+                    const excess = normalizeBongValue(questExcess + allClearExcess);
+                    if (excess <= 0) return;
+
+                    const prevBong = normalizeBongValue(Number(data.bong) || 0);
+                    const nextBong = normalizeBongValue(Math.max(0, prevBong - excess));
+                    const bongLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                    bongLogs.push(buildBongChangeLogEntry('중복 퀘스트 보상 회수', prevBong, nextBong, {
+                        source: 'duplicateQuestHotfix',
+                        questExcess,
+                        allClearExcess,
+                    }));
+
+                    const gameDateStr = getLocalDateStr();
+                    sanitizeDailyQuestFlagsForDate(data, gameDateStr);
+
+                    batch.set(studentDoc.ref, {
+                        bong: nextBong,
+                        questHistory: dedupeQuestHistory(data.questHistory),
+                        quests: data.quests || {},
+                        bongChangeLog: bongLogs,
+                    }, { merge: true });
+                    touched++;
+                    totalRecovered += excess;
+                });
+
+                batch.set(markerRef, {
+                    done: true,
+                    touched,
+                    totalRecovered,
+                    sanitizedAt: new Date().toISOString(),
+                    note: 'questHistory 중복 일일퀘스트·전부완료 보너스 과다 지급 회수',
+                }, { merge: true });
+                await batch.commit();
+            } catch (e) {
+                console.warn('applyDuplicateQuestBongHotfix', e);
             }
         }
 
@@ -7045,6 +7176,7 @@ function redrawPlazaGrantsUi() {
                 await loadClassMeta();
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
+                void applyDuplicateQuestBongHotfix();
                 void applyWorldCupBetCancelMigration();
                 void applyWorldCupBetR32Migration();
                 void applyLearningThermometerRahiMaxHotfix();
@@ -8696,6 +8828,7 @@ function redrawPlazaGrantsUi() {
                     </div>
                     <div class="shrink-0 bg-slate-800 px-1.5 py-0.5 rounded text-right">
                         <span class="text-sb-blue text-[9px] font-bold block">+${q.xp}</span>
+                        <span class="text-sb-gold text-[9px] font-bold block">+${formatBongDisplay(q.bong)}B</span>
                     </div>
                 </label>`;
             }).join('');
@@ -8774,7 +8907,7 @@ function redrawPlazaGrantsUi() {
                         </div>
                         <div class="shrink-0 bg-slate-900 px-2 py-1 rounded text-right">
                             <span class="text-sb-blue font-bold text-[10px] block">+${q.xp}X</span>
-                            <span class="text-sb-gold font-bold text-[10px] block">+B</span>
+                            <span class="text-sb-gold font-bold text-[10px] block">+${formatBongDisplay(q.bong)}B</span>
                         </div>
                     </button>`;
                 }).join('');
@@ -9125,6 +9258,7 @@ function redrawPlazaGrantsUi() {
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
+            let blockedByDuplicateQuest = false;
             let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -9189,6 +9323,15 @@ function redrawPlazaGrantsUi() {
 
                         const serverBong = Number(serverData.bong);
                         const nextBong = Number(dataToSave.bong);
+                        if (opts.questCompletionId) {
+                            const qid = String(opts.questCompletionId);
+                            const serverQuests = serverData.quests || {};
+                            if (serverQuests[qid]) {
+                                blockedByDuplicateQuest = true;
+                                serverRestoreData = serverData;
+                                return;
+                            }
+                        }
                         const maxBongDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
                         if (
                             opts.allowBongDecrease &&
@@ -9251,7 +9394,7 @@ function redrawPlazaGrantsUi() {
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance) {
+                if (blockedByServerBalance || blockedByDuplicateQuest) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -9263,7 +9406,9 @@ function redrawPlazaGrantsUi() {
                         if (typeof updateUI === 'function') updateUI();
                     }
                     await window.customAlert(
-                        blockedByBankReconcile
+                        blockedByDuplicateQuest
+                            ? '이미 서버에 완료 처리된 퀘스트입니다.\n중복 보상을 막기 위해 저장하지 않았습니다. 새로고침 후 확인해 주세요.'
+                            : blockedByBankReconcile
                             ? '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.'
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
                                 '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
@@ -9964,6 +10109,16 @@ function redrawPlazaGrantsUi() {
             applyDailyQuestResetIfNewDay({ silent: true });
             if (window.playerState.quests[qId]) return;
 
+            const todayStr = getLocalDateStr();
+            const qMetaEarly = getQuestCatalog().find((q) => q.id === qId);
+            if (qMetaEarly && qMetaEarly.type === 'daily' && questBongAlreadyEarnedToday(window.playerState, qId, todayStr)) {
+                window.playerState.quests[qId] = true;
+                updateUI();
+                return await window.customAlert('오늘 이미 완료·보상을 받은 일일 퀘스트입니다.');
+            }
+
+            const bongBefore = normalizeBongValue(Number(window.playerState.bong) || 0);
+
             let finalXp = xp; 
             let finalBong = bong; 
             let isEarlyBirdJackpot = false;
@@ -9997,7 +10152,7 @@ function redrawPlazaGrantsUi() {
             const nowBonus = new Date();
             const todayStrBonus = `${nowBonus.getFullYear()}-${String(nowBonus.getMonth() + 1).padStart(2, '0')}-${String(nowBonus.getDate()).padStart(2, '0')}`;
             let dailyAllClearMsg = '';
-            if (allDailyDone && window.playerState.dailyAllClearBonusDate !== todayStrBonus) {
+            if (allDailyDone && !hadDailyAllClearBonusToday(window.playerState, todayStrBonus)) {
                 window.playerState.dailyAllClearBonusDate = todayStrBonus;
                 window.playerState.xp += 50;
                 window.playerState.bong = normalizeBongValue(window.playerState.bong + 10);
@@ -10040,7 +10195,13 @@ function redrawPlazaGrantsUi() {
                     return;
                 }
                 /** 퀘스트 직후 playerState가 이미 최종값이므로 전체 merge 저장(서버 재읽기·델타 계산 없음 — 실패 알림 오판 방지) */
-                await saveDataToCloud({ operationLabel: `퀘스트 완료: ${qInfo ? qInfo.name : qId}`, maxBongIncrease: 350 });
+                const bongAfter = normalizeBongValue(Number(window.playerState.bong) || 0);
+                const bongDelta = normalizeBongValue(Math.max(0, bongAfter - bongBefore));
+                await saveDataToCloud({
+                    operationLabel: `퀘스트 완료: ${qInfo ? qInfo.name : qId}`,
+                    maxBongIncrease: Math.max(5, bongDelta + 5),
+                    questCompletionId: qId,
+                });
             } catch (e) {
                 console.error('attemptQuest persist', e);
                 await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));

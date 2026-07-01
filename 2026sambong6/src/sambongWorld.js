@@ -1277,7 +1277,7 @@ function redrawPlazaGrantsUi() {
                     name: String(q.name),
                     desc: String(q.desc || ''),
                     xp: Math.max(0, Math.floor(Number(q.xp) || 0)),
-                    bong: normalizeBongValue(Math.max(0, Number(q.bong) || 0)),
+                    bong: normalizeQuestBongReward(Number(q.bong) || 0),
                     icon: q.icon || 'fa-star',
                     color: q.color || 'text-emerald-300',
                     custom: true,
@@ -1286,7 +1286,9 @@ function redrawPlazaGrantsUi() {
 
         function getQuestCatalog() {
             const deleted = getDeletedQuestIds();
-            return [...QUEST_DATA, ...getCustomQuests()].filter((q) => !deleted.has(String(q.id)));
+            return [...QUEST_DATA, ...getCustomQuests()]
+                .filter((q) => !deleted.has(String(q.id)))
+                .map((q) => ({ ...q, bong: normalizeQuestBongReward(q.bong) }));
         }
 
         function getDeletedJobIds() {
@@ -1811,6 +1813,13 @@ function redrawPlazaGrantsUi() {
             const n = Number(v);
             if (!Number.isFinite(n)) return 0;
             return Math.floor(n);
+        }
+
+        /** 퀘스트 보상 삼봉 — 정수 체계에서 반올림(0.5B → 1B, 5.5B → 6B) */
+        function normalizeQuestBongReward(v) {
+            const n = Number(v);
+            if (!Number.isFinite(n) || n <= 0) return 0;
+            return Math.max(0, Math.round(n));
         }
 
         /** UI 표시용 삼봉(B) 문자열 */
@@ -3851,7 +3860,23 @@ function redrawPlazaGrantsUi() {
             }
         }
 
-        /** 탭 세션 시작 시각 기준 1시간 경과 시 새로고침(로컬 조작·새로고침 악용 완화) */
+        /** 수업도구(타이머·제비뽑기·칠판·학습온도계 등) 사용 중인지 — 강제 새로고침 방지용 */
+        function isClassToolsInUse() {
+            const isVisible = (id) => {
+                const el = document.getElementById(id);
+                return !!(el && !el.classList.contains('hidden'));
+            };
+            if (isVisible('chalkboardOverlay')) return true;
+            if (isVisible('classTimerOverlay')) return true;
+            if (isVisible('lotteryDrawOverlay')) return true;
+            if (isVisible('classtoolsSection')) return true;
+            if (_lotteryRunning || _classWheelSpinning) return true;
+            if (_classTimerEndAt || _classTimerAlarmId) return true;
+            if (isLearningThermometerLocallyBusy() || _learningThermometerSettlementRunning) return true;
+            return false;
+        }
+
+        /** 탭 세션 시작 시각 기준 1시간 경과 시 새로고침(로컬 조작·새로고침 악용 완화) — 수업도구 사용 중에는 연기 */
         function initSessionRefreshGuard() {
             const KEY = 'sambong_sess_start';
             let start = parseInt(sessionStorage.getItem(KEY) || '0', 10);
@@ -3859,10 +3884,16 @@ function redrawPlazaGrantsUi() {
                 start = Date.now();
                 sessionStorage.setItem(KEY, String(start));
             }
+            window.addEventListener('beforeunload', (e) => {
+                if (!isClassToolsInUse()) return;
+                e.preventDefault();
+                e.returnValue = '';
+            });
             setInterval(() => {
                 const s = parseInt(sessionStorage.getItem(KEY) || '0', 10);
                 if (!s || Number.isNaN(s)) return;
                 if (Date.now() - s >= 60 * 60 * 1000) {
+                    if (isClassToolsInUse()) return;
                     sessionStorage.setItem(KEY, String(Date.now()));
                     location.reload();
                 }
@@ -10125,8 +10156,8 @@ function redrawPlazaGrantsUi() {
 
             const bongBefore = normalizeBongValue(Number(window.playerState.bong) || 0);
 
-            let finalXp = xp; 
-            let finalBong = bong; 
+            let finalXp = xp;
+            let finalBong = qMetaEarly ? qMetaEarly.bong : normalizeQuestBongReward(bong);
             let isEarlyBirdJackpot = false;
             let buffAmount = 0;
             
@@ -10167,15 +10198,16 @@ function redrawPlazaGrantsUi() {
 
             const newLv = getLevelInfo(window.playerState.xp).index;
 
-            let alertMsg = "";
-            if (dailyAllClearMsg) alertMsg += dailyAllClearMsg;
-            if (isEarlyBirdJackpot) alertMsg += `🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!\n\n`;
-            if (buffAmount > 0) alertMsg += `🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!\n`;
+            const qInfo = getQuestCatalog().find(q => q.id === qId);
+            const qName = qInfo ? qInfo.name : qId;
+            let alertMsg = `✅ [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongDisplay(finalBong)} B`;
+            if (dailyAllClearMsg) alertMsg = dailyAllClearMsg.trim() + '\n\n' + alertMsg;
+            if (isEarlyBirdJackpot) alertMsg += `\n\n🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`;
+            if (buffAmount > 0) alertMsg += `\n\n🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!`;
 
             if(!window.playerState.questHistory) window.playerState.questHistory = [];
             const now = new Date();
             const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const qInfo = getQuestCatalog().find(q => q.id === qId);
             if(qInfo) {
                 window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
             }
@@ -10183,10 +10215,10 @@ function redrawPlazaGrantsUi() {
             if (newLv > oldLv) {
                 const bonus = newLv * 3;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + bonus);
-                alertMsg += `\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`;
+                alertMsg += `\n\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`;
             }
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
-            if (alertMsg !== "") await window.customAlert(alertMsg.trim());
+            await window.customAlert(alertMsg.trim());
 
             await handleQuestDrop(xp, { allDailyDone });
 
@@ -10217,7 +10249,8 @@ function redrawPlazaGrantsUi() {
         // ★ 버그 수정: 퀘스트 취소 시 UI 초기화 기능 개선
         window.cancelQuest = async function(qId, xp, bong) {
             if (window.playerState.isGuest) return;
-            const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(0.5 B)가 깎여요.");
+            const rewardBong = normalizeQuestBongReward(bong);
+            const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(1 B)가 깎여요.");
             
             if (isOk) {
                 if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
@@ -10229,11 +10262,12 @@ function redrawPlazaGrantsUi() {
                     if (idx !== -1) window.playerState.questHistory.splice(idx, 1);
                 }
 
+                const deductBong = rewardBong + 1;
                 window.playerState.xp = Math.max(0, window.playerState.xp - xp);
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - (Number(bong) + 0.5));
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - deductBong);
                 delete window.playerState.quests[qId]; 
                 updateUI(); 
-                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: Number(bong) + 0.5, operationLabel: `퀘스트 취소: ${qId}` });
+                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();

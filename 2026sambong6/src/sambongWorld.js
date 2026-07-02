@@ -1066,7 +1066,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null };
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** 편의점 주문 목록 스냅샷: 최신순 배열 */
@@ -1444,6 +1444,12 @@ function redrawPlazaGrantsUi() {
                         <h3 class="text-lg font-display text-pink-100"><i class="fa-solid fa-music text-pink-300"></i> 뮤직 타임 신청곡</h3>
                         <button type="button" onclick="window.closeMusicTimeQueuePanel()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
                     </div>
+                    <div class="shrink-0 mb-3">
+                        <a href="https://music.youtube.com/" target="_blank" rel="noopener noreferrer"
+                            class="flex items-center justify-center gap-2 w-full bg-red-900/60 hover:bg-red-800 text-red-100 font-bold py-2.5 px-3 rounded-xl text-[10px] border border-red-500/50 transition">
+                            <i class="fa-brands fa-youtube text-red-300"></i> 유튜브 뮤직 바로가기 ↗
+                        </a>
+                    </div>
                     <div id="musicTimeQueueModalBody" class="overflow-y-auto scrollbar-hide pr-1 flex-1"></div>
                 </div>`;
             document.body.appendChild(modal);
@@ -1524,6 +1530,160 @@ function redrawPlazaGrantsUi() {
                 await window.customAlert('처리 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
+
+        // ★ 주간 시간표 (마스터 탭 · Firestore globalSettings.classTimetable) ★
+        const CLASS_TIMETABLE_DAYS = [
+            { key: 'mon', label: '월' },
+            { key: 'tue', label: '화' },
+            { key: 'wed', label: '수' },
+            { key: 'thu', label: '목' },
+            { key: 'fri', label: '금' },
+        ];
+        const CLASS_TIMETABLE_PERIODS = [
+            { id: 1, label: '1교시', start: '09:00', end: '09:40' },
+            { id: 2, label: '2교시', start: '09:50', end: '10:30' },
+            { id: 3, label: '3교시', start: '10:40', end: '11:20' },
+            { id: 4, label: '4교시', start: '11:30', end: '12:10' },
+            { id: 5, label: '5교시', start: '13:10', end: '13:50' },
+            { id: 6, label: '6교시', start: '14:00', end: '14:40' },
+        ];
+        const CLASS_TIMETABLE_LUNCH = { label: '점심', start: '12:10', end: '13:10' };
+
+        function sanitizeClassTimetable(raw) {
+            const emptyDays = {};
+            CLASS_TIMETABLE_DAYS.forEach((d) => {
+                emptyDays[d.key] = {};
+                for (let p = 1; p <= 6; p++) emptyDays[d.key][p] = '';
+            });
+            if (!raw || typeof raw !== 'object') return { days: emptyDays };
+            const days = {};
+            CLASS_TIMETABLE_DAYS.forEach((d) => {
+                const src = raw.days && raw.days[d.key] && typeof raw.days[d.key] === 'object' ? raw.days[d.key] : {};
+                days[d.key] = {};
+                for (let p = 1; p <= 6; p++) {
+                    const v = src[p] != null ? src[p] : src[String(p)];
+                    days[d.key][p] = String(v || '').trim().slice(0, 30);
+                }
+            });
+            return { days };
+        }
+
+        function getClassTimetable() {
+            return sanitizeClassTimetable(window.globalSettings && window.globalSettings.classTimetable);
+        }
+
+        function getClassTimetableDayKeyFromDate(now = new Date()) {
+            return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
+        }
+
+        function parseClassTimetableTimeToMinutes(hhmm) {
+            const parts = String(hhmm || '').split(':');
+            const h = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+            return h * 60 + m;
+        }
+
+        function isClassTimetablePanelEditing() {
+            const panel = document.getElementById('classTimetablePanel');
+            if (!panel) return false;
+            const active = document.activeElement;
+            return !!(active && panel.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'));
+        }
+
+        window.renderClassTimetableAdminPanel = function() {
+            const grid = document.getElementById('classTimetableGrid');
+            if (!grid) return;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                grid.innerHTML = '<div class="text-slate-500 text-[9px] text-center py-4">마스터만 편집할 수 있습니다.</div>';
+                return;
+            }
+            const tt = getClassTimetable();
+            const headerCells = CLASS_TIMETABLE_DAYS.map((d) =>
+                `<th class="p-1.5 text-center text-violet-200 min-w-[72px]">${d.label}</th>`
+            ).join('');
+            const periodRows = CLASS_TIMETABLE_PERIODS.map((period) => {
+                const cells = CLASS_TIMETABLE_DAYS.map((d) => {
+                    const val = tt.days[d.key][period.id] || '';
+                    return `<td class="p-1">
+                        <input type="text" data-tt-day="${d.key}" data-tt-period="${period.id}" value="${escapeHtmlAttr(val)}" maxlength="30"
+                            class="w-full min-w-[64px] bg-slate-950 border border-slate-700 text-white px-1.5 py-1 rounded text-[10px] font-bold focus:outline-none focus:border-violet-500"
+                            placeholder="과목" />
+                    </td>`;
+                }).join('');
+                return `<tr class="border-b border-slate-800">
+                    <td class="p-1.5 text-[9px] text-slate-400 whitespace-nowrap font-bold">${period.label}<br><span class="text-[8px] text-slate-500">${period.start}~${period.end}</span></td>
+                    ${cells}
+                </tr>`;
+            }).join('');
+            const lunchRow = `<tr class="border-b border-slate-800 bg-slate-950/40">
+                <td class="p-1.5 text-[9px] text-amber-400/90 whitespace-nowrap font-bold">${CLASS_TIMETABLE_LUNCH.label}<br><span class="text-[8px] text-slate-500">${CLASS_TIMETABLE_LUNCH.start}~${CLASS_TIMETABLE_LUNCH.end}</span></td>
+                ${CLASS_TIMETABLE_DAYS.map(() => '<td class="p-1 text-center text-[8px] text-slate-600">—</td>').join('')}
+            </tr>`;
+            grid.innerHTML = `
+                <table class="w-full text-left min-w-[480px] border border-slate-700/80 rounded-lg overflow-hidden">
+                    <thead class="bg-slate-800 text-slate-400 text-[9px]">
+                        <tr><th class="p-1.5 w-20">교시</th>${headerCells}</tr>
+                    </thead>
+                    <tbody>${periodRows}${lunchRow}</tbody>
+                </table>`;
+        };
+
+        window.saveClassTimetableFromAdmin = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const grid = document.getElementById('classTimetableGrid');
+            if (!grid) return;
+            const inputs = grid.querySelectorAll('input[data-tt-day][data-tt-period]');
+            const days = {};
+            CLASS_TIMETABLE_DAYS.forEach((d) => { days[d.key] = {}; });
+            inputs.forEach((inp) => {
+                const day = inp.getAttribute('data-tt-day');
+                const period = parseInt(inp.getAttribute('data-tt-period'), 10);
+                if (!day || !Number.isFinite(period)) return;
+                if (!days[day]) days[day] = {};
+                days[day][period] = String(inp.value || '').trim().slice(0, 30);
+            });
+            const payload = { classTimetable: { days } };
+            const statusEl = document.getElementById('classTimetableStatus');
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), payload, { merge: true });
+                if (!window.globalSettings) window.globalSettings = {};
+                window.globalSettings.classTimetable = payload.classTimetable;
+                if (statusEl) statusEl.textContent = '✅ 시간표가 저장되었습니다.';
+                await window.customAlert('✅ 주간 시간표가 저장되었습니다.');
+            } catch (e) {
+                console.error('saveClassTimetableFromAdmin', e);
+                if (statusEl) statusEl.textContent = '저장 실패';
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        function checkClassStartReminders(now = new Date()) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const dayKey = getClassTimetableDayKeyFromDate(now);
+            if (!CLASS_TIMETABLE_DAYS.some((d) => d.key === dayKey)) return;
+            const tt = getClassTimetable();
+            const today = tt.days[dayKey] || {};
+            const nowMin = now.getHours() * 60 + now.getMinutes();
+            const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            for (const period of CLASS_TIMETABLE_PERIODS) {
+                const startMin = parseClassTimetableTimeToMinutes(period.start);
+                if (startMin == null) continue;
+                if (nowMin < startMin || nowMin >= startMin + 2) continue;
+                const alertKey = `sambong_class_prep_${dateKey}_${period.id}`;
+                if (localStorage.getItem(alertKey) === '1') continue;
+                localStorage.setItem(alertKey, '1');
+                const subject = String(today[period.id] || '').trim();
+                const subjectLine = subject ? `과목: ${subject}` : '과목: (시간표 미입력)';
+                void window.customAlert(
+                    `🔔 수업 준비 알림\n\n` +
+                    `${period.label} (${period.start}~${period.end})\n` +
+                    `${subjectLine}\n\n` +
+                    `수업 시작 시간입니다. 준비해 주세요!`
+                );
+            }
+        }
 
         /** 상점 기본가(SHOP_DATA) — 마스터가 저장한 shopPrices와 병합 시 기준 */
         function getDefaultShopPrice(shopId) {
@@ -3985,6 +4145,9 @@ function redrawPlazaGrantsUi() {
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
+            }
+            if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
+                window.renderClassTimetableAdminPanel();
             }
             if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                 window.renderGoldenBellMasterLive();
@@ -7302,6 +7465,12 @@ function redrawPlazaGrantsUi() {
                                 if (settingsData.musicTimeQueue !== undefined) {
                                     window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
                                 }
+                                if (settingsData.classTimetable !== undefined) {
+                                    window.globalSettings.classTimetable = sanitizeClassTimetable(settingsData.classTimetable);
+                                    if (!isClassTimetablePanelEditing() && typeof window.renderClassTimetableAdminPanel === 'function') {
+                                        window.renderClassTimetableAdminPanel();
+                                    }
+                                }
                                 if (settingsData.learningThermometer !== undefined) {
                                     window.globalSettings.learningThermometer = keepLocalLearningThermometer
                                         ? localLearningThermometer
@@ -7544,8 +7713,9 @@ function redrawPlazaGrantsUi() {
 
         function checkTimeEvents() {
             checkWeekendTime();
-            
+
             const now = new Date();
+            checkClassStartReminders(now);
             const h = now.getHours();
             const m = now.getMinutes();
             const isPast1210 = (h > 12) || (h === 12 && m >= 10);

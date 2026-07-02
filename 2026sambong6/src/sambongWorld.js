@@ -6380,10 +6380,11 @@ function redrawPlazaGrantsUi() {
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">알림</h3>
                     <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <button id="bOk" class="bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
+                    <button type="button" class="js-custom-alert-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
                 </div>`;
-            document.body.appendChild(d); 
-            document.getElementById('bOk').onclick = () => { d.remove(); r(true); };
+            document.body.appendChild(d);
+            const okBtn = d.querySelector('.js-custom-alert-ok');
+            if (okBtn) okBtn.onclick = () => { d.remove(); r(true); };
         });
 
         window.customConfirm = (m) => new Promise(r => {
@@ -6394,13 +6395,15 @@ function redrawPlazaGrantsUi() {
                     <h3 class="text-xl font-display text-white">확인</h3>
                     <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
                     <div class="flex gap-4 mt-4">
-                        <button id="bNo" class="bg-slate-700 text-white font-bold py-2 rounded-full w-full">취소</button>
-                        <button id="bYes" class="bg-sb-red text-white font-bold py-2 rounded-full w-full">확인</button>
+                        <button type="button" class="js-custom-confirm-no bg-slate-700 text-white font-bold py-2 rounded-full w-full">취소</button>
+                        <button type="button" class="js-custom-confirm-yes bg-sb-red text-white font-bold py-2 rounded-full w-full">확인</button>
                     </div>
                 </div>`;
-            document.body.appendChild(d); 
-            document.getElementById('bYes').onclick = () => { d.remove(); r(true); }; 
-            document.getElementById('bNo').onclick = () => { d.remove(); r(false); };
+            document.body.appendChild(d);
+            const yesBtn = d.querySelector('.js-custom-confirm-yes');
+            const noBtn = d.querySelector('.js-custom-confirm-no');
+            if (yesBtn) yesBtn.onclick = () => { d.remove(); r(true); };
+            if (noBtn) noBtn.onclick = () => { d.remove(); r(false); };
         });
 
         window.customPrompt = (m, type="password") => new Promise(r => {
@@ -6410,16 +6413,19 @@ function redrawPlazaGrantsUi() {
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-sb-gold">입력</h3>
                     <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <input type="${type}" id="pIn" class="w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
+                    <input type="${type}" class="js-custom-prompt-input w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
                     <div class="flex gap-4">
-                        <button id="bpNo" class="bg-slate-700 text-white font-bold py-2 w-full rounded">취소</button>
-                        <button id="bpYes" class="bg-emerald-500 text-white font-bold py-2 w-full rounded">확인</button>
+                        <button type="button" class="js-custom-prompt-no bg-slate-700 text-white font-bold py-2 w-full rounded">취소</button>
+                        <button type="button" class="js-custom-prompt-yes bg-emerald-500 text-white font-bold py-2 w-full rounded">확인</button>
                     </div>
                 </div>`;
-            document.body.appendChild(d); 
-            document.getElementById('pIn').focus();
-            document.getElementById('bpYes').onclick = () => { r(document.getElementById('pIn').value); d.remove(); }; 
-            document.getElementById('bpNo').onclick = () => { r(null); d.remove(); };
+            document.body.appendChild(d);
+            const inputEl = d.querySelector('.js-custom-prompt-input');
+            const yesBtn = d.querySelector('.js-custom-prompt-yes');
+            const noBtn = d.querySelector('.js-custom-prompt-no');
+            if (inputEl) inputEl.focus();
+            if (yesBtn) yesBtn.onclick = () => { r(inputEl ? inputEl.value : ''); d.remove(); };
+            if (noBtn) noBtn.onclick = () => { r(null); d.remove(); };
         });
 
         // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
@@ -7825,6 +7831,21 @@ function redrawPlazaGrantsUi() {
             if (typeof db !== 'undefined' && db && isWorldCupBettingPastDeadline(now)) {
                 void maybeAutoCloseWorldCupBetting(now);
             }
+            // 적금 만기: 앱을 켜 둔 채 날짜가 바뀌어도 1분마다 만기·저장 처리
+            if (window.playerState && !window.playerState.isGuest && currentStudentDocRef) {
+                const termRes = applyBankTermDepositMaturity();
+                if (termRes.changed) {
+                    if (termRes.msgs.length > 0) {
+                        void window.customAlert(
+                            '🎁 적금 만기!\n\n' +
+                            termRes.msgs.join('\n') +
+                            '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
+                        );
+                    }
+                    void saveDataToCloud({ allowBankFieldChanges: true });
+                    if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
+                }
+            }
         }
 
         async function resetGoldenBellState(reason = 'expired', extra = {}) {
@@ -8577,13 +8598,19 @@ function redrawPlazaGrantsUi() {
             const w0 = normalizeBongValue(Number(window.playerState.bong) || 0);
             if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${formatBongDisplay(w0)} B)`);
             if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
+            const prevBong = w0;
+            const prevTerms = sanitizeBankTermDeposits(window.playerState.bankTermDeposits);
             window.playerState.bong = normalizeBongValue(w0 - amt);
             const id = `td_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
             window.playerState.bankTermDeposits.push({ id, amount: amt, startDate: getLocalDateStr() });
             if (inp) inp.value = '';
-            updateUI();
             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '보물상자 적금 가입' });
-            if (!saved) return;
+            if (!saved) {
+                window.playerState.bong = prevBong;
+                window.playerState.bankTermDeposits = prevTerms;
+                return;
+            }
+            updateUI();
             await window.customAlert(`🎁 보물상자 적금 ${formatBongDisplay(amt)} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
 

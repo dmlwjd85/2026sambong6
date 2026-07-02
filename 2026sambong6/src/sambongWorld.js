@@ -1531,6 +1531,54 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        const MUSIC_TIME_SEEN_STORAGE_KEY = 'sambong_seen_music_time_requests';
+
+        function getSeenMusicTimeRequestIds() {
+            try {
+                const raw = localStorage.getItem(MUSIC_TIME_SEEN_STORAGE_KEY) || '[]';
+                const arr = JSON.parse(raw);
+                return new Set(Array.isArray(arr) ? arr.map(String) : []);
+            } catch (e) {
+                return new Set();
+            }
+        }
+
+        function markSeenMusicTimeRequestIds(ids) {
+            const seen = getSeenMusicTimeRequestIds();
+            ids.forEach((id) => seen.add(String(id)));
+            localStorage.setItem(MUSIC_TIME_SEEN_STORAGE_KEY, JSON.stringify(Array.from(seen).slice(-MUSIC_TIME_QUEUE_MAX)));
+        }
+
+        /** 신청곡 큐에 새 항목이 들어오면 마스터에게 곡(id)당 최초 1회 팝업 */
+        function maybeShowMusicTimeRequestPopup({ fromCache = false } = {}) {
+            if (fromCache) return;
+            if (!window.playerState || window.playerState.isGuest || !window.playerState.isAdmin) return;
+            const queue = getMusicTimeQueue();
+            if (!queue.length) return;
+            const seen = getSeenMusicTimeRequestIds();
+            const fresh = queue.filter((row) => !seen.has(String(row.id)));
+            if (!fresh.length) return;
+            markSeenMusicTimeRequestIds(fresh.map((row) => row.id));
+            if (fresh.length === 1) {
+                const row = fresh[0];
+                void window.customAlert(
+                    `🎵 뮤직 타임 신청곡\n\n` +
+                    `- 신청: ${row.studentName} (${row.studentId}번)\n` +
+                    `- 곡: ${row.song}\n\n` +
+                    `상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`
+                );
+                return;
+            }
+            const lines = fresh
+                .slice()
+                .sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0))
+                .map((row, idx) => `${idx + 1}. ${row.studentName} · ${row.song}`)
+                .join('\n');
+            void window.customAlert(
+                `🎵 뮤직 타임 신청곡 ${fresh.length}건\n\n${lines}\n\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`
+            );
+        }
+
         // ★ 주간 시간표 (마스터 탭 · Firestore globalSettings.classTimetable) ★
         const CLASS_TIMETABLE_DAYS = [
             { key: 'mon', label: '월' },
@@ -7456,7 +7504,8 @@ function redrawPlazaGrantsUi() {
                         });
 
                         if(unsubscribeSettings) unsubscribeSettings();
-                        unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), snap => {
+                        unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), (snap) => {
+                            const fromCache = !!(snap.metadata && snap.metadata.fromCache);
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
                                 const keepLocalLearningThermometer = settingsData.learningThermometer !== undefined && isLearningThermometerLocallyBusy();
@@ -7464,6 +7513,7 @@ function redrawPlazaGrantsUi() {
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
                                 if (settingsData.musicTimeQueue !== undefined) {
                                     window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
+                                    maybeShowMusicTimeRequestPopup({ fromCache });
                                 }
                                 if (settingsData.classTimetable !== undefined) {
                                     window.globalSettings.classTimetable = sanitizeClassTimetable(settingsData.classTimetable);
@@ -8926,6 +8976,7 @@ function redrawPlazaGrantsUi() {
             checkTimeEvents();
             renderConvenienceManagerUi();
             maybeShowConvenienceOrderPopup();
+            maybeShowMusicTimeRequestPopup({ fromCache: false });
             
             const xp = window.playerState.xp || 0;
             const lvInfo = getLevelInfo(xp); 

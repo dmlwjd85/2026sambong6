@@ -3479,6 +3479,51 @@ function redrawPlazaGrantsUi() {
             }
         }
 
+        /** 레전더리 타임(s7) 공동구매 모금 잔액 삭제 — 환불 없이 contributions만 비움(1회) */
+        async function applyLegendaryTimeGroupBuyPoolWipeMigration() {
+            if (!db) return;
+            const shopId = 's7';
+            const markerId = 'shop_group_buy_s7_wipe_20260703';
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                const poolSnap = await getDocFromServer(poolRef);
+                const poolData = poolSnap.exists() ? poolSnap.data() || {} : {};
+                const total = sumShopPoolContributions(poolData);
+                if (total <= 0) {
+                    await setDoc(markerRef, {
+                        done: true,
+                        clearedTotal: 0,
+                        note: '레전더리 타임(s7) 공동구매 — 이미 비어 있음',
+                        sanitizedAt: new Date().toISOString(),
+                    }, { merge: true });
+                    return;
+                }
+                await setDoc(poolRef, {
+                    ...poolData,
+                    contributions: {},
+                    updatedAt: Date.now(),
+                    lastWipeAt: Date.now(),
+                    lastWipeOriginalTotal: total,
+                    lastWipeNote: '레전더리 타임 공동구매 모금 삭제(환불 없음)',
+                }, { merge: true });
+                await setDoc(markerRef, {
+                    done: true,
+                    clearedTotal: total,
+                    note: '레전더리 타임(s7) 공동구매 모금 삭제',
+                    sanitizedAt: new Date().toISOString(),
+                }, { merge: true });
+                applyShopGroupBuyPoolLocal(shopId, {});
+                if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
+            } catch (e) {
+                console.warn('applyLegendaryTimeGroupBuyPoolWipeMigration', e);
+            }
+        }
+
         window.cancelAllWorldCupBetsAdmin = async function() {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 실행할 수 있습니다.');
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
@@ -3702,10 +3747,16 @@ function redrawPlazaGrantsUi() {
             return normalizeBongValue(reg + termSum);
         }
 
+        /** 학생 지갑(광장 표시·즉시 사용 가능 삼봉) */
+        function getStudentWalletBong(stu) {
+            if (!stu) return 0;
+            return normalizeBongValue(Number(stu.bong) || 0);
+        }
+
         /** 학생의 현금성 삼봉 — 지갑 + 일반예금 (적금·만기 전 원금 제외) */
         function getStudentCashBong(stu) {
             if (!stu) return 0;
-            const wallet = normalizeBongValue(Number(stu.bong) || 0);
+            const wallet = getStudentWalletBong(stu);
             const regular = normalizeBongValue(Number(stu.bankRegularSavings) || 0);
             return normalizeBongValue(wallet + regular);
         }
@@ -7434,6 +7485,7 @@ function redrawPlazaGrantsUi() {
                 void applyWorldCupBetCancelMigration();
                 void applyWorldCupBetR32Migration();
                 void applyLearningThermometerRahiMaxHotfix();
+                void applyLegendaryTimeGroupBuyPoolWipeMigration();
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
@@ -8093,7 +8145,7 @@ function redrawPlazaGrantsUi() {
                     </div>`;
                 }
 
-                const cashBong = getStudentCashBong(displayData);
+                const walletBong = getStudentWalletBong(displayData);
 
                 return `
                 <div ${gmOnClick} class="flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
@@ -8109,7 +8161,7 @@ function redrawPlazaGrantsUi() {
                     <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="text-[9px] sm:text-[10px] font-black ${cashBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(cashBong)}B</span>
+                        <span class="text-[9px] sm:text-[10px] font-black ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}B</span>
                     </div>
 
                     ${gmControls}

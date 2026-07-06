@@ -2052,6 +2052,15 @@ function redrawPlazaGrantsUi() {
         const BONG_ANOMALY_SINGLE_DELTA_WARN = 120;
         /** 삼봉 금융감독 — 아이템 환불 누적 의심 기준 */
         const BONG_SUPERVISION_REFUND_WARN = 8;
+        /** 금융감독 집계에서 제외할 bongChangeLog source (정상 은행·적금 흐름) */
+        const BONG_SUPERVISION_EXCLUDED_SOURCES = new Set(['bankTermMaturity', 'bankTermEarly']);
+
+        function isBankTermDepositBongSupervisionExcluded(row) {
+            if (!row || typeof row !== 'object') return false;
+            if (row.source && BONG_SUPERVISION_EXCLUDED_SOURCES.has(String(row.source))) return true;
+            const reason = String(row.reason || '');
+            return /보물상자 적금 만기|적금 만기|보물상자 적금 중도 해지/.test(reason);
+        }
 
         function formatSupervisionDateTime(ms) {
             const d = new Date(Number(ms));
@@ -2081,6 +2090,7 @@ function redrawPlazaGrantsUi() {
             const todayGainRows = [];
             logs.forEach((row) => {
                 if (!row || !row.at) return;
+                if (isBankTermDepositBongSupervisionExcluded(row)) return;
                 const ds = getLocalDateStr(new Date(Number(row.at)));
                 if (ds !== today) return;
                 const delta = normalizeBongValue(Number(row.delta) || 0);
@@ -2104,6 +2114,7 @@ function redrawPlazaGrantsUi() {
             }
 
             logs.forEach((row, idx) => {
+                if (isBankTermDepositBongSupervisionExcluded(row)) return;
                 const delta = normalizeBongValue(Number(row && row.delta) || 0);
                 if (delta < BONG_ANOMALY_SINGLE_DELTA_WARN) return;
                 incidents.push({
@@ -2270,6 +2281,7 @@ function redrawPlazaGrantsUi() {
             let gain = 0;
             logs.forEach((row) => {
                 if (!row || !row.at) return;
+                if (isBankTermDepositBongSupervisionExcluded(row)) return;
                 const d = new Date(Number(row.at));
                 if (isNaN(d.getTime())) return;
                 const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -7894,7 +7906,11 @@ function redrawPlazaGrantsUi() {
                             '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
                         );
                     }
-                    void saveDataToCloud({ allowBankFieldChanges: true });
+                    void saveDataToCloud({
+                        allowBankFieldChanges: true,
+                        operationLabel: '보물상자 적금 만기',
+                        bongLogSource: 'bankTermMaturity',
+                    });
                     if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
                 }
             }
@@ -8682,7 +8698,7 @@ function redrawPlazaGrantsUi() {
             window.playerState.bankTermDeposits = arr;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
             updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지' });
+            const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
             if (!saved) return;
             await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
@@ -8937,10 +8953,14 @@ function redrawPlazaGrantsUi() {
             if(!window.playerState.conveniencePurchases) window.playerState.conveniencePurchases = [];
             const bankMigrateTouched = migrateBankPlayerFields();
             let bankProcessingNeedSave = bankMigrateTouched;
+            let bankSaveOperationLabel = '';
+            let bankSaveBongLogSource = '';
             if (canRunBankSideEffects) {
                 const termRes = applyBankTermDepositMaturity();
                 if (termRes.changed) {
                     bankProcessingNeedSave = true;
+                    bankSaveOperationLabel = '보물상자 적금 만기';
+                    bankSaveBongLogSource = 'bankTermMaturity';
                     if (termRes.msgs.length > 0) {
                         setTimeout(() => {
                             void window.customAlert(
@@ -9397,7 +9417,13 @@ function redrawPlazaGrantsUi() {
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
-            if (bankProcessingNeedSave) saveDataToCloud({ allowBankFieldChanges: true });
+            if (bankProcessingNeedSave) {
+                saveDataToCloud({
+                    allowBankFieldChanges: true,
+                    operationLabel: bankSaveOperationLabel || '은행 자동 처리',
+                    bongLogSource: bankSaveBongLogSource || undefined,
+                });
+            }
 
             // 스피드 퀴즈: 로그인 직후·상태 갱신 시 진행 중인 퀴즈 팝업을 다시 맞춤 (선생님이 먼저 출제한 경우 포함)
             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
@@ -9701,7 +9727,7 @@ function redrawPlazaGrantsUi() {
                         if (Number.isFinite(serverBong) && Math.abs(finalBong - serverBong) > 0.0001) {
                             const bongLogs = Array.isArray(serverData.bongChangeLog) ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
                             bongLogs.push(buildBongChangeLogEntry(opts.operationLabel, serverBong, finalBong, {
-                                source: 'saveDataToCloud',
+                                source: opts.bongLogSource || 'saveDataToCloud',
                                 allowBongDecrease: !!opts.allowBongDecrease,
                             }));
                             dataToSave.bongChangeLog = bongLogs;

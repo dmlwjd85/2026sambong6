@@ -173,16 +173,33 @@ function redrawPlazaGrantsUi() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const v = Math.round(Number(value) || 0);
             const freq = 440 * Math.pow(2, v / 24);
+            const now = audioCtx.currentTime;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.14, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.09);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.1);
+
+            if (v < 0) {
+                // 저음은 sine보다 잘 들리도록 파형·볼륨·길이를 키움
+                osc.type = 'triangle';
+                const depth = Math.min(1, Math.abs(v) / 20);
+                const gainPeak = 0.22 + depth * 0.28;
+                const duration = 0.1 + depth * 0.08;
+                osc.frequency.setValueAtTime(freq, now);
+                gain.gain.setValueAtTime(gainPeak, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                osc.start(now);
+                osc.stop(now + duration + 0.02);
+            } else {
+                osc.type = 'sine';
+                const gainPeak = v > 0 ? 0.14 : 0.15;
+                const duration = 0.09;
+                osc.frequency.setValueAtTime(freq, now);
+                gain.gain.setValueAtTime(gainPeak, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                osc.start(now);
+                osc.stop(now + duration + 0.01);
+            }
         }
 
         const MARTIAL_LAW_PROCLAMATION = [
@@ -4479,6 +4496,40 @@ function redrawPlazaGrantsUi() {
             return 'text-slate-200';
         }
 
+        let _learningThermometerZeroLineSyncBound = false;
+
+        /** 슬라이더 0점(값 0) 위치에 0 기준선 맞춤 */
+        function syncLearningThermometerZeroLine() {
+            const line = document.querySelector('.learning-thermometer-zero-line');
+            const stage = document.querySelector('.learning-thermometer-stage');
+            const students = document.getElementById('learningThermometerStudents');
+            if (!line || !stage || !students) return;
+            const slider = students.querySelector('.learning-thermometer-slider');
+            if (!slider) {
+                line.style.top = '';
+                students.style.removeProperty('--lt-zero-y');
+                return;
+            }
+
+            const min = Number(slider.min);
+            const max = Number(slider.max);
+            const span = max - min;
+            const zeroRatio = span ? (0 - min) / span : 0.5;
+            const sliderRect = slider.getBoundingClientRect();
+            const stageRect = stage.getBoundingClientRect();
+            const studentsRect = students.getBoundingClientRect();
+            // vertical-rl + rtl: min(음수) 아래, max(양수) 위
+            const zeroClientY = sliderRect.bottom - zeroRatio * sliderRect.height;
+            line.style.top = `${zeroClientY - stageRect.top}px`;
+            students.style.setProperty('--lt-zero-y', `${zeroClientY - studentsRect.top}px`);
+        }
+
+        function ensureLearningThermometerZeroLineSync() {
+            if (_learningThermometerZeroLineSyncBound) return;
+            _learningThermometerZeroLineSyncBound = true;
+            window.addEventListener('resize', () => syncLearningThermometerZeroLine());
+        }
+
         function renderLearningThermometerPanel() {
             const box = document.getElementById('learningThermometerStudents');
             const status = document.getElementById('learningThermometerStatus');
@@ -4561,6 +4612,8 @@ function redrawPlazaGrantsUi() {
                         ${controlHtml}
                     </div>`;
             }).join('');
+            ensureLearningThermometerZeroLineSync();
+            requestAnimationFrame(() => syncLearningThermometerZeroLine());
         }
 
         async function saveLearningThermometerState({ silent = true } = {}) {

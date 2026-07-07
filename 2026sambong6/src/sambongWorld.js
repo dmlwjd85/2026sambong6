@@ -168,6 +168,23 @@ function redrawPlazaGrantsUi() {
             }
         }
 
+        /** 학습 온도계: 값 높이에 맞는 짧은 음(0=440Hz, 위=고음, 아래=저음) */
+        function playLearningThermometerSfx(value) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const v = Math.round(Number(value) || 0);
+            const freq = 440 * Math.pow(2, v / 24);
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.14, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.09);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        }
+
         const MARTIAL_LAW_PROCLAMATION = [
             { title: '제1조', text: '체육수업 전면 폐지 및 국어수학진도 100% 달성' },
             { title: '제2조', text: '쉬는 시간 5분' },
@@ -4587,7 +4604,9 @@ function redrawPlazaGrantsUi() {
             _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
             const state = getLearningThermometerState();
             const id = String(sid);
+            const prev = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[id]) || 0)));
             const next = Math.max(state.min, Math.min(state.max, Math.round(Number(rawValue) || 0)));
+            if (next !== prev) playLearningThermometerSfx(next);
             if (next === 0) delete state.values[id];
             else state.values[id] = next;
             state.date = getLocalDateStr();
@@ -4719,19 +4738,22 @@ function redrawPlazaGrantsUi() {
                         state.settlementKey === today &&
                         state.settlementStatus === 'running' &&
                         Date.now() - Number(state.settlementStartedAt || 0) < LEARNING_THERMOMETER_LOCK_STALE_MS;
+                    const pendingValues = {};
+                    getActiveStudentIds().forEach((sid) => {
+                        const v = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[String(sid)]) || 0)));
+                        if (v !== 0) pendingValues[String(sid)] = v;
+                    });
                     if (state.settledDate === today) {
-                        claimed = { status: 'already_done', state };
-                        return;
+                        if (!manual || !Object.keys(pendingValues).length) {
+                            claimed = { status: 'already_done', state };
+                            return;
+                        }
                     }
                     if (lockIsFresh) {
                         claimed = { status: 'locked', state };
                         return;
                     }
-                    const values = {};
-                    getActiveStudentIds().forEach((sid) => {
-                        const v = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[String(sid)]) || 0)));
-                        if (v !== 0) values[String(sid)] = v;
-                    });
+                    const values = pendingValues;
                     claimed = { status: 'claimed', state: { ...state, values } };
                     transaction.set(ref, {
                         learningThermometer: {
@@ -4835,9 +4857,13 @@ function redrawPlazaGrantsUi() {
             if (!ok) return;
             try {
                 const result = await settleLearningThermometer({ manual: true });
-                if (result.status === 'already_done') return await window.customAlert('오늘은 이미 정산되었습니다.');
+                if (result.status === 'already_done') {
+                    return await window.customAlert('반영할 온도계 값이 없습니다.\n(오늘 이미 정산했고, 현재 값이 모두 0이에요.)');
+                }
                 if (result.status === 'locked') return await window.customAlert('다른 화면에서 정산 중입니다. 잠시 후 확인해 주세요.');
-                await window.customAlert(`정산 완료!\n적용 ${result.appliedCount || 0}명 · 합계 ${result.totalDelta >= 0 ? '+' : ''}${result.totalDelta || 0} XP`);
+                await window.customAlert(
+                    `정산 완료!\n적용 ${result.appliedCount || 0}명 · 합계 ${result.totalDelta >= 0 ? '+' : ''}${result.totalDelta || 0} XP\n\n온도계가 0으로 초기화되었습니다. 바로 다시 조절할 수 있어요.`
+                );
             } catch (e) {
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -11745,6 +11771,56 @@ function redrawPlazaGrantsUi() {
                 execBtn.disabled = !ready;
                 execBtn.classList.toggle('opacity-40', !ready);
             }
+        };
+
+        window.openShopGroupBuyStatusPanel = function () {
+            if (!window.playerState || window.playerState.isGuest) {
+                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            }
+            if (window.playerState.isGM) return window.openShopGroupBuyAdminModal();
+            return window.openShopGroupBuyStudentOverviewModal();
+        };
+
+        window.openShopGroupBuyStudentOverviewModal = function () {
+            if (window.playerState.isGuest || window.playerState.isAdmin) {
+                return window.customAlert('학생만 공동구매 현황을 볼 수 있어요.');
+            }
+            const modal = document.getElementById('shopGroupBuyStudentOverviewModal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            window.renderShopGroupBuyStudentOverviewModal();
+        };
+
+        window.renderShopGroupBuyStudentOverviewModal = function () {
+            const modal = document.getElementById('shopGroupBuyStudentOverviewModal');
+            const body = document.getElementById('shopGroupBuyStudentOverviewBody');
+            if (!modal || !body || modal.classList.contains('hidden')) return;
+
+            const rows = getAllShopItems()
+                .filter((shop) => shop.id !== 'item_mystery_dice')
+                .map((shop) => {
+                    const target = getEffectiveShopPrice(shop.id);
+                    const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shop.id]) || {};
+                    const mergedContribs = buildSanitizedContributionsMap(pool.contributions);
+                    const sum = sumShopPoolContributions(pool);
+                    const pct = target > 0 ? Math.min(100, Math.round((sum / target) * 100)) : 0;
+                    const myId = localStorage.getItem('sambong_student_id');
+                    const myAmt = myId ? mergedContribs[String(myId)] || 0 : 0;
+                    return `
+                        <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <div class="font-bold text-white">${shop.name}</div>
+                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${target} B (${pct}%)</div>
+                            </div>
+                            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
+                                <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
+                            </div>
+                            <div class="text-[9px] text-slate-400">${myAmt > 0 ? `내 입금 <span class="text-cyan-300 font-bold">${myAmt} B</span>` : '내 입금 없음'}</div>
+                            <button type="button" onclick="window.openShopGroupBuyModal('${shop.id}')" class="mt-2 w-full bg-cyan-900/70 hover:bg-cyan-800 text-cyan-100 font-bold py-1.5 px-2 rounded text-[9px] border border-cyan-600">이 상품 공동구매 열기</button>
+                        </div>`;
+                });
+
+            body.innerHTML = rows.join('') || '<div class="text-center text-slate-500 py-6">조회할 공동구매 항목이 없습니다.</div>';
         };
 
         window.openShopGroupBuyAdminModal = function () {

@@ -5009,14 +5009,14 @@ function redrawPlazaGrantsUi() {
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
+            let result = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
 
                 await runTransaction(db, async (transaction) => {
-                    const ref = getGlobalSettingsDocRef();
-                    const snap = await transaction.get(ref);
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const snap = await transaction.get(settingsRef);
                     const data = snap.exists() ? snap.data() || {} : {};
                     const state = sanitizeLearningThermometerState(data.learningThermometer);
                     const lockIsFresh =
@@ -5030,48 +5030,32 @@ function redrawPlazaGrantsUi() {
                     });
                     if (state.settledDate === today) {
                         if (!manual || !Object.keys(pendingValues).length) {
-                            claimed = { status: 'already_done', state };
+                            result = { status: 'already_done', state };
                             return;
                         }
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
+                        result = { status: 'locked', state };
                         return;
                     }
                     const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const claimedState = { ...state, values, date: today };
+                    const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                    const studentDocs = [];
+                    for (const [sid] of entries) {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        const stuSnap = await transaction.get(ref);
+                        studentDocs.push({ sid, ref, data: stuSnap.exists() ? (stuSnap.data() || {}) : {} });
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
+                    let appliedCount = 0;
+                    let totalDelta = 0;
                     entries.forEach(([sid, deltaRaw]) => {
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const row = studentDocs.find((item) => String(item.sid) === String(sid));
+                        if (!row) return;
+                        const stu = row.data;
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
@@ -5082,35 +5066,38 @@ function redrawPlazaGrantsUi() {
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        transaction.set(
+                            row.ref,
                             { xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...claimedState,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(settingsRef, { learningThermometer: resetState }, { merge: true });
+                    result = { status: 'done', appliedCount, totalDelta, state: resetState };
+                });
+
+                if (!result || result.status !== 'done') return result || { status: 'not_claimed' };
+
+                setLocalLearningThermometerState(result.state);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return { status: 'done', appliedCount: result.appliedCount, totalDelta: result.totalDelta };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -8768,6 +8755,8 @@ function redrawPlazaGrantsUi() {
             window.switchTab('bank');
         };
 
+        let _bankAutoSavePromise = null;
+
         /** 레거시 필드 → 일반예금으로 이전 후 불필요 키 정리 */
         function migrateBankPlayerFields() {
             if (!window.playerState) return false;
@@ -9729,10 +9718,14 @@ function redrawPlazaGrantsUi() {
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) {
-                saveDataToCloud({
+                const bankSavePromise = saveDataToCloud({
                     allowBankFieldChanges: true,
                     operationLabel: bankSaveOperationLabel || '은행 자동 처리',
                     bongLogSource: bankSaveBongLogSource || undefined,
+                });
+                _bankAutoSavePromise = bankSavePromise;
+                bankSavePromise.finally(() => {
+                    if (_bankAutoSavePromise === bankSavePromise) _bankAutoSavePromise = null;
                 });
             }
 
@@ -9915,6 +9908,10 @@ function redrawPlazaGrantsUi() {
                 operationLabel: '저장',
                 ...options,
             };
+            if (!opts.allowBankFieldChanges && _bankAutoSavePromise) {
+                const bankSaved = await _bankAutoSavePromise.catch(() => false);
+                if (!bankSaved) return false;
+            }
             const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
@@ -10068,7 +10065,7 @@ function redrawPlazaGrantsUi() {
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

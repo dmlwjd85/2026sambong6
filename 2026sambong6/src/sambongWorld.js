@@ -1490,6 +1490,126 @@ function redrawPlazaGrantsUi() {
             return modal;
         }
 
+        function getYoutubeDataApiKey() {
+            // Firebase 웹 API 키와 동일(이미 클라이언트에 노출됨). YouTube Data API 검색용.
+            return 'AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8';
+        }
+
+        /** 신청곡명으로 유튜브 뮤직 재생 URL 생성(가능하면 첫 검색 결과 바로 재생) */
+        async function resolveYoutubeMusicPlayUrl(songTitle) {
+            const q = String(songTitle || '').trim();
+            if (!q) return { url: 'https://music.youtube.com/', mode: 'home' };
+            const searchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(q)}`;
+
+            // 1) YouTube Data API로 음악 영상 1건 검색 → watch URL
+            try {
+                const key = getYoutubeDataApiKey();
+                const apiUrl =
+                    'https://www.googleapis.com/youtube/v3/search' +
+                    `?part=snippet&type=video&maxResults=1&videoCategoryId=10` +
+                    `&q=${encodeURIComponent(q)}&key=${encodeURIComponent(key)}`;
+                const res = await fetch(apiUrl);
+                if (res.ok) {
+                    const data = await res.json();
+                    const videoId = data && data.items && data.items[0] && data.items[0].id && data.items[0].id.videoId;
+                    if (videoId) {
+                        return {
+                            url: `https://music.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+                            mode: 'play',
+                            videoId: String(videoId),
+                        };
+                    }
+                }
+            } catch (e) {
+                console.warn('resolveYoutubeMusicPlayUrl youtube api', e);
+            }
+
+            // 2) Piped 공개 검색 API(CORS 허용 인스턴스) 폴백
+            const pipedHosts = [
+                'https://pipedapi.kavin.rocks',
+                'https://pipedapi.adminforge.de',
+            ];
+            for (const host of pipedHosts) {
+                try {
+                    const res = await fetch(`${host}/search?q=${encodeURIComponent(q)}&filter=music_songs`);
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    const items = Array.isArray(data && data.items) ? data.items : (Array.isArray(data) ? data : []);
+                    const first = items.find((it) => it && (it.url || it.id || it.videoId));
+                    if (!first) continue;
+                    let videoId = first.videoId || first.id || '';
+                    if (!videoId && first.url) {
+                        const m = String(first.url).match(/(?:v=|\/watch\/|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+                        if (m) videoId = m[1];
+                        else if (String(first.url).startsWith('/watch?v=')) videoId = String(first.url).slice(9);
+                    }
+                    if (videoId) {
+                        return {
+                            url: `https://music.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+                            mode: 'play',
+                            videoId: String(videoId),
+                        };
+                    }
+                } catch (e) {
+                    console.warn('resolveYoutubeMusicPlayUrl piped', host, e);
+                }
+            }
+
+            // 3) 최종 폴백: 유튜브 뮤직 검색 페이지
+            return { url: searchUrl, mode: 'search' };
+        }
+
+        window.playMusicTimeRequest = async function(requestId) {
+            const rid = String(requestId || '');
+            const target = getMusicTimeQueue().find((row) => String(row.id) === rid);
+            if (!target) return await window.customAlert('이미 처리되었거나 신청곡을 찾을 수 없습니다.');
+            const song = String(target.song || '').trim();
+            if (!song) return await window.customAlert('곡명이 비어 있습니다.');
+
+            const btn = document.querySelector(`button[data-music-play-id="${CSS.escape(rid)}"]`);
+            const prevLabel = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 찾는 중';
+            }
+
+            // 클릭 직후 창을 열어 팝업 차단을 피함
+            const popup = window.open('about:blank', '_blank');
+            try {
+                const resolved = await resolveYoutubeMusicPlayUrl(song);
+                if (popup && !popup.closed) {
+                    popup.opener = null;
+                    popup.location.href = resolved.url;
+                } else {
+                    const opened = window.open(resolved.url, '_blank', 'noopener,noreferrer');
+                    if (!opened) {
+                        return await window.customAlert(
+                            '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
+                        );
+                    }
+                }
+                if (resolved.mode === 'search') {
+                    await window.customAlert(
+                        `유튜브 뮤직 검색 결과를 열었습니다.\n\n🎵 ${song}\n\n첫 곡을 눌러 재생해 주세요.`
+                    );
+                }
+            } catch (e) {
+                console.error('playMusicTimeRequest', e);
+                const fallback = `https://music.youtube.com/search?q=${encodeURIComponent(song)}`;
+                if (popup && !popup.closed) {
+                    popup.location.href = fallback;
+                } else {
+                    window.open(fallback, '_blank', 'noopener,noreferrer');
+                }
+                await window.customAlert('자동 재생 연결에 실패해 검색 페이지를 열었습니다.\n첫 곡을 눌러 재생해 주세요.');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
+                }
+            }
+        };
+
         function renderMusicTimeQueueModalBody() {
             const body = document.getElementById('musicTimeQueueModalBody');
             if (!body) return;
@@ -1510,11 +1630,16 @@ function redrawPlazaGrantsUi() {
                                     <div class="text-sm text-white font-bold break-words">🎵 ${escapeConvenienceHtml(row.song)}</div>
                                     <div class="text-[9px] text-slate-500 mt-1">${formatMusicTimeAt(row.at)}</div>
                                 </div>
-                                ${isGM ? `<button type="button" onclick="window.completeMusicTimeRequestAdmin('${escapeHtmlAttr(row.id)}')" class="shrink-0 bg-emerald-800 hover:bg-emerald-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-emerald-600">재생완료</button>` : ''}
+                                <div class="shrink-0 flex flex-col gap-1">
+                                    <button type="button" data-music-play-id="${escapeHtmlAttr(row.id)}" onclick="window.playMusicTimeRequest('${escapeHtmlAttr(row.id)}')" class="bg-pink-800 hover:bg-pink-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-pink-500/70">
+                                        <i class="fa-solid fa-play"></i> 재생
+                                    </button>
+                                    ${isGM ? `<button type="button" onclick="window.completeMusicTimeRequestAdmin('${escapeHtmlAttr(row.id)}')" class="bg-emerald-800 hover:bg-emerald-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-emerald-600">재생완료</button>` : ''}
+                                </div>
                             </div>
                         </div>`).join('')}
                 </div>
-                ${isGM ? '<p class="text-[9px] text-slate-500 mt-3 leading-relaxed">마스터 J만 「재생완료」를 누를 수 있습니다. 완료 처리하면 목록에서 사라집니다.</p>' : ''}`;
+                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 해당 곡을 검색해 바로 재생을 시도합니다.${isGM ? ' 마스터 J만 「재생완료」로 목록에서 제거할 수 있습니다.' : ''}</p>`;
         }
 
         window.openMusicTimeQueuePanel = function() {

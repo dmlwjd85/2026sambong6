@@ -1444,6 +1444,8 @@ function redrawPlazaGrantsUi() {
             const localQueue = sanitizeMusicTimeQueue(window.globalSettings.musicTimeQueue);
             localQueue.push(entry);
             window.globalSettings.musicTimeQueue = localQueue.slice(-MUSIC_TIME_QUEUE_MAX);
+            // 신청 직후 재생 URL을 미리 찾아 두면 재생 버튼이 빨라짐
+            void searchYoutubeVideoIdFast(songText);
             return entry;
         }
 
@@ -1495,68 +1497,173 @@ function redrawPlazaGrantsUi() {
             return 'AIzaSyAsih-sfnIZ_gX_1l7SAVZHCAhk3KzmiP8';
         }
 
+        const MUSIC_TIME_PLAY_CACHE_KEY = 'sambong_ytm_play_cache_v1';
+        const MUSIC_TIME_PLAY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+        const _musicTimePlayCacheMem = new Map();
+        const _musicTimeResolveInflight = new Map();
+
+        function normalizeMusicTimeSongKey(songTitle) {
+            return String(songTitle || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        }
+
+        function loadMusicTimePlayCache() {
+            try {
+                const raw = localStorage.getItem(MUSIC_TIME_PLAY_CACHE_KEY);
+                const obj = raw ? JSON.parse(raw) : {};
+                return obj && typeof obj === 'object' ? obj : {};
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveMusicTimePlayCache(map) {
+            try {
+                localStorage.setItem(MUSIC_TIME_PLAY_CACHE_KEY, JSON.stringify(map));
+            } catch (e) { /* ignore quota */ }
+        }
+
+        function getCachedMusicTimeVideoId(songTitle) {
+            const key = normalizeMusicTimeSongKey(songTitle);
+            if (!key) return '';
+            if (_musicTimePlayCacheMem.has(key)) return _musicTimePlayCacheMem.get(key) || '';
+            const store = loadMusicTimePlayCache();
+            const row = store[key];
+            if (!row || !row.videoId) return '';
+            if (Date.now() - Number(row.at || 0) > MUSIC_TIME_PLAY_CACHE_TTL_MS) {
+                delete store[key];
+                saveMusicTimePlayCache(store);
+                return '';
+            }
+            _musicTimePlayCacheMem.set(key, String(row.videoId));
+            return String(row.videoId);
+        }
+
+        function setCachedMusicTimeVideoId(songTitle, videoId) {
+            const key = normalizeMusicTimeSongKey(songTitle);
+            const id = String(videoId || '').trim();
+            if (!key || !id) return;
+            _musicTimePlayCacheMem.set(key, id);
+            const store = loadMusicTimePlayCache();
+            store[key] = { videoId: id, at: Date.now() };
+            // 캐시 과다 방지
+            const keys = Object.keys(store);
+            if (keys.length > 80) {
+                keys
+                    .map((k) => ({ k, at: Number(store[k] && store[k].at) || 0 }))
+                    .sort((a, b) => a.at - b.at)
+                    .slice(0, keys.length - 80)
+                    .forEach((row) => { delete store[row.k]; });
+            }
+            saveMusicTimePlayCache(store);
+        }
+
+        function buildYoutubeMusicWatchUrl(videoId) {
+            const id = encodeURIComponent(String(videoId || ''));
+            // list=RDAMVM… 는 해당 곡 기준 라디오로 바로 재생을 유도
+            return `https://music.youtube.com/watch?v=${id}&list=RDAMVM${id}`;
+        }
+
+        function buildYoutubeMusicSearchUrl(songTitle) {
+            return `https://music.youtube.com/search?q=${encodeURIComponent(String(songTitle || '').trim())}`;
+        }
+
+        function extractVideoIdFromPipedItem(item) {
+            if (!item) return '';
+            let videoId = item.videoId || item.id || '';
+            if (!videoId && item.url) {
+                const m = String(item.url).match(/(?:v=|\/watch\/|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+                if (m) videoId = m[1];
+                else if (String(item.url).startsWith('/watch?v=')) videoId = String(item.url).slice(9);
+            }
+            return String(videoId || '').trim();
+        }
+
+        async function fetchWithTimeout(url, ms = 1800) {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), ms);
+            try {
+                return await fetch(url, { signal: ctrl.signal });
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        async function searchYoutubeVideoIdFast(songTitle) {
+            const q = String(songTitle || '').trim();
+            if (!q) return '';
+
+            const cached = getCachedMusicTimeVideoId(q);
+            if (cached) return cached;
+
+            const key = normalizeMusicTimeSongKey(q);
+            if (_musicTimeResolveInflight.has(key)) return _musicTimeResolveInflight.get(key);
+
+            const task = (async () => {
+                const ytKey = getYoutubeDataApiKey();
+                // videoCategoryId 없이 검색(더 빠르고 결과 누락 적음) + Piped 병렬 레이스
+                const ytUrl =
+                    'https://www.googleapis.com/youtube/v3/search' +
+                    `?part=snippet&type=video&maxResults=1&q=${encodeURIComponent(q)}&key=${encodeURIComponent(ytKey)}`;
+                const pipedUrls = [
+                    `https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(q)}&filter=music_songs`,
+                    `https://pipedapi.adminforge.de/search?q=${encodeURIComponent(q)}&filter=music_songs`,
+                ];
+
+                const tryYoutube = (async () => {
+                    const res = await fetchWithTimeout(ytUrl, 1600);
+                    if (!res.ok) return '';
+                    const data = await res.json();
+                    return (data && data.items && data.items[0] && data.items[0].id && data.items[0].id.videoId) || '';
+                })().catch(() => '');
+
+                const tryPiped = (url) => (async () => {
+                    const res = await fetchWithTimeout(url, 1600);
+                    if (!res.ok) return '';
+                    const data = await res.json();
+                    const items = Array.isArray(data && data.items) ? data.items : (Array.isArray(data) ? data : []);
+                    return extractVideoIdFromPipedItem(items.find((it) => it && (it.url || it.id || it.videoId)));
+                })().catch(() => '');
+
+                const racers = [tryYoutube, ...pipedUrls.map(tryPiped)];
+                const videoId = await Promise.any(
+                    racers.map((p) => p.then((id) => {
+                        if (!id) throw new Error('empty');
+                        return String(id);
+                    }))
+                ).catch(() => '');
+
+                if (videoId) setCachedMusicTimeVideoId(q, videoId);
+                return videoId;
+            })();
+
+            _musicTimeResolveInflight.set(key, task);
+            try {
+                return await task;
+            } finally {
+                _musicTimeResolveInflight.delete(key);
+            }
+        }
+
         /** 신청곡명으로 유튜브 뮤직 재생 URL 생성(가능하면 첫 검색 결과 바로 재생) */
         async function resolveYoutubeMusicPlayUrl(songTitle) {
             const q = String(songTitle || '').trim();
             if (!q) return { url: 'https://music.youtube.com/', mode: 'home' };
-            const searchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(q)}`;
-
-            // 1) YouTube Data API로 음악 영상 1건 검색 → watch URL
-            try {
-                const key = getYoutubeDataApiKey();
-                const apiUrl =
-                    'https://www.googleapis.com/youtube/v3/search' +
-                    `?part=snippet&type=video&maxResults=1&videoCategoryId=10` +
-                    `&q=${encodeURIComponent(q)}&key=${encodeURIComponent(key)}`;
-                const res = await fetch(apiUrl);
-                if (res.ok) {
-                    const data = await res.json();
-                    const videoId = data && data.items && data.items[0] && data.items[0].id && data.items[0].id.videoId;
-                    if (videoId) {
-                        return {
-                            url: `https://music.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
-                            mode: 'play',
-                            videoId: String(videoId),
-                        };
-                    }
-                }
-            } catch (e) {
-                console.warn('resolveYoutubeMusicPlayUrl youtube api', e);
+            const searchUrl = buildYoutubeMusicSearchUrl(q);
+            const videoId = await searchYoutubeVideoIdFast(q);
+            if (videoId) {
+                return { url: buildYoutubeMusicWatchUrl(videoId), mode: 'play', videoId };
             }
-
-            // 2) Piped 공개 검색 API(CORS 허용 인스턴스) 폴백
-            const pipedHosts = [
-                'https://pipedapi.kavin.rocks',
-                'https://pipedapi.adminforge.de',
-            ];
-            for (const host of pipedHosts) {
-                try {
-                    const res = await fetch(`${host}/search?q=${encodeURIComponent(q)}&filter=music_songs`);
-                    if (!res.ok) continue;
-                    const data = await res.json();
-                    const items = Array.isArray(data && data.items) ? data.items : (Array.isArray(data) ? data : []);
-                    const first = items.find((it) => it && (it.url || it.id || it.videoId));
-                    if (!first) continue;
-                    let videoId = first.videoId || first.id || '';
-                    if (!videoId && first.url) {
-                        const m = String(first.url).match(/(?:v=|\/watch\/|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
-                        if (m) videoId = m[1];
-                        else if (String(first.url).startsWith('/watch?v=')) videoId = String(first.url).slice(9);
-                    }
-                    if (videoId) {
-                        return {
-                            url: `https://music.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
-                            mode: 'play',
-                            videoId: String(videoId),
-                        };
-                    }
-                } catch (e) {
-                    console.warn('resolveYoutubeMusicPlayUrl piped', host, e);
-                }
-            }
-
-            // 3) 최종 폴백: 유튜브 뮤직 검색 페이지
             return { url: searchUrl, mode: 'search' };
+        }
+
+        function prefetchMusicTimePlayUrls(songs) {
+            const list = Array.isArray(songs) ? songs : [];
+            list.slice(0, 8).forEach((song) => {
+                const q = String(song || '').trim();
+                if (!q) return;
+                if (getCachedMusicTimeVideoId(q)) return;
+                void searchYoutubeVideoIdFast(q);
+            });
         }
 
         window.playMusicTimeRequest = async function(requestId) {
@@ -1570,38 +1677,36 @@ function redrawPlazaGrantsUi() {
             const prevLabel = btn ? btn.innerHTML : '';
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 찾는 중';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 재생';
             }
 
-            // 클릭 직후 창을 열어 팝업 차단을 피함
-            const popup = window.open('about:blank', '_blank');
-            try {
-                const resolved = await resolveYoutubeMusicPlayUrl(song);
-                if (popup && !popup.closed) {
-                    popup.opener = null;
-                    popup.location.href = resolved.url;
-                } else {
-                    const opened = window.open(resolved.url, '_blank', 'noopener,noreferrer');
-                    if (!opened) {
-                        return await window.customAlert(
-                            '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
-                        );
-                    }
+            const cachedId = getCachedMusicTimeVideoId(song);
+            const initialUrl = cachedId ? buildYoutubeMusicWatchUrl(cachedId) : buildYoutubeMusicSearchUrl(song);
+            // 클릭 즉시 창을 열어 체감 지연을 줄임(캐시 있으면 바로 첫 곡 재생)
+            const popup = window.open(initialUrl, '_blank');
+            if (!popup) {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
                 }
-                if (resolved.mode === 'search') {
+                return await window.customAlert(
+                    '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
+                );
+            }
+            try { popup.opener = null; } catch (e) { /* ignore */ }
+
+            try {
+                if (cachedId) return; // 이미 첫 곡 재생 URL로 열림
+                const videoId = await searchYoutubeVideoIdFast(song);
+                if (videoId && popup && !popup.closed) {
+                    popup.location.href = buildYoutubeMusicWatchUrl(videoId);
+                } else if (!videoId) {
                     await window.customAlert(
-                        `유튜브 뮤직 검색 결과를 열었습니다.\n\n🎵 ${song}\n\n첫 곡을 눌러 재생해 주세요.`
+                        `검색 결과를 열었습니다.\n\n🎵 ${song}\n\n첫 곡을 눌러 재생해 주세요.`
                     );
                 }
             } catch (e) {
                 console.error('playMusicTimeRequest', e);
-                const fallback = `https://music.youtube.com/search?q=${encodeURIComponent(song)}`;
-                if (popup && !popup.closed) {
-                    popup.location.href = fallback;
-                } else {
-                    window.open(fallback, '_blank', 'noopener,noreferrer');
-                }
-                await window.customAlert('자동 재생 연결에 실패해 검색 페이지를 열었습니다.\n첫 곡을 눌러 재생해 주세요.');
             } finally {
                 if (btn) {
                     btn.disabled = false;
@@ -1619,6 +1724,8 @@ function redrawPlazaGrantsUi() {
                 body.innerHTML = '<div class="text-[10px] text-slate-500 text-center py-10 border border-dashed border-slate-700 rounded-xl">대기 중인 신청곡이 없습니다.</div>';
                 return;
             }
+            // 목록을 열 때 앞쪽 곡들을 미리 찾아 재생 속도를 높임
+            prefetchMusicTimePlayUrls(queue.map((row) => row.song));
             body.innerHTML = `
                 <div class="text-[9px] text-slate-400 mb-3">총 ${queue.length}곡 · 먼저 신청한 순서대로 표시</div>
                 <div class="space-y-2">
@@ -1639,7 +1746,7 @@ function redrawPlazaGrantsUi() {
                             </div>
                         </div>`).join('')}
                 </div>
-                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 해당 곡을 검색해 바로 재생을 시도합니다.${isGM ? ' 마스터 J만 「재생완료」로 목록에서 제거할 수 있습니다.' : ''}</p>`;
+                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 첫 검색 곡을 바로 재생합니다.${isGM ? ' 마스터 J만 「재생완료」로 목록에서 제거할 수 있습니다.' : ''}</p>`;
         }
 
         window.openMusicTimeQueuePanel = function() {

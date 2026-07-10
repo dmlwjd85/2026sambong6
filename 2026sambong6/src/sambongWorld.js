@@ -2039,12 +2039,14 @@ function redrawPlazaGrantsUi() {
             const t0 = audioCtx.currentTime + 0.05;
             const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
             notes.forEach((f, i) => {
-                scheduleTone({ freq: f, start: t0 + i * 0.09, duration: 0.22, type: 'triangle', gain: 0.2 });
-                scheduleTone({ freq: f * 2, start: t0 + i * 0.09, duration: 0.18, type: 'sine', gain: 0.08 });
+                scheduleTone({ freq: f, start: t0 + i * 0.09, duration: 0.28, type: 'square', gain: 0.38 });
+                scheduleTone({ freq: f, start: t0 + i * 0.09, duration: 0.26, type: 'triangle', gain: 0.32 });
+                scheduleTone({ freq: f * 2, start: t0 + i * 0.09, duration: 0.22, type: 'sine', gain: 0.2 });
             });
             // 마지막 화음 팡파레
             [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-                scheduleTone({ freq: f, start: t0 + 0.55, duration: 0.55, type: 'triangle', gain: 0.16 - i * 0.02 });
+                scheduleTone({ freq: f, start: t0 + 0.55, duration: 0.65, type: 'square', gain: 0.28 - i * 0.02 });
+                scheduleTone({ freq: f, start: t0 + 0.55, duration: 0.65, type: 'triangle', gain: 0.24 - i * 0.02 });
             });
         }
 
@@ -2077,8 +2079,12 @@ function redrawPlazaGrantsUi() {
             const { melody } = getSeokBirthdaySongTimeline();
             const t0 = audioCtx.currentTime + 0.08;
             melody.forEach(([freq, start, dur]) => {
-                scheduleTone({ freq, start: t0 + start, duration: dur, type: 'triangle', gain: 0.22 });
-                scheduleTone({ freq: freq * 2, start: t0 + start, duration: dur * 0.85, type: 'sine', gain: 0.07 });
+                // 한 옥타브 올려서 교실에서도 잘 들리게 + 겹겹이 크게
+                const f = freq * 2;
+                scheduleTone({ freq: f, start: t0 + start, duration: dur, type: 'square', gain: 0.42 });
+                scheduleTone({ freq: f, start: t0 + start, duration: dur, type: 'triangle', gain: 0.36 });
+                scheduleTone({ freq: f * 2, start: t0 + start, duration: dur * 0.9, type: 'sine', gain: 0.18 });
+                scheduleTone({ freq: f / 2, start: t0 + start, duration: dur, type: 'triangle', gain: 0.12 });
             });
             return t0;
         }
@@ -2098,29 +2104,40 @@ function redrawPlazaGrantsUi() {
         }
 
         function ensureSeokBirthdayStyles() {
-            if (document.getElementById('seokBirthdayStyles')) return;
-            const style = document.createElement('style');
-            style.id = 'seokBirthdayStyles';
+            let style = document.getElementById('seokBirthdayStyles');
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'seokBirthdayStyles';
+                document.head.appendChild(style);
+            }
             style.textContent = `
-                @keyframes seokBdayPop { 0%{transform:scale(.6);opacity:0} 60%{transform:scale(1.08);opacity:1} 100%{transform:scale(1)} }
-                @keyframes seokBdayShine { 0%,100%{filter:drop-shadow(0 0 8px rgba(251,191,36,.4))} 50%{filter:drop-shadow(0 0 22px rgba(244,114,182,.85))} }
+                @keyframes seokBdayPop { 0%{transform:scale(.72);opacity:0} 60%{transform:scale(1.04);opacity:1} 100%{transform:scale(1)} }
+                @keyframes seokBdayShine { 0%,100%{filter:drop-shadow(0 0 10px rgba(251,191,36,.45))} 50%{filter:drop-shadow(0 0 28px rgba(244,114,182,.9))} }
                 @keyframes seokBdayConfettiFall { 0%{transform:translateY(-10vh) rotate(0deg);opacity:1} 100%{transform:translateY(110vh) rotate(720deg);opacity:0} }
-                @keyframes seokBdayCakeBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
-                @keyframes seokBdayLyricIn { 0%{opacity:0;transform:translateY(12px) scale(.95)} 100%{opacity:1;transform:translateY(0) scale(1)} }
-                .seok-bday-overlay{position:fixed;inset:0;z-index:420;display:flex;align-items:center;justify-content:center;padding:1rem;
-                    background:radial-gradient(circle at 50% 20%,rgba(251,191,36,.35),transparent 40%),
+                @keyframes seokBdayCakeBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
+                @keyframes seokBdayLyricIn { 0%{opacity:0;transform:translateY(14px) scale(.92)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+                .seok-bday-overlay{position:fixed;inset:0;z-index:420;display:flex;align-items:center;justify-content:center;padding:.75rem;
+                    background:radial-gradient(circle at 50% 18%,rgba(251,191,36,.42),transparent 42%),
                     linear-gradient(160deg,#831843 0%,#4c1d95 45%,#0f172a 100%);overflow:hidden}
-                .seok-bday-card{position:relative;z-index:2;max-width:28rem;width:100%;text-align:center;border-radius:1.75rem;
-                    border:2px solid rgba(251,191,36,.55);background:rgba(15,23,42,.82);backdrop-filter:blur(10px);
-                    padding:1.5rem 1.25rem 1.25rem;box-shadow:0 0 60px rgba(244,114,182,.35);animation:seokBdayPop .55s ease-out}
-                .seok-bday-title{font-size:1.85rem;line-height:1.15;font-weight:900;color:#fde68a;animation:seokBdayShine 1.6s ease-in-out infinite}
-                .seok-bday-cake{font-size:3.4rem;line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.35rem 0 .5rem}
-                .seok-bday-lyric{min-height:2.8rem;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:900;color:#fff;
-                    text-shadow:0 0 18px rgba(244,114,182,.8);animation:seokBdayLyricIn .35s ease-out}
-                .seok-bday-confetti{position:absolute;top:-12px;width:10px;height:14px;border-radius:2px;z-index:1;
+                .seok-bday-card{position:relative;z-index:2;max-width:56rem;width:min(96vw,56rem);text-align:center;border-radius:2rem;
+                    border:3px solid rgba(251,191,36,.65);background:rgba(15,23,42,.88);backdrop-filter:blur(12px);
+                    padding:2rem 1.75rem 1.5rem;box-shadow:0 0 80px rgba(244,114,182,.45);animation:seokBdayPop .55s ease-out}
+                .seok-bday-eyebrow{font-family:'Jua',sans-serif;font-size:clamp(1rem,2.4vw,1.35rem);letter-spacing:.28em;color:#f9a8d4;margin-bottom:.35rem}
+                .seok-bday-title{font-family:'Jua',sans-serif;font-size:clamp(2.4rem,6.5vw,4.2rem);line-height:1.2;font-weight:400;color:#fde68a;animation:seokBdayShine 1.6s ease-in-out infinite}
+                .seok-bday-cake{font-size:clamp(4rem,10vw,6.5rem);line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.5rem 0 .75rem}
+                .seok-bday-msg{font-family:'Gaegu',cursive;font-size:clamp(1.45rem,3.6vw,2.15rem);line-height:1.45;color:#fce7f3;font-weight:700;margin-bottom:1rem}
+                .seok-bday-msg .hi{color:#fde68a}
+                .seok-bday-lyric{font-family:'Jua',sans-serif;min-height:4.2rem;display:flex;align-items:center;justify-content:center;
+                    font-size:clamp(1.9rem,5.2vw,3.1rem);font-weight:400;color:#fff;line-height:1.25;
+                    text-shadow:0 0 22px rgba(244,114,182,.95);animation:seokBdayLyricIn .35s ease-out}
+                .seok-bday-hint{font-family:'Gaegu',cursive;font-size:clamp(1.1rem,2.5vw,1.45rem);color:#cbd5e1;margin:.85rem 0 1rem}
+                .seok-bday-close{font-family:'Jua',sans-serif;font-size:clamp(1.05rem,2.4vw,1.35rem)!important;padding:1rem 1.25rem!important}
+                .seok-bday-confetti{position:absolute;top:-12px;width:12px;height:16px;border-radius:2px;z-index:1;
                     animation-name:seokBdayConfettiFall;animation-timing-function:linear;animation-fill-mode:forwards;pointer-events:none}
+                @media (max-width:640px){
+                    .seok-bday-card{padding:1.35rem 1rem 1.1rem;border-radius:1.5rem}
+                }
             `;
-            document.head.appendChild(style);
         }
 
         function showSeokBirthdayClassStartAlert({ period, subjectLine }) {
@@ -2128,19 +2145,19 @@ function redrawPlazaGrantsUi() {
                 const d = document.createElement('div');
                 d.className = 'fixed inset-0 z-[310] flex items-center justify-center bg-black/85 px-4';
                 d.innerHTML = `
-                    <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border-2 border-pink-400/50 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                        <div class="text-4xl">🎂🎉🍦</div>
-                        <h3 class="text-xl font-display text-pink-100">6교시 수업 준비</h3>
-                        <p class="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">${period.label} (${period.start}~${period.end})
+                    <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-8 sm:p-10 rounded-3xl border-2 border-pink-400/50 max-w-xl w-full text-center space-y-5 shadow-2xl">
+                        <div class="text-6xl sm:text-7xl">🎂🎉🍦</div>
+                        <h3 class="text-3xl sm:text-4xl font-display text-pink-100" style="font-family:'Jua',sans-serif">6교시 수업 준비</h3>
+                        <p class="text-lg sm:text-xl text-slate-100 whitespace-pre-wrap leading-relaxed" style="font-family:'Gaegu',cursive;font-weight:700">${period.label} (${period.start}~${period.end})
 ${subjectLine}
 
 오늘은 <span class="text-amber-300 font-black">석서영</span> 생일!
 아이스크림 케이크와 함께
 생일 파티를 준비해요 🎈</p>
-                        <button type="button" class="js-seok-class-start w-full bg-gradient-to-r from-pink-600 to-amber-500 hover:from-pink-500 hover:to-amber-400 text-white font-black py-3 px-6 rounded-full text-base shadow-lg border border-amber-200/40">
+                        <button type="button" class="js-seok-class-start w-full bg-gradient-to-r from-pink-600 to-amber-500 hover:from-pink-500 hover:to-amber-400 text-white font-black py-4 px-6 rounded-full text-xl sm:text-2xl shadow-lg border border-amber-200/40" style="font-family:'Jua',sans-serif">
                             수업시작 🎂
                         </button>
-                        <button type="button" class="js-seok-class-later w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-6 rounded-full text-xs">
+                        <button type="button" class="js-seok-class-later w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-3 px-6 rounded-full text-base">
                             나중에
                         </button>
                     </div>`;
@@ -2177,18 +2194,18 @@ ${subjectLine}
             overlay.className = 'seok-bday-overlay';
             overlay.innerHTML = `
                 <div class="seok-bday-card">
-                    <p class="text-[10px] font-black tracking-[0.35em] text-pink-300/90 mb-1">SPECIAL BIRTHDAY CLASS</p>
+                    <p class="seok-bday-eyebrow">SPECIAL BIRTHDAY CLASS</p>
                     <h2 class="seok-bday-title">석서영 생일 축하합니다!</h2>
                     <div class="seok-bday-cake" aria-hidden="true">🍦🎂✨</div>
-                    <p class="text-sm text-pink-100/95 font-bold leading-relaxed mb-3">
+                    <p class="seok-bday-msg">
                         6교시 수업을 열며<br>
-                        <span class="text-amber-200">서영이</span>의 특별한 하루를 함께 축하해요!<br>
+                        <span class="hi">서영이</span>의 특별한 하루를 함께 축하해요!<br>
                         아이스크림 케이크를 나눠 먹고<br>
                         신나는 생일 파티를 시작합시다 🎉
                     </p>
                     <div id="seokBirthdayLyric" class="seok-bday-lyric">🎵 준비... 🎵</div>
-                    <p class="text-[10px] text-slate-400 mt-3 mb-3">다 같이 손뼉 치며 노래해요!</p>
-                    <button type="button" class="js-seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-full text-xs border border-white/15">
+                    <p class="seok-bday-hint">다 같이 손뼉 치며 크게 노래해요!</p>
+                    <button type="button" class="js-seok-bday-close seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full border border-white/15">
                         파티 마무리 · 수업 시작!
                     </button>
                 </div>`;

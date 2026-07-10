@@ -1990,6 +1990,11 @@ function redrawPlazaGrantsUi() {
                 localStorage.setItem(alertKey, '1');
                 const subject = String(today[period.id] || '').trim();
                 const subjectLine = subject ? `과목: ${subject}` : '과목: (시간표 미입력)';
+                // 석서영 생일(7/10) 6교시: 수업시작 버튼 → 생일 축하 파티
+                if (period.id === 6 && isSeokBirthdayPartyDay(now)) {
+                    void showSeokBirthdayClassStartAlert({ period, subjectLine });
+                    continue;
+                }
                 void window.customAlert(
                     `🔔 수업 준비 알림\n\n` +
                     `${period.label} (${period.start}~${period.end})\n` +
@@ -1998,6 +2003,240 @@ function redrawPlazaGrantsUi() {
                 );
             }
         }
+
+        // ==========================================
+        // ★ 석서영 생일 파티 (6교시 수업시작) ★
+        // ==========================================
+        const SEOK_BIRTHDAY = {
+            studentId: '13',
+            name: '석서영',
+            month: 7,
+            day: 10,
+        };
+
+        function isSeokBirthdayPartyDay(now = new Date()) {
+            return now.getMonth() + 1 === SEOK_BIRTHDAY.month && now.getDate() === SEOK_BIRTHDAY.day;
+        }
+
+        function scheduleTone({ freq, start, duration, type = 'sine', gain = 0.18, detune = 0 }) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, start);
+            if (detune) osc.detune.setValueAtTime(detune, start);
+            g.gain.setValueAtTime(0.0001, start);
+            g.gain.exponentialRampToValueAtTime(gain, start + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(0.05, duration - 0.02));
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start(start);
+            osc.stop(start + duration + 0.05);
+        }
+
+        function playBirthdayFanfare() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const t0 = audioCtx.currentTime + 0.05;
+            const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+            notes.forEach((f, i) => {
+                scheduleTone({ freq: f, start: t0 + i * 0.09, duration: 0.22, type: 'triangle', gain: 0.2 });
+                scheduleTone({ freq: f * 2, start: t0 + i * 0.09, duration: 0.18, type: 'sine', gain: 0.08 });
+            });
+            // 마지막 화음 팡파레
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+                scheduleTone({ freq: f, start: t0 + 0.55, duration: 0.55, type: 'triangle', gain: 0.16 - i * 0.02 });
+            });
+        }
+
+        /** Happy Birthday 멜로디 + 가사 타임라인 (초) */
+        function getSeokBirthdaySongTimeline() {
+            // C4=261.63 D4=293.66 E4=329.63 F4=349.23 G4=392 A4=440 Bb4=466.16 C5=523.25
+            const N = {
+                C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23,
+                G4: 392.00, A4: 440.00, Bb4: 466.16, C5: 523.25,
+            };
+            // 각 음표 [freq, startSec, durationSec]
+            const melody = [
+                [N.C4, 0.00, 0.28], [N.C4, 0.30, 0.22], [N.D4, 0.55, 0.45], [N.C4, 1.05, 0.45], [N.F4, 1.55, 0.45], [N.E4, 2.05, 0.70],
+                [N.C4, 2.90, 0.28], [N.C4, 3.20, 0.22], [N.D4, 3.45, 0.45], [N.C4, 3.95, 0.45], [N.G4, 4.45, 0.45], [N.F4, 4.95, 0.70],
+                [N.C4, 5.80, 0.28], [N.C4, 6.10, 0.22], [N.C5, 6.35, 0.45], [N.A4, 6.85, 0.45], [N.F4, 7.35, 0.40], [N.E4, 7.80, 0.40], [N.D4, 8.25, 0.70],
+                [N.Bb4, 9.10, 0.28], [N.Bb4, 9.40, 0.22], [N.A4, 9.65, 0.45], [N.F4, 10.15, 0.45], [N.G4, 10.65, 0.45], [N.F4, 11.15, 0.85],
+            ];
+            const lyrics = [
+                { at: 0.00, text: '생일 축하합니다~' },
+                { at: 2.90, text: '생일 축하합니다~' },
+                { at: 5.80, text: '사랑하는 서영아~' },
+                { at: 9.10, text: '생일 축하합니다!' },
+                { at: 12.10, text: '🍦 아이스크림 케이크 파티 GO!' },
+            ];
+            return { melody, lyrics, durationSec: 13.2 };
+        }
+
+        function playSeokBirthdaySong() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const { melody } = getSeokBirthdaySongTimeline();
+            const t0 = audioCtx.currentTime + 0.08;
+            melody.forEach(([freq, start, dur]) => {
+                scheduleTone({ freq, start: t0 + start, duration: dur, type: 'triangle', gain: 0.22 });
+                scheduleTone({ freq: freq * 2, start: t0 + start, duration: dur * 0.85, type: 'sine', gain: 0.07 });
+            });
+            return t0;
+        }
+
+        function spawnBirthdayConfetti(root, count = 55) {
+            const colors = ['#f472b6', '#fbbf24', '#34d399', '#60a5fa', '#c084fc', '#fb7185', '#fde68a'];
+            for (let i = 0; i < count; i++) {
+                const p = document.createElement('span');
+                p.className = 'seok-bday-confetti';
+                p.style.left = `${Math.random() * 100}%`;
+                p.style.background = colors[i % colors.length];
+                p.style.animationDelay = `${Math.random() * 0.8}s`;
+                p.style.animationDuration = `${2.2 + Math.random() * 2.2}s`;
+                p.style.transform = `rotate(${Math.random() * 360}deg)`;
+                root.appendChild(p);
+            }
+        }
+
+        function ensureSeokBirthdayStyles() {
+            if (document.getElementById('seokBirthdayStyles')) return;
+            const style = document.createElement('style');
+            style.id = 'seokBirthdayStyles';
+            style.textContent = `
+                @keyframes seokBdayPop { 0%{transform:scale(.6);opacity:0} 60%{transform:scale(1.08);opacity:1} 100%{transform:scale(1)} }
+                @keyframes seokBdayShine { 0%,100%{filter:drop-shadow(0 0 8px rgba(251,191,36,.4))} 50%{filter:drop-shadow(0 0 22px rgba(244,114,182,.85))} }
+                @keyframes seokBdayConfettiFall { 0%{transform:translateY(-10vh) rotate(0deg);opacity:1} 100%{transform:translateY(110vh) rotate(720deg);opacity:0} }
+                @keyframes seokBdayCakeBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+                @keyframes seokBdayLyricIn { 0%{opacity:0;transform:translateY(12px) scale(.95)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+                .seok-bday-overlay{position:fixed;inset:0;z-index:420;display:flex;align-items:center;justify-content:center;padding:1rem;
+                    background:radial-gradient(circle at 50% 20%,rgba(251,191,36,.35),transparent 40%),
+                    linear-gradient(160deg,#831843 0%,#4c1d95 45%,#0f172a 100%);overflow:hidden}
+                .seok-bday-card{position:relative;z-index:2;max-width:28rem;width:100%;text-align:center;border-radius:1.75rem;
+                    border:2px solid rgba(251,191,36,.55);background:rgba(15,23,42,.82);backdrop-filter:blur(10px);
+                    padding:1.5rem 1.25rem 1.25rem;box-shadow:0 0 60px rgba(244,114,182,.35);animation:seokBdayPop .55s ease-out}
+                .seok-bday-title{font-size:1.85rem;line-height:1.15;font-weight:900;color:#fde68a;animation:seokBdayShine 1.6s ease-in-out infinite}
+                .seok-bday-cake{font-size:3.4rem;line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.35rem 0 .5rem}
+                .seok-bday-lyric{min-height:2.8rem;display:flex;align-items:center;justify-content:center;font-size:1.25rem;font-weight:900;color:#fff;
+                    text-shadow:0 0 18px rgba(244,114,182,.8);animation:seokBdayLyricIn .35s ease-out}
+                .seok-bday-confetti{position:absolute;top:-12px;width:10px;height:14px;border-radius:2px;z-index:1;
+                    animation-name:seokBdayConfettiFall;animation-timing-function:linear;animation-fill-mode:forwards;pointer-events:none}
+            `;
+            document.head.appendChild(style);
+        }
+
+        function showSeokBirthdayClassStartAlert({ period, subjectLine }) {
+            return new Promise((resolve) => {
+                const d = document.createElement('div');
+                d.className = 'fixed inset-0 z-[310] flex items-center justify-center bg-black/85 px-4';
+                d.innerHTML = `
+                    <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border-2 border-pink-400/50 max-w-sm w-full text-center space-y-4 shadow-2xl">
+                        <div class="text-4xl">🎂🎉🍦</div>
+                        <h3 class="text-xl font-display text-pink-100">6교시 수업 준비</h3>
+                        <p class="text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">${period.label} (${period.start}~${period.end})
+${subjectLine}
+
+오늘은 <span class="text-amber-300 font-black">석서영</span> 생일!
+아이스크림 케이크와 함께
+생일 파티를 준비해요 🎈</p>
+                        <button type="button" class="js-seok-class-start w-full bg-gradient-to-r from-pink-600 to-amber-500 hover:from-pink-500 hover:to-amber-400 text-white font-black py-3 px-6 rounded-full text-base shadow-lg border border-amber-200/40">
+                            수업시작 🎂
+                        </button>
+                        <button type="button" class="js-seok-class-later w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-6 rounded-full text-xs">
+                            나중에
+                        </button>
+                    </div>`;
+                document.body.appendChild(d);
+                const startBtn = d.querySelector('.js-seok-class-start');
+                const laterBtn = d.querySelector('.js-seok-class-later');
+                if (startBtn) {
+                    startBtn.onclick = () => {
+                        d.remove();
+                        window.startSeokBirthdayParty();
+                        resolve(true);
+                    };
+                }
+                if (laterBtn) {
+                    laterBtn.onclick = () => { d.remove(); resolve(false); };
+                }
+            });
+        }
+
+        let _seokBirthdayTimers = [];
+        function clearSeokBirthdayTimers() {
+            _seokBirthdayTimers.forEach((id) => clearTimeout(id));
+            _seokBirthdayTimers = [];
+        }
+
+        window.startSeokBirthdayParty = function() {
+            ensureSeokBirthdayStyles();
+            clearSeokBirthdayTimers();
+            const existing = document.getElementById('seokBirthdayOverlay');
+            if (existing) existing.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'seokBirthdayOverlay';
+            overlay.className = 'seok-bday-overlay';
+            overlay.innerHTML = `
+                <div class="seok-bday-card">
+                    <p class="text-[10px] font-black tracking-[0.35em] text-pink-300/90 mb-1">SPECIAL BIRTHDAY CLASS</p>
+                    <h2 class="seok-bday-title">석서영 생일 축하합니다!</h2>
+                    <div class="seok-bday-cake" aria-hidden="true">🍦🎂✨</div>
+                    <p class="text-sm text-pink-100/95 font-bold leading-relaxed mb-3">
+                        6교시 수업을 열며<br>
+                        <span class="text-amber-200">서영이</span>의 특별한 하루를 함께 축하해요!<br>
+                        아이스크림 케이크를 나눠 먹고<br>
+                        신나는 생일 파티를 시작합시다 🎉
+                    </p>
+                    <div id="seokBirthdayLyric" class="seok-bday-lyric">🎵 준비... 🎵</div>
+                    <p class="text-[10px] text-slate-400 mt-3 mb-3">다 같이 손뼉 치며 노래해요!</p>
+                    <button type="button" class="js-seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-full text-xs border border-white/15">
+                        파티 마무리 · 수업 시작!
+                    </button>
+                </div>`;
+            document.body.appendChild(overlay);
+            spawnBirthdayConfetti(overlay, 64);
+
+            const close = () => {
+                clearSeokBirthdayTimers();
+                overlay.remove();
+            };
+            const closeBtn = overlay.querySelector('.js-seok-bday-close');
+            if (closeBtn) closeBtn.onclick = close;
+
+            playBirthdayFanfare();
+            const lyricEl = document.getElementById('seokBirthdayLyric');
+            const { lyrics, durationSec } = getSeokBirthdaySongTimeline();
+
+            // 팡파레 직후 노래 + 가사
+            const songDelayMs = 850;
+            _seokBirthdayTimers.push(setTimeout(() => {
+                playSeokBirthdaySong();
+                lyrics.forEach((row) => {
+                    _seokBirthdayTimers.push(setTimeout(() => {
+                        if (!lyricEl) return;
+                        lyricEl.style.animation = 'none';
+                        // reflow로 애니메이션 재시작
+                        void lyricEl.offsetWidth;
+                        lyricEl.style.animation = '';
+                        lyricEl.textContent = row.text;
+                    }, Math.round(row.at * 1000)));
+                });
+            }, songDelayMs));
+
+            // 노래 끝난 뒤 마무리 멘트
+            _seokBirthdayTimers.push(setTimeout(() => {
+                if (!lyricEl) return;
+                lyricEl.textContent = '🥳 서영아, 생일 정말 축하해!';
+                spawnBirthdayConfetti(overlay, 40);
+            }, songDelayMs + Math.round(durationSec * 1000)));
+        };
+
+        /** 마스터용: 생일 파티를 지금 바로 실행 (리허설) */
+        window.previewSeokBirthdayParty = function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 미리보기를 실행할 수 있습니다.');
+            }
+            return window.startSeokBirthdayParty();
+        };
 
         /** 상점 기본가(SHOP_DATA) — 마스터가 저장한 shopPrices와 병합 시 기준 */
         function getDefaultShopPrice(shopId) {

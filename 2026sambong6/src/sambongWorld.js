@@ -2074,17 +2074,47 @@ function redrawPlazaGrantsUi() {
             return { melody, lyrics, durationSec: 13.2 };
         }
 
+        function playCountdownBeep(freq = 880) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const t0 = audioCtx.currentTime;
+            scheduleTone({ freq, start: t0, duration: 0.18, type: 'square', gain: 0.28 });
+            scheduleTone({ freq: freq * 2, start: t0, duration: 0.14, type: 'sine', gain: 0.12 });
+        }
+
+        function playCountdownStartChord() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const t0 = audioCtx.currentTime;
+            [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+                scheduleTone({ freq: f, start: t0, duration: 0.45, type: 'triangle', gain: 0.22 - i * 0.02 });
+                scheduleTone({ freq: f, start: t0, duration: 0.4, type: 'square', gain: 0.14 - i * 0.015 });
+            });
+        }
+
+        /** 음표 root에 메이저 화음(루트·3·5·옥타브)을 겹쳐 풍성하게 재생 */
+        function scheduleChord({ root, start, duration, gain = 0.28 }) {
+            const third = root * Math.pow(2, 4 / 12);   // 메이저 3도
+            const fifth = root * Math.pow(2, 7 / 12);   // 완전 5도
+            const octave = root * 2;
+            // 본음 레이어
+            scheduleTone({ freq: root, start, duration, type: 'triangle', gain: gain * 0.95 });
+            scheduleTone({ freq: root, start, duration, type: 'square', gain: gain * 0.55 });
+            // 화음
+            scheduleTone({ freq: third, start, duration: duration * 0.95, type: 'triangle', gain: gain * 0.55 });
+            scheduleTone({ freq: fifth, start, duration: duration * 0.95, type: 'sine', gain: gain * 0.5 });
+            scheduleTone({ freq: octave, start, duration: duration * 0.9, type: 'sine', gain: gain * 0.35 });
+            // 한 옥타브 아래 베이스
+            scheduleTone({ freq: root / 2, start, duration, type: 'triangle', gain: gain * 0.32 });
+            // 살짝 지연된 반주(스트럼 느낌)
+            scheduleTone({ freq: fifth / 2, start: start + 0.03, duration: duration * 0.9, type: 'sine', gain: gain * 0.18 });
+        }
+
         function playSeokBirthdaySong() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             const { melody } = getSeokBirthdaySongTimeline();
-            const t0 = audioCtx.currentTime + 0.08;
+            const t0 = audioCtx.currentTime + 0.05;
             melody.forEach(([freq, start, dur]) => {
-                // 한 옥타브 올려서 교실에서도 잘 들리게 + 겹겹이 크게
-                const f = freq * 2;
-                scheduleTone({ freq: f, start: t0 + start, duration: dur, type: 'square', gain: 0.42 });
-                scheduleTone({ freq: f, start: t0 + start, duration: dur, type: 'triangle', gain: 0.36 });
-                scheduleTone({ freq: f * 2, start: t0 + start, duration: dur * 0.9, type: 'sine', gain: 0.18 });
-                scheduleTone({ freq: f / 2, start: t0 + start, duration: dur, type: 'triangle', gain: 0.12 });
+                // 한 옥타브 올린 루트로 교실에서도 잘 들리게 + 메이저 화음
+                scheduleChord({ root: freq * 2, start: t0 + start, duration: dur, gain: 0.34 });
             });
             return t0;
         }
@@ -2130,6 +2160,7 @@ function redrawPlazaGrantsUi() {
                 .seok-bday-lyric{font-family:'Jua',sans-serif;min-height:4.2rem;display:flex;align-items:center;justify-content:center;
                     font-size:clamp(1.9rem,5.2vw,3.1rem);font-weight:400;color:#fff;line-height:1.25;
                     text-shadow:0 0 22px rgba(244,114,182,.95);animation:seokBdayLyricIn .35s ease-out}
+                .seok-bday-lyric.is-countdown{font-size:clamp(2.6rem,8vw,4.8rem);color:#fde68a;text-shadow:0 0 28px rgba(251,191,36,.95)}
                 .seok-bday-hint{font-family:'Gaegu',cursive;font-size:clamp(1.1rem,2.5vw,1.45rem);color:#cbd5e1;margin:.85rem 0 1rem}
                 .seok-bday-close{font-family:'Jua',sans-serif;font-size:clamp(1.05rem,2.4vw,1.35rem)!important;padding:1rem 1.25rem!important}
                 .seok-bday-confetti{position:absolute;top:-12px;width:12px;height:16px;border-radius:2px;z-index:1;
@@ -2203,14 +2234,14 @@ ${subjectLine}
                         아이스크림 케이크를 나눠 먹고<br>
                         신나는 생일 파티를 시작합시다 🎉
                     </p>
-                    <div id="seokBirthdayLyric" class="seok-bday-lyric">🎵 준비... 🎵</div>
-                    <p class="seok-bday-hint">다 같이 손뼉 치며 크게 노래해요!</p>
+                    <div id="seokBirthdayLyric" class="seok-bday-lyric is-countdown">다함께 노래 불러요~</div>
+                    <p class="seok-bday-hint">크게 손뼉 치며 준비하세요!</p>
                     <button type="button" class="js-seok-bday-close seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full border border-white/15">
                         파티 마무리 · 수업 시작!
                     </button>
                 </div>`;
             document.body.appendChild(overlay);
-            spawnBirthdayConfetti(overlay, 64);
+            spawnBirthdayConfetti(overlay, 48);
 
             const close = () => {
                 clearSeokBirthdayTimers();
@@ -2219,32 +2250,59 @@ ${subjectLine}
             const closeBtn = overlay.querySelector('.js-seok-bday-close');
             if (closeBtn) closeBtn.onclick = close;
 
-            playBirthdayFanfare();
             const lyricEl = document.getElementById('seokBirthdayLyric');
+            const hintEl = overlay.querySelector('.seok-bday-hint');
             const { lyrics, durationSec } = getSeokBirthdaySongTimeline();
 
-            // 팡파레 직후 노래 + 가사
-            const songDelayMs = 850;
+            function setLyricText(text, countdown = false) {
+                if (!lyricEl) return;
+                lyricEl.classList.toggle('is-countdown', !!countdown);
+                lyricEl.style.animation = 'none';
+                void lyricEl.offsetWidth;
+                lyricEl.style.animation = '';
+                lyricEl.textContent = text;
+            }
+
+            // 1) 다함께 노래 불러요~ → 2) 3,2,1 → 3) 시작~ → 4) 팡파레+멜로디
+            const cueSteps = [
+                { atMs: 0, text: '다함께 노래 불러요~', countdown: true, beep: null },
+                { atMs: 1800, text: '3', countdown: true, beep: 880 },
+                { atMs: 2800, text: '2', countdown: true, beep: 880 },
+                { atMs: 3800, text: '1', countdown: true, beep: 880 },
+                { atMs: 4800, text: '시작~', countdown: true, beep: 'start' },
+            ];
+            const songStartMs = 5600;
+
+            cueSteps.forEach((step) => {
+                _seokBirthdayTimers.push(setTimeout(() => {
+                    setLyricText(step.text, step.countdown);
+                    if (step.beep === 'start') playCountdownStartChord();
+                    else if (typeof step.beep === 'number') playCountdownBeep(step.beep);
+                }, step.atMs));
+            });
+
             _seokBirthdayTimers.push(setTimeout(() => {
+                if (hintEl) hintEl.textContent = '다 같이 손뼉 치며 크게 노래해요!';
+                playBirthdayFanfare();
+            }, songStartMs));
+
+            // 팡파레(약 0.9초) 후 멜로디 + 가사
+            const melodyOffsetMs = songStartMs + 900;
+            _seokBirthdayTimers.push(setTimeout(() => {
+                if (lyricEl) lyricEl.classList.remove('is-countdown');
                 playSeokBirthdaySong();
                 lyrics.forEach((row) => {
                     _seokBirthdayTimers.push(setTimeout(() => {
-                        if (!lyricEl) return;
-                        lyricEl.style.animation = 'none';
-                        // reflow로 애니메이션 재시작
-                        void lyricEl.offsetWidth;
-                        lyricEl.style.animation = '';
-                        lyricEl.textContent = row.text;
+                        setLyricText(row.text, false);
                     }, Math.round(row.at * 1000)));
                 });
-            }, songDelayMs));
+            }, melodyOffsetMs));
 
             // 노래 끝난 뒤 마무리 멘트
             _seokBirthdayTimers.push(setTimeout(() => {
-                if (!lyricEl) return;
-                lyricEl.textContent = '🥳 서영아, 생일 정말 축하해!';
+                setLyricText('🥳 서영아, 생일 정말 축하해!', false);
                 spawnBirthdayConfetti(overlay, 40);
-            }, songDelayMs + Math.round(durationSec * 1000)));
+            }, melodyOffsetMs + Math.round(durationSec * 1000)));
         };
 
         /** 마스터용: 생일 파티를 지금 바로 실행 (리허설) */

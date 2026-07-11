@@ -3493,6 +3493,18 @@ ${subjectLine}
             return getSanitizedWorldCupBetState(window.globalSettings && window.globalSettings.worldCupBet);
         }
 
+        function getWorldCupSettlementStudentRefs() {
+            const ids = new Set(getActiveStudentIds().map(String));
+            (window.allStudentsData || []).forEach((stu) => {
+                if (!stu || stu.id === 'gm' || stu.id === 'gm_a') return;
+                ids.add(String(stu.id));
+            });
+            return Array.from(ids).map((sid) => ({
+                sid,
+                ref: doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+            }));
+        }
+
         function getWorldCupOddsEntry(market, pick) {
             const table = WORLD_CUP_ODDS[market];
             if (!table || !table[pick]) return null;
@@ -3853,49 +3865,70 @@ ${subjectLine}
                     result,
                     settledAt,
                 };
-                let winnerCount = 0;
-                let totalPayout = 0;
-                const batch = writeBatch(db);
-                const rows = (window.allStudentsData || []).filter((s) => s && s.id !== 'gm' && s.id !== 'gm_a');
-                rows.forEach((stu) => {
-                    const sid = String(stu.id);
-                    const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
-                    let payoutSum = 0;
-                    let changed = false;
-                    const nextBets = bets.map((bet) => {
-                        if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
-                        changed = true;
-                        const won = String(bet.pick) === String(result[bet.market]);
-                        const payout = won ? normalizeBongValue(Number(bet.stake || 0) * Number(bet.odds || 0)) : 0;
-                        if (won) {
-                            payoutSum = normalizeBongValue(payoutSum + payout);
-                            winnerCount += 1;
-                        }
-                        return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
-                    });
-                    if (!changed) return;
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-                    const payload = { worldCupBets: nextBets.slice(-40) };
-                    if (payoutSum > 0) payload.bong = increment(payoutSum);
-                    batch.set(ref, payload, { merge: true });
-                    totalPayout = normalizeBongValue(totalPayout + payoutSum);
-                    if (sid === String(localStorage.getItem('sambong_student_id') || '')) {
-                        window.playerState.worldCupBets = nextBets.slice(-40);
-                        if (payoutSum > 0) {
-                            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payoutSum);
-                        }
+                const mySid = String(localStorage.getItem('sambong_student_id') || '');
+                const settlement = await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const latestWc = getSanitizedWorldCupBetState(settingsSnap.exists() ? settingsSnap.data().worldCupBet : null);
+                    if (latestWc.settled) throw new Error('already_settled');
+                    const studentRows = [];
+                    for (const row of getWorldCupSettlementStudentRefs()) {
+                        const snap = await transaction.get(row.ref);
+                        studentRows.push({ ...row, snap });
                     }
+
+                    let winnerCount = 0;
+                    let totalPayout = 0;
+                    let myNextBets = null;
+                    let myPayout = 0;
+                    studentRows.forEach(({ sid, ref, snap }) => {
+                        if (!snap.exists()) return;
+                        const stu = snap.data() || {};
+                        const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
+                        let payoutSum = 0;
+                        let changed = false;
+                        const nextBets = bets.map((bet) => {
+                            if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
+                            changed = true;
+                            const won = String(bet.pick) === String(result[bet.market]);
+                            const payout = won ? normalizeBongValue(Number(bet.stake || 0) * Number(bet.odds || 0)) : 0;
+                            if (won) {
+                                payoutSum = normalizeBongValue(payoutSum + payout);
+                                winnerCount += 1;
+                            }
+                            return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
+                        });
+                        if (!changed) return;
+                        const slicedBets = nextBets.slice(-40);
+                        const payload = { worldCupBets: slicedBets };
+                        if (payoutSum > 0) payload.bong = increment(payoutSum);
+                        transaction.set(ref, payload, { merge: true });
+                        totalPayout = normalizeBongValue(totalPayout + payoutSum);
+                        if (sid === mySid) {
+                            myNextBets = slicedBets;
+                            myPayout = payoutSum;
+                        }
+                    });
+                    transaction.set(settingsRef, { worldCupBet: nextWc }, { merge: true });
+                    return { winnerCount, totalPayout, myNextBets, myPayout };
                 });
-                batch.set(getGlobalSettingsDocRef(), { worldCupBet: nextWc }, { merge: true });
-                await batch.commit();
+                if (settlement.myNextBets && window.playerState) {
+                    window.playerState.worldCupBets = settlement.myNextBets;
+                    if (settlement.myPayout > 0) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + settlement.myPayout);
+                    }
+                }
                 window.globalSettings.worldCupBet = nextWc;
                 await refreshStudentsCacheFromServer();
                 updateUI();
                 renderWorldCupBetPanel();
                 await window.customAlert(
-                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${formatBongDisplay(totalPayout)}B`
+                    `✅ 승부예측 정산 완료!\n적중 ${settlement.winnerCount}건 · 총 지급 ${formatBongDisplay(settlement.totalPayout)}B`
                 );
             } catch (e) {
+                if (e && e.message === 'already_settled') {
+                    return await window.customAlert('이미 정산된 경기입니다.');
+                }
                 console.error('settleWorldCupBetAdmin', e);
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
             }
@@ -5027,6 +5060,19 @@ ${subjectLine}
             };
         }
 
+        function sanitizeLearningThermometerSettlementState(raw) {
+            const state = sanitizeLearningThermometerState(raw);
+            const src = raw && typeof raw === 'object' ? raw : {};
+            const rawValues = src.values && typeof src.values === 'object' ? src.values : {};
+            const values = {};
+            Object.keys(rawValues).forEach((sid) => {
+                const id = String(sid);
+                const val = Math.max(state.min, Math.min(state.max, Math.round(Number(rawValues[id]) || 0)));
+                if (val !== 0) values[id] = val;
+            });
+            return { ...state, values };
+        }
+
         function getLearningThermometerState() {
             return sanitizeLearningThermometerState(window.globalSettings && window.globalSettings.learningThermometer);
         }
@@ -5285,17 +5331,18 @@ ${subjectLine}
                     const settingsRef = getGlobalSettingsDocRef();
                     const settingsSnap = await transaction.get(settingsRef);
                     const data = settingsSnap.exists() ? settingsSnap.data() || {} : {};
-                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const state = sanitizeLearningThermometerSettlementState(data.learningThermometer);
                     const values = { ...(state.values || {}) };
                     const wasMax = Number(values['2']) === Number(state.max);
                     if (wasMax) delete values['2'];
-                    transaction.set(settingsRef, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: getLocalDateStr(),
-                        },
-                    }, { merge: true });
+                    if (wasMax) {
+                        transaction.set(settingsRef, {
+                            learningThermometer: {
+                                ...state,
+                                values,
+                            },
+                        }, { merge: true });
+                    }
                     transaction.set(markerRef, {
                         done: true,
                         touched: wasMax,
@@ -5323,16 +5370,15 @@ ${subjectLine}
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
 
-                await runTransaction(db, async (transaction) => {
-                    const ref = getGlobalSettingsDocRef();
-                    const snap = await transaction.get(ref);
+                const result = await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const snap = await transaction.get(settingsRef);
                     const data = snap.exists() ? snap.data() || {} : {};
-                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const state = sanitizeLearningThermometerSettlementState(data.learningThermometer);
                     const lockIsFresh =
                         state.settlementKey === today &&
                         state.settlementStatus === 'running' &&
@@ -5344,48 +5390,34 @@ ${subjectLine}
                     });
                     if (state.settledDate === today) {
                         if (!manual || !Object.keys(pendingValues).length) {
-                            claimed = { status: 'already_done', state };
-                            return;
+                            return { status: 'already_done', state };
                         }
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
-                        return;
+                        return { status: 'locked', state };
                     }
                     const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const claimedState = { ...state, values };
+                    const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                    const studentRows = [];
+                    for (const [sid, deltaRaw] of entries) {
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        const snap = await transaction.get(ref);
+                        studentRows.push({ sid, deltaRaw, ref, snap });
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    studentRows.forEach(({ sid, deltaRaw, ref, snap }) => {
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const stu = snap.exists() ? (snap.data() || {}) : {};
+                        const alreadyApplied = Array.isArray(stu.xpChangeLog) && stu.xpChangeLog.some((log) =>
+                            log &&
+                            log.source === 'learningThermometer' &&
+                            String(log.settledDate || '') === today
+                        );
+                        if (alreadyApplied) return;
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
@@ -5396,35 +5428,33 @@ ${subjectLine}
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { xp: afterXp, xpChangeLog: logs },
-                            { merge: true }
-                        );
+                        transaction.set(ref, { xp: afterXp, xpChangeLog: logs }, { merge: true });
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...claimedState,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(settingsRef, { learningThermometer: resetState }, { merge: true });
+                    return { status: 'done', appliedCount, totalDelta, resetState };
+                });
+
+                if (result.status !== 'done') return result;
+                setLocalLearningThermometerState(result.resetState);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return result;
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -7744,13 +7774,13 @@ ${subjectLine}
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
+            const refundB = normalizeBongValue(Number(order.price) || 0);
             const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongDisplay(refundB)}B가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
-            const refundB = normalizeBongValue(Number(order.price) || 0);
             try {
                 await runTransaction(db, async (transaction) => {
                     const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
@@ -9135,6 +9165,18 @@ ${subjectLine}
             return true;
         }
 
+        let _bankManualSaveInFlight = 0;
+
+        async function saveManualBankChange(options) {
+            _bankManualSaveInFlight++;
+            try {
+                updateUI();
+                return await saveDataToCloud(options);
+            } finally {
+                _bankManualSaveInFlight = Math.max(0, _bankManualSaveInFlight - 1);
+            }
+        }
+
         window.updateBankPanel = function() {
             const w = document.getElementById('bankWalletDisplay');
             const s = document.getElementById('bankRegularDisplay');
@@ -9230,8 +9272,7 @@ ${subjectLine}
             window.playerState.bong = normalizeBongValue(wallet - amt);
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
-            updateUI();
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
+            const saved = await saveManualBankChange({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
             if (!saved) return;
             window.customAlert(`🏦 일반예금에 ${formatBongDisplay(amt)} B를 넣었습니다.`);
         };
@@ -9249,8 +9290,7 @@ ${subjectLine}
             window.playerState.bankRegularSavings = normalizeBongValue(sav - amt);
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + amt);
             if (inp) inp.value = '';
-            updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금' });
+            const saved = await saveManualBankChange({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금' });
             if (!saved) return;
             window.customAlert(`💵 ${formatBongDisplay(amt)} B를 찾았습니다.`);
         };
@@ -9266,8 +9306,7 @@ ${subjectLine}
             window.playerState.bankRegularSavings = 0;
             const inp = document.getElementById('bankWithdrawInput');
             if (inp) inp.value = '';
-            updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금' });
+            const saved = await saveManualBankChange({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금' });
             if (!saved) return;
             await window.customAlert(`💵 ${formatBongDisplay(sav)} B를 모두 찾았습니다.`);
         };
@@ -9322,8 +9361,7 @@ ${subjectLine}
             arr.splice(idx, 1);
             window.playerState.bankTermDeposits = arr;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
-            updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
+            const saved = await saveManualBankChange({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
             if (!saved) return;
             await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
@@ -10042,7 +10080,7 @@ ${subjectLine}
             updateLunchInvestLockUI();
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
-            if (bankProcessingNeedSave) {
+            if (bankProcessingNeedSave && _bankManualSaveInFlight === 0) {
                 saveDataToCloud({
                     allowBankFieldChanges: true,
                     operationLabel: bankSaveOperationLabel || '은행 자동 처리',
@@ -10382,7 +10420,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

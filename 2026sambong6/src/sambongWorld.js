@@ -1973,6 +1973,8 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        const _classStartReminderPendingKeys = new Set();
+
         function checkClassStartReminders(now = new Date()) {
             if (!window.playerState || !window.playerState.isAdmin) return;
             const dayKey = getClassTimetableDayKeyFromDate(now);
@@ -1987,14 +1989,22 @@ function redrawPlazaGrantsUi() {
                 if (nowMin < startMin || nowMin >= startMin + 2) continue;
                 const alertKey = `sambong_class_prep_${dateKey}_${period.id}`;
                 if (localStorage.getItem(alertKey) === '1') continue;
-                localStorage.setItem(alertKey, '1');
+                if (_classStartReminderPendingKeys.has(alertKey)) continue;
                 const subject = String(today[period.id] || '').trim();
                 const subjectLine = subject ? `과목: ${subject}` : '과목: (시간표 미입력)';
                 // 석서영 생일(7/10) 6교시: 수업시작 버튼 → 생일 축하 파티
                 if (period.id === 6 && isSeokBirthdayPartyDay(now)) {
-                    void showSeokBirthdayClassStartAlert({ period, subjectLine });
+                    _classStartReminderPendingKeys.add(alertKey);
+                    void showSeokBirthdayClassStartAlert({ period, subjectLine })
+                        .then((started) => {
+                            if (started) localStorage.setItem(alertKey, '1');
+                        })
+                        .finally(() => {
+                            _classStartReminderPendingKeys.delete(alertKey);
+                        });
                     continue;
                 }
+                localStorage.setItem(alertKey, '1');
                 void window.customAlert(
                     `🔔 수업 준비 알림\n\n` +
                     `${period.label} (${period.start}~${period.end})\n` +
@@ -2179,9 +2189,7 @@ function redrawPlazaGrantsUi() {
                     <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-8 sm:p-10 rounded-3xl border-2 border-pink-400/50 max-w-xl w-full text-center space-y-5 shadow-2xl">
                         <div class="text-6xl sm:text-7xl">🎂🎉🍦</div>
                         <h3 class="text-3xl sm:text-4xl font-display text-pink-100" style="font-family:'Jua',sans-serif">6교시 수업 준비</h3>
-                        <p class="text-lg sm:text-xl text-slate-100 whitespace-pre-wrap leading-relaxed" style="font-family:'Gaegu',cursive;font-weight:700">${period.label} (${period.start}~${period.end})
-${subjectLine}
-
+                        <p class="text-lg sm:text-xl text-slate-100 whitespace-pre-wrap leading-relaxed" style="font-family:'Gaegu',cursive;font-weight:700"><span class="js-seok-class-info"></span>
 오늘은 <span class="text-amber-300 font-black">석서영</span> 생일!
 아이스크림 케이크와 함께
 생일 파티를 준비해요 🎈</p>
@@ -2193,6 +2201,8 @@ ${subjectLine}
                         </button>
                     </div>`;
                 document.body.appendChild(d);
+                const infoEl = d.querySelector('.js-seok-class-info');
+                if (infoEl) infoEl.textContent = `${period.label} (${period.start}~${period.end})\n${subjectLine}\n`;
                 const startBtn = d.querySelector('.js-seok-class-start');
                 const laterBtn = d.querySelector('.js-seok-class-later');
                 if (startBtn) {
@@ -5323,7 +5333,7 @@ ${subjectLine}
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
+            let result = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
@@ -5344,48 +5354,29 @@ ${subjectLine}
                     });
                     if (state.settledDate === today) {
                         if (!manual || !Object.keys(pendingValues).length) {
-                            claimed = { status: 'already_done', state };
+                            result = { status: 'already_done', state };
                             return;
                         }
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
+                        result = { status: 'locked', state };
                         return;
                     }
-                    const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const entries = Object.entries(pendingValues).filter(([, v]) => Number(v) !== 0);
+                    const studentRows = [];
+                    for (const [sid] of entries) {
+                        const studentRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        const studentSnap = await transaction.get(studentRef);
+                        studentRows.push({ sid, ref: studentRef, snap: studentSnap });
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    studentRows.forEach(({ sid, ref: studentRef, snap: studentSnap }) => {
+                        const deltaRaw = pendingValues[String(sid)];
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const stu = studentSnap.exists() ? (studentSnap.data() || {}) : {};
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
@@ -5396,35 +5387,39 @@ ${subjectLine}
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        transaction.set(
+                            studentRef,
                             { xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...state,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    // 학생 XP 반영과 온도계 초기화를 한 트랜잭션에 묶어 중간 실패 시 중복 정산을 막습니다.
+                    transaction.set(ref, { learningThermometer: resetState }, { merge: true });
+                    result = { status: 'done', appliedCount, totalDelta, state: resetState };
+                });
+
+                if (!result || result.status !== 'done') return result || { status: 'not_claimed' };
+
+                setLocalLearningThermometerState(result.state);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return { status: 'done', appliedCount: result.appliedCount, totalDelta: result.totalDelta };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -7067,10 +7062,12 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">알림</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <p class="js-custom-alert-message text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
                     <button type="button" class="js-custom-alert-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
                 </div>`;
             document.body.appendChild(d);
+            const msgEl = d.querySelector('.js-custom-alert-message');
+            if (msgEl) msgEl.textContent = String(m ?? '');
             const okBtn = d.querySelector('.js-custom-alert-ok');
             if (okBtn) okBtn.onclick = () => { d.remove(); r(true); };
         });
@@ -7081,13 +7078,15 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">확인</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <p class="js-custom-confirm-message text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
                     <div class="flex gap-4 mt-4">
                         <button type="button" class="js-custom-confirm-no bg-slate-700 text-white font-bold py-2 rounded-full w-full">취소</button>
                         <button type="button" class="js-custom-confirm-yes bg-sb-red text-white font-bold py-2 rounded-full w-full">확인</button>
                     </div>
                 </div>`;
             document.body.appendChild(d);
+            const msgEl = d.querySelector('.js-custom-confirm-message');
+            if (msgEl) msgEl.textContent = String(m ?? '');
             const yesBtn = d.querySelector('.js-custom-confirm-yes');
             const noBtn = d.querySelector('.js-custom-confirm-no');
             if (yesBtn) yesBtn.onclick = () => { d.remove(); r(true); };
@@ -7097,17 +7096,20 @@ ${subjectLine}
         window.customPrompt = (m, type="password") => new Promise(r => {
             const d = document.createElement('div'); 
             d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            const safeType = ['password', 'text', 'number', 'tel'].includes(String(type)) ? String(type) : 'text';
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-sb-gold">입력</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <input type="${type}" class="js-custom-prompt-input w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
+                    <p class="js-custom-prompt-message text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
+                    <input type="${safeType}" class="js-custom-prompt-input w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
                     <div class="flex gap-4">
                         <button type="button" class="js-custom-prompt-no bg-slate-700 text-white font-bold py-2 w-full rounded">취소</button>
                         <button type="button" class="js-custom-prompt-yes bg-emerald-500 text-white font-bold py-2 w-full rounded">확인</button>
                     </div>
                 </div>`;
             document.body.appendChild(d);
+            const msgEl = d.querySelector('.js-custom-prompt-message');
+            if (msgEl) msgEl.textContent = String(m ?? '');
             const inputEl = d.querySelector('.js-custom-prompt-input');
             const yesBtn = d.querySelector('.js-custom-prompt-yes');
             const noBtn = d.querySelector('.js-custom-prompt-no');
@@ -7123,7 +7125,7 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <p class="js-custom-pick-message text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
                     <p class="text-[10px] text-pink-200/90">1~6 면을 눌러 예측 번호를 고르세요</p>
                     <div class="grid grid-cols-3 gap-3">
                         ${[1,2,3,4,5,6].map(n => `
@@ -7136,6 +7138,8 @@ ${subjectLine}
                     <button type="button" id="pickCancel" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 w-full rounded-xl">취소</button>
                 </div>`;
             document.body.appendChild(d);
+            const msgEl = d.querySelector('.js-custom-pick-message');
+            if (msgEl) msgEl.textContent = String(m ?? '');
             d.querySelectorAll('button[data-pick]').forEach(btn => {
                 btn.onclick = () => {
                     const v = parseInt(btn.getAttribute('data-pick'), 10);
@@ -10382,7 +10386,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByBankReconcile || blockedByDuplicateQuest) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

@@ -1566,44 +1566,49 @@ function redrawPlazaGrantsUi() {
             return `https://music.youtube.com/search?q=${encodeURIComponent(String(songTitle || '').trim())}`;
         }
 
-        /** 여러 videoId를 한 재생목록(대기열)으로 여는 URL */
-        function buildYoutubeMusicPlaylistUrl(videoIds) {
-            const ids = (Array.isArray(videoIds) ? videoIds : [])
-                .map((id) => String(id || '').trim())
-                .filter((id) => /^[A-Za-z0-9_-]{6,}$/.test(id));
-            if (!ids.length) return 'https://music.youtube.com/';
-            if (ids.length === 1) return buildYoutubeMusicWatchUrl(ids[0]);
-            // watch_videos로 임시 대기열 생성(신청곡 순서대로). 같은 창에서 이어서 재생됨.
-            const joined = ids.slice(0, 40).join(',');
-            return `https://www.youtube.com/watch_videos?video_ids=${joined}`;
-        }
-
-        /** 이미 연 유튜브 뮤직/유튜브 창이 있으면 새 창 없이 같은 창에서 이어서 이동 */
+        /**
+         * 유튜브 뮤직은 COOP 때문에 window 핸들이 끊기기 쉬움.
+         * 새 창 남발 방지: 고정 창 이름 + <a target>로만 1회 이동 (window.open(url) 중복 호출 금지)
+         */
         const MUSIC_TIME_YTM_WINDOW_NAME = 'sambongYtmPlayer';
+
         function openOrReuseYtmWindow(url) {
             const target = String(url || 'https://music.youtube.com/');
-            let popup = null;
-            try {
-                popup = window.open(target, MUSIC_TIME_YTM_WINDOW_NAME);
-            } catch (e) {
-                popup = null;
-            }
-            if (popup) {
-                window._sambongYtmWin = popup;
-                try { popup.focus(); } catch (e) { /* ignore */ }
-            }
-            return popup;
-        }
 
-        function navigateYtmWindow(popup, url) {
-            if (!popup || popup.closed) return openOrReuseYtmWindow(url);
-            try {
-                popup.location.href = url;
-                popup.focus();
-                return popup;
-            } catch (e) {
-                return openOrReuseYtmWindow(url);
+            // 접근 가능한 기존 핸들이 있으면 location만 변경
+            const existing = window._sambongYtmWin;
+            if (existing) {
+                try {
+                    if (!existing.closed) {
+                        existing.location.assign(target);
+                        existing.focus();
+                        return existing;
+                    }
+                } catch (e) {
+                    // COOP — 아래 a[target]으로 같은 이름 창만 갱신
+                }
             }
+
+            // 같은 이름 browsing context로만 이동 (새 창 대신 기존 창 재사용)
+            const a = document.createElement('a');
+            a.href = target;
+            a.target = MUSIC_TIME_YTM_WINDOW_NAME;
+            a.rel = 'opener';
+            a.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            // 포커스용 핸들만 확보 (URL 인자 없이 → 추가 네비게이션/신규 창 방지)
+            try {
+                const w = window.open('', MUSIC_TIME_YTM_WINDOW_NAME);
+                if (w) {
+                    window._sambongYtmWin = w;
+                    try { w.focus(); } catch (e) { /* ignore */ }
+                    return w;
+                }
+            } catch (e) { /* ignore */ }
+            return window._sambongYtmWin || null;
         }
 
         function extractVideoIdFromPipedItem(item) {
@@ -1719,96 +1724,42 @@ function redrawPlazaGrantsUi() {
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 재생';
             }
 
-            const cachedId = getCachedMusicTimeVideoId(song);
-            const initialUrl = cachedId ? buildYoutubeMusicWatchUrl(cachedId) : buildYoutubeMusicSearchUrl(song);
-            // 같은 창 이름으로 열면 이미 유튜브 뮤직이 떠 있을 때 새 창 없이 이어서 검색/재생
-            const popup = openOrReuseYtmWindow(initialUrl);
-            if (!popup) {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
-                }
-                return await window.customAlert(
-                    '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
-                );
-            }
-
             try {
-                if (cachedId) return;
+                const cachedId = getCachedMusicTimeVideoId(song);
+                // 캐시 hit: 클릭 순간에 같은 이름 창으로 1회만 이동
+                if (cachedId) {
+                    openOrReuseYtmWindow(buildYoutubeMusicWatchUrl(cachedId));
+                    return;
+                }
+
+                // 캐시 miss: 검색을 같은 이름 창에 1회만 연다 (이후 추가 window.open 금지 → 새 창 방지)
+                const opened = openOrReuseYtmWindow(buildYoutubeMusicSearchUrl(song));
                 const videoId = await searchYoutubeVideoIdFast(song);
-                if (videoId) {
-                    navigateYtmWindow(popup, buildYoutubeMusicWatchUrl(videoId));
-                } else if (!videoId) {
+                if (!videoId) {
                     await window.customAlert(
                         `검색 결과를 열었습니다.\n\n🎵 ${song}\n\n첫 곡을 눌러 재생해 주세요.`
                     );
+                    return;
                 }
+                // 가능하면 이미 연 창의 location만 교체. 실패해도 새 창은 열지 않음.
+                const watchUrl = buildYoutubeMusicWatchUrl(videoId);
+                const win = opened || window._sambongYtmWin;
+                try {
+                    if (win && !win.closed) {
+                        win.location.assign(watchUrl);
+                        return;
+                    }
+                } catch (e) {
+                    // COOP로 막히면 검색 창을 그대로 두고, 다음 재생부터는 캐시로 바로 재생됨
+                    setCachedMusicTimeVideoId(song, videoId);
+                }
+                setCachedMusicTimeVideoId(song, videoId);
             } catch (e) {
                 console.error('playMusicTimeRequest', e);
             } finally {
                 if (btn) {
                     btn.disabled = false;
                     btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
-                }
-            }
-        };
-
-        /** 대기 중인 신청곡을 모두 찾아 재생목록(대기열)으로 한 번에 열기 */
-        window.openMusicTimeQueuePlaylist = async function() {
-            const queue = getMusicTimeQueue().slice().sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
-            if (!queue.length) return await window.customAlert('대기 중인 신청곡이 없습니다.');
-
-            const btn = document.getElementById('musicTimePlaylistBtn');
-            const prev = btn ? btn.innerHTML : '';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 재생목록 만드는 중...';
-            }
-
-            // 클릭 직후 같은 창을 확보(팝업 차단 방지 + 기존 창 재사용)
-            const popup = openOrReuseYtmWindow('https://music.youtube.com/');
-            if (!popup) {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = prev || '<i class="fa-solid fa-list-ol"></i> 전체 재생목록 열기';
-                }
-                return await window.customAlert(
-                    '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
-                );
-            }
-
-            try {
-                const results = await Promise.all(
-                    queue.map(async (row) => {
-                        const song = String(row.song || '').trim();
-                        if (!song) return { song, videoId: '' };
-                        const videoId = await searchYoutubeVideoIdFast(song);
-                        return { song, videoId: videoId || '' };
-                    })
-                );
-                const videoIds = results.map((r) => r.videoId).filter(Boolean);
-                const missed = results.filter((r) => r.song && !r.videoId).map((r) => r.song);
-
-                if (!videoIds.length) {
-                    navigateYtmWindow(popup, buildYoutubeMusicSearchUrl(queue[0].song));
-                    return await window.customAlert('곡을 찾지 못해 첫 신청곡 검색 페이지를 열었습니다.');
-                }
-
-                const playlistUrl = buildYoutubeMusicPlaylistUrl(videoIds);
-                navigateYtmWindow(popup, playlistUrl);
-
-                if (missed.length) {
-                    await window.customAlert(
-                        `재생목록 ${videoIds.length}곡을 같은 창에 넣었습니다.\n\n찾지 못한 곡 ${missed.length}개:\n- ${missed.slice(0, 5).join('\n- ')}${missed.length > 5 ? '\n…' : ''}`
-                    );
-                }
-            } catch (e) {
-                console.error('openMusicTimeQueuePlaylist', e);
-                await window.customAlert('재생목록을 여는 중 오류가 났습니다: ' + (e && e.message ? e.message : String(e)));
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = prev || '<i class="fa-solid fa-list-ol"></i> 전체 재생목록 열기';
                 }
             }
         };
@@ -1822,18 +1773,9 @@ function redrawPlazaGrantsUi() {
                 body.innerHTML = '<div class="text-[10px] text-slate-500 text-center py-10 border border-dashed border-slate-700 rounded-xl">대기 중인 신청곡이 없습니다.</div>';
                 return;
             }
-            // 목록을 열면 전체 곡을 미리 찾아 재생목록을 바로 만들 수 있게 함
             prefetchMusicTimePlayUrls(queue.map((row) => row.song));
-            // 신청곡이 있으면 백그라운드로 videoId를 모아 두어 「전체 재생목록」이 빨라지게
-            void Promise.all(queue.map((row) => searchYoutubeVideoIdFast(String(row.song || '').trim())));
             body.innerHTML = `
-                <div class="mb-3 space-y-2">
-                    <button type="button" id="musicTimePlaylistBtn" onclick="window.openMusicTimeQueuePlaylist()"
-                        class="w-full bg-gradient-to-r from-pink-700 to-fuchsia-700 hover:from-pink-600 hover:to-fuchsia-600 text-white font-bold py-2.5 px-3 rounded-xl text-[10px] border border-pink-400/50">
-                        <i class="fa-solid fa-list-ol"></i> 전체 재생목록 열기 (${queue.length}곡)
-                    </button>
-                    <div class="text-[9px] text-slate-400">총 ${queue.length}곡 · 유튜브 뮤직이 이미 열려 있으면 같은 창에서 이어서 재생합니다.</div>
-                </div>
+                <div class="text-[9px] text-slate-400 mb-3">총 ${queue.length}곡 · 「재생」은 같은 유튜브 뮤직 창에서 이어서 열립니다.</div>
                 <div class="space-y-2">
                     ${queue.map((row, idx) => `
                         <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
@@ -1852,7 +1794,7 @@ function redrawPlazaGrantsUi() {
                             </div>
                         </div>`).join('')}
                 </div>
-                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「전체 재생목록 열기」로 신청곡을 한 번에 넣고, 「재생」은 같은 유튜브 뮤직 창에서 이어서 검색합니다.${isGM ? ' 마스터 J만 「재생완료」로 목록에서 제거할 수 있습니다.' : ''}</p>`;
+                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 첫 검색 곡을 같은 창에 이어서 재생합니다.${isGM ? ' 마스터 J만 「재생완료」로 목록에서 제거할 수 있습니다.' : ''}</p>`;
         }
 
         window.openMusicTimeQueuePanel = function() {

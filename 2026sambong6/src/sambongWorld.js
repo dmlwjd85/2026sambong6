@@ -9188,10 +9188,27 @@ ${subjectLine}
         };
 
         let _bankAutoSavePromise = null;
+        let _bankAutoSaveFailed = false;
 
         /** 자동 만기·보너스 저장이 끝나기 전에 일반 저장이 낡은 은행 상태를 덮지 않도록 직렬화합니다. */
         function startBankAutoSave(options) {
-            const bankSavePromise = saveDataToCloud(options);
+            const bankSavePromise = saveDataToCloud(options).then((saved) => {
+                _bankAutoSaveFailed = saved !== true;
+                if (_bankAutoSaveFailed) {
+                    void window.customAlert(
+                        '은행 자동 처리를 서버에 저장하지 못했습니다.\n' +
+                        '잘못된 잔액 저장을 막기 위해 새로고침 후 다시 이용해 주세요.'
+                    );
+                }
+                return saved;
+            }).catch(() => {
+                _bankAutoSaveFailed = true;
+                void window.customAlert(
+                    '은행 자동 처리를 서버에 저장하지 못했습니다.\n' +
+                    '잘못된 잔액 저장을 막기 위해 새로고침 후 다시 이용해 주세요.'
+                );
+                return false;
+            });
             _bankAutoSavePromise = bankSavePromise;
             bankSavePromise.finally(() => {
                 if (_bankAutoSavePromise === bankSavePromise) _bankAutoSavePromise = null;
@@ -10365,6 +10382,13 @@ ${subjectLine}
                 operationLabel: '저장',
                 ...options,
             };
+            if (!opts.allowBankFieldChanges && _bankAutoSaveFailed && !_bankAutoSavePromise) {
+                await window.customAlert(
+                    `은행 자동 처리가 서버에 반영되지 않아 ${opts.operationLabel}도 저장하지 않았습니다.\n` +
+                    '새로고침 후 다시 시도해 주세요.'
+                );
+                return false;
+            }
             const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
@@ -10560,6 +10584,7 @@ ${subjectLine}
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankDailyBonusLastDate')) {
                     window.playerState.bankDailyBonusLastDate = dataToSave.bankDailyBonusLastDate;
                 }
+                if (opts.allowBankFieldChanges) _bankAutoSaveFailed = false;
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);

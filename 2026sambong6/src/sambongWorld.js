@@ -1815,10 +1815,10 @@ function redrawPlazaGrantsUi() {
                                     <div class="text-[9px] text-slate-500 mt-1">${formatMusicTimeAt(row.at)}</div>
                                 </div>
                                 <div class="shrink-0 flex flex-col gap-1">
-                                    <button type="button" data-music-play-id="${escapeHtmlAttr(row.id)}" onclick="window.playMusicTimeRequest('${escapeHtmlAttr(row.id)}')" class="bg-pink-800 hover:bg-pink-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-pink-500/70">
+                                    <button type="button" data-music-play-id="${escapeHtmlAttr(row.id)}" onclick="window.playMusicTimeRequest(this.dataset.musicPlayId)" class="bg-pink-800 hover:bg-pink-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-pink-500/70">
                                         <i class="fa-solid fa-play"></i> 재생
                                     </button>
-                                    ${isGM ? `<button type="button" onclick="window.completeMusicTimeRequestAdmin('${escapeHtmlAttr(row.id)}')" class="bg-emerald-800 hover:bg-emerald-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-emerald-600">재생완료</button>` : ''}
+                                    ${isGM ? `<button type="button" data-music-complete-id="${escapeHtmlAttr(row.id)}" onclick="window.completeMusicTimeRequestAdmin(this.dataset.musicCompleteId)" class="bg-emerald-800 hover:bg-emerald-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-emerald-600">재생완료</button>` : ''}
                                 </div>
                             </div>
                         </div>`).join('')}
@@ -5089,12 +5089,13 @@ ${subjectLine}
             });
 
             const stateDate = src.date ? String(src.date) : today;
+            const settledDate = src.settledDate ? String(src.settledDate) : '';
             return {
                 date: stateDate,
                 min,
                 max,
-                values: stateDate === today ? values : {},
-                settledDate: src.settledDate ? String(src.settledDate) : '',
+                values: settledDate === stateDate ? {} : values,
+                settledDate,
                 lastSettlementAt: Number(src.lastSettlementAt) || 0,
                 settlementKey: src.settlementKey ? String(src.settlementKey) : '',
                 settlementStatus: src.settlementStatus ? String(src.settlementStatus) : '',
@@ -5102,6 +5103,11 @@ ${subjectLine}
                 settlementAppliedCount: Math.max(0, Math.floor(Number(src.settlementAppliedCount) || 0)),
                 settlementTotalDelta: Math.floor(Number(src.settlementTotalDelta) || 0),
             };
+        }
+
+        /** 정산에서는 날짜가 지난 미정산 값도 버리지 않고 서버 원본에서 복구합니다. */
+        function sanitizeLearningThermometerSettlementState(raw) {
+            return sanitizeLearningThermometerState(raw);
         }
 
         function getLearningThermometerState() {
@@ -5254,7 +5260,31 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
                 const state = getLearningThermometerState();
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
+                let skippedByNewerSettlement = false;
+                let serverStateAfterSkip = null;
+                await runTransaction(db, async (transaction) => {
+                    const ref = getGlobalSettingsDocRef();
+                    const snap = await transaction.get(ref);
+                    const data = snap.exists() ? snap.data() || {} : {};
+                    const serverState = sanitizeLearningThermometerState(data.learningThermometer);
+                    if (
+                        serverState.settledDate &&
+                        serverState.settledDate === state.date &&
+                        Number(serverState.lastSettlementAt || 0) > Number(state.lastSettlementAt || 0)
+                    ) {
+                        skippedByNewerSettlement = true;
+                        serverStateAfterSkip = serverState;
+                        return;
+                    }
+                    transaction.set(ref, { learningThermometer: state }, { merge: true });
+                });
+                if (skippedByNewerSettlement) {
+                    if (serverStateAfterSkip) {
+                        setLocalLearningThermometerState(serverStateAfterSkip);
+                        renderLearningThermometerPanel();
+                    }
+                    return false;
+                }
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 return true;
@@ -5286,6 +5316,12 @@ ${subjectLine}
             if (next === 0) delete state.values[id];
             else state.values[id] = next;
             state.date = getLocalDateStr();
+            if (state.settledDate === state.date) {
+                state.settledDate = '';
+                state.settlementStatus = '';
+                state.settlementKey = '';
+                state.settlementStartedAt = 0;
+            }
             setLocalLearningThermometerState(state);
 
             const valueEl = document.getElementById(`lt_value_${id}`);
@@ -5362,17 +5398,18 @@ ${subjectLine}
                     const settingsRef = getGlobalSettingsDocRef();
                     const settingsSnap = await transaction.get(settingsRef);
                     const data = settingsSnap.exists() ? settingsSnap.data() || {} : {};
-                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const state = sanitizeLearningThermometerSettlementState(data.learningThermometer);
                     const values = { ...(state.values || {}) };
                     const wasMax = Number(values['2']) === Number(state.max);
                     if (wasMax) delete values['2'];
-                    transaction.set(settingsRef, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: getLocalDateStr(),
-                        },
-                    }, { merge: true });
+                    if (wasMax) {
+                        transaction.set(settingsRef, {
+                            learningThermometer: {
+                                ...state,
+                                values,
+                            },
+                        }, { merge: true });
+                    }
                     transaction.set(markerRef, {
                         done: true,
                         touched: wasMax,
@@ -5400,16 +5437,18 @@ ${subjectLine}
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
+            clearTimeout(_learningThermometerSaveTimer);
+            _learningThermometerSavePending = false;
+            _learningThermometerIgnoreRemoteUntil = 0;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
 
-                await runTransaction(db, async (transaction) => {
+                const result = await runTransaction(db, async (transaction) => {
                     const ref = getGlobalSettingsDocRef();
                     const snap = await transaction.get(ref);
                     const data = snap.exists() ? snap.data() || {} : {};
-                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const state = sanitizeLearningThermometerSettlementState(data.learningThermometer);
                     const lockIsFresh =
                         state.settlementKey === today &&
                         state.settlementStatus === 'running' &&
@@ -5421,87 +5460,76 @@ ${subjectLine}
                     });
                     if (state.settledDate === today) {
                         if (!manual || !Object.keys(pendingValues).length) {
-                            claimed = { status: 'already_done', state };
-                            return;
+                            return { status: 'already_done', state };
                         }
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
-                        return;
+                        return { status: 'locked', state };
                     }
                     const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const claimedState = { ...state, values };
+                    const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                    const studentSnaps = [];
+                    for (const [sid, deltaRaw] of entries) {
+                        const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        studentSnaps.push({ sid, deltaRaw, ref: stuRef, snap: await transaction.get(stuRef) });
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    const recoveringStaleClaim = state.settlementStatus === 'running';
+                    studentSnaps.forEach(({ sid, deltaRaw, ref: stuRef, snap: stuSnap }) => {
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const stu = stuSnap.exists() ? stuSnap.data() || {} : {};
+                        const existingLogs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog : [];
+                        const alreadyApplied = recoveringStaleClaim && existingLogs.some((log) =>
+                            log &&
+                            log.source === 'learningThermometer' &&
+                            String(log.settledDate || '') === today
+                        );
+                        if (alreadyApplied) return;
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
                         if (!actualDelta) return;
-                        const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
+                        const logs = existingLogs.slice(-XP_CHANGE_LOG_LIMIT + 1);
                         logs.push(buildXpChangeLogEntry('학습 온도계 15시 정산', beforeXp, afterXp, {
                             source: 'learningThermometer',
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        transaction.set(
+                            stuRef,
                             { xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...claimedState,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(ref, { learningThermometer: resetState }, { merge: true });
+                    return { status: 'done', appliedCount, totalDelta, state: resetState };
+                });
+
+                if (!result || result.status !== 'done') return result || { status: 'not_claimed' };
+                setLocalLearningThermometerState(result.state);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return { status: 'done', appliedCount: result.appliedCount, totalDelta: result.totalDelta };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -8608,7 +8636,7 @@ ${subjectLine}
                             '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
                         );
                     }
-                    void saveDataToCloud({
+                    void startBankAutoSave({
                         allowBankFieldChanges: true,
                         operationLabel: '보물상자 적금 만기',
                         bongLogSource: 'bankTermMaturity',
@@ -9159,6 +9187,18 @@ ${subjectLine}
             window.switchTab('bank');
         };
 
+        let _bankAutoSavePromise = null;
+
+        /** 자동 만기·보너스 저장이 끝나기 전에 일반 저장이 낡은 은행 상태를 덮지 않도록 직렬화합니다. */
+        function startBankAutoSave(options) {
+            const bankSavePromise = saveDataToCloud(options);
+            _bankAutoSavePromise = bankSavePromise;
+            bankSavePromise.finally(() => {
+                if (_bankAutoSavePromise === bankSavePromise) _bankAutoSavePromise = null;
+            });
+            return bankSavePromise;
+        }
+
         /** 레거시 필드 → 일반예금으로 이전 후 불필요 키 정리 */
         function migrateBankPlayerFields() {
             if (!window.playerState) return false;
@@ -9395,13 +9435,32 @@ ${subjectLine}
                 `중도 해지 시 이자는 지급되지 않고 원금 ${formatBongDisplay(td.amount)} B만 지갑으로 돌아갑니다.\n해지할까요?`
             );
             if (!ok) return;
+            const prevBong = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const prevTerms = sanitizeBankTermDeposits(arr);
             const principal = normalizeBongValue(Number(td.amount) || 0);
             arr.splice(idx, 1);
             window.playerState.bankTermDeposits = arr;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
-            if (!saved) return;
+            if (!saved) {
+                try {
+                    const snap = await readStudentDocPreferServer(currentStudentDocRef);
+                    if (!snap.exists()) throw new Error('student_not_found');
+                    const roleFlags = {
+                        isGuest: window.playerState.isGuest,
+                        isGM: window.playerState.isGM,
+                        isGMA: window.playerState.isGMA,
+                        isAdmin: window.playerState.isAdmin,
+                    };
+                    window.playerState = { ...(snap.data() || {}), ...roleFlags };
+                } catch (e) {
+                    window.playerState.bong = prevBong;
+                    window.playerState.bankTermDeposits = prevTerms;
+                }
+                updateUI();
+                return;
+            }
             await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
@@ -10120,7 +10179,7 @@ ${subjectLine}
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) {
-                saveDataToCloud({
+                startBankAutoSave({
                     allowBankFieldChanges: true,
                     operationLabel: bankSaveOperationLabel || '은행 자동 처리',
                     bongLogSource: bankSaveBongLogSource || undefined,
@@ -10319,6 +10378,16 @@ ${subjectLine}
                 const nextXp = Math.floor(Number(dataToSave.xp) || 0);
                 dataToSave.xp = Math.max(nextXp, xpFloor);
             }
+            if (!opts.allowBankFieldChanges && _bankAutoSavePromise) {
+                const bankSaved = await _bankAutoSavePromise.catch(() => false);
+                if (!bankSaved) {
+                    await window.customAlert(
+                        `은행 자동 처리를 서버에 저장하지 못해 ${opts.operationLabel}도 저장하지 않았습니다.\n` +
+                        '새로고침 후 다시 시도해 주세요.'
+                    );
+                    return false;
+                }
+            }
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
@@ -10459,7 +10528,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

@@ -1567,48 +1567,78 @@ function redrawPlazaGrantsUi() {
         }
 
         /**
-         * 유튜브 뮤직은 COOP 때문에 window 핸들이 끊기기 쉬움.
-         * 새 창 남발 방지: 고정 창 이름 + <a target>로만 1회 이동 (window.open(url) 중복 호출 금지)
+         * 유튜브 뮤직은 COOP로 window 핸들이 끊김.
+         * → 항상 우리 사이트(ytm-bridge.html)를 같은 창 이름으로 연 뒤, 브리지가 music으로 이동.
+         *    다음 곡도 브리지(동일 출처)로 기존 창을 다시 잡아 재사용한다.
          */
         const MUSIC_TIME_YTM_WINDOW_NAME = 'sambongYtmPlayer';
 
-        function openOrReuseYtmWindow(url) {
-            const target = String(url || 'https://music.youtube.com/');
+        function getYtmBridgeBaseUrl() {
+            try {
+                const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.BASE_URL)
+                    ? String(import.meta.env.BASE_URL)
+                    : '/2026sambong6/';
+                return base.endsWith('/') ? base : `${base}/`;
+            } catch (e) {
+                return '/2026sambong6/';
+            }
+        }
 
-            // 접근 가능한 기존 핸들이 있으면 location만 변경
-            const existing = window._sambongYtmWin;
-            if (existing) {
+        function buildYtmBridgeUrl(musicUrl, { wait = false } = {}) {
+            const base = getYtmBridgeBaseUrl();
+            if (wait) return `${base}ytm-bridge.html?wait=1`;
+            const u = encodeURIComponent(String(musicUrl || 'https://music.youtube.com/'));
+            return `${base}ytm-bridge.html?u=${u}`;
+        }
+
+        function openOrReuseYtmWindow(musicUrl) {
+            const bridgeUrl = buildYtmBridgeUrl(musicUrl);
+            // 고정 이름 + 우리 도메인 URL → 이미 연 창이 있어도 그 창을 브리지로 덮어씀
+            let win = null;
+            try {
+                win = window.open(bridgeUrl, MUSIC_TIME_YTM_WINDOW_NAME);
+            } catch (e) {
+                win = null;
+            }
+            if (win) {
+                window._sambongYtmWin = win;
+                try { win.focus(); } catch (e) { /* ignore */ }
+            }
+            return win;
+        }
+
+        /** 클릭 직후: 같은 이름 창을 우리 브리지(wait)로 확보 — 이후 location 교체 가능 */
+        function claimYtmBridgeWindow() {
+            const waitUrl = buildYtmBridgeUrl('', { wait: true });
+            let win = null;
+            try {
+                win = window.open(waitUrl, MUSIC_TIME_YTM_WINDOW_NAME);
+            } catch (e) {
+                win = null;
+            }
+            if (win) {
+                window._sambongYtmWin = win;
+                try { win.focus(); } catch (e) { /* ignore */ }
+            }
+            return win;
+        }
+
+        /** wait 브리지(동일 출처) → 최종 music URL 브리지로 교체 */
+        function navigateYtmBridgeWindow(win, musicUrl) {
+            const bridgeUrl = buildYtmBridgeUrl(musicUrl);
+            if (win) {
                 try {
-                    if (!existing.closed) {
-                        existing.location.assign(target);
-                        existing.focus();
-                        return existing;
+                    if (!win.closed) {
+                        win.location.replace(bridgeUrl);
+                        try { win.focus(); } catch (e) { /* ignore */ }
+                        window._sambongYtmWin = win;
+                        return win;
                     }
                 } catch (e) {
-                    // COOP — 아래 a[target]으로 같은 이름 창만 갱신
+                    // 접근 불가면 이름 창으로 다시 브리지 open
                 }
             }
-
-            // 같은 이름 browsing context로만 이동 (새 창 대신 기존 창 재사용)
-            const a = document.createElement('a');
-            a.href = target;
-            a.target = MUSIC_TIME_YTM_WINDOW_NAME;
-            a.rel = 'opener';
-            a.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-
-            // 포커스용 핸들만 확보 (URL 인자 없이 → 추가 네비게이션/신규 창 방지)
-            try {
-                const w = window.open('', MUSIC_TIME_YTM_WINDOW_NAME);
-                if (w) {
-                    window._sambongYtmWin = w;
-                    try { w.focus(); } catch (e) { /* ignore */ }
-                    return w;
-                }
-            } catch (e) { /* ignore */ }
-            return window._sambongYtmWin || null;
+            return openOrReuseYtmWindow(musicUrl);
         }
 
         function extractVideoIdFromPipedItem(item) {
@@ -1724,36 +1754,35 @@ function redrawPlazaGrantsUi() {
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 재생';
             }
 
+            // 클릭 제스처에서 고정 이름 창을 우리 브리지로 확보(이미 떠 있으면 그 창을 재사용)
+            const claimed = claimYtmBridgeWindow();
+            if (!claimed) {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
+                }
+                return await window.customAlert(
+                    '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
+                );
+            }
+
             try {
                 const cachedId = getCachedMusicTimeVideoId(song);
-                // 캐시 hit: 클릭 순간에 같은 이름 창으로 1회만 이동
-                if (cachedId) {
-                    openOrReuseYtmWindow(buildYoutubeMusicWatchUrl(cachedId));
-                    return;
-                }
+                let videoId = cachedId;
+                if (!videoId) videoId = await searchYoutubeVideoIdFast(song);
 
-                // 캐시 miss: 검색을 같은 이름 창에 1회만 연다 (이후 추가 window.open 금지 → 새 창 방지)
-                const opened = openOrReuseYtmWindow(buildYoutubeMusicSearchUrl(song));
-                const videoId = await searchYoutubeVideoIdFast(song);
+                const finalUrl = videoId
+                    ? buildYoutubeMusicWatchUrl(videoId)
+                    : buildYoutubeMusicSearchUrl(song);
+
+                // wait 브리지 → 최종 URL 브리지(같은 창). music으로의 이동은 브리지가 담당
+                navigateYtmBridgeWindow(claimed, finalUrl);
+
                 if (!videoId) {
                     await window.customAlert(
                         `검색 결과를 열었습니다.\n\n🎵 ${song}\n\n첫 곡을 눌러 재생해 주세요.`
                     );
-                    return;
                 }
-                // 가능하면 이미 연 창의 location만 교체. 실패해도 새 창은 열지 않음.
-                const watchUrl = buildYoutubeMusicWatchUrl(videoId);
-                const win = opened || window._sambongYtmWin;
-                try {
-                    if (win && !win.closed) {
-                        win.location.assign(watchUrl);
-                        return;
-                    }
-                } catch (e) {
-                    // COOP로 막히면 검색 창을 그대로 두고, 다음 재생부터는 캐시로 바로 재생됨
-                    setCachedMusicTimeVideoId(song, videoId);
-                }
-                setCachedMusicTimeVideoId(song, videoId);
             } catch (e) {
                 console.error('playMusicTimeRequest', e);
             } finally {

@@ -5240,12 +5240,12 @@ ${subjectLine}
             requestAnimationFrame(() => syncLearningThermometerZeroLine());
         }
 
-        async function saveLearningThermometerState({ silent = true } = {}) {
+        async function saveLearningThermometerState({ silent = true, allowDuringSettlement = false } = {}) {
             if (!window.playerState || !window.playerState.isAdmin) {
                 _learningThermometerSavePending = false;
                 return false;
             }
-            if (_learningThermometerSettlementRunning) {
+            if (_learningThermometerSettlementRunning && !allowDuringSettlement) {
                 _learningThermometerSavePending = false;
                 return false;
             }
@@ -5415,6 +5415,10 @@ ${subjectLine}
 
             _learningThermometerSettlementRunning = true;
             try {
+                const shouldFlushPendingSave =
+                    !!_learningThermometerSaveTimer ||
+                    !!_learningThermometerSaveInFlight ||
+                    _learningThermometerSavePending;
                 clearTimeout(_learningThermometerSaveTimer);
                 _learningThermometerSaveTimer = null;
                 if (_learningThermometerSaveInFlight) {
@@ -5424,7 +5428,15 @@ ${subjectLine}
                         console.warn('학습 온도계 대기 저장 실패 후 정산을 계속합니다.', e);
                     }
                 }
-                _learningThermometerSavePending = false;
+                if (shouldFlushPendingSave) {
+                    const flushed = await saveLearningThermometerState({
+                        silent: true,
+                        allowDuringSettlement: true,
+                    });
+                    if (!flushed) throw new Error('pending_save_failed');
+                } else {
+                    _learningThermometerSavePending = false;
+                }
 
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
@@ -9412,13 +9424,17 @@ ${subjectLine}
             window.playerState.bankTermDeposits = arr;
             window.playerState.bong = normalizeBongValue(prevBong + principal);
             updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
-            if (!saved) {
-                window.playerState.bong = prevBong;
-                window.playerState.bankTermDeposits = prevTerms;
-                updateUI();
-                return;
-            }
+            const saved = await saveDataToCloud({
+                allowBankFieldChanges: true,
+                operationLabel: '보물상자 적금 중도 해지',
+                bongLogSource: 'bankTermEarly',
+                restoreLocalOnFailure: () => {
+                    window.playerState.bong = prevBong;
+                    window.playerState.bankTermDeposits = prevTerms;
+                    updateUI();
+                },
+            });
+            if (!saved) return;
             await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
@@ -10346,6 +10362,7 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
                     console.warn('saveDataToCloud: 익명 인증 실패');
+                    if (typeof opts.restoreLocalOnFailure === 'function') opts.restoreLocalOnFailure();
                     return false;
                 }
                 await runTransaction(db, async (transaction) => {
@@ -10511,6 +10528,7 @@ ${subjectLine}
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
+                if (typeof opts.restoreLocalOnFailure === 'function') opts.restoreLocalOnFailure();
                 return false;
             } finally {
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1000);

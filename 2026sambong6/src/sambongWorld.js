@@ -5258,7 +5258,18 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
                 const state = getLearningThermometerState();
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
+                await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const settingsData = settingsSnap.exists() ? settingsSnap.data() || {} : {};
+                    const serverState = sanitizeLearningThermometerState(settingsData.learningThermometer);
+                    if (serverState.lastSettlementAt > state.lastSettlementAt) {
+                        const staleError = new Error('stale_after_settlement');
+                        staleError.serverState = serverState;
+                        throw staleError;
+                    }
+                    transaction.set(settingsRef, { learningThermometer: state }, { merge: true });
+                });
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
             })();
             _learningThermometerSaveInFlight = savePromise;
@@ -5269,6 +5280,11 @@ ${subjectLine}
                 return true;
             } catch (e) {
                 console.error('saveLearningThermometerState', e);
+                if (e && e.message === 'stale_after_settlement' && e.serverState) {
+                    setLocalLearningThermometerState(e.serverState);
+                    renderLearningThermometerPanel();
+                    updateUI();
+                }
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;
             } finally {

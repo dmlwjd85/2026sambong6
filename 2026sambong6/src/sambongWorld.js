@@ -5482,6 +5482,7 @@ ${subjectLine}
                     const recoveringInterruptedSettlement =
                         state.settlementKey === today &&
                         state.settlementStatus === 'running';
+                    const interruptedSettlementStartedAt = Math.max(0, Number(state.settlementStartedAt) || 0);
                     const values = pendingValues;
                     const claimedState = { ...state, values };
                     const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
@@ -5504,7 +5505,9 @@ ${subjectLine}
                             stu.xpChangeLog.some((log) =>
                                 log &&
                                 log.source === 'learningThermometer' &&
-                                String(log.settledDate || '') === today
+                                String(log.settledDate || '') === today &&
+                                interruptedSettlementStartedAt > 0 &&
+                                Number(log.at || 0) >= interruptedSettlementStartedAt
                             );
                         if (alreadyAppliedBeforeInterruption) return;
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
@@ -9222,9 +9225,14 @@ ${subjectLine}
                 return saveDataToCloud({ ...options, skipBankAutoSaveWait: true });
             })();
             _bankAutoSavePromise = bankSavePromise;
-            bankSavePromise.finally(() => {
-                if (_bankAutoSavePromise === bankSavePromise) _bankAutoSavePromise = null;
-            });
+            bankSavePromise.then(
+                (saved) => {
+                    if (saved && _bankAutoSavePromise === bankSavePromise) _bankAutoSavePromise = null;
+                },
+                () => {
+                    // 실패한 자동 저장은 새로고침 전까지 후속 저장을 막아 만기금을 중복 반영하지 않습니다.
+                }
+            );
             return bankSavePromise;
         }
 
@@ -10386,11 +10394,14 @@ ${subjectLine}
                 operationLabel: '저장',
                 ...options,
             };
+            const dataToSave = { ...window.playerState };
             if (!opts.skipBankAutoSaveWait && _bankAutoSavePromise) {
                 const bankSaved = await _bankAutoSavePromise.catch(() => false);
-                if (!bankSaved) return false;
+                if (!bankSaved) {
+                    if (typeof opts.restoreLocalOnFailure === 'function') opts.restoreLocalOnFailure();
+                    return false;
+                }
             }
-            const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
             delete dataToSave.isGMA;

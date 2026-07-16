@@ -5479,6 +5479,9 @@ ${subjectLine}
                     if (lockIsFresh) {
                         return { status: 'locked', state };
                     }
+                    const recoveringInterruptedSettlement =
+                        state.settlementKey === today &&
+                        state.settlementStatus === 'running';
                     const values = pendingValues;
                     const claimedState = { ...state, values };
                     const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
@@ -5495,6 +5498,15 @@ ${subjectLine}
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
                         const stu = studentSnap.exists() ? studentSnap.data() || {} : {};
+                        const alreadyAppliedBeforeInterruption =
+                            recoveringInterruptedSettlement &&
+                            Array.isArray(stu.xpChangeLog) &&
+                            stu.xpChangeLog.some((log) =>
+                                log &&
+                                log.source === 'learningThermometer' &&
+                                String(log.settledDate || '') === today
+                            );
+                        if (alreadyAppliedBeforeInterruption) return;
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
@@ -8646,7 +8658,7 @@ ${subjectLine}
                             '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
                         );
                     }
-                    void saveDataToCloud({
+                    void queueBankAutoSave({
                         allowBankFieldChanges: true,
                         operationLabel: '보물상자 적금 만기',
                         bongLogSource: 'bankTermMaturity',
@@ -9196,6 +9208,25 @@ ${subjectLine}
         window.visitBank = function() {
             window.switchTab('bank');
         };
+
+        let _bankAutoSavePromise = null;
+
+        /** 적금 만기·주기 보너스 저장이 끝나기 전에 일반 저장이 낡은 은행 상태를 덮지 않도록 직렬화합니다. */
+        function queueBankAutoSave(options) {
+            const previous = _bankAutoSavePromise;
+            const bankSavePromise = (async () => {
+                if (previous) {
+                    const previousSaved = await previous.catch(() => false);
+                    if (!previousSaved) return false;
+                }
+                return saveDataToCloud({ ...options, skipBankAutoSaveWait: true });
+            })();
+            _bankAutoSavePromise = bankSavePromise;
+            bankSavePromise.finally(() => {
+                if (_bankAutoSavePromise === bankSavePromise) _bankAutoSavePromise = null;
+            });
+            return bankSavePromise;
+        }
 
         /** 레거시 필드 → 일반예금으로 이전 후 불필요 키 정리 */
         function migrateBankPlayerFields() {
@@ -10169,7 +10200,7 @@ ${subjectLine}
             window.updateBankPanel();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) {
-                saveDataToCloud({
+                void queueBankAutoSave({
                     allowBankFieldChanges: true,
                     operationLabel: bankSaveOperationLabel || '은행 자동 처리',
                     bongLogSource: bankSaveBongLogSource || undefined,
@@ -10355,6 +10386,10 @@ ${subjectLine}
                 operationLabel: '저장',
                 ...options,
             };
+            if (!opts.skipBankAutoSaveWait && _bankAutoSavePromise) {
+                const bankSaved = await _bankAutoSavePromise.catch(() => false);
+                if (!bankSaved) return false;
+            }
             const dataToSave = { ...window.playerState };
             delete dataToSave.isGuest;
             delete dataToSave.isGM;

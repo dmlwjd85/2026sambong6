@@ -4998,6 +4998,7 @@ ${subjectLine}
         const LEARNING_THERMOMETER_AUTO_HOUR = 15;
         const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
         let _learningThermometerSaveTimer = null;
+        let _learningThermometerSaveInFlight = null;
         let _learningThermometerSettlementRunning = false;
         let _learningThermometerEditActive = false;
         let _learningThermometerSavePending = false;
@@ -5008,7 +5009,7 @@ ${subjectLine}
         }
 
         function canEditLearningThermometer() {
-            return !!(window.playerState && window.playerState.isAdmin);
+            return !!(window.playerState && window.playerState.isAdmin && !_learningThermometerSettlementRunning);
         }
 
         function updateClassToolsPanelVisibility() {
@@ -5244,18 +5245,26 @@ ${subjectLine}
                 _learningThermometerSavePending = false;
                 return false;
             }
+            if (_learningThermometerSettlementRunning) {
+                _learningThermometerSavePending = false;
+                return false;
+            }
             if (!db) {
                 _learningThermometerSavePending = false;
                 if (!silent) await window.customAlert('데이터베이스에 연결되지 않았습니다.');
                 return false;
             }
-            try {
-                _learningThermometerSavePending = true;
+            const savePromise = (async () => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
                 const state = getLearningThermometerState();
                 await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
+            })();
+            _learningThermometerSaveInFlight = savePromise;
+            try {
+                _learningThermometerSavePending = true;
+                await savePromise;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 return true;
             } catch (e) {
@@ -5263,14 +5272,19 @@ ${subjectLine}
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;
             } finally {
+                if (_learningThermometerSaveInFlight === savePromise) {
+                    _learningThermometerSaveInFlight = null;
+                }
                 _learningThermometerSavePending = false;
             }
         }
 
         function scheduleLearningThermometerSave() {
+            if (_learningThermometerSettlementRunning) return;
             clearTimeout(_learningThermometerSaveTimer);
             _learningThermometerSavePending = true;
             _learningThermometerSaveTimer = setTimeout(() => {
+                _learningThermometerSaveTimer = null;
                 void saveLearningThermometerState({ silent: true });
             }, 550);
         }
@@ -5400,12 +5414,22 @@ ${subjectLine}
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
             try {
+                clearTimeout(_learningThermometerSaveTimer);
+                _learningThermometerSaveTimer = null;
+                if (_learningThermometerSaveInFlight) {
+                    try {
+                        await _learningThermometerSaveInFlight;
+                    } catch (e) {
+                        console.warn('학습 온도계 대기 저장 실패 후 정산을 계속합니다.', e);
+                    }
+                }
+                _learningThermometerSavePending = false;
+
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
 
-                await runTransaction(db, async (transaction) => {
+                const result = await runTransaction(db, async (transaction) => {
                     const ref = getGlobalSettingsDocRef();
                     const snap = await transaction.get(ref);
                     const data = snap.exists() ? snap.data() || {} : {};
@@ -5421,48 +5445,28 @@ ${subjectLine}
                     });
                     if (state.settledDate === today) {
                         if (!manual || !Object.keys(pendingValues).length) {
-                            claimed = { status: 'already_done', state };
-                            return;
+                            return { status: 'already_done', state };
                         }
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
-                        return;
+                        return { status: 'locked', state };
                     }
                     const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const claimedState = { ...state, values };
+                    const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                    const studentRows = [];
+                    for (const [sid, deltaRaw] of entries) {
+                        const studentRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        const studentSnap = await transaction.get(studentRef);
+                        studentRows.push({ sid, deltaRaw, studentRef, studentSnap });
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    studentRows.forEach(({ deltaRaw, studentRef, studentSnap }) => {
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const stu = studentSnap.exists() ? studentSnap.data() || {} : {};
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
@@ -5473,35 +5477,41 @@ ${subjectLine}
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        transaction.set(
+                            studentRef,
                             { xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...claimedState,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(ref, { learningThermometer: resetState }, { merge: true });
+                    return { status: 'done', appliedCount, totalDelta, resetState };
+                });
+
+                if (!result || result.status !== 'done') return result || { status: 'not_claimed' };
+                setLocalLearningThermometerState(result.resetState);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return {
+                    status: 'done',
+                    appliedCount: result.appliedCount,
+                    totalDelta: result.totalDelta,
+                };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;

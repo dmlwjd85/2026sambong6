@@ -9396,12 +9396,19 @@ ${subjectLine}
             );
             if (!ok) return;
             const principal = normalizeBongValue(Number(td.amount) || 0);
+            const prevBong = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const prevTerms = sanitizeBankTermDeposits(arr);
             arr.splice(idx, 1);
             window.playerState.bankTermDeposits = arr;
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + principal);
+            window.playerState.bong = normalizeBongValue(prevBong + principal);
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
-            if (!saved) return;
+            if (!saved) {
+                window.playerState.bong = prevBong;
+                window.playerState.bankTermDeposits = prevTerms;
+                updateUI();
+                return;
+            }
             await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
@@ -10459,7 +10466,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

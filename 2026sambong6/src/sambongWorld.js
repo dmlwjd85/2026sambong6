@@ -3332,6 +3332,22 @@ ${subjectLine}
             return getSanitizedLottoState(window.globalSettings && window.globalSettings.lotto);
         }
 
+        // 이전 회차가 미추첨인데 티켓/풀이 남아 있으면 새 회차 구매로 덮어쓰지 않도록 감지합니다.
+        function hasUndrawnPastLottoRound(raw, now = new Date()) {
+            const state = getSanitizedLottoState(raw);
+            const currentRoundKey = getLottoRoundKey(now);
+            const hasValueAtRisk = (Array.isArray(state.tickets) && state.tickets.length > 0) || (Number(state.poolB) || 0) > 0;
+            return state.roundKey !== currentRoundKey && !state.drawnAt && hasValueAtRisk;
+        }
+
+        // 추첨은 미해결 과거 회차를 우선 대상으로 삼아 티켓/풀 손실을 막습니다.
+        function getLottoStateForDraw(raw, now = new Date()) {
+            const state = getSanitizedLottoState(raw);
+            const currentRoundKey = getLottoRoundKey(now);
+            if (state.roundKey !== currentRoundKey && !state.drawnAt) return state;
+            return buildLottoStateForPurchase(raw, now);
+        }
+
         function buildLottoStateForPurchase(raw, now = new Date()) {
             const state = getSanitizedLottoState(raw);
             const roundKey = getLottoRoundKey(now);
@@ -3923,58 +3939,69 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
                 const settledAt = Date.now();
-                const nextWc = {
-                    matchId: WORLD_CUP_MATCH.id,
-                    bettingOpen: false,
-                    settled: true,
-                    result,
-                    settledAt,
-                };
-                let winnerCount = 0;
-                let totalPayout = 0;
-                const batch = writeBatch(db);
-                const rows = (window.allStudentsData || []).filter((s) => s && s.id !== 'gm' && s.id !== 'gm_a');
-                rows.forEach((stu) => {
-                    const sid = String(stu.id);
-                    const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
-                    let payoutSum = 0;
-                    let changed = false;
-                    const nextBets = bets.map((bet) => {
-                        if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
-                        changed = true;
-                        const won = String(bet.pick) === String(result[bet.market]);
-                        const payout = won ? normalizeBongValue(Number(bet.stake || 0) * Number(bet.odds || 0)) : 0;
-                        if (won) {
-                            payoutSum = normalizeBongValue(payoutSum + payout);
-                            winnerCount += 1;
-                        }
-                        return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
-                    });
-                    if (!changed) return;
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-                    const payload = { worldCupBets: nextBets.slice(-40) };
-                    if (payoutSum > 0) payload.bong = increment(payoutSum);
-                    batch.set(ref, payload, { merge: true });
-                    totalPayout = normalizeBongValue(totalPayout + payoutSum);
-                    if (sid === String(localStorage.getItem('sambong_student_id') || '')) {
-                        window.playerState.worldCupBets = nextBets.slice(-40);
-                        if (payoutSum > 0) {
-                            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + payoutSum);
-                        }
+                // 서버 settled 가드와 학생 배당을 한 트랜잭션에 묶어 이중 정산을 막습니다.
+                const settleResult = await runTransaction(db, async (transaction) => {
+                    const settingsRef = getGlobalSettingsDocRef();
+                    const settingsSnap = await transaction.get(settingsRef);
+                    const settingsData = settingsSnap.exists() ? settingsSnap.data() || {} : {};
+                    const serverWc = getSanitizedWorldCupBetState(settingsData.worldCupBet);
+                    if (serverWc.settled) throw new Error('already_settled');
+
+                    const studentRefs = getActiveStudentIds().map((sid) => ({
+                        sid: String(sid),
+                        ref: doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                    }));
+                    const studentSnaps = [];
+                    for (const row of studentRefs) {
+                        studentSnaps.push({ ...row, snap: await transaction.get(row.ref) });
                     }
+
+                    const nextWc = {
+                        matchId: WORLD_CUP_MATCH.id,
+                        bettingOpen: false,
+                        settled: true,
+                        result,
+                        settledAt,
+                    };
+                    let winnerCount = 0;
+                    let totalPayout = 0;
+                    studentSnaps.forEach(({ sid, ref, snap }) => {
+                        const stu = snap.exists() ? snap.data() || {} : {};
+                        const bets = Array.isArray(stu.worldCupBets) ? stu.worldCupBets.slice() : [];
+                        let payoutSum = 0;
+                        let changed = false;
+                        const nextBets = bets.map((bet) => {
+                            if (!bet || String(bet.matchId) !== WORLD_CUP_MATCH.id || bet.status !== 'pending') return bet;
+                            changed = true;
+                            const won = String(bet.pick) === String(result[bet.market]);
+                            const payout = won ? normalizeBongValue(Number(bet.stake || 0) * Number(bet.odds || 0)) : 0;
+                            if (won) {
+                                payoutSum = normalizeBongValue(payoutSum + payout);
+                                winnerCount += 1;
+                            }
+                            return { ...bet, status: won ? 'won' : 'lost', payout, settledAt };
+                        });
+                        if (!changed) return;
+                        const payload = { worldCupBets: nextBets.slice(-40) };
+                        if (payoutSum > 0) payload.bong = increment(payoutSum);
+                        transaction.set(ref, payload, { merge: true });
+                        totalPayout = normalizeBongValue(totalPayout + payoutSum);
+                    });
+                    transaction.set(settingsRef, { worldCupBet: nextWc }, { merge: true });
+                    return { nextWc, winnerCount, totalPayout };
                 });
-                batch.set(getGlobalSettingsDocRef(), { worldCupBet: nextWc }, { merge: true });
-                await batch.commit();
-                window.globalSettings.worldCupBet = nextWc;
+                window.globalSettings.worldCupBet = settleResult.nextWc;
                 await refreshStudentsCacheFromServer();
                 updateUI();
                 renderWorldCupBetPanel();
                 await window.customAlert(
-                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${formatBongDisplay(totalPayout)}B`
+                    `✅ 승부예측 정산 완료!\n적중 ${settleResult.winnerCount}건 · 총 지급 ${formatBongDisplay(settleResult.totalPayout)}B`
                 );
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
-                await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
+                const msg = String(e && e.message ? e.message : e);
+                if (msg === 'already_settled') return await window.customAlert('이미 정산된 경기입니다.');
+                await window.customAlert('정산 실패: ' + msg);
             }
         };
 
@@ -10874,25 +10901,67 @@ ${subjectLine}
             const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 구매하시겠습니까?`);
             if(!ok) return;
 
-            window.playerState.bong -= price;
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '부동산 구매' });
-            if (!saved) return;
-            
-            seat.owner = window.playerState.id;
-            seat.assignee = null;
-            const buyerId = String(window.playerState.id);
-            window.estateState.seats.forEach((s) => {
-                if (s !== seat && String(s.assignee) === buyerId) s.assignee = null;
-            });
-            if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
-            window.estateState.purchaseHistory.push({
-                studentId: String(window.playerState.id),
-                seatId: seatId,
-                price: price,
-                at: Date.now()
-            });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
-            window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            if (!currentStudentDocRef) return await window.customAlert('학생 정보를 서버에서 불러온 뒤 다시 시도해 주세요.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const buyerId = String(window.playerState.id);
+                const priceB = normalizeBongValue(Number(price) || 0);
+                // 봉 차감과 자리 소유권 기록을 같은 트랜잭션에서 처리해,
+                // 낡은 로컬 estate 전체 덮어쓰기·부분 실패로 인한 돈/소유권 손실을 막습니다.
+                const synced = await runTransaction(db, async (transaction) => {
+                    const estateRef = doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state');
+                    const studentRef = currentStudentDocRef;
+                    const estateSnap = await transaction.get(estateRef);
+                    const studentSnap = await transaction.get(studentRef);
+                    const serverEstate = estateSnap.exists() ? (estateSnap.data() || {}) : {};
+                    const seats = Array.isArray(serverEstate.seats) ? serverEstate.seats.map((s) => ({ ...(s || {}) })) : [];
+                    const serverSeat = seats[seatId];
+                    if (!serverSeat || ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) throw new Error('seat_not_found');
+                    if (serverSeat.owner) throw new Error('already_sold');
+                    if (serverSeat.locked) throw new Error('locked');
+                    const serverStudent = studentSnap.exists() ? (studentSnap.data() || {}) : {};
+                    const serverBong = normalizeBongValue(Number(serverStudent.bong) || 0);
+                    if (serverBong + 0.0001 < priceB) throw new Error('insufficient');
+                    const nextBong = normalizeBongValue(serverBong - priceB);
+                    const bongLogs = Array.isArray(serverStudent.bongChangeLog) ? serverStudent.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                    bongLogs.push(buildBongChangeLogEntry('부동산 구매', serverBong, nextBong, {
+                        source: 'estatePurchase',
+                        allowBongDecrease: true,
+                    }));
+                    serverSeat.owner = buyerId;
+                    serverSeat.assignee = null;
+                    seats.forEach((s, idx) => {
+                        if (idx !== Number(seatId) && String(s.assignee) === buyerId) s.assignee = null;
+                    });
+                    const purchaseHistory = Array.isArray(serverEstate.purchaseHistory) ? serverEstate.purchaseHistory.slice() : [];
+                    purchaseHistory.push({
+                        studentId: buyerId,
+                        seatId: seatId,
+                        price: priceB,
+                        at: Date.now()
+                    });
+                    const nextEstate = {
+                        ...serverEstate,
+                        seats,
+                        purchaseHistory,
+                    };
+                    transaction.set(studentRef, { bong: nextBong, bongChangeLog: bongLogs }, { merge: true });
+                    transaction.set(estateRef, nextEstate, { merge: true });
+                    return { nextBong, nextEstate };
+                });
+                window.playerState.bong = synced.nextBong;
+                window.estateState = synced.nextEstate;
+                updateUI();
+                window.renderEstate();
+                window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            } catch (e) {
+                if (e && e.message === 'already_sold') return await window.customAlert('이미 판매 완료된 자리입니다.');
+                if (e && e.message === 'locked') return await window.customAlert('현재 잠겨있는 자리입니다.');
+                if (e && e.message === 'insufficient') return await window.customAlert(`자산(B)이 부족합니다! (${price} B 필요)`);
+                console.error('buyEstateSeat', e);
+                await window.customAlert('자리 구매 실패: ' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.toggleSeatLock = async function(seatId) {
@@ -11602,6 +11671,8 @@ ${subjectLine}
                     const nowMs = Date.now();
                     const roundKey = getLottoRoundKey(new Date(nowMs));
                     const rawLotto = settingsSnap.exists() ? (settingsSnap.data().lotto || null) : null;
+                    // 미추첨 과거 회차가 있으면 새 회차 초기화로 티켓·풀이 지워지지 않게 구매를 막습니다.
+                    if (hasUndrawnPastLottoRound(rawLotto, new Date(nowMs))) throw new Error('previous_round_undrawn');
                     const lotto = buildLottoStateForPurchase(rawLotto, new Date(nowMs));
                     if (lotto.roundKey === roundKey && lotto.drawnAt) throw new Error('round_already_drawn');
 
@@ -11648,6 +11719,7 @@ ${subjectLine}
                 console.error('buyLottoTicket', e);
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_enough_bong') return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
+                if (msg === 'previous_round_undrawn') return await window.customAlert('이전 회차 로또가 아직 추첨되지 않았습니다.\n마스터 추첨 후 새 회차를 구매해 주세요.');
                 if (msg === 'round_already_drawn') return await window.customAlert('이번 회차는 이미 추첨이 끝났습니다. 다음 회차에 구매해 주세요.');
                 await window.customAlert('로또 구매 실패: ' + msg);
             }
@@ -11680,13 +11752,23 @@ ${subjectLine}
                     const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
                     const settingsSnap = await transaction.get(settingsRef);
                     const rawSettings = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
-                    const state = buildLottoStateForPurchase(rawSettings.lotto || null, now);
-                    if (auto && state.lastAutoDrawKey === roundKey) throw new Error('already_auto_checked');
-                    if (state.roundKey !== roundKey) throw new Error('not_current_round');
+                    // 미추첨 과거 회차가 있으면 그 회차를 추첨해 티켓/풀이 새 회차 초기화로 사라지지 않게 합니다.
+                    const state = getLottoStateForDraw(rawSettings.lotto || null, now);
+                    if (auto && (state.roundKey !== roundKey || state.lastAutoDrawKey === roundKey)) throw new Error('already_auto_checked');
                     if (state.drawnAt) throw new Error('already_drawn');
                     if (!Array.isArray(state.tickets) || state.tickets.length === 0) {
                         noTicket = true;
-                        nextLotto = { ...state, lastAutoDrawKey: auto ? roundKey : state.lastAutoDrawKey, updatedAt: nowMs };
+                        // 티켓이 없어도 풀이 남아 있으면 이월·마감 처리해 미추첨 상태로 남지 않게 합니다.
+                        const emptyCarryoverB = normalizeBongValue((Number(state.carryoverB) || 0) + (Number(state.poolB) || 0));
+                        nextLotto = {
+                            ...state,
+                            poolB: 0,
+                            carryoverB: emptyCarryoverB,
+                            tickets: [],
+                            drawnAt: nowMs,
+                            lastAutoDrawKey: auto ? roundKey : state.lastAutoDrawKey,
+                            updatedAt: nowMs,
+                        };
                         transaction.set(settingsRef, { lotto: nextLotto }, { merge: true });
                         return;
                     }

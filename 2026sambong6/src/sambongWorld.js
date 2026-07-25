@@ -7825,15 +7825,23 @@ ${subjectLine}
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
             try {
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId)), {
-                    status: 'done',
-                    completedAt: Date.now(),
-                    completedBy: managerId,
-                    completedByName: managerName,
+                // 서버 최신 주문이 pending일 때만 완료로 전이해, 방금 환불된 주문을 done으로 덮어쓰지 않습니다.
+                await runTransaction(db, async (transaction) => {
+                    const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
+                    const orderSnap = await transaction.get(orderRef);
+                    const latestOrder = orderSnap.exists() ? (orderSnap.data() || {}) : null;
+                    if (!latestOrder || latestOrder.status !== 'pending') throw new Error('not_pending');
+                    transaction.set(orderRef, {
+                        status: 'done',
+                        completedAt: Date.now(),
+                        completedBy: managerId,
+                        completedByName: managerName,
+                    }, { merge: true });
                 });
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
             } catch (e) {
+                if (e && e.message === 'not_pending') return await window.customAlert('이미 처리된 주문입니다. 새로고침 후 확인해 주세요.');
                 console.error('completeConvenienceOrder', e);
                 await window.customAlert('처리완료 저장 실패: ' + (e && e.message ? e.message : String(e)));
             }

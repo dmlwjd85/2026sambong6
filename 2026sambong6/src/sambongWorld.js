@@ -554,7 +554,27 @@ function redrawPlazaGrantsUi() {
             academicYear: 2026,
             semester: 1,
             termLabel: '',
+            /** 2026 여름방학 기본값 — 기간 중 자동 지급·점심 차감 등 일시정지 */
+            vacationEnabled: true,
+            vacationLabel: '여름 방학',
+            vacationStartDate: '2026-07-25',
+            vacationEndDate: '2026-08-24',
+            vacationPauseLunch: true,
+            vacationPauseSalary: true,
+            vacationPauseClassXp: true,
+            vacationPauseBankBonus: true,
+            vacationPauseThermometer: true,
         };
+
+        function normalizeWorldDateYmd(raw) {
+            const s = String(raw || '').trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            if (!s) return '';
+            const d = new Date(s);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        }
 
         function toDatetimeLocalValue(raw) {
             if (!raw) return '';
@@ -581,6 +601,13 @@ function redrawPlazaGrantsUi() {
             const nature = ['spring', 'summer', 'fall', 'winter', 'custom'].includes(src.seasonNature)
                 ? src.seasonNature
                 : DEFAULT_WORLD_SETTINGS.seasonNature;
+            let vacationStartDate = normalizeWorldDateYmd(src.vacationStartDate) || DEFAULT_WORLD_SETTINGS.vacationStartDate;
+            let vacationEndDate = normalizeWorldDateYmd(src.vacationEndDate) || DEFAULT_WORLD_SETTINGS.vacationEndDate;
+            if (vacationStartDate && vacationEndDate && vacationStartDate > vacationEndDate) {
+                const tmp = vacationStartDate;
+                vacationStartDate = vacationEndDate;
+                vacationEndDate = tmp;
+            }
             return {
                 worldName: String(src.worldName || DEFAULT_WORLD_SETTINGS.worldName).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldName,
                 worldNameEn: String(src.worldNameEn || DEFAULT_WORLD_SETTINGS.worldNameEn).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldNameEn,
@@ -597,8 +624,49 @@ function redrawPlazaGrantsUi() {
                 academicYear,
                 semester,
                 termLabel: String(src.termLabel || '').trim().slice(0, 40),
+                vacationEnabled: src.vacationEnabled !== false,
+                vacationLabel: String(src.vacationLabel || DEFAULT_WORLD_SETTINGS.vacationLabel).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.vacationLabel,
+                vacationStartDate,
+                vacationEndDate,
+                vacationPauseLunch: src.vacationPauseLunch !== false,
+                vacationPauseSalary: src.vacationPauseSalary !== false,
+                vacationPauseClassXp: src.vacationPauseClassXp !== false,
+                vacationPauseBankBonus: src.vacationPauseBankBonus !== false,
+                vacationPauseThermometer: src.vacationPauseThermometer !== false,
             };
         }
+
+        /** 해당 날짜가 설정된 방학 기간(시작·종료 포함)인지 */
+        function isWorldVacationDay(d = new Date()) {
+            const ws = getWorldSettings();
+            if (!ws.vacationEnabled) return false;
+            const start = ws.vacationStartDate;
+            const end = ws.vacationEndDate;
+            if (!start || !end) return false;
+            const ymd = typeof d === 'string' ? normalizeWorldDateYmd(d) : (
+                `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            );
+            if (!ymd) return false;
+            return ymd >= start && ymd <= end;
+        }
+
+        /**
+         * 방학 중 자동 처리 일시정지 여부.
+         * kind: lunch | salary | classXp | bankBonus | thermometer
+         */
+        function isVacationAutomationPaused(kind, d = new Date()) {
+            if (!isWorldVacationDay(d)) return false;
+            const ws = getWorldSettings();
+            if (kind === 'lunch') return !!ws.vacationPauseLunch;
+            if (kind === 'salary') return !!ws.vacationPauseSalary;
+            if (kind === 'classXp') return !!ws.vacationPauseClassXp;
+            if (kind === 'bankBonus') return !!ws.vacationPauseBankBonus;
+            if (kind === 'thermometer') return !!ws.vacationPauseThermometer;
+            return true;
+        }
+
+        window.isWorldVacationDay = isWorldVacationDay;
+        window.isVacationAutomationPaused = isVacationAutomationPaused;
 
         function getWorldSettings() {
             return sanitizeWorldSettings(window.globalSettings && window.globalSettings.worldSettings);
@@ -697,6 +765,28 @@ function redrawPlazaGrantsUi() {
             setVal('wsAcademicYear', ws.academicYear);
             setVal('wsSemester', ws.semester);
             setVal('wsTermLabel', ws.termLabel || `${ws.academicYear}학년도 ${ws.semester}학기`);
+            setCheck('wsVacationEnabled', ws.vacationEnabled);
+            setVal('wsVacationLabel', ws.vacationLabel);
+            setVal('wsVacationStartDate', ws.vacationStartDate);
+            setVal('wsVacationEndDate', ws.vacationEndDate);
+            setCheck('wsVacationPauseLunch', ws.vacationPauseLunch);
+            setCheck('wsVacationPauseSalary', ws.vacationPauseSalary);
+            setCheck('wsVacationPauseClassXp', ws.vacationPauseClassXp);
+            setCheck('wsVacationPauseBankBonus', ws.vacationPauseBankBonus);
+            setCheck('wsVacationPauseThermometer', ws.vacationPauseThermometer);
+            const vacStatus = document.getElementById('wsVacationStatus');
+            if (vacStatus) {
+                if (!ws.vacationEnabled) {
+                    vacStatus.textContent = '방학 모드 꺼짐 — 자동 지급·차감이 평소처럼 동작합니다.';
+                    vacStatus.className = 'text-[10px] font-bold text-slate-400 min-h-[1rem]';
+                } else if (isWorldVacationDay()) {
+                    vacStatus.textContent = `🏖️ 지금 ${ws.vacationLabel || '방학'} 기간입니다 (${ws.vacationStartDate} ~ ${ws.vacationEndDate}). 선택한 자동 처리가 멈춰 있습니다.`;
+                    vacStatus.className = 'text-[10px] font-bold text-sky-300 min-h-[1rem]';
+                } else {
+                    vacStatus.textContent = `방학 예정/종료: ${ws.vacationLabel || '방학'} ${ws.vacationStartDate} ~ ${ws.vacationEndDate} (오늘은 방학 기간 밖)`;
+                    vacStatus.className = 'text-[10px] font-bold text-slate-400 min-h-[1rem]';
+                }
+            }
             setVal('wsClassDisplayName', meta.displayName || '');
             setVal('wsClassSchoolYear', meta.schoolYear || ws.academicYear);
             setVal('wsClassGrade', meta.grade || 6);
@@ -751,6 +841,15 @@ function redrawPlazaGrantsUi() {
                 academicYear: num('wsAcademicYear', 2026),
                 semester: num('wsSemester', 1),
                 termLabel: text('wsTermLabel'),
+                vacationEnabled: !!(document.getElementById('wsVacationEnabled')?.checked),
+                vacationLabel: text('wsVacationLabel'),
+                vacationStartDate: text('wsVacationStartDate'),
+                vacationEndDate: text('wsVacationEndDate'),
+                vacationPauseLunch: !!(document.getElementById('wsVacationPauseLunch')?.checked),
+                vacationPauseSalary: !!(document.getElementById('wsVacationPauseSalary')?.checked),
+                vacationPauseClassXp: !!(document.getElementById('wsVacationPauseClassXp')?.checked),
+                vacationPauseBankBonus: !!(document.getElementById('wsVacationPauseBankBonus')?.checked),
+                vacationPauseThermometer: !!(document.getElementById('wsVacationPauseThermometer')?.checked),
             });
 
             const opsPayload = {
@@ -4822,7 +4921,7 @@ ${subjectLine}
                 accrued.maturityCredit = maturity.credit;
                 accrued.maturityMsgs = maturity.msgs;
             }
-            if (!isAdmin) {
+            if (!isAdmin && !isVacationAutomationPaused('bankBonus')) {
                 const totalDep = normalizeBongValue(accrued.bankRegularSavings + sumBankTermDeposits(accrued.bankTermDeposits));
                 if (totalDep >= 100) {
                     const last = accrued.bankDailyBonusLastDate;
@@ -5782,6 +5881,7 @@ ${subjectLine}
 
         function checkLearningThermometerAutoSettlement() {
             if (!window.playerState || !window.playerState.isAdmin) return;
+            if (isVacationAutomationPaused('thermometer')) return;
             const now = new Date();
             if (now.getHours() < LEARNING_THERMOMETER_AUTO_HOUR) return;
             const state = getLearningThermometerState();
@@ -9480,6 +9580,7 @@ ${subjectLine}
         /** 일반예금+적금 원금 합 100 B 이상: 마지막 지급일 기준 3일마다 지갑으로 1 B */
         function applyBankRegularDailyBonus() {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return false;
+            if (isVacationAutomationPaused('bankBonus')) return false;
             const total = getBankTotalDeposits();
             if (total < 100) return false;
             const today = getLocalDateStr();
@@ -9508,7 +9609,10 @@ ${subjectLine}
                 const today = getLocalDateStr();
                 const last = window.playerState.bankDailyBonusLastDate || '';
                 const gotToday = last === today;
-                if (total < 100) {
+                if (isVacationAutomationPaused('bankBonus')) {
+                    const ws = getWorldSettings();
+                    dailyLine.textContent = `🏖️ ${ws.vacationLabel || '방학'} 기간에는 예금 주기 보너스가 지급되지 않습니다. (${ws.vacationStartDate} ~ ${ws.vacationEndDate})`;
+                } else if (total < 100) {
                     dailyLine.textContent = '일반예금+적금 원금 합계 100 B 이상이면, 마지막 지급일 기준 3일마다 1 B가 지갑으로 지급됩니다.';
                 } else if (gotToday) {
                     dailyLine.textContent = '오늘 주기 보너스(1 B)를 이미 받았습니다.';
@@ -13493,6 +13597,7 @@ ${subjectLine}
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
+            if (isVacationAutomationPaused('classXp', now)) return;
             const day = now.getDay();
             if (day === 0 || day === 6) return;
 
@@ -13548,6 +13653,8 @@ ${subjectLine}
             let dDate = new Date(now);
             if (day === 6) dDate.setDate(now.getDate() - 1);
             else if (day === 0) dDate.setDate(now.getDate() - 2);
+            /** 정산 대상 금요일(또는 금요 당일)이 방학이면 주급 지급 안 함 */
+            if (isVacationAutomationPaused('salary', dDate)) return;
 
             const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
 
@@ -13594,6 +13701,7 @@ ${subjectLine}
             if (window.playerState.isAdmin) return;
 
             const now = new Date();
+            if (isVacationAutomationPaused('lunch', now)) return;
             const day = now.getDay();
             if (day < 1 || day > 5) return;
             if (now.getHours() < 12) return;

@@ -536,27 +536,285 @@ function redrawPlazaGrantsUi() {
         };
 
         // ==========================================
-        // ★ 시즌 타이머 로직 ★
+        // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
+        const DEFAULT_WORLD_SETTINGS = {
+            worldName: '삼봉월드',
+            worldNameEn: 'SAMBONG WORLD',
+            navBadge: 'S1',
+            tagline: '',
+            footerCredit: '삼봉월드 창조자 마스터 J & 해적 마스터 A',
+            seasonNumber: 1,
+            seasonLabel: '시즌 1',
+            seasonTheme: '여름 바다 모험',
+            seasonNature: 'summer',
+            seasonStartAt: '',
+            seasonEndAt: '2027-01-06T00:00:00',
+            showSeasonTimer: true,
+            academicYear: 2026,
+            semester: 1,
+            termLabel: '',
+        };
+
+        function toDatetimeLocalValue(raw) {
+            if (!raw) return '';
+            const d = new Date(raw);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function fromDatetimeLocalValue(raw) {
+            const s = String(raw || '').trim();
+            if (!s) return '';
+            const d = new Date(s);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
+        }
+
+        function sanitizeWorldSettings(raw) {
+            const src = raw && typeof raw === 'object' ? raw : {};
+            const seasonNumber = Math.max(1, Math.min(99, Math.floor(Number(src.seasonNumber) || DEFAULT_WORLD_SETTINGS.seasonNumber)));
+            const semester = Number(src.semester) === 2 ? 2 : 1;
+            const academicYear = Math.max(2020, Math.min(2100, Math.floor(Number(src.academicYear) || DEFAULT_WORLD_SETTINGS.academicYear)));
+            const nature = ['spring', 'summer', 'fall', 'winter', 'custom'].includes(src.seasonNature)
+                ? src.seasonNature
+                : DEFAULT_WORLD_SETTINGS.seasonNature;
+            return {
+                worldName: String(src.worldName || DEFAULT_WORLD_SETTINGS.worldName).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldName,
+                worldNameEn: String(src.worldNameEn || DEFAULT_WORLD_SETTINGS.worldNameEn).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldNameEn,
+                navBadge: String(src.navBadge || DEFAULT_WORLD_SETTINGS.navBadge).trim().slice(0, 12) || DEFAULT_WORLD_SETTINGS.navBadge,
+                tagline: String(src.tagline || '').trim().slice(0, 80),
+                footerCredit: String(src.footerCredit || DEFAULT_WORLD_SETTINGS.footerCredit).trim().slice(0, 120) || DEFAULT_WORLD_SETTINGS.footerCredit,
+                seasonNumber,
+                seasonLabel: String(src.seasonLabel || `시즌 ${seasonNumber}`).trim().slice(0, 30) || `시즌 ${seasonNumber}`,
+                seasonTheme: String(src.seasonTheme || DEFAULT_WORLD_SETTINGS.seasonTheme).trim().slice(0, 60),
+                seasonNature: nature,
+                seasonStartAt: String(src.seasonStartAt || '').trim(),
+                seasonEndAt: String(src.seasonEndAt || DEFAULT_WORLD_SETTINGS.seasonEndAt).trim() || DEFAULT_WORLD_SETTINGS.seasonEndAt,
+                showSeasonTimer: src.showSeasonTimer !== false,
+                academicYear,
+                semester,
+                termLabel: String(src.termLabel || '').trim().slice(0, 40),
+            };
+        }
+
+        function getWorldSettings() {
+            return sanitizeWorldSettings(window.globalSettings && window.globalSettings.worldSettings);
+        }
+
+        function setLocalWorldSettings(next) {
+            if (!window.globalSettings) window.globalSettings = {};
+            window.globalSettings.worldSettings = sanitizeWorldSettings(next);
+        }
+
+        function applyWorldBranding() {
+            const ws = getWorldSettings();
+            const seasonLine = ws.seasonTheme
+                ? `[${ws.seasonLabel} : ${ws.seasonTheme}]`
+                : `[${ws.seasonLabel}]`;
+            document.title = `${ws.academicYear} ${ws.worldName}: ${ws.seasonLabel}`;
+
+            const loginTitle = document.getElementById('loginWorldTitle');
+            if (loginTitle) loginTitle.textContent = ws.worldNameEn || ws.worldName;
+            const loginSub = document.getElementById('loginSeasonSubtitle');
+            if (loginSub) {
+                const emoji = ws.seasonNature === 'winter' ? '❄️'
+                    : ws.seasonNature === 'fall' ? '🍂'
+                        : ws.seasonNature === 'spring' ? '🌸'
+                            : '🌊';
+                loginSub.textContent = `${emoji} ${seasonLine}`;
+            }
+            const navBrand = document.getElementById('navWorldBrand');
+            if (navBrand) {
+                const en = String(ws.worldNameEn || 'SAMBONG').trim();
+                navBrand.textContent = en.split(/\s+/)[0] || 'SAMBONG';
+            }
+            const navBadge = document.getElementById('navSeasonBadge');
+            if (navBadge) navBadge.textContent = ws.navBadge || `S${ws.seasonNumber}`;
+            const seasonLabel = document.getElementById('seasonTimerLabel');
+            if (seasonLabel) seasonLabel.textContent = `${ws.seasonLabel} 종료까지`;
+            const footer = document.getElementById('footerCreditText');
+            if (footer) footer.textContent = `- ${ws.footerCredit} -`;
+            const timerWrap = seasonLabel && seasonLabel.closest('.glass-panel');
+            if (timerWrap) timerWrap.classList.toggle('hidden', !ws.showSeasonTimer);
+            updateSeasonTimer();
+        }
+
         function updateSeasonTimer() {
             const timerEl = document.getElementById('seasonTimerDisplay');
             if (!timerEl) return;
-            const seasonEnd = new Date('2027-01-06T00:00:00'); 
+            const ws = getWorldSettings();
+            const seasonEnd = new Date(ws.seasonEndAt || DEFAULT_WORLD_SETTINGS.seasonEndAt);
             const now = new Date();
+            if (isNaN(seasonEnd.getTime())) {
+                timerEl.innerText = '날짜 오류';
+                return;
+            }
             const diff = seasonEnd - now;
 
             if (diff <= 0) {
-                timerEl.innerText = "시즌 종료!";
-                timerEl.classList.replace('text-emerald-400', 'text-sb-red');
+                timerEl.innerText = '시즌 종료!';
+                timerEl.classList.remove('text-cyan-400', 'text-emerald-400');
+                timerEl.classList.add('text-sb-red');
                 return;
             }
+            timerEl.classList.remove('text-sb-red');
+            timerEl.classList.add('text-cyan-400');
             const d = Math.floor(diff / (1000 * 60 * 60 * 24));
             const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
             const m = Math.floor((diff / 1000 / 60) % 60);
             timerEl.innerText = `${d}일 ${h}시간 ${m}분`;
         }
-        setInterval(updateSeasonTimer, 60000); 
-        updateSeasonTimer(); 
+        setInterval(updateSeasonTimer, 60000);
+        updateSeasonTimer();
+
+        window.renderWorldSettingsPanel = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const ws = getWorldSettings();
+            const meta = window.classMeta || buildDefaultClassMeta(typeof appId !== 'undefined' ? appId : 'sambong-class-2026');
+            const setVal = (id, v) => {
+                const el = document.getElementById(id);
+                if (el && document.activeElement !== el) el.value = v == null ? '' : String(v);
+            };
+            const setCheck = (id, on) => {
+                const el = document.getElementById(id);
+                if (el && document.activeElement !== el) el.checked = !!on;
+            };
+            setVal('wsWorldName', ws.worldName);
+            setVal('wsWorldNameEn', ws.worldNameEn);
+            setVal('wsNavBadge', ws.navBadge);
+            setVal('wsTagline', ws.tagline);
+            setVal('wsFooterCredit', ws.footerCredit);
+            setVal('wsSeasonNumber', ws.seasonNumber);
+            setVal('wsSeasonLabel', ws.seasonLabel);
+            setVal('wsSeasonTheme', ws.seasonTheme);
+            setVal('wsSeasonNature', ws.seasonNature);
+            setCheck('wsShowSeasonTimer', ws.showSeasonTimer);
+            setVal('wsSeasonStartAt', toDatetimeLocalValue(ws.seasonStartAt));
+            setVal('wsSeasonEndAt', toDatetimeLocalValue(ws.seasonEndAt));
+            setVal('wsAcademicYear', ws.academicYear);
+            setVal('wsSemester', ws.semester);
+            setVal('wsTermLabel', ws.termLabel || `${ws.academicYear}학년도 ${ws.semester}학기`);
+            setVal('wsClassDisplayName', meta.displayName || '');
+            setVal('wsClassSchoolYear', meta.schoolYear || ws.academicYear);
+            setVal('wsClassGrade', meta.grade || 6);
+            setVal('wsClassHomeroom', meta.homeroom || 1);
+            setVal('wsGmaEditStudentId', meta.gmaEditStudentId || '13');
+            setVal('wsClassIdReadonly', meta.classId || (typeof appId !== 'undefined' ? appId : ''));
+            setVal('wsRaidPassword', (window.globalSettings && window.globalSettings.raidPassword) || '1234');
+            setVal('wsBankInterest', window.globalSettings && window.globalSettings.bankInterestPercent != null
+                ? window.globalSettings.bankInterestPercent : 0);
+            setVal('wsRaidRewardXp', (window.globalSettings && window.globalSettings.weekendRaidRewardXp) || 100);
+            setVal('wsRaidRewardBong', (window.globalSettings && window.globalSettings.weekendRaidRewardBong) || 20);
+            setVal('wsAnnouncement', (window.globalSettings && window.globalSettings.announcement) || '');
+            setVal('wsMorningNotice', (window.globalSettings && window.globalSettings.morningActivityNotice) || DEFAULT_MORNING_ACTIVITY_NOTICE);
+
+            const classPanel = document.getElementById('settingsClassPanel');
+            if (classPanel) {
+                classPanel.classList.toggle('opacity-60', !window.playerState.isGM);
+                classPanel.querySelectorAll('input').forEach((inp) => {
+                    if (inp.id === 'wsClassIdReadonly') return;
+                    inp.disabled = !window.playerState.isGM;
+                });
+            }
+            const status = document.getElementById('settingsStatus');
+            if (status) status.textContent = '현재 설정을 불러왔습니다. 수정 후 「설정 저장」을 누르세요.';
+        };
+
+        window.saveWorldSettingsFromPanel = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 설정을 저장할 수 있습니다.');
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const status = document.getElementById('settingsStatus');
+            const num = (id, fallback) => {
+                const n = Number(document.getElementById(id)?.value);
+                return Number.isFinite(n) ? n : fallback;
+            };
+            const text = (id) => String(document.getElementById(id)?.value || '').trim();
+
+            const worldSettings = sanitizeWorldSettings({
+                worldName: text('wsWorldName'),
+                worldNameEn: text('wsWorldNameEn'),
+                navBadge: text('wsNavBadge'),
+                tagline: text('wsTagline'),
+                footerCredit: text('wsFooterCredit'),
+                seasonNumber: num('wsSeasonNumber', 1),
+                seasonLabel: text('wsSeasonLabel'),
+                seasonTheme: text('wsSeasonTheme'),
+                seasonNature: text('wsSeasonNature') || 'summer',
+                showSeasonTimer: !!(document.getElementById('wsShowSeasonTimer')?.checked),
+                seasonStartAt: fromDatetimeLocalValue(document.getElementById('wsSeasonStartAt')?.value),
+                seasonEndAt: fromDatetimeLocalValue(document.getElementById('wsSeasonEndAt')?.value) || DEFAULT_WORLD_SETTINGS.seasonEndAt,
+                academicYear: num('wsAcademicYear', 2026),
+                semester: num('wsSemester', 1),
+                termLabel: text('wsTermLabel'),
+            });
+
+            const opsPayload = {
+                worldSettings,
+                raidPassword: text('wsRaidPassword') || '1234',
+                bankInterestPercent: Math.max(0, Math.min(100, num('wsBankInterest', 0))),
+                weekendRaidRewardXp: Math.max(0, Math.floor(num('wsRaidRewardXp', 100))),
+                weekendRaidRewardBong: Math.max(0, Math.floor(num('wsRaidRewardBong', 20))),
+                announcement: text('wsAnnouncement'),
+                morningActivityNotice: text('wsMorningNotice') || DEFAULT_MORNING_ACTIVITY_NOTICE,
+            };
+
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다.');
+
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), opsPayload, { merge: true });
+                window.globalSettings = { ...window.globalSettings, ...opsPayload };
+                setLocalWorldSettings(worldSettings);
+
+                if (window.playerState.isGM) {
+                    const displayName = text('wsClassDisplayName') || window.classMeta?.displayName || '우리 반';
+                    const schoolYear = Math.floor(num('wsClassSchoolYear', worldSettings.academicYear));
+                    const grade = Math.max(1, Math.min(6, Math.floor(num('wsClassGrade', 6))));
+                    const homeroom = Math.max(1, Math.min(20, Math.floor(num('wsClassHomeroom', 1))));
+                    const gmaEditStudentId = text('wsGmaEditStudentId') || '13';
+                    const classPayload = {
+                        classId: appId,
+                        displayName,
+                        schoolYear,
+                        grade,
+                        homeroom,
+                        gmaEditStudentId,
+                        inviteCode: window.classMeta?.inviteCode || generateInviteCode(),
+                        isActive: true,
+                        roster: window.classMeta?.roster || buildDefaultRosterFromLegacy(),
+                        staff: window.classMeta?.staff || DEFAULT_CLASS_STAFF,
+                        updatedAt: serverTimestamp(),
+                    };
+                    await setDoc(doc(db, 'classes', appId), classPayload, { merge: true });
+                    window.classMeta = { ...window.classMeta, ...classPayload };
+                    syncNameGenderMaps();
+                    populateLoginSelect();
+                    updateClassDisplayLabels();
+                    if (typeof window.renderClassAdminPanel === 'function') window.renderClassAdminPanel();
+                }
+
+                applyWorldBranding();
+                const pwDisplay = document.getElementById('currentRaidPwDisplay');
+                if (pwDisplay) pwDisplay.innerText = opsPayload.raidPassword;
+                const npcEl = document.getElementById('npcText');
+                if (npcEl) {
+                    npcEl.innerText = opsPayload.announcement
+                        ? `"[공지] ${opsPayload.announcement}"`
+                        : '"(등록된 공지가 없습니다)"';
+                }
+                if (status) status.textContent = '✅ 설정을 저장했습니다.';
+                await window.customAlert('✅ 월드 설정을 저장했습니다.');
+            } catch (e) {
+                console.error('saveWorldSettingsFromPanel', e);
+                if (status) status.textContent = '저장 실패';
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        }; 
 
         // ==========================================
         // ★ 환경 설정 및 데이터 정의 ★
@@ -858,6 +1116,10 @@ function redrawPlazaGrantsUi() {
             if (window.playerState && window.playerState.isAdmin && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
             }
+            const settingsSec = document.getElementById('settingsSection');
+            if (settingsSec && !settingsSec.classList.contains('hidden') && window.playerState?.isAdmin) {
+                window.renderWorldSettingsPanel();
+            }
         }
 
         window.switchClass = function(nextClassId, { reload = true } = {}) {
@@ -1100,7 +1362,8 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null };
+        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+        applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
         /** 편의점 주문 목록 스냅샷: 최신순 배열 */
@@ -4866,12 +5129,15 @@ ${subjectLine}
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'shop', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin'];
+        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'shop', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin', 'settings'];
         /** 기본 탭: 광장(plaza) */
         let currentTabIndex = 2;
 
         window.switchTab = function(tabId) {
             if (isMartialLawLockingStudent()) return;
+            if (tabId === 'settings' && (!window.playerState || !window.playerState.isAdmin)) {
+                return window.customAlert('마스터만 설정 탭을 열 수 있습니다.');
+            }
             if (tabId === 'classtools' && (!canViewClassTools())) {
                 enforceClassToolsAccess();
                 return;
@@ -4885,7 +5151,7 @@ ${subjectLine}
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'text-violet-300', 'border-violet-400', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -4903,6 +5169,7 @@ ${subjectLine}
                 else if (tabId === 'constitution') activeBtn.classList.add('border-amber-300', 'text-amber-300', 'bg-slate-800/50');
                 else if (tabId === 'classtools') activeBtn.classList.add('border-lime-500', 'text-lime-400', 'bg-slate-800/50');
                 else if (tabId === 'shop') activeBtn.classList.add('border-pink-500', 'text-pink-400', 'bg-slate-800/50');
+                else if (tabId === 'settings') activeBtn.classList.add('border-violet-400', 'text-violet-300', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 
@@ -4933,6 +5200,9 @@ ${subjectLine}
                 renderConvenienceManagerUi();
                 renderLottoPanel();
                 renderWorldCupBetPanel();
+            }
+            if (tabId === 'settings' && window.playerState && window.playerState.isAdmin) {
+                window.renderWorldSettingsPanel();
             }
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
@@ -8283,6 +8553,14 @@ ${subjectLine}
                                 const keepLocalLearningThermometer = settingsData.learningThermometer !== undefined && isLearningThermometerLocallyBusy();
                                 const localLearningThermometer = window.globalSettings && window.globalSettings.learningThermometer;
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
+                                if (settingsData.worldSettings !== undefined) {
+                                    window.globalSettings.worldSettings = sanitizeWorldSettings(settingsData.worldSettings);
+                                    applyWorldBranding();
+                                    const settingsSec = document.getElementById('settingsSection');
+                                    if (settingsSec && !settingsSec.classList.contains('hidden') && window.playerState?.isAdmin) {
+                                        window.renderWorldSettingsPanel();
+                                    }
+                                }
                                 if (settingsData.musicTimeQueue !== undefined) {
                                     window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
                                     maybeShowMusicTimeRequestPopup({ fromCache });
@@ -9700,6 +9978,8 @@ ${subjectLine}
 
             if (window.playerState.isAdmin) {
                 document.getElementById('tab-admin').classList.remove('hidden');
+                const tabSettings = document.getElementById('tab-settings');
+                if (tabSettings) tabSettings.classList.remove('hidden');
                 document.getElementById('todoPanel').classList.add('hidden'); 
                 if(window.playerState.isGM) {
                     document.getElementById('gmResetPanel').classList.remove('hidden');
@@ -9749,6 +10029,8 @@ ${subjectLine}
                 if (gbMasterPanel) gbMasterPanel.classList.remove('hidden');
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
+                const tabSettingsOff = document.getElementById('tab-settings');
+                if (tabSettingsOff) tabSettingsOff.classList.add('hidden');
                 document.getElementById('todoPanel').classList.remove('hidden');
                 const plazaGM = document.getElementById('plazaGMControls');
                 if(plazaGM) plazaGM.classList.add('hidden');

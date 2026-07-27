@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>2026 삼봉 월드: 시즌 1</title>
+            <title id="docTitle">2026 삼봉 월드: 시즌 1</title>
     <meta name="theme-color" content="#0ea5e9">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -41,8 +41,8 @@
         <div class="text-center mb-8 relative">
             <div class="absolute inset-0 bg-cyan-400/15 blur-[100px] rounded-full"></div>
             <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-cyan-200 mb-4 animate-bounce relative z-10"></i>
-            <h1 class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(56,189,248,0.6)] relative z-10">SAMBONG WORLD</h1>
-            <p class="text-sm sm:text-base text-cyan-200/90 mt-2 font-bold tracking-widest relative z-10">🌊 [시즌 1 : 여름 바다 모험]</p>
+            <h1 id="loginWorldTitle" class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(56,189,248,0.6)] relative z-10">SAMBONG WORLD</h1>
+            <p id="loginSeasonSubtitle" class="text-sm sm:text-base text-cyan-200/90 mt-2 font-bold tracking-widest relative z-10">🌊 [시즌 1 : 여름 바다 모험]</p>
         </div>
 
         <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-sm w-full shadow-2xl border-t-4 border-t-cyan-400/80 relative z-10">
@@ -74,7 +74,7 @@
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex items-center justify-between h-14">
             <div class="flex items-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md"></i>
-                <span class="font-display text-lg text-white tracking-widest">SAMBONG <span class="text-cyan-400">S1</span></span>
+                <span class="font-display text-lg text-white tracking-widest"><span id="navWorldBrand">SAMBONG</span> <span id="navSeasonBadge" class="text-cyan-400">S1</span></span>
                 <span id="navClassLabel" class="hidden sm:inline text-[10px] text-emerald-300/80 font-bold truncate max-w-[8rem]" title="">우리 반</span>
             </div>
             <div class="flex items-center space-x-2">
@@ -99,6 +99,7 @@
             <button id="tab-bank" onclick="window.switchTab('bank')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-sky-400">은행</button>
             <button id="tab-classtools" onclick="window.switchTab('classtools')" class="hidden flex-1 min-w-[80px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-lime-400">수업도구</button>
             <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
+            <button id="tab-settings" onclick="window.switchTab('settings')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-violet-300">설정</button>
         </div>
     </nav>
 
@@ -323,7 +324,7 @@
             <div class="glass-panel p-3 rounded-2xl flex justify-between items-center bg-slate-800/80 border border-slate-700 shadow-sm">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-hourglass-half text-sb-gold animate-pulse text-sm"></i>
-                    <span class="text-xs font-bold text-slate-300">시즌 1 종료까지</span>
+                    <span id="seasonTimerLabel" class="text-xs font-bold text-slate-300">시즌 1 종료까지</span>
                 </div>
                 <div id="seasonTimerDisplay" class="font-display text-cyan-400 tracking-wider text-sm sm:text-base">계산중...</div>
             </div>
@@ -1523,9 +1524,155 @@
                 <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
             </div>
         </section>
+
+        <!-- ★ 설정 탭 (마스터 전용) ★ -->
+        <section id="settingsSection" class="hidden space-y-4">
+            <div class="mb-2">
+                <h2 class="text-2xl font-display text-violet-300"><i class="fa-solid fa-sliders"></i> 월드 설정</h2>
+                <p class="text-[10px] text-slate-400 mt-1">마스터만 볼 수 있습니다. 월드·시즌·학사·학급 정보를 나눠 저장합니다.</p>
+            </div>
+
+            <div id="settingsStatus" class="text-[10px] text-violet-300/90 font-bold min-h-[1rem]">—</div>
+
+            <!-- 1. 월드 기본 -->
+            <div class="glass-panel p-4 rounded-2xl border border-violet-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-globe text-violet-400"></i> 1. 월드 기본</h3>
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <label class="text-[10px] text-slate-300 font-bold">월드 이름 (한글)
+                        <input id="wsWorldName" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 삼봉월드">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">월드 이름 (영문/표기)
+                        <input id="wsWorldNameEn" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: SAMBONG WORLD">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">상단 배지 (짧은 표기)
+                        <input id="wsNavBadge" type="text" maxlength="12" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: S1">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">한 줄 소개 / 태그라인
+                        <input id="wsTagline" type="text" maxlength="80" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 추억과 사랑의 메타버스">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">푸터 크레딧
+                        <input id="wsFooterCredit" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 삼봉월드 창조자 마스터 J & 해적 마스터 A">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 2. 시즌 -->
+            <div class="glass-panel p-4 rounded-2xl border border-cyan-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week text-cyan-400"></i> 2. 시즌</h3>
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <label class="text-[10px] text-slate-300 font-bold">시즌 번호
+                        <input id="wsSeasonNumber" type="number" min="1" max="99" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">시즌 표기 이름
+                        <input id="wsSeasonLabel" type="text" maxlength="30" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 시즌 1">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">시즌 테마 / 부제
+                        <input id="wsSeasonTheme" type="text" maxlength="60" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 여름 바다 모험">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">계절 분위기
+                        <select id="wsSeasonNature" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                            <option value="spring">봄</option>
+                            <option value="summer">여름</option>
+                            <option value="fall">가을</option>
+                            <option value="winter">겨울</option>
+                            <option value="custom">기타</option>
+                        </select>
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold flex items-center gap-2 mt-6">
+                        <input id="wsShowSeasonTimer" type="checkbox" class="rounded border-slate-600">
+                        <span>월드맵에 시즌 종료 타이머 표시</span>
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">시즌 시작일
+                        <input id="wsSeasonStartAt" type="datetime-local" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">시즌 종료일
+                        <input id="wsSeasonEndAt" type="datetime-local" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 3. 학사 -->
+            <div class="glass-panel p-4 rounded-2xl border border-emerald-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-graduation-cap text-emerald-400"></i> 3. 학사 일정</h3>
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <label class="text-[10px] text-slate-300 font-bold">학년도 (월드 표기)
+                        <input id="wsAcademicYear" type="number" min="2020" max="2100" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">학기
+                        <select id="wsSemester" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                            <option value="1">1학기</option>
+                            <option value="2">2학기</option>
+                        </select>
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">학기 표기 문구 (선택)
+                        <input id="wsTermLabel" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 2026학년도 1학기">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 4. 학급 -->
+            <div id="settingsClassPanel" class="glass-panel p-4 rounded-2xl border border-amber-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-school text-amber-400"></i> 4. 학급 정보</h3>
+                <p class="text-[9px] text-slate-500">학급 ID·명단 상세는 마스터 탭 「학급·명단 관리」에서도 다룰 수 있습니다. 여기서는 핵심 식별 정보만 빠르게 바꿉니다.</p>
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">학급 표시 이름
+                        <input id="wsClassDisplayName" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 6학년 1반">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">학년도 (학급 데이터)
+                        <input id="wsClassSchoolYear" type="number" min="2020" max="2100" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">학년
+                        <input id="wsClassGrade" type="number" min="1" max="6" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">반
+                        <input id="wsClassHomeroom" type="number" min="1" max="20" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">마스터 A 편집 대상 학번
+                        <input id="wsGmaEditStudentId" type="text" maxlength="8" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold" placeholder="예: 13">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">현재 학급 ID (읽기 전용)
+                        <input id="wsClassIdReadonly" type="text" readonly class="mt-1 w-full bg-slate-900 border border-slate-700 text-slate-400 rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 5. 운영 기본값 -->
+            <div class="glass-panel p-4 rounded-2xl border border-pink-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-screwdriver-wrench text-pink-400"></i> 5. 운영 기본값</h3>
+                <div class="grid sm:grid-cols-2 gap-3">
+                    <label class="text-[10px] text-slate-300 font-bold">레이드 비밀번호
+                        <input id="wsRaidPassword" type="text" maxlength="20" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">은행 이자율 (%)
+                        <input id="wsBankInterest" type="number" min="0" max="100" step="0.1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">주말 레이드 보상 XP
+                        <input id="wsRaidRewardXp" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">주말 레이드 보상 B
+                        <input id="wsRaidRewardBong" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">광장 공지
+                        <textarea id="wsAnnouncement" rows="2" maxlength="200" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold resize-y" placeholder="광장 NPC 공지"></textarea>
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">아침활동 안내 문구
+                        <textarea id="wsMorningNotice" rows="2" maxlength="300" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold resize-y"></textarea>
+                    </label>
+                </div>
+            </div>
+
+            <div class="sticky bottom-2 z-10 flex flex-col sm:flex-row gap-2">
+                <button type="button" onclick="window.saveWorldSettingsFromPanel()" class="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-3 px-4 rounded-xl text-sm border border-violet-300/40 shadow-lg">
+                    <i class="fa-solid fa-floppy-disk"></i> 설정 저장
+                </button>
+                <button type="button" onclick="window.renderWorldSettingsPanel()" class="sm:w-40 bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl text-xs">
+                    다시 불러오기
+                </button>
+            </div>
+        </section>
         
         <footer class="text-center text-slate-500 py-6 border-t border-slate-800 mt-10">
-            <p class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
+            <p id="footerCreditText" class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
         </footer>
     </div>
 

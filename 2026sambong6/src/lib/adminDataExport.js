@@ -468,3 +468,103 @@ export function downloadAdminStudentWorkbook({ selectedIds, ctx, fileName }) {
     XLSX.writeFile(wb, outName);
     return { fileName: outName, sheetCount };
 }
+
+/** 선택한 시트를 JSON으로 묶어 다운로드 (보고서·분석용) */
+export function downloadAdminStudentJson({ selectedIds, ctx, fileName }) {
+    const selected = new Set((selectedIds || []).map(String));
+    if (!selected.size) throw new Error('선택된 항목이 없습니다.');
+
+    const payload = {
+        exportedAt: new Date().toISOString(),
+        sheets: {},
+    };
+
+    const pack = (id, builder) => {
+        if (!selected.has(id)) return;
+        const rows = builder(ctx);
+        const [header, ...body] = rows;
+        payload.sheets[id] = body.map((row) => {
+            const obj = {};
+            header.forEach((h, i) => { obj[h] = row[i]; });
+            return obj;
+        });
+    };
+
+    pack('summary', buildSummaryRows);
+    pack('questHistory', buildQuestHistoryRows);
+    pack('xpLog', buildXpLogRows);
+    pack('bongLog', buildBongLogRows);
+    pack('jobs', buildJobsRows);
+    pack('inventory', buildInventoryRows);
+    pack('purchases', buildPurchaseRows);
+    pack('bank', buildBankRows);
+    pack('questStatus', buildQuestStatusRows);
+    pack('dragonBalls', buildDragonBallRows);
+    pack('lottoBets', buildLottoBetRows);
+
+    if (selected.has('xpDaily')) {
+        const xpAgg = buildDailyAggregateRows(ctx, 'xpChangeLog', 'XP');
+        const [h1, ...b1] = xpAgg.perStudent;
+        payload.sheets.xpDailyStudent = b1.map((row) => Object.fromEntries(h1.map((h, i) => [h, row[i]])));
+        const [h2, ...b2] = xpAgg.classRows;
+        payload.sheets.xpDailyClass = b2.map((row) => Object.fromEntries(h2.map((h, i) => [h, row[i]])));
+    }
+    if (selected.has('bongDaily')) {
+        const bongAgg = buildDailyAggregateRows(ctx, 'bongChangeLog', '봉');
+        const [h1, ...b1] = bongAgg.perStudent;
+        payload.sheets.bongDailyStudent = b1.map((row) => Object.fromEntries(h1.map((h, i) => [h, row[i]])));
+        const [h2, ...b2] = bongAgg.classRows;
+        payload.sheets.bongDailyClass = b2.map((row) => Object.fromEntries(h2.map((h, i) => [h, row[i]])));
+    }
+
+    if (!Object.keys(payload.sheets).length) throw new Error('내보낼 데이터가 없습니다.');
+
+    const stamp = toLocalYmd(new Date()).replace(/-/g, '');
+    const outName = fileName || `삼봉월드_학생데이터_${stamp}.json`;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = outName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return { fileName: outName, sheetCount: Object.keys(payload.sheets).length };
+}
+
+/** 요약+퀘스트기록을 합친 CSV (간단 보고서용) */
+export function downloadAdminStudentCsv({ selectedIds, ctx, fileName }) {
+    const selected = new Set((selectedIds || []).map(String));
+    const chunks = [];
+    const pushBlock = (title, rows) => {
+        chunks.push(`# ${title}`);
+        rows.forEach((row) => {
+            chunks.push(row.map((cell) => {
+                const s = cell == null ? '' : String(cell);
+                if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+                return s;
+            }).join(','));
+        });
+        chunks.push('');
+    };
+    if (selected.has('summary') || !selected.size) pushBlock('학생요약', buildSummaryRows(ctx));
+    if (selected.has('questHistory')) pushBlock('퀘스트완료기록', buildQuestHistoryRows(ctx));
+    if (selected.has('jobs')) pushBlock('직업', buildJobsRows(ctx));
+    if (selected.has('purchases')) pushBlock('구매기록', buildPurchaseRows(ctx));
+    if (selected.has('questStatus')) pushBlock('오늘퀘스트현황', buildQuestStatusRows(ctx));
+    if (!chunks.length) throw new Error('CSV로 내보낼 기본 항목이 없습니다. 요약·퀘스트·직업·구매·오늘현황 중 선택하세요.');
+
+    const stamp = toLocalYmd(new Date()).replace(/-/g, '');
+    const outName = fileName || `삼봉월드_학생데이터_${stamp}.csv`;
+    const blob = new Blob(['\uFEFF' + chunks.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = outName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return { fileName: outName };
+}

@@ -23,6 +23,16 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
+    <!-- 네트워크·로딩 UX -->
+    <div id="offlineBanner" class="hidden fixed top-0 inset-x-0 z-[400] bg-amber-600 text-white text-center text-[11px] sm:text-xs font-bold py-2 px-3 shadow-lg">
+        <i class="fa-solid fa-wifi"></i> 네트워크 연결이 끊겼습니다. 연결되면 자동으로 다시 시도합니다.
+        <button type="button" onclick="void window.retryPendingNetworkActions()" class="ml-2 underline">지금 재시도</button>
+    </div>
+    <div id="globalLoadingOverlay" class="hidden fixed inset-0 z-[390] bg-slate-950/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 px-4" aria-live="polite" aria-busy="true">
+        <i class="fa-solid fa-spinner fa-spin text-3xl text-cyan-300"></i>
+        <p id="globalLoadingText" class="text-sm font-bold text-white text-center">불러오는 중…</p>
+        <p id="globalLoadingError" class="hidden text-[11px] text-red-300 font-bold text-center max-w-sm"></p>
+    </div>
     <!-- 여름 물방울·햇살 배경 (장식) -->
     <div class="summer-sun-glow" aria-hidden="true"></div>
     <div class="summer-bubbles" aria-hidden="true">
@@ -100,6 +110,7 @@
             <button id="tab-classtools" onclick="window.switchTab('classtools')" class="hidden flex-1 min-w-[80px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-lime-400">수업도구</button>
             <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
             <button id="tab-settings" onclick="window.switchTab('settings')" class="hidden flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-violet-300">설정</button>
+            <button id="tab-help" onclick="window.switchTab('help')" class="flex-1 min-w-[70px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">도움말</button>
         </div>
     </nav>
 
@@ -1392,26 +1403,71 @@
                 </div>
                 <p class="text-[8px] text-slate-500 mb-1.5 leading-tight">행: 학생 · 열: 오늘 일일 퀘스트 완료(✓). 가로 스크롤로 전체 열 확인.</p>
                 <div id="adminQuestBoard" class="overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
-                    <div class="text-slate-500 text-[9px] text-center py-6">데이터 로딩 중…</div>
+                    <div class="text-slate-500 text-[9px] text-center py-6"><i class="fa-solid fa-spinner fa-spin mr-1"></i>데이터 로딩 중…</div>
                 </div>
+            </div>
+
+            <!-- ★ 연구·수업 활동 통계 대시보드 ★ -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-fuchsia-500/50 bg-slate-900/80">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chart-line text-fuchsia-400"></i> 활동 통계 (연구·보고서용)</h3>
+                    <button type="button" onclick="window.renderResearchStatsDashboard()" class="bg-fuchsia-700 hover:bg-fuchsia-600 text-white text-[10px] py-1.5 px-3 rounded font-bold">새로고침</button>
+                </div>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">오늘/이번 주 퀘스트 완료율, 학생별 XP 증가, 인기 퀘스트, 상점 이용을 한눈에 봅니다. 아래 CSV·JSON으로 보고서용 그래프 데이터를 저장하세요.</p>
+                <div id="researchStatsPanel" class="space-y-3 text-[10px] text-slate-300">
+                    <div class="text-slate-500 text-center py-4"><i class="fa-solid fa-spinner fa-spin mr-1"></i>마스터 탭을 열면 집계합니다.</div>
+                </div>
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <button type="button" onclick="void window.downloadResearchStatsCsv()" class="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[10px] font-bold py-2 px-3 rounded-lg">CSV 저장</button>
+                    <button type="button" onclick="void window.downloadResearchStatsJson()" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg border border-slate-500">JSON 저장</button>
+                </div>
+            </div>
+
+            <!-- ★ 연구 설문·관찰 일지 ★ -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-rose-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-clipboard-list text-rose-400"></i> 연구 설문 · 관찰 일지</h3>
+                <p class="text-[9px] text-slate-400 leading-relaxed">적용 전·후 설문(참여 동기·자율성·협력 등) 링크와 관찰/소감을 모아 두면 연구 체계성·효과성 증빙에 쓰입니다.</p>
+                <label class="block text-[10px] text-slate-300 font-bold">외부 설문 링크 (Google Form 등)
+                    <input id="researchSurveyUrl" type="url" maxlength="400" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs" placeholder="https://forms.gle/...">
+                </label>
+                <label class="block text-[10px] text-slate-300 font-bold">설문 안내 문구
+                    <input id="researchSurveyNote" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs" placeholder="예: 적용 후 설문 (5분)">
+                </label>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="void window.saveResearchSurveySettings()" class="bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">설문 설정 저장</button>
+                    <button type="button" onclick="window.openResearchSurveyLink()" class="bg-slate-800 hover:bg-slate-700 text-rose-200 text-[10px] font-bold py-2 px-3 rounded-lg border border-rose-500/40">설문 열기</button>
+                </div>
+                <label class="block text-[10px] text-slate-300 font-bold">관찰 일지 / 학생 소감 / 업무 시간 메모
+                    <textarea id="researchJournalInput" rows="3" maxlength="800" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs resize-y" placeholder="예: 3/12 관찰 — 협력 퀘스트에서 서로 돕기 증가. 교사 업무: 출석 체크 5분 단축."></textarea>
+                </label>
+                <button type="button" onclick="void window.addResearchJournalEntry()" class="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold py-2 px-3 rounded-lg">일지 추가</button>
+                <div id="researchJournalList" class="max-h-40 overflow-y-auto space-y-1.5 text-[9px] text-slate-400 border border-slate-800 rounded-lg p-2 bg-slate-950/50"></div>
             </div>
 
             <!-- ★ 학생 데이터 엑셀 내보내기 ★ -->
             <div class="glass-panel p-4 rounded-xl mb-4 border border-lime-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-file-excel text-lime-400"></i> 학생 데이터 엑셀 내보내기</h3>
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-file-excel text-lime-400"></i> 학생 데이터 내보내기</h3>
                     <span id="adminExportStatus" class="text-[9px] text-lime-300/90 font-bold tabular-nums shrink-0">—</span>
                 </div>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">내보낼 항목을 고른 뒤 다운로드하세요. 경험치·봉 <strong class="text-lime-200">일별 집계</strong> 시트는 엑셀에서 그래프로 만들기 쉬운 형태입니다.</p>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">내보낼 항목을 고른 뒤 다운로드하세요. 경험치·봉 <strong class="text-lime-200">일별 집계</strong>는 그래프용입니다. 보고서에는 CSV/JSON도 함께 쓰세요.</p>
                 <div class="flex flex-wrap gap-2 mb-3">
                     <button type="button" onclick="window.selectAllAdminExportSheets(true)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] py-1 px-2 rounded font-bold border border-slate-600">전체 선택</button>
                     <button type="button" onclick="window.selectAllAdminExportSheets(false)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] py-1 px-2 rounded font-bold border border-slate-600">전체 해제</button>
                     <button type="button" onclick="window.selectDefaultAdminExportSheets()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] py-1 px-2 rounded font-bold border border-slate-600">기본 선택</button>
                 </div>
                 <div id="adminExportSheetChecks" class="grid sm:grid-cols-2 gap-1.5 mb-3 text-[10px] text-slate-300"></div>
-                <button type="button" onclick="void window.downloadAdminStudentExcel()" class="w-full sm:w-auto bg-lime-600 hover:bg-lime-500 text-white font-black py-2.5 px-4 rounded-xl text-xs border border-lime-300/40 shadow-lg">
-                    <i class="fa-solid fa-download"></i> 선택한 항목 엑셀 다운로드
-                </button>
+                <div class="flex flex-col sm:flex-row flex-wrap gap-2">
+                    <button type="button" onclick="void window.downloadAdminStudentExcel()" class="flex-1 bg-lime-600 hover:bg-lime-500 text-white font-black py-2.5 px-4 rounded-xl text-xs border border-lime-300/40 shadow-lg">
+                        <i class="fa-solid fa-file-excel"></i> 엑셀(.xlsx)
+                    </button>
+                    <button type="button" onclick="void window.downloadAdminStudentCsv()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs">
+                        CSV
+                    </button>
+                    <button type="button" onclick="void window.downloadAdminStudentJson()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 px-4 rounded-xl text-xs border border-slate-500">
+                        JSON
+                    </button>
+                </div>
             </div>
 
             <!-- 마스터 스피드 퀴즈 (선착순 N명) -->
@@ -1538,8 +1594,13 @@
             <!-- ★ 완전 초기화 (맨 아래·위험) ★ -->
             <div id="gmResetPanel" class="hidden bg-red-900/30 border border-red-500/50 p-4 rounded-xl mt-8 mb-2 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
                 <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
-                <p class="text-[10px] text-slate-300 mb-3">내일 새로운 마음으로 시작하기 위해 모든 학생의 XP, B, 아이템, 상태를 완전 0으로 돌립니다.</p>
-                <button onclick="window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행</button>
+                <p class="text-[10px] text-slate-300 mb-2 leading-relaxed">모든 학생의 XP, B, 아이템, 상태를 0으로 돌립니다. <strong class="text-red-200">되돌리기 어렵습니다.</strong> (개별 백업은 자동 저장되나, 실수 방지를 위해 확인이 강화되어 있습니다.)</p>
+                <ul class="text-[9px] text-red-200/90 list-disc pl-4 mb-3 space-y-0.5">
+                    <li>1단계: 위험 안내 확인</li>
+                    <li>2단계: 「초기화확인」 문구 입력</li>
+                    <li>3단계: 최종 실행 확인</li>
+                </ul>
+                <button onclick="void window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">초기화 실행 (3단계 확인)</button>
             </div>
         </section>
 
@@ -1734,10 +1795,75 @@
                 </button>
             </div>
         </section>
+
+        <!-- ★ 도움말 탭 (전원) ★ -->
+        <section id="helpSection" class="hidden space-y-4">
+            <div class="mb-1">
+                <h2 class="text-2xl font-display text-cyan-300"><i class="fa-solid fa-circle-question"></i> 도움말</h2>
+                <p class="text-[10px] text-slate-400 mt-1">사용 안내 · 삼봉월드만의 특징 · 개인정보 · 출처</p>
+            </div>
+
+            <div class="glass-panel p-4 rounded-2xl border border-cyan-500/40 bg-slate-900/80 space-y-2">
+                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-star text-cyan-400"></i> ClassDojo와 다른 점</h3>
+                <p class="text-[11px] text-slate-300 leading-relaxed">삼봉월드는 단순 행동 점수 앱이 아닙니다. <strong class="text-cyan-200">학급 경제(봉)·직업·헌법·부동산·은행·실시간 레이드·시즌·드래곤볼·공동구매</strong>가 한 메타버스로 연결되어, 교실을 ‘살아있는 사회 시뮬레이션’으로 운영합니다.</p>
+            </div>
+
+            <div class="glass-panel p-4 rounded-2xl border border-emerald-500/40 bg-slate-900/80 space-y-2">
+                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-book-open text-emerald-400"></i> 간단 사용 설명</h3>
+                <ol class="text-[11px] text-slate-300 leading-relaxed list-decimal pl-4 space-y-1.5">
+                    <li><strong class="text-white">로그인:</strong> 학급 초대 코드를 입력한 뒤 이름·PIN으로 접속합니다.</li>
+                    <li><strong class="text-white">학생:</strong> 퀘스트·상점·직업·은행·부동산·레이드를 탐험하며 성장합니다.</li>
+                    <li><strong class="text-white">마스터:</strong> 「마스터」탭에서 명단·공지·시간표·통계·데이터 내보내기를, 「설정」에서 월드·방학을 관리합니다.</li>
+                    <li><strong class="text-white">새 학급:</strong> 마스터 → 학급·명단 관리 → 「새 학급 만들기」로 초대 코드를 발급합니다. 기본 퀘스트·직업·상점 템플릿이 바로 사용됩니다.</li>
+                    <li><strong class="text-white">연구 데이터:</strong> 마스터 탭의 활동 통계·CSV/JSON·관찰 일지·설문 링크를 활용하세요.</li>
+                </ol>
+                <button type="button" onclick="void window.applyDefaultClassTemplates()" class="mt-2 w-full sm:w-auto bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">기본 퀘스트·직업·상점 템플릿 안내</button>
+            </div>
+
+            <div class="glass-panel p-4 rounded-2xl border border-amber-500/40 bg-slate-900/80 space-y-2">
+                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-amber-400"></i> 개인정보 처리</h3>
+                <p class="text-[11px] text-slate-300 leading-relaxed">학번·이름·게임 진행 데이터(XP·봉·퀘스트 등)는 수업 운영 목적으로만 사용됩니다. 자세한 내용은 개인정보 처리방침을 확인해 주세요.</p>
+                <button type="button" onclick="window.openPrivacyPolicyModal()" class="bg-amber-700 hover:bg-amber-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">개인정보 처리방침 보기</button>
+            </div>
+
+            <div class="glass-panel p-4 rounded-2xl border border-slate-500/40 bg-slate-900/80 space-y-2">
+                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-copyright text-slate-300"></i> 저작권·출처</h3>
+                <ul class="text-[10px] text-slate-400 leading-relaxed list-disc pl-4 space-y-1">
+                    <li>앱 UI·로직: 삼봉월드 프로젝트 (교육용)</li>
+                    <li>글꼴: Google Fonts — Black Han Sans, Do Hyeon, Gaegu, Jua, Nanum Pen Script, Noto Sans KR (SIL Open Font License / Apache)</li>
+                    <li>아이콘: Font Awesome 6 (CDN, Font Awesome Free 라이선스)</li>
+                    <li>백엔드: Google Firebase (Firestore 등)</li>
+                    <li>이모지·장식 아이콘은 시스템/유니코드 이모지를 사용합니다.</li>
+                </ul>
+            </div>
+        </section>
         
         <footer class="text-center text-slate-500 py-6 border-t border-slate-800 mt-10">
             <p id="footerCreditText" class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 창조자 마스터 J & 해적 마스터 A -</p>
+            <p class="text-[9px] text-slate-500 mt-2">
+                <button type="button" onclick="window.openPrivacyPolicyModal()" class="underline hover:text-slate-300">개인정보 처리방침</button>
+                ·
+                <button type="button" onclick="window.switchTab('help')" class="underline hover:text-slate-300">도움말·출처</button>
+            </p>
         </footer>
+    </div>
+
+    <!-- 개인정보 처리방침 모달 -->
+    <div id="privacyPolicyModal" class="hidden fixed inset-0 z-[350] bg-black/75 backdrop-blur-sm flex items-center justify-center px-3 py-6">
+        <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-lg w-full border-t-4 border-t-amber-400 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-start gap-2 mb-3">
+                <h3 class="text-lg font-display text-white"><i class="fa-solid fa-shield-halved text-amber-400"></i> 개인정보 처리방침</h3>
+                <button type="button" onclick="window.closePrivacyPolicyModal()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+            </div>
+            <div class="text-[11px] text-slate-300 leading-relaxed space-y-2">
+                <p><strong class="text-white">1. 수집 항목</strong> — 학번·이름(명단), 접속 PIN(해시/저장), 게임 진행 데이터(경험치·봉·퀘스트·구매·직업 등), 선택적 설문 응답(외부 설문 시 해당 서비스 정책 적용).</p>
+                <p><strong class="text-white">2. 이용 목적</strong> — 수업 중 학급 운영, 보상·경제 시뮬레이션, 교육 연구·보고서용 통계(익명·집계 가능).</p>
+                <p><strong class="text-white">3. 보관</strong> — Firebase(Firestore)에 학급(artifacts) 단위로 저장되며, 담임(마스터)이 학급 데이터를 관리합니다.</p>
+                <p><strong class="text-white">4. 제3자 제공</strong> — 수업·연구 목적 외 외부 판매·광고에 제공하지 않습니다. 호스팅·DB는 Google Firebase를 사용합니다.</p>
+                <p><strong class="text-white">5. 권리</strong> — 학생·보호자는 담임 교사에게 열람·수정·삭제(초기화)를 요청할 수 있습니다.</p>
+                <p><strong class="text-white">6. 문의</strong> — 학급 담임(마스터 J)에게 문의하세요.</p>
+            </div>
+        </div>
     </div>
 
     <!-- ★ 판서 모드(전자칠판) 오버레이 — 마스터 전용 ★

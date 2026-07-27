@@ -24,7 +24,15 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
     downloadAdminStudentWorkbook,
+    downloadAdminStudentJson as exportStudentJsonFile,
+    downloadAdminStudentCsv as exportStudentCsvFile,
 } from './lib/adminDataExport.js';
+import { withRetry, isLikelyNetworkError } from './lib/withRetry.js';
+import {
+    computeResearchStats,
+    researchStatsToCsv,
+    downloadTextFile,
+} from './lib/researchStats.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -1502,18 +1510,105 @@ function redrawPlazaGrantsUi() {
                 return true;
             };
             try {
-                return await tryOnce();
+                return await withRetry(tryOnce, {
+                    retries: 2,
+                    baseDelayMs: 450,
+                    onRetry: (n, err) => console.warn(`ensureAnonAuthReady 재시도 ${n}`, err),
+                });
             } catch (e) {
-                console.warn('ensureAnonAuthReady', e);
-                try {
-                    await new Promise((r) => setTimeout(r, 450));
-                    return await tryOnce();
-                } catch (e2) {
-                    console.warn('ensureAnonAuthReady 재시도 실패', e2);
-                    return false;
-                }
+                console.warn('ensureAnonAuthReady 최종 실패', e);
+                return false;
             }
         }
+
+        /** 전역 로딩 스피너 / 에러 표시 */
+        window.showGlobalLoading = function(msg) {
+            const overlay = document.getElementById('globalLoadingOverlay');
+            const text = document.getElementById('globalLoadingText');
+            const err = document.getElementById('globalLoadingError');
+            if (text) text.textContent = msg || '불러오는 중…';
+            if (err) {
+                err.textContent = '';
+                err.classList.add('hidden');
+            }
+            if (overlay) overlay.classList.remove('hidden');
+        };
+        window.hideGlobalLoading = function() {
+            const overlay = document.getElementById('globalLoadingOverlay');
+            if (overlay) overlay.classList.add('hidden');
+        };
+        window.showGlobalLoadingError = function(msg) {
+            const overlay = document.getElementById('globalLoadingOverlay');
+            const err = document.getElementById('globalLoadingError');
+            if (err) {
+                err.textContent = msg || '오류가 발생했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
+                err.classList.remove('hidden');
+            }
+            if (overlay) overlay.classList.remove('hidden');
+        };
+
+        function updateOfflineBanner() {
+            const banner = document.getElementById('offlineBanner');
+            if (!banner) return;
+            const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+            banner.classList.toggle('hidden', !offline);
+        }
+        window.addEventListener('online', () => {
+            updateOfflineBanner();
+            void window.retryPendingNetworkActions();
+        });
+        window.addEventListener('offline', updateOfflineBanner);
+        updateOfflineBanner();
+
+        window._networkRetryQueue = window._networkRetryQueue || [];
+        window.retryPendingNetworkActions = async function() {
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                return window.customAlert('아직 오프라인입니다. 연결 후 다시 시도해 주세요.');
+            }
+            const queue = window._networkRetryQueue.splice(0, window._networkRetryQueue.length);
+            if (!queue.length) {
+                try {
+                    await ensureAnonAuthReady();
+                    if (typeof refreshStudentsCacheFromServer === 'function') await refreshStudentsCacheFromServer();
+                } catch (e) {
+                    console.warn('retryPendingNetworkActions', e);
+                }
+                return;
+            }
+            window.showGlobalLoading('재시도 중…');
+            try {
+                for (const fn of queue) {
+                    try { await fn(); } catch (e) { console.warn('queued retry failed', e); }
+                }
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        /** Firestore 등 네트워크 작업을 재시도하며 실행 */
+        async function runWithNetworkRetry(fn, label) {
+            let keepErrorOverlay = false;
+            try {
+                return await withRetry(fn, {
+                    retries: 2,
+                    baseDelayMs: 600,
+                    onRetry: (n, err) => {
+                        console.warn(`${label || 'network'} 재시도 ${n}`, err);
+                        window.showGlobalLoading(`${label || '작업'} 재시도 중… (${n})`);
+                    },
+                });
+            } catch (e) {
+                if (isLikelyNetworkError(e)) {
+                    window._networkRetryQueue.push(fn);
+                    keepErrorOverlay = true;
+                    window.showGlobalLoadingError((label || '작업') + ' 실패: 네트워크를 확인한 뒤 「지금 재시도」를 눌러 주세요.');
+                }
+                throw e;
+            } finally {
+                if (!keepErrorOverlay) window.hideGlobalLoading();
+            }
+        }
+        window.runWithNetworkRetry = runWithNetworkRetry;
 
         /** 서버 스냅샷으로 XP가 올라온 경우 안내(수업 자동 XP 등) — 직전 저장과 구분 */
         let _prevXpFromSnapshot = null;
@@ -5232,7 +5327,7 @@ ${subjectLine}
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'shop', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin', 'settings'];
+        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'shop', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin', 'settings', 'help'];
         /** 기본 탭: 광장(plaza) */
         let currentTabIndex = 2;
 
@@ -5254,7 +5349,7 @@ ${subjectLine}
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'text-violet-300', 'border-violet-400', 'bg-slate-800/50'); 
+                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'text-violet-300', 'border-violet-400', 'text-cyan-300', 'border-cyan-400', 'bg-slate-800/50'); 
                     btn.classList.add('text-slate-400', 'border-transparent'); 
                 }
             });
@@ -5273,6 +5368,7 @@ ${subjectLine}
                 else if (tabId === 'classtools') activeBtn.classList.add('border-lime-500', 'text-lime-400', 'bg-slate-800/50');
                 else if (tabId === 'shop') activeBtn.classList.add('border-pink-500', 'text-pink-400', 'bg-slate-800/50');
                 else if (tabId === 'settings') activeBtn.classList.add('border-violet-400', 'text-violet-300', 'bg-slate-800/50');
+                else if (tabId === 'help') activeBtn.classList.add('border-cyan-400', 'text-cyan-300', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
             }
 
@@ -5283,6 +5379,11 @@ ${subjectLine}
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderAdminExportPanel === 'function') {
                 window.renderAdminExportPanel();
+            }
+            if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderResearchStatsDashboard === 'function') {
+                window.renderResearchStatsDashboard();
+                window.renderResearchSurveyPanel();
+                window.renderResearchJournalList();
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
@@ -9403,10 +9504,11 @@ ${subjectLine}
                 return window.customAlert('내보낼 항목을 하나 이상 선택해 주세요.');
             }
             try {
+                window.showGlobalLoading('서버 데이터 새로고침 중…');
                 if (status) status.textContent = '서버 데이터 새로고침 중…';
                 if (typeof refreshStudentsCacheFromServer === 'function') {
                     try {
-                        await refreshStudentsCacheFromServer();
+                        await withRetry(() => refreshStudentsCacheFromServer(), { retries: 2, baseDelayMs: 500 });
                     } catch (eRefresh) {
                         console.warn('export refreshStudentsCacheFromServer', eRefresh);
                     }
@@ -9422,7 +9524,239 @@ ${subjectLine}
                 console.error('downloadAdminStudentExcel', e);
                 if (status) status.textContent = '내보내기 실패';
                 await window.customAlert('엑셀 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
             }
+        };
+
+        window.downloadAdminStudentJson = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 데이터를 내보낼 수 있습니다.');
+            }
+            const status = document.getElementById('adminExportStatus');
+            const selectedIds = getSelectedAdminExportSheetIds();
+            if (!selectedIds.length) return window.customAlert('내보낼 항목을 하나 이상 선택해 주세요.');
+            try {
+                window.showGlobalLoading('JSON 생성 중…');
+                if (typeof refreshStudentsCacheFromServer === 'function') {
+                    try { await refreshStudentsCacheFromServer(); } catch (_) { /* ignore */ }
+                }
+                const result = exportStudentJsonFile({
+                    selectedIds,
+                    ctx: buildAdminExportContext(window.allStudentsData || []),
+                });
+                if (status) status.textContent = `✅ ${result.fileName}`;
+            } catch (e) {
+                console.error(e);
+                await window.customAlert('JSON 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.downloadAdminStudentCsv = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 데이터를 내보낼 수 있습니다.');
+            }
+            const status = document.getElementById('adminExportStatus');
+            const selectedIds = getSelectedAdminExportSheetIds();
+            try {
+                window.showGlobalLoading('CSV 생성 중…');
+                if (typeof refreshStudentsCacheFromServer === 'function') {
+                    try { await refreshStudentsCacheFromServer(); } catch (_) { /* ignore */ }
+                }
+                const result = exportStudentCsvFile({
+                    selectedIds,
+                    ctx: buildAdminExportContext(window.allStudentsData || []),
+                });
+                if (status) status.textContent = `✅ ${result.fileName}`;
+            } catch (e) {
+                console.error(e);
+                await window.customAlert('CSV 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        let _lastResearchStats = null;
+
+        window.renderResearchStatsDashboard = function() {
+            const panel = document.getElementById('researchStatsPanel');
+            if (!panel || !window.playerState?.isAdmin) return;
+            try {
+                const dailyQuests = getQuestCatalog().filter((q) => q.type === 'daily');
+                const stats = computeResearchStats({
+                    students: window.allStudentsData || [],
+                    studentIds: getActiveStudentIds(),
+                    getName: (sid) => STUDENT_NAMES[String(sid)] || String(sid),
+                    dailyQuests,
+                    today: getLocalDateStr(),
+                });
+                _lastResearchStats = stats;
+                const topHtml = (stats.topQuests || []).slice(0, 5).map((q, i) =>
+                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${q.name}</span><span class="text-fuchsia-300 font-bold">${q.count}회</span></div>`
+                ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                const xpTop = (stats.perStudent || []).slice(0, 5).map((r) =>
+                    `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-sb-blue font-bold">+${r.xpGainWeek} XP</span></div>`
+                ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                panel.innerHTML = `
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">오늘 완료율</div><div class="text-lg font-black text-emerald-300 tabular-nums">${stats.todayCompletionRate}%</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">이번 주 완료율</div><div class="text-lg font-black text-cyan-300 tabular-nums">${stats.weekCompletionRate}%</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">오늘 평균 XP↑</div><div class="text-lg font-black text-sb-blue tabular-nums">${stats.avgXpGainToday}</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">주간 평균 XP↑</div><div class="text-lg font-black text-violet-300 tabular-nums">${stats.avgXpGainWeek}</div></div>
+                    </div>
+                    <div class="grid sm:grid-cols-3 gap-2 text-[9px]">
+                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">전부완료(오늘) <strong class="text-white">${stats.allClearToday}</strong>명</div>
+                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">상점 이용(주) <strong class="text-white">${stats.purchaseCountWeek}</strong>건</div>
+                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">기간 ${stats.weekStart}~${stats.weekEnd}</div>
+                    </div>
+                    <div class="grid sm:grid-cols-2 gap-3">
+                        <div><div class="text-[9px] text-fuchsia-300 font-bold mb-1">인기 퀘스트 (누적)</div>${topHtml}</div>
+                        <div><div class="text-[9px] text-sb-blue font-bold mb-1">이번 주 XP 증가 TOP</div>${xpTop}</div>
+                    </div>`;
+            } catch (e) {
+                console.error('renderResearchStatsDashboard', e);
+                panel.innerHTML = `<div class="text-red-300 text-center py-3">통계 집계 오류: ${e && e.message ? e.message : e}</div>`;
+            }
+        };
+
+        window.downloadResearchStatsCsv = function() {
+            if (!window.playerState?.isAdmin) return;
+            if (!_lastResearchStats) window.renderResearchStatsDashboard();
+            if (!_lastResearchStats) return window.customAlert('통계를 먼저 불러와 주세요.');
+            const stamp = getLocalDateStr().replace(/-/g, '');
+            downloadTextFile(`삼봉월드_활동통계_${stamp}.csv`, '\uFEFF' + researchStatsToCsv(_lastResearchStats), 'text/csv;charset=utf-8');
+        };
+
+        window.downloadResearchStatsJson = function() {
+            if (!window.playerState?.isAdmin) return;
+            if (!_lastResearchStats) window.renderResearchStatsDashboard();
+            if (!_lastResearchStats) return window.customAlert('통계를 먼저 불러와 주세요.');
+            const stamp = getLocalDateStr().replace(/-/g, '');
+            downloadTextFile(`삼봉월드_활동통계_${stamp}.json`, JSON.stringify(_lastResearchStats, null, 2), 'application/json;charset=utf-8');
+        };
+
+        function getResearchSettings() {
+            const g = window.globalSettings || {};
+            return {
+                surveyUrl: String(g.researchSurveyUrl || '').trim(),
+                surveyNote: String(g.researchSurveyNote || '').trim(),
+                journal: Array.isArray(g.researchJournal) ? g.researchJournal : [],
+            };
+        }
+
+        window.renderResearchSurveyPanel = function() {
+            const rs = getResearchSettings();
+            const urlEl = document.getElementById('researchSurveyUrl');
+            const noteEl = document.getElementById('researchSurveyNote');
+            if (urlEl && document.activeElement !== urlEl) urlEl.value = rs.surveyUrl;
+            if (noteEl && document.activeElement !== noteEl) noteEl.value = rs.surveyNote;
+        };
+
+        window.renderResearchJournalList = function() {
+            const list = document.getElementById('researchJournalList');
+            if (!list) return;
+            const journal = getResearchSettings().journal.slice().reverse();
+            if (!journal.length) {
+                list.innerHTML = '<div class="text-slate-500 text-center py-2">아직 일지가 없습니다. 관찰·소감·업무 시간 변화를 남겨 두세요.</div>';
+                return;
+            }
+            list.innerHTML = journal.map((e, idx) => {
+                const realIdx = getResearchSettings().journal.length - 1 - idx;
+                const when = e.at ? new Date(e.at).toLocaleString('ko-KR') : '';
+                return `<div class="border border-slate-700/80 rounded-lg px-2 py-1.5 bg-slate-900/60 flex gap-2 justify-between">
+                    <div class="min-w-0"><div class="text-slate-500">${when}</div><div class="text-slate-200 whitespace-pre-wrap break-words">${String(e.text || '').replace(/</g, '&lt;')}</div></div>
+                    <button type="button" class="shrink-0 text-red-400 text-[8px] font-bold" onclick="void window.deleteResearchJournalEntry(${realIdx})">삭제</button>
+                </div>`;
+            }).join('');
+        };
+
+        window.saveResearchSurveySettings = async function() {
+            if (!window.playerState?.isAdmin || !db) return window.customAlert('마스터만 저장할 수 있습니다.');
+            const surveyUrl = String(document.getElementById('researchSurveyUrl')?.value || '').trim().slice(0, 400);
+            const surveyNote = String(document.getElementById('researchSurveyNote')?.value || '').trim().slice(0, 120);
+            try {
+                window.showGlobalLoading('설문 설정 저장 중…');
+                await runWithNetworkRetry(async () => {
+                    await ensureAnonAuthReady();
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                        researchSurveyUrl: surveyUrl,
+                        researchSurveyNote: surveyNote,
+                    }, { merge: true });
+                }, '설문 설정 저장');
+                window.globalSettings = { ...window.globalSettings, researchSurveyUrl: surveyUrl, researchSurveyNote: surveyNote };
+                await window.customAlert('설문 설정을 저장했습니다.');
+            } catch (e) {
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.openResearchSurveyLink = function() {
+            const url = String(document.getElementById('researchSurveyUrl')?.value || getResearchSettings().surveyUrl || '').trim();
+            if (!url) return window.customAlert('설문 링크를 먼저 입력·저장해 주세요.');
+            window.open(url, '_blank', 'noopener,noreferrer');
+        };
+
+        window.addResearchJournalEntry = async function() {
+            if (!window.playerState?.isAdmin || !db) return window.customAlert('마스터만 작성할 수 있습니다.');
+            const text = String(document.getElementById('researchJournalInput')?.value || '').trim().slice(0, 800);
+            if (!text) return window.customAlert('일지 내용을 입력해 주세요.');
+            const journal = getResearchSettings().journal.slice();
+            journal.push({ at: Date.now(), text, by: window.playerState.isGM ? 'gm' : 'gm_a' });
+            const clipped = journal.slice(-80);
+            try {
+                window.showGlobalLoading('일지 저장 중…');
+                await runWithNetworkRetry(async () => {
+                    await ensureAnonAuthReady();
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                        researchJournal: clipped,
+                    }, { merge: true });
+                }, '관찰 일지 저장');
+                window.globalSettings = { ...window.globalSettings, researchJournal: clipped };
+                const input = document.getElementById('researchJournalInput');
+                if (input) input.value = '';
+                window.renderResearchJournalList();
+            } catch (e) {
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.deleteResearchJournalEntry = async function(idx) {
+            if (!window.playerState?.isAdmin || !db) return;
+            const journal = getResearchSettings().journal.slice();
+            if (idx < 0 || idx >= journal.length) return;
+            const ok = await window.customConfirm('이 일지 항목을 삭제할까요?');
+            if (!ok) return;
+            journal.splice(idx, 1);
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { researchJournal: journal }, { merge: true });
+                window.globalSettings = { ...window.globalSettings, researchJournal: journal };
+                window.renderResearchJournalList();
+            } catch (e) {
+                await window.customAlert('삭제 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.openPrivacyPolicyModal = function() {
+            const m = document.getElementById('privacyPolicyModal');
+            if (m) m.classList.remove('hidden');
+        };
+        window.closePrivacyPolicyModal = function() {
+            const m = document.getElementById('privacyPolicyModal');
+            if (m) m.classList.add('hidden');
+        };
+
+        window.applyDefaultClassTemplates = async function() {
+            await window.customAlert(
+                '📦 기본 템플릿 안내\n\n' +
+                '새 학급을 만들면 삼봉월드 기본 퀘스트·직업·상점 카탈로그가 자동으로 제공됩니다.\n' +
+                '(마스터가 추가한 커스텀 항목은 학급 settings에 따로 저장됩니다.)\n\n' +
+                '다른 선생님 사용법:\n' +
+                '1) 마스터로 로그인 → 학급·명단 관리 → 새 학급 만들기\n' +
+                '2) 발급된 초대 코드를 학생·동료에게 공유\n' +
+                '3) 로그인 화면에서 초대 코드 입력 후 접속'
+            );
         };
 
         window.renderAdminQuestBoard = function(studentsData) {
@@ -13581,18 +13915,25 @@ ${subjectLine}
                 'PIN(비밀번호)은 유지됩니다.'
             );
             if (!ok) return;
+            const ok2 = await window.customConfirm(
+                `최종 확인\n\n[${label}] 초기화를 실행합니다.\n직전 상태는 백업되지만, 실수가 아닌지 다시 확인해 주세요.`
+            );
+            if (!ok2) return;
 
             try {
+                window.showGlobalLoading(`[${label}] 초기화 중…`);
                 const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
-                await saveStudentBackupDoc(stuId, stu);
-                const payload = buildStudentResetPayload(stu);
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
-                await setDoc(docRef, payload);
+                await runWithNetworkRetry(async () => {
+                    await saveStudentBackupDoc(stuId, stu);
+                    const payload = buildStudentResetPayload(stu);
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
+                    await setDoc(docRef, payload);
+                }, '학생 초기화');
 
                 const myId = localStorage.getItem('sambong_student_id');
                 if (myId === String(stuId) && !window.playerState.isAdmin) {
-                    window.playerState = { ...payload, isGuest: false, isGM: false, isGMA: false, isAdmin: false };
-                    currentStudentDocRef = docRef;
+                    window.playerState = { ...buildStudentResetPayload(stu), isGuest: false, isGM: false, isGMA: false, isAdmin: false };
+                    currentStudentDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
                     _prevXpFromSnapshot = 0;
                     updateUI();
                 }
@@ -13601,6 +13942,8 @@ ${subjectLine}
             } catch (e) {
                 console.error('resetStudentData', e);
                 await window.customAlert('초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
             }
         };
 
@@ -13659,29 +14002,45 @@ ${subjectLine}
 
         window.hardResetAll = async function() {
             if (!window.playerState.isGM) return window.customAlert('선생님(마스터 J) 전용 기능입니다.');
-            const ok1 = await window.customPrompt('⚠️ [위험] 모든 학생의 데이터가 0으로 영구 초기화됩니다.\n계속하시려면 "초기화확인"을 입력하세요:', 'text');
-            if (ok1 !== "초기화확인") return;
+            const ok0 = await window.customConfirm(
+                '⚠️ [매우 위험] 서버 전체 초기화\n\n' +
+                '모든 학생의 XP·봉·아이템·상태가 0으로 초기화됩니다.\n' +
+                '개별 백업은 자동 저장되지만, 실수로 실행하면 수업 데이터가 크게 흔들립니다.\n\n' +
+                '계속할까요? (다음 단계에서 문구 입력)'
+            );
+            if (!ok0) return;
+            const ok1 = await window.customPrompt('계속하려면 아래 문구를 정확히 입력하세요:\n초기화확인', 'text');
+            if (ok1 !== '초기화확인') {
+                return window.customAlert('입력이 일치하지 않아 취소되었습니다.');
+            }
+            const ok2 = await window.customConfirm('최종 확인: 정말로 전체 초기화를 실행할까요?\n이 작업은 즉시 서버에 반영됩니다.');
+            if (!ok2) return;
             
             try {
-                const batch = writeBatch(db);
-                getActiveStudentIds().forEach((sid) => {
-                    const stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
-                    batch.set(getStudentBackupRef(sid), {
-                        studentId: String(sid),
-                        savedAt: new Date().toISOString(),
-                        data: extractStudentGameData(stu),
+                window.showGlobalLoading('전체 초기화 실행 중…');
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    getActiveStudentIds().forEach((sid) => {
+                        const stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
+                        batch.set(getStudentBackupRef(sid), {
+                            studentId: String(sid),
+                            savedAt: new Date().toISOString(),
+                            data: extractStudentGameData(stu),
+                        });
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            buildStudentResetPayload(stu)
+                        );
                     });
-                    batch.set(
-                        doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                        buildStudentResetPayload(stu)
-                    );
-                });
-                
-                batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
-
-                await batch.commit();
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
+                    await batch.commit();
+                }, '전체 초기화');
                 await window.customAlert("✅ 서버 대규모 초기화가 완료되었습니다!\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.");
-            } catch(e) { window.customAlert("초기화 중 오류 발생: " + e.message); }
+            } catch(e) {
+                window.customAlert("초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
         };
 
         /** 평일 수업 종료 시각(타임테이블)마다 전 학생 문서에 XP+5. 담임 화면이 켜진 경우에만 트랜잭션 1회 실행. (특정 학번만 아님 — 전원 동일 규칙) */

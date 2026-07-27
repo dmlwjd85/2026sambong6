@@ -1396,6 +1396,24 @@
                 </div>
             </div>
 
+            <!-- ★ 학생 데이터 엑셀 내보내기 ★ -->
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-lime-500/50 bg-slate-900/80">
+                <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-file-excel text-lime-400"></i> 학생 데이터 엑셀 내보내기</h3>
+                    <span id="adminExportStatus" class="text-[9px] text-lime-300/90 font-bold tabular-nums shrink-0">—</span>
+                </div>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">내보낼 항목을 고른 뒤 다운로드하세요. 경험치·봉 <strong class="text-lime-200">일별 집계</strong> 시트는 엑셀에서 그래프로 만들기 쉬운 형태입니다.</p>
+                <div class="flex flex-wrap gap-2 mb-3">
+                    <button type="button" onclick="window.selectAllAdminExportSheets(true)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] py-1 px-2 rounded font-bold border border-slate-600">전체 선택</button>
+                    <button type="button" onclick="window.selectAllAdminExportSheets(false)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] py-1 px-2 rounded font-bold border border-slate-600">전체 해제</button>
+                    <button type="button" onclick="window.selectDefaultAdminExportSheets()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[9px] py-1 px-2 rounded font-bold border border-slate-600">기본 선택</button>
+                </div>
+                <div id="adminExportSheetChecks" class="grid sm:grid-cols-2 gap-1.5 mb-3 text-[10px] text-slate-300"></div>
+                <button type="button" onclick="void window.downloadAdminStudentExcel()" class="w-full sm:w-auto bg-lime-600 hover:bg-lime-500 text-white font-black py-2.5 px-4 rounded-xl text-xs border border-lime-300/40 shadow-lg">
+                    <i class="fa-solid fa-download"></i> 선택한 항목 엑셀 다운로드
+                </button>
+            </div>
+
             <!-- 마스터 스피드 퀴즈 (선착순 N명) -->
             <div class="glass-panel p-4 rounded-xl mb-4 border border-cyan-500/60 bg-slate-900/80">
                 <div class="flex justify-between mb-3">

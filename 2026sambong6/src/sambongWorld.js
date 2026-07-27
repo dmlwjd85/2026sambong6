@@ -21,6 +21,10 @@ import {
     where,
 } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {
+    ADMIN_EXPORT_SHEET_OPTIONS,
+    downloadAdminStudentWorkbook,
+} from './lib/adminDataExport.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -5277,6 +5281,9 @@ ${subjectLine}
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && window.refreshPicbookAccountsAdmin) {
                 void window.refreshPicbookAccountsAdmin();
             }
+            if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderAdminExportPanel === 'function') {
+                window.renderAdminExportPanel();
+            }
             if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
             }
@@ -9332,6 +9339,90 @@ ${subjectLine}
                 }
             });
             renderBongAnomalyPanel(studentsData);
+        };
+
+        /** 마스터 엑셀 내보내기 — 체크박스 패널 렌더 */
+        window.renderAdminExportPanel = function() {
+            const box = document.getElementById('adminExportSheetChecks');
+            if (!box) return;
+            const existing = box.querySelectorAll('input[data-export-sheet]');
+            if (existing.length === ADMIN_EXPORT_SHEET_OPTIONS.length) return;
+            box.innerHTML = ADMIN_EXPORT_SHEET_OPTIONS.map((opt) => {
+                const checked = opt.defaultOn ? ' checked' : '';
+                return `<label class="flex items-start gap-2 bg-slate-950/50 border border-slate-700/70 rounded-lg px-2 py-1.5 cursor-pointer hover:border-lime-500/40">
+                    <input type="checkbox" data-export-sheet="${opt.id}" class="mt-0.5 rounded border-slate-600"${checked}>
+                    <span class="leading-snug">${opt.label}</span>
+                </label>`;
+            }).join('');
+        };
+
+        window.selectAllAdminExportSheets = function(on) {
+            document.querySelectorAll('#adminExportSheetChecks input[data-export-sheet]').forEach((el) => {
+                el.checked = !!on;
+            });
+        };
+
+        window.selectDefaultAdminExportSheets = function() {
+            const defaults = new Set(ADMIN_EXPORT_SHEET_OPTIONS.filter((o) => o.defaultOn).map((o) => o.id));
+            document.querySelectorAll('#adminExportSheetChecks input[data-export-sheet]').forEach((el) => {
+                el.checked = defaults.has(el.getAttribute('data-export-sheet'));
+            });
+        };
+
+        function getSelectedAdminExportSheetIds() {
+            return [...document.querySelectorAll('#adminExportSheetChecks input[data-export-sheet]:checked')]
+                .map((el) => el.getAttribute('data-export-sheet'))
+                .filter(Boolean);
+        }
+
+        function buildAdminExportContext(students) {
+            return {
+                students: Array.isArray(students) ? students : (window.allStudentsData || []),
+                getActiveStudentIds,
+                getStudentName: (sid) => STUDENT_NAMES[String(sid)] || String(sid),
+                getQuestCatalog,
+                getShopCatalog: getAllShopItems,
+                getJobCatalog,
+                getStudentJobName,
+                calculateExactLevel,
+                getLocalDateStr,
+                weaponData: WEAPON_DATA,
+                skinData: SKIN_DATA,
+            };
+        }
+
+        /** 선택한 학생 데이터를 엑셀(.xlsx)로 다운로드 */
+        window.downloadAdminStudentExcel = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 데이터를 내보낼 수 있습니다.');
+            }
+            const status = document.getElementById('adminExportStatus');
+            const selectedIds = getSelectedAdminExportSheetIds();
+            if (!selectedIds.length) {
+                if (status) status.textContent = '항목을 하나 이상 선택하세요.';
+                return window.customAlert('내보낼 항목을 하나 이상 선택해 주세요.');
+            }
+            try {
+                if (status) status.textContent = '서버 데이터 새로고침 중…';
+                if (typeof refreshStudentsCacheFromServer === 'function') {
+                    try {
+                        await refreshStudentsCacheFromServer();
+                    } catch (eRefresh) {
+                        console.warn('export refreshStudentsCacheFromServer', eRefresh);
+                    }
+                }
+                if (status) status.textContent = '엑셀 파일 생성 중…';
+                const result = downloadAdminStudentWorkbook({
+                    selectedIds,
+                    ctx: buildAdminExportContext(window.allStudentsData || []),
+                });
+                if (status) status.textContent = `✅ ${result.fileName} (${result.sheetCount}시트)`;
+                await window.customAlert(`✅ 엑셀 다운로드를 시작했습니다.\n파일: ${result.fileName}\n시트 수: ${result.sheetCount}`);
+            } catch (e) {
+                console.error('downloadAdminStudentExcel', e);
+                if (status) status.textContent = '내보내기 실패';
+                await window.customAlert('엑셀 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.renderAdminQuestBoard = function(studentsData) {

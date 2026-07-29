@@ -1050,8 +1050,11 @@ function redrawPlazaGrantsUi() {
 
         const DEFAULT_CLASS_STAFF = [
             { id: 'gm', name: '마스터 J', gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
-            { id: 'gm_a', name: '마스터 A', gender: 'F', role: 'co_teacher', label: '해적섬 두목', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
+            { id: 'gm_a', name: '마스터 A', gender: 'F', role: 'co_teacher', label: '보조 마스터', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
         ];
+
+        const SEED_CLASS_ID = 'sambong-class-2026';
+        const RECENT_CLASSES_KEY = 'sambong_recent_classes';
 
         function buildDefaultRosterFromLegacy() {
             return [
@@ -1071,6 +1074,18 @@ function redrawPlazaGrantsUi() {
             ];
         }
 
+        /** 새 학급용 빈 명단 틀 */
+        function buildBlankRoster(count = 25) {
+            const n = Math.max(1, Math.min(40, Math.floor(Number(count) || 25)));
+            return Array.from({ length: n }, (_, i) => ({
+                id: String(i + 1),
+                name: `학생 ${i + 1}`,
+                gender: 'M',
+                label: '',
+                active: true,
+            }));
+        }
+
         function resolveClassId() {
             try {
                 const params = new URLSearchParams(window.location.search);
@@ -1084,9 +1099,10 @@ function redrawPlazaGrantsUi() {
             if (stored) return stored;
             if (typeof window.__app_id !== 'undefined' && window.__app_id) return window.__app_id;
             if (typeof __app_id !== 'undefined' && __app_id) return __app_id;
-            return 'sambong-class-2026';
+            return SEED_CLASS_ID;
         }
 
+        /** 시드(데모) 학급 메타 — 기존 반 유지용 */
         function buildDefaultClassMeta(classId) {
             return {
                 classId,
@@ -1097,15 +1113,64 @@ function redrawPlazaGrantsUi() {
                 inviteCode: '',
                 gmaEditStudentId: '13',
                 isActive: true,
+                isDemoSeed: classId === SEED_CLASS_ID,
                 roster: buildDefaultRosterFromLegacy(),
                 staff: DEFAULT_CLASS_STAFF.map((s) => ({ ...s })),
             };
         }
 
+        /** 타 교사·신규 학급용 빈 템플릿 (시드 명단을 절대 쓰지 않음) */
+        function buildBlankClassMeta(classId, opts = {}) {
+            const year = Number(opts.schoolYear) || new Date().getFullYear();
+            const grade = Number(opts.grade) || 6;
+            const homeroom = Number(opts.homeroom) || 1;
+            const teacherName = String(opts.teacherName || '담임 선생님').trim().slice(0, 20) || '담임 선생님';
+            return {
+                classId,
+                displayName: String(opts.displayName || `${year}학년도 ${grade}학년 ${homeroom}반`).trim().slice(0, 40),
+                schoolYear: year,
+                grade,
+                homeroom,
+                inviteCode: opts.inviteCode || generateInviteCode(),
+                gmaEditStudentId: '1',
+                isActive: true,
+                isDemoSeed: false,
+                roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 25),
+                staff: [
+                    { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
+                    { id: 'gm_a', name: '보조 마스터', gender: 'F', role: 'co_teacher', label: '보조', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
+                ],
+            };
+        }
+
+        function getRecentClasses() {
+            try {
+                const raw = JSON.parse(localStorage.getItem(RECENT_CLASSES_KEY) || '[]');
+                return Array.isArray(raw) ? raw.filter((x) => x && x.classId).slice(0, 8) : [];
+            } catch (_) {
+                return [];
+            }
+        }
+
+        function rememberRecentClass(classId, displayName, inviteCode) {
+            const id = String(classId || '').trim();
+            if (!id) return;
+            const next = [
+                {
+                    classId: id,
+                    displayName: String(displayName || id).slice(0, 40),
+                    inviteCode: String(inviteCode || '').slice(0, 12),
+                    at: Date.now(),
+                },
+                ...getRecentClasses().filter((x) => x.classId !== id),
+            ].slice(0, 8);
+            localStorage.setItem(RECENT_CLASSES_KEY, JSON.stringify(next));
+        }
+
         window.classMeta = null;
 
         function syncNameGenderMaps() {
-            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const names = { guest: '손님' };
             const genders = { guest: 'M' };
             (meta.roster || []).forEach((r) => {
@@ -1124,15 +1189,17 @@ function redrawPlazaGrantsUi() {
         }
 
         function getActiveStudentIds() {
+            const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
             const roster = window.classMeta && Array.isArray(window.classMeta.roster)
                 ? window.classMeta.roster
-                : buildDefaultRosterFromLegacy();
+                : fallback;
             return roster.filter((r) => r.active !== false).map((r) => String(r.id));
         }
 
         function getStudentDisplayLabel(id) {
             const sid = String(id);
-            const roster = window.classMeta?.roster || buildDefaultRosterFromLegacy();
+            const fallback = appId === SEED_CLASS_ID ? buildDefaultRosterFromLegacy() : buildBlankRoster(25);
+            const roster = window.classMeta?.roster || fallback;
             const entry = roster.find((r) => String(r.id) === sid);
             const name = entry ? entry.name : (STUDENT_NAMES[sid] || sid);
             const suffix = entry && entry.label ? ` (${entry.label})` : '';
@@ -1140,7 +1207,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function getGmaEditStudentId() {
-            return String(window.classMeta?.gmaEditStudentId || '13');
+            return String(window.classMeta?.gmaEditStudentId || '1');
         }
 
         function getStaffMember(staffId) {
@@ -1168,7 +1235,14 @@ function redrawPlazaGrantsUi() {
             const year = Number(meta.schoolYear) || new Date().getFullYear();
             const grade = Number(meta.grade) || 6;
             const room = Number(meta.homeroom) || 1;
-            return `sambong-${year}-${grade}-${room}`;
+            const suffix = String(meta.suffix || Math.random().toString(36).slice(2, 6)).toLowerCase();
+            return `sambong-${year}-${grade}-${room}-${suffix}`;
+        }
+
+        function getClassShareUrl(classId) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('class', classId || appId);
+            return url.origin + url.pathname + url.search;
         }
 
         function updateClassDisplayLabels() {
@@ -1176,21 +1250,63 @@ function redrawPlazaGrantsUi() {
             const labelEl = document.getElementById('loginClassLabel');
             const codeEl = document.getElementById('loginClassCode');
             const navClassEl = document.getElementById('navClassLabel');
+            const navBtn = document.getElementById('navClassLabelBtn');
+            const teacherHint = document.getElementById('teacherJoinClassHint');
             if (labelEl && meta) {
-                labelEl.textContent = `${meta.displayName || appId} · 코드: ${appId}`;
+                const demo = meta.isDemoSeed || appId === SEED_CLASS_ID ? ' · 데모/시드' : '';
+                labelEl.textContent = `${meta.displayName || appId}${demo} · 초대: ${meta.inviteCode || '(없음)'}`;
             }
-            if (codeEl) codeEl.value = appId;
+            if (codeEl && document.activeElement !== codeEl) {
+                codeEl.value = (meta && meta.inviteCode) ? meta.inviteCode : appId;
+            }
             if (navClassEl && meta) {
                 navClassEl.textContent = meta.displayName || appId;
                 navClassEl.title = `학급 ID: ${appId}`;
-                navClassEl.classList.remove('hidden');
             }
+            if (navBtn && meta) navBtn.classList.remove('hidden');
+            if (teacherHint && meta) {
+                teacherHint.textContent = `현재 학급: ${meta.displayName || appId} (초대 ${meta.inviteCode || '—'})`;
+            }
+            if (meta) rememberRecentClass(appId, meta.displayName, meta.inviteCode);
+            renderLoginRecentClasses();
+            renderTeacherClassHub();
+            populateTeacherLoginSelect();
+        }
+
+        function renderLoginRecentClasses() {
+            const box = document.getElementById('loginRecentClasses');
+            if (!box) return;
+            const recent = getRecentClasses().filter((r) => r.classId !== appId);
+            if (!recent.length) {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+                return;
+            }
+            box.classList.remove('hidden');
+            box.innerHTML = `<div class="text-[9px] text-slate-500 font-bold">최근 학급</div>` + recent.map((r) =>
+                `<button type="button" onclick="window.switchClass('${String(r.classId).replace(/'/g, '')}')" class="w-full text-left px-2 py-1.5 rounded-lg bg-slate-900/70 border border-slate-700 hover:border-cyan-500/50 text-[10px] text-slate-300">
+                    <span class="text-white font-bold">${r.displayName || r.classId}</span>
+                    <span class="text-slate-500 ml-1">${r.inviteCode || r.classId}</span>
+                </button>`
+            ).join('');
+        }
+
+        function populateTeacherLoginSelect() {
+            const sel = document.getElementById('loginIdTeacher');
+            if (!sel) return;
+            const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
+            let html = '<option value="" disabled selected>관리자 계정 선택</option>';
+            (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
+                const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
+                html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
+            });
+            sel.innerHTML = html;
         }
 
         function populateLoginSelect() {
             const sel = document.getElementById('loginId');
             if (!sel) return;
-            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const prev = sel.value;
             let html = '<option value="" disabled selected>내 이름(학번) 선택</option>';
             html += `<option disabled>─── ${meta.displayName || '우리 반'} ───</option>`;
@@ -1207,19 +1323,37 @@ function redrawPlazaGrantsUi() {
             });
             sel.innerHTML = html;
             if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+            populateTeacherLoginSelect();
         }
 
         async function loadClassMeta() {
             const classRef = doc(db, 'classes', appId);
             const snap = await getDoc(classRef);
             if (snap.exists()) {
-                window.classMeta = { ...buildDefaultClassMeta(appId), ...snap.data(), classId: appId };
-            } else if (appId === 'sambong-class-2026') {
+                const data = snap.data() || {};
+                const base = (data.isDemoSeed || appId === SEED_CLASS_ID)
+                    ? buildDefaultClassMeta(appId)
+                    : buildBlankClassMeta(appId, data);
+                window.classMeta = { ...base, ...data, classId: appId };
+                // Firestore에 시드 명단이 없는데 빈 학급이면 blank 유지
+                if (!Array.isArray(data.roster) || !data.roster.length) {
+                    if (appId !== SEED_CLASS_ID) {
+                        window.classMeta.roster = buildBlankRoster(data.studentCount || 25);
+                    }
+                }
+                if (!window.classMeta.inviteCode) {
+                    window.classMeta.inviteCode = generateInviteCode();
+                    try {
+                        await setDoc(classRef, { inviteCode: window.classMeta.inviteCode, updatedAt: serverTimestamp() }, { merge: true });
+                    } catch (_) { /* ignore */ }
+                }
+            } else if (appId === SEED_CLASS_ID) {
                 const defaultMeta = buildDefaultClassMeta(appId);
                 window.classMeta = defaultMeta;
                 await setDoc(classRef, { ...defaultMeta, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
             } else {
-                window.classMeta = buildDefaultClassMeta(appId);
+                // 아직 메타가 없는 신규 ID — 시드 명단을 쓰지 않음
+                window.classMeta = buildBlankClassMeta(appId);
             }
             syncNameGenderMaps();
             populateLoginSelect();
@@ -1244,29 +1378,226 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        async function resolveClassIdFromInviteOrRaw(raw) {
+            const code = String(raw || '').trim();
+            if (!code) throw new Error('empty');
+            if (!db) throw new Error('no_db');
+            // 초대 코드(짧은 영숫자) 우선 조회
+            const looksLikeInvite = !code.includes('-') || (code.length <= 8 && !/^sambong-/i.test(code));
+            if (looksLikeInvite && code.length <= 10) {
+                const q = query(collection(db, 'classes'), where('inviteCode', '==', code.toUpperCase()));
+                const found = await getDocs(q);
+                if (found.empty) throw new Error('invite_not_found');
+                return found.docs[0].id;
+            }
+            return code;
+        }
+
         window.applyLoginClassCode = async function() {
             const input = document.getElementById('loginClassCode');
             const raw = input ? String(input.value || '').trim() : '';
-            if (!raw) return window.customAlert('학급 코드 또는 초대 코드를 입력해 주세요.');
+            if (!raw) return window.customAlert('학급 초대 코드 또는 학급 ID를 입력해 주세요.');
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
-            let classId = raw;
-            if (!raw.includes('-') && raw.length <= 8) {
-                try {
-                    const q = query(collection(db, 'classes'), where('inviteCode', '==', raw.toUpperCase()));
-                    const found = await getDocs(q);
-                    if (!found.empty) classId = found.docs[0].id;
-                    else return window.customAlert('초대 코드를 찾을 수 없습니다.');
-                } catch (e) {
-                    console.warn('applyLoginClassCode invite lookup', e);
+            try {
+                window.showGlobalLoading('학급을 찾는 중…');
+                const classId = await resolveClassIdFromInviteOrRaw(raw);
+                window.switchClass(classId);
+            } catch (e) {
+                console.warn('applyLoginClassCode', e);
+                if (String(e.message) === 'invite_not_found') {
+                    return window.customAlert('초대 코드를 찾을 수 없습니다.\n선생님께 다시 확인해 주세요.');
+                }
+                return window.customAlert('학급을 열 수 없습니다. 코드를 확인하거나 네트워크를 점검해 주세요.');
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.applyTeacherJoinCode = async function() {
+            const raw = String(document.getElementById('teacherJoinCode')?.value || '').trim();
+            if (!raw) return window.customAlert('초대 코드를 입력해 주세요.');
+            const studentInput = document.getElementById('loginClassCode');
+            if (studentInput) studentInput.value = raw;
+            await window.applyLoginClassCode();
+        };
+
+        window.setLoginMode = function(mode) {
+            const student = document.getElementById('loginPanelStudent');
+            const teacher = document.getElementById('loginPanelTeacher');
+            const btnS = document.getElementById('loginModeStudentBtn');
+            const btnT = document.getElementById('loginModeTeacherBtn');
+            const isTeacher = mode === 'teacher';
+            if (student) student.classList.toggle('hidden', isTeacher);
+            if (teacher) teacher.classList.toggle('hidden', !isTeacher);
+            if (btnS) {
+                btnS.className = isTeacher
+                    ? 'login-mode-btn py-2.5 rounded-xl text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300'
+                    : 'login-mode-btn py-2.5 rounded-xl text-xs font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100';
+            }
+            if (btnT) {
+                btnT.className = isTeacher
+                    ? 'login-mode-btn py-2.5 rounded-xl text-xs font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100'
+                    : 'login-mode-btn py-2.5 rounded-xl text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300';
+            }
+            if (isTeacher) window.setTeacherSubMode('join');
+        };
+
+        window.setTeacherSubMode = function(sub) {
+            const join = document.getElementById('teacherJoinPanel');
+            const create = document.getElementById('teacherCreatePanel');
+            const btnJ = document.getElementById('teacherSubJoinBtn');
+            const btnC = document.getElementById('teacherSubCreateBtn');
+            const isCreate = sub === 'create';
+            if (join) join.classList.toggle('hidden', isCreate);
+            if (create) create.classList.toggle('hidden', !isCreate);
+            if (btnJ) {
+                btnJ.className = isCreate
+                    ? 'teacher-sub-btn py-2 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300'
+                    : 'teacher-sub-btn py-2 rounded-lg text-[10px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100';
+            }
+            if (btnC) {
+                btnC.className = isCreate
+                    ? 'teacher-sub-btn py-2 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100'
+                    : 'teacher-sub-btn py-2 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300';
+            }
+        };
+
+        /** 공통: 새 학급 Firestore 워크스페이스 생성 */
+        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent }) {
+            if (!db) throw new Error('no_db');
+            const inviteCode = generateInviteCode();
+            let newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
+            // 충돌 시 접미사 재생성
+            for (let i = 0; i < 5; i++) {
+                const existing = await getDoc(doc(db, 'classes', newClassId));
+                if (!existing.exists()) break;
+                newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom, suffix: Math.random().toString(36).slice(2, 6) });
+            }
+            const newMeta = buildBlankClassMeta(newClassId, {
+                displayName,
+                schoolYear,
+                grade,
+                homeroom,
+                teacherName,
+                studentCount,
+                inviteCode,
+            });
+            await setDoc(doc(db, 'classes', newClassId), {
+                ...newMeta,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            }, { merge: true });
+
+            // 기본 운영 설정 (현재 학급 복사 또는 최소 기본값)
+            if (copySettingsFromCurrent) {
+                const globalSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'));
+                if (globalSnap.exists()) {
+                    const src = globalSnap.data();
+                    const { announcement, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
+                    await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
+                        ...copySettings,
+                        worldSettings: {
+                            ...(copySettings.worldSettings || {}),
+                            worldName: displayName || '삼봉월드',
+                        },
+                    }, { merge: true });
+                }
+            } else {
+                await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
+                    raidPassword: '1234',
+                    shieldStock: 10,
+                    weekendRaidRewardXp: 100,
+                    weekendRaidRewardBong: 20,
+                    worldSettings: {
+                        worldName: displayName || '삼봉월드',
+                        worldNameEn: 'SAMBONG WORLD',
+                        navBadge: 'S1',
+                        seasonNumber: 1,
+                        seasonLabel: '시즌 1',
+                        academicYear: schoolYear,
+                    },
+                }, { merge: true });
+            }
+
+            if (teacherPin) {
+                const pin = String(teacherPin).trim();
+                if (/^\d{4}$/.test(pin)) {
+                    await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'students', 'student_gm'), {
+                        pin,
+                        xp: 0,
+                        bong: 0,
+                        quests: {},
+                        unlockedQuests: {},
+                        jobs: [],
+                        inventory: [],
+                        questHistory: [],
+                    }, { merge: true });
                 }
             }
-            window.switchClass(classId);
+
+            rememberRecentClass(newClassId, displayName, inviteCode);
+            return { newClassId, inviteCode, newMeta };
+        }
+
+        window.createClassFromLogin = async function() {
+            if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            const displayName = String(document.getElementById('createClassDisplayName')?.value || '').trim();
+            const schoolYear = Number(document.getElementById('createClassYear')?.value);
+            const grade = Number(document.getElementById('createClassGrade')?.value);
+            const homeroom = Number(document.getElementById('createClassHomeroom')?.value);
+            const teacherName = String(document.getElementById('createClassTeacherName')?.value || '').trim();
+            const studentCount = Number(document.getElementById('createClassStudentCount')?.value) || 25;
+            const teacherPin = String(document.getElementById('createClassTeacherPin')?.value || '').trim();
+            if (!displayName || !schoolYear || !grade || !homeroom) {
+                return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
+            }
+            if (!teacherName) return window.customAlert('담임 표시 이름을 입력해 주세요.');
+            if (!/^\d{4}$/.test(teacherPin)) {
+                return window.customAlert('마스터 PIN은 숫자 4자리로 설정해 주세요.');
+            }
+            const ok = await window.customConfirm(
+                `새 학급을 만듭니다.\n\n` +
+                `이름: ${displayName}\n` +
+                `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
+                `담임: ${teacherName}\n` +
+                `학생 틀: ${studentCount}명\n\n` +
+                `생성 후 이 학급으로 이동하며, 초대 코드가 발급됩니다.`
+            );
+            if (!ok) return;
+            try {
+                window.showGlobalLoading('학급을 만드는 중…');
+                await ensureAnonAuthReady();
+                const { newClassId, inviteCode } = await createClassWorkspace({
+                    displayName,
+                    schoolYear,
+                    grade,
+                    homeroom,
+                    teacherName,
+                    studentCount,
+                    teacherPin,
+                    copySettingsFromCurrent: false,
+                });
+                localStorage.setItem('sambong_student_id', 'gm');
+                localStorage.setItem('sambong_student_pin', teacherPin);
+                await window.customAlert(
+                    `✅ 학급이 준비되었습니다!\n\n` +
+                    `초대 코드: ${inviteCode}\n` +
+                    `학급 ID: ${newClassId}\n\n` +
+                    `학생에게 초대 코드를 알려 주세요.\n접속 후 마스터 탭에서 명단을 수정할 수 있습니다.`
+                );
+                window.switchClass(newClassId);
+            } catch (e) {
+                console.error('createClassFromLogin', e);
+                await window.customAlert('학급 생성 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
         };
 
         window.renderClassAdminPanel = function() {
             const panel = document.getElementById('classAdminPanel');
             if (!panel || !window.playerState?.isGM) return;
-            const meta = window.classMeta || buildDefaultClassMeta(appId);
+            const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
                 <tr class="border-b border-slate-700/80">
                     <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
@@ -1298,7 +1629,14 @@ function redrawPlazaGrantsUi() {
                         </div>
                     </label>
                 </div>
-                <p class="text-[9px] text-slate-500 mb-2">초대 코드: <span class="text-emerald-300 font-bold">${meta.inviteCode || '(저장 후 생성)'}</span> · GMA 편집 대상 학번: ${meta.gmaEditStudentId || '13'}</p>
+                <p class="text-[9px] text-slate-500 mb-2">
+                    초대 코드: <span class="text-emerald-300 font-bold tracking-widest">${meta.inviteCode || '(저장 후 생성)'}</span>
+                    <button type="button" onclick="window.copyTeacherInviteCode()" class="ml-1 text-[9px] text-sky-300 underline">복사</button>
+                    · GMA 편집 학번: ${meta.gmaEditStudentId || '1'}
+                </p>
+                <p class="text-[9px] text-slate-500 mb-2 break-all">공유 링크: <span class="text-sky-300/90">${getClassShareUrl(appId)}</span>
+                    <button type="button" onclick="window.copyTeacherClassLink()" class="ml-1 text-[9px] text-sky-300 underline">복사</button>
+                </p>
                 <div class="overflow-x-auto max-h-[240px] overflow-y-auto rounded border border-slate-700 mb-3">
                     <table class="w-full text-[10px]">
                         <thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-1">번호</th><th class="p-1">이름</th><th class="p-1">성별</th><th class="p-1">별칭</th><th class="p-1">활성</th></tr></thead>
@@ -1398,47 +1736,100 @@ function redrawPlazaGrantsUi() {
             if (!displayName || !schoolYear || !grade || !homeroom) {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
-            const newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
-            const ok = await window.customConfirm(`새 학급을 만듭니다.\n\nID: ${newClassId}\n이름: ${displayName}\n\n빈 명단(학생 1~13번 틀)으로 시작합니다. 계속할까요?`);
+            const ok = await window.customConfirm(`새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`);
             if (!ok) return;
-            const existing = await getDoc(doc(db, 'classes', newClassId));
-            if (existing.exists()) {
-                const go = await window.customConfirm(`"${newClassId}" 학급이 이미 있습니다.\n그 학급으로 이동할까요?`);
-                if (go) window.switchClass(newClassId);
+            try {
+                window.showGlobalLoading('학급 생성 중…');
+                const teacherName = getStaffMember('gm')?.name || '담임 선생님';
+                const { newClassId, inviteCode } = await createClassWorkspace({
+                    displayName,
+                    schoolYear,
+                    grade,
+                    homeroom,
+                    teacherName,
+                    studentCount: 25,
+                    teacherPin: '',
+                    copySettingsFromCurrent: true,
+                });
+                await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
+                window.switchClass(newClassId);
+            } catch (e) {
+                console.error('createNewClass', e);
+                await window.customAlert('생성 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        function renderTeacherClassHub() {
+            const hub = document.getElementById('teacherClassHub');
+            if (!hub) return;
+            const show = !!(window.playerState && window.playerState.isGM && window.classMeta);
+            hub.classList.toggle('hidden', !show);
+            if (!show) return;
+            const meta = window.classMeta;
+            const nameEl = document.getElementById('teacherHubClassName');
+            const idEl = document.getElementById('teacherHubClassId');
+            const codeEl = document.getElementById('teacherHubInviteCode');
+            if (nameEl) nameEl.textContent = meta.displayName || appId;
+            if (idEl) idEl.textContent = appId;
+            if (codeEl) codeEl.textContent = meta.inviteCode || '—';
+        }
+
+        window.copyTeacherInviteCode = async function() {
+            const code = window.classMeta?.inviteCode || '';
+            if (!code) return window.customAlert('초대 코드가 없습니다. 명단을 한 번 저장해 주세요.');
+            try {
+                await navigator.clipboard.writeText(code);
+                await window.customAlert(`초대 코드를 복사했습니다.\n${code}`);
+            } catch (_) {
+                await window.customAlert(`초대 코드: ${code}`);
+            }
+        };
+
+        window.copyTeacherClassLink = async function() {
+            const link = getClassShareUrl(appId);
+            try {
+                await navigator.clipboard.writeText(link);
+                await window.customAlert('접속 링크를 복사했습니다.\n학생·동료 선생님에게 공유하세요.');
+            } catch (_) {
+                await window.customAlert(link);
+            }
+        };
+
+        window.toggleNavClassMenu = function(forceOpen) {
+            const menu = document.getElementById('navClassMenu');
+            if (!menu) return;
+            const open = forceOpen === true ? true : menu.classList.contains('hidden');
+            if (!open) {
+                menu.classList.add('hidden');
                 return;
             }
-            const defaultRoster = Array.from({ length: 13 }, (_, i) => ({
-                id: String(i + 1),
-                name: `학생 ${i + 1}`,
-                gender: 'M',
-                label: '',
-                active: true,
-            }));
-            const inviteCode = generateInviteCode();
-            const newMeta = {
-                classId: newClassId,
-                displayName,
-                schoolYear,
-                grade,
-                homeroom,
-                inviteCode,
-                gmaEditStudentId: '13',
-                isActive: true,
-                roster: defaultRoster,
-                staff: DEFAULT_CLASS_STAFF.map((s) => ({ ...s })),
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-            };
-            await setDoc(doc(db, 'classes', newClassId), newMeta, { merge: true });
-            const globalSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'));
-            if (globalSnap.exists()) {
-                const src = globalSnap.data();
-                const { announcement, lastAutoXpTime, ...copySettings } = src;
-                await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), copySettings, { merge: true });
-            }
-            await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생 PIN을 설정하세요.`);
-            window.switchClass(newClassId);
+            const recent = getRecentClasses();
+            const rows = recent.length
+                ? recent.map((r) => {
+                    const cur = r.classId === appId ? ' · 현재' : '';
+                    return `<button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200" onclick="window.switchClass('${String(r.classId).replace(/'/g, '')}')">
+                        <div class="font-bold truncate">${r.displayName || r.classId}${cur}</div>
+                        <div class="text-slate-500 truncate">${r.inviteCode || r.classId}</div>
+                    </button>`;
+                }).join('')
+                : '<div class="text-slate-500 px-2 py-2">최근 학급이 없습니다.</div>';
+            menu.innerHTML = `
+                <div class="text-[9px] text-slate-500 font-bold px-1 mb-1">학급 전환</div>
+                ${rows}
+                <div class="border-t border-slate-700 mt-1 pt-1">
+                    <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sky-300 font-bold" onclick="window.logout()">다른 계정·학급으로 다시 로그인</button>
+                </div>`;
+            menu.classList.remove('hidden');
         };
+
+        document.addEventListener('click', (e) => {
+            const wrap = document.getElementById('navClassSwitcherWrap');
+            const menu = document.getElementById('navClassMenu');
+            if (!wrap || !menu || menu.classList.contains('hidden')) return;
+            if (!wrap.contains(e.target)) menu.classList.add('hidden');
+        });
 
         /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */
         const DICE_UNICODE_FACES = ['\u2680','\u2681','\u2682','\u2683','\u2684','\u2685'];
@@ -9749,13 +10140,13 @@ ${subjectLine}
 
         window.applyDefaultClassTemplates = async function() {
             await window.customAlert(
-                '📦 기본 템플릿 안내\n\n' +
-                '새 학급을 만들면 삼봉월드 기본 퀘스트·직업·상점 카탈로그가 자동으로 제공됩니다.\n' +
-                '(마스터가 추가한 커스텀 항목은 학급 settings에 따로 저장됩니다.)\n\n' +
-                '다른 선생님 사용법:\n' +
-                '1) 마스터로 로그인 → 학급·명단 관리 → 새 학급 만들기\n' +
-                '2) 발급된 초대 코드를 학생·동료에게 공유\n' +
-                '3) 로그인 화면에서 초대 코드 입력 후 접속'
+                '📦 다교실 운영 안내\n\n' +
+                '1) 로그인 → 선생님 → 새 학급 만들기\n' +
+                '2) 초대 코드를 학생에게 공유\n' +
+                '3) 학생은 초대 코드로 자기 반만 접속\n' +
+                '4) 각 학급은 artifacts/{학급ID} 로 데이터가 분리됩니다\n\n' +
+                '기본 퀘스트·직업·상점은 새 학급에서 바로 사용할 수 있습니다.\n' +
+                '시드 학급(sambong-class-2026)은 데모용이며, 실제 수업은 새 학급을 만드세요.'
             );
         };
 
@@ -10515,6 +10906,7 @@ ${subjectLine}
                     document.getElementById('dbAdminStatus').classList.remove('hidden');
                     const plazaGM = document.getElementById('plazaGMControls');
                     if(plazaGM) plazaGM.classList.remove('hidden');
+                    renderTeacherClassHub();
                     const bankRatePanel = document.getElementById('bankInterestAdminPanel');
                     if (bankRatePanel) bankRatePanel.classList.remove('hidden');
                     const dbRec = document.getElementById('dragonBallRecoveryPanel');
@@ -10560,6 +10952,8 @@ ${subjectLine}
                 document.getElementById('tab-admin').classList.add('hidden');
                 const tabSettingsOff = document.getElementById('tab-settings');
                 if (tabSettingsOff) tabSettingsOff.classList.add('hidden');
+                const teacherHubOff = document.getElementById('teacherClassHub');
+                if (teacherHubOff) teacherHubOff.classList.add('hidden');
                 document.getElementById('todoPanel').classList.remove('hidden');
                 const plazaGM = document.getElementById('plazaGMControls');
                 if(plazaGM) plazaGM.classList.add('hidden');
@@ -10975,8 +11369,19 @@ ${subjectLine}
         document.getElementById('btnLogin').onclick = () => {
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
         };
+        const btnLoginTeacher = document.getElementById('btnLoginTeacher');
+        if (btnLoginTeacher) {
+            btnLoginTeacher.onclick = () => {
+                attemptLogin(
+                    document.getElementById('loginIdTeacher')?.value,
+                    document.getElementById('loginPinTeacher')?.value,
+                    false
+                );
+            };
+        }
         const btnApplyClass = document.getElementById('btnApplyClass');
         if (btnApplyClass) btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
+        if (typeof window.setLoginMode === 'function') window.setLoginMode('student');
         
         window.loginAsGuest = function() {
             window.playerState = { 
@@ -11004,8 +11409,10 @@ ${subjectLine}
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
             if(isOk) {
                 const classId = localStorage.getItem('sambong_class_id');
+                const recent = localStorage.getItem(RECENT_CLASSES_KEY);
                 localStorage.clear();
                 if (classId) localStorage.setItem('sambong_class_id', classId);
+                if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
                 location.reload();
             }
         };

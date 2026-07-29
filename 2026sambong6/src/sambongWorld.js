@@ -1355,10 +1355,11 @@ function redrawPlazaGrantsUi() {
                 return;
             }
             box.classList.remove('hidden');
+            // displayName/inviteCode는 Firestore classes 문서를 거친 값이므로 HTML 삽입 전에 이스케이프합니다.
             box.innerHTML = `<div class="text-[9px] text-slate-500 font-bold">최근 학급</div>` + recent.map((r) =>
-                `<button type="button" onclick="window.switchClass('${String(r.classId).replace(/'/g, '')}')" class="w-full text-left px-2 py-1.5 rounded-lg bg-slate-900/70 border border-slate-700 hover:border-cyan-500/50 text-[10px] text-slate-300">
-                    <span class="text-white font-bold">${r.displayName || r.classId}</span>
-                    <span class="text-slate-500 ml-1">${r.inviteCode || r.classId}</span>
+                `<button type="button" onclick="window.switchClass('${escapeHtmlAttr(String(r.classId || '')).replace(/'/g, '')}')" class="w-full text-left px-2 py-1.5 rounded-lg bg-slate-900/70 border border-slate-700 hover:border-cyan-500/50 text-[10px] text-slate-300">
+                    <span class="text-white font-bold">${escapeConvenienceHtml(r.displayName || r.classId)}</span>
+                    <span class="text-slate-500 ml-1">${escapeConvenienceHtml(r.inviteCode || r.classId)}</span>
                 </button>`
             ).join('');
         }
@@ -1369,8 +1370,10 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             let html = '<option value="" disabled selected>관리자 계정 선택</option>';
             (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
-                const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
-                html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
+                // optionClass는 허용된 Tailwind 토큰만 통과시켜 속성 주입을 막습니다.
+                const safeOptClass = String(s.optionClass || '').replace(/[^a-zA-Z0-9_\-\s]/g, '');
+                const optClass = safeOptClass ? ` class="${escapeHtmlAttr(safeOptClass)}"` : '';
+                html += `<option value="${escapeHtmlAttr(s.id)}"${optClass}>${escapeConvenienceHtml(s.emoji || '👑')} ${escapeConvenienceHtml(s.name)} (${escapeConvenienceHtml(s.label || '관리자')})</option>`;
             });
             sel.innerHTML = html;
         }
@@ -1381,17 +1384,18 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const prev = sel.value;
             let html = '<option value="" disabled selected>내 이름(학번) 선택</option>';
-            html += `<option disabled>─── ${meta.displayName || '우리 반'} ───</option>`;
+            html += `<option disabled>─── ${escapeConvenienceHtml(meta.displayName || '우리 반')} ───</option>`;
             getActiveStudentIds().forEach((sid) => {
                 const rosterEntry = (meta.roster || []).find((r) => String(r.id) === sid);
-                const labelSuffix = rosterEntry && rosterEntry.label ? ` (${rosterEntry.label})` : '';
+                const labelSuffix = rosterEntry && rosterEntry.label ? ` (${escapeConvenienceHtml(rosterEntry.label)})` : '';
                 const optClass = rosterEntry && rosterEntry.label ? ' class="text-cyan-300"' : '';
-                html += `<option value="${sid}"${optClass}>${sid}. ${STUDENT_NAMES[sid] || sid}${labelSuffix}</option>`;
+                html += `<option value="${escapeHtmlAttr(sid)}"${optClass}>${escapeConvenienceHtml(sid)}. ${escapeConvenienceHtml(STUDENT_NAMES[sid] || sid)}${labelSuffix}</option>`;
             });
             html += '<option disabled>─── 관리자 ───</option>';
             (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
-                const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
-                html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
+                const safeOptClass = String(s.optionClass || '').replace(/[^a-zA-Z0-9_\-\s]/g, '');
+                const optClass = safeOptClass ? ` class="${escapeHtmlAttr(safeOptClass)}"` : '';
+                html += `<option value="${escapeHtmlAttr(s.id)}"${optClass}>${escapeConvenienceHtml(s.emoji || '👑')} ${escapeConvenienceHtml(s.name)} (${escapeConvenienceHtml(s.label || '관리자')})</option>`;
             });
             sel.innerHTML = html;
             if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
@@ -1704,41 +1708,41 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
                 <tr class="border-b border-slate-700/80">
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${escapeHtmlAttr(r.id || '')}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${escapeHtmlAttr(r.name || '')}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
                     <td class="p-1">
                         <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
                             <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
                             <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
                         </select>
                     </td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${escapeHtmlAttr(r.label || '')}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
                     <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
                 </tr>`).join('');
             panel.innerHTML = `
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
                     <label class="text-[10px] text-slate-300">학급 표시 이름
-                        <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                        <input id="classMetaDisplayName" type="text" value="${escapeHtmlAttr(meta.displayName || '')}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                     </label>
                     <label class="text-[10px] text-slate-300">학급 ID (데이터 경로)
-                        <input type="text" value="${appId}" readonly class="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400">
+                        <input type="text" value="${escapeHtmlAttr(appId)}" readonly class="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400">
                     </label>
                     <label class="text-[10px] text-slate-300">학년도
-                        <input id="classMetaSchoolYear" type="number" min="2020" max="2100" value="${meta.schoolYear || 2026}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                        <input id="classMetaSchoolYear" type="number" min="2020" max="2100" value="${Number(meta.schoolYear) || 2026}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                     </label>
                     <label class="text-[10px] text-slate-300">학년 · 반
                         <div class="mt-1 flex gap-2">
-                            <input id="classMetaGrade" type="number" min="1" max="6" value="${meta.grade || 6}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
-                            <input id="classMetaHomeroom" type="number" min="1" max="20" value="${meta.homeroom || 1}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                            <input id="classMetaGrade" type="number" min="1" max="6" value="${Number(meta.grade) || 6}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                            <input id="classMetaHomeroom" type="number" min="1" max="20" value="${Number(meta.homeroom) || 1}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
                         </div>
                     </label>
                 </div>
                 <p class="text-[9px] text-slate-500 mb-2">
-                    초대 코드: <span class="text-emerald-300 font-bold tracking-widest">${meta.inviteCode || '(저장 후 생성)'}</span>
+                    초대 코드: <span class="text-emerald-300 font-bold tracking-widest">${escapeConvenienceHtml(meta.inviteCode || '(저장 후 생성)')}</span>
                     <button type="button" onclick="window.copyTeacherInviteCode()" class="ml-1 text-[9px] text-sky-300 underline">복사</button>
-                    · GMA 편집 학번: ${meta.gmaEditStudentId || '1'}
+                    · GMA 편집 학번: ${escapeConvenienceHtml(meta.gmaEditStudentId || '1')}
                 </p>
-                <p class="text-[9px] text-slate-500 mb-2 break-all">공유 링크: <span class="text-sky-300/90">${getClassShareUrl(appId)}</span>
+                <p class="text-[9px] text-slate-500 mb-2 break-all">공유 링크: <span class="text-sky-300/90">${escapeConvenienceHtml(getClassShareUrl(appId))}</span>
                     <button type="button" onclick="window.copyTeacherClassLink()" class="ml-1 text-[9px] text-sky-300 underline">복사</button>
                 </p>
                 <div class="overflow-x-auto max-h-[240px] overflow-y-auto rounded border border-slate-700 mb-3">

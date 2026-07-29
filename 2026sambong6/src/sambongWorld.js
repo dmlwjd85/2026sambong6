@@ -1401,9 +1401,11 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading('학급을 찾는 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(raw);
+                window.hideGlobalLoading();
                 window.switchClass(classId);
             } catch (e) {
                 console.warn('applyLoginClassCode', e);
+                window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
                     return window.customAlert('초대 코드를 찾을 수 없습니다.\n선생님께 다시 확인해 주세요.');
                 }
@@ -1566,7 +1568,8 @@ function redrawPlazaGrantsUi() {
             if (!ok) return;
             try {
                 window.showGlobalLoading('학급을 만드는 중…');
-                await ensureAnonAuthReady();
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
                 const { newClassId, inviteCode } = await createClassWorkspace({
                     displayName,
                     schoolYear,
@@ -1579,6 +1582,8 @@ function redrawPlazaGrantsUi() {
                 });
                 localStorage.setItem('sambong_student_id', 'gm');
                 localStorage.setItem('sambong_student_pin', teacherPin);
+                // 팝업이 로딩에 가려지지 않도록 먼저 닫음
+                window.hideGlobalLoading();
                 await window.customAlert(
                     `✅ 학급이 준비되었습니다!\n\n` +
                     `초대 코드: ${inviteCode}\n` +
@@ -1588,6 +1593,7 @@ function redrawPlazaGrantsUi() {
                 window.switchClass(newClassId);
             } catch (e) {
                 console.error('createClassFromLogin', e);
+                window.hideGlobalLoading();
                 await window.customAlert('학급 생성 실패: ' + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
@@ -1741,6 +1747,8 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading('학급 생성 중…');
                 const teacherName = getStaffMember('gm')?.name || '담임 선생님';
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
                 const { newClassId, inviteCode } = await createClassWorkspace({
                     displayName,
                     schoolYear,
@@ -1751,10 +1759,12 @@ function redrawPlazaGrantsUi() {
                     teacherPin: '',
                     copySettingsFromCurrent: true,
                 });
+                window.hideGlobalLoading();
                 await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
                 window.switchClass(newClassId);
             } catch (e) {
                 console.error('createNewClass', e);
+                window.hideGlobalLoading();
                 await window.customAlert('생성 실패: ' + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
@@ -1800,8 +1810,10 @@ function redrawPlazaGrantsUi() {
         window.toggleNavClassMenu = function(forceOpen) {
             const menu = document.getElementById('navClassMenu');
             if (!menu) return;
-            const open = forceOpen === true ? true : menu.classList.contains('hidden');
-            if (!open) {
+            const currentlyHidden = menu.classList.contains('hidden');
+            // forceOpen=true면 무조건 열기, 아니면 토글
+            const shouldOpen = forceOpen === true ? true : (forceOpen === false ? false : currentlyHidden);
+            if (!shouldOpen) {
                 menu.classList.add('hidden');
                 return;
             }
@@ -1809,26 +1821,68 @@ function redrawPlazaGrantsUi() {
             const rows = recent.length
                 ? recent.map((r) => {
                     const cur = r.classId === appId ? ' · 현재' : '';
-                    return `<button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200" onclick="window.switchClass('${String(r.classId).replace(/'/g, '')}')">
+                    const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    return `<button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
                         <div class="font-bold truncate">${r.displayName || r.classId}${cur}</div>
                         <div class="text-slate-500 truncate">${r.inviteCode || r.classId}</div>
                     </button>`;
                 }).join('')
-                : '<div class="text-slate-500 px-2 py-2">최근 학급이 없습니다.</div>';
+                : '<div class="text-slate-500 px-2 py-2">최근 학급이 없습니다. 아래에서 코드로 이동하세요.</div>';
             menu.innerHTML = `
                 <div class="text-[9px] text-slate-500 font-bold px-1 mb-1">학급 전환</div>
                 ${rows}
-                <div class="border-t border-slate-700 mt-1 pt-1">
-                    <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sky-300 font-bold" onclick="window.logout()">다른 계정·학급으로 다시 로그인</button>
+                <div class="border-t border-slate-700 mt-1 pt-2 space-y-1.5">
+                    <input id="navSwitchClassCode" type="text" placeholder="초대 코드 또는 학급 ID" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1.5 text-[10px] text-white font-bold" onclick="event.stopPropagation()">
+                    <button type="button" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 rounded-lg" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 이동</button>
+                    <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sky-300 font-bold" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
                 </div>`;
             menu.classList.remove('hidden');
+            // 같은 클릭 이벤트로 바로 닫히지 않도록 한 틱 무시
+            window._navClassMenuIgnoreUntil = Date.now() + 300;
+        };
+
+        window.applyNavClassSwitch = async function() {
+            const raw = String(document.getElementById('navSwitchClassCode')?.value || '').trim();
+            if (!raw) return window.customAlert('초대 코드 또는 학급 ID를 입력해 주세요.');
+            const studentInput = document.getElementById('loginClassCode');
+            if (studentInput) studentInput.value = raw;
+            // 로그인 화면 없이도 전환
+            try {
+                window.showGlobalLoading('학급을 찾는 중…');
+                const classId = await resolveClassIdFromInviteOrRaw(raw);
+                window.hideGlobalLoading();
+                window.switchClass(classId);
+            } catch (e) {
+                window.hideGlobalLoading();
+                if (String(e.message) === 'invite_not_found') {
+                    return window.customAlert('초대 코드를 찾을 수 없습니다.');
+                }
+                return window.customAlert('학급을 열 수 없습니다: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        /** 허브 버튼용: 드롭다운이 클릭과 동시에 닫히는 문제 없이 전환 패널 표시 */
+        window.openClassSwitchPanel = function() {
+            window.toggleNavClassMenu(true);
+            // 모바일에서도 보이도록 메뉴를 화면 중앙 모달처럼 보정
+            const menu = document.getElementById('navClassMenu');
+            if (menu) {
+                menu.classList.add('fixed', 'left-1/2', 'top-20', '-translate-x-1/2', 'z-[430]');
+                menu.classList.remove('absolute', 'left-0', 'top-full', 'mt-1');
+            }
         };
 
         document.addEventListener('click', (e) => {
+            if (Date.now() < (window._navClassMenuIgnoreUntil || 0)) return;
             const wrap = document.getElementById('navClassSwitcherWrap');
             const menu = document.getElementById('navClassMenu');
-            if (!wrap || !menu || menu.classList.contains('hidden')) return;
-            if (!wrap.contains(e.target)) menu.classList.add('hidden');
+            if (!menu || menu.classList.contains('hidden')) return;
+            // 메뉴 자체 클릭은 유지
+            if (menu.contains(e.target)) return;
+            if (wrap && wrap.contains(e.target)) return;
+            menu.classList.add('hidden');
+            menu.classList.remove('fixed', 'left-1/2', 'top-20', '-translate-x-1/2', 'z-[430]');
+            menu.classList.add('absolute', 'left-0', 'top-full', 'mt-1');
         });
 
         /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */
@@ -8009,7 +8063,8 @@ ${subjectLine}
         // ==========================================
         window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            // 전역 로딩(z-390)·오프라인 배너(z-400)보다 위 — 팝업이 가려져 먹통처럼 보이는 문제 방지
+            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">알림</h3>
@@ -8023,7 +8078,7 @@ ${subjectLine}
 
         window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">확인</h3>
@@ -8042,7 +8097,7 @@ ${subjectLine}
 
         window.customPrompt = (m, type="password") => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-sb-gold">입력</h3>
@@ -8065,7 +8120,7 @@ ${subjectLine}
         // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
         window.customPick1to6 = (m) => new Promise(r => {
             const d = document.createElement('div');
-            d.className = "fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4";
+            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>

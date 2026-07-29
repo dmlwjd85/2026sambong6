@@ -151,7 +151,7 @@
                 <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md shrink-0"></i>
                 <span class="font-display text-lg text-white tracking-widest shrink-0"><span id="navWorldBrand">SAMBONG</span> <span id="navSeasonBadge" class="text-cyan-400">S1</span></span>
                 <div class="relative min-w-0" id="navClassSwitcherWrap">
-                    <button type="button" id="navClassLabelBtn" onclick="window.toggleNavClassMenu()" class="hidden sm:flex items-center gap-1 max-w-[10rem] text-[10px] text-emerald-300/90 font-bold truncate px-2 py-1 rounded-lg border border-emerald-500/30 bg-slate-800/50 hover:bg-slate-700/80" title="학급 전환">
+                    <button type="button" id="navClassLabelBtn" onclick="event.stopPropagation(); window.toggleNavClassMenu()" class="flex items-center gap-1 max-w-[10rem] text-[10px] text-emerald-300/90 font-bold truncate px-2 py-1 rounded-lg border border-emerald-500/30 bg-slate-800/50 hover:bg-slate-700/80" title="학급 전환">
                         <span id="navClassLabel">우리 반</span>
                         <i class="fa-solid fa-caret-down text-[8px] opacity-70"></i>
                     </button>
@@ -817,7 +817,7 @@
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2">
                     <button type="button" onclick="window.copyTeacherClassLink()" class="text-[10px] bg-sky-800 hover:bg-sky-700 text-white font-bold py-1.5 px-3 rounded-lg">접속 링크 복사</button>
-                    <button type="button" onclick="window.toggleNavClassMenu(true)" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1.5 px-3 rounded-lg border border-slate-600">다른 학급으로 전환</button>
+                    <button type="button" onclick="window.openClassSwitchPanel()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1.5 px-3 rounded-lg border border-slate-600">다른 학급으로 전환</button>
                 </div>
             </div>
 

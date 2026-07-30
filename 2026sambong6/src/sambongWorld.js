@@ -5864,17 +5864,52 @@ ${subjectLine}
         initSessionRefreshGuard();
 
         /**
-         * 식단표 URL이 PDF / 이미지 / 기타(iframe) 중 무엇인지 판별.
-         * Firebase Storage URL처럼 쿼리스트링·퍼센트 인코딩이 붙은 경우도 처리합니다.
+         * 식단표 URL·파일명으로 리소스 종류 판별.
+         * pdf | image | hangul | other
          */
-        function getLunchMenuResourceType(url) {
-            if (!url || typeof url !== 'string') return 'other';
-            let pathOnly = url.split(/[?#]/)[0];
-            try { pathOnly = decodeURIComponent(pathOnly); } catch (e) {}
-            const lower = pathOnly.toLowerCase();
-            if (/\.pdf$/i.test(lower)) return 'pdf';
-            if (/\.(png|jpe?g|gif|webp)$/i.test(lower)) return 'image';
+        function getLunchMenuResourceType(url, fileNameHint) {
+            const candidates = [url, fileNameHint, window.globalSettings?.lunchMenuFileName]
+                .filter(Boolean)
+                .map(String);
+            const kindHint = String(window.globalSettings?.lunchMenuKind || '').toLowerCase();
+            if (kindHint === 'pdf' || kindHint === 'image' || kindHint === 'hangul') return kindHint;
+
+            for (const raw of candidates) {
+                let pathOnly = String(raw).split(/[?#]/)[0];
+                try { pathOnly = decodeURIComponent(pathOnly); } catch (_) { /* ignore */ }
+                const lower = pathOnly.toLowerCase();
+                if (/\.(hwp|hwpx|hml)$/i.test(lower)) return 'hangul';
+                if (/\.pdf$/i.test(lower)) return 'pdf';
+                if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(lower)) return 'image';
+            }
             return 'other';
+        }
+
+        function detectLunchMenuKindFromFile(file) {
+            const name = String(file?.name || '').toLowerCase();
+            const type = String(file?.type || '').toLowerCase();
+            if (name.endsWith('.hwp') || name.endsWith('.hwpx') || name.endsWith('.hml')
+                || type.includes('hwp') || type.includes('haansoft')) return 'hangul';
+            if (name.endsWith('.pdf') || type === 'application/pdf') return 'pdf';
+            if (type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)) return 'image';
+            return 'other';
+        }
+
+        function lunchMenuContentTypeForFile(file) {
+            const lower = String(file?.name || '').toLowerCase();
+            let contentType = String(file?.type || '').trim();
+            if (contentType) return contentType;
+            if (lower.endsWith('.pdf')) return 'application/pdf';
+            if (lower.endsWith('.png')) return 'image/png';
+            if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+            if (lower.endsWith('.webp')) return 'image/webp';
+            if (lower.endsWith('.gif')) return 'image/gif';
+            if (lower.endsWith('.bmp')) return 'image/bmp';
+            if (lower.endsWith('.svg')) return 'image/svg+xml';
+            if (lower.endsWith('.hwpx')) return 'application/hwp+zip';
+            if (lower.endsWith('.hwp')) return 'application/x-hwp';
+            if (lower.endsWith('.hml')) return 'application/haansofthml';
+            return 'application/octet-stream';
         }
 
         /** HTML 속성값(쌍따옴표) 안전 이스케이프 */
@@ -5983,6 +6018,9 @@ ${subjectLine}
             }
             if (tabId === 'settings' && window.playerState && window.playerState.isAdmin) {
                 window.renderWorldSettingsPanel();
+            }
+            if (tabId === 'lunch' && typeof renderLunchMenuUI === 'function') {
+                renderLunchMenuUI();
             }
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
@@ -12127,9 +12165,10 @@ ${subjectLine}
             const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '';
             const url = window.globalSettings && window.globalSettings.lunchMenuUrl ? String(window.globalSettings.lunchMenuUrl) : '';
             const updatedAt = window.globalSettings && window.globalSettings.lunchMenuUpdatedAt ? window.globalSettings.lunchMenuUpdatedAt : 0;
+            const fileName = window.globalSettings && window.globalSettings.lunchMenuFileName ? String(window.globalSettings.lunchMenuFileName) : '';
 
             const hasUrl = !!url;
-            const resType = hasUrl ? getLunchMenuResourceType(url) : 'other';
+            const resType = hasUrl ? getLunchMenuResourceType(url, fileName) : 'other';
             if(openBtn) openBtn.classList.toggle('hidden', !hasUrl);
             if(emptyText) emptyText.classList.toggle('hidden', hasUrl);
             if(adminPanel) adminPanel.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
@@ -12141,22 +12180,22 @@ ${subjectLine}
                         thumbImg.classList.remove('hidden');
                         thumbImg.src = url;
                         thumbPdf.classList.add('hidden');
-                    } else if (resType === 'pdf') {
-                        thumbImg.classList.add('hidden');
-                        thumbImg.removeAttribute('src');
-                        thumbPdf.classList.remove('hidden');
-                        const pdfIcon = thumbPdf.querySelector('i');
-                        const pdfLabel = thumbPdf.querySelector('span');
-                        if (pdfIcon) { pdfIcon.className = 'fa-solid fa-file-pdf text-5xl text-red-400'; }
-                        if (pdfLabel) pdfLabel.textContent = 'PDF 식단표';
                     } else {
                         thumbImg.classList.add('hidden');
                         thumbImg.removeAttribute('src');
                         thumbPdf.classList.remove('hidden');
                         const pdfIcon = thumbPdf.querySelector('i');
                         const pdfLabel = thumbPdf.querySelector('span');
-                        if (pdfIcon) { pdfIcon.className = 'fa-solid fa-link text-5xl text-emerald-400'; }
-                        if (pdfLabel) pdfLabel.textContent = '웹·링크 식단표';
+                        if (resType === 'pdf') {
+                            if (pdfIcon) pdfIcon.className = 'fa-solid fa-file-pdf text-3xl text-red-400';
+                            if (pdfLabel) pdfLabel.textContent = 'PDF 급식표';
+                        } else if (resType === 'hangul') {
+                            if (pdfIcon) pdfIcon.className = 'fa-solid fa-file-word text-3xl text-sky-300';
+                            if (pdfLabel) pdfLabel.textContent = '한글 급식표';
+                        } else {
+                            if (pdfIcon) pdfIcon.className = 'fa-solid fa-file text-3xl text-emerald-400';
+                            if (pdfLabel) pdfLabel.textContent = fileName ? `파일: ${fileName}` : '첨부 급식표';
+                        }
                     }
                 } else {
                     thumbImg.classList.add('hidden');
@@ -12197,19 +12236,27 @@ ${subjectLine}
         };
 
         window.openLunchMenu = function() {
-            const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '식단표';
+            const title = window.globalSettings && window.globalSettings.lunchMenuTitle ? String(window.globalSettings.lunchMenuTitle) : '급식표';
             const url = window.globalSettings && window.globalSettings.lunchMenuUrl ? String(window.globalSettings.lunchMenuUrl) : '';
-            if(!url) return window.customAlert('첨부된 식단표가 없습니다.');
+            const fileName = window.globalSettings && window.globalSettings.lunchMenuFileName ? String(window.globalSettings.lunchMenuFileName) : '';
+            if(!url) return window.customAlert('첨부된 급식표가 없습니다.');
 
             const modal = document.getElementById('lunchMenuModal');
             const body = document.getElementById('lunchMenuModalBody');
             const titleEl = document.getElementById('lunchMenuModalTitle');
-            if(titleEl) titleEl.innerText = `식단표 · ${title}`;
+            if(titleEl) titleEl.innerHTML = `<i class="fa-solid fa-clipboard-list text-emerald-400"></i> 급식표 · ${title}`;
             if(body) {
                 const attrUrl = escapeHtmlAttr(url);
-                const kind = getLunchMenuResourceType(url);
+                const kind = getLunchMenuResourceType(url, fileName);
                 if (kind === 'pdf') {
-                    body.innerHTML = `<embed src="${attrUrl}" type="application/pdf" class="w-full h-[70vh] rounded-xl" />`;
+                    body.innerHTML = `
+                        <div class="space-y-2">
+                            <embed src="${attrUrl}" type="application/pdf" class="w-full h-[65vh] rounded-xl bg-slate-950" />
+                            <div class="flex flex-wrap gap-2 justify-center">
+                                <a href="${attrUrl}" target="_blank" rel="noopener noreferrer" class="min-h-[44px] inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">새 탭에서 열기</a>
+                                <a href="${attrUrl}" download class="min-h-[44px] inline-flex items-center justify-center px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold">다운로드</a>
+                            </div>
+                        </div>`;
                 } else if (kind === 'image') {
                     body.textContent = '';
                     const wrap = document.createElement('div');
@@ -12219,7 +12266,7 @@ ${subjectLine}
                     btn.className = 'block w-full rounded-xl overflow-hidden border border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500';
                     const img = document.createElement('img');
                     img.src = url;
-                    img.alt = '식단표';
+                    img.alt = '급식표';
                     img.className = 'w-full max-h-[65vh] object-contain bg-slate-950';
                     img.decoding = 'async';
                     btn.appendChild(img);
@@ -12230,8 +12277,30 @@ ${subjectLine}
                     hint.textContent = '이미지를 탭하면 전체 화면으로 확대됩니다.';
                     wrap.appendChild(hint);
                     body.appendChild(wrap);
+                } else if (kind === 'hangul') {
+                    const safeName = escapeHtmlAttr(fileName || '급식표.hwp');
+                    body.innerHTML = `
+                        <div class="flex flex-col items-center justify-center gap-4 py-8 px-3 text-center">
+                            <i class="fa-solid fa-file-word text-5xl text-sky-300"></i>
+                            <div>
+                                <p class="text-white font-black text-sm mb-1">한글 문서 급식표</p>
+                                <p class="text-[11px] text-slate-400 font-bold break-all">${safeName}</p>
+                            </div>
+                            <p class="text-[10px] text-slate-400 leading-relaxed max-w-sm">브라우저에서는 한글 파일을 직접 미리볼 수 없습니다. 아래 버튼으로 연 뒤 한글(또는 뷰어)에서 확인하세요.</p>
+                            <div class="flex flex-col sm:flex-row gap-2 w-full max-w-sm">
+                                <a href="${attrUrl}" target="_blank" rel="noopener noreferrer" class="flex-1 min-h-[48px] inline-flex items-center justify-center px-4 py-3 rounded-xl bg-sky-700 hover:bg-sky-600 text-white text-sm font-black shadow-lg">새 탭에서 열기</a>
+                                <a href="${attrUrl}" download="${safeName}" class="flex-1 min-h-[48px] inline-flex items-center justify-center px-4 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-black shadow-lg">다운로드</a>
+                            </div>
+                        </div>`;
                 } else {
-                    body.innerHTML = `<iframe src="${attrUrl}" class="w-full h-[70vh] rounded-xl border border-slate-700" referrerpolicy="no-referrer"></iframe>`;
+                    body.innerHTML = `
+                        <div class="space-y-3">
+                            <iframe src="${attrUrl}" class="w-full h-[60vh] rounded-xl border border-slate-700 bg-slate-950" referrerpolicy="no-referrer"></iframe>
+                            <div class="flex flex-wrap gap-2 justify-center">
+                                <a href="${attrUrl}" target="_blank" rel="noopener noreferrer" class="min-h-[44px] inline-flex items-center justify-center px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">새 탭에서 열기</a>
+                                <a href="${attrUrl}" download class="min-h-[44px] inline-flex items-center justify-center px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold">다운로드</a>
+                            </div>
+                        </div>`;
                 }
             }
             if(modal) modal.classList.remove('hidden');
@@ -12255,13 +12324,19 @@ ${subjectLine}
             }
 
             const payload = {
-                lunchMenuTitle: title || '식단표',
+                lunchMenuTitle: title || '급식표',
                 lunchMenuUpdatedAt: Date.now()
             };
             // 업로드 완료 시에만 다운로드 URL 갱신 (수동 저장은 제목·시간만 merge — 기존 lunchMenuUrl 유지)
             if (Object.prototype.hasOwnProperty.call(opts, 'urlOverride')) {
                 const u = String(opts.urlOverride || '').trim();
                 if (u) payload.lunchMenuUrl = u;
+            }
+            if (Object.prototype.hasOwnProperty.call(opts, 'fileNameOverride')) {
+                payload.lunchMenuFileName = String(opts.fileNameOverride || '').trim();
+            }
+            if (Object.prototype.hasOwnProperty.call(opts, 'kindOverride')) {
+                payload.lunchMenuKind = String(opts.kindOverride || '').trim();
             }
 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), payload, { merge: true });
@@ -12271,14 +12346,16 @@ ${subjectLine}
 
         window.clearLunchMenu = async function() {
             if(!window.playerState || !window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('식단표 첨부를 삭제할까요?');
+            const ok = await window.customConfirm('급식표 첨부를 삭제할까요?');
             if(!ok) return;
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                 lunchMenuTitle: '',
                 lunchMenuUrl: '',
+                lunchMenuFileName: '',
+                lunchMenuKind: '',
                 lunchMenuUpdatedAt: Date.now()
             }, { merge: true });
-            window.customAlert('✅ 식단표가 삭제되었습니다.');
+            window.customAlert('✅ 급식표가 삭제되었습니다.');
         };
 
         window.pickLunchMenuFile = function() {
@@ -12314,7 +12391,7 @@ ${subjectLine}
             if (auth.currentUser) await auth.currentUser.getIdToken(true);
         }
 
-        /** 식단표 파일 업로드: uploadBytes 단일 요청(재개 업로드 0% 정지 이슈 회피). 경로는 artifacts/{appId}/public/... */
+        /** 식단표 파일 업로드: uploadBytes 단일 요청. 경로는 artifacts/{appId}/public/... */
         window.uploadLunchMenuFile = async function(file) {
             if(!window.playerState || !window.playerState.isAdmin) return;
             if(!storage) {
@@ -12324,14 +12401,20 @@ ${subjectLine}
             if(!file) return;
             if (window._lunchMenuUploading) return;
 
-            const maxBytes = 15 * 1024 * 1024;
+            const maxBytes = 20 * 1024 * 1024;
             if(file.size > maxBytes) {
-                await window.customAlert('파일이 너무 큽니다. (최대 15MB)');
+                await window.customAlert('파일이 너무 큽니다. (최대 20MB)');
                 return;
             }
 
-            const safeName = (file.name || 'menu').replace(/[^\w.\-() ]+/g, '_');
-            // Firestore 데이터와 동일한 appId 하위 public 경로 — Storage 규칙과 맞춤
+            const kind = detectLunchMenuKindFromFile(file);
+            const allowed = kind === 'pdf' || kind === 'image' || kind === 'hangul';
+            if (!allowed) {
+                await window.customAlert('지원 형식: 한글(.hwp/.hwpx), PDF, 이미지(PNG/JPG/WEBP 등)');
+                return;
+            }
+
+            const safeName = (file.name || 'menu').replace(/[^\w.\-()가-힣 ]+/g, '_');
             const path = `artifacts/${appId}/public/data/lunch-menu/${Date.now()}_${safeName}`;
             const refObj = storageRef(storage, path);
 
@@ -12340,18 +12423,10 @@ ${subjectLine}
             window._lunchMenuUploading = true;
             if (uploadBtn) uploadBtn.disabled = true;
 
-            const lower = (file.name || '').toLowerCase();
-            let contentType = (file.type || '').trim();
-            if (!contentType) {
-                if (lower.endsWith('.pdf')) contentType = 'application/pdf';
-                else if (lower.endsWith('.png')) contentType = 'image/png';
-                else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) contentType = 'image/jpeg';
-                else if (lower.endsWith('.webp')) contentType = 'image/webp';
-                else if (lower.endsWith('.gif')) contentType = 'image/gif';
-                else contentType = 'application/octet-stream';
-            }
+            const contentType = lunchMenuContentTypeForFile(file);
 
             try {
+                window.showGlobalLoading('잠시만 기다려 주세요…');
                 if (statusEl) statusEl.textContent = '인증 확인 중…';
                 await ensureFirebaseAuthForUpload();
                 if (statusEl) statusEl.textContent = '업로드 중… (완료될 때까지 잠시만 기다려 주세요)';
@@ -12365,23 +12440,39 @@ ${subjectLine}
 
                 const titleEl = document.getElementById('lunchMenuTitleInput');
                 const titleFromForm = (titleEl?.value || '').trim();
-                const saveOpts = { skipSuccessAlert: true, urlOverride: urlStr };
+                const saveOpts = {
+                    skipSuccessAlert: true,
+                    urlOverride: urlStr,
+                    fileNameOverride: file.name || safeName,
+                    kindOverride: kind,
+                };
                 if (titleFromForm) saveOpts.titleOverride = titleFromForm;
+                else saveOpts.titleOverride = (file.name || '급식표').replace(/\.[^.]+$/, '') || '급식표';
                 await window.saveLunchMenu(saveOpts);
-                await window.customAlert('✅ 파일 업로드 및 식단표 저장이 완료되었습니다.');
+                window.hideGlobalLoading();
+                window.showToast?.('급식표가 업로드되었습니다!');
+                await window.customAlert(
+                    '✅ 급식표 업로드가 완료되었습니다.\n\n' +
+                    (kind === 'hangul'
+                        ? '한글 파일은 팝업에서 다운로드·새 탭으로 열어 확인하세요.'
+                        : '학생들이 「급식표 보기」로 팝업에서 확인할 수 있습니다.')
+                );
+                renderLunchMenuUI();
             } catch (e) {
+                window.hideGlobalLoading();
                 console.error('uploadLunchMenuFile', e);
                 const code = e && e.code ? String(e.code) : '';
                 const msg = e && e.message ? String(e.message) : String(e);
                 let hint = '';
                 if (code === 'storage/unauthorized' || code === 'storage/permission-denied' || /permission|unauthorized|403/i.test(msg)) {
-                    hint = '\n\n※ [필요 조치] Firebase 콘솔 → Storage → 규칙에 인증된 사용자(익명 포함)의 쓰기를 허용해 주세요. 예:\n'
-                        + 'match /artifacts/' + appId + '/public/{path=**} { allow read: if true; allow write: if request.auth != null; }';
+                    hint = '\n\n※ [필요 조치] Firebase 콘솔 → Storage → 규칙에 인증된 사용자(익명 포함)의 쓰기를 허용해 주세요.';
                 } else if (/auth\/|익명|anonymous|ADMIN_ONLY/i.test(msg) || code === 'auth/admin-restricted-operation') {
                     hint = '\n\n※ [필요 조치] Firebase 콘솔 → Authentication → 로그인 방법 → 「익명」 사용을 켜 주세요.';
                 }
-                await window.customAlert('업로드 또는 저장에 실패했습니다.\n' + (code ? '[' + code + '] ' : '') + msg + hint);
+                const retry = await window.customConfirm('저장에 실패했습니다. 다시 시도해 주세요.\n\n' + (code ? '[' + code + '] ' : '') + msg + hint + '\n\n다시 시도할까요?');
+                if (retry) return window.uploadLunchMenuFile(file);
             } finally {
+                window.hideGlobalLoading();
                 window._lunchMenuUploading = false;
                 if (uploadBtn) uploadBtn.disabled = false;
                 if (statusEl) statusEl.textContent = '';

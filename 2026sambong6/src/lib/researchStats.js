@@ -167,22 +167,50 @@ export function computeResearchStats(opts) {
     const avgXpGainToday = perStudent.reduce((s, r) => s + r.xpGainToday, 0) / n;
     const avgXpGainWeek = perStudent.reduce((s, r) => s + r.xpGainWeek, 0) / n;
 
+    // 은행 이용: 예금·적금 기록 건수
+    let bankUseCount = 0;
+    students.forEach((stu) => {
+        const terms = Array.isArray(stu.bankTermDeposits) ? stu.bankTermDeposits.length : 0;
+        const regular = Number(stu.bankRegularSavings) > 0 ? 1 : 0;
+        bankUseCount += terms + regular;
+    });
+
+    // 학습 온도계 평균
+    let thermoAvg = null;
+    const thermo = opts.learningThermometer;
+    if (thermo && typeof thermo === 'object') {
+        const vals = Object.values(thermo)
+            .map((v) => (typeof v === 'number' ? v : Number(v?.temp ?? v?.value)))
+            .filter((v) => Number.isFinite(v));
+        if (vals.length) thermoAvg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+    }
+
+    const allRate = dailyIds.length
+        ? (todayCompletions > 0 || weekCompletions > 0
+            ? Math.round(((weekStudentDoneSum + todayStudentDoneSum) / (dailyTotalSlots * 2)) * 1000) / 10
+            : Math.round(weekRate * 10) / 10)
+        : 0;
+
     return {
         generatedAt: new Date().toISOString(),
         today,
         weekStart,
         weekEnd,
+        period: opts.period || 'week',
         studentCount: students.length,
         dailyQuestCount: dailyIds.length,
         todayCompletions,
         weekCompletions,
         todayCompletionRate: Math.round(todayRate * 10) / 10,
         weekCompletionRate: Math.round(weekRate * 10) / 10,
+        allCompletionRate: allRate,
         allClearToday,
         avgXpGainToday: Math.round(avgXpGainToday * 10) / 10,
         avgXpGainWeek: Math.round(avgXpGainWeek * 10) / 10,
         purchaseCount,
         purchaseCountWeek,
+        bankUseCount,
+        thermoAvg,
         topQuests,
         topQuestsToday,
         perStudent: perStudent.sort((a, b) => b.xpGainWeek - a.xpGainWeek),

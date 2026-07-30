@@ -550,15 +550,18 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
+        const APP_VERSION = 'v1.1';
+        window.APP_VERSION = APP_VERSION;
+
         const DEFAULT_WORLD_SETTINGS = {
             worldName: '삼봉월드',
             worldNameEn: 'SAMBONG WORLD',
             navBadge: 'S1',
             tagline: '',
-            footerCredit: '삼봉월드 창조자 마스터 J & 해적 마스터 A',
+            footerCredit: '삼봉월드 · 우리 반',
             seasonNumber: 1,
             seasonLabel: '시즌 1',
-            seasonTheme: '여름 바다 모험',
+            seasonTheme: '우리 반 모험',
             seasonNature: 'summer',
             seasonStartAt: '',
             seasonEndAt: '2027-01-06T00:00:00',
@@ -627,8 +630,8 @@ function redrawPlazaGrantsUi() {
                 tagline: String(src.tagline || '').trim().slice(0, 80),
                 footerCredit: String(src.footerCredit || DEFAULT_WORLD_SETTINGS.footerCredit).trim().slice(0, 120) || DEFAULT_WORLD_SETTINGS.footerCredit,
                 seasonNumber,
-                seasonLabel: String(src.seasonLabel || `시즌 ${seasonNumber}`).trim().slice(0, 30) || `시즌 ${seasonNumber}`,
-                seasonTheme: String(src.seasonTheme || DEFAULT_WORLD_SETTINGS.seasonTheme).trim().slice(0, 60),
+                seasonLabel: String(src.seasonName || src.seasonLabel || `시즌 ${seasonNumber}`).trim().slice(0, 30) || `시즌 ${seasonNumber}`,
+                seasonTheme: String(src.seasonTheme || DEFAULT_WORLD_SETTINGS.seasonTheme).trim().slice(0, 60) || DEFAULT_WORLD_SETTINGS.seasonTheme,
                 seasonNature: nature,
                 seasonStartAt: String(src.seasonStartAt || '').trim(),
                 seasonEndAt: String(src.seasonEndAt || DEFAULT_WORLD_SETTINGS.seasonEndAt).trim() || DEFAULT_WORLD_SETTINGS.seasonEndAt,
@@ -694,7 +697,9 @@ function redrawPlazaGrantsUi() {
             const seasonLine = ws.seasonTheme
                 ? `[${ws.seasonLabel} : ${ws.seasonTheme}]`
                 : `[${ws.seasonLabel}]`;
-            document.title = `${ws.academicYear} ${ws.worldName}: ${ws.seasonLabel}`;
+            document.title = `${ws.worldName}`;
+            const verEls = document.querySelectorAll('[data-app-version]');
+            verEls.forEach((el) => { el.textContent = APP_VERSION; });
 
             const loginTitle = document.getElementById('loginWorldTitle');
             if (loginTitle) loginTitle.textContent = ws.worldNameEn || ws.worldName;
@@ -717,6 +722,8 @@ function redrawPlazaGrantsUi() {
             if (seasonLabel) seasonLabel.textContent = `${ws.seasonLabel} 종료까지`;
             const footer = document.getElementById('footerCreditText');
             if (footer) footer.textContent = `- ${ws.footerCredit} -`;
+            const plazaMaster = document.getElementById('plazaMasterNameLabel');
+            if (plazaMaster) plazaMaster.textContent = getMasterDisplayName();
             const timerWrap = seasonLabel && seasonLabel.closest('.glass-panel');
             if (timerWrap) timerWrap.classList.toggle('hidden', !ws.showSeasonTimer);
             updateSeasonTimer();
@@ -805,7 +812,11 @@ function redrawPlazaGrantsUi() {
             setVal('wsClassHomeroom', meta.homeroom || 1);
             setVal('wsGmaEditStudentId', meta.gmaEditStudentId || '13');
             setVal('wsClassIdReadonly', meta.classId || (typeof appId !== 'undefined' ? appId : ''));
-            setVal('wsRaidPassword', (window.globalSettings && window.globalSettings.raidPassword) || '1234');
+            setVal('wsRaidPassword', (window.globalSettings && window.globalSettings.raidPassword) || '');
+            setVal('wsMasterDisplayName', meta.masterDisplayName || getMasterDisplayName());
+            setVal('wsClassSchoolName', meta.schoolName || '');
+            window.renderMyClassesList?.();
+            window.renderCurriculumMappingPanel?.();
             setVal('wsBankInterest', window.globalSettings && window.globalSettings.bankInterestPercent != null
                 ? window.globalSettings.bankInterestPercent : 0);
             setVal('wsRaidRewardXp', (window.globalSettings && window.globalSettings.weekendRaidRewardXp) || 100);
@@ -866,7 +877,8 @@ function redrawPlazaGrantsUi() {
 
             const opsPayload = {
                 worldSettings,
-                raidPassword: text('wsRaidPassword') || '1234',
+                raidPassword: text('wsRaidPassword') || (window.globalSettings?.raidPassword || ''),
+                raidPasswordNeedsSetup: !text('wsRaidPassword'),
                 bankInterestPercent: Math.max(0, Math.min(100, num('wsBankInterest', 0))),
                 weekendRaidRewardXp: Math.max(0, Math.floor(num('wsRaidRewardXp', 100))),
                 weekendRaidRewardBong: Math.max(0, Math.floor(num('wsRaidRewardBong', 20))),
@@ -888,17 +900,24 @@ function redrawPlazaGrantsUi() {
                     const grade = Math.max(1, Math.min(6, Math.floor(num('wsClassGrade', 6))));
                     const homeroom = Math.max(1, Math.min(20, Math.floor(num('wsClassHomeroom', 1))));
                     const gmaEditStudentId = text('wsGmaEditStudentId') || '13';
+                    const masterDisplayName = text('wsMasterDisplayName') || getMasterDisplayName();
+                    const schoolName = text('wsClassSchoolName');
+                    const staff = (window.classMeta?.staff || DEFAULT_CLASS_STAFF).map((s) =>
+                        String(s.id) === 'gm' ? { ...s, name: masterDisplayName } : s
+                    );
                     const classPayload = {
                         classId: appId,
                         displayName,
+                        schoolName,
                         schoolYear,
                         grade,
                         homeroom,
+                        masterDisplayName,
                         gmaEditStudentId,
                         inviteCode: window.classMeta?.inviteCode || generateInviteCode(),
                         isActive: true,
                         roster: window.classMeta?.roster || buildDefaultRosterFromLegacy(),
-                        staff: window.classMeta?.staff || DEFAULT_CLASS_STAFF,
+                        staff,
                         updatedAt: serverTimestamp(),
                     };
                     await setDoc(doc(db, 'classes', appId), classPayload, { merge: true });
@@ -958,44 +977,53 @@ function redrawPlazaGrantsUi() {
         ];
 
         const JOB_DATA = [
-            { id: 'job_sp', name: '학생회 연합대장', sub: '(전교회장)', icon: 'fa-crown', color: 'text-amber-400', pay: 15, desc: '학교의 평화 리더' },
-            { id: 'job_svp', name: '학생회 부대장', sub: '(전교부회장)', icon: 'fa-shield-cat', color: 'text-amber-200', pay: 12, desc: '학교의 든든한 방패' },
-            { id: 'job1', name: '길드 마스터', sub: '(학급회장)', icon: 'fa-flag', color: 'text-yellow-300', pay: 12, desc: '길드 통솔, 회의 진행' },
-            { id: 'job2', name: '길드 매니저', sub: '(학급부회장)', icon: 'fa-star-half-stroke', color: 'text-yellow-100', pay: 10, desc: '규칙 수호 및 보조' },
-            { id: 'job_vac', name: '블랙홀 마스터', sub: '(청소기)', icon: 'fa-wind', color: 'text-teal-400', pay: 8, desc: '강력한 흡입 마법' },
-            { id: 'job3', name: '심연의 청소부', sub: '(일반쓰레기)', icon: 'fa-trash-can', color: 'text-stone-400', pay: 7, desc: '일반 쓰레기 정화' },
-            { id: 'job4', name: '체력물약 보급관', sub: '(우유 배식)', icon: 'fa-glass-water', color: 'text-blue-400', pay: 6, desc: '매일 아침 우유 보급' },
-            { id: 'job5', name: '역사 기록관', sub: '(칠판 관리)', icon: 'fa-chalkboard', color: 'text-slate-400', pay: 5, desc: '칠판 지우기 및 정돈' },
-            { id: 'job6', name: '시스템 매니저', sub: '(기기 관리)', icon: 'fa-desktop', color: 'text-cyan-400', pay: 6, desc: '메인 서버/스크린 관리' },
-            { id: 'job7', name: '자원 연금술사', sub: '(분리수거)', icon: 'fa-recycle', color: 'text-sb-green', pay: 7, desc: '철저한 분리수거' },
-            { id: 'job8', name: '마나 충전소', sub: '(스마트패드)', icon: 'fa-tablet-screen-button', color: 'text-purple-400', pay: 6, desc: '패드 충전 및 정리' },
-            { id: 'job9', name: '빛의 파수꾼', sub: '(소등 관리)', icon: 'fa-lightbulb', color: 'text-yellow-400', pay: 5, desc: '교실 불 끄기 및 절전' },
-            { id: 'job10', name: '삼봉은행', sub: '(금융 관리)', icon: 'fa-piggy-bank', color: 'text-pink-400', pay: 6, desc: '화폐 관리 및 세금' },
-            { id: 'job11', name: '생명의 수호자', sub: '(식물/환기)', icon: 'fa-leaf', color: 'text-emerald-500', pay: 5, desc: '화분 물주기, 환기' },
-            { id: 'job12', name: '편의점 매니저', sub: '(비품 관리)', icon: 'fa-store', color: 'text-orange-400', pay: 6, desc: '상점 및 비품 정리' }
-            ,{ id: 'job_book', name: '마법서 관리관', sub: '(교과서 세팅)', icon: 'fa-book-skull', color: 'text-purple-300', pay: 6, desc: '선생님 교과서/자료 세팅 도우미' }
-            ,{ id: 'job_newbie', name: '뉴비 매니저', sub: '(전담 마크)', icon: 'fa-hand-holding-heart', color: 'text-pink-300', pay: 6, desc: '도움이 필요한 친구 전담 도우미' }
+            { id: 'job_sp', name: '학생회 연합대장', sub: '(전교회장)', icon: 'fa-crown', color: 'text-amber-400', pay: 15, desc: '학교의 평화 리더', tags: ['#민주시민', '#협력'] },
+            { id: 'job_svp', name: '학생회 부대장', sub: '(전교부회장)', icon: 'fa-shield-cat', color: 'text-amber-200', pay: 12, desc: '학교의 든든한 방패', tags: ['#민주시민', '#협력'] },
+            { id: 'job1', name: '길드 마스터', sub: '(학급회장)', icon: 'fa-flag', color: 'text-yellow-300', pay: 12, desc: '길드 통솔, 회의 진행', tags: ['#민주시민', '#협력'] },
+            { id: 'job2', name: '길드 매니저', sub: '(학급부회장)', icon: 'fa-star-half-stroke', color: 'text-yellow-100', pay: 10, desc: '규칙 수호 및 보조', tags: ['#민주시민'] },
+            { id: 'job_vac', name: '블랙홀 마스터', sub: '(청소기)', icon: 'fa-wind', color: 'text-teal-400', pay: 8, desc: '강력한 흡입 마법', tags: ['#자기관리'] },
+            { id: 'job3', name: '심연의 청소부', sub: '(일반쓰레기)', icon: 'fa-trash-can', color: 'text-stone-400', pay: 7, desc: '일반 쓰레기 정화', tags: ['#자기관리'] },
+            { id: 'job4', name: '체력물약 보급관', sub: '(우유 배식)', icon: 'fa-glass-water', color: 'text-blue-400', pay: 6, desc: '매일 아침 우유 보급', tags: ['#협력'] },
+            { id: 'job5', name: '역사 기록관', sub: '(칠판 관리)', icon: 'fa-chalkboard', color: 'text-slate-400', pay: 5, desc: '칠판 지우기 및 정돈', tags: ['#자기관리'] },
+            { id: 'job6', name: '시스템 매니저', sub: '(기기 관리)', icon: 'fa-desktop', color: 'text-cyan-400', pay: 6, desc: '메인 서버/스크린 관리', tags: ['#디지털문해력'] },
+            { id: 'job7', name: '자원 연금술사', sub: '(분리수거)', icon: 'fa-recycle', color: 'text-sb-green', pay: 7, desc: '철저한 분리수거', tags: ['#자기관리'] },
+            { id: 'job8', name: '마나 충전소', sub: '(스마트패드)', icon: 'fa-tablet-screen-button', color: 'text-purple-400', pay: 6, desc: '패드 충전 및 정리', tags: ['#디지털문해력'] },
+            { id: 'job9', name: '빛의 파수꾼', sub: '(소등 관리)', icon: 'fa-lightbulb', color: 'text-yellow-400', pay: 5, desc: '교실 불 끄기 및 절전', tags: ['#자기관리'] },
+            { id: 'job10', name: '삼봉은행', sub: '(금융 관리)', icon: 'fa-piggy-bank', color: 'text-pink-400', pay: 6, desc: '화폐 관리 및 세금', tags: ['#경제교육'] },
+            { id: 'job11', name: '생명의 수호자', sub: '(식물/환기)', icon: 'fa-leaf', color: 'text-emerald-500', pay: 5, desc: '화분 물주기, 환기', tags: ['#자기관리'] },
+            { id: 'job12', name: '편의점 매니저', sub: '(비품 관리)', icon: 'fa-store', color: 'text-orange-400', pay: 6, desc: '상점 및 비품 정리', tags: ['#경제교육'] }
+            ,{ id: 'job_book', name: '마법서 관리관', sub: '(교과서 세팅)', icon: 'fa-book-skull', color: 'text-purple-300', pay: 6, desc: '선생님 교과서/자료 세팅 도우미', tags: ['#협력'] }
+            ,{ id: 'job_newbie', name: '뉴비 매니저', sub: '(전담 마크)', icon: 'fa-hand-holding-heart', color: 'text-pink-300', pay: 6, desc: '도움이 필요한 친구 전담 도우미', tags: ['#협력'] }
+        ];
+
+        const DEFAULT_CURRICULUM_TAGS = ['#자기관리', '#협력', '#경제교육', '#디지털문해력', '#교과연계', '#민주시민'];
+        const DEFAULT_CURRICULUM_MAPPING = [
+            { feature: '퀘스트', competency: '자기관리·책임감', example: '출석·건강·청소 등 일상 습관을 퀘스트로 실천' },
+            { feature: '직업·은행·상점', competency: '경제교육·금융이해', example: '주급·저축·소비 의사결정 시뮬레이션' },
+            { feature: '골든벨·레이드', competency: '교과 복습·협력', example: '전담 수업·평가를 팀 레이드로 복습' },
+            { feature: '헌법', competency: '민주시민교육', example: '학급 규칙 제정·준수로 민주적 절차 체험' },
+            { feature: '부동산·자리', competency: '공간·책임·협력', example: '자리 계약·양도로 공공성·책임 학습' },
         ];
 
         const QUEST_DATA = [
-            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '8:40 전 등교', xp: 10, bong: 0.5, icon: 'fa-sun', color: 'text-yellow-200' },
-            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 50, bong: 7.0, icon: 'fa-hands-holding-child', color: 'text-pink-300' },
-            { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 20, bong: 5.0, icon: 'fa-dumbbell', color: 'text-blue-300' },
-            { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 20, bong: 5.0, icon: 'fa-person-snowboarding', color: 'text-emerald-300' },
-            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 20, bong: 5.0, icon: 'fa-child-reaching', color: 'text-orange-300' },
-            { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 20, bong: 2.0, icon: 'fa-utensils', color: 'text-orange-300' },
-            { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 30, bong: 3.0, icon: 'fa-broom', color: 'text-teal-300' },
-            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 10, bong: 0.5, icon: 'fa-tooth', color: 'text-cyan-200' },
-            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 25, bong: 5.5, icon: 'fa-gauge-high', color: 'text-emerald-400' },
-            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 25, bong: 6.0, icon: 'fa-fire', color: 'text-orange-400' },
-            { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 50, bong: 2.0, icon: 'fa-calendar-check', color: 'text-white' },
-            { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-flask', color: 'text-purple-300' },
-            { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-hammer', color: 'text-purple-300' },
-            { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-language', color: 'text-purple-300' },
-            { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-music', color: 'text-purple-300' },
-            { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-masks-theater', color: 'text-purple-300' },
-            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-person-chalkboard', color: 'text-amber-300' },
-            { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-scroll', color: 'text-red-300' }
+            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '8:40 전 등교', xp: 10, bong: 0.5, icon: 'fa-sun', color: 'text-yellow-200', tags: ['#자기관리'] },
+            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 50, bong: 7.0, icon: 'fa-hands-holding-child', color: 'text-pink-300', tags: ['#협력'] },
+            { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 20, bong: 5.0, icon: 'fa-dumbbell', color: 'text-blue-300', tags: ['#자기관리'] },
+            { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 20, bong: 5.0, icon: 'fa-person-snowboarding', color: 'text-emerald-300', tags: ['#자기관리'] },
+            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 20, bong: 5.0, icon: 'fa-child-reaching', color: 'text-orange-300', tags: ['#자기관리'] },
+            { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 20, bong: 2.0, icon: 'fa-utensils', color: 'text-orange-300', tags: ['#자기관리'] },
+            { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 30, bong: 3.0, icon: 'fa-broom', color: 'text-teal-300', tags: ['#자기관리', '#협력'] },
+            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 10, bong: 0.5, icon: 'fa-tooth', color: 'text-cyan-200', tags: ['#자기관리'] },
+            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 25, bong: 5.5, icon: 'fa-gauge-high', color: 'text-emerald-400', tags: ['#자기관리'] },
+            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 25, bong: 6.0, icon: 'fa-fire', color: 'text-orange-400', tags: ['#자기관리'] },
+            { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 50, bong: 2.0, icon: 'fa-calendar-check', color: 'text-white', tags: ['#자기관리'] },
+            { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-flask', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-hammer', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-language', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-music', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-masks-theater', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-person-chalkboard', color: 'text-amber-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-scroll', color: 'text-red-300', tags: ['#교과연계', '#자기관리'] }
         ];
 
         const SKIN_DATA = [
@@ -1107,9 +1135,11 @@ function redrawPlazaGrantsUi() {
             return {
                 classId,
                 displayName: '6학년 1반',
+                schoolName: '',
                 schoolYear: 2026,
                 grade: 6,
                 homeroom: 1,
+                masterDisplayName: '마스터 J',
                 inviteCode: '',
                 gmaEditStudentId: '13',
                 isActive: true,
@@ -1124,13 +1154,15 @@ function redrawPlazaGrantsUi() {
             const year = Number(opts.schoolYear) || new Date().getFullYear();
             const grade = Number(opts.grade) || 6;
             const homeroom = Number(opts.homeroom) || 1;
-            const teacherName = String(opts.teacherName || '담임 선생님').trim().slice(0, 20) || '담임 선생님';
+            const teacherName = String(opts.teacherName || opts.masterDisplayName || '담임 선생님').trim().slice(0, 20) || '담임 선생님';
             return {
                 classId,
                 displayName: String(opts.displayName || `${year}학년도 ${grade}학년 ${homeroom}반`).trim().slice(0, 40),
+                schoolName: String(opts.schoolName || '').trim().slice(0, 40),
                 schoolYear: year,
                 grade,
                 homeroom,
+                masterDisplayName: teacherName,
                 inviteCode: opts.inviteCode || generateInviteCode(),
                 gmaEditStudentId: '1',
                 isActive: true,
@@ -1215,10 +1247,34 @@ function redrawPlazaGrantsUi() {
             return staff.find((s) => String(s.id) === String(staffId));
         }
 
+        /** 학급 설정 masterDisplayName → 없으면 담임(staff gm) 이름 → 기본값 */
+        function getMasterDisplayName() {
+            const fromMeta = String(window.classMeta?.masterDisplayName || '').trim();
+            if (fromMeta) return fromMeta.slice(0, 20);
+            const staff = getStaffMember('gm');
+            if (staff?.name) return String(staff.name).slice(0, 20);
+            return '담임 선생님';
+        }
+        window.getMasterDisplayName = getMasterDisplayName;
+
+        function getCoMasterDisplayName() {
+            const staff = getStaffMember('gm_a');
+            if (staff?.name) return String(staff.name).slice(0, 20);
+            return '보조 마스터';
+        }
+
         function getStaffCardLabel(staffId) {
             const member = getStaffMember(staffId);
             return member ? member.name : (STUDENT_NAMES[staffId] || staffId);
         }
+
+        function requireMasterAccess(actionLabel) {
+            if (window.playerState?.isGM) return true;
+            const act = actionLabel ? String(actionLabel) : '이 기능';
+            void window.customAlert(`${getMasterDisplayName()} 전용입니다.\n${act}은(는) 마스터로 로그인한 뒤 사용할 수 있습니다.`);
+            return false;
+        }
+        window.requireMasterAccess = requireMasterAccess;
 
         function canEditStudentAsAdmin(targetId) {
             return window.playerState.isGM || (window.playerState.isGMA && String(targetId) === getGmaEditStudentId());
@@ -1407,7 +1463,7 @@ function redrawPlazaGrantsUi() {
                 console.warn('applyLoginClassCode', e);
                 window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
-                    return window.customAlert('초대 코드를 찾을 수 없습니다.\n선생님께 다시 확인해 주세요.');
+                    return window.customAlert('초대 코드를 다시 확인해 주세요.\n선생님께 받은 코드를 정확히 입력했는지 살펴보세요.');
                 }
                 return window.customAlert('학급을 열 수 없습니다. 코드를 확인하거나 네트워크를 점검해 주세요.');
             } finally {
@@ -1433,15 +1489,21 @@ function redrawPlazaGrantsUi() {
             if (teacher) teacher.classList.toggle('hidden', !isTeacher);
             if (btnS) {
                 btnS.className = isTeacher
-                    ? 'login-mode-btn py-2.5 rounded-xl text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300'
-                    : 'login-mode-btn py-2.5 rounded-xl text-xs font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100';
+                    ? 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70'
+                    : 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg text-left';
             }
             if (btnT) {
                 btnT.className = isTeacher
-                    ? 'login-mode-btn py-2.5 rounded-xl text-xs font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100'
-                    : 'login-mode-btn py-2.5 rounded-xl text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300';
+                    ? 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg text-left'
+                    : 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70';
             }
-            if (isTeacher) window.setTeacherSubMode('join');
+            const hint = document.getElementById('loginRoleHint');
+            if (hint) {
+                hint.textContent = isTeacher
+                    ? '선생님: 학급을 만들고 초대 코드를 학생에게 알려주세요'
+                    : '학생: 선생님이 알려준 초대 코드를 입력하세요';
+            }
+            if (isTeacher) window.setTeacherSubMode('create');
         };
 
         window.setTeacherSubMode = function(sub) {
@@ -1465,7 +1527,7 @@ function redrawPlazaGrantsUi() {
         };
 
         /** 공통: 새 학급 Firestore 워크스페이스 생성 */
-        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent }) {
+        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword }) {
             if (!db) throw new Error('no_db');
             const inviteCode = generateInviteCode();
             let newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
@@ -1483,6 +1545,8 @@ function redrawPlazaGrantsUi() {
                 teacherName,
                 studentCount,
                 inviteCode,
+                schoolName,
+                masterDisplayName: teacherName,
             });
             await setDoc(doc(db, 'classes', newClassId), {
                 ...newMeta,
@@ -1505,19 +1569,26 @@ function redrawPlazaGrantsUi() {
                     }, { merge: true });
                 }
             } else {
+                const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
                 await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
-                    raidPassword: '1234',
+                    raidPassword: raidPw,
+                    raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
                     shieldStock: 10,
                     weekendRaidRewardXp: 100,
                     weekendRaidRewardBong: 20,
+                    curriculumTags: DEFAULT_CURRICULUM_TAGS,
+                    curriculumMapping: DEFAULT_CURRICULUM_MAPPING,
                     worldSettings: {
                         worldName: displayName || '삼봉월드',
                         worldNameEn: 'SAMBONG WORLD',
                         navBadge: 'S1',
                         seasonNumber: 1,
-                        seasonLabel: '시즌 1',
+                        seasonLabel: String(seasonLabel || '시즌 1').trim().slice(0, 30) || '시즌 1',
+                        seasonTheme: String(seasonTheme || '우리 반 모험').trim().slice(0, 60) || '우리 반 모험',
                         academicYear: schoolYear,
+                        footerCredit: `${displayName || '삼봉월드'} · ${teacherName || '담임 선생님'}`,
                     },
+                    applyDefaultTemplatePending: !!applyDefaultTemplate,
                 }, { merge: true });
             }
 
@@ -1544,51 +1615,62 @@ function redrawPlazaGrantsUi() {
         window.createClassFromLogin = async function() {
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
             const displayName = String(document.getElementById('createClassDisplayName')?.value || '').trim();
-            const schoolYear = Number(document.getElementById('createClassYear')?.value);
-            const grade = Number(document.getElementById('createClassGrade')?.value);
-            const homeroom = Number(document.getElementById('createClassHomeroom')?.value);
-            const teacherName = String(document.getElementById('createClassTeacherName')?.value || '').trim();
+            const schoolName = String(document.getElementById('createClassSchoolName')?.value || '').trim();
+            const schoolYear = Number(document.getElementById('createClassYear')?.value) || new Date().getFullYear();
+            const gradeRaw = document.getElementById('createClassGrade')?.value;
+            const grade = gradeRaw === '' || gradeRaw == null ? 6 : Number(gradeRaw);
+            const homeroom = Number(document.getElementById('createClassHomeroom')?.value) || 1;
+            const teacherName = String(document.getElementById('createClassTeacherName')?.value || '').trim() || '담임 선생님';
+            const seasonLabel = String(document.getElementById('createClassSeasonName')?.value || '').trim() || '시즌 1';
+            const seasonTheme = String(document.getElementById('createClassSeasonTheme')?.value || '').trim() || '우리 반 모험';
             const studentCount = Number(document.getElementById('createClassStudentCount')?.value) || 25;
             const teacherPin = String(document.getElementById('createClassTeacherPin')?.value || '').trim();
-            if (!displayName || !schoolYear || !grade || !homeroom) {
-                return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
+            const applyDefaultTemplate = !!(document.getElementById('createClassApplyTemplate')?.checked);
+            if (!displayName) {
+                return window.customAlert('학급명은 필수입니다.');
             }
-            if (!teacherName) return window.customAlert('담임 표시 이름을 입력해 주세요.');
             if (!/^\d{4}$/.test(teacherPin)) {
                 return window.customAlert('마스터 PIN은 숫자 4자리로 설정해 주세요.');
             }
             const ok = await window.customConfirm(
                 `새 학급을 만듭니다.\n\n` +
-                `이름: ${displayName}\n` +
+                `학급명: ${displayName}\n` +
+                (schoolName ? `학교: ${schoolName}\n` : '') +
                 `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
-                `담임: ${teacherName}\n` +
-                `학생 틀: ${studentCount}명\n\n` +
+                `시즌: ${seasonLabel} / ${seasonTheme}\n` +
+                `마스터: ${teacherName}\n` +
+                `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n\n` +
                 `생성 후 이 학급으로 이동하며, 초대 코드가 발급됩니다.`
             );
             if (!ok) return;
             try {
-                window.showGlobalLoading('학급을 만드는 중…');
+                window.showGlobalLoading('잠시만 기다려 주세요…');
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
                 const { newClassId, inviteCode } = await createClassWorkspace({
                     displayName,
+                    schoolName,
                     schoolYear,
                     grade,
                     homeroom,
                     teacherName,
                     studentCount,
                     teacherPin,
+                    seasonLabel,
+                    seasonTheme,
+                    applyDefaultTemplate,
                     copySettingsFromCurrent: false,
                 });
                 localStorage.setItem('sambong_student_id', 'gm');
                 localStorage.setItem('sambong_student_pin', teacherPin);
-                // 팝업이 로딩에 가려지지 않도록 먼저 닫음
+                localStorage.setItem('sambong_show_onboarding', '1');
+                localStorage.setItem('sambong_onboarding_invite', inviteCode);
                 window.hideGlobalLoading();
                 await window.customAlert(
                     `✅ 학급이 준비되었습니다!\n\n` +
                     `초대 코드: ${inviteCode}\n` +
                     `학급 ID: ${newClassId}\n\n` +
-                    `학생에게 초대 코드를 알려 주세요.\n접속 후 마스터 탭에서 명단을 수정할 수 있습니다.`
+                    `다음 화면에서 초대 코드를 복사하고 시작 체크리스트를 확인하세요.`
                 );
                 window.switchClass(newClassId);
             } catch (e) {
@@ -1784,6 +1866,13 @@ function redrawPlazaGrantsUi() {
             if (nameEl) nameEl.textContent = meta.displayName || appId;
             if (idEl) idEl.textContent = appId;
             if (codeEl) codeEl.textContent = meta.inviteCode || '—';
+            if (typeof window.renderTeacherOnboarding === 'function') window.renderTeacherOnboarding();
+            // 설문 버튼 (학생용)
+            const surveyBtn = document.getElementById('studentSurveyBtn');
+            if (surveyBtn) {
+                const url = String(window.globalSettings?.researchSurveyUrl || '').trim();
+                surveyBtn.classList.toggle('hidden', !url || !!window.playerState.isAdmin);
+            }
         }
 
         window.copyTeacherInviteCode = async function() {
@@ -1791,7 +1880,7 @@ function redrawPlazaGrantsUi() {
             if (!code) return window.customAlert('초대 코드가 없습니다. 명단을 한 번 저장해 주세요.');
             try {
                 await navigator.clipboard.writeText(code);
-                await window.customAlert(`초대 코드를 복사했습니다.\n${code}`);
+                window.showToast('복사되었습니다!');
             } catch (_) {
                 await window.customAlert(`초대 코드: ${code}`);
             }
@@ -1801,7 +1890,7 @@ function redrawPlazaGrantsUi() {
             const link = getClassShareUrl(appId);
             try {
                 await navigator.clipboard.writeText(link);
-                await window.customAlert('접속 링크를 복사했습니다.\n학생·동료 선생님에게 공유하세요.');
+                window.showToast('복사되었습니다!');
             } catch (_) {
                 await window.customAlert(link);
             }
@@ -1855,7 +1944,7 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
-                    return window.customAlert('초대 코드를 찾을 수 없습니다.');
+                    return window.customAlert('초대 코드를 다시 확인해 주세요.');
                 }
                 return window.customAlert('학급을 열 수 없습니다: ' + (e && e.message ? e.message : String(e)));
             }
@@ -1918,7 +2007,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '1234', shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+        window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -1971,7 +2060,7 @@ function redrawPlazaGrantsUi() {
             const overlay = document.getElementById('globalLoadingOverlay');
             const text = document.getElementById('globalLoadingText');
             const err = document.getElementById('globalLoadingError');
-            if (text) text.textContent = msg || '불러오는 중…';
+            if (text) text.textContent = msg || '잠시만 기다려 주세요…';
             if (err) {
                 err.textContent = '';
                 err.classList.add('hidden');
@@ -1980,16 +2069,39 @@ function redrawPlazaGrantsUi() {
         };
         window.hideGlobalLoading = function() {
             const overlay = document.getElementById('globalLoadingOverlay');
+            const retryBtn = document.getElementById('globalLoadingRetryBtn');
+            if (retryBtn) retryBtn.classList.add('hidden');
             if (overlay) overlay.classList.add('hidden');
         };
         window.showGlobalLoadingError = function(msg) {
             const overlay = document.getElementById('globalLoadingOverlay');
             const err = document.getElementById('globalLoadingError');
+            const retryBtn = document.getElementById('globalLoadingRetryBtn');
             if (err) {
-                err.textContent = msg || '오류가 발생했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.';
+                err.textContent = msg || '연결이 불안정합니다. 다시 시도합니다…';
                 err.classList.remove('hidden');
             }
+            if (retryBtn) retryBtn.classList.remove('hidden');
             if (overlay) overlay.classList.remove('hidden');
+        };
+
+        /** 짧은 토스트 (복사 성공 등) */
+        window.showToast = function(message, ms = 2200) {
+            let el = document.getElementById('appToast');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'appToast';
+                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
+                document.body.appendChild(el);
+            }
+            el.textContent = message || '';
+            el.classList.remove('opacity-0');
+            el.classList.add('opacity-100');
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(() => {
+                el.classList.add('opacity-0');
+                el.classList.remove('opacity-100');
+            }, ms);
         };
 
         function updateOfflineBanner() {
@@ -2729,7 +2841,7 @@ function redrawPlazaGrantsUi() {
                             </div>
                         </div>`).join('')}
                 </div>
-                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 첫 검색 곡을 같은 창에 이어서 재생합니다.${isGM ? ' 마스터 J만 「재생완료」로 목록에서 제거할 수 있습니다.' : ''}</p>`;
+                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 첫 검색 곡을 같은 창에 이어서 재생합니다.${isGM ? ` ${getMasterDisplayName()}만 「재생완료」로 목록에서 제거할 수 있습니다.` : ''}</p>`;
         }
 
         window.openMusicTimeQueuePanel = function() {
@@ -2745,7 +2857,7 @@ function redrawPlazaGrantsUi() {
 
         window.completeMusicTimeRequestAdmin = async function(requestId) {
             if (!window.playerState || !window.playerState.isGM) {
-                return await window.customAlert('마스터 J만 재생 완료 처리할 수 있습니다.');
+                return await window.customAlert(`${getMasterDisplayName()}만 재생 완료 처리할 수 있습니다.`);
             }
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const rid = String(requestId || '');
@@ -3955,10 +4067,10 @@ ${subjectLine}
                 await window.customAlert(
                     '⚠️ 삼봉 금융감독 경고\n\n' +
                     '비정상으로 의심되는 삼봉(B) 거래가 감지되었습니다.\n' +
-                    '허용되지 않은 방법으로 획득·환불한 경우 마스터 J가 확인할 수 있습니다.\n\n' +
+                    `허용되지 않은 방법으로 획득·환불한 경우 ${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
                     '[감지 내역]\n' +
                     lines +
-                    '\n\n정상 활동이라면 마스터 J에게 문의하세요.'
+                    `\n\n정상 활동이라면 ${getMasterDisplayName()}에게 문의하세요.`
                 );
                 newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
                 localStorage.setItem(storageKey, JSON.stringify(seen));
@@ -4712,7 +4824,7 @@ ${subjectLine}
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const studentId = String(localStorage.getItem('sambong_student_id') || '');
             const studentName = window.playerState.isAdmin
-                ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A')
+                ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName())
                 : (STUDENT_NAMES[studentId] || studentId);
             const betId = `wc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
             let nextBong = balance;
@@ -4787,7 +4899,7 @@ ${subjectLine}
         };
 
         window.toggleWorldCupBettingAdmin = async function(open) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 변경할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 변경할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산이 끝난 경기입니다.');
@@ -4812,7 +4924,7 @@ ${subjectLine}
         };
 
         window.settleWorldCupBetAdmin = async function() {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 정산할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 정산할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산된 경기입니다.');
@@ -5100,7 +5212,7 @@ ${subjectLine}
         }
 
         window.cancelAllWorldCupBetsAdmin = async function() {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 실행할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 실행할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산된 경기입니다.');
@@ -8646,7 +8758,7 @@ ${subjectLine}
             const finalPrice = normalizeBongValue(itemTotal + (deliveryRequested ? deliveryFee : 0));
 
             const studentId = String(localStorage.getItem('sambong_student_id') || '');
-            const studentName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[studentId] || studentId);
+            const studentName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[studentId] || studentId);
             const orderRef = doc(getConvenienceOrdersCollectionRef());
             let nextBong = normalizeBongValue(Number(window.playerState.bong) || 0);
             const orderItems = entries.map(({ item, qty, lineTotal }) => ({
@@ -8725,7 +8837,7 @@ ${subjectLine}
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
-            const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
+            const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[managerId] || managerId);
             try {
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId)), {
                     status: 'done',
@@ -8750,7 +8862,7 @@ ${subjectLine}
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
-            const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A') : (STUDENT_NAMES[managerId] || managerId);
+            const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[managerId] || managerId);
             const refundB = normalizeBongValue(Number(order.price) || 0);
             try {
                 await runTransaction(db, async (transaction) => {
@@ -8801,7 +8913,7 @@ ${subjectLine}
         window.saveConvenienceDeliveryFeeAdmin = async function(options = {}) {
             const silent = !!(options && options.silent);
             if (!window.playerState || !window.playerState.isGM) {
-                if (!silent) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
+                if (!silent) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
                 return false;
             }
             if (!db) {
@@ -8833,7 +8945,7 @@ ${subjectLine}
         };
 
         window.addConvenienceItemAdmin = async function() {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추가할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 추가할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const nameEl = document.getElementById('gmConvenienceName');
             const priceEl = document.getElementById('gmConveniencePrice');
@@ -8863,7 +8975,7 @@ ${subjectLine}
         };
 
         window.saveConvenienceItemAdmin = async function(itemId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 수정할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 수정할 수 있습니다.`);
             const items = Array.isArray(window.globalSettings.convenienceItems) ? window.globalSettings.convenienceItems.slice() : [];
             const idx = items.findIndex((item) => String(item.id) === String(itemId));
             if (idx < 0) return await window.customAlert('수정할 물품을 찾지 못했습니다.');
@@ -8888,7 +9000,7 @@ ${subjectLine}
         };
 
         window.deleteConvenienceItemAdmin = async function(itemId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 삭제할 수 있습니다.`);
             const items = Array.isArray(window.globalSettings.convenienceItems) ? window.globalSettings.convenienceItems.slice() : [];
             const item = items.find((x) => String(x.id) === String(itemId));
             if (!item) return await window.customAlert('삭제할 물품을 찾지 못했습니다.');
@@ -9215,6 +9327,22 @@ ${subjectLine}
                                         window.renderWorldSettingsPanel();
                                     }
                                 }
+                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate) {
+                                    window._appliedPendingTemplate = true;
+                                    void (async () => {
+                                        try {
+                                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                                                applyDefaultTemplatePending: false,
+                                                curriculumTags: settingsData.curriculumTags || DEFAULT_CURRICULUM_TAGS,
+                                                curriculumMapping: settingsData.curriculumMapping || DEFAULT_CURRICULUM_MAPPING,
+                                                deletedQuestIds: [],
+                                                deletedJobIds: [],
+                                            }, { merge: true });
+                                        } catch (e) {
+                                            console.warn('applyDefaultTemplatePending', e);
+                                        }
+                                    })();
+                                }
                                 if (settingsData.musicTimeQueue !== undefined) {
                                     window.globalSettings.musicTimeQueue = sanitizeMusicTimeQueue(settingsData.musicTimeQueue);
                                     maybeShowMusicTimeRequestPopup({ fromCache });
@@ -9232,7 +9360,7 @@ ${subjectLine}
                                 }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
-                                if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '1234';
+                                if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '설정 필요';
                                 
                                 const npcEl = document.getElementById('npcText');
                                 if (npcEl) {
@@ -9938,6 +10066,15 @@ ${subjectLine}
             };
         }
 
+        function buildAdminExportFileName(ext) {
+            const className = String(window.classMeta?.displayName || getWorldSettings().worldName || '학급')
+                .replace(/[\\/:*?"<>|]/g, '_')
+                .trim()
+                .slice(0, 30) || '학급';
+            const stamp = getLocalDateStr().replace(/-/g, '');
+            return `삼봉월드_${className}_${stamp}.${ext}`;
+        }
+
         /** 선택한 학생 데이터를 엑셀(.xlsx)로 다운로드 */
         window.downloadAdminStudentExcel = async function() {
             if (!window.playerState || !window.playerState.isAdmin) {
@@ -9950,7 +10087,7 @@ ${subjectLine}
                 return window.customAlert('내보낼 항목을 하나 이상 선택해 주세요.');
             }
             try {
-                window.showGlobalLoading('서버 데이터 새로고침 중…');
+                window.showGlobalLoading('잠시만 기다려 주세요…');
                 if (status) status.textContent = '서버 데이터 새로고침 중…';
                 if (typeof refreshStudentsCacheFromServer === 'function') {
                     try {
@@ -9963,13 +10100,15 @@ ${subjectLine}
                 const result = downloadAdminStudentWorkbook({
                     selectedIds,
                     ctx: buildAdminExportContext(window.allStudentsData || []),
+                    fileName: buildAdminExportFileName('xlsx'),
                 });
                 if (status) status.textContent = `✅ ${result.fileName} (${result.sheetCount}시트)`;
                 await window.customAlert(`✅ 엑셀 다운로드를 시작했습니다.\n파일: ${result.fileName}\n시트 수: ${result.sheetCount}`);
             } catch (e) {
                 console.error('downloadAdminStudentExcel', e);
-                if (status) status.textContent = '내보내기 실패';
-                await window.customAlert('엑셀 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
+                if (status) status.textContent = '내보내기 실패 — 다시 시도해 주세요';
+                const retry = await window.customConfirm('엑셀 내보내기에 실패했습니다.\n다시 시도할까요?\n\n' + (e && e.message ? e.message : String(e)));
+                if (retry) return window.downloadAdminStudentExcel();
             } finally {
                 window.hideGlobalLoading();
             }
@@ -9990,6 +10129,7 @@ ${subjectLine}
                 const result = exportStudentJsonFile({
                     selectedIds,
                     ctx: buildAdminExportContext(window.allStudentsData || []),
+                    fileName: buildAdminExportFileName('json'),
                 });
                 if (status) status.textContent = `✅ ${result.fileName}`;
             } catch (e) {
@@ -10014,6 +10154,7 @@ ${subjectLine}
                 const result = exportStudentCsvFile({
                     selectedIds,
                     ctx: buildAdminExportContext(window.allStudentsData || []),
+                    fileName: buildAdminExportFileName('csv'),
                 });
                 if (status) status.textContent = `✅ ${result.fileName}`;
             } catch (e) {
@@ -10025,6 +10166,18 @@ ${subjectLine}
         };
 
         let _lastResearchStats = null;
+        let _researchPeriod = 'week'; // today | week | all
+
+        window.setResearchStatsPeriod = function(period) {
+            _researchPeriod = ['today', 'week', 'all'].includes(period) ? period : 'week';
+            document.querySelectorAll('[data-research-period]').forEach((btn) => {
+                const on = btn.getAttribute('data-research-period') === _researchPeriod;
+                btn.className = on
+                    ? 'bg-fuchsia-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg min-h-[44px]'
+                    : 'bg-slate-800 text-slate-300 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-slate-600 min-h-[44px]';
+            });
+            window.renderResearchStatsDashboard();
+        };
 
         window.renderResearchStatsDashboard = function() {
             const panel = document.getElementById('researchStatsPanel');
@@ -10037,29 +10190,36 @@ ${subjectLine}
                     getName: (sid) => STUDENT_NAMES[String(sid)] || String(sid),
                     dailyQuests,
                     today: getLocalDateStr(),
+                    period: _researchPeriod,
+                    learningThermometer: window.globalSettings?.learningThermometer,
                 });
                 _lastResearchStats = stats;
+                const periodLabel = _researchPeriod === 'today' ? '오늘' : (_researchPeriod === 'all' ? '전체' : '이번 주');
                 const topHtml = (stats.topQuests || []).slice(0, 5).map((q, i) =>
                     `<div class="flex justify-between gap-2"><span>${i + 1}. ${q.name}</span><span class="text-fuchsia-300 font-bold">${q.count}회</span></div>`
                 ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                const xpKey = _researchPeriod === 'today' ? 'xpGainToday' : 'xpGainWeek';
                 const xpTop = (stats.perStudent || []).slice(0, 5).map((r) =>
-                    `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-sb-blue font-bold">+${r.xpGainWeek} XP</span></div>`
+                    `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-sb-blue font-bold">+${r[xpKey] || 0} XP</span></div>`
                 ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                const completionRate = _researchPeriod === 'today' ? stats.todayCompletionRate
+                    : (_researchPeriod === 'all' ? (stats.allCompletionRate ?? stats.weekCompletionRate) : stats.weekCompletionRate);
                 panel.innerHTML = `
+                    <div class="text-[9px] text-slate-400 mb-1">기간: <strong class="text-fuchsia-200">${periodLabel}</strong></div>
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">오늘 완료율</div><div class="text-lg font-black text-emerald-300 tabular-nums">${stats.todayCompletionRate}%</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">이번 주 완료율</div><div class="text-lg font-black text-cyan-300 tabular-nums">${stats.weekCompletionRate}%</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">오늘 평균 XP↑</div><div class="text-lg font-black text-sb-blue tabular-nums">${stats.avgXpGainToday}</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">주간 평균 XP↑</div><div class="text-lg font-black text-violet-300 tabular-nums">${stats.avgXpGainWeek}</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">퀘스트 완료율</div><div class="text-lg font-black text-emerald-300 tabular-nums">${completionRate}%</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">평균 XP↑</div><div class="text-lg font-black text-sb-blue tabular-nums">${_researchPeriod === 'today' ? stats.avgXpGainToday : stats.avgXpGainWeek}</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">상점·은행 이용</div><div class="text-lg font-black text-amber-300 tabular-nums">${(stats.purchaseCountWeek || 0) + (stats.bankUseCount || 0)}</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">온도계 평균</div><div class="text-lg font-black text-rose-300 tabular-nums">${stats.thermoAvg != null ? stats.thermoAvg : '—'}</div></div>
                     </div>
                     <div class="grid sm:grid-cols-3 gap-2 text-[9px]">
                         <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">전부완료(오늘) <strong class="text-white">${stats.allClearToday}</strong>명</div>
                         <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">상점 이용(주) <strong class="text-white">${stats.purchaseCountWeek}</strong>건</div>
-                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">기간 ${stats.weekStart}~${stats.weekEnd}</div>
+                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">은행 이용 <strong class="text-white">${stats.bankUseCount || 0}</strong>건</div>
                     </div>
                     <div class="grid sm:grid-cols-2 gap-3">
-                        <div><div class="text-[9px] text-fuchsia-300 font-bold mb-1">인기 퀘스트 (누적)</div>${topHtml}</div>
-                        <div><div class="text-[9px] text-sb-blue font-bold mb-1">이번 주 XP 증가 TOP</div>${xpTop}</div>
+                        <div><div class="text-[9px] text-fuchsia-300 font-bold mb-1">가장 많이 완료된 퀘스트</div>${topHtml}</div>
+                        <div><div class="text-[9px] text-sb-blue font-bold mb-1">XP 증가량 상위</div>${xpTop}</div>
                     </div>`;
             } catch (e) {
                 console.error('renderResearchStatsDashboard', e);
@@ -10184,6 +10344,130 @@ ${subjectLine}
             }
         };
 
+        window.applyDefaultClassTemplates = async function() {
+            if (!window.playerState?.isGM) {
+                return window.customAlert(`${getMasterDisplayName()} 전용입니다.\n기본 템플릿은 마스터로 로그인한 뒤 적용할 수 있습니다.`);
+            }
+            if (!db) return window.customAlert('서버에 연결되지 않았습니다.');
+            const ok = await window.customConfirm(
+                '기본 템플릿을 적용할까요?\n\n' +
+                '· 기본 일일·주간 퀘스트 (앱 기본 목록)\n' +
+                '· 기본 직업 목록\n' +
+                '· 기본 헌법 문구\n' +
+                '· 교육과정 매핑 예시\n\n' +
+                '이미 수정한 커스텀 항목은 유지되며, 삭제 목록만 비웁니다.'
+            );
+            if (!ok) return;
+            try {
+                window.showGlobalLoading('잠시만 기다려 주세요…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
+                const constitutionItems = Array.isArray(window.globalSettings?.constitutionItems) && window.globalSettings.constitutionItems.length
+                    ? window.globalSettings.constitutionItems
+                    : [
+                        { id: 'c1', title: '서로를 존중한다', body: '말과 행동으로 친구의 마음을 다치게 하지 않습니다.' },
+                        { id: 'c2', title: '정직하게 참여한다', body: '퀘스트·상점·은행은 정직한 기록으로 운영합니다.' },
+                        { id: 'c3', title: '함께 성장한다', body: '도움이 필요한 친구를 돕고, 협력 퀘스트에 참여합니다.' },
+                    ];
+                const payload = {
+                    deletedQuestIds: [],
+                    deletedJobIds: [],
+                    constitutionItems,
+                    curriculumTags: DEFAULT_CURRICULUM_TAGS,
+                    curriculumMapping: window.globalSettings?.curriculumMapping?.length
+                        ? window.globalSettings.curriculumMapping
+                        : DEFAULT_CURRICULUM_MAPPING,
+                    applyDefaultTemplatePending: false,
+                };
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), payload, { merge: true });
+                window.globalSettings = { ...window.globalSettings, ...payload };
+                window.hideGlobalLoading();
+                window.showToast('기본 템플릿이 적용되었습니다!');
+                await window.customAlert('✅ 기본 템플릿을 적용했습니다.\n퀘스트·직업·헌법·교육과정 매핑을 확인해 주세요.');
+                if (typeof window.renderCurriculumMappingPanel === 'function') window.renderCurriculumMappingPanel();
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('템플릿 적용 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.renderMyClassesList = function() {
+            const el = document.getElementById('myClassesList');
+            if (!el) return;
+            const recent = getRecentClasses();
+            if (!recent.length) {
+                el.innerHTML = '<p class="text-[10px] text-slate-500">최근 학급이 없습니다. 새 학급을 만들거나 초대 코드로 입장하세요.</p>';
+                return;
+            }
+            el.innerHTML = recent.map((r) => {
+                const cur = r.classId === appId;
+                const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `<button type="button" class="w-full text-left px-3 py-2.5 rounded-xl border ${cur ? 'border-emerald-500/60 bg-emerald-950/40' : 'border-slate-700 bg-slate-950/60 hover:bg-slate-800'} min-h-[44px]" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
+                    <div class="text-xs font-bold text-white truncate">${r.displayName || r.classId}${cur ? ' · 현재' : ''}</div>
+                    <div class="text-[9px] text-slate-500 truncate">${r.inviteCode || r.classId}</div>
+                </button>`;
+            }).join('');
+        };
+
+        window.renderCurriculumMappingPanel = function() {
+            const el = document.getElementById('curriculumMappingPanel');
+            if (!el) return;
+            const rows = (window.globalSettings?.curriculumMapping?.length
+                ? window.globalSettings.curriculumMapping
+                : DEFAULT_CURRICULUM_MAPPING);
+            el.innerHTML = `
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-[10px] text-slate-300 min-w-[480px]">
+                        <thead class="bg-slate-800 text-slate-400">
+                            <tr>
+                                <th class="p-2">기능명</th>
+                                <th class="p-2">관련 역량/성취기준</th>
+                                <th class="p-2">활용 예시</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.map((r) => `<tr class="border-b border-slate-800">
+                                <td class="p-2 font-bold text-white">${r.feature || ''}</td>
+                                <td class="p-2">${r.competency || ''}</td>
+                                <td class="p-2 text-slate-400">${r.example || ''}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-[9px] text-slate-500 mt-2">태그 예시: ${(window.globalSettings?.curriculumTags || DEFAULT_CURRICULUM_TAGS).join(' ')}</p>`;
+        };
+
+        window.renderTeacherOnboarding = function() {
+            const box = document.getElementById('teacherOnboardingBanner');
+            if (!box) return;
+            const show = localStorage.getItem('sambong_show_onboarding') === '1' && window.playerState?.isGM;
+            box.classList.toggle('hidden', !show);
+            if (!show) return;
+            const code = localStorage.getItem('sambong_onboarding_invite') || window.classMeta?.inviteCode || '';
+            const codeEl = document.getElementById('onboardingInviteCode');
+            if (codeEl) codeEl.textContent = code || '—';
+        };
+
+        window.dismissTeacherOnboarding = function() {
+            localStorage.removeItem('sambong_show_onboarding');
+            localStorage.removeItem('sambong_onboarding_invite');
+            document.getElementById('teacherOnboardingBanner')?.classList.add('hidden');
+        };
+
+        window.copyOnboardingInvite = async function() {
+            const code = document.getElementById('onboardingInviteCode')?.textContent?.trim()
+                || window.classMeta?.inviteCode || '';
+            if (!code || code === '—') return window.customAlert('초대 코드가 없습니다.');
+            try {
+                await navigator.clipboard.writeText(code);
+                window.showToast('복사되었습니다!');
+            } catch (_) {
+                await window.customAlert(`초대 코드: ${code}`);
+            }
+        };
+
         window.openPrivacyPolicyModal = function() {
             const m = document.getElementById('privacyPolicyModal');
             if (m) m.classList.remove('hidden');
@@ -10191,18 +10475,6 @@ ${subjectLine}
         window.closePrivacyPolicyModal = function() {
             const m = document.getElementById('privacyPolicyModal');
             if (m) m.classList.add('hidden');
-        };
-
-        window.applyDefaultClassTemplates = async function() {
-            await window.customAlert(
-                '📦 다교실 운영 안내\n\n' +
-                '1) 로그인 → 선생님 → 새 학급 만들기\n' +
-                '2) 초대 코드를 학생에게 공유\n' +
-                '3) 학생은 초대 코드로 자기 반만 접속\n' +
-                '4) 각 학급은 artifacts/{학급ID} 로 데이터가 분리됩니다\n\n' +
-                '기본 퀘스트·직업·상점은 새 학급에서 바로 사용할 수 있습니다.\n' +
-                '시드 학급(sambong-class-2026)은 데모용이며, 실제 수업은 새 학급을 만드세요.'
-            );
         };
 
         window.renderAdminQuestBoard = function(studentsData) {
@@ -10659,7 +10931,7 @@ ${subjectLine}
         };
 
         window.saveBankInterestRate = async function() {
-            if (!window.playerState.isGM) return window.customAlert('마스터 J만 저장할 수 있습니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
             const el = document.getElementById('gmBankInterestRate');
             const v = el ? parseFloat(el.value) : NaN;
             if (!Number.isFinite(v) || v < 0 || v > 100) return window.customAlert('0~100 사이의 이자율(%)을 입력하세요.');
@@ -10810,7 +11082,7 @@ ${subjectLine}
         };
 
         window.restoreDragonBallsAdmin = async function () {
-            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const idsEl = document.getElementById('dragonBallRecoveryStudentIds');
             const ballsEl = document.getElementById('dragonBallRecoveryBallNums');
@@ -12930,7 +13202,7 @@ ${subjectLine}
         };
 
         async function executeLottoDraw({ auto = false } = {}) {
-            if (!auto && (!window.playerState || !window.playerState.isGM)) return await window.customAlert('마스터 J만 추첨할 수 있습니다.');
+            if (!auto && (!window.playerState || !window.playerState.isGM)) return await window.customAlert(`${getMasterDisplayName()}만 추첨할 수 있습니다.`);
             if (!db) {
                 if (!auto) await window.customAlert('데이터베이스에 연결되지 않았습니다.');
                 return null;
@@ -13247,7 +13519,7 @@ ${subjectLine}
                     try {
                         const studentId = String(localStorage.getItem('sambong_student_id') || '');
                         const studentName = window.playerState.isAdmin
-                            ? (window.playerState.isGM ? '마스터 J' : '해적 마스터 A')
+                            ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName())
                             : (STUDENT_NAMES[studentId] || studentId);
                         await appendMusicTimeRequest({ studentId, studentName, song: musicSongTitle });
                         renderMusicTimeQueueBar();
@@ -13322,7 +13594,7 @@ ${subjectLine}
         };
 
         window.saveShopPricesAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const shopPrices = {};
             getAllShopItems().forEach((s) => {
@@ -13348,7 +13620,7 @@ ${subjectLine}
         };
 
         window.addCustomShopItemAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추가할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 추가할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const nameEl = document.getElementById('gmCustomShopName');
             const descEl = document.getElementById('gmCustomShopDesc');
@@ -13404,7 +13676,7 @@ ${subjectLine}
         };
 
         window.deleteCustomShopItemAdmin = async function (itemId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 삭제할 수 있습니다.`);
             const item = getCustomShopItems().find((x) => x.id === itemId);
             if (!item) return await window.customAlert('삭제할 수 있는 추가 아이템을 찾지 못했습니다.');
             if (!await window.customConfirm(`[${item.name}] 아이템을 삭제할까요?\n기존 구매 기록은 학생 문서에 그대로 남습니다.`)) return;
@@ -13427,7 +13699,7 @@ ${subjectLine}
         };
 
         window.addCustomQuestAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 추가할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 추가할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const nameEl = document.getElementById('gmQuestName');
             const typeEl = document.getElementById('gmQuestType');
@@ -13472,7 +13744,7 @@ ${subjectLine}
         };
 
         window.deleteQuestAdmin = async function (questId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 삭제할 수 있습니다.`);
             const id = String(questId);
             const custom = getCustomQuests().find((q) => q.id === id);
             const base = QUEST_DATA.find((q) => q.id === id);
@@ -13501,7 +13773,7 @@ ${subjectLine}
         };
 
         window.restoreQuestAdmin = async function (questId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 복구할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 복구할 수 있습니다.`);
             const id = String(questId);
             const deletedQuestIds = Array.from(getDeletedQuestIds()).filter((x) => x !== id);
             try {
@@ -13528,7 +13800,7 @@ ${subjectLine}
         };
 
         window.editJobAdmin = function (jobId) {
-            if (!window.playerState || !window.playerState.isGM) return window.customAlert('마스터 J만 수정할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()}만 수정할 수 있습니다.`);
             const id = String(jobId);
             const job = [
                 ...JOB_DATA.map((j) => sanitizeJobItem({ ...j, ...(getJobOverrides()[j.id] || {}) }, j.id)),
@@ -13549,7 +13821,7 @@ ${subjectLine}
         };
 
         window.saveJobAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 저장할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const editId = String((document.getElementById('gmJobEditId') || {}).value || '').trim();
             const name = String((document.getElementById('gmJobName') || {}).value || '').trim();
@@ -13597,7 +13869,7 @@ ${subjectLine}
         };
 
         window.deleteJobAdmin = async function (jobId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 삭제할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 삭제할 수 있습니다.`);
             const id = String(jobId);
             const custom = getCustomJobs().find((j) => j.id === id);
             const base = JOB_DATA.find((j) => j.id === id);
@@ -13622,7 +13894,7 @@ ${subjectLine}
         };
 
         window.restoreJobAdmin = async function (jobId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 복구할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 복구할 수 있습니다.`);
             const deletedJobIds = Array.from(getDeletedJobIds()).filter((id) => id !== String(jobId));
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -13773,7 +14045,7 @@ ${subjectLine}
         };
 
         window.openShopGroupBuyAdminModal = function () {
-            if (!window.playerState || !window.playerState.isGM) return window.customAlert('마스터 J만 조회할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()}만 조회할 수 있습니다.`);
             const modal = document.getElementById('shopGroupBuyAdminModal');
             if (!modal) return;
             modal.classList.remove('hidden');
@@ -13981,7 +14253,7 @@ ${subjectLine}
         };
 
         window.resetShopGroupBuyAdmin = async function (shopId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 초기화할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 초기화할 수 있습니다.`);
             if (!shopId || !db) return;
             const shop = getShopItemById(shopId);
             const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
@@ -14030,7 +14302,7 @@ ${subjectLine}
         };
 
         window.refundShopGroupBuyStudentAdmin = async function (shopId, studentId) {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert('마스터 J만 학생별 환불을 할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 학생별 환불을 할 수 있습니다.`);
             if (!shopId || !studentId || !db) return;
             const canonId = String(studentId).trim();
             const input = document.getElementById(`gb_admin_refund_${shopId}_${studentId}`);
@@ -14247,11 +14519,15 @@ ${subjectLine}
 
         window.promptUnlock = async function(qId) {
             if (window.playerState.isGuest) return;
-            const pw = window.globalSettings.raidPassword || "1234";
+            const pw = String(window.globalSettings.raidPassword || '').trim();
+            if (!pw) {
+                return await window.customAlert('레이드 비밀번호가 아직 설정되지 않았습니다.\n마스터 설정에서 비밀번호를 먼저 정해 주세요.');
+            }
             const code = await window.customPrompt(`전담 선생님 비밀번호를 입력하세요:`, "password");
+            const masterBypass = String(getMasterDisplayName()).replace(/\s/g, '');
             
-            if (code === pw || code === "마스터J") { 
-                if (code !== "마스터J") {
+            if (code === pw || code === "마스터J" || (masterBypass && code === masterBypass)) { 
+                if (code !== "마스터J" && code !== masterBypass) {
                     if (!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
                     if (window.playerState.usedRaidPasswords.includes(code)) {
                         return await window.customAlert("❌ 이미 사용한 비밀번호입니다.\n비밀번호 하나당 하나의 레이드만 열 수 있습니다.");
@@ -14463,7 +14739,7 @@ ${subjectLine}
         };
 
         window.hardResetAll = async function() {
-            if (!window.playerState.isGM) return window.customAlert('선생님(마스터 J) 전용 기능입니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             const ok0 = await window.customConfirm(
                 '⚠️ [매우 위험] 서버 전체 초기화\n\n' +
                 '모든 학생의 XP·봉·아이템·상태가 0으로 초기화됩니다.\n' +
@@ -14643,7 +14919,7 @@ ${subjectLine}
                 return;
             }
             if (!window.playerState.isAdmin) {
-                await window.customAlert('마스터 J / 마스터 A만 광장에서 지급할 수 있어요.');
+                await window.customAlert(`${getMasterDisplayName()} / 보조 마스터만 광장에서 지급할 수 있어요.`);
                 return;
             }
             const sid = String(stuId);
@@ -14754,7 +15030,7 @@ ${subjectLine}
         };
 
         window.bulkAdd = async function(type, amount) {
-            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const ok = await window.customConfirm(`모든 학생에게 +${amount} ${ type === 'xp' ? 'XP' : 'B' } 지급하시겠습니까?`);
             if (!ok) return;
@@ -14813,7 +15089,7 @@ ${subjectLine}
         };
 
         window.bulkDeduct = async function(type, amount) {
-            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const ok = await window.customConfirm(`모든 학생의 ${type==='xp'?'XP':'B'}를 ${amount} 차감합니까?\n⚠️ 방패 보유자는 방패가 깎입니다.`); 
             if(!ok) return;
@@ -14974,7 +15250,7 @@ ${subjectLine}
         }
 
         window.resetRaids = async function() {
-            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
             const ok = await window.customConfirm("모든 학생의 '전담 레이드' 상태를 초기화합니다.");
             if (!ok) return;
@@ -15009,7 +15285,7 @@ ${subjectLine}
         }
 
         async function saveRaidPasswordAndReset(password, label) {
-            if (!window.playerState.isGM) return window.customAlert('마스터 J 전용 기능입니다.');
+            if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -15031,9 +15307,10 @@ ${subjectLine}
         };
 
         window.resetRaidPassword = async function() {
-            const ok = await window.customConfirm('전담 레이드 비밀번호를 기본값 1234로 초기화할까요?\n저장하면 모든 학생의 전담 레이드 잠금도 초기화됩니다.');
+            const nextPassword = createRandomRaidPassword();
+            const ok = await window.customConfirm(`전담 레이드 비밀번호를 새 랜덤 값으로 바꿀까요?\n새 비번: ${nextPassword}\n\n저장하면 모든 학생의 전담 레이드 잠금도 초기화됩니다.`);
             if (!ok) return;
-            await saveRaidPasswordAndReset('1234', '비밀번호 초기화');
+            await saveRaidPasswordAndReset(nextPassword, '비밀번호 재발급');
         };
 
         window.openQuestHistory = function() {

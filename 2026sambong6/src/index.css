@@ -1124,3 +1124,22 @@
             animation: worldtree-breathe 4.5s ease-in-out infinite;
             transform-origin: 50% 85%;
         }
+
+/* v1.1: 태블릿 터치 영역·반응형 보강 */
+button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
+    touch-action: manipulation;
+}
+@media (max-width: 640px) {
+    #swipeTabBar button {
+        min-height: 44px;
+        padding-top: 0.65rem;
+        padding-bottom: 0.65rem;
+    }
+    #adminSection .glass-panel button,
+    #settingsSection button,
+    #questsSection button,
+    #shopSection button,
+    #estateSection button {
+        min-height: 44px;
+    }
+}

@@ -550,7 +550,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.1';
+        const APP_VERSION = 'v1.2';
         window.APP_VERSION = APP_VERSION;
 
         const DEFAULT_WORLD_SETTINGS = {
@@ -623,6 +623,8 @@ function redrawPlazaGrantsUi() {
                 vacationStartDate = vacationEndDate;
                 vacationEndDate = tmp;
             }
+            const seasonLabel = String(src.seasonName || src.seasonLabel || `시즌 ${seasonNumber}`).trim().slice(0, 30) || `시즌 ${seasonNumber}`;
+            const seasonTheme = String(src.seasonTheme || DEFAULT_WORLD_SETTINGS.seasonTheme).trim().slice(0, 60) || DEFAULT_WORLD_SETTINGS.seasonTheme;
             return {
                 worldName: String(src.worldName || DEFAULT_WORLD_SETTINGS.worldName).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldName,
                 worldNameEn: String(src.worldNameEn || DEFAULT_WORLD_SETTINGS.worldNameEn).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldNameEn,
@@ -630,8 +632,9 @@ function redrawPlazaGrantsUi() {
                 tagline: String(src.tagline || '').trim().slice(0, 80),
                 footerCredit: String(src.footerCredit || DEFAULT_WORLD_SETTINGS.footerCredit).trim().slice(0, 120) || DEFAULT_WORLD_SETTINGS.footerCredit,
                 seasonNumber,
-                seasonLabel: String(src.seasonName || src.seasonLabel || `시즌 ${seasonNumber}`).trim().slice(0, 30) || `시즌 ${seasonNumber}`,
-                seasonTheme: String(src.seasonTheme || DEFAULT_WORLD_SETTINGS.seasonTheme).trim().slice(0, 60) || DEFAULT_WORLD_SETTINGS.seasonTheme,
+                seasonLabel,
+                seasonName: seasonLabel,
+                seasonTheme,
                 seasonNature: nature,
                 seasonStartAt: String(src.seasonStartAt || '').trim(),
                 seasonEndAt: String(src.seasonEndAt || DEFAULT_WORLD_SETTINGS.seasonEndAt).trim() || DEFAULT_WORLD_SETTINGS.seasonEndAt,
@@ -697,7 +700,10 @@ function redrawPlazaGrantsUi() {
             const seasonLine = ws.seasonTheme
                 ? `[${ws.seasonLabel} : ${ws.seasonTheme}]`
                 : `[${ws.seasonLabel}]`;
-            document.title = `${ws.worldName}`;
+            const className = String(window.classMeta?.displayName || window.classMeta?.className || '').trim();
+            document.title = className
+                ? `${className} · ${ws.worldName}`
+                : `${ws.worldName} - ${ws.seasonLabel}`;
             const verEls = document.querySelectorAll('[data-app-version]');
             verEls.forEach((el) => { el.textContent = APP_VERSION; });
 
@@ -848,6 +854,7 @@ function redrawPlazaGrantsUi() {
             };
             const text = (id) => String(document.getElementById(id)?.value || '').trim();
 
+            const seasonNameVal = text('wsSeasonLabel');
             const worldSettings = sanitizeWorldSettings({
                 worldName: text('wsWorldName'),
                 worldNameEn: text('wsWorldNameEn'),
@@ -855,7 +862,8 @@ function redrawPlazaGrantsUi() {
                 tagline: text('wsTagline'),
                 footerCredit: text('wsFooterCredit'),
                 seasonNumber: num('wsSeasonNumber', 1),
-                seasonLabel: text('wsSeasonLabel'),
+                seasonName: seasonNameVal,
+                seasonLabel: seasonNameVal,
                 seasonTheme: text('wsSeasonTheme'),
                 seasonNature: text('wsSeasonNature') || 'summer',
                 showSeasonTimer: !!(document.getElementById('wsShowSeasonTimer')?.checked),
@@ -908,6 +916,7 @@ function redrawPlazaGrantsUi() {
                     const classPayload = {
                         classId: appId,
                         displayName,
+                        className: displayName,
                         schoolName,
                         schoolYear,
                         grade,
@@ -942,7 +951,12 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('saveWorldSettingsFromPanel', e);
                 if (status) status.textContent = '저장 실패';
-                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                const retry = await window.customConfirm(
+                    '저장에 실패했습니다. 다시 시도해 주세요.\n\n' +
+                    (e && e.message ? e.message : String(e)) +
+                    '\n\n다시 시도할까요?'
+                );
+                if (retry) return window.saveWorldSettingsFromPanel();
             }
         }; 
 
@@ -998,11 +1012,11 @@ function redrawPlazaGrantsUi() {
 
         const DEFAULT_CURRICULUM_TAGS = ['#자기관리', '#협력', '#경제교육', '#디지털문해력', '#교과연계', '#민주시민'];
         const DEFAULT_CURRICULUM_MAPPING = [
-            { feature: '퀘스트', competency: '자기관리·책임감', example: '출석·건강·청소 등 일상 습관을 퀘스트로 실천' },
-            { feature: '직업·은행·상점', competency: '경제교육·금융이해', example: '주급·저축·소비 의사결정 시뮬레이션' },
-            { feature: '골든벨·레이드', competency: '교과 복습·협력', example: '전담 수업·평가를 팀 레이드로 복습' },
-            { feature: '헌법', competency: '민주시민교육', example: '학급 규칙 제정·준수로 민주적 절차 체험' },
-            { feature: '부동산·자리', competency: '공간·책임·협력', example: '자리 계약·양도로 공공성·책임 학습' },
+            { feature: '일일/주간 퀘스트', competency: '자기관리, 책임감', example: '생활 습관·과제 관리' },
+            { feature: '직업·은행·상점', competency: '경제교육, 금융이해', example: '용돈·소비·저축 경험' },
+            { feature: '골든벨·레이드', competency: '교과 복습, 협력', example: '과목별 문제 풀이·협동' },
+            { feature: '헌법', competency: '민주시민교육', example: '학급 규칙·권리 의무' },
+            { feature: '학습 온도계', competency: '자기성찰', example: '수업 태도 피드백' },
         ];
 
         const QUEST_DATA = [
@@ -1135,6 +1149,7 @@ function redrawPlazaGrantsUi() {
             return {
                 classId,
                 displayName: '6학년 1반',
+                className: '6학년 1반',
                 schoolName: '',
                 schoolYear: 2026,
                 grade: 6,
@@ -1158,6 +1173,7 @@ function redrawPlazaGrantsUi() {
             return {
                 classId,
                 displayName: String(opts.displayName || `${year}학년도 ${grade}학년 ${homeroom}반`).trim().slice(0, 40),
+                className: String(opts.displayName || opts.className || `${year}학년도 ${grade}학년 ${homeroom}반`).trim().slice(0, 40),
                 schoolName: String(opts.schoolName || '').trim().slice(0, 40),
                 schoolYear: year,
                 grade,
@@ -1463,7 +1479,7 @@ function redrawPlazaGrantsUi() {
                 console.warn('applyLoginClassCode', e);
                 window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
-                    return window.customAlert('초대 코드를 다시 확인해 주세요.\n선생님께 받은 코드를 정확히 입력했는지 살펴보세요.');
+                    return window.customAlert('초대 코드를 다시 확인해 주세요. 대소문자를 구분합니다.');
                 }
                 return window.customAlert('학급을 열 수 없습니다. 코드를 확인하거나 네트워크를 점검해 주세요.');
             } finally {
@@ -1500,8 +1516,8 @@ function redrawPlazaGrantsUi() {
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '선생님: 학급을 만들고 초대 코드를 학생에게 알려주세요'
-                    : '학생: 선생님이 알려준 초대 코드를 입력하세요';
+                    ? '선생님: 학급을 만들고 초대 코드를 학생에게 알려주세요. 학급마다 데이터가 완전히 분리됩니다.'
+                    : '학생: 선생님이 알려준 초대 코드를 입력하세요. 학급마다 데이터가 완전히 분리됩니다.';
             }
             if (isTeacher) window.setTeacherSubMode('create');
         };
@@ -1944,7 +1960,7 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
-                    return window.customAlert('초대 코드를 다시 확인해 주세요.');
+                    return window.customAlert('초대 코드를 다시 확인해 주세요. 대소문자를 구분합니다.');
                 }
                 return window.customAlert('학급을 열 수 없습니다: ' + (e && e.message ? e.message : String(e)));
             }
@@ -2078,7 +2094,7 @@ function redrawPlazaGrantsUi() {
             const err = document.getElementById('globalLoadingError');
             const retryBtn = document.getElementById('globalLoadingRetryBtn');
             if (err) {
-                err.textContent = msg || '연결이 불안정합니다. 다시 시도합니다…';
+                err.textContent = msg || '연결이 불안정합니다. 자동으로 다시 시도합니다.';
                 err.classList.remove('hidden');
             }
             if (retryBtn) retryBtn.classList.remove('hidden');
@@ -5976,12 +5992,12 @@ ${subjectLine}
             if(window.playerState.isAdmin) {
                 window.switchTab('admin');
             } else {
-                window.customAlert("🌳 [세계수]\n삼봉월드를 창조한 마스터 J의 성역입니다.\n성장한 자들만이 이곳의 비밀을 풀 수 있습니다.");
+                window.customAlert(`🌳 [세계수]\n${getMasterDisplayName()}의 성역입니다.\n성장한 자들만이 이곳의 비밀을 풀 수 있습니다.`);
             }
         };
 
         window.visitPirateIsland = function() {
-            window.customAlert("🌊 [난지도 분교]\n해적 마스터 A의 구역입니다!\n으스스한 해골 깃발이 펄럭이고 있습니다. 🏴‍☠️");
+            window.customAlert(`🌊 [보조 구역]\n${getCoMasterDisplayName()}의 구역입니다!\n함께 모험을 떠나는 공간입니다.`);
         };
 
         window.openExternalPortal = function() {
@@ -9916,7 +9932,7 @@ ${subjectLine}
                         <div class="text-4xl sm:text-5xl avatar-legend mb-2 z-10 relative">
                             ${isA?'🏴‍☠️':'🐉'}<span class="absolute -bottom-1 -right-1 text-xl">${isA?'🌊':'🔥'}</span>${overlays}
                         </div>
-                        <div class="text-[8px] font-black ${isA?'text-cyan-400':'text-sb-gold'} mb-0.5">${isA?'해적섬 두목':'창조자'}</div>
+                        <div class="text-[8px] font-black ${isA?'text-cyan-400':'text-sb-gold'} mb-0.5">${isA ? (getStaffMember('gm_a')?.label || '보조') : (getStaffMember('gm')?.label || '담임')}</div>
                         <div class="font-bold bg-gradient-to-r ${isA?'from-cyan-600 to-blue-800 text-white':'from-sb-gold to-yellow-300 text-slate-900'} px-1 py-0.5 rounded text-[9px] w-full text-center truncate border border-slate-700">
                             ${idLabel}
                         </div>
@@ -14741,10 +14757,11 @@ ${subjectLine}
         window.hardResetAll = async function() {
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             const ok0 = await window.customConfirm(
-                '⚠️ [매우 위험] 서버 전체 초기화\n\n' +
-                '모든 학생의 XP·봉·아이템·상태가 0으로 초기화됩니다.\n' +
-                '개별 백업은 자동 저장되지만, 실수로 실행하면 수업 데이터가 크게 흔들립니다.\n\n' +
-                '계속할까요? (다음 단계에서 문구 입력)'
+                '⚠️ [매우 위험]\n\n' +
+                '정말 모든 학생 데이터를 삭제하시겠습니까?\n\n' +
+                '모든 학생의 XP·봉·아이템·상태가 초기화됩니다.\n' +
+                '이 작업은 되돌리기 어렵습니다.\n\n' +
+                '계속할까요? (다음 단계에서 확인 문구 입력)'
             );
             if (!ok0) return;
             const ok1 = await window.customPrompt('계속하려면 아래 문구를 정확히 입력하세요:\n초기화확인', 'text');

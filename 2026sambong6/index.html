@@ -24,10 +24,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
+    <div id="appVersionCorner" data-app-version class="fixed bottom-2 right-3 z-[380] text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.2</div>
     <!-- 네트워크·로딩 UX -->
     <div id="offlineBanner" class="hidden fixed top-0 inset-x-0 z-[400] bg-amber-600 text-white text-center text-[11px] sm:text-xs font-bold py-2.5 px-3 shadow-lg">
-        <i class="fa-solid fa-wifi"></i> 연결이 불안정합니다. 다시 시도합니다…
-        <button type="button" onclick="void window.retryPendingNetworkActions()" class="ml-2 underline min-h-[44px] px-2">다시 시도</button>
+        <i class="fa-solid fa-wifi"></i> 연결이 불안정합니다. 자동으로 다시 시도합니다.
+        <button type="button" onclick="void window.retryPendingNetworkActions()" class="ml-2 underline min-h-[44px] px-2">지금 다시 시도</button>
     </div>
     <div id="globalLoadingOverlay" class="hidden fixed inset-0 z-[390] bg-slate-950/70 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 px-4" aria-live="polite" aria-busy="true">
         <i class="fa-solid fa-spinner fa-spin text-3xl text-cyan-300"></i>
@@ -55,7 +56,7 @@
             <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-cyan-200 mb-4 animate-bounce relative z-10"></i>
             <h1 id="loginWorldTitle" class="text-4xl sm:text-6xl font-display text-white tracking-widest drop-shadow-[0_0_18px_rgba(56,189,248,0.6)] relative z-10">SAMBONG WORLD</h1>
             <p id="loginSeasonSubtitle" class="text-sm sm:text-base text-cyan-200/90 mt-2 font-bold tracking-widest relative z-10">🌊 [시즌 1 : 우리 반 모험]</p>
-            <p class="text-[10px] text-slate-500 mt-2 relative z-10" data-app-version>v1.1</p>
+            <p class="text-[10px] text-slate-500 mt-2 relative z-10" data-app-version>v1.2</p>
         </div>
 
         <div class="glass-panel p-5 sm:p-7 rounded-3xl max-w-md w-full shadow-2xl border-t-4 border-t-cyan-400/80 relative z-10">
@@ -65,15 +66,15 @@
             <!-- 역할 선택 (큰 CTA) -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <button type="button" id="loginModeTeacherBtn" onclick="window.setLoginMode('teacher')" class="login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg text-left">
-                    <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-chalkboard-user text-lg"></i> 선생님</div>
-                    <div class="text-[10px] font-bold text-amber-100/80 leading-snug">새 학급 만들기 · 초대 코드로 기존 학급 들어가기</div>
+                    <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-chalkboard-user text-lg"></i> 선생님 · 새 학급 만들기</div>
+                    <div class="text-[10px] font-bold text-amber-100/80 leading-snug">학급을 만들고 초대 코드를 학생에게 알려주세요</div>
                 </button>
                 <button type="button" id="loginModeStudentBtn" onclick="window.setLoginMode('student')" class="login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg text-left">
-                    <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-graduation-cap text-lg"></i> 학생</div>
-                    <div class="text-[10px] font-bold text-cyan-100/80 leading-snug">선생님이 알려준 초대 코드로 입장</div>
+                    <div class="flex items-center gap-2 mb-1"><i class="fa-solid fa-graduation-cap text-lg"></i> 학생 · 초대 코드로 입장</div>
+                    <div class="text-[10px] font-bold text-cyan-100/80 leading-snug">선생님이 알려준 초대 코드를 입력하세요</div>
                 </button>
             </div>
-            <p id="loginRoleHint" class="text-[10px] text-slate-400 text-center mb-3 leading-relaxed">선생님: 학급을 만들고 초대 코드를 학생에게 알려주세요 · 학생: 선생님이 알려준 초대 코드를 입력하세요</p>
+            <p id="loginRoleHint" class="text-[10px] text-slate-400 text-center mb-3 leading-relaxed">선생님: 학급을 만들고 초대 코드를 학생에게 알려주세요. · 학생: 선생님이 알려준 초대 코드를 입력하세요. · 학급마다 데이터가 완전히 분리됩니다.</p>
 
             <!-- 학생 접속 -->
             <div id="loginPanelStudent" class="space-y-3">
@@ -157,7 +158,7 @@
                         <span>기본 템플릿 적용 (퀘스트·직업·헌법·교육과정 매핑 기본값)</span>
                     </label>
                     <button type="button" onclick="void window.createClassFromLogin()" class="w-full bg-gradient-to-r from-sky-600 to-emerald-500 hover:from-sky-500 text-white font-black py-3.5 rounded-xl shadow-lg text-sm min-h-[48px]">
-                        <i class="fa-solid fa-school"></i> 학급 만들고 시작하기
+                        <i class="fa-solid fa-school"></i> 학급 만들고 마스터 화면으로 시작하기
                     </button>
                 </div>
             </div>
@@ -174,7 +175,7 @@
         <div class="max-w-7xl mx-auto px-3 sm:px-6 flex items-center justify-between h-14">
             <div class="flex items-center gap-2 min-w-0">
                 <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md shrink-0"></i>
-                <span class="font-display text-lg text-white tracking-widest shrink-0"><span id="navWorldBrand">SAMBONG</span> <span id="navSeasonBadge" class="text-cyan-400">S1</span> <span id="navVersionBadge" data-app-version class="text-[9px] text-slate-500 font-bold">v1.1</span></span>
+                <span class="font-display text-lg text-white tracking-widest shrink-0"><span id="navWorldBrand">SAMBONG</span> <span id="navSeasonBadge" class="text-cyan-400">S1</span> <span id="navVersionBadge" data-app-version class="text-[9px] text-slate-500 font-bold">v1.2</span></span>
                 <div class="relative min-w-0" id="navClassSwitcherWrap">
                     <button type="button" id="navClassLabelBtn" onclick="event.stopPropagation(); window.toggleNavClassMenu()" class="flex items-center gap-1 max-w-[10rem] text-[10px] text-emerald-300/90 font-bold truncate px-2 py-1 rounded-lg border border-emerald-500/30 bg-slate-800/50 hover:bg-slate-700/80" title="학급 전환">
                         <span id="navClassLabel">우리 반</span>
@@ -825,21 +826,30 @@
                     <h3 class="text-emerald-200 font-black text-sm"><i class="fa-solid fa-rocket"></i> 새 학급 시작 안내</h3>
                     <button type="button" onclick="window.dismissTeacherOnboarding()" class="text-[10px] text-slate-400 underline min-h-[44px] px-2">닫기</button>
                 </div>
-                <div class="rounded-xl bg-slate-950/70 border border-emerald-500/40 p-3 text-center">
-                    <p class="text-[10px] text-slate-400 mb-1">초대 코드를 학생에게 알려주세요</p>
-                    <p id="onboardingInviteCode" class="text-2xl font-black text-emerald-300 tracking-widest">—</p>
-                    <button type="button" onclick="void window.copyOnboardingInvite()" class="mt-2 w-full sm:w-auto min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-xl text-xs">
+                <div class="rounded-xl bg-slate-950/70 border border-emerald-500/40 p-4 text-center space-y-2">
+                    <p class="text-sm font-black text-white">학생에게 이 초대 코드를 알려주세요</p>
+                    <p id="onboardingInviteCode" class="text-3xl font-black text-emerald-300 tracking-widest">—</p>
+                    <button type="button" onclick="void window.copyOnboardingInvite()" class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 px-4 rounded-xl text-sm shadow-lg">
                         <i class="fa-solid fa-copy"></i> 초대 코드 복사
                     </button>
                 </div>
                 <div>
-                    <p class="text-[10px] text-emerald-200 font-bold mb-1">다음으로 할 일</p>
-                    <ul class="text-[11px] text-slate-300 space-y-1.5 list-none">
-                        <li>☐ 학생 명단 입력 <button type="button" class="text-sky-300 underline ml-1" onclick="window.switchTab('admin'); document.getElementById('classAdminSection')?.scrollIntoView({behavior:'smooth'})">바로가기</button></li>
-                        <li>☐ 기본 퀘스트/직업 확인 <button type="button" class="text-sky-300 underline ml-1" onclick="void window.applyDefaultClassTemplates()">기본 템플릿 적용</button></li>
-                        <li>☐ 활동 통계 확인 <button type="button" class="text-sky-300 underline ml-1" onclick="window.switchTab('admin'); window.renderResearchStatsDashboard()">통계 보기</button></li>
+                    <p class="text-[10px] text-emerald-200 font-bold mb-2">다음에 할 일</p>
+                    <ul class="text-[11px] text-slate-300 space-y-2 list-none">
+                        <li class="flex flex-wrap items-center gap-2">☐ 학생 명단 입력하기
+                            <button type="button" class="min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="window.switchTab('admin'); document.getElementById('classAdminSection')?.scrollIntoView({behavior:'smooth'})">명단 입력하기</button>
+                        </li>
+                        <li class="flex flex-wrap items-center gap-2">☐ 기본 템플릿 적용하기 (퀘스트·직업·상점)
+                            <button type="button" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="void window.applyDefaultClassTemplates()">기본 템플릿 적용</button>
+                        </li>
+                        <li class="flex flex-wrap items-center gap-2">☐ 활동 통계 확인하기
+                            <button type="button" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="window.switchTab('admin'); window.renderResearchStatsDashboard()">통계 보기</button>
+                        </li>
                     </ul>
                 </div>
+                <button type="button" onclick="window.dismissTeacherOnboarding(); window.switchTab('admin');" class="w-full min-h-[48px] bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 text-white font-black py-3 rounded-xl text-sm shadow-lg">
+                    마스터 화면으로 시작하기
+                </button>
             </div>
 
             <div id="teacherClassHub" class="hidden mb-4 glass-panel p-3 sm:p-4 rounded-2xl border border-emerald-500/50 bg-slate-900/80">
@@ -1748,7 +1758,7 @@
             <!-- ★ 완전 초기화 (맨 아래·위험) ★ -->
             <div id="gmResetPanel" class="hidden bg-red-900/30 border border-red-500/50 p-4 rounded-xl mt-8 mb-2 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
                 <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 서버 초기화 (위험)</h3>
-                <p class="text-[10px] text-slate-300 mb-2 leading-relaxed">모든 학생의 XP, B, 아이템, 상태를 0으로 돌립니다. <strong class="text-red-200">되돌리기 어렵습니다.</strong> (개별 백업은 자동 저장되나, 실수 방지를 위해 확인이 강화되어 있습니다.)</p>
+                <p class="text-[10px] text-slate-300 mb-2 leading-relaxed">정말 모든 학생 데이터를 삭제하시겠습니까? <strong class="text-red-200">되돌리기 어렵습니다.</strong> (개별 백업은 자동 저장되나, 실수 방지를 위해 확인이 강화되어 있습니다.)</p>
                 <ul class="text-[9px] text-red-200/90 list-disc pl-4 mb-3 space-y-0.5">
                     <li>1단계: 위험 안내 확인</li>
                     <li>2단계: 「초기화확인」 문구 입력</li>
@@ -1975,7 +1985,7 @@
         <section id="helpSection" class="hidden space-y-4">
             <div class="mb-1">
                 <h2 class="text-2xl font-display text-cyan-300"><i class="fa-solid fa-circle-question"></i> 도움말</h2>
-                <p class="text-[10px] text-slate-400 mt-1">시작 가이드 · 학생 이용 · 차별화 · FAQ · 개인정보 · 출처 <span data-app-version class="text-slate-500">v1.1</span></p>
+                <p class="text-[10px] text-slate-400 mt-1">시작 가이드 · 학생 이용 · 차별화 · FAQ · 개인정보 · 출처 <span data-app-version class="text-slate-500">v1.2</span></p>
             </div>
 
             <div class="glass-panel p-4 rounded-2xl border border-sky-500/40 bg-slate-900/80 space-y-2">
@@ -2034,7 +2044,7 @@
         
         <footer class="text-center text-slate-500 py-6 border-t border-slate-800 mt-10">
             <p id="footerCreditText" class="text-xs sm:text-sm font-bold text-emerald-400">- 삼봉월드 · 우리 반 -</p>
-            <p class="text-[9px] text-slate-500 mt-1"><span data-app-version>v1.1</span> · 삼봉월드</p>
+            <p class="text-[9px] text-slate-500 mt-1"><span data-app-version>v1.2</span> · 삼봉월드</p>
             <p class="text-[9px] text-slate-500 mt-2">
                 <button type="button" onclick="window.openPrivacyPolicyModal()" class="underline hover:text-slate-300 min-h-[44px] px-1">개인정보 처리방침</button>
                 ·

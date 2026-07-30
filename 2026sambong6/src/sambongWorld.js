@@ -6488,11 +6488,13 @@ ${subjectLine}
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
+            let result = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
 
+                // 학생 XP 반영과 온도계 초기화를 한 트랜잭션에 묶어,
+                // lock→batch→reset 분리 구조에서 생길 수 있는 중복 XP 지급을 막습니다.
                 await runTransaction(db, async (transaction) => {
                     const ref = getGlobalSettingsDocRef();
                     const snap = await transaction.get(ref);
@@ -6509,48 +6511,29 @@ ${subjectLine}
                     });
                     if (state.settledDate === today) {
                         if (!manual || !Object.keys(pendingValues).length) {
-                            claimed = { status: 'already_done', state };
+                            result = { status: 'already_done', state };
                             return;
                         }
                     }
                     if (lockIsFresh) {
-                        claimed = { status: 'locked', state };
+                        result = { status: 'locked', state };
                         return;
                     }
-                    const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
-                });
+                    const entries = Object.entries(pendingValues).filter(([, v]) => Number(v) !== 0);
+                    const studentRows = [];
+                    for (const [sid] of entries) {
+                        const studentRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                        const studentSnap = await transaction.get(studentRef);
+                        studentRows.push({ sid, ref: studentRef, snap: studentSnap });
+                    }
 
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
-                let appliedCount = 0;
-                let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
+                    let appliedCount = 0;
+                    let totalDelta = 0;
+                    studentRows.forEach(({ sid, ref: studentRef, snap: studentSnap }) => {
+                        const deltaRaw = pendingValues[String(sid)];
                         const delta = Math.round(Number(deltaRaw) || 0);
                         if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
+                        const stu = studentSnap.exists() ? (studentSnap.data() || {}) : {};
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
                         const afterXp = Math.max(0, beforeXp + delta);
                         const actualDelta = afterXp - beforeXp;
@@ -6561,35 +6544,38 @@ ${subjectLine}
                             rawDelta: delta,
                             settledDate: today,
                         }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        transaction.set(
+                            studentRef,
                             { xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
                         totalDelta += actualDelta;
                     });
-                    if (appliedCount > 0) await batch.commit();
-                }
 
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
-                setLocalLearningThermometerState(resetState);
+                    const resetState = {
+                        ...state,
+                        values: {},
+                        date: today,
+                        settledDate: today,
+                        lastSettlementAt: Date.now(),
+                        settlementKey: today,
+                        settlementStatus: 'done',
+                        settlementStartedAt: 0,
+                        settlementAppliedCount: appliedCount,
+                        settlementTotalDelta: totalDelta,
+                    };
+                    transaction.set(ref, { learningThermometer: resetState }, { merge: true });
+                    result = { status: 'done', appliedCount, totalDelta, state: resetState };
+                });
+
+                if (!result || result.status !== 'done') return result || { status: 'not_claimed' };
+
+                setLocalLearningThermometerState(result.state);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return { status: 'done', appliedCount: result.appliedCount, totalDelta: result.totalDelta };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -8234,9 +8220,12 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">알림</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <p class="js-custom-alert-msg text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
                     <button type="button" class="js-custom-alert-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
                 </div>`;
+            // 신청곡명 등 사용자 입력이 메시지에 포함될 수 있어 textContent로 주입합니다.
+            const msgEl = d.querySelector('.js-custom-alert-msg');
+            if (msgEl) msgEl.textContent = m == null ? '' : String(m);
             document.body.appendChild(d);
             const okBtn = d.querySelector('.js-custom-alert-ok');
             if (okBtn) okBtn.onclick = () => { d.remove(); r(true); };
@@ -8248,12 +8237,14 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">확인</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <p class="js-custom-confirm-msg text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
                     <div class="flex gap-4 mt-4">
                         <button type="button" class="js-custom-confirm-no bg-slate-700 text-white font-bold py-2 rounded-full w-full">취소</button>
                         <button type="button" class="js-custom-confirm-yes bg-sb-red text-white font-bold py-2 rounded-full w-full">확인</button>
                     </div>
                 </div>`;
+            const msgEl = d.querySelector('.js-custom-confirm-msg');
+            if (msgEl) msgEl.textContent = m == null ? '' : String(m);
             document.body.appendChild(d);
             const yesBtn = d.querySelector('.js-custom-confirm-yes');
             const noBtn = d.querySelector('.js-custom-confirm-no');
@@ -8267,13 +8258,15 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-sb-gold">입력</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <input type="${type}" class="js-custom-prompt-input w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
+                    <p class="js-custom-prompt-msg text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
+                    <input type="${type === 'text' ? 'text' : 'password'}" class="js-custom-prompt-input w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
                     <div class="flex gap-4">
                         <button type="button" class="js-custom-prompt-no bg-slate-700 text-white font-bold py-2 w-full rounded">취소</button>
                         <button type="button" class="js-custom-prompt-yes bg-emerald-500 text-white font-bold py-2 w-full rounded">확인</button>
                     </div>
                 </div>`;
+            const msgEl = d.querySelector('.js-custom-prompt-msg');
+            if (msgEl) msgEl.textContent = m == null ? '' : String(m);
             document.body.appendChild(d);
             const inputEl = d.querySelector('.js-custom-prompt-input');
             const yesBtn = d.querySelector('.js-custom-prompt-yes');
@@ -8290,7 +8283,7 @@ ${subjectLine}
             d.innerHTML = `
                 <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                    <p class="js-custom-pick-msg text-xs sm:text-sm text-slate-300 whitespace-pre-wrap"></p>
                     <p class="text-[10px] text-pink-200/90">1~6 면을 눌러 예측 번호를 고르세요</p>
                     <div class="grid grid-cols-3 gap-3">
                         ${[1,2,3,4,5,6].map(n => `
@@ -8302,6 +8295,8 @@ ${subjectLine}
                     </div>
                     <button type="button" id="pickCancel" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 w-full rounded-xl">취소</button>
                 </div>`;
+            const msgEl = d.querySelector('.js-custom-pick-msg');
+            if (msgEl) msgEl.textContent = m == null ? '' : String(m);
             document.body.appendChild(d);
             d.querySelectorAll('button[data-pick]').forEach(btn => {
                 btn.onclick = () => {
@@ -8911,13 +8906,14 @@ ${subjectLine}
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
+            // 확인창에서 환불액을 보여주므로, 선언을 confirm 호출보다 앞에 둡니다.
+            const refundB = normalizeBongValue(Number(order.price) || 0);
             const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongDisplay(refundB)}B가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[managerId] || managerId);
-            const refundB = normalizeBongValue(Number(order.price) || 0);
             try {
                 await runTransaction(db, async (transaction) => {
                     const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
@@ -12058,7 +12054,8 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                // 은행 정합 거절도 실패로 처리해야 가짜 로컬 잔액이 성공으로 남고 이후 일반 저장에 고정되지 않습니다.
+                if (blockedByServerBalance || blockedByBankReconcile || blockedByDuplicateQuest) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

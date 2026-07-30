@@ -1930,10 +1930,10 @@ function redrawPlazaGrantsUi() {
             const rows = recent.length
                 ? recent.map((r) => {
                     const cur = r.classId === appId ? ' · 현재' : '';
-                    const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                    const safeId = escapeHtmlAttr(String(r.classId || '')).replace(/'/g, '');
                     return `<button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
-                        <div class="font-bold truncate">${r.displayName || r.classId}${cur}</div>
-                        <div class="text-slate-500 truncate">${r.inviteCode || r.classId}</div>
+                        <div class="font-bold truncate">${escapeConvenienceHtml(r.displayName || r.classId)}${cur}</div>
+                        <div class="text-slate-500 truncate">${escapeConvenienceHtml(r.inviteCode || r.classId)}</div>
                     </button>`;
                 }).join('')
                 : '<div class="text-slate-500 px-2 py-2">최근 학급이 없습니다. 아래에서 코드로 이동하세요.</div>';
@@ -10575,10 +10575,10 @@ ${subjectLine}
             }
             el.innerHTML = recent.map((r) => {
                 const cur = r.classId === appId;
-                const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const safeId = escapeHtmlAttr(String(r.classId || '')).replace(/'/g, '');
                 return `<button type="button" class="w-full text-left px-3 py-2.5 rounded-xl border ${cur ? 'border-emerald-500/60 bg-emerald-950/40' : 'border-slate-700 bg-slate-950/60 hover:bg-slate-800'} min-h-[44px]" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
-                    <div class="text-xs font-bold text-white truncate">${r.displayName || r.classId}${cur ? ' · 현재' : ''}</div>
-                    <div class="text-[9px] text-slate-500 truncate">${r.inviteCode || r.classId}</div>
+                    <div class="text-xs font-bold text-white truncate">${escapeConvenienceHtml(r.displayName || r.classId)}${cur ? ' · 현재' : ''}</div>
+                    <div class="text-[9px] text-slate-500 truncate">${escapeConvenienceHtml(r.inviteCode || r.classId)}</div>
                 </button>`;
             }).join('');
         };
@@ -10601,14 +10601,14 @@ ${subjectLine}
                         </thead>
                         <tbody>
                             ${rows.map((r) => `<tr class="border-b border-slate-800">
-                                <td class="p-2 font-bold text-white">${r.feature || ''}</td>
-                                <td class="p-2">${r.competency || ''}</td>
-                                <td class="p-2 text-slate-400">${r.example || ''}</td>
+                                <td class="p-2 font-bold text-white">${escapeConvenienceHtml(r.feature || '')}</td>
+                                <td class="p-2">${escapeConvenienceHtml(r.competency || '')}</td>
+                                <td class="p-2 text-slate-400">${escapeConvenienceHtml(r.example || '')}</td>
                             </tr>`).join('')}
                         </tbody>
                     </table>
                 </div>
-                <p class="text-[9px] text-slate-500 mt-2">태그 예시: ${(window.globalSettings?.curriculumTags || DEFAULT_CURRICULUM_TAGS).join(' ')}</p>`;
+                <p class="text-[9px] text-slate-500 mt-2">태그 예시: ${escapeConvenienceHtml((window.globalSettings?.curriculumTags || DEFAULT_CURRICULUM_TAGS).join(' '))}</p>`;
         };
 
         window.renderTeacherOnboarding = function() {
@@ -12367,7 +12367,14 @@ ${subjectLine}
             const modal = document.getElementById('lunchMenuModal');
             const body = document.getElementById('lunchMenuModalBody');
             const titleEl = document.getElementById('lunchMenuModalTitle');
-            if(titleEl) titleEl.innerHTML = `<i class="fa-solid fa-clipboard-list text-emerald-400"></i> 급식표 · ${title}`;
+            // lunchMenuTitle은 Firestore 설정값이라 HTML에 직접 넣지 않고 이스케이프합니다.
+            if (titleEl) {
+                titleEl.textContent = '';
+                const icon = document.createElement('i');
+                icon.className = 'fa-solid fa-clipboard-list text-emerald-400';
+                titleEl.appendChild(icon);
+                titleEl.appendChild(document.createTextNode(` 급식표 · ${title}`));
+            }
             if(body) {
                 const attrUrl = escapeHtmlAttr(url);
                 const kind = getLunchMenuResourceType(url, fileName);

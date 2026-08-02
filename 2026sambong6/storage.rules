@@ -1,0 +1,20 @@
+rules_version = '2';
+// 삼봉월드 Storage — 급식표 등 public 첨부 파일
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // 학급별 public 첨부 (급식표 등): 누구나 읽기, 로그인(익명 포함)만 쓰기
+    match /artifacts/{appId}/public/{allPaths=**} {
+      allow read: if true;
+      allow write: if signedIn()
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

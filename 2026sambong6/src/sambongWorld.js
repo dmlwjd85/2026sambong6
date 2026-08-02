@@ -5926,14 +5926,34 @@ ${subjectLine}
             return 'other';
         }
 
+        /**
+         * 급식표 URL 허용 목록 — settings는 인증 사용자면 쓸 수 있어
+         * javascript:·data:text/html 등을 iframe/embed/img에 넣지 않습니다.
+         */
+        function isSafeLunchMenuUrl(raw) {
+            const url = String(raw || '').trim();
+            if (!url) return false;
+            if (/^https?:\/\//i.test(url)) return true;
+            // Firestore 임베드: 이미지·PDF만 허용 (svg/html 스크립트 페이로드 차단)
+            if (/^data:image\/(png|jpe?g|gif|webp|bmp);/i.test(url)) return true;
+            if (/^data:application\/pdf;/i.test(url)) return true;
+            // 한글 등 바이너리 임베드는 다운로드 링크로만 쓰이도록 제한된 MIME만 허용
+            if (/^data:application\/(x-hwp|hwp\+zip|haansofthml|octet-stream);/i.test(url)) return true;
+            return false;
+        }
+
         /** 현재 표시용 급식표 URL(외부/Storage URL 또는 Firestore 임베드 data URL) */
         function getActiveLunchMenuUrl() {
+            const settings = window.globalSettings || {};
+            const url = settings.lunchMenuUrl ? String(settings.lunchMenuUrl).trim() : '';
+            // Storage/외부 링크로 전환한 뒤에는 임베드보다 URL을 우선합니다(클리어 지연·실패 대비).
+            if (url && settings.lunchMenuEmbedded === false && isSafeLunchMenuUrl(url)) return url;
             const media = window.lunchMenuMedia;
-            if (media && media.dataUrl) return String(media.dataUrl);
-            const url = window.globalSettings && window.globalSettings.lunchMenuUrl
-                ? String(window.globalSettings.lunchMenuUrl).trim()
-                : '';
-            return url;
+            if (media && media.dataUrl && !media.cleared) {
+                const embedded = String(media.dataUrl);
+                if (isSafeLunchMenuUrl(embedded)) return embedded;
+            }
+            return isSafeLunchMenuUrl(url) ? url : '';
         }
 
         function detectLunchMenuKindFromFile(file) {
@@ -12363,6 +12383,9 @@ ${subjectLine}
                 ? String(window.globalSettings.lunchMenuFileName)
                 : (window.lunchMenuMedia?.fileName ? String(window.lunchMenuMedia.fileName) : '');
             if(!url) return window.customAlert('첨부된 급식표가 없습니다.');
+            if (!isSafeLunchMenuUrl(url)) {
+                return window.customAlert('급식표 주소가 안전하지 않아 열 수 없습니다. 마스터에게 다시 업로드를 요청해 주세요.');
+            }
 
             const modal = document.getElementById('lunchMenuModal');
             const body = document.getElementById('lunchMenuModalBody');
@@ -12508,7 +12531,17 @@ ${subjectLine}
             const kind = getLunchMenuResourceType(raw, raw);
             try {
                 window.showGlobalLoading('링크 저장 중…');
-                // 임베드 본문 제거 후 외부 URL만 사용
+                const titleEl = document.getElementById('lunchMenuTitleInput');
+                const titleFromForm = (titleEl?.value || '').trim();
+                // URL 메타를 먼저 저장한 뒤 임베드를 비워, 저장 실패 시 기존 급식표 유실을 막습니다.
+                await window.saveLunchMenu({
+                    skipSuccessAlert: true,
+                    urlOverride: raw,
+                    fileNameOverride: '',
+                    kindOverride: kind === 'other' ? '' : kind,
+                    embeddedOverride: false,
+                    titleOverride: titleFromForm || '급식표'
+                });
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'lunchMenuMedia'), {
                     dataUrl: '',
                     fileName: '',
@@ -12518,16 +12551,6 @@ ${subjectLine}
                     cleared: true
                 }, { merge: true });
                 window.lunchMenuMedia = null;
-                const titleEl = document.getElementById('lunchMenuTitleInput');
-                const titleFromForm = (titleEl?.value || '').trim();
-                await window.saveLunchMenu({
-                    skipSuccessAlert: true,
-                    urlOverride: raw,
-                    fileNameOverride: '',
-                    kindOverride: kind === 'other' ? '' : kind,
-                    embeddedOverride: false,
-                    titleOverride: titleFromForm || '급식표'
-                });
                 window.hideGlobalLoading();
                 if (urlEl) urlEl.value = '';
                 await window.customAlert('✅ 급식표 링크가 저장되었습니다.\n학생들이 「급식표 보기」로 확인할 수 있습니다.');
@@ -12613,7 +12636,11 @@ ${subjectLine}
         /** Firestore에 급식표 본문(data URL) 저장 — Storage 미설정 환경에서도 동작 */
         async function saveLunchMenuEmbedded(file, kind) {
             let uploadFile = file;
-            if (kind === 'image' && file.size > LUNCH_MENU_EMBED_MAX_BYTES) {
+            const rawType = String(file?.type || '').toLowerCase();
+            const rawName = String(file?.name || '').toLowerCase();
+            // SVG는 스크립트 페이로드 위험이 있어 항상 JPEG로 래스터화합니다.
+            const mustRasterizeSvg = kind === 'image' && (rawType.includes('svg') || rawName.endsWith('.svg'));
+            if (kind === 'image' && (mustRasterizeSvg || file.size > LUNCH_MENU_EMBED_MAX_BYTES)) {
                 uploadFile = await compressLunchMenuImageFile(file, LUNCH_MENU_EMBED_MAX_BYTES);
                 kind = 'image';
             }
@@ -12629,6 +12656,9 @@ ${subjectLine}
             // base64 문자열 길이 ≈ 문서 크기. 여유를 두고 차단
             if (dataUrl.length > 950000) {
                 throw new Error('파일이 저장 한도를 초과합니다. 더 작은 이미지/PDF로 올려 주세요.');
+            }
+            if (!isSafeLunchMenuUrl(dataUrl)) {
+                throw new Error('이 파일 형식은 임베드 저장을 지원하지 않습니다. PDF·일반 이미지로 올려 주세요.');
             }
             const contentType = lunchMenuContentTypeForFile(uploadFile);
             const mediaPayload = {
@@ -12666,13 +12696,11 @@ ${subjectLine}
             const downloadUrl = await getDownloadURL(refObj);
             const urlStr = String(downloadUrl || '').trim();
             if (!urlStr) throw new Error('다운로드 URL을 가져오지 못했습니다.');
-            // 임베드 비움
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'lunchMenuMedia'), {
-                dataUrl: '', fileName: '', kind: '', contentType: '', updatedAt: Date.now(), cleared: true
-            }, { merge: true });
-            window.lunchMenuMedia = null;
+            if (!isSafeLunchMenuUrl(urlStr)) throw new Error('안전하지 않은 다운로드 URL입니다.');
             const titleEl = document.getElementById('lunchMenuTitleInput');
             const titleFromForm = (titleEl?.value || '').trim();
+            // 메타데이터(URL)를 먼저 저장한 뒤 임베드를 비웁니다.
+            // 임베드를 먼저 지우면 URL 저장 실패 시 기존 급식표가 유실됩니다.
             await window.saveLunchMenu({
                 skipSuccessAlert: true,
                 urlOverride: urlStr,
@@ -12681,6 +12709,10 @@ ${subjectLine}
                 embeddedOverride: false,
                 titleOverride: titleFromForm || ((file.name || '급식표').replace(/\.[^.]+$/, '') || '급식표')
             });
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'lunchMenuMedia'), {
+                dataUrl: '', fileName: '', kind: '', contentType: '', updatedAt: Date.now(), cleared: true
+            }, { merge: true });
+            window.lunchMenuMedia = null;
             return { kind, fileName: file.name || safeName };
         }
 

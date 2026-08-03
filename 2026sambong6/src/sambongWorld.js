@@ -1097,6 +1097,11 @@ function redrawPlazaGrantsUi() {
         const SEED_CLASS_ID = 'sambong-class-2026';
         const RECENT_CLASSES_KEY = 'sambong_recent_classes';
 
+        /** 시드(데모) 학급인지 — 석서영 생일·부동산 자동복구 등은 여기에만 적용 */
+        function isSeedDemoClass() {
+            return appId === SEED_CLASS_ID || !!(window.classMeta && window.classMeta.isDemoSeed);
+        }
+
         function buildDefaultRosterFromLegacy() {
             return [
                 { id: '1', name: '김단엘', gender: 'M', label: '', active: true },
@@ -1302,6 +1307,42 @@ function redrawPlazaGrantsUi() {
             return code;
         }
 
+        /** inviteCodes/{CODE} 문서가 비어 있는 코드가 나올 때까지 생성 */
+        async function generateUniqueInviteCode() {
+            for (let i = 0; i < 24; i++) {
+                const code = generateInviteCode();
+                try {
+                    const snap = await getDoc(doc(db, 'inviteCodes', code));
+                    if (!snap.exists()) return code;
+                } catch (_) {
+                    return code; // 규칙/오프라인 시에도 진행 (이후 register에서 충돌 감지)
+                }
+            }
+            throw new Error('invite_gen_failed');
+        }
+
+        /**
+         * 초대 코드 → classId O(1) 매핑 등록.
+         * 다른 학급이 이미 쓴 코드면 invite_code_taken.
+         */
+        async function registerInviteCode(inviteCode, classId, extra = {}) {
+            const code = String(inviteCode || '').trim().toUpperCase();
+            const id = String(classId || '').trim();
+            if (!code || !id || !db) return;
+            const ref = doc(db, 'inviteCodes', code);
+            const existing = await getDoc(ref);
+            if (existing.exists()) {
+                const prev = String(existing.data()?.classId || '').trim();
+                if (prev && prev !== id) throw new Error('invite_code_taken');
+            }
+            await setDoc(ref, {
+                classId: id,
+                displayName: String(extra.displayName || '').slice(0, 40),
+                updatedAt: serverTimestamp(),
+                ...(existing.exists() ? {} : { createdAt: serverTimestamp() }),
+            }, { merge: true });
+        }
+
         function buildClassIdFromMeta(meta) {
             const year = Number(meta.schoolYear) || new Date().getFullYear();
             const grade = Number(meta.grade) || 6;
@@ -1310,10 +1351,76 @@ function redrawPlazaGrantsUi() {
             return `sambong-${year}-${grade}-${room}-${suffix}`;
         }
 
-        function getClassShareUrl(classId) {
+        /**
+         * 학급 공유 주소.
+         * 초대 코드가 있으면 ?c=CODE (학생·선생 모두 이 링크로 해당 학급만 입장).
+         * 없으면 기존 ?class=classId.
+         */
+        function getClassShareUrl(classId, inviteCode) {
             const url = new URL(window.location.href);
-            url.searchParams.set('class', classId || appId);
-            return url.origin + url.pathname + url.search;
+            url.searchParams.delete('class');
+            url.searchParams.delete('classId');
+            url.searchParams.delete('invite');
+            const code = String(inviteCode || window.classMeta?.inviteCode || '').trim().toUpperCase();
+            if (code) {
+                url.searchParams.set('c', code);
+            } else {
+                url.searchParams.set('class', classId || appId);
+            }
+            return url.origin + url.pathname + '?' + url.searchParams.toString();
+        }
+
+        /** URL의 ?c= / ?invite= / 경로 /c/CODE 추출 (있으면 대문자 코드) */
+        function readInviteCodeFromLocation() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const fromQuery = (params.get('c') || params.get('invite') || '').trim();
+                if (fromQuery) return fromQuery.toUpperCase();
+                const path = String(window.location.pathname || '');
+                const m = path.match(/\/c\/([A-Za-z0-9]{4,12})\/?$/i);
+                if (m) return m[1].toUpperCase();
+            } catch (_) { /* ignore */ }
+            return '';
+        }
+
+        /**
+         * 부팅 직후: 초대 코드 URL이면 classId로 해석해 ?class= 로 치환 후 새로고침.
+         * @returns {Promise<boolean>} true면 페이지가 이동 중이므로 init 중단
+         */
+        async function applyInviteCodeFromUrlIfNeeded() {
+            const invite = readInviteCodeFromLocation();
+            if (!invite || !db) return false;
+            // 이미 class= 가 같이 있으면 class 우선 (전환 직후)
+            try {
+                const params = new URLSearchParams(window.location.search);
+                if ((params.get('class') || params.get('classId') || '').trim()) return false;
+            } catch (_) { /* ignore */ }
+            try {
+                window.showGlobalLoading?.('학급 링크로 이동 중…');
+                const classId = await resolveClassIdFromInviteOrRaw(invite);
+                localStorage.setItem('sambong_class_id', classId);
+                const url = new URL(window.location.href);
+                url.searchParams.delete('c');
+                url.searchParams.delete('invite');
+                url.searchParams.set('class', classId);
+                // /c/CODE 경로였다면 pathname을 앱 루트로 되돌림 (GitHub Pages base 유지)
+                let path = url.pathname.replace(/\/c\/[A-Za-z0-9]+\/?$/i, '/');
+                if (!path.endsWith('/') && !path.includes('.')) path += '/';
+                window.location.replace(path + '?' + url.searchParams.toString() + url.hash);
+                return true;
+            } catch (e) {
+                window.hideGlobalLoading?.();
+                console.warn('applyInviteCodeFromUrlIfNeeded', e);
+                const msg = String(e && e.message || e);
+                if (msg === 'invite_not_found') {
+                    await window.customAlert?.('초대 코드 링크를 확인할 수 없습니다.\n코드가 올바른지 선생님께 물어봐 주세요.');
+                } else if (msg === 'class_archived') {
+                    await window.customAlert?.('이 학급은 보관(비활성) 상태라 입장할 수 없습니다.');
+                } else {
+                    await window.customAlert?.('학급 링크로 이동하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
+                }
+                return false;
+            }
         }
 
         function updateClassDisplayLabels() {
@@ -1413,10 +1520,15 @@ function redrawPlazaGrantsUi() {
                     }
                 }
                 if (!window.classMeta.inviteCode) {
-                    window.classMeta.inviteCode = generateInviteCode();
+                    window.classMeta.inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
                     try {
                         await setDoc(classRef, { inviteCode: window.classMeta.inviteCode, updatedAt: serverTimestamp() }, { merge: true });
                     } catch (_) { /* ignore */ }
+                }
+                try {
+                    await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
+                } catch (e) {
+                    console.warn('registerInviteCode(load)', e);
                 }
             } else if (appId === SEED_CLASS_ID) {
                 const defaultMeta = buildDefaultClassMeta(appId);
@@ -1444,8 +1556,11 @@ function redrawPlazaGrantsUi() {
             localStorage.setItem('sambong_class_id', id);
             if (reload) {
                 const url = new URL(window.location.href);
+                url.searchParams.delete('c');
+                url.searchParams.delete('invite');
                 url.searchParams.set('class', id);
-                window.location.href = url.pathname + url.search + url.hash;
+                let path = url.pathname.replace(/\/c\/[A-Za-z0-9]+\/?$/i, '/');
+                window.location.href = path + '?' + url.searchParams.toString() + url.hash;
             }
         };
 
@@ -1456,13 +1571,122 @@ function redrawPlazaGrantsUi() {
             // 초대 코드(짧은 영숫자) 우선 조회
             const looksLikeInvite = !code.includes('-') || (code.length <= 8 && !/^sambong-/i.test(code));
             if (looksLikeInvite && code.length <= 10) {
-                const q = query(collection(db, 'classes'), where('inviteCode', '==', code.toUpperCase()));
+                const upper = code.toUpperCase();
+                // 1) O(1) 매핑 테이블
+                try {
+                    const mapSnap = await getDoc(doc(db, 'inviteCodes', upper));
+                    if (mapSnap.exists()) {
+                        const mapped = mapSnap.data() || {};
+                        if (mapped.isActive === false) throw new Error('class_archived');
+                        const mappedId = String(mapped.classId || '').trim();
+                        if (mappedId) {
+                            const metaSnap = await getDoc(doc(db, 'classes', mappedId));
+                            if (metaSnap.exists() && metaSnap.data()?.isActive === false) {
+                                throw new Error('class_archived');
+                            }
+                            return mappedId;
+                        }
+                    }
+                } catch (e) {
+                    if (String(e.message) === 'class_archived') throw e;
+                    console.warn('inviteCodes lookup', e);
+                }
+                // 2) 하위 호환: classes.inviteCode 쿼리 후 매핑 백필
+                const q = query(collection(db, 'classes'), where('inviteCode', '==', upper));
                 const found = await getDocs(q);
                 if (found.empty) throw new Error('invite_not_found');
-                return found.docs[0].id;
+                const classId = found.docs[0].id;
+                const data = found.docs[0].data() || {};
+                if (data.isActive === false) throw new Error('class_archived');
+                try { await registerInviteCode(upper, classId, { displayName: data.displayName }); } catch (_) { /* ignore */ }
+                return classId;
+            }
+            // 학급 ID 직접 지정
+            try {
+                const metaSnap = await getDoc(doc(db, 'classes', code));
+                if (metaSnap.exists() && metaSnap.data()?.isActive === false) {
+                    throw new Error('class_archived');
+                }
+            } catch (e) {
+                if (String(e.message) === 'class_archived') throw e;
             }
             return code;
         }
+
+        /** 이 기기에서 학급 연결만 해제(데이터 삭제 아님) → 로그인 화면으로 */
+        window.leaveCurrentClass = async function(opts = {}) {
+            const skipConfirm = !!opts.skipConfirm;
+            if (!skipConfirm) {
+                const ok = await window.customConfirm(
+                    '이 기기에서 현재 학급 연결을 해제할까요?\n\n' +
+                    '서버의 학급 데이터는 삭제되지 않습니다.\n' +
+                    '다시 들어오려면 초대 코드 링크가 필요합니다.'
+                );
+                if (!ok) return;
+            }
+            try {
+                localStorage.removeItem('sambong_class_id');
+                localStorage.removeItem('sambong_student_id');
+                localStorage.removeItem('sambong_student_pin');
+            } catch (_) { /* ignore */ }
+            const url = new URL(window.location.href);
+            url.searchParams.delete('class');
+            url.searchParams.delete('classId');
+            url.searchParams.delete('c');
+            url.searchParams.delete('invite');
+            window.location.href = url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash;
+        };
+
+        /** 마스터: 학급 보관(비활성). 데이터는 남기고 초대 입장만 차단 */
+        window.archiveCurrentClass = async function() {
+            if (!requireMasterAccess('학급 보관')) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            if (isSeedDemoClass()) {
+                return window.customAlert('데모(시드) 학급은 보관할 수 없습니다. 새 학급을 만들어 운영하세요.');
+            }
+            const name = window.classMeta?.displayName || appId;
+            const code = window.classMeta?.inviteCode || '';
+            const ok = await window.customConfirm(
+                `⚠️ 이 학급만 보관(비활성)합니다.\n\n` +
+                `학급: ${name}\n` +
+                `초대 코드: ${code || '(없음)'}\n\n` +
+                `· 학생·설정 데이터는 서버에 남습니다.\n` +
+                `· 초대 코드/?c= 링크로는 더 이상 입장할 수 없습니다.\n` +
+                `· 다른 학급에는 영향이 없습니다.\n\n` +
+                `보관할까요?`
+            );
+            if (!ok) return;
+            const typed = await window.customPrompt('계속하려면 학급 초대 코드를 입력하세요.', 'text');
+            if (String(typed || '').trim().toUpperCase() !== String(code).toUpperCase()) {
+                return window.customAlert('초대 코드가 일치하지 않아 취소되었습니다.');
+            }
+            try {
+                window.showGlobalLoading('학급 보관 중…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
+                await setDoc(doc(db, 'classes', appId), {
+                    isActive: false,
+                    archivedAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+                if (code) {
+                    await setDoc(doc(db, 'inviteCodes', String(code).toUpperCase()), {
+                        classId: appId,
+                        isActive: false,
+                        archivedAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                    }, { merge: true });
+                }
+                window.hideGlobalLoading();
+                await window.customAlert('✅ 이 학급을 보관했습니다.\n다른 기기의 학생은 초대 코드로 입장할 수 없습니다.');
+                await window.leaveCurrentClass({ skipConfirm: true });
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('보관 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
 
         window.applyLoginClassCode = async function() {
             const input = document.getElementById('loginClassCode');
@@ -1479,6 +1703,9 @@ function redrawPlazaGrantsUi() {
                 window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
                     return window.customAlert('초대 코드를 다시 확인해 주세요. 대소문자를 구분합니다.');
+                }
+                if (String(e.message) === 'class_archived') {
+                    return window.customAlert('이 학급은 보관(비활성) 상태라 입장할 수 없습니다.');
                 }
                 return window.customAlert('학급을 열 수 없습니다. 코드를 확인하거나 네트워크를 점검해 주세요.');
             } finally {
@@ -1544,7 +1771,7 @@ function redrawPlazaGrantsUi() {
         /** 공통: 새 학급 Firestore 워크스페이스 생성 */
         async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword }) {
             if (!db) throw new Error('no_db');
-            const inviteCode = generateInviteCode();
+            const inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
             let newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
             // 충돌 시 접미사 재생성
             for (let i = 0; i < 5; i++) {
@@ -1568,6 +1795,7 @@ function redrawPlazaGrantsUi() {
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
+            await registerInviteCode(inviteCode, newClassId, { displayName });
 
             // 기본 운영 설정 (현재 학급 복사 또는 최소 기본값)
             if (copySettingsFromCurrent) {
@@ -1681,11 +1909,12 @@ function redrawPlazaGrantsUi() {
                 localStorage.setItem('sambong_show_onboarding', '1');
                 localStorage.setItem('sambong_onboarding_invite', inviteCode);
                 window.hideGlobalLoading();
+                const share = getClassShareUrl(newClassId, inviteCode);
                 await window.customAlert(
                     `✅ 학급이 준비되었습니다!\n\n` +
                     `초대 코드: ${inviteCode}\n` +
-                    `학급 ID: ${newClassId}\n\n` +
-                    `다음 화면에서 초대 코드를 복사하고 시작 체크리스트를 확인하세요.`
+                    `접속 링크:\n${share}\n\n` +
+                    `학생에게 코드 또는 링크를 공유하세요.`
                 );
                 window.switchClass(newClassId);
             } catch (e) {
@@ -1806,7 +2035,7 @@ function redrawPlazaGrantsUi() {
             const schoolYear = Number(document.getElementById('classMetaSchoolYear')?.value) || window.classMeta?.schoolYear || 2026;
             const grade = Number(document.getElementById('classMetaGrade')?.value) || window.classMeta?.grade || 6;
             const homeroom = Number(document.getElementById('classMetaHomeroom')?.value) || window.classMeta?.homeroom || 1;
-            const inviteCode = window.classMeta?.inviteCode || generateInviteCode();
+            const inviteCode = window.classMeta?.inviteCode || await generateUniqueInviteCode().catch(() => generateInviteCode());
             const payload = {
                 classId: appId,
                 displayName,
@@ -1814,13 +2043,21 @@ function redrawPlazaGrantsUi() {
                 grade,
                 homeroom,
                 inviteCode,
-                gmaEditStudentId: window.classMeta?.gmaEditStudentId || '13',
+                gmaEditStudentId: window.classMeta?.gmaEditStudentId || getGmaEditStudentId() || '1',
                 isActive: true,
                 roster,
                 staff: window.classMeta?.staff || DEFAULT_CLASS_STAFF,
                 updatedAt: serverTimestamp(),
             };
             await setDoc(doc(db, 'classes', appId), payload, { merge: true });
+            try {
+                await registerInviteCode(inviteCode, appId, { displayName });
+            } catch (e) {
+                if (String(e.message) === 'invite_code_taken') {
+                    return window.customAlert('초대 코드 충돌이 감지되었습니다. 페이지를 새로고침한 뒤 다시 저장해 주세요.');
+                }
+                console.warn('registerInviteCode(save)', e);
+            }
             window.classMeta = { ...window.classMeta, ...payload, roster, staff: payload.staff };
             syncNameGenderMaps();
             populateLoginSelect();
@@ -1938,6 +2175,7 @@ function redrawPlazaGrantsUi() {
                 <div class="border-t border-slate-700 mt-1 pt-2 space-y-1.5">
                     <input id="navSwitchClassCode" type="text" placeholder="초대 코드 또는 학급 ID" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1.5 text-[10px] text-white font-bold" onclick="event.stopPropagation()">
                     <button type="button" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 rounded-lg" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 이동</button>
+                    <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-amber-200 font-bold" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
                     <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sky-300 font-bold" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
                 </div>`;
             menu.classList.remove('hidden');
@@ -1960,6 +2198,9 @@ function redrawPlazaGrantsUi() {
                 window.hideGlobalLoading();
                 if (String(e.message) === 'invite_not_found') {
                     return window.customAlert('초대 코드를 다시 확인해 주세요. 대소문자를 구분합니다.');
+                }
+                if (String(e.message) === 'class_archived') {
+                    return window.customAlert('이 학급은 보관(비활성) 상태라 입장할 수 없습니다.');
                 }
                 return window.customAlert('학급을 열 수 없습니다: ' + (e && e.message ? e.message : String(e)));
             }
@@ -3100,8 +3341,8 @@ function redrawPlazaGrantsUi() {
                 localStorage.setItem(alertKey, '1');
                 const subject = String(today[period.id] || '').trim();
                 const subjectLine = subject ? `과목: ${subject}` : '과목: (시간표 미입력)';
-                // 석서영 생일(7/10) 6교시: 수업시작 버튼 → 생일 축하 파티
-                if (period.id === 6 && isSeokBirthdayPartyDay(now)) {
+                // 석서영 생일(7/10) 6교시: 수업시작 버튼 → 생일 축하 파티 (시드 학급 전용)
+                if (period.id === 6 && isSeedDemoClass() && isSeokBirthdayPartyDay(now)) {
                     void showSeokBirthdayClassStartAlert({ period, subjectLine });
                     continue;
                 }
@@ -3125,6 +3366,7 @@ function redrawPlazaGrantsUi() {
         };
 
         function isSeokBirthdayPartyDay(now = new Date()) {
+            if (!isSeedDemoClass()) return false;
             return now.getMonth() + 1 === SEOK_BIRTHDAY.month && now.getDate() === SEOK_BIRTHDAY.day;
         }
 
@@ -9226,6 +9468,8 @@ ${subjectLine}
                 if (auth.currentUser) {
                     await auth.currentUser.getIdToken();
                 }
+                // ?c=초대코드 / /c/CODE → 해당 학급으로 이동 (페이지 리로드 시 true)
+                if (await applyInviteCodeFromUrlIfNeeded()) return;
                 await loadClassMeta();
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
@@ -10458,11 +10702,13 @@ ${subjectLine}
             const code = document.getElementById('onboardingInviteCode')?.textContent?.trim()
                 || window.classMeta?.inviteCode || '';
             if (!code || code === '—') return window.customAlert('초대 코드가 없습니다.');
+            const link = getClassShareUrl(appId, code);
+            const text = `${code}\n${link}`;
             try {
-                await navigator.clipboard.writeText(code);
-                window.showToast('복사되었습니다!');
+                await navigator.clipboard.writeText(text);
+                window.showToast('초대 코드와 접속 링크를 복사했습니다!');
             } catch (_) {
-                await window.customAlert(`초대 코드: ${code}`);
+                await window.customAlert(`초대 코드: ${code}\n링크: ${link}`);
             }
         };
 
@@ -12097,8 +12343,9 @@ ${subjectLine}
         // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
 
-        /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구하고, 구매 기록에 남깁니다. (다른 자리를 이미 사도 복구 가능) */
+        /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구 — 시드(데모) 학급 전용 */
         window.ensureEstateSeokRestore = async function() {
+            if (!isSeedDemoClass()) return;
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
             const idx = ESTATE_RESTORE_SEOK_SEAT_INDEX;
             const seat = window.estateState.seats[idx];
@@ -12115,8 +12362,9 @@ ${subjectLine}
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
 
-        /** 빈 자리일 때 황훈태(12번) 학생의 2번 자리 소유를 복구합니다. 하단 구매 기록에는 복구 문구를 남기지 않습니다. */
+        /** 빈 자리일 때 황훈태(12번) 학생의 2번 자리 소유를 복구 — 시드(데모) 학급 전용 */
         window.ensureEstateHwangRestore = async function() {
+            if (!isSeedDemoClass()) return;
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
             const idx = ESTATE_RESTORE_HHWANG_SEAT_INDEX;
             const seat = window.estateState.seats[idx];
@@ -14460,10 +14708,13 @@ ${subjectLine}
 
         window.hardResetAll = async function() {
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
+            const classLabel = window.classMeta?.displayName || appId;
             const ok0 = await window.customConfirm(
-                '⚠️ [매우 위험]\n\n' +
-                '정말 모든 학생 데이터를 삭제하시겠습니까?\n\n' +
-                '모든 학생의 XP·봉·아이템·상태가 초기화됩니다.\n' +
+                '⚠️ [매우 위험] — 현재 학급만 초기화\n\n' +
+                `대상 학급: ${classLabel}\n` +
+                `(학급 ID: ${appId})\n\n` +
+                '이 학급 학생의 XP·봉·아이템·상태가 초기화됩니다.\n' +
+                '다른 선생님의 학급에는 영향이 없습니다.\n' +
                 '이 작업은 되돌리기 어렵습니다.\n\n' +
                 '계속할까요? (다음 단계에서 확인 문구 입력)'
             );
@@ -14472,11 +14723,11 @@ ${subjectLine}
             if (ok1 !== '초기화확인') {
                 return window.customAlert('입력이 일치하지 않아 취소되었습니다.');
             }
-            const ok2 = await window.customConfirm('최종 확인: 정말로 전체 초기화를 실행할까요?\n이 작업은 즉시 서버에 반영됩니다.');
+            const ok2 = await window.customConfirm(`최종 확인: 「${classLabel}」 학급만 초기화할까요?\n이 작업은 즉시 서버에 반영됩니다.`);
             if (!ok2) return;
             
             try {
-                window.showGlobalLoading('전체 초기화 실행 중…');
+                window.showGlobalLoading('이 학급 초기화 실행 중…');
                 await runWithNetworkRetry(async () => {
                     const batch = writeBatch(db);
                     getActiveStudentIds().forEach((sid) => {
@@ -14493,8 +14744,8 @@ ${subjectLine}
                     });
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
                     await batch.commit();
-                }, '전체 초기화');
-                await window.customAlert("✅ 서버 대규모 초기화가 완료되었습니다!\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.");
+                }, '학급 초기화');
+                await window.customAlert(`✅ 「${classLabel}」 학급 초기화가 완료되었습니다.\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.`);
             } catch(e) {
                 window.customAlert("초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
             } finally {

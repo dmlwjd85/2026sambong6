@@ -55,6 +55,22 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // 초대 코드 → classId O(1) 매핑 (학급별 공유 링크 ?c=CODE)
+    match /inviteCodes/{code} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['classId'])
+        && request.resource.data.classId is string
+        && request.resource.data.classId.size() > 0;
+      allow update: if signedIn()
+        && request.resource.data.classId is string
+        && (
+          !('classId' in resource.data)
+          || request.resource.data.classId == resource.data.classId
+        );
+      allow delete: if false;
+    }
+
     // --- ncgame ---
     match /loginByName/{name} {
       allow read: if true;

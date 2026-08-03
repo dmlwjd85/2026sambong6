@@ -16746,11 +16746,10 @@ ${subjectLine}
 
         window.joinRaid = async function() {
             if(window.playerState.isGuest) return;
-            if (!isLocalWeekend()) return window.customAlert('주말(토·일)에만 레이드에 참여할 수 있어요!');
             const st = window.currentRaidState;
             if(!st) return;
             const canJoin = (st.status === 'recruiting') || (st.status === 'playing' && (st.participants || []).length < 5);
-            if(!canJoin) return window.customAlert('현재 참여할 수 있는 레이드가 없습니다.');
+            if(!canJoin) return window.customAlert('현재 참여할 수 있는 레이드가 없습니다.\n마스터가 레이드를 시작하면 참가할 수 있어요.');
             if((st.participants || []).some(p => p.id === window.playerState.id)) return window.customAlert('이미 참여했습니다.');
             if((st.participants || []).length >= 5) return window.customAlert('최대 인원(5명)이 꽉 찼습니다!');
             
@@ -16833,7 +16832,6 @@ ${subjectLine}
 
         window.spectateRaid = function() {
             if(window.playerState.isGuest) return;
-            if (!isLocalWeekend()) return window.customAlert('주말(토·일)에만 관전할 수 있어요!');
             const st = window.currentRaidState;
             if(!st || st.status !== 'playing') return window.customAlert('전투 중일 때만 관전할 수 있어요.');
             if(raidIsMyParticipant(st)) return window.customAlert('이미 참여자입니다.');
@@ -16970,44 +16968,38 @@ ${subjectLine}
                 return;
             }
 
-            const weekendOk = isLocalWeekend();
-
             if(st.status === 'recruiting') {
-                if (!weekendOk) {
-                    btn.disabled = true;
-                    btn.innerText = "주말에만 참여";
-                    btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
-                    cntDiv.classList.remove('hidden');
-                    rCount.innerText = (st.participants && st.participants.length) ? st.participants.length : 0;
-                    statusTxt.innerText = "📅 주말(토·일)에만 참여 가능 (모집 준비 중)";
-                    statusTxt.className = "text-[10px] text-amber-300 font-bold";
-                } else {
-                    btn.disabled = false;
-                    btn.innerText = "레이드 참가하기";
-                    btn.className = "w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-[0_0_15px_rgba(147,51,234,0.5)] transition transform hover:scale-105 text-xs";
-                    cntDiv.classList.remove('hidden');
-                    rCount.innerText = st.participants.length;
-                    statusTxt.innerText = "🔥 용사 모집 중!";
+                btn.disabled = false;
+                btn.innerText = "레이드 참가하기";
+                btn.className = "w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-[0_0_15px_rgba(147,51,234,0.5)] transition transform hover:scale-105 text-xs";
+                if (cntDiv) cntDiv.classList.remove('hidden');
+                if (rCount) rCount.innerText = (st.participants && st.participants.length) ? st.participants.length : 0;
+                if (statusTxt) {
+                    statusTxt.innerText = "🔥 용사 모집 중! (마스터가 연 레이드)";
                     statusTxt.className = "text-[10px] text-emerald-400 font-bold animate-pulse";
                 }
             } else if (st.status === 'playing') {
                 btn.disabled = true;
                 btn.innerText = "전투 진행 중";
                 btn.className = "w-full bg-slate-800 text-red-400 font-bold py-2.5 px-4 rounded-xl border border-red-500/50 text-xs";
-                cntDiv.classList.add('hidden');
-                statusTxt.innerText = "⚔️ 전투 중!";
-                statusTxt.className = "text-[10px] text-red-400 font-bold animate-pulse";
+                if (cntDiv) cntDiv.classList.add('hidden');
+                if (statusTxt) {
+                    statusTxt.innerText = "⚔️ 전투 중!";
+                    statusTxt.className = "text-[10px] text-red-400 font-bold animate-pulse";
+                }
             } else {
                 btn.disabled = true;
                 btn.innerText = "모집 대기중";
                 btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
-                cntDiv.classList.add('hidden');
-                statusTxt.innerText = "휴식 중";
-                statusTxt.className = "text-[10px] text-slate-500 font-bold";
+                if (cntDiv) cntDiv.classList.add('hidden');
+                if (statusTxt) {
+                    statusTxt.innerText = "휴식 중 · 마스터가 레이드를 시작하면 참가할 수 있어요";
+                    statusTxt.className = "text-[10px] text-slate-500 font-bold";
+                }
             }
 
-            // 관전 UI 제어 + 레이드 타이머 구동 (주말 협동 레이드: 관전도 주말에만)
-            const canSpectate = weekendOk && st.status === 'playing' && window.playerState && !window.playerState.isGuest && !raidIsMyParticipant(st);
+            // 관전 UI 제어 + 레이드 타이머 구동 (마스터가 연 전투면 평일·주말 모두)
+            const canSpectate = st.status === 'playing' && window.playerState && !window.playerState.isGuest && !raidIsMyParticipant(st);
             if(spectateBtn) {
                 if(canSpectate) {
                     spectateBtn.classList.remove('hidden');
@@ -17018,7 +17010,7 @@ ${subjectLine}
                 }
             }
 
-            // 레이드가 시작되면 자동 관전 모드 (비참여자, 주말만)
+            // 레이드가 시작되면 자동 관전 모드 (비참여자)
             const modal = document.getElementById('raidBattleModal');
             if(canSpectate && modal && modal.classList.contains('hidden')) {
                 window._raidSpectateActive = true;

@@ -921,8 +921,9 @@
                 <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-3 rounded-2xl border border-purple-500 shadow-lg md:col-span-2">
                     <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
                         <div class="flex-1">
-                            <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 주말 협동 레이드</h3>
+                            <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 협동 레이드</h3>
                             <div class="text-[10px] text-yellow-500 font-bold" id="raidTimeStatusText">상태 확인 중...</div>
+                            <p class="text-[9px] text-slate-400 mt-0.5">마스터가 레이드를 열면 평일·주말 모두 참가할 수 있어요.</p>
                         </div>
                         <div class="w-full sm:w-auto text-center shrink-0">
                             <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed" disabled>모집 대기중</button>
@@ -1166,7 +1167,8 @@
 
                 <!-- 레이드 출제 패널 -->
                 <div id="raidAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-purple-500 bg-slate-900/80">
-                    <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                    <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 협동 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                    <p class="text-[9px] text-slate-400 mb-3">평일·주말 모두 「레이드 시작」으로 모집할 수 있습니다. 학생이 5명 모이면 전투가 시작됩니다.</p>
                     <div class="grid grid-cols-2 gap-2 mb-3">
                         <label class="text-[10px] text-slate-300">최대 보상 XP
                             <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
@@ -1902,10 +1904,10 @@
                     <label class="text-[10px] text-slate-300 font-bold">은행 이자율 (%)
                         <input id="wsBankInterest" type="number" min="0" max="100" step="0.1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
-                    <label class="text-[10px] text-slate-300 font-bold">주말 레이드 보상 XP
+                    <label class="text-[10px] text-slate-300 font-bold">협동 레이드 보상 XP
                         <input id="wsRaidRewardXp" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
-                    <label class="text-[10px] text-slate-300 font-bold">주말 레이드 보상 B
+                    <label class="text-[10px] text-slate-300 font-bold">협동 레이드 보상 B
                         <input id="wsRaidRewardBong" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
                     <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">광장 공지

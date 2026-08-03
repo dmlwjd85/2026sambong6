@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy:firestore": "firebase deploy --only firestore:rules"
+    "deploy:firestore": "firebase deploy --only firestore:rules",
+    "test:invite": "node src/lib/inviteResolve.test.mjs"
   },
   "dependencies": {
     "firebase": "^11.6.1",

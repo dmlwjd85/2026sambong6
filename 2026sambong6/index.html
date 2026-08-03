@@ -798,99 +798,8 @@
             </div>
         </section>
 
-        <!-- ★ 3. 광장 탭 (모바일 3열 최적화) ★ -->
+        <!-- ★ 3. 광장 탭 — 학생 카드 우선, 선생님 도구는 하단 ★ -->
         <section id="plazaSection">
-            <!-- 선생님 허브: 초대 코드·공유 링크 (다교실 운영용) -->
-            <!-- 선생님 온보딩 안내 -->
-            <div id="teacherOnboardingBanner" class="hidden mb-4 glass-panel p-4 rounded-2xl border-2 border-emerald-400/60 bg-emerald-950/50 space-y-3">
-                <div class="flex flex-wrap items-start justify-between gap-2">
-                    <h3 class="text-emerald-200 font-black text-sm"><i class="fa-solid fa-rocket"></i> 새 학급 시작 안내</h3>
-                    <button type="button" onclick="window.dismissTeacherOnboarding()" class="text-[10px] text-slate-400 underline min-h-[44px] px-2">닫기</button>
-                </div>
-                <div class="rounded-xl bg-slate-950/70 border border-emerald-500/40 p-4 text-center space-y-2">
-                    <p class="text-sm font-black text-white">학생에게 이 초대 코드를 알려주세요</p>
-                    <p id="onboardingInviteCode" class="text-3xl font-black text-emerald-300 tracking-widest">—</p>
-                    <button type="button" onclick="void window.copyOnboardingInvite()" class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 px-4 rounded-xl text-sm shadow-lg">
-                        <i class="fa-solid fa-copy"></i> 초대 코드 복사
-                    </button>
-                </div>
-                <div>
-                    <p class="text-[10px] text-emerald-200 font-bold mb-2">다음에 할 일</p>
-                    <ul class="text-[11px] text-slate-300 space-y-2 list-none">
-                        <li class="flex flex-wrap items-center gap-2">☐ 학생 명단 입력하기
-                            <button type="button" class="min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="window.switchTab('admin'); document.getElementById('classAdminSection')?.scrollIntoView({behavior:'smooth'})">명단 입력하기</button>
-                        </li>
-                        <li class="flex flex-wrap items-center gap-2">☐ 기본 템플릿 적용하기 (퀘스트·직업·상점)
-                            <button type="button" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="void window.applyDefaultClassTemplates()">기본 템플릿 적용</button>
-                        </li>
-                        <li class="flex flex-wrap items-center gap-2">☐ 활동 통계 확인하기
-                            <button type="button" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="window.switchTab('admin'); window.renderResearchStatsDashboard()">통계 보기</button>
-                        </li>
-                    </ul>
-                </div>
-                <button type="button" onclick="window.dismissTeacherOnboarding(); window.switchTab('admin');" class="w-full min-h-[48px] bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 text-white font-black py-3 rounded-xl text-sm shadow-lg">
-                    마스터 화면으로 시작하기
-                </button>
-            </div>
-
-            <div id="teacherClassHub" class="hidden mb-4 glass-panel p-3 sm:p-4 rounded-2xl border border-emerald-500/50 bg-slate-900/80">
-                <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
-                    <div>
-                        <h3 class="text-emerald-300 font-bold text-sm"><i class="fa-solid fa-chalkboard-user"></i> 우리 학급 허브</h3>
-                        <p class="text-[9px] text-slate-400 mt-0.5">학생에게 초대 코드를 알려 주세요. 학급마다 데이터가 분리됩니다.</p>
-                    </div>
-                    <button type="button" onclick="window.switchTab('admin')" class="text-[10px] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded-lg">명단·설정</button>
-                </div>
-                <div class="grid sm:grid-cols-2 gap-2 text-[10px]">
-                    <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2.5">
-                        <div class="text-slate-500 mb-1">학급</div>
-                        <div id="teacherHubClassName" class="text-white font-bold truncate">—</div>
-                        <div id="teacherHubClassId" class="text-slate-500 text-[8px] mt-0.5 truncate">—</div>
-                    </div>
-                    <div class="rounded-xl bg-slate-950/70 border border-emerald-700/40 p-2.5">
-                        <div class="text-slate-500 mb-1">초대 코드</div>
-                        <div class="flex items-center gap-2">
-                            <span id="teacherHubInviteCode" class="text-emerald-300 font-black text-lg tracking-widest">—</span>
-                            <button type="button" onclick="window.copyTeacherInviteCode()" class="text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded font-bold border border-slate-600">복사</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <button type="button" onclick="window.copyTeacherClassLink()" class="text-[10px] bg-sky-800 hover:bg-sky-700 text-white font-bold py-1.5 px-3 rounded-lg">접속 링크 복사 (?c=초대코드)</button>
-                    <button type="button" onclick="window.openClassSwitchPanel()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1.5 px-3 rounded-lg border border-slate-600">다른 학급으로 전환</button>
-                    <button type="button" onclick="void window.leaveCurrentClass()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-200 font-bold py-1.5 px-3 rounded-lg border border-amber-700/50">이 기기에서 학급 나가기</button>
-                    <button type="button" onclick="void window.archiveCurrentClass()" class="text-[10px] bg-red-950/60 hover:bg-red-900 text-red-200 font-bold py-1.5 px-3 rounded-lg border border-red-800/60">학급 보관(비활성)</button>
-                </div>
-                <p class="mt-2 text-[9px] text-slate-500 leading-relaxed">학생 공유용 주소 예: <span class="text-sky-300/90">…/2026sambong6/?c=ABC123</span> — 학급마다 다른 링크로 보이며, 데이터는 학급별로 분리됩니다.</p>
-            </div>
-
-            <!-- 마스터 전용 광장 일괄 컨트롤 (코드 유지) -->
-            <div id="plazaGMControls" class="hidden mb-4 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sb-gold font-bold text-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> 반 전체 일괄 컨트롤</h3>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div class="flex flex-col gap-1.5">
-                        <span class="text-emerald-400 text-[10px] font-bold px-1">경험치 (XP)</span>
-                        <div class="flex gap-1">
-                            <button onclick="window.bulkAdd('xp', 5)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 X</button>
-                            <button onclick="window.bulkDeduct('xp', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 X</button>
-                            <button onclick="window.bulkAdd('xp', 1)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 X</button>
-                            <button onclick="window.bulkDeduct('xp', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 X</button>
-                        </div>
-                    </div>
-                    <div class="flex flex-col gap-1.5">
-                        <span class="text-yellow-400 text-[10px] font-bold px-1">자산 (B)</span>
-                        <div class="flex gap-1">
-                            <button onclick="window.bulkAdd('bong', 5)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 B</button>
-                            <button onclick="window.bulkDeduct('bong', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 B</button>
-                            <button onclick="window.bulkAdd('bong', 1)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 B</button>
-                            <button onclick="window.bulkDeduct('bong', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 B</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div class="mb-4 flex justify-between items-end">
                 <div>
                     <h2 class="text-xl sm:text-2xl font-display text-emerald-400"><i class="fa-solid fa-users"></i> 우리반 광장</h2>
@@ -908,6 +817,100 @@
             <div id="hallOfFameSection" class="hidden mt-12 relative text-center">
                 <h2 class="text-2xl sm:text-3xl font-display text-yellow-500 mb-4"><i class="fa-solid fa-trophy"></i> 명예의 전당</h2>
                 <div id="hofContainer" class="flex flex-wrap gap-4 justify-center px-2"></div>
+            </div>
+
+            <!-- 아래부터 마스터·학급 운영 도구 (스크롤 하단) -->
+            <div class="mt-10 space-y-4 border-t border-slate-700/60 pt-6">
+                <!-- 마스터 전용 광장 일괄 컨트롤 -->
+                <div id="plazaGMControls" class="hidden bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sb-gold font-bold text-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> 반 전체 일괄 컨트롤</h3>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="flex flex-col gap-1.5">
+                            <span class="text-emerald-400 text-[10px] font-bold px-1">경험치 (XP)</span>
+                            <div class="flex gap-1">
+                                <button onclick="window.bulkAdd('xp', 5)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 X</button>
+                                <button onclick="window.bulkDeduct('xp', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 X</button>
+                                <button onclick="window.bulkAdd('xp', 1)" class="flex-1 bg-slate-700 hover:bg-emerald-600/50 text-emerald-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 X</button>
+                                <button onclick="window.bulkDeduct('xp', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 X</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <span class="text-yellow-400 text-[10px] font-bold px-1">자산 (B)</span>
+                            <div class="flex gap-1">
+                                <button onclick="window.bulkAdd('bong', 5)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+5 B</button>
+                                <button onclick="window.bulkDeduct('bong', 5)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-5 B</button>
+                                <button onclick="window.bulkAdd('bong', 1)" class="flex-1 bg-slate-700 hover:bg-yellow-600/50 text-yellow-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">+1 B</button>
+                                <button onclick="window.bulkDeduct('bong', 1)" class="flex-1 bg-slate-700 hover:bg-red-600/50 text-red-400 hover:text-white border border-slate-600 text-xs py-2 rounded-lg font-bold transition">-1 B</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 선생님 온보딩 안내 -->
+                <div id="teacherOnboardingBanner" class="hidden glass-panel p-4 rounded-2xl border-2 border-emerald-400/60 bg-emerald-950/50 space-y-3">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <h3 class="text-emerald-200 font-black text-sm"><i class="fa-solid fa-rocket"></i> 새 학급 시작 안내</h3>
+                        <button type="button" onclick="window.dismissTeacherOnboarding()" class="text-[10px] text-slate-400 underline min-h-[44px] px-2">닫기</button>
+                    </div>
+                    <div class="rounded-xl bg-slate-950/70 border border-emerald-500/40 p-4 text-center space-y-2">
+                        <p class="text-sm font-black text-white">학생에게 이 초대 코드를 알려주세요</p>
+                        <p id="onboardingInviteCode" class="text-3xl font-black text-emerald-300 tracking-widest">—</p>
+                        <button type="button" onclick="void window.copyOnboardingInvite()" class="w-full min-h-[48px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3 px-4 rounded-xl text-sm shadow-lg">
+                            <i class="fa-solid fa-copy"></i> 초대 코드 복사
+                        </button>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-emerald-200 font-bold mb-2">다음에 할 일</p>
+                        <ul class="text-[11px] text-slate-300 space-y-2 list-none">
+                            <li class="flex flex-wrap items-center gap-2">☐ 학생 명단 입력하기
+                                <button type="button" class="min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="window.switchTab('admin'); document.getElementById('classAdminSection')?.scrollIntoView({behavior:'smooth'})">명단 입력하기</button>
+                            </li>
+                            <li class="flex flex-wrap items-center gap-2">☐ 기본 템플릿 적용하기 (퀘스트·직업·상점)
+                                <button type="button" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="void window.applyDefaultClassTemplates()">기본 템플릿 적용</button>
+                            </li>
+                            <li class="flex flex-wrap items-center gap-2">☐ 활동 통계 확인하기
+                                <button type="button" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-2 rounded-lg text-[10px]" onclick="window.switchTab('admin'); window.renderResearchStatsDashboard()">통계 보기</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <button type="button" onclick="window.dismissTeacherOnboarding(); window.switchTab('admin');" class="w-full min-h-[48px] bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 text-white font-black py-3 rounded-xl text-sm shadow-lg">
+                        마스터 화면으로 시작하기
+                    </button>
+                </div>
+
+                <!-- 선생님 허브: 초대 코드·공유 링크 -->
+                <div id="teacherClassHub" class="hidden glass-panel p-3 sm:p-4 rounded-2xl border border-emerald-500/50 bg-slate-900/80">
+                    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+                        <div>
+                            <h3 class="text-emerald-300 font-bold text-sm"><i class="fa-solid fa-chalkboard-user"></i> 우리 학급 허브</h3>
+                            <p class="text-[9px] text-slate-400 mt-0.5">학생에게 초대 코드를 알려 주세요. 학급마다 데이터가 분리됩니다.</p>
+                        </div>
+                        <button type="button" onclick="window.switchTab('admin')" class="text-[10px] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded-lg">명단·설정</button>
+                    </div>
+                    <div class="grid sm:grid-cols-2 gap-2 text-[10px]">
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2.5">
+                            <div class="text-slate-500 mb-1">학급</div>
+                            <div id="teacherHubClassName" class="text-white font-bold truncate">—</div>
+                            <div id="teacherHubClassId" class="text-slate-500 text-[8px] mt-0.5 truncate">—</div>
+                        </div>
+                        <div class="rounded-xl bg-slate-950/70 border border-emerald-700/40 p-2.5">
+                            <div class="text-slate-500 mb-1">초대 코드</div>
+                            <div class="flex items-center gap-2">
+                                <span id="teacherHubInviteCode" class="text-emerald-300 font-black text-lg tracking-widest">—</span>
+                                <button type="button" onclick="window.copyTeacherInviteCode()" class="text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded font-bold border border-slate-600">복사</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button type="button" onclick="window.copyTeacherClassLink()" class="text-[10px] bg-sky-800 hover:bg-sky-700 text-white font-bold py-1.5 px-3 rounded-lg">접속 링크 복사 (?c=초대코드)</button>
+                        <button type="button" onclick="window.openClassSwitchPanel()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1.5 px-3 rounded-lg border border-slate-600">다른 학급으로 전환</button>
+                        <button type="button" onclick="void window.leaveCurrentClass()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-200 font-bold py-1.5 px-3 rounded-lg border border-amber-700/50">이 기기에서 학급 나가기</button>
+                        <button type="button" onclick="void window.archiveCurrentClass()" class="text-[10px] bg-red-950/60 hover:bg-red-900 text-red-200 font-bold py-1.5 px-3 rounded-lg border border-red-800/60">학급 보관(비활성)</button>
+                    </div>
+                    <p class="mt-2 text-[9px] text-slate-500 leading-relaxed">학생 공유용 주소 예: <span class="text-sky-300/90">…/2026sambong6/?c=ABC123</span> — 학급마다 다른 링크로 보이며, 데이터는 학급별로 분리됩니다.</p>
+                </div>
             </div>
         </section>
 

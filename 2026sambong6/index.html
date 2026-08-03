@@ -403,25 +403,6 @@
         </div>
     </div>
 
-    <!-- ★ 식단표 모달 (로딩 오버레이 z-390보다 위) ★ -->
-    <div id="lunchMenuModal" class="hidden fixed inset-0 z-[430] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
-        <div class="glass-panel p-5 rounded-3xl max-w-3xl w-full max-h-[85vh] flex flex-col relative border-t-4 border-t-emerald-500 shadow-2xl overflow-hidden">
-            <button onclick="window.closeLunchMenu()" class="absolute top-4 right-4 text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
-            <h3 id="lunchMenuModalTitle" class="text-lg sm:text-xl font-display text-white mb-3 pr-8"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 급식표</h3>
-            <div id="lunchMenuModalBody" class="flex-1 overflow-auto rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
-                <div class="text-center text-slate-400 text-xs font-bold py-10">불러오는 중...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 식단표 이미지 전체 화면 확대(라이트박스) -->
-    <div id="lunchMenuLightbox" class="hidden fixed inset-0 z-[440] bg-black/95 flex items-center justify-center p-3" role="dialog" aria-modal="true" onclick="window.closeLunchMenuLightbox()">
-        <button type="button" onclick="event.stopPropagation(); window.closeLunchMenuLightbox();" class="absolute top-4 right-4 text-white/90 hover:text-white z-10 p-2 rounded-lg bg-black/40" aria-label="닫기"><i class="fa-solid fa-xmark text-2xl"></i></button>
-        <div class="max-w-full max-h-full flex items-center justify-center" onclick="event.stopPropagation()">
-            <img id="lunchMenuLightboxImg" src="" alt="식단표 확대 보기" class="max-w-full max-h-[92vh] object-contain select-none" />
-        </div>
-    </div>
-
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
     <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-16 px-3 sm:px-4 2xl:px-6 max-w-[1600px] mx-auto w-full min-h-screen">
 
@@ -1117,10 +1098,10 @@
             </div>
         </section>
 
-        <!-- ★ 5. 밥줄(점심) 탭 (레이아웃 개선) ★ -->
+        <!-- ★ 5. 밥줄(점심) 탭 ★ -->
         <section id="lunchSection" class="hidden">
-            <div class="max-w-6xl mx-auto space-y-3 lg:grid lg:grid-cols-[0.8fr_1.2fr_0.9fr] lg:items-start lg:gap-3 lg:space-y-0">
-                <div class="mb-1 lg:col-span-3">
+            <div class="max-w-6xl mx-auto space-y-3 lg:grid lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-3 lg:space-y-0">
+                <div class="mb-1 lg:col-span-2">
                     <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
                     <p class="text-[9px] sm:text-[10px] text-slate-300 mt-0.5">평일 낮 12시 이후 점심값(10B)이 자동 차감됩니다. 투자액이 많을수록 먼저 먹고, 동점이면 레벨(XP)이 높은 사람이 이깁니다.</p>
                     <p id="lunchInvestLockHint" class="hidden text-[9px] text-red-400 font-bold mt-1">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
@@ -1139,52 +1120,6 @@
                     <h3 class="font-bold text-xs sm:text-sm text-white mb-2"><i class="fa-solid fa-ranking-star text-orange-400"></i> 오늘의 급식 순위 <span class="text-[9px] text-slate-400 font-normal">(12시 10분 공개)</span></h3>
                     <div id="lunchQueueContainer" class="space-y-1.5">
                         <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
-                    </div>
-                </div>
-
-                <!-- 급식표(마스터 첨부) — 한글/PDF/이미지 업로드 후 팝업 보기 -->
-                <div class="glass-panel p-3 sm:p-4 rounded-2xl shadow-xl border-t-4 border-t-emerald-500 bg-slate-900/60">
-                    <div class="flex items-center justify-between gap-3 mb-2">
-                        <h3 class="font-bold text-xs sm:text-sm text-white"><i class="fa-solid fa-clipboard-list text-emerald-400"></i> 급식표</h3>
-                        <span id="lunchMenuUpdatedText" class="text-[9px] text-slate-400 font-bold"></span>
-                    </div>
-                    <!-- 썸네일: 이미지는 미리보기, PDF/한글은 아이콘(클릭 시 모달) -->
-                    <div id="lunchMenuThumbWrap" class="hidden mb-2 rounded-xl overflow-hidden border border-emerald-600/50 shadow-lg">
-                        <button type="button" id="lunchMenuThumbBtn" onclick="window.openLunchMenu()" class="relative w-full block group text-left focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[44px]">
-                            <img id="lunchMenuThumbImg" src="" alt="급식표 미리보기" class="hidden w-full h-24 sm:h-28 object-cover bg-slate-800" loading="lazy" decoding="async" />
-                            <div id="lunchMenuThumbPdf" class="hidden flex flex-col items-center justify-center gap-1 h-20 sm:h-24 bg-gradient-to-br from-slate-800 to-slate-900">
-                                <i class="fa-solid fa-file-pdf text-3xl text-red-400"></i>
-                                <span class="text-[11px] font-bold text-slate-300">PDF 급식표</span>
-                            </div>
-                            <div class="absolute bottom-0 inset-x-0 bg-black/55 text-white text-[10px] sm:text-xs font-bold py-1.5 text-center">탭하여 팝업으로 보기</div>
-                        </button>
-                    </div>
-                    <div id="lunchMenuStudentRow" class="flex gap-2">
-                        <button id="btnOpenLunchMenu" onclick="window.openLunchMenu()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg transition text-xs min-h-[44px] hidden">
-                            급식표 보기
-                        </button>
-                        <div id="lunchMenuEmptyText" class="flex-1 text-center text-[10px] text-slate-400 font-bold bg-slate-800/60 border border-slate-700 rounded-xl py-3 hidden">
-                            아직 첨부된 급식표가 없어요.
-                        </div>
-                    </div>
-
-                    <div id="lunchMenuAdminPanel" class="hidden mt-3 pt-3 border-t border-slate-700/60 space-y-2">
-                        <div class="text-[10px] text-slate-300 font-bold leading-relaxed">마스터 전용: 이미지·PDF·한글을 올리면 학생들이 팝업으로 봅니다. 큰 파일은 자동 압축하거나, 아래 링크로도 등록할 수 있습니다. 한글은 다운로드·새 탭으로 엽니다.</div>
-                        <input type="text" id="lunchMenuTitleInput" placeholder="급식표 제목 (예: 3월 4주 급식표)" class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold min-h-[44px]">
-                        <label class="block text-[10px] text-slate-400 font-bold">파일 선택</label>
-                        <input type="file" id="lunchMenuFileInput" accept="application/pdf,image/*,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.hwp,.hwpx,.hml,application/x-hwp,application/haansofthwp,application/haansofthwpx" class="w-full text-[11px] text-slate-200 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-800 file:text-white file:font-bold file:text-xs min-h-[44px]" onchange="void window.onLunchMenuFileSelected(this)">
-                        <button type="button" id="lunchMenuUploadBtn" onclick="window.pickLunchMenuFile()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2.5 rounded-xl text-xs min-h-[48px] disabled:opacity-40 disabled:pointer-events-none">
-                            <i class="fa-solid fa-upload"></i> 선택한 파일 업로드
-                        </button>
-                        <div class="flex gap-2">
-                            <input type="url" id="lunchMenuUrlInput" placeholder="또는 급식표 링크(URL) 붙여넣기" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs font-bold min-h-[44px]">
-                            <button type="button" onclick="void window.saveLunchMenuFromUrl()" class="shrink-0 bg-teal-700 hover:bg-teal-600 text-white font-bold py-2 px-3 rounded-xl text-xs min-h-[44px]">링크 저장</button>
-                        </div>
-                        <p id="lunchMenuUploadStatus" class="text-[10px] text-amber-300 font-bold min-h-[1.1rem]" aria-live="polite"></p>
-                        <div class="flex gap-2">
-                            <button onclick="void window.saveLunchMenu()" class="flex-1 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 rounded text-xs min-h-[44px]">제목 저장</button>
-                            <button onclick="void window.clearLunchMenu()" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-2 px-3 rounded text-xs border border-red-900 min-h-[44px]">삭제</button>
-                        </div>
                     </div>
                 </div>
             </div>

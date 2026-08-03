@@ -27,6 +27,7 @@ import {
     downloadAdminStudentCsv as exportStudentCsvFile,
 } from './lib/adminDataExport.js';
 import { withRetry, isLikelyNetworkError } from './lib/withRetry.js';
+import { resolveInviteCodeToClassId } from './lib/inviteResolve.js';
 import {
     computeResearchStats,
     researchStatsToCsv,
@@ -1416,6 +1417,8 @@ function redrawPlazaGrantsUi() {
                     await window.customAlert?.('초대 코드 링크를 확인할 수 없습니다.\n코드가 올바른지 선생님께 물어봐 주세요.');
                 } else if (msg === 'class_archived') {
                     await window.customAlert?.('이 학급은 보관(비활성) 상태라 입장할 수 없습니다.');
+                } else if (msg === 'invite_conflict') {
+                    await window.customAlert?.('이 초대 코드가 여러 학급에 중복되어 있습니다.\n선생님께 새 초대 코드를 요청해 주세요.');
                 } else {
                     await window.customAlert?.('학급 링크로 이동하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
                 }
@@ -1572,34 +1575,45 @@ function redrawPlazaGrantsUi() {
             const looksLikeInvite = !code.includes('-') || (code.length <= 8 && !/^sambong-/i.test(code));
             if (looksLikeInvite && code.length <= 10) {
                 const upper = code.toUpperCase();
-                // 1) O(1) 매핑 테이블
+
+                // 1) classes.inviteCode 조회(권위) — 공개 매핑 테이블보다 먼저
+                let classHits = [];
+                try {
+                    const q = query(collection(db, 'classes'), where('inviteCode', '==', upper));
+                    const found = await getDocs(q);
+                    classHits = found.docs.map((d) => ({ id: d.id, ...(d.data() || {}) }));
+                } catch (e) {
+                    console.warn('classes inviteCode query', e);
+                }
+
+                // 2) inviteCodes 매핑은 대상 학급 메타와 교차 검증할 때만 사용
+                let mapped = null;
+                let mappedClassMeta = null;
                 try {
                     const mapSnap = await getDoc(doc(db, 'inviteCodes', upper));
                     if (mapSnap.exists()) {
-                        const mapped = mapSnap.data() || {};
-                        if (mapped.isActive === false) throw new Error('class_archived');
+                        mapped = mapSnap.data() || {};
                         const mappedId = String(mapped.classId || '').trim();
                         if (mappedId) {
                             const metaSnap = await getDoc(doc(db, 'classes', mappedId));
-                            if (metaSnap.exists() && metaSnap.data()?.isActive === false) {
-                                throw new Error('class_archived');
-                            }
-                            return mappedId;
+                            mappedClassMeta = metaSnap.exists() ? (metaSnap.data() || {}) : null;
                         }
                     }
                 } catch (e) {
-                    if (String(e.message) === 'class_archived') throw e;
                     console.warn('inviteCodes lookup', e);
                 }
-                // 2) 하위 호환: classes.inviteCode 쿼리 후 매핑 백필
-                const q = query(collection(db, 'classes'), where('inviteCode', '==', upper));
-                const found = await getDocs(q);
-                if (found.empty) throw new Error('invite_not_found');
-                const classId = found.docs[0].id;
-                const data = found.docs[0].data() || {};
-                if (data.isActive === false) throw new Error('class_archived');
-                try { await registerInviteCode(upper, classId, { displayName: data.displayName }); } catch (_) { /* ignore */ }
-                return classId;
+
+                const decided = resolveInviteCodeToClassId({
+                    code: upper,
+                    mapped,
+                    classHits,
+                    mappedClassMeta,
+                });
+                if (decided.error) throw new Error(decided.error);
+                try {
+                    await registerInviteCode(upper, decided.classId, { displayName: decided.displayName });
+                } catch (_) { /* 매핑 오염/충돌 시에도 올바른 학급 입장은 허용 */ }
+                return decided.classId;
             }
             // 학급 ID 직접 지정
             try {
@@ -1706,6 +1720,9 @@ function redrawPlazaGrantsUi() {
                 }
                 if (String(e.message) === 'class_archived') {
                     return window.customAlert('이 학급은 보관(비활성) 상태라 입장할 수 없습니다.');
+                }
+                if (String(e.message) === 'invite_conflict') {
+                    return window.customAlert('이 초대 코드가 여러 학급에 중복되어 있습니다.\n선생님께 새 초대 코드를 요청해 주세요.');
                 }
                 return window.customAlert('학급을 열 수 없습니다. 코드를 확인하거나 네트워크를 점검해 주세요.');
             } finally {
@@ -2201,6 +2218,9 @@ function redrawPlazaGrantsUi() {
                 }
                 if (String(e.message) === 'class_archived') {
                     return window.customAlert('이 학급은 보관(비활성) 상태라 입장할 수 없습니다.');
+                }
+                if (String(e.message) === 'invite_conflict') {
+                    return window.customAlert('이 초대 코드가 여러 학급에 중복되어 있습니다.\n선생님께 새 초대 코드를 요청해 주세요.');
                 }
                 return window.customAlert('학급을 열 수 없습니다: ' + (e && e.message ? e.message : String(e)));
             }

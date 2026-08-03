@@ -56,17 +56,33 @@ service cloud.firestore {
     }
 
     // 초대 코드 → classId O(1) 매핑 (학급별 공유 링크 ?c=CODE)
+    // classId 변경 금지. 생성/갱신은 해당 학급 메타의 inviteCode 와 문서 ID 가 일치할 때만 허용.
+    // isActive:false 는 학급 자체가 보관(isActive==false)된 뒤에만 허용(익명 사용자의 초대 차단 방지).
+    function classClaimsInviteCode(classId, code) {
+      return exists(/databases/$(database)/documents/classes/$(classId))
+        && get(/databases/$(database)/documents/classes/$(classId)).data.inviteCode == code;
+    }
+
     match /inviteCodes/{code} {
       allow read: if true;
       allow create: if signedIn()
         && request.resource.data.keys().hasAll(['classId'])
         && request.resource.data.classId is string
-        && request.resource.data.classId.size() > 0;
+        && request.resource.data.classId.size() > 0
+        && classClaimsInviteCode(request.resource.data.classId, code)
+        && (
+          !('isActive' in request.resource.data)
+          || request.resource.data.isActive != false
+          || get(/databases/$(database)/documents/classes/$(request.resource.data.classId)).data.isActive == false
+        );
       allow update: if signedIn()
         && request.resource.data.classId is string
+        && resource.data.classId == request.resource.data.classId
+        && classClaimsInviteCode(resource.data.classId, code)
         && (
-          !('classId' in resource.data)
-          || request.resource.data.classId == resource.data.classId
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isActive'])
+          || request.resource.data.isActive != false
+          || get(/databases/$(database)/documents/classes/$(resource.data.classId)).data.isActive == false
         );
       allow delete: if false;
     }

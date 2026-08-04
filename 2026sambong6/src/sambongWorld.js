@@ -6367,12 +6367,120 @@ ${subjectLine}
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        const TABS = ['dashboard', 'constitution', 'plaza', 'quests', 'shop', 'jobs', 'lunch', 'goldenbell', 'estate', 'bank', 'classtools', 'admin', 'settings', 'help'];
-        /** 기본 탭: 광장(plaza) */
-        let currentTabIndex = 2;
+        /** 상단 탭 + 경제 하위 섹션(shop/bank/estate) — 스와이프는 보이는 탭만 */
+        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'economy', 'lunch', 'challenge', 'constitution', 'classtools', 'admin', 'settings', 'help', 'shop', 'bank', 'estate', 'goldenbell'];
+        /** 기본 탭: 홈(dashboard) */
+        let currentTabIndex = 1; // plaza
+        /** 경제 서브: shop | bank | estate | groupbuy */
+        let economySub = 'shop';
+        /** 도전 서브: goldenbell | speedquiz | raid */
+        let challengeSub = 'goldenbell';
 
-        window.switchTab = function(tabId) {
+        window.switchEconomySub = function(sub) {
+            economySub = sub || 'shop';
+            const idle = 'border-slate-600 bg-slate-800/60 text-slate-300';
+            const map = {
+                shop: 'border-pink-500/50 bg-pink-900/40 text-pink-200',
+                bank: 'border-sky-500/50 bg-sky-900/40 text-sky-200',
+                estate: 'border-teal-500/50 bg-teal-900/40 text-teal-200',
+                groupbuy: 'border-cyan-500/50 bg-cyan-900/40 text-cyan-200'
+            };
+            ['shop', 'bank', 'estate', 'groupbuy'].forEach(s => {
+                const btn = document.getElementById('economySub-' + s);
+                if (!btn) return;
+                btn.classList.remove('border-pink-500/50', 'bg-pink-900/40', 'text-pink-200', 'border-sky-500/50', 'bg-sky-900/40', 'text-sky-200', 'border-teal-500/50', 'bg-teal-900/40', 'text-teal-200', 'border-cyan-500/50', 'bg-cyan-900/40', 'text-cyan-200', 'border-slate-600', 'bg-slate-800/60', 'text-slate-300');
+                (s === economySub ? map[s] : idle).split(/\s+/).forEach(c => btn.classList.add(c));
+            });
+            ['shop', 'bank', 'estate'].forEach(s => {
+                const sec = document.getElementById(s + 'Section');
+                if (sec) sec.classList.add('hidden');
+            });
+            if (economySub === 'groupbuy') {
+                const shopSec = document.getElementById('shopSection');
+                if (shopSec) shopSec.classList.remove('hidden');
+                renderShopCatalog();
+                renderConvenienceStore();
+                renderConvenienceAdminPanel();
+                renderConvenienceManagerUi();
+                renderLottoPanel();
+                renderWorldCupBetPanel();
+                if (typeof window.openShopGroupBuyStatusPanel === 'function') {
+                    window.openShopGroupBuyStatusPanel();
+                }
+            } else {
+                const sec = document.getElementById(economySub + 'Section');
+                if (sec) sec.classList.remove('hidden');
+                if (economySub === 'shop') {
+                    renderShopCatalog();
+                    renderConvenienceStore();
+                    renderConvenienceAdminPanel();
+                    renderConvenienceManagerUi();
+                    renderLottoPanel();
+                    renderWorldCupBetPanel();
+                }
+                if (economySub === 'bank' && window.updateBankPanel) window.updateBankPanel();
+                if (economySub === 'estate' && typeof window.renderEstate === 'function') window.renderEstate();
+            }
+            const ecoSec = document.getElementById('economySection');
+            if (ecoSec) ecoSec.classList.remove('hidden');
+        };
+
+        window.switchChallengeSub = function(sub) {
+            challengeSub = sub || 'goldenbell';
+            const idle = 'border-slate-600 bg-slate-800/60 text-slate-300';
+            const map = {
+                goldenbell: 'border-yellow-500/50 bg-yellow-900/40 text-yellow-200',
+                speedquiz: 'border-cyan-500/50 bg-cyan-900/40 text-cyan-200',
+                raid: 'border-purple-500/50 bg-purple-900/40 text-purple-200'
+            };
+            ['goldenbell', 'speedquiz', 'raid'].forEach(s => {
+                const btn = document.getElementById('challengeSub-' + s);
+                if (!btn) return;
+                btn.classList.remove('border-yellow-500/50', 'bg-yellow-900/40', 'text-yellow-200', 'border-cyan-500/50', 'bg-cyan-900/40', 'text-cyan-200', 'border-purple-500/50', 'bg-purple-900/40', 'text-purple-200', 'border-slate-600', 'bg-slate-800/60', 'text-slate-300');
+                (s === challengeSub ? map[s] : idle).split(/\s+/).forEach(c => btn.classList.add(c));
+                const pane = document.getElementById('challengePane-' + s);
+                if (pane) {
+                    if (s === challengeSub) pane.classList.remove('hidden');
+                    else pane.classList.add('hidden');
+                }
+            });
+            if (challengeSub === 'goldenbell') {
+                if (window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
+                    window.renderGoldenBellMasterLive();
+                } else if (window.renderGoldenBellStudent) {
+                    window.renderGoldenBellStudent();
+                }
+            }
+            if (challengeSub === 'speedquiz') {
+                const st = document.getElementById('challengeSpeedQuizStatus');
+                const mq = window.masterQuizState;
+                if (st) {
+                    st.textContent = (mq && mq.isOpen)
+                        ? '진행 중 — 팝업에서 답을 제출하세요!'
+                        : '대기 중 — 문제가 열리면 자동으로 팝업이 표시됩니다.';
+                }
+            }
+        };
+
+        /**
+         * @param {string} tabId
+         * @param {string} [subOrOpts] 경제/도전 서브 또는 생략
+         */
+        window.switchTab = function(tabId, subOrOpts) {
             if (isMartialLawLockingStudent()) return;
+            // 레거시 딥링크 별칭
+            if (tabId === 'goldenbell') {
+                challengeSub = (typeof subOrOpts === 'string' && subOrOpts) ? subOrOpts : 'goldenbell';
+                tabId = 'challenge';
+            } else if (tabId === 'shop' || tabId === 'bank' || tabId === 'estate') {
+                economySub = tabId;
+                tabId = 'economy';
+            } else if (tabId === 'economy' && typeof subOrOpts === 'string' && subOrOpts) {
+                economySub = subOrOpts;
+            } else if (tabId === 'challenge' && typeof subOrOpts === 'string' && subOrOpts) {
+                challengeSub = subOrOpts;
+            }
+
             if (tabId === 'settings' && (!window.playerState || !window.playerState.isAdmin)) {
                 return window.customAlert('마스터만 설정 탭을 열 수 있습니다.');
             }
@@ -6401,12 +6509,10 @@ ${subjectLine}
             if(activeBtn) { 
                 activeBtn.classList.remove('text-slate-400', 'border-transparent'); 
                 if (tabId === 'lunch') activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
-                else if (tabId === 'goldenbell') activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
-                else if (tabId === 'estate') activeBtn.classList.add('border-teal-400', 'text-teal-400', 'bg-slate-800/50');
-                else if (tabId === 'bank') activeBtn.classList.add('border-sky-400', 'text-sky-400', 'bg-slate-800/50');
+                else if (tabId === 'challenge') activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
+                else if (tabId === 'economy') activeBtn.classList.add('border-pink-500', 'text-pink-400', 'bg-slate-800/50');
                 else if (tabId === 'constitution') activeBtn.classList.add('border-amber-300', 'text-amber-300', 'bg-slate-800/50');
                 else if (tabId === 'classtools') activeBtn.classList.add('border-lime-500', 'text-lime-400', 'bg-slate-800/50');
-                else if (tabId === 'shop') activeBtn.classList.add('border-pink-500', 'text-pink-400', 'bg-slate-800/50');
                 else if (tabId === 'settings') activeBtn.classList.add('border-violet-400', 'text-violet-300', 'bg-slate-800/50');
                 else if (tabId === 'help') activeBtn.classList.add('border-cyan-400', 'text-cyan-300', 'bg-slate-800/50');
                 else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
@@ -6428,28 +6534,23 @@ ${subjectLine}
             if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
             }
-            if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
-                window.renderClassTimetableAdminPanel();
-                if (typeof window.renderBirthdayCelebrationAdminPanel === 'function') {
-                    window.renderBirthdayCelebrationAdminPanel();
-                }
+            if (tabId === 'challenge') {
+                window.switchChallengeSub(challengeSub);
             }
-            if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
-                window.renderGoldenBellMasterLive();
+            if (tabId === 'economy') {
+                window.switchEconomySub(economySub);
             }
             if (tabId === 'classtools') {
                 renderLearningThermometerPanel();
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
                 renderClassWheelPanel();
-            }
-            if (tabId === 'shop') {
-                renderShopCatalog();
-                renderConvenienceStore();
-                renderConvenienceAdminPanel();
-                renderConvenienceManagerUi();
-                renderLottoPanel();
-                renderWorldCupBetPanel();
+                if (window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
+                    window.renderClassTimetableAdminPanel();
+                    if (typeof window.renderBirthdayCelebrationAdminPanel === 'function') {
+                        window.renderBirthdayCelebrationAdminPanel();
+                    }
+                }
             }
             if (tabId === 'settings' && window.playerState && window.playerState.isAdmin) {
                 window.renderWorldSettingsPanel();
@@ -6499,8 +6600,16 @@ ${subjectLine}
             if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
                 if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs') || e.target.closest('.learning-thermometer-stage')) return;
                 
-                let visibleTabs = TABS.filter(t => !document.getElementById('tab-' + t).classList.contains('hidden'));
+                let visibleTabs = TABS.filter(t => {
+                    const btn = document.getElementById('tab-' + t);
+                    return btn && !btn.classList.contains('hidden') && !btn.hasAttribute('aria-hidden');
+                });
                 let cIdx = visibleTabs.indexOf(TABS[currentTabIndex]);
+                if (cIdx < 0) cIdx = visibleTabs.indexOf(TABS[currentTabIndex] === 'shop' || TABS[currentTabIndex] === 'bank' || TABS[currentTabIndex] === 'estate' ? 'economy' : (TABS[currentTabIndex] === 'goldenbell' ? 'challenge' : TABS[currentTabIndex]));
+                if (cIdx < 0) {
+                    const active = document.querySelector('#mainTabBar button.border-sb-gold, #mainTabBar button.border-yellow-400, #mainTabBar button.border-pink-500, #mainTabBar button.border-orange-400, #mainTabBar button.border-amber-300, #mainTabBar button.border-lime-500, #mainTabBar button.border-cyan-400, #mainTabBar button.border-violet-400');
+                    if (active && active.id) cIdx = visibleTabs.indexOf(active.id.replace(/^tab-/, ''));
+                }
                 
                 if (diffX > 0 && cIdx < visibleTabs.length - 1) {
                     window.switchTab(visibleTabs[cIdx + 1]);
@@ -11744,6 +11853,8 @@ ${subjectLine}
                     if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
                     const raidAdminPanel = document.getElementById('raidAdminPanel');
                     if (raidAdminPanel) raidAdminPanel.classList.remove('hidden');
+                    const masterSpeedQuizPanel = document.getElementById('masterSpeedQuizPanel');
+                    if (masterSpeedQuizPanel) masterSpeedQuizPanel.classList.remove('hidden');
                     const classAdminSection = document.getElementById('classAdminSection');
                     if (classAdminSection) classAdminSection.classList.remove('hidden');
                     if (typeof window.renderClassAdminPanel === 'function') window.renderClassAdminPanel();
@@ -11769,6 +11880,10 @@ ${subjectLine}
                 }
                 const gbMasterPanel = document.getElementById('gbMasterPanel');
                 if (gbMasterPanel) gbMasterPanel.classList.remove('hidden');
+                const masterSpeedQuizPanelAll = document.getElementById('masterSpeedQuizPanel');
+                if (masterSpeedQuizPanelAll) masterSpeedQuizPanelAll.classList.remove('hidden');
+                const classTimetablePanelOn = document.getElementById('classTimetablePanel');
+                if (classTimetablePanelOn) classTimetablePanelOn.classList.remove('hidden');
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
                 const tabSettingsOff = document.getElementById('tab-settings');
@@ -11796,8 +11911,12 @@ ${subjectLine}
                 if (gbMasterPanel) gbMasterPanel.classList.add('hidden');
                 const raidAdminPanel = document.getElementById('raidAdminPanel');
                 if (raidAdminPanel) raidAdminPanel.classList.add('hidden');
+                const masterSpeedQuizPanelOff = document.getElementById('masterSpeedQuizPanel');
+                if (masterSpeedQuizPanelOff) masterSpeedQuizPanelOff.classList.add('hidden');
                 const classAdminSectionOff = document.getElementById('classAdminSection');
                 if (classAdminSectionOff) classAdminSectionOff.classList.add('hidden');
+                const classTimetablePanelOff = document.getElementById('classTimetablePanel');
+                if (classTimetablePanelOff) classTimetablePanelOff.classList.add('hidden');
             }
             
             checkTimeEvents();
@@ -17329,7 +17448,7 @@ ${subjectLine}
                         const modal = document.getElementById('raidBattleModal');
                         if(modal) modal.classList.add('hidden');
                         window._raidSpectateActive = false;
-                        window.switchTab('quests');
+                        window.switchTab('challenge', 'raid');
                     })();
                 }
             }

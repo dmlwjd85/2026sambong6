@@ -1097,7 +1097,7 @@ function redrawPlazaGrantsUi() {
         const SEED_CLASS_ID = 'sambong-class-2026';
         const RECENT_CLASSES_KEY = 'sambong_recent_classes';
 
-        /** 시드(데모) 학급인지 — 석서영 생일·부동산 자동복구 등은 여기에만 적용 */
+        /** 시드(데모) 학급인지 — 부동산 자동복구 등은 여기에만 적용 */
         function isSeedDemoClass() {
             return appId === SEED_CLASS_ID || !!(window.classMeta && window.classMeta.isDemoSeed);
         }
@@ -2263,7 +2263,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-        window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -3341,9 +3341,10 @@ function redrawPlazaGrantsUi() {
                 localStorage.setItem(alertKey, '1');
                 const subject = String(today[period.id] || '').trim();
                 const subjectLine = subject ? `과목: ${subject}` : '과목: (시간표 미입력)';
-                // 석서영 생일(7/10) 6교시: 수업시작 버튼 → 생일 축하 파티 (시드 학급 전용)
-                if (period.id === 6 && isSeedDemoClass() && isSeokBirthdayPartyDay(now)) {
-                    void showSeokBirthdayClassStartAlert({ period, subjectLine });
+                // 등록된 생일 축하(해당 교시·날짜)면 생일 파티 알림
+                const bdayHit = getBirthdayCelebrationForPeriod(period.id, now);
+                if (bdayHit) {
+                    void showBirthdayClassStartAlert({ period, subjectLine, celebration: bdayHit });
                     continue;
                 }
                 void window.customAlert(
@@ -3356,18 +3357,54 @@ function redrawPlazaGrantsUi() {
         }
 
         // ==========================================
-        // ★ 석서영 생일 파티 (6교시 수업시작) ★
+        // ★ 생일 축하 파티 (이름·날짜 설정 가능) ★
         // ==========================================
-        const SEOK_BIRTHDAY = {
-            studentId: '13',
-            name: '석서영',
-            month: 7,
-            day: 10,
-        };
+        const DEFAULT_SEED_BIRTHDAY_CELEBRATIONS = [
+            { id: 'bday_seok', name: '석서영', nickname: '서영', month: 7, day: 10, periodId: 6, enabled: true },
+        ];
 
-        function isSeokBirthdayPartyDay(now = new Date()) {
-            if (!isSeedDemoClass()) return false;
-            return now.getMonth() + 1 === SEOK_BIRTHDAY.month && now.getDate() === SEOK_BIRTHDAY.day;
+        function sanitizeBirthdayCelebrations(raw) {
+            const list = Array.isArray(raw) ? raw : [];
+            const out = [];
+            const seen = new Set();
+            list.forEach((row, idx) => {
+                if (!row || typeof row !== 'object') return;
+                const name = String(row.name || '').trim().slice(0, 20);
+                if (!name) return;
+                const month = Math.max(1, Math.min(12, Math.floor(Number(row.month) || 0)));
+                const day = Math.max(1, Math.min(31, Math.floor(Number(row.day) || 0)));
+                if (!month || !day) return;
+                let id = String(row.id || '').trim().slice(0, 40);
+                if (!id) id = `bday_${Date.now()}_${idx}`;
+                if (seen.has(id)) id = `${id}_${idx}`;
+                seen.add(id);
+                const nickname = String(row.nickname || name).trim().slice(0, 20) || name;
+                const periodId = Math.max(1, Math.min(6, Math.floor(Number(row.periodId) || 6)));
+                const enabled = row.enabled !== false;
+                out.push({ id, name, nickname, month, day, periodId, enabled });
+            });
+            return out.slice(0, 40);
+        }
+
+        function getBirthdayCelebrations() {
+            const fromSettings = window.globalSettings && window.globalSettings.birthdayCelebrations;
+            if (Array.isArray(fromSettings)) {
+                return sanitizeBirthdayCelebrations(fromSettings);
+            }
+            // 시드 학급만 기존 석서영 일정을 기본값으로 제공 (다른 학급은 빈 목록)
+            if (isSeedDemoClass()) return sanitizeBirthdayCelebrations(DEFAULT_SEED_BIRTHDAY_CELEBRATIONS);
+            return [];
+        }
+
+        function getBirthdayCelebrationsForToday(now = new Date()) {
+            const m = now.getMonth() + 1;
+            const d = now.getDate();
+            return getBirthdayCelebrations().filter((c) => c.enabled && c.month === m && c.day === d);
+        }
+
+        function getBirthdayCelebrationForPeriod(periodId, now = new Date()) {
+            const pid = Number(periodId);
+            return getBirthdayCelebrationsForToday(now).find((c) => Number(c.periodId) === pid) || null;
         }
 
         function scheduleTone({ freq, start, duration, type = 'sine', gain = 0.18, detune = 0 }) {
@@ -3395,21 +3432,19 @@ function redrawPlazaGrantsUi() {
                 scheduleTone({ freq: f, start: t0 + i * 0.09, duration: 0.26, type: 'triangle', gain: 0.32 });
                 scheduleTone({ freq: f * 2, start: t0 + i * 0.09, duration: 0.22, type: 'sine', gain: 0.2 });
             });
-            // 마지막 화음 팡파레
             [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
                 scheduleTone({ freq: f, start: t0 + 0.55, duration: 0.65, type: 'square', gain: 0.28 - i * 0.02 });
                 scheduleTone({ freq: f, start: t0 + 0.55, duration: 0.65, type: 'triangle', gain: 0.24 - i * 0.02 });
             });
         }
 
-        /** Happy Birthday 멜로디 + 가사 타임라인 (초) */
-        function getSeokBirthdaySongTimeline() {
-            // C4=261.63 D4=293.66 E4=329.63 F4=349.23 G4=392 A4=440 Bb4=466.16 C5=523.25
+        /** Happy Birthday 멜로디 + 가사 타임라인 (초) — nickname 삽입 */
+        function getBirthdaySongTimeline(nickname) {
+            const nick = String(nickname || '생일').trim() || '생일';
             const N = {
                 C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23,
                 G4: 392.00, A4: 440.00, Bb4: 466.16, C5: 523.25,
             };
-            // 각 음표 [freq, startSec, durationSec]
             const melody = [
                 [N.C4, 0.00, 0.28], [N.C4, 0.30, 0.22], [N.D4, 0.55, 0.45], [N.C4, 1.05, 0.45], [N.F4, 1.55, 0.45], [N.E4, 2.05, 0.70],
                 [N.C4, 2.90, 0.28], [N.C4, 3.20, 0.22], [N.D4, 3.45, 0.45], [N.C4, 3.95, 0.45], [N.G4, 4.45, 0.45], [N.F4, 4.95, 0.70],
@@ -3419,7 +3454,7 @@ function redrawPlazaGrantsUi() {
             const lyrics = [
                 { at: 0.00, text: '생일 축하합니다~' },
                 { at: 2.90, text: '생일 축하합니다~' },
-                { at: 5.80, text: '사랑하는 서영아~' },
+                { at: 5.80, text: `사랑하는 ${nick}~` },
                 { at: 9.10, text: '생일 축하합니다!' },
                 { at: 12.10, text: '🍦 아이스크림 케이크 파티 GO!' },
             ];
@@ -3442,30 +3477,24 @@ function redrawPlazaGrantsUi() {
             });
         }
 
-        /** 음표 root에 메이저 화음(루트·3·5·옥타브)을 겹쳐 풍성하게 재생 */
         function scheduleChord({ root, start, duration, gain = 0.28 }) {
-            const third = root * Math.pow(2, 4 / 12);   // 메이저 3도
-            const fifth = root * Math.pow(2, 7 / 12);   // 완전 5도
+            const third = root * Math.pow(2, 4 / 12);
+            const fifth = root * Math.pow(2, 7 / 12);
             const octave = root * 2;
-            // 본음 레이어
             scheduleTone({ freq: root, start, duration, type: 'triangle', gain: gain * 0.95 });
             scheduleTone({ freq: root, start, duration, type: 'square', gain: gain * 0.55 });
-            // 화음
             scheduleTone({ freq: third, start, duration: duration * 0.95, type: 'triangle', gain: gain * 0.55 });
             scheduleTone({ freq: fifth, start, duration: duration * 0.95, type: 'sine', gain: gain * 0.5 });
             scheduleTone({ freq: octave, start, duration: duration * 0.9, type: 'sine', gain: gain * 0.35 });
-            // 한 옥타브 아래 베이스
             scheduleTone({ freq: root / 2, start, duration, type: 'triangle', gain: gain * 0.32 });
-            // 살짝 지연된 반주(스트럼 느낌)
             scheduleTone({ freq: fifth / 2, start: start + 0.03, duration: duration * 0.9, type: 'sine', gain: gain * 0.18 });
         }
 
-        function playSeokBirthdaySong() {
+        function playBirthdaySong(nickname) {
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            const { melody } = getSeokBirthdaySongTimeline();
+            const { melody } = getBirthdaySongTimeline(nickname);
             const t0 = audioCtx.currentTime + 0.05;
             melody.forEach(([freq, start, dur]) => {
-                // 한 옥타브 올린 루트로 교실에서도 잘 들리게 + 메이저 화음
                 scheduleChord({ root: freq * 2, start: t0 + start, duration: dur, gain: 0.34 });
             });
             return t0;
@@ -3485,11 +3514,11 @@ function redrawPlazaGrantsUi() {
             }
         }
 
-        function ensureSeokBirthdayStyles() {
-            let style = document.getElementById('seokBirthdayStyles');
+        function ensureBirthdayPartyStyles() {
+            let style = document.getElementById('birthdayPartyStyles');
             if (!style) {
                 style = document.createElement('style');
-                style.id = 'seokBirthdayStyles';
+                style.id = 'birthdayPartyStyles';
                 document.head.appendChild(style);
             }
             style.textContent = `
@@ -3523,34 +3552,37 @@ function redrawPlazaGrantsUi() {
             `;
         }
 
-        function showSeokBirthdayClassStartAlert({ period, subjectLine }) {
+        function showBirthdayClassStartAlert({ period, subjectLine, celebration }) {
+            const name = celebration?.name || '친구';
+            const nick = celebration?.nickname || name;
+            const safeName = escapeConvenienceHtml ? escapeConvenienceHtml(name) : String(name).replace(/</g, '&lt;');
             return new Promise((resolve) => {
                 const d = document.createElement('div');
                 d.className = 'fixed inset-0 z-[310] flex items-center justify-center bg-black/85 px-4';
                 d.innerHTML = `
                     <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-8 sm:p-10 rounded-3xl border-2 border-pink-400/50 max-w-xl w-full text-center space-y-5 shadow-2xl">
                         <div class="text-6xl sm:text-7xl">🎂🎉🍦</div>
-                        <h3 class="text-3xl sm:text-4xl font-display text-pink-100" style="font-family:'Jua',sans-serif">6교시 수업 준비</h3>
+                        <h3 class="text-3xl sm:text-4xl font-display text-pink-100" style="font-family:'Jua',sans-serif">${period.label} 수업 준비</h3>
                         <p class="text-lg sm:text-xl text-slate-100 whitespace-pre-wrap leading-relaxed" style="font-family:'Gaegu',cursive;font-weight:700">${period.label} (${period.start}~${period.end})
 ${subjectLine}
 
-오늘은 <span class="text-amber-300 font-black">석서영</span> 생일!
+오늘은 <span class="text-amber-300 font-black">${safeName}</span> 생일!
 아이스크림 케이크와 함께
 생일 파티를 준비해요 🎈</p>
-                        <button type="button" class="js-seok-class-start w-full bg-gradient-to-r from-pink-600 to-amber-500 hover:from-pink-500 hover:to-amber-400 text-white font-black py-4 px-6 rounded-full text-xl sm:text-2xl shadow-lg border border-amber-200/40" style="font-family:'Jua',sans-serif">
+                        <button type="button" class="js-bday-class-start w-full bg-gradient-to-r from-pink-600 to-amber-500 hover:from-pink-500 hover:to-amber-400 text-white font-black py-4 px-6 rounded-full text-xl sm:text-2xl shadow-lg border border-amber-200/40" style="font-family:'Jua',sans-serif">
                             수업시작 🎂
                         </button>
-                        <button type="button" class="js-seok-class-later w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-3 px-6 rounded-full text-base">
+                        <button type="button" class="js-bday-class-later w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-3 px-6 rounded-full text-base">
                             나중에
                         </button>
                     </div>`;
                 document.body.appendChild(d);
-                const startBtn = d.querySelector('.js-seok-class-start');
-                const laterBtn = d.querySelector('.js-seok-class-later');
+                const startBtn = d.querySelector('.js-bday-class-start');
+                const laterBtn = d.querySelector('.js-bday-class-later');
                 if (startBtn) {
                     startBtn.onclick = () => {
                         d.remove();
-                        window.startSeokBirthdayParty();
+                        window.startBirthdayParty(celebration);
                         resolve(true);
                     };
                 }
@@ -3560,35 +3592,52 @@ ${subjectLine}
             });
         }
 
-        let _seokBirthdayTimers = [];
-        function clearSeokBirthdayTimers() {
-            _seokBirthdayTimers.forEach((id) => clearTimeout(id));
-            _seokBirthdayTimers = [];
+        let _birthdayPartyTimers = [];
+        function clearBirthdayPartyTimers() {
+            _birthdayPartyTimers.forEach((id) => clearTimeout(id));
+            _birthdayPartyTimers = [];
         }
 
-        window.startSeokBirthdayParty = function() {
-            ensureSeokBirthdayStyles();
-            clearSeokBirthdayTimers();
-            const existing = document.getElementById('seokBirthdayOverlay');
+        window.startBirthdayParty = function(celebrationOrName) {
+            let celebration = celebrationOrName;
+            if (typeof celebrationOrName === 'string') {
+                celebration = { name: celebrationOrName, nickname: celebrationOrName };
+            }
+            if (!celebration || !celebration.name) {
+                celebration = { name: '생일', nickname: '생일' };
+            }
+            const name = String(celebration.name || '생일').trim() || '생일';
+            const nick = String(celebration.nickname || name).trim() || name;
+            const periodLabel = (() => {
+                const pid = Number(celebration.periodId) || 6;
+                const p = (typeof CLASS_TIMETABLE_PERIODS !== 'undefined')
+                    ? CLASS_TIMETABLE_PERIODS.find((x) => x.id === pid)
+                    : null;
+                return p ? p.label : `${pid}교시`;
+            })();
+
+            ensureBirthdayPartyStyles();
+            clearBirthdayPartyTimers();
+            const existing = document.getElementById('birthdayPartyOverlay');
             if (existing) existing.remove();
 
             const overlay = document.createElement('div');
-            overlay.id = 'seokBirthdayOverlay';
+            overlay.id = 'birthdayPartyOverlay';
             overlay.className = 'seok-bday-overlay';
             overlay.innerHTML = `
                 <div class="seok-bday-card">
                     <p class="seok-bday-eyebrow">SPECIAL BIRTHDAY CLASS</p>
-                    <h2 class="seok-bday-title">석서영 생일 축하합니다!</h2>
+                    <h2 class="seok-bday-title">${escapeConvenienceHtml(name)} 생일 축하합니다!</h2>
                     <div class="seok-bday-cake" aria-hidden="true">🍦🎂✨</div>
                     <p class="seok-bday-msg">
-                        6교시 수업을 열며<br>
-                        <span class="hi">서영이</span>의 특별한 하루를 함께 축하해요!<br>
+                        ${escapeConvenienceHtml(periodLabel)} 수업을 열며<br>
+                        <span class="hi">${escapeConvenienceHtml(nick)}</span>의 특별한 하루를 함께 축하해요!<br>
                         아이스크림 케이크를 나눠 먹고<br>
                         신나는 생일 파티를 시작합시다 🎉
                     </p>
-                    <div id="seokBirthdayLyric" class="seok-bday-lyric is-countdown">다함께 노래 불러요~</div>
+                    <div id="birthdayPartyLyric" class="seok-bday-lyric is-countdown">다함께 노래 불러요~</div>
                     <p class="seok-bday-hint">크게 손뼉 치며 준비하세요!</p>
-                    <button type="button" class="js-seok-bday-close seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full border border-white/15">
+                    <button type="button" class="js-bday-close seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full border border-white/15">
                         파티 마무리 · 수업 시작!
                     </button>
                 </div>`;
@@ -3596,15 +3645,15 @@ ${subjectLine}
             spawnBirthdayConfetti(overlay, 48);
 
             const close = () => {
-                clearSeokBirthdayTimers();
+                clearBirthdayPartyTimers();
                 overlay.remove();
             };
-            const closeBtn = overlay.querySelector('.js-seok-bday-close');
+            const closeBtn = overlay.querySelector('.js-bday-close');
             if (closeBtn) closeBtn.onclick = close;
 
-            const lyricEl = document.getElementById('seokBirthdayLyric');
+            const lyricEl = document.getElementById('birthdayPartyLyric');
             const hintEl = overlay.querySelector('.seok-bday-hint');
-            const { lyrics, durationSec } = getSeokBirthdaySongTimeline();
+            const { lyrics, durationSec } = getBirthdaySongTimeline(nick);
 
             function setLyricText(text, countdown = false) {
                 if (!lyricEl) return;
@@ -3615,7 +3664,6 @@ ${subjectLine}
                 lyricEl.textContent = text;
             }
 
-            // 1) 다함께 노래 불러요~ → 2) 3,2,1 → 3) 시작~ → 4) 팡파레+멜로디
             const cueSteps = [
                 { atMs: 0, text: '다함께 노래 불러요~', countdown: true, beep: null },
                 { atMs: 1800, text: '3', countdown: true, beep: 880 },
@@ -3626,43 +3674,235 @@ ${subjectLine}
             const songStartMs = 5600;
 
             cueSteps.forEach((step) => {
-                _seokBirthdayTimers.push(setTimeout(() => {
+                _birthdayPartyTimers.push(setTimeout(() => {
                     setLyricText(step.text, step.countdown);
                     if (step.beep === 'start') playCountdownStartChord();
                     else if (typeof step.beep === 'number') playCountdownBeep(step.beep);
                 }, step.atMs));
             });
 
-            _seokBirthdayTimers.push(setTimeout(() => {
+            _birthdayPartyTimers.push(setTimeout(() => {
                 if (hintEl) hintEl.textContent = '다 같이 손뼉 치며 크게 노래해요!';
                 playBirthdayFanfare();
             }, songStartMs));
 
-            // 팡파레(약 0.9초) 후 멜로디 + 가사
             const melodyOffsetMs = songStartMs + 900;
-            _seokBirthdayTimers.push(setTimeout(() => {
+            _birthdayPartyTimers.push(setTimeout(() => {
                 if (lyricEl) lyricEl.classList.remove('is-countdown');
-                playSeokBirthdaySong();
+                playBirthdaySong(nick);
                 lyrics.forEach((row) => {
-                    _seokBirthdayTimers.push(setTimeout(() => {
+                    _birthdayPartyTimers.push(setTimeout(() => {
                         setLyricText(row.text, false);
                     }, Math.round(row.at * 1000)));
                 });
             }, melodyOffsetMs));
 
-            // 노래 끝난 뒤 마무리 멘트
-            _seokBirthdayTimers.push(setTimeout(() => {
-                setLyricText('🥳 서영아, 생일 정말 축하해!', false);
+            _birthdayPartyTimers.push(setTimeout(() => {
+                setLyricText(`🥳 ${nick}, 생일 정말 축하해!`, false);
                 spawnBirthdayConfetti(overlay, 40);
             }, melodyOffsetMs + Math.round(durationSec * 1000)));
         };
 
-        /** 마스터용: 생일 파티를 지금 바로 실행 (리허설) */
+        /** 하위 호환: 예전 버튼/호출명 */
+        window.startSeokBirthdayParty = function() {
+            const today = getBirthdayCelebrationsForToday()[0];
+            const fallback = getBirthdayCelebrations()[0] || DEFAULT_SEED_BIRTHDAY_CELEBRATIONS[0];
+            return window.startBirthdayParty(today || fallback);
+        };
+
         window.previewSeokBirthdayParty = function() {
+            return window.previewBirthdayParty();
+        };
+
+        /** 마스터용: 목록에서 고르거나 오늘 일정으로 바로 실행 */
+        window.previewBirthdayParty = async function(celebrationId) {
             if (!window.playerState || !window.playerState.isAdmin) {
                 return window.customAlert('마스터만 미리보기를 실행할 수 있습니다.');
             }
-            return window.startSeokBirthdayParty();
+            const list = getBirthdayCelebrations();
+            if (!list.length) {
+                return window.customAlert('등록된 생일 축하가 없습니다.\n아래에서 이름과 날짜를 추가해 주세요.');
+            }
+            let target = null;
+            if (celebrationId) {
+                target = list.find((c) => c.id === celebrationId) || null;
+            }
+            if (!target) {
+                const today = getBirthdayCelebrationsForToday();
+                if (today.length === 1) target = today[0];
+                else if (list.length === 1) target = list[0];
+                else {
+                    const lines = list.map((c, i) => `${i + 1}. ${c.name} (${c.month}/${c.day})`).join('\n');
+                    const picked = await window.customPrompt(
+                        `실행할 생일 번호를 입력하세요.\n\n${lines}`,
+                        'text'
+                    );
+                    const n = Math.floor(Number(picked));
+                    if (!n || n < 1 || n > list.length) return window.customAlert('취소되었거나 번호가 올바르지 않습니다.');
+                    target = list[n - 1];
+                }
+            }
+            return window.startBirthdayParty(target);
+        };
+
+        window.renderBirthdayCelebrationAdminPanel = function() {
+            const box = document.getElementById('birthdayCelebrationAdminPanel');
+            if (!box) return;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                box.innerHTML = '';
+                return;
+            }
+            const list = getBirthdayCelebrations();
+            const rows = list.length
+                ? list.map((c) => `
+                    <div class="flex flex-wrap items-center gap-2 rounded-xl border border-pink-500/30 bg-slate-950/60 p-2.5" data-bday-id="${escapeHtmlAttr(c.id)}">
+                        <div class="flex-1 min-w-[8rem]">
+                            <div class="text-pink-100 font-black text-xs">${escapeConvenienceHtml(c.name)}
+                                <span class="text-slate-500 font-bold">(${escapeConvenienceHtml(c.nickname)})</span>
+                            </div>
+                            <div class="text-[9px] text-slate-400 font-bold mt-0.5">${c.month}월 ${c.day}일 · ${c.periodId}교시 알림 ${c.enabled ? 'ON' : 'OFF'}</div>
+                        </div>
+                        <button type="button" onclick="void window.previewBirthdayParty('${escapeHtmlAttr(c.id)}')" class="min-h-[40px] bg-pink-700 hover:bg-pink-600 text-white text-[9px] font-bold px-2.5 py-1.5 rounded-lg">파티 시작</button>
+                        <button type="button" onclick="void window.editBirthdayCelebration('${escapeHtmlAttr(c.id)}')" class="min-h-[40px] bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-bold px-2.5 py-1.5 rounded-lg">수정</button>
+                        <button type="button" onclick="void window.deleteBirthdayCelebration('${escapeHtmlAttr(c.id)}')" class="min-h-[40px] bg-red-950/70 hover:bg-red-900 text-red-200 text-[9px] font-bold px-2.5 py-1.5 rounded-lg border border-red-800/50">삭제</button>
+                    </div>`).join('')
+                : '<p class="text-[10px] text-slate-500 font-bold text-center py-3">아직 등록된 생일이 없습니다. 아래에서 추가하세요.</p>';
+
+            box.innerHTML = `
+                <div class="space-y-2 mb-3">${rows}</div>
+                <div class="rounded-xl border border-pink-500/40 bg-slate-950/50 p-3 space-y-2">
+                    <p class="text-[10px] text-pink-200 font-black">생일 추가 / 수정</p>
+                    <input type="hidden" id="bdayEditId" value="">
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="text-[9px] text-slate-400 font-bold col-span-2">이름
+                            <input id="bdayNameInput" type="text" maxlength="20" placeholder="예: 석서영" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        </label>
+                        <label class="text-[9px] text-slate-400 font-bold col-span-2">호칭(노래·멘트용, 비우면 이름 사용)
+                            <input id="bdayNickInput" type="text" maxlength="20" placeholder="예: 서영" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        </label>
+                        <label class="text-[9px] text-slate-400 font-bold">월
+                            <input id="bdayMonthInput" type="number" min="1" max="12" value="1" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        </label>
+                        <label class="text-[9px] text-slate-400 font-bold">일
+                            <input id="bdayDayInput" type="number" min="1" max="31" value="1" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        </label>
+                        <label class="text-[9px] text-slate-400 font-bold col-span-2">알림 교시
+                            <select id="bdayPeriodInput" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                                <option value="1">1교시</option><option value="2">2교시</option><option value="3">3교시</option>
+                                <option value="4">4교시</option><option value="5">5교시</option><option value="6" selected>6교시</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="void window.saveBirthdayCelebrationFromForm()" class="flex-1 min-h-[44px] bg-gradient-to-r from-pink-700 to-amber-600 hover:from-pink-600 hover:to-amber-500 text-white font-black text-[10px] px-3 py-2 rounded-xl border border-amber-300/40">저장(추가/수정)</button>
+                        <button type="button" onclick="window.clearBirthdayCelebrationForm()" class="min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] px-3 py-2 rounded-xl border border-slate-600">입력 비우기</button>
+                    </div>
+                    <p class="text-[8px] text-slate-500 leading-relaxed">해당 날짜·교시 시작 알림에서 「수업시작」을 누르면 파티가 열립니다. 「파티 시작」으로 지금 바로 연출할 수도 있습니다.</p>
+                </div>`;
+        };
+
+        window.clearBirthdayCelebrationForm = function() {
+            const idEl = document.getElementById('bdayEditId');
+            const nameEl = document.getElementById('bdayNameInput');
+            const nickEl = document.getElementById('bdayNickInput');
+            const monthEl = document.getElementById('bdayMonthInput');
+            const dayEl = document.getElementById('bdayDayInput');
+            const periodEl = document.getElementById('bdayPeriodInput');
+            if (idEl) idEl.value = '';
+            if (nameEl) nameEl.value = '';
+            if (nickEl) nickEl.value = '';
+            if (monthEl) monthEl.value = '1';
+            if (dayEl) dayEl.value = '1';
+            if (periodEl) periodEl.value = '6';
+        };
+
+        window.editBirthdayCelebration = function(id) {
+            const c = getBirthdayCelebrations().find((x) => x.id === id);
+            if (!c) return;
+            const idEl = document.getElementById('bdayEditId');
+            const nameEl = document.getElementById('bdayNameInput');
+            const nickEl = document.getElementById('bdayNickInput');
+            const monthEl = document.getElementById('bdayMonthInput');
+            const dayEl = document.getElementById('bdayDayInput');
+            const periodEl = document.getElementById('bdayPeriodInput');
+            if (idEl) idEl.value = c.id;
+            if (nameEl) nameEl.value = c.name;
+            if (nickEl) nickEl.value = c.nickname || '';
+            if (monthEl) monthEl.value = String(c.month);
+            if (dayEl) dayEl.value = String(c.day);
+            if (periodEl) periodEl.value = String(c.periodId || 6);
+            nameEl?.focus();
+        };
+
+        window.saveBirthdayCelebrationFromForm = async function() {
+            if (!window.playerState?.isAdmin || !db) return;
+            const editId = String(document.getElementById('bdayEditId')?.value || '').trim();
+            const name = String(document.getElementById('bdayNameInput')?.value || '').trim();
+            const nickname = String(document.getElementById('bdayNickInput')?.value || '').trim();
+            const month = Math.floor(Number(document.getElementById('bdayMonthInput')?.value));
+            const day = Math.floor(Number(document.getElementById('bdayDayInput')?.value));
+            const periodId = Math.floor(Number(document.getElementById('bdayPeriodInput')?.value) || 6);
+            if (!name) return window.customAlert('이름을 입력해 주세요.');
+            if (!(month >= 1 && month <= 12) || !(day >= 1 && day <= 31)) {
+                return window.customAlert('월(1~12)·일(1~31)을 확인해 주세요.');
+            }
+            const next = {
+                id: editId || `bday_${Date.now()}`,
+                name,
+                nickname: nickname || name,
+                month,
+                day,
+                periodId: Math.max(1, Math.min(6, periodId)),
+                enabled: true,
+            };
+            let list = getBirthdayCelebrations().slice();
+            const idx = list.findIndex((c) => c.id === next.id);
+            if (idx >= 0) list[idx] = { ...list[idx], ...next };
+            else list.push(next);
+            list = sanitizeBirthdayCelebrations(list);
+            try {
+                window.showGlobalLoading('생일 일정 저장 중…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                    birthdayCelebrations: list,
+                }, { merge: true });
+                if (!window.globalSettings) window.globalSettings = {};
+                window.globalSettings.birthdayCelebrations = list;
+                window.hideGlobalLoading();
+                window.clearBirthdayCelebrationForm();
+                window.renderBirthdayCelebrationAdminPanel();
+                window.showToast?.('생일 일정을 저장했습니다!');
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.deleteBirthdayCelebration = async function(id) {
+            if (!window.playerState?.isAdmin || !db) return;
+            const c = getBirthdayCelebrations().find((x) => x.id === id);
+            if (!c) return;
+            const ok = await window.customConfirm(`「${c.name}」 생일 일정을 삭제할까요?`);
+            if (!ok) return;
+            const list = sanitizeBirthdayCelebrations(getBirthdayCelebrations().filter((x) => x.id !== id));
+            try {
+                window.showGlobalLoading('삭제 중…');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
+                    birthdayCelebrations: list,
+                }, { merge: true });
+                if (!window.globalSettings) window.globalSettings = {};
+                window.globalSettings.birthdayCelebrations = list;
+                window.hideGlobalLoading();
+                window.renderBirthdayCelebrationAdminPanel();
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('삭제 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
         };
 
         /** 상점 기본가(SHOP_DATA) — 마스터가 저장한 shopPrices와 병합 시 기준 */
@@ -6190,6 +6430,9 @@ ${subjectLine}
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
+                if (typeof window.renderBirthdayCelebrationAdminPanel === 'function') {
+                    window.renderBirthdayCelebrationAdminPanel();
+                }
             }
             if (tabId === 'goldenbell' && window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                 window.renderGoldenBellMasterLive();
@@ -9593,6 +9836,13 @@ ${subjectLine}
                                     window.globalSettings.classTimetable = sanitizeClassTimetable(settingsData.classTimetable);
                                     if (!isClassTimetablePanelEditing() && typeof window.renderClassTimetableAdminPanel === 'function') {
                                         window.renderClassTimetableAdminPanel();
+                                    }
+                                }
+                                if (settingsData.birthdayCelebrations !== undefined) {
+                                    window.globalSettings.birthdayCelebrations = sanitizeBirthdayCelebrations(settingsData.birthdayCelebrations);
+                                    const adminSec = document.getElementById('adminSection');
+                                    if (adminSec && !adminSec.classList.contains('hidden') && typeof window.renderBirthdayCelebrationAdminPanel === 'function') {
+                                        window.renderBirthdayCelebrationAdminPanel();
                                     }
                                 }
                                 if (settingsData.learningThermometer !== undefined) {

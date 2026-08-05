@@ -1731,19 +1731,19 @@ function redrawPlazaGrantsUi() {
             if (teacher) teacher.classList.toggle('hidden', !isTeacher);
             if (btnS) {
                 btnS.className = isTeacher
-                    ? 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70'
-                    : 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg text-left';
+                    ? 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70'
+                    : 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg text-left';
             }
             if (btnT) {
                 btnT.className = isTeacher
-                    ? 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg text-left'
-                    : 'login-mode-btn min-h-[72px] py-4 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70';
+                    ? 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg text-left'
+                    : 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70';
             }
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '선생님: 학급을 만들고 초대 코드를 학생에게 알려주세요. 학급마다 데이터가 완전히 분리됩니다.'
-                    : '학생: 선생님이 알려준 초대 코드를 입력하세요. 학급마다 데이터가 완전히 분리됩니다.';
+                    ? '학급을 만들거나 초대 코드로 기존 학급에 들어가세요.'
+                    : '초대 코드로 학급을 연 뒤 이름을 선택하세요.';
             }
             if (isTeacher) window.setTeacherSubMode('create');
         };
@@ -1758,13 +1758,13 @@ function redrawPlazaGrantsUi() {
             if (create) create.classList.toggle('hidden', !isCreate);
             if (btnJ) {
                 btnJ.className = isCreate
-                    ? 'teacher-sub-btn py-2 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300'
-                    : 'teacher-sub-btn py-2 rounded-lg text-[10px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100';
+                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap'
+                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap';
             }
             if (btnC) {
                 btnC.className = isCreate
-                    ? 'teacher-sub-btn py-2 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100'
-                    : 'teacher-sub-btn py-2 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300';
+                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
+                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap';
             }
         };
 

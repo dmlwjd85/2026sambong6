@@ -551,12 +551,20 @@ function redrawPlazaGrantsUi() {
         const APP_VERSION = 'v1.2';
         window.APP_VERSION = APP_VERSION;
 
+        /** 레거시 브랜드명(삼봉월드) → MATE */
+        function remapLegacyBrandText(text) {
+            return String(text || '')
+                .replace(/SAMBONG\s*WORLD/gi, 'MATE')
+                .replace(/\bSAMBONG\b/gi, 'MATE')
+                .replace(/삼봉월드/g, 'MATE');
+        }
+
         const DEFAULT_WORLD_SETTINGS = {
-            worldName: '삼봉월드',
-            worldNameEn: 'SAMBONG WORLD',
+            worldName: 'MATE',
+            worldNameEn: 'MATE',
             navBadge: 'S1',
             tagline: '',
-            footerCredit: '삼봉월드 · 우리 반',
+            footerCredit: 'MATE · 우리 반',
             seasonNumber: 1,
             seasonLabel: '시즌 1',
             seasonTheme: '우리 반 모험',
@@ -624,11 +632,11 @@ function redrawPlazaGrantsUi() {
             const seasonLabel = String(src.seasonName || src.seasonLabel || `시즌 ${seasonNumber}`).trim().slice(0, 30) || `시즌 ${seasonNumber}`;
             const seasonTheme = String(src.seasonTheme || DEFAULT_WORLD_SETTINGS.seasonTheme).trim().slice(0, 60) || DEFAULT_WORLD_SETTINGS.seasonTheme;
             return {
-                worldName: String(src.worldName || DEFAULT_WORLD_SETTINGS.worldName).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldName,
-                worldNameEn: String(src.worldNameEn || DEFAULT_WORLD_SETTINGS.worldNameEn).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldNameEn,
+                worldName: remapLegacyBrandText(String(src.worldName || DEFAULT_WORLD_SETTINGS.worldName).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldName),
+                worldNameEn: remapLegacyBrandText(String(src.worldNameEn || DEFAULT_WORLD_SETTINGS.worldNameEn).trim().slice(0, 40) || DEFAULT_WORLD_SETTINGS.worldNameEn),
                 navBadge: String(src.navBadge || DEFAULT_WORLD_SETTINGS.navBadge).trim().slice(0, 12) || DEFAULT_WORLD_SETTINGS.navBadge,
                 tagline: String(src.tagline || '').trim().slice(0, 80),
-                footerCredit: String(src.footerCredit || DEFAULT_WORLD_SETTINGS.footerCredit).trim().slice(0, 120) || DEFAULT_WORLD_SETTINGS.footerCredit,
+                footerCredit: remapLegacyBrandText(String(src.footerCredit || DEFAULT_WORLD_SETTINGS.footerCredit).trim().slice(0, 120) || DEFAULT_WORLD_SETTINGS.footerCredit),
                 seasonNumber,
                 seasonLabel,
                 seasonName: seasonLabel,
@@ -717,8 +725,8 @@ function redrawPlazaGrantsUi() {
             }
             const navBrand = document.getElementById('navWorldBrand');
             if (navBrand) {
-                const en = String(ws.worldNameEn || 'SAMBONG').trim();
-                navBrand.textContent = en.split(/\s+/)[0] || 'SAMBONG';
+                const en = String(ws.worldNameEn || 'MATE').trim();
+                navBrand.textContent = en.split(/\s+/)[0] || 'MATE';
             }
             const navBadge = document.getElementById('navSeasonBadge');
             if (navBadge) navBadge.textContent = ws.navBadge || `S${ws.seasonNumber}`;
@@ -1806,7 +1814,7 @@ function redrawPlazaGrantsUi() {
                         ...copySettings,
                         worldSettings: {
                             ...(copySettings.worldSettings || {}),
-                            worldName: displayName || '삼봉월드',
+                            worldName: displayName || 'MATE',
                         },
                     }, { merge: true });
                 }
@@ -1821,14 +1829,14 @@ function redrawPlazaGrantsUi() {
                     curriculumTags: DEFAULT_CURRICULUM_TAGS,
                     curriculumMapping: DEFAULT_CURRICULUM_MAPPING,
                     worldSettings: {
-                        worldName: displayName || '삼봉월드',
-                        worldNameEn: 'SAMBONG WORLD',
+                        worldName: displayName || 'MATE',
+                        worldNameEn: 'MATE',
                         navBadge: 'S1',
                         seasonNumber: 1,
                         seasonLabel: String(seasonLabel || '시즌 1').trim().slice(0, 30) || '시즌 1',
                         seasonTheme: String(seasonTheme || '우리 반 모험').trim().slice(0, 60) || '우리 반 모험',
                         academicYear: schoolYear,
-                        footerCredit: `${displayName || '삼봉월드'} · ${teacherName || '담임 선생님'}`,
+                        footerCredit: `${displayName || 'MATE'} · ${teacherName || '담임 선생님'}`,
                     },
                     applyDefaultTemplatePending: !!applyDefaultTemplate,
                 }, { merge: true });
@@ -10705,7 +10713,7 @@ ${subjectLine}
                 .trim()
                 .slice(0, 30) || '학급';
             const stamp = getLocalDateStr().replace(/-/g, '');
-            return `삼봉월드_${className}_${stamp}.${ext}`;
+            return `MATE_${className}_${stamp}.${ext}`;
         }
 
         /** 선택한 학생 데이터를 엑셀(.xlsx)로 다운로드 */
@@ -10865,7 +10873,7 @@ ${subjectLine}
             if (!_lastResearchStats) window.renderResearchStatsDashboard();
             if (!_lastResearchStats) return window.customAlert('통계를 먼저 불러와 주세요.');
             const stamp = getLocalDateStr().replace(/-/g, '');
-            downloadTextFile(`삼봉월드_활동통계_${stamp}.csv`, '\uFEFF' + researchStatsToCsv(_lastResearchStats), 'text/csv;charset=utf-8');
+            downloadTextFile(`MATE_활동통계_${stamp}.csv`, '\uFEFF' + researchStatsToCsv(_lastResearchStats), 'text/csv;charset=utf-8');
         };
 
         window.downloadResearchStatsJson = function() {
@@ -10873,7 +10881,7 @@ ${subjectLine}
             if (!_lastResearchStats) window.renderResearchStatsDashboard();
             if (!_lastResearchStats) return window.customAlert('통계를 먼저 불러와 주세요.');
             const stamp = getLocalDateStr().replace(/-/g, '');
-            downloadTextFile(`삼봉월드_활동통계_${stamp}.json`, JSON.stringify(_lastResearchStats, null, 2), 'application/json;charset=utf-8');
+            downloadTextFile(`MATE_활동통계_${stamp}.json`, JSON.stringify(_lastResearchStats, null, 2), 'application/json;charset=utf-8');
         };
 
         function getResearchSettings() {

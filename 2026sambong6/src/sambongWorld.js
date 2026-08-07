@@ -15,7 +15,6 @@ import {
     increment,
     runTransaction,
     arrayUnion,
-    deleteDoc,
     serverTimestamp,
     query,
     where,
@@ -1187,7 +1186,7 @@ function redrawPlazaGrantsUi() {
                 gmaEditStudentId: '1',
                 isActive: true,
                 isDemoSeed: false,
-                roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 25),
+                roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 24),
                 staff: [
                     { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
                     { id: 'gm_a', name: '보조 마스터', gender: 'F', role: 'co_teacher', label: '보조', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
@@ -6520,9 +6519,6 @@ ${subjectLine}
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
             if (window.updateBankPanel) window.updateBankPanel();
-            if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && window.refreshPicbookAccountsAdmin) {
-                void window.refreshPicbookAccountsAdmin();
-            }
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderAdminExportPanel === 'function') {
                 window.renderAdminExportPanel();
             }
@@ -10406,9 +10402,45 @@ ${subjectLine}
         // ==========================================
         // ★ 광장 및 관리자 테이블 렌더링 ★
         // ==========================================
+        const PLAZA_CARD_SIZE_KEY = 'sambong_plaza_card_size';
+        /** @type {'lg'|'md'|'sm'} */
+        let plazaCardSize = 'sm';
+
+        function readPlazaCardSize() {
+            try {
+                const v = localStorage.getItem(PLAZA_CARD_SIZE_KEY);
+                if (v === 'lg' || v === 'md' || v === 'sm') return v;
+            } catch (_) { /* ignore */ }
+            return 'sm';
+        }
+
+        function applyPlazaCardSizeUI(size) {
+            plazaCardSize = size === 'lg' || size === 'md' || size === 'sm' ? size : 'sm';
+            const container = document.getElementById('plazaContainer');
+            if (container) {
+                container.classList.remove('plaza-cards-lg', 'plaza-cards-md', 'plaza-cards-sm');
+                container.classList.add('plaza-cards', `plaza-cards-${plazaCardSize}`);
+            }
+            ['lg', 'md', 'sm'].forEach((s) => {
+                const btn = document.getElementById('plazaSize-' + s);
+                if (!btn) return;
+                const on = s === plazaCardSize;
+                btn.className = on
+                    ? 'plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/60 bg-emerald-900/40 text-emerald-200'
+                    : 'plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300';
+            });
+        }
+
+        /** 광장 학생 카드 크기: lg(크게) / md(보통) / sm(작게·24명 권장) */
+        window.setPlazaCardSize = function(size) {
+            applyPlazaCardSizeUI(size);
+            try { localStorage.setItem(PLAZA_CARD_SIZE_KEY, plazaCardSize); } catch (_) { /* ignore */ }
+        };
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
+            applyPlazaCardSizeUI(readPlazaCardSize());
 
             if (window._morningActivityPreviewActive || (isMorningActivityTime() && !window._morningActivityDismissed)) {
                 container.innerHTML = buildMorningActivityPlazaHtml({ preview: !!window._morningActivityPreviewActive });
@@ -10423,9 +10455,9 @@ ${subjectLine}
                 const gmCursor = canEdit && !isGMCard ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : '';
 
                 if (!data && !isGMCard) {
-                    return `<div class="flex flex-col items-center p-2 rounded-xl border border-slate-700 bg-slate-800/30 w-full opacity-50">
-                                <div class="text-3xl mb-1 opacity-30 grayscale">👤</div>
-                                <div class="font-bold bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
+                    return `<div class="plaza-card flex flex-col items-center p-2 rounded-xl border border-slate-700 bg-slate-800/30 w-full opacity-50">
+                                <div class="plaza-card-face text-3xl mb-1 opacity-30 grayscale">👤</div>
+                                <div class="plaza-card-name font-bold bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
                             </div>`;
                 }
 
@@ -10491,7 +10523,7 @@ ${subjectLine}
                 }
 
                 let gmControls = canEdit && !isGMCard ? `
-                    <div class="w-full mt-1.5 pt-1.5 border-t border-slate-700/50 flex flex-col gap-0.5 z-20" onclick="event.stopPropagation();">
+                    <div class="plaza-gm-controls w-full mt-1.5 pt-1.5 border-t border-slate-700/50 flex flex-col gap-0.5 z-20" onclick="event.stopPropagation();">
                         <div class="flex gap-0.5">
                             <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="flex-1 bg-sb-blue/10 text-sb-blue text-[9px] font-bold py-1 rounded">+1X</button>
                             <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="flex-1 bg-sb-blue/20 text-sb-blue text-[9px] font-bold py-1 rounded">+5X</button>
@@ -10512,13 +10544,13 @@ ${subjectLine}
                     const cGlow = isA ? 'shadow-[0_0_15px_rgba(6,182,212,0.6)]' : 'shadow-[0_0_15px_rgba(251,191,36,0.6)]';
                     
                     return `
-                    <div class="flex flex-col items-center p-3 rounded-xl border-2 w-full transition ${cGlow} ${cBorder} bg-slate-900 mx-auto z-10 relative">
+                    <div class="plaza-card flex flex-col items-center p-3 rounded-xl border-2 w-full transition ${cGlow} ${cBorder} bg-slate-900 mx-auto z-10 relative">
                         ${shieldHtml}${jobHtml}${condHtml}
-                        <div class="text-4xl sm:text-5xl avatar-legend mb-2 z-10 relative">
+                        <div class="plaza-card-face text-4xl sm:text-5xl avatar-legend mb-2 z-10 relative">
                             ${isA?'🏴‍☠️':'🐉'}<span class="absolute -bottom-1 -right-1 text-xl">${isA?'🌊':'🔥'}</span>${overlays}
                         </div>
-                        <div class="text-[8px] font-black ${isA?'text-cyan-400':'text-sb-gold'} mb-0.5">${isA ? (getStaffMember('gm_a')?.label || '보조') : (getStaffMember('gm')?.label || '담임')}</div>
-                        <div class="font-bold bg-gradient-to-r ${isA?'from-cyan-600 to-blue-800 text-white':'from-sb-gold to-yellow-300 text-slate-900'} px-1 py-0.5 rounded text-[9px] w-full text-center truncate border border-slate-700">
+                        <div class="plaza-card-lv text-[8px] font-black ${isA?'text-cyan-400':'text-sb-gold'} mb-0.5">${isA ? (getStaffMember('gm_a')?.label || '보조') : (getStaffMember('gm')?.label || '담임')}</div>
+                        <div class="plaza-card-name font-bold bg-gradient-to-r ${isA?'from-cyan-600 to-blue-800 text-white':'from-sb-gold to-yellow-300 text-slate-900'} px-1 py-0.5 rounded text-[9px] w-full text-center truncate border border-slate-700">
                             ${idLabel}
                         </div>
                     </div>`;
@@ -10527,17 +10559,17 @@ ${subjectLine}
                 const walletBong = getStudentWalletBong(displayData);
 
                 return `
-                <div ${gmOnClick} class="flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
+                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
                     ${shieldHtml}${jobHtml}${condHtml}
-                    <div class="text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
+                    <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
                         <div class="relative inline-block leading-none">${face}${overlays}</div>
                         <div class="text-[0.6em] leading-none animate-pulse">${lv.info.prop}</div>
                     </div>
-                    <div class="text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv} ${lv.info.name}</div>
-                    <div class="font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
+                    <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv} ${lv.info.name}</div>
+                    <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
                     
                     <!-- XP 및 B 동시 표기 -->
-                    <div class="w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
+                    <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
                         <span class="text-[9px] sm:text-[10px] font-black ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}B</span>
@@ -11550,140 +11582,6 @@ ${subjectLine}
          * 마스터 J 전용: 오류로 비워진 드래곤볼 보관함을 Firestore에 복구합니다.
          * 학번·성구는 쉼표로 구분; 기존 보관함과 합쳐 중복 제거 후 저장합니다.
          */
-        const PICBOOK_ACCOUNTS_COL = 'picbook_accounts';
-
-        async function hashPicbookPassword(password) {
-            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(password)));
-            return Array.from(new Uint8Array(buf))
-                .map((b) => b.toString(16).padStart(2, '0'))
-                .join('');
-        }
-
-        function formatPicbookDate(iso) {
-            if (!iso) return '—';
-            try {
-                const d = new Date(iso);
-                if (Number.isNaN(d.getTime())) return iso;
-                return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-            } catch {
-                return iso;
-            }
-        }
-
-        window.refreshPicbookAccountsAdmin = async function () {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            if (!db) return;
-            const statusEl = document.getElementById('picbookAdminStatus');
-            const tbody = document.getElementById('picbookAdminTableBody');
-            if (!tbody) return;
-            if (statusEl) statusEl.textContent = '불러오는 중…';
-            tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">불러오는 중…</td></tr>';
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) {
-                    if (statusEl) statusEl.textContent = '인증 실패 — 새로고침 후 다시 시도';
-                    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">인증 실패</td></tr>';
-                    return;
-                }
-                const snap = await getDocs(collection(db, PICBOOK_ACCOUNTS_COL));
-                const rows = [];
-                snap.forEach((docSnap) => {
-                    const d = docSnap.data() || {};
-                    rows.push({
-                        key: docSnap.id,
-                        name: d.name || docSnap.id,
-                        unlockedIds: Array.isArray(d.unlockedIds) ? d.unlockedIds : [],
-                        updatedAt: d.updatedAt || '',
-                    });
-                });
-                rows.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
-                if (rows.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-500">등록된 PicBook 회원이 없습니다.</td></tr>';
-                    if (statusEl) statusEl.textContent = '0명';
-                    return;
-                }
-                tbody.innerHTML = rows
-                    .map((r) => {
-                        const books = r.unlockedIds.length
-                            ? r.unlockedIds.map((id) => `<span class="inline-block mr-1 mb-0.5 rounded bg-indigo-950/80 px-1.5 py-0.5 text-[9px] text-indigo-200">${id}</span>`).join('')
-                            : '<span class="text-slate-500">없음</span>';
-                        const safeName = String(r.name).replace(/</g, '&lt;');
-                        const safeKey = String(r.key).replace(/"/g, '&quot;');
-                        return `<tr class="border-b border-slate-800/80 hover:bg-slate-900/50">
-                            <td class="p-2 font-bold text-white">${safeName}<br><span class="text-[8px] text-slate-500">${safeKey}</span></td>
-                            <td class="p-2">${books}</td>
-                            <td class="p-2 text-slate-400 tabular-nums">${formatPicbookDate(r.updatedAt)}</td>
-                            <td class="p-2 text-center whitespace-nowrap">
-                                <button type="button" class="picbook-reset-pw mr-1 rounded bg-slate-700 px-2 py-1 text-[9px] font-bold text-white hover:bg-slate-600" data-key="${safeKey}" data-name="${safeName}">비번</button>
-                                <button type="button" class="picbook-del rounded bg-red-900/60 px-2 py-1 text-[9px] font-bold text-red-200 hover:bg-red-800" data-key="${safeKey}" data-name="${safeName}">삭제</button>
-                            </td>
-                        </tr>`;
-                    })
-                    .join('');
-                tbody.querySelectorAll('.picbook-reset-pw').forEach((btn) => {
-                    btn.addEventListener('click', () => {
-                        const key = btn.getAttribute('data-key');
-                        const name = btn.getAttribute('data-name');
-                        void window.resetPicbookPasswordAdmin(key, name);
-                    });
-                });
-                tbody.querySelectorAll('.picbook-del').forEach((btn) => {
-                    btn.addEventListener('click', () => {
-                        const key = btn.getAttribute('data-key');
-                        const name = btn.getAttribute('data-name');
-                        void window.deletePicbookAccountAdmin(key, name);
-                    });
-                });
-                if (statusEl) statusEl.textContent = `${rows.length}명`;
-            } catch (e) {
-                console.error('refreshPicbookAccountsAdmin', e);
-                if (statusEl) statusEl.textContent = '오류: ' + (e && e.message ? e.message : String(e));
-                tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">불러오기 실패</td></tr>';
-            }
-        };
-
-        window.resetPicbookPasswordAdmin = async function (accountKey, displayName) {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            if (!db) return;
-            const raw = window.prompt(`${displayName || accountKey} — 새 비밀번호(숫자 6자리)`);
-            if (raw == null) return;
-            const pw = String(raw).replace(/\D/g, '').slice(0, 6);
-            if (pw.length !== 6) return window.customAlert('숫자 6자리를 입력해 주세요.');
-            const ok = await window.customConfirm(`${displayName || accountKey} 비밀번호를 변경할까요?`);
-            if (!ok) return;
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return window.customAlert('인증 실패');
-                const passwordHash = await hashPicbookPassword(pw);
-                await updateDoc(doc(db, PICBOOK_ACCOUNTS_COL, accountKey), {
-                    passwordHash,
-                    updatedAt: new Date().toISOString(),
-                });
-                await window.customAlert('비밀번호를 변경했습니다.');
-                void window.refreshPicbookAccountsAdmin();
-            } catch (e) {
-                window.customAlert('변경 실패: ' + (e && e.message ? e.message : String(e)));
-            }
-        };
-
-        window.deletePicbookAccountAdmin = async function (accountKey, displayName) {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            if (!db) return;
-            const ok = await window.customConfirm(
-                `${displayName || accountKey} PicBook 회원 데이터를 삭제할까요?\n(복구할 수 없습니다.)`
-            );
-            if (!ok) return;
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return window.customAlert('인증 실패');
-                await deleteDoc(doc(db, PICBOOK_ACCOUNTS_COL, accountKey));
-                await window.customAlert('삭제했습니다.');
-                void window.refreshPicbookAccountsAdmin();
-            } catch (e) {
-                window.customAlert('삭제 실패: ' + (e && e.message ? e.message : String(e)));
-            }
-        };
-
         window.restoreDragonBallsAdmin = async function () {
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');

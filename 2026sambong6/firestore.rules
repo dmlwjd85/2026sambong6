@@ -94,7 +94,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // --- PicBook (picbook 앱) — 회원·구매·연출, 삼봉월드와 동일 Firebase 프로젝트 ---
+    // --- PicBook / visual_dictionary ---
+    // 삼봉월드 UI·코드에서는 제거됨. 동일 Firebase를 쓰는 PicBook 앱이 별도 규칙 파일을
+    // 배포하기 전까지는 접근이 끊기지 않도록 규칙만 유지합니다.
     match /picbook_accounts/{accountKey} {
       allow read, write: if request.auth != null;
     }

@@ -467,6 +467,66 @@
             overflow: hidden;
         }
 
+        /* 광장 학생 카드 밀도 (크게 / 보통 / 작게) — 24명 한 화면용 */
+        .plaza-cards {
+            display: grid;
+            width: 100%;
+        }
+        .plaza-cards-lg {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+        @media (min-width: 640px) {
+            .plaza-cards-lg { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.65rem; }
+        }
+        @media (min-width: 768px) {
+            .plaza-cards-lg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+        .plaza-cards-md {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.4rem;
+        }
+        @media (min-width: 640px) {
+            .plaza-cards-md { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
+        }
+        @media (min-width: 768px) {
+            .plaza-cards-md { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1280px) {
+            .plaza-cards-md { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        }
+        .plaza-cards-sm {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.3rem;
+        }
+        @media (min-width: 640px) {
+            .plaza-cards-sm { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.35rem; }
+        }
+        @media (min-width: 768px) {
+            .plaza-cards-sm { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        }
+        @media (min-width: 1024px) {
+            .plaza-cards-sm { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+        }
+
+        .plaza-card { min-width: 0; }
+        .plaza-cards-sm .plaza-card { padding: 0.3rem !important; border-radius: 0.65rem !important; }
+        .plaza-cards-sm .plaza-card-face { font-size: 1.35rem !important; margin-bottom: 0.15rem !important; }
+        .plaza-cards-sm .plaza-card-lv { font-size: 7px !important; padding: 0 0.25rem !important; }
+        .plaza-cards-sm .plaza-card-name { font-size: 8px !important; }
+        .plaza-cards-sm .plaza-card-stats { margin-top: 0.15rem !important; }
+        .plaza-cards-sm .plaza-card-stats span { font-size: 8px !important; }
+        .plaza-cards-sm .plaza-learning-thermometer { min-width: 1.6rem; max-width: 2rem; height: 0.9rem; font-size: 7px; }
+        .plaza-cards-sm .plaza-gm-controls { margin-top: 0.25rem !important; padding-top: 0.25rem !important; gap: 0.15rem !important; }
+        .plaza-cards-sm .plaza-gm-controls button { font-size: 7px !important; padding: 0.15rem 0 !important; }
+
+        .plaza-cards-lg .plaza-card { padding: 0.65rem !important; }
+        .plaza-cards-lg .plaza-card-face { font-size: 2.5rem !important; }
+        @media (min-width: 640px) {
+            .plaza-cards-lg .plaza-card-face { font-size: 3rem !important; }
+        }
+        .plaza-cards-lg .plaza-card-name { font-size: 11px !important; }
+
         /* 전술 타이머 전체 화면 */
         .military-timer-overlay {
             background: #0a0c08;

@@ -10450,11 +10450,6 @@ ${subjectLine}
             if(!container) return;
             applyPlazaCardSizeUI(readPlazaCardSize());
 
-            if (window._morningActivityPreviewActive || (isMorningActivityTime() && !window._morningActivityDismissed)) {
-                container.innerHTML = buildMorningActivityPlazaHtml({ preview: !!window._morningActivityPreviewActive });
-                return;
-            }
-            
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
                 const targetId = data ? data.id : emptyId;
@@ -10548,17 +10543,29 @@ ${subjectLine}
 
                 if (isGMCard) {
                     const isA = targetId === 'gm_a';
-                    const cBorder = isA ? 'border-cyan-500' : 'border-sb-gold';
-                    const cGlow = isA ? 'shadow-[0_0_15px_rgba(6,182,212,0.6)]' : 'shadow-[0_0_15px_rgba(251,191,36,0.6)]';
-                    
+                    const themeClass = isA ? 'plaza-staff-card-pirate' : 'plaza-staff-card-master';
+                    const roleLabel = isA
+                        ? (getStaffMember('gm_a')?.label || '해적두목')
+                        : (getStaffMember('gm')?.label || '마스터');
+                    const badge = isA ? '해적두목' : '마스터';
                     return `
-                    <div class="plaza-card flex flex-col items-center p-3 rounded-xl border-2 w-full transition ${cGlow} ${cBorder} bg-slate-900 mx-auto z-10 relative">
+                    <div class="plaza-card plaza-staff-card ${themeClass} w-full relative">
+                        <span class="plaza-staff-badge">${badge}</span>
+                        <span class="plaza-staff-spark" style="top:18%;left:12%;animation-delay:0s"></span>
+                        <span class="plaza-staff-spark" style="top:28%;right:14%;animation-delay:.4s"></span>
+                        <span class="plaza-staff-spark" style="bottom:22%;left:18%;animation-delay:.8s"></span>
+                        <span class="plaza-staff-spark" style="bottom:16%;right:20%;animation-delay:1.2s"></span>
                         ${shieldHtml}${jobHtml}${condHtml}
-                        <div class="plaza-card-face text-4xl sm:text-5xl avatar-legend mb-2 z-10 relative">
-                            ${isA?'🏴‍☠️':'🐉'}<span class="absolute -bottom-1 -right-1 text-xl">${isA?'🌊':'🔥'}</span>${overlays}
+                        <div class="plaza-staff-face-wrap">
+                            <div class="plaza-staff-ring" aria-hidden="true"></div>
+                            <div class="plaza-card-face plaza-staff-face relative">
+                                ${isA ? '🏴‍☠️' : '🐉'}
+                                <span class="absolute -bottom-1 -right-2 text-2xl sm:text-3xl drop-shadow-lg">${isA ? '🌊' : '🔥'}</span>
+                                ${overlays}
+                            </div>
                         </div>
-                        <div class="plaza-card-lv text-[8px] font-black ${isA?'text-cyan-400':'text-sb-gold'} mb-0.5">${isA ? (getStaffMember('gm_a')?.label || '보조') : (getStaffMember('gm')?.label || '담임')}</div>
-                        <div class="plaza-card-name font-bold bg-gradient-to-r ${isA?'from-cyan-600 to-blue-800 text-white':'from-sb-gold to-yellow-300 text-slate-900'} px-1 py-0.5 rounded text-[9px] w-full text-center truncate border border-slate-700">
+                        <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
+                        <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} w-full text-center truncate border ${isA ? 'border-cyan-300/40' : 'border-amber-200/50'}">
                             ${idLabel}
                         </div>
                     </div>`;
@@ -10587,8 +10594,27 @@ ${subjectLine}
                 </div>`;
             };
 
-            let html = createCard(gmData || {id: 'gm', xp: 0, bong: 0}, true, getStaffCardLabel('gm'));
-            if(gmaData || window.playerState.isGMA) html += createCard(gmaData || {id: 'gm_a', xp: 0, bong: 0}, true, getStaffCardLabel('gm_a'));
+            const staffRow = document.getElementById('plazaStaffRow');
+            const morningOn = window._morningActivityPreviewActive || (isMorningActivityTime() && !window._morningActivityDismissed);
+            if (morningOn) {
+                if (staffRow) {
+                    staffRow.classList.remove('is-visible');
+                    staffRow.innerHTML = '';
+                }
+                container.innerHTML = buildMorningActivityPlazaHtml({ preview: !!window._morningActivityPreviewActive });
+                return;
+            }
+
+            let staffHtml = createCard(gmData || { id: 'gm', xp: 0, bong: 0 }, true, getStaffCardLabel('gm'));
+            if (gmaData || window.playerState.isGMA) {
+                staffHtml += createCard(gmaData || { id: 'gm_a', xp: 0, bong: 0 }, true, getStaffCardLabel('gm_a'));
+            }
+            if (staffRow) {
+                staffRow.innerHTML = staffHtml;
+                staffRow.classList.add('is-visible');
+            }
+
+            let html = '';
             getActiveStudentIds().forEach((sid) => {
                 html += createCard(studentsData.find(s => s.id === String(sid)), false, getStudentDisplayLabel(sid));
             });

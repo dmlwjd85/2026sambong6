@@ -2280,20 +2280,135 @@ function redrawPlazaGrantsUi() {
         /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */
         const DICE_UNICODE_FACES = ['\u2680','\u2681','\u2682','\u2683','\u2684','\u2685'];
 
-        /** 석서영(학번 13) 부동산 복구용 자리 인덱스(0부터). 8번 자리 = 인덱스 7. */
+        /** 석서영(학번 13) 부동산 복구용 자리 인덱스(0부터). 8번 자리 = 인덱스 7. — 시드 학급·기본 4×4 전용 */
         const ESTATE_RESTORE_SEOK_SEAT_INDEX = 7;
-        /** 황훈태(학번 12) 부동산 복구용 자리 인덱스(0부터). 2번 자리 = 인덱스 1. */
+        /** 황훈태(학번 12) 부동산 복구용 자리 인덱스(0부터). 2번 자리 = 인덱스 1. — 시드 학급·기본 4×4 전용 */
         const ESTATE_RESTORE_HHWANG_SEAT_INDEX = 1;
 
-        /** 화면에서 제거할 자리(표시 번호 1, 13, 16 → 0부터 인덱스 0, 12, 15) */
-        const ESTATE_HIDDEN_SEAT_IDS = [0, 12, 15];
+        /** 기본 4×4에서 사용 안 함으로 시작하는 자리(표시 번호 1·13·16 → 인덱스 0·12·15) */
+        const ESTATE_DEFAULT_HIDDEN_SEAT_IDS = [0, 12, 15];
+        /** @deprecated 레거시 별칭 — 새 코드는 ESTATE_DEFAULT_HIDDEN_SEAT_IDS / seat.hidden 사용 */
+        const ESTATE_HIDDEN_SEAT_IDS = ESTATE_DEFAULT_HIDDEN_SEAT_IDS;
 
-        /** 부동산 초기 16칸 (1·13·16번 자리는 사용 안 함) */
+        const ESTATE_LAYOUT_MIN = 1;
+        const ESTATE_LAYOUT_MAX = 12;
+        const ESTATE_DEFAULT_PRICE = 500;
+
+        function clampEstateDim(n, fallback) {
+            const v = Math.floor(Number(n));
+            if (!Number.isFinite(v)) return fallback;
+            return Math.max(ESTATE_LAYOUT_MIN, Math.min(ESTATE_LAYOUT_MAX, v));
+        }
+
+        /** 부동산 격자 크기 (rows × cols). 없으면 좌석 수로 추론 */
+        function getEstateLayout(state = window.estateState) {
+            const layout = state && state.layout;
+            let rows = clampEstateDim(layout && layout.rows, 0);
+            let cols = clampEstateDim(layout && layout.cols, 0);
+            if (rows >= 1 && cols >= 1) return { rows, cols };
+            const n = Array.isArray(state && state.seats) ? state.seats.length : 16;
+            if (n === 16) return { rows: 4, cols: 4 };
+            cols = Math.min(8, Math.max(2, Math.ceil(Math.sqrt(n))));
+            rows = Math.max(1, Math.ceil(n / cols));
+            return { rows, cols };
+        }
+
+        /** 사용하지 않는(비활성) 자리인지 */
+        function isEstateSeatDisabled(seat) {
+            if (!seat) return true;
+            if (seat.hidden === true) return true;
+            return false;
+        }
+
+        /** 부동산 자리 배열 생성 */
+        function buildEstateSeatsFromLayout(rows, cols, opts = {}) {
+            const r = clampEstateDim(rows, 4);
+            const c = clampEstateDim(cols, 4);
+            const total = r * c;
+            const price = Math.max(0, Math.floor(Number(opts.defaultPrice) || ESTATE_DEFAULT_PRICE));
+            const hiddenSet = new Set(
+                Array.isArray(opts.hiddenIds)
+                    ? opts.hiddenIds.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x >= 0 && x < total)
+                    : []
+            );
+            const prevById = new Map();
+            if (opts.keepExisting && Array.isArray(opts.previousSeats)) {
+                opts.previousSeats.forEach((s) => {
+                    if (s && Number.isFinite(Number(s.id))) prevById.set(Number(s.id), s);
+                });
+            }
+            const seats = [];
+            for (let i = 0; i < total; i++) {
+                const hide = hiddenSet.has(i);
+                const prev = prevById.get(i);
+                if (prev && opts.keepExisting) {
+                    seats.push({
+                        id: i,
+                        owner: hide ? null : (prev.owner || null),
+                        assignee: hide ? null : (prev.assignee || null),
+                        price: Math.max(0, Math.floor(Number(prev.price) || price)),
+                        locked: hide ? true : !!prev.locked,
+                        hidden: hide,
+                        noAutoRestore: !!prev.noAutoRestore,
+                    });
+                } else {
+                    seats.push({
+                        id: i,
+                        owner: null,
+                        assignee: null,
+                        price,
+                        locked: hide,
+                        hidden: hide,
+                    });
+                }
+            }
+            return { seats, layout: { rows: r, cols: c } };
+        }
+
+        /** 부동산 초기 16칸 (1·13·16번 자리는 사용 안 함) — 하위 호환 */
         function buildInitialEstateSeats() {
-            return Array.from({ length: 16 }, (_, i) => {
-                const hide = ESTATE_HIDDEN_SEAT_IDS.includes(i);
-                return { id: i, owner: null, assignee: null, price: 500, locked: hide, hidden: hide };
+            return buildEstateSeatsFromLayout(4, 4, {
+                defaultPrice: ESTATE_DEFAULT_PRICE,
+                hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
+            }).seats;
+        }
+
+        /** Firestore/메모리 estateState 정규화 (layout·hidden 마이그레이션) */
+        function normalizeEstateState(raw) {
+            const state = raw && typeof raw === 'object' ? { ...raw } : {};
+            if (!Array.isArray(state.seats)) state.seats = buildInitialEstateSeats();
+            if (!Array.isArray(state.purchaseHistory)) state.purchaseHistory = [];
+            const layout = getEstateLayout(state);
+            state.layout = { rows: layout.rows, cols: layout.cols };
+            const expected = layout.rows * layout.cols;
+            // 좌석 수가 layout과 다르면 layout을 좌석 수에 맞춤(구데이터)
+            if (state.seats.length !== expected) {
+                const n = state.seats.length;
+                if (n === 16) state.layout = { rows: 4, cols: 4 };
+                else {
+                    const cols = Math.min(8, Math.max(2, Math.ceil(Math.sqrt(n))));
+                    state.layout = { rows: Math.max(1, Math.ceil(n / cols)), cols };
+                }
+            }
+            const isLegacyDefault = state.seats.length === 16
+                && state.layout.rows === 4
+                && state.layout.cols === 4;
+            state.seats = state.seats.map((s, i) => {
+                const seat = s && typeof s === 'object' ? { ...s } : {};
+                seat.id = Number.isFinite(Number(seat.id)) ? Number(seat.id) : i;
+                if (seat.assignee === undefined) seat.assignee = null;
+                if (seat.owner === undefined) seat.owner = null;
+                if (seat.price == null) seat.price = ESTATE_DEFAULT_PRICE;
+                if (seat.hidden === undefined) {
+                    seat.hidden = isLegacyDefault && ESTATE_DEFAULT_HIDDEN_SEAT_IDS.includes(seat.id);
+                }
+                if (seat.hidden) {
+                    seat.locked = true;
+                    seat.assignee = null;
+                }
+                return seat;
             });
+            return state;
         }
 
         window.playerState = { 
@@ -10075,12 +10190,10 @@ ${subjectLine}
 
                         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
                             if(snap.exists()) {
-                                window.estateState = snap.data(); 
-                                if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
+                                window.estateState = normalizeEstateState(snap.data());
                                 if (Array.isArray(window.estateState.seats)) {
                                     window.estateState.seats.forEach((s) => {
-                                        if (s.assignee === undefined) s.assignee = null;
-                                        if (s.owner || s.locked || s.hidden || ESTATE_HIDDEN_SEAT_IDS.includes(s.id)) {
+                                        if (s.owner || s.locked || isEstateSeatDisabled(s)) {
                                             s.assignee = null;
                                         }
                                     });
@@ -10089,13 +10202,23 @@ ${subjectLine}
                                 window.ensureEstateHwangRestore();
                                 window.renderEstate(); 
                             } else {
-                                const initialSeats = buildInitialEstateSeats();
+                                const built = buildEstateSeatsFromLayout(4, 4, {
+                                    defaultPrice: ESTATE_DEFAULT_PRICE,
+                                    hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
+                                });
+                                const initialSeats = built.seats;
                                 initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
                                 initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden = false;
                                 initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
                                 initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
+                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
                                 const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
-                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: ph });
+                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                                    seats: initialSeats,
+                                    layout: built.layout,
+                                    purchaseHistory: ph,
+                                });
                             }
                         });
 
@@ -11352,10 +11475,15 @@ ${subjectLine}
             const grid = document.getElementById('estateGrid');
             if(!grid || !window.estateState) return;
 
+            window.estateState = normalizeEstateState(window.estateState);
+            const layout = getEstateLayout(window.estateState);
             const estateAdmin = window.playerState.isAdmin;
-            document.getElementById('btnEstateReset').style.display = estateAdmin ? 'block' : 'none';
+            const resetBtn = document.getElementById('btnEstateReset');
+            if (resetBtn) resetBtn.style.display = estateAdmin ? 'block' : 'none';
             const shuffleBtn = document.getElementById('btnEstateShuffle');
             if (shuffleBtn) shuffleBtn.style.display = estateAdmin ? 'block' : 'none';
+            const layoutBtn = document.getElementById('btnEstateLayout');
+            if (layoutBtn) layoutBtn.style.display = estateAdmin ? 'block' : 'none';
 
             const logEl = document.getElementById('estatePurchaseLog');
             if (logEl) {
@@ -11363,19 +11491,37 @@ ${subjectLine}
                 logEl.classList.add('hidden');
             }
 
+            const panel = grid.closest('.glass-panel');
+            if (panel) {
+                panel.classList.toggle('max-w-2xl', layout.cols <= 5);
+                panel.classList.toggle('max-w-4xl', layout.cols > 5 && layout.cols <= 8);
+                panel.classList.toggle('max-w-6xl', layout.cols > 8);
+                panel.classList.toggle('mx-auto', true);
+            }
+
+            grid.className = 'grid gap-2 sm:gap-3 w-full';
+            grid.style.gridTemplateColumns = `repeat(${layout.cols}, minmax(0, 1fr))`;
+
+            const hint = document.getElementById('estateLayoutHint');
+            if (hint) {
+                const active = (window.estateState.seats || []).filter((s) => !isEstateSeatDisabled(s)).length;
+                hint.textContent = `${layout.rows}행 × ${layout.cols}열 · 사용 ${active}칸 / 전체 ${window.estateState.seats.length}칸`;
+            }
+
             grid.innerHTML = window.estateState.seats.map((seat) => {
-                if (ESTATE_HIDDEN_SEAT_IDS.includes(seat.id)) {
-                    return `<div class="bg-slate-900/40 border border-dashed border-slate-600/60 rounded-xl p-3 text-center opacity-50 pointer-events-none select-none grayscale">
+                if (isEstateSeatDisabled(seat)) {
+                    const adminClick = estateAdmin ? `onclick="window.openEstateSeatAdmin(${seat.id})"` : '';
+                    return `<div class="bg-slate-900/40 border border-dashed border-slate-600/60 rounded-xl p-2 sm:p-3 text-center opacity-50 ${estateAdmin ? 'cursor-pointer hover:opacity-80' : 'pointer-events-none select-none'} grayscale" ${adminClick}>
                         <div class="text-slate-500 font-bold text-[10px] mb-1"><i class="fa-solid fa-xmark text-slate-600"></i> 비활성</div>
-                        <div class="text-slate-500 text-[10px]">${seat.id + 1}번 자리</div>
-                        <div class="text-[9px] text-slate-600 mt-1">배치 없음</div>
+                        <div class="text-slate-500 text-[10px]">${seat.id + 1}번</div>
+                        <div class="text-[9px] text-slate-600 mt-1">사용 안 함</div>
                     </div>`;
                 }
                 // 마스터는 어느 자리든 클릭 시 관리 모달(주인 변경·삭제, 가격, 잠금)을 연다
                 const adminClick = estateAdmin ? `onclick="window.openEstateSeatAdmin(${seat.id})"` : '';
                 if (seat.owner) {
                     const ownerName = STUDENT_NAMES[seat.owner] || '학생';
-                    return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)] ${estateAdmin ? 'cursor-pointer transition hover:border-amber-400' : ''}" ${adminClick}>
+                    return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-2 sm:p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)] ${estateAdmin ? 'cursor-pointer transition hover:border-amber-400' : ''}" ${adminClick}>
                         <div class="text-teal-400 font-bold text-xs mb-1">구매 완료</div>
                         <div class="text-white text-[10px]">${ownerName}</div>
                         ${estateAdmin ? `<div class="text-[9px] text-slate-400 mt-1">${formatBongAmount(seat.price)} · 관리</div>` : ''}
@@ -11386,20 +11532,20 @@ ${subjectLine}
                     const clickAction = estateAdmin
                         ? adminClick
                         : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
-                    return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
+                    return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-2 sm:p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
                         <div class="text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
                         <div class="text-white text-[10px]">${assignName}</div>
                         <div class="text-sb-gold text-[9px] mt-1">${formatBongAmount(seat.price)}</div>
                     </div>`;
                 }
                 if (seat.locked) {
-                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-3 text-center transition ${estateAdmin ? 'cursor-pointer hover:border-red-500' : ''}" ${adminClick}>
+                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-2 sm:p-3 text-center transition ${estateAdmin ? 'cursor-pointer hover:border-red-500' : ''}" ${adminClick}>
                         <div class="text-slate-500 font-bold text-xs mb-1"><i class="fa-solid fa-lock text-red-900"></i> 잠김</div>
                         <div class="text-slate-600 text-[10px]">${seat.id + 1}번 자리</div>
                     </div>`;
                 }
                 const clickAction = estateAdmin ? adminClick : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
-                return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-3 text-center cursor-pointer transition group" ${clickAction}>
+                return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-2 sm:p-3 text-center cursor-pointer transition group" ${clickAction}>
                     <div class="text-slate-300 font-bold text-xs mb-1 group-hover:text-white">${seat.id + 1}번 자리</div>
                     <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${formatBongAmount(seat.price)}</div>
                 </div>`;
@@ -12705,14 +12851,16 @@ ${subjectLine}
         // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
 
-        /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구 — 시드(데모) 학급 전용 */
+        /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구 — 시드(데모) 학급·기본 4×4 전용 */
         window.ensureEstateSeokRestore = async function() {
             if (!isSeedDemoClass()) return;
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
+            const layout = getEstateLayout(window.estateState);
+            if (layout.rows !== 4 || layout.cols !== 4) return;
             const idx = ESTATE_RESTORE_SEOK_SEAT_INDEX;
             const seat = window.estateState.seats[idx];
             // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
-            if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
+            if (!seat || isEstateSeatDisabled(seat) || seat.locked || seat.owner || seat.noAutoRestore) return;
             seat.owner = '13';
             if (!Array.isArray(window.estateState.purchaseHistory)) window.estateState.purchaseHistory = [];
             window.estateState.purchaseHistory.push({
@@ -12724,14 +12872,16 @@ ${subjectLine}
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
 
-        /** 빈 자리일 때 황훈태(12번) 학생의 2번 자리 소유를 복구 — 시드(데모) 학급 전용 */
+        /** 빈 자리일 때 황훈태(12번) 학생의 2번 자리 소유를 복구 — 시드(데모) 학급·기본 4×4 전용 */
         window.ensureEstateHwangRestore = async function() {
             if (!isSeedDemoClass()) return;
             if (!db || !window.estateState || !Array.isArray(window.estateState.seats)) return;
+            const layout = getEstateLayout(window.estateState);
+            if (layout.rows !== 4 || layout.cols !== 4) return;
             const idx = ESTATE_RESTORE_HHWANG_SEAT_INDEX;
             const seat = window.estateState.seats[idx];
             // noAutoRestore: 마스터가 직권으로 주인을 변경·삭제한 자리는 자동 복구하지 않음
-            if (!seat || seat.locked || seat.owner || seat.noAutoRestore) return;
+            if (!seat || isEstateSeatDisabled(seat) || seat.locked || seat.owner || seat.noAutoRestore) return;
             seat.owner = '12';
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
@@ -12740,10 +12890,10 @@ ${subjectLine}
         
         window.buyEstateSeat = async function(seatId, price) {
             if(window.playerState.isGuest || window.playerState.isAdmin) return window.customAlert('학생만 자리를 구매할 수 있습니다.');
-            if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             if(!window.estateState || !window.estateState.seats[seatId]) return;
-            
             const seat = window.estateState.seats[seatId];
+            if (isEstateSeatDisabled(seat)) return;
+            
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
             if(seat.locked) return window.customAlert('현재 잠겨있는 자리입니다.');
             
@@ -12775,8 +12925,8 @@ ${subjectLine}
 
         window.toggleSeatLock = async function(seatId) {
             if(!window.playerState.isAdmin) return;
-            if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             const seat = window.estateState.seats[seatId];
+            if (!seat || isEstateSeatDisabled(seat)) return;
             const msg = seat.locked ? `${seatId+1}번 자리 잠금을 해제할까요?` : `${seatId+1}번 자리를 학생이 구매할 수 없도록 잠글까요?`;
             const ok = await window.customConfirm(msg);
             if(ok) {
@@ -12794,12 +12944,12 @@ ${subjectLine}
          */
         window.openEstateSeatAdmin = function(seatId) {
             if (!window.playerState || !window.playerState.isAdmin) return;
-            if (ESTATE_HIDDEN_SEAT_IDS.includes(seatId)) return;
             const seat = (window.estateState && Array.isArray(window.estateState.seats)) ? window.estateState.seats[seatId] : null;
             if (!seat) return;
 
             const ownerName = seat.owner ? (STUDENT_NAMES[seat.owner] || seat.owner) : '없음 (매물)';
             const assignName = seat.assignee ? (STUDENT_NAMES[seat.assignee] || seat.assignee) : '없음';
+            const unused = isEstateSeatDisabled(seat);
             const ownerOptions = ['<option value="">(주인 없음 — 매물로 전환)</option>']
                 .concat(getActiveStudentIds().map((sid) => {
                     const id = String(sid);
@@ -12811,27 +12961,41 @@ ${subjectLine}
             const d = document.createElement('div');
             d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
             d.innerHTML = `
-                <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-teal-500/50 max-w-sm w-full space-y-3 shadow-2xl">
+                <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-teal-500/50 max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
                     <h3 class="text-lg font-display text-teal-300 text-center">🪑 ${seatId + 1}번 자리 관리</h3>
                     <p class="text-[10px] text-slate-400 text-center leading-relaxed">
                         현재 주인: <strong class="text-white">${escapeHtmlGb(ownerName)}</strong>
                         · 임시 배치: ${escapeHtmlGb(assignName)}
-                        · 상태: ${seat.locked ? '<span class="text-rose-400 font-bold">잠김</span>' : '<span class="text-emerald-300 font-bold">열림</span>'}
+                        · 상태: ${unused ? '<span class="text-slate-400 font-bold">사용 안 함</span>' : (seat.locked ? '<span class="text-rose-400 font-bold">잠김</span>' : '<span class="text-emerald-300 font-bold">열림</span>')}
                     </p>
+                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
+                        <input type="checkbox" id="estAdminUnused" ${unused ? 'checked' : ''} class="rounded border-slate-600">
+                        <span>이 자리 사용 안 함 (통로·빈칸)</span>
+                    </label>
                     <label class="block text-[10px] text-slate-300 font-bold">자리 주인
-                        <select id="estAdminOwner" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">${ownerOptions}</select>
+                        <select id="estAdminOwner" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
                     </label>
-                    <label class="block text-[10px] text-slate-300 font-bold">가격 (B)
-                        <input type="number" id="estAdminPrice" min="0" step="1" value="${Number(seat.price) || 0}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs">
+                    <label class="block text-[10px] text-slate-300 font-bold">가격 (${getCurrencyUnit()})
+                        <input type="number" id="estAdminPrice" min="0" step="1" value="${Number(seat.price) || 0}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>
                     </label>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">※ 주인 변경·삭제 시 봉(B)은 자동 정산되지 않습니다. 환불·차감이 필요하면 마스터 탭에서 직접 조정하세요.<br>※ 변경 내역은 구매 기록(감사 로그)에 남습니다.</p>
-                    <div class="flex gap-2">
+                    <p class="text-[9px] text-slate-500 leading-relaxed">※ 주인 변경·삭제 시 ${getCurrencyUnit()}은(는) 자동 정산되지 않습니다. 「사용 안 함」이면 주인·임시 배치가 해제됩니다.</p>
+                    <div class="flex gap-2 flex-wrap">
                         <button type="button" id="estAdminSave" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs">저장</button>
-                        <button type="button" id="estAdminLock" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">${seat.locked ? '🔓 잠금 해제' : '🔒 잠금'}</button>
+                        <button type="button" id="estAdminLock" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600 ${unused ? 'opacity-40 pointer-events-none' : ''}">${seat.locked ? '🔓 잠금 해제' : '🔒 잠금'}</button>
                         <button type="button" id="estAdminCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">취소</button>
                     </div>
                 </div>`;
             document.body.appendChild(d);
+
+            const unusedEl = document.getElementById('estAdminUnused');
+            const syncDisabled = () => {
+                const on = !!unusedEl.checked;
+                document.getElementById('estAdminOwner').disabled = on;
+                document.getElementById('estAdminPrice').disabled = on;
+                document.getElementById('estAdminLock').classList.toggle('opacity-40', on);
+                document.getElementById('estAdminLock').classList.toggle('pointer-events-none', on);
+            };
+            unusedEl.addEventListener('change', syncDisabled);
 
             document.getElementById('estAdminCancel').onclick = () => d.remove();
             document.getElementById('estAdminLock').onclick = async () => {
@@ -12839,32 +13003,43 @@ ${subjectLine}
                 await window.toggleSeatLock(seatId);
             };
             document.getElementById('estAdminSave').onclick = async () => {
-                const newOwner = document.getElementById('estAdminOwner').value || null;
+                const becomeUnused = !!document.getElementById('estAdminUnused').checked;
+                const newOwner = becomeUnused ? null : (document.getElementById('estAdminOwner').value || null);
                 let newPrice = parseInt(document.getElementById('estAdminPrice').value, 10);
                 if (isNaN(newPrice) || newPrice < 0) newPrice = Number(seat.price) || 0;
 
+                const unusedChanged = !!seat.hidden !== becomeUnused;
                 const ownerChanged = String(seat.owner || '') !== String(newOwner || '');
-                const priceChanged = Number(seat.price) !== newPrice;
-                if (!ownerChanged && !priceChanged) { d.remove(); return; }
+                const priceChanged = !becomeUnused && Number(seat.price) !== newPrice;
+                if (!unusedChanged && !ownerChanged && !priceChanged) { d.remove(); return; }
 
                 const changeLines = [];
+                if (unusedChanged) changeLines.push(`- 사용: ${seat.hidden ? '안 함' : '함'} → ${becomeUnused ? '안 함' : '함'}`);
                 if (ownerChanged) {
                     const newName = newOwner ? (STUDENT_NAMES[newOwner] || newOwner) : '없음 (매물로 전환)';
                     changeLines.push(`- 주인: ${ownerName} → ${newName}`);
                 }
                 if (priceChanged) changeLines.push(`- 가격: ${formatBongAmount(Number(seat.price) || 0)} → ${formatBongAmount(newPrice)}`);
                 d.remove();
-                const ok = await window.customConfirm(`${seatId + 1}번 자리를 다음과 같이 변경할까요?\n\n${changeLines.join('\n')}\n\n※ 봉(B) 정산은 자동으로 되지 않습니다.`);
+                const ok = await window.customConfirm(`${seatId + 1}번 자리를 다음과 같이 변경할까요?\n\n${changeLines.join('\n')}`);
                 if (!ok) return;
 
                 const prevOwner = seat.owner ? String(seat.owner) : null;
-                if (ownerChanged) {
+                if (becomeUnused) {
+                    seat.hidden = true;
+                    seat.locked = true;
+                    seat.owner = null;
+                    seat.assignee = null;
+                    seat.noAutoRestore = true;
+                } else {
+                    seat.hidden = false;
+                    if (unusedChanged) seat.locked = false;
+                }
+                if (ownerChanged && !becomeUnused) {
                     seat.owner = newOwner;
-                    // 지정 복구 자리(자동 주인 복구)가 마스터 직권 변경을 되돌리지 않도록 표시
                     seat.noAutoRestore = true;
                     if (newOwner) {
                         seat.assignee = null;
-                        // 새 주인이 다른 자리에 임시 배치돼 있었다면 그 배치를 해제
                         window.estateState.seats.forEach((s) => {
                             if (s !== seat && String(s.assignee || '') === String(newOwner)) s.assignee = null;
                         });
@@ -12912,7 +13087,7 @@ ${subjectLine}
                 .map((sid) => String(sid))
                 .filter((sid) => !ownedIds.has(sid));
             const availableSeats = window.estateState.seats.filter(
-                (s) => !ESTATE_HIDDEN_SEAT_IDS.includes(s.id) && !s.hidden && !s.locked && !s.owner
+                (s) => !isEstateSeatDisabled(s) && !s.locked && !s.owner
             );
 
             availableSeats.forEach((s) => {
@@ -12961,25 +13136,201 @@ ${subjectLine}
 
         window.masterResetEstate = async function() {
             if(!window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?\n\n※ 자리 구매 기록(감사 로그)은 삭제되지 않습니다.\n※ 석서영 학생 지정 자리는 규칙에 따라 다시 부여됩니다.');
+            const layout = getEstateLayout(window.estateState);
+            const hiddenIds = (window.estateState && Array.isArray(window.estateState.seats))
+                ? window.estateState.seats.filter((s) => isEstateSeatDisabled(s)).map((s) => s.id)
+                : ESTATE_DEFAULT_HIDDEN_SEAT_IDS;
+            const ok = await window.customConfirm(
+                `정말로 모든 학생의 자리를 초기화하고 매물로 내놓으시겠습니까?\n\n` +
+                `현재 배열 ${layout.rows}행×${layout.cols}열과 「사용 안 함」 자리는 유지합니다.\n` +
+                `※ 자리 구매 기록(감사 로그)은 삭제되지 않습니다.`
+            );
             if(!ok) return;
 
             const prevHistory = (window.estateState && Array.isArray(window.estateState.purchaseHistory))
                 ? [...window.estateState.purchaseHistory] : [];
-            const initialSeats = buildInitialEstateSeats();
-            initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
-            initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
-            initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
-            initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
-            prevHistory.push({
-                studentId: '13',
-                seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,
-                price: 500,
-                at: Date.now(),
-                note: '전체 초기화 후 석서영 자리 복구'
+            const avgPrice = (() => {
+                const prices = (window.estateState.seats || []).map((s) => Number(s.price) || ESTATE_DEFAULT_PRICE);
+                if (!prices.length) return ESTATE_DEFAULT_PRICE;
+                return Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+            })();
+            const built = buildEstateSeatsFromLayout(layout.rows, layout.cols, {
+                defaultPrice: avgPrice,
+                hiddenIds,
             });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), { seats: initialSeats, purchaseHistory: prevHistory });
-            window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록은 보존되었습니다.)");
+            // 시드 학급·기본 4×4일 때만 지정 자리 복구
+            if (isSeedDemoClass() && layout.rows === 4 && layout.cols === 4) {
+                if (built.seats[ESTATE_RESTORE_SEOK_SEAT_INDEX] && !built.seats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden) {
+                    built.seats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+                    built.seats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+                    prevHistory.push({
+                        studentId: '13',
+                        seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX,
+                        price: avgPrice,
+                        at: Date.now(),
+                        note: '전체 초기화 후 석서영 자리 복구'
+                    });
+                }
+                if (built.seats[ESTATE_RESTORE_HHWANG_SEAT_INDEX] && !built.seats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden) {
+                    built.seats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
+                    built.seats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
+                }
+            }
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                seats: built.seats,
+                layout: built.layout,
+                purchaseHistory: prevHistory,
+            });
+            window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록·배열 설정은 보존되었습니다.)");
+        };
+
+        /**
+         * ★ 마스터: 자리 배열(행·열·사용 안 함) 편집 ★
+         * 표 만들듯이 행/열을 정하고, 미리보기에서 안 쓰는 칸을 토글한다.
+         */
+        window.openEstateLayoutEditor = function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 자리 배열을 수정할 수 있습니다.');
+            }
+            if (!window.estateState) window.estateState = normalizeEstateState({});
+            else window.estateState = normalizeEstateState(window.estateState);
+
+            const cur = getEstateLayout(window.estateState);
+            let draftRows = cur.rows;
+            let draftCols = cur.cols;
+            const draftHidden = new Set(
+                (window.estateState.seats || []).filter((s) => isEstateSeatDisabled(s)).map((s) => Number(s.id))
+            );
+            const defaultPrice = (() => {
+                const prices = (window.estateState.seats || [])
+                    .filter((s) => !isEstateSeatDisabled(s))
+                    .map((s) => Number(s.price) || ESTATE_DEFAULT_PRICE);
+                if (!prices.length) return ESTATE_DEFAULT_PRICE;
+                return Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+            })();
+
+            const d = document.createElement('div');
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-3 py-4';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-4 sm:p-6 rounded-3xl border border-teal-500/50 max-w-xl w-full space-y-3 shadow-2xl max-h-[92vh] overflow-y-auto">
+                    <h3 class="text-lg font-display text-teal-300 text-center"><i class="fa-solid fa-table-cells"></i> 자리 배열 설정</h3>
+                    <p class="text-[10px] text-slate-400 text-center leading-relaxed">행·열을 입력한 뒤, 미리보기에서 칸을 눌러 「사용 안 함」(통로·빈자리)을 지정하세요.</p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <label class="text-[10px] text-slate-300 font-bold">행
+                            <input type="number" id="estLayoutRows" min="1" max="12" value="${draftRows}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs font-bold text-center">
+                        </label>
+                        <label class="text-[10px] text-slate-300 font-bold">열
+                            <input type="number" id="estLayoutCols" min="1" max="12" value="${draftCols}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs font-bold text-center">
+                        </label>
+                        <label class="text-[10px] text-slate-300 font-bold">새 자리 가격
+                            <input type="number" id="estLayoutPrice" min="0" step="1" value="${defaultPrice}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs font-bold text-center">
+                        </label>
+                    </div>
+                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2">
+                        <input type="checkbox" id="estLayoutKeep" checked class="rounded border-slate-600">
+                        <span>기존 주인·가격·잠금 유지 (겹치는 번호만)</span>
+                    </label>
+                    <div class="text-center text-[9px] text-slate-500 bg-slate-950/60 rounded-lg py-1.5 border border-slate-700">칠판 (앞)</div>
+                    <div id="estLayoutPreview" class="grid gap-1.5"></div>
+                    <p id="estLayoutSummary" class="text-[10px] text-teal-200/90 font-bold text-center"></p>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">※ 배열을 줄여 사라지는 자리에 주인이 있으면 해당 소유는 해제됩니다(자동 환불 없음).</p>
+                    <div class="flex gap-2">
+                        <button type="button" id="estLayoutApply" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs">적용·저장</button>
+                        <button type="button" id="estLayoutCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-4 rounded-xl text-xs border border-slate-600">취소</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(d);
+
+            const preview = document.getElementById('estLayoutPreview');
+            const summary = document.getElementById('estLayoutSummary');
+            const rowsEl = document.getElementById('estLayoutRows');
+            const colsEl = document.getElementById('estLayoutCols');
+
+            const paint = () => {
+                draftRows = clampEstateDim(rowsEl.value, draftRows);
+                draftCols = clampEstateDim(colsEl.value, draftCols);
+                rowsEl.value = String(draftRows);
+                colsEl.value = String(draftCols);
+                const total = draftRows * draftCols;
+                [...draftHidden].forEach((id) => {
+                    if (id >= total) draftHidden.delete(id);
+                });
+                preview.style.gridTemplateColumns = `repeat(${draftCols}, minmax(0, 1fr))`;
+                let html = '';
+                for (let i = 0; i < total; i++) {
+                    const off = draftHidden.has(i);
+                    html += `<button type="button" data-est-idx="${i}" class="min-h-[44px] rounded-lg border text-[10px] font-bold transition ${
+                        off
+                            ? 'bg-slate-900/70 border-dashed border-slate-600 text-slate-500'
+                            : 'bg-teal-900/40 border-teal-500/70 text-teal-100 hover:border-teal-300'
+                    }">${off ? '×' : (i + 1)}</button>`;
+                }
+                preview.innerHTML = html;
+                const active = total - draftHidden.size;
+                summary.textContent = `${draftRows}행 × ${draftCols}열 · 사용 ${active}칸 · 안 씀 ${draftHidden.size}칸`;
+                preview.querySelectorAll('[data-est-idx]').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const idx = Number(btn.getAttribute('data-est-idx'));
+                        if (draftHidden.has(idx)) draftHidden.delete(idx);
+                        else draftHidden.add(idx);
+                        paint();
+                    });
+                });
+            };
+            rowsEl.addEventListener('change', paint);
+            colsEl.addEventListener('change', paint);
+            rowsEl.addEventListener('input', () => { /* live size only on change/blur to reduce flicker */ });
+            paint();
+
+            document.getElementById('estLayoutCancel').onclick = () => d.remove();
+            document.getElementById('estLayoutApply').onclick = async () => {
+                draftRows = clampEstateDim(rowsEl.value, draftRows);
+                draftCols = clampEstateDim(colsEl.value, draftCols);
+                const price = Math.max(0, Math.floor(Number(document.getElementById('estLayoutPrice').value) || ESTATE_DEFAULT_PRICE));
+                const keep = !!document.getElementById('estLayoutKeep').checked;
+                const total = draftRows * draftCols;
+                const lostOwned = (window.estateState.seats || []).filter(
+                    (s) => s.owner && Number(s.id) >= total
+                );
+                const hideOwned = (window.estateState.seats || []).filter(
+                    (s) => s.owner && draftHidden.has(Number(s.id))
+                );
+                let warn = `${draftRows}행 × ${draftCols}열 배열을 적용할까요?\n사용 ${total - draftHidden.size}칸 / 안 씀 ${draftHidden.size}칸`;
+                if (lostOwned.length || hideOwned.length) {
+                    warn += `\n\n※ 주인 있는 자리 ${lostOwned.length + hideOwned.length}곳이 사라지거나 비활성됩니다(자동 환불 없음).`;
+                }
+                const ok = await window.customConfirm(warn);
+                if (!ok) return;
+
+                const built = buildEstateSeatsFromLayout(draftRows, draftCols, {
+                    defaultPrice: price,
+                    hiddenIds: [...draftHidden],
+                    keepExisting: keep,
+                    previousSeats: window.estateState.seats || [],
+                });
+                const prevHistory = Array.isArray(window.estateState.purchaseHistory)
+                    ? [...window.estateState.purchaseHistory]
+                    : [];
+                prevHistory.push({
+                    studentId: 'gm',
+                    seatId: -1,
+                    price: 0,
+                    at: Date.now(),
+                    note: `자리 배열 변경 → ${draftRows}×${draftCols} (사용 ${total - draftHidden.size})`,
+                });
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                        seats: built.seats,
+                        layout: built.layout,
+                        purchaseHistory: prevHistory,
+                    });
+                    d.remove();
+                    await window.customAlert(`✅ 자리 배열을 저장했습니다.\n${draftRows}행 × ${draftCols}열`);
+                } catch (e) {
+                    console.error('openEstateLayoutEditor', e);
+                    await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                }
+            };
         };
 
         window.equipWeapon = async function(wpId) {

@@ -1262,19 +1262,21 @@
 
         <!-- ★ 7. 부동산(자리표) — 경제 서브 ★ -->
         <section id="estateSection" class="hidden">
-            <div class="mb-4 flex justify-between items-end">
+            <div class="mb-4 flex flex-wrap justify-between items-end gap-2">
                 <div>
                     <h2 class="text-xl sm:text-2xl font-display text-teal-400"><i class="fa-solid fa-building"></i> 학급 부동산 (자리표)</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">원하는 자리를 B로 영구 구매하세요! (마스터: 자리 클릭으로 주인 변경·삭제, 가격 조정, 잠금 관리 / 랜덤 배치는 구매 완료 자리 유지)</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">원하는 자리를 영구 구매하세요! 마스터는 행·열·사용 안 함 자리를 자유롭게 배열할 수 있습니다.</p>
+                    <p id="estateLayoutHint" class="text-[10px] text-teal-300/80 font-bold mt-1">—</p>
                 </div>
                 <div class="flex flex-wrap gap-2 shrink-0">
+                    <button id="btnEstateLayout" type="button" onclick="window.openEstateLayoutEditor()" class="hidden bg-teal-700 hover:bg-teal-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-teal-400"><i class="fa-solid fa-table-cells"></i> 자리 배열</button>
                     <button id="btnEstateShuffle" onclick="window.shuffleEstateSeatAssignments()" class="hidden bg-teal-800 hover:bg-teal-700 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-teal-500">자리 랜덤 배치</button>
                     <button id="btnEstateReset" onclick="window.masterResetEstate()" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-slate-500">전체 초기화</button>
                 </div>
             </div>
             <div class="glass-panel p-3 sm:p-5 rounded-3xl shadow-xl border-t-4 border-t-teal-500 max-w-2xl mx-auto bg-slate-900/80">
                 <div class="w-full text-center bg-slate-800 text-slate-400 font-bold py-2 mb-4 rounded-xl border border-slate-600 tracking-widest text-xs">칠판 (앞)</div>
-                <div class="grid grid-cols-4 gap-2 sm:gap-4" id="estateGrid"><div class="text-center text-slate-500 text-xs py-10 col-span-4">로딩 중...</div></div>
+                <div class="grid gap-2 sm:gap-3 w-full" id="estateGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr));"><div class="text-center text-slate-500 text-xs py-10" style="grid-column: 1 / -1;">로딩 중...</div></div>
                 <div id="estatePurchaseLog" class="hidden"></div>
             </div>
         </section>

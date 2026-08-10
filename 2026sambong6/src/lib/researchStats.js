@@ -1,6 +1,6 @@
 /**
- * 교사 연구용 활동 통계 집계
- * 오늘/이번 주 퀘스트 완료율, XP 증가, 인기 퀘스트, 상점 이용 등을 계산합니다.
+ * 활용 통계 집계
+ * 오늘/이번 주 퀘스트 완료율, XP 증가, 퀘스트 완료 Top 3, 상점 이용 등을 계산합니다.
  */
 
 function pad2(n) {
@@ -33,12 +33,20 @@ function inRange(ymd, start, end) {
     return ymd && start && end && ymd >= start && ymd <= end;
 }
 
+function mapTopQuests(entries, resolveQuestName, limit = 3) {
+    return [...entries]
+        .map(([id, count]) => ({ id, name: resolveQuestName(id), count }))
+        .sort((a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name), 'ko'))
+        .slice(0, limit);
+}
+
 /**
  * @param {object} opts
  * @param {any[]} opts.students
  * @param {string[]} opts.studentIds
  * @param {(sid:string)=>string} opts.getName
  * @param {any[]} opts.dailyQuests
+ * @param {any[]} [opts.allQuests] 이름 해석용 전체 퀘스트 목록
  * @param {string} [opts.today]
  */
 export function computeResearchStats(opts) {
@@ -46,6 +54,9 @@ export function computeResearchStats(opts) {
     const weekStart = toYmd(startOfWeekMonday(new Date()));
     const weekEnd = addDaysYmd(weekStart, 6);
     const dailyQuests = Array.isArray(opts.dailyQuests) ? opts.dailyQuests : [];
+    const allQuests = Array.isArray(opts.allQuests) && opts.allQuests.length
+        ? opts.allQuests
+        : dailyQuests;
     const dailyIds = dailyQuests.map((q) => String(q.id));
     const students = (opts.studentIds || []).map((id) => {
         const sid = String(id);
@@ -150,19 +161,20 @@ export function computeResearchStats(opts) {
     const weekRate = dailyIds.length ? (weekStudentDoneSum / dailyTotalSlots) * 100 : 0;
 
     const resolveQuestName = (id) => {
-        const q = dailyQuests.find((x) => String(x.id) === String(id));
+        const q = allQuests.find((x) => String(x.id) === String(id))
+            || dailyQuests.find((x) => String(x.id) === String(id));
         return (q && q.name) || String(id);
     };
 
-    const topQuests = [...questCountById.entries()]
-        .map(([id, count]) => ({ id, name: resolveQuestName(id), count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 8);
-
-    const topQuestsToday = [...questCountToday.entries()]
-        .map(([id, count]) => ({ id, name: resolveQuestName(id), count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5);
+    const topQuests = mapTopQuests(questCountById.entries(), resolveQuestName, 8);
+    const topQuestsToday = mapTopQuests(questCountToday.entries(), resolveQuestName, 5);
+    const topQuestsWeek = mapTopQuests(questCountWeek.entries(), resolveQuestName, 5);
+    const period = opts.period || 'week';
+    const topQuestsPeriod = period === 'today'
+        ? mapTopQuests(questCountToday.entries(), resolveQuestName, 3)
+        : (period === 'all'
+            ? mapTopQuests(questCountById.entries(), resolveQuestName, 3)
+            : mapTopQuests(questCountWeek.entries(), resolveQuestName, 3));
 
     const avgXpGainToday = perStudent.reduce((s, r) => s + r.xpGainToday, 0) / n;
     const avgXpGainWeek = perStudent.reduce((s, r) => s + r.xpGainWeek, 0) / n;
@@ -175,16 +187,6 @@ export function computeResearchStats(opts) {
         bankUseCount += terms + regular;
     });
 
-    // 학습 온도계 평균
-    let thermoAvg = null;
-    const thermo = opts.learningThermometer;
-    if (thermo && typeof thermo === 'object') {
-        const vals = Object.values(thermo)
-            .map((v) => (typeof v === 'number' ? v : Number(v?.temp ?? v?.value)))
-            .filter((v) => Number.isFinite(v));
-        if (vals.length) thermoAvg = Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
-    }
-
     const allRate = dailyIds.length
         ? (todayCompletions > 0 || weekCompletions > 0
             ? Math.round(((weekStudentDoneSum + todayStudentDoneSum) / (dailyTotalSlots * 2)) * 1000) / 10
@@ -196,7 +198,7 @@ export function computeResearchStats(opts) {
         today,
         weekStart,
         weekEnd,
-        period: opts.period || 'week',
+        period,
         studentCount: students.length,
         dailyQuestCount: dailyIds.length,
         todayCompletions,
@@ -210,9 +212,10 @@ export function computeResearchStats(opts) {
         purchaseCount,
         purchaseCountWeek,
         bankUseCount,
-        thermoAvg,
         topQuests,
         topQuestsToday,
+        topQuestsWeek,
+        topQuestsPeriod,
         perStudent: perStudent.sort((a, b) => b.xpGainWeek - a.xpGainWeek),
     };
 }
@@ -231,6 +234,9 @@ export function researchStatsToCsv(stats) {
     lines.push(`이번주_평균XP증가,${stats.avgXpGainWeek}`);
     lines.push(`상점_이용건수_전체,${stats.purchaseCount}`);
     lines.push(`상점_이용건수_이번주,${stats.purchaseCountWeek}`);
+    lines.push('');
+    lines.push('퀘스트완료_Top3(선택기간),완료수');
+    (stats.topQuestsPeriod || []).forEach((q) => lines.push(`"${String(q.name).replace(/"/g, '""')}",${q.count}`));
     lines.push('');
     lines.push('인기퀘스트(누적),완료수');
     (stats.topQuests || []).forEach((q) => lines.push(`"${String(q.name).replace(/"/g, '""')}",${q.count}`));

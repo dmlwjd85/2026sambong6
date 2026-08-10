@@ -1608,10 +1608,10 @@
                 </div>
             </div>
 
-            <!-- ★ 연구·수업 활동 통계 대시보드 ★ -->
+            <!-- ★ 활용 통계 대시보드 ★ -->
             <div class="glass-panel p-4 rounded-xl mb-4 border border-fuchsia-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chart-line text-fuchsia-400"></i> 활동 통계 (연구·보고서용)</h3>
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chart-line text-fuchsia-400"></i> 활용 통계</h3>
                     <button type="button" onclick="window.renderResearchStatsDashboard()" class="bg-fuchsia-700 hover:bg-fuchsia-600 text-white text-[10px] py-2 px-3 rounded font-bold min-h-[44px]">새로고침</button>
                 </div>
                 <div class="flex flex-wrap gap-2 mb-3">
@@ -1619,7 +1619,7 @@
                     <button type="button" data-research-period="week" onclick="window.setResearchStatsPeriod('week')" class="bg-fuchsia-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg min-h-[44px]">이번 주</button>
                     <button type="button" data-research-period="all" onclick="window.setResearchStatsPeriod('all')" class="bg-slate-800 text-slate-300 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-slate-600 min-h-[44px]">전체</button>
                 </div>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">퀘스트 완료율, XP 상위, 인기 퀘스트, 상점·은행 이용, 학습 온도계 평균을 봅니다.</p>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">퀘스트 완료율, XP 상위, 퀘스트별 완료 Top 3, 상점·은행 이용을 봅니다.</p>
                 <div id="researchStatsPanel" class="space-y-3 text-[10px] text-slate-300">
                     <div class="text-slate-500 text-center py-4"><i class="fa-solid fa-spinner fa-spin mr-1"></i>마스터 탭을 열면 집계합니다.</div>
                 </div>
@@ -1627,27 +1627,6 @@
                     <button type="button" onclick="void window.downloadResearchStatsCsv()" class="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[10px] font-bold py-2 px-3 rounded-lg">CSV 저장</button>
                     <button type="button" onclick="void window.downloadResearchStatsJson()" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg border border-slate-500">JSON 저장</button>
                 </div>
-            </div>
-
-            <!-- ★ 연구 설문·관찰 일지 ★ -->
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-rose-500/40 bg-slate-900/80 space-y-3">
-                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-clipboard-list text-rose-400"></i> 연구 설문 · 관찰 일지</h3>
-                <p class="text-[9px] text-slate-400 leading-relaxed">적용 전·후 설문(참여 동기·자율성·협력 등) 링크와 관찰/소감을 모아 두면 연구 체계성·효과성 증빙에 쓰입니다.</p>
-                <label class="block text-[10px] text-slate-300 font-bold">외부 설문 링크 (Google Form 등)
-                    <input id="researchSurveyUrl" type="url" maxlength="400" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs" placeholder="https://forms.gle/...">
-                </label>
-                <label class="block text-[10px] text-slate-300 font-bold">설문 안내 문구
-                    <input id="researchSurveyNote" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs" placeholder="예: 적용 후 설문 (5분)">
-                </label>
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" onclick="void window.saveResearchSurveySettings()" class="bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">설문 설정 저장</button>
-                    <button type="button" onclick="window.openResearchSurveyLink()" class="bg-slate-800 hover:bg-slate-700 text-rose-200 text-[10px] font-bold py-2 px-3 rounded-lg border border-rose-500/40">설문 열기</button>
-                </div>
-                <label class="block text-[10px] text-slate-300 font-bold">관찰 일지 / 학생 소감 / 업무 시간 메모
-                    <textarea id="researchJournalInput" rows="3" maxlength="800" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs resize-y" placeholder="예: 3/12 관찰 — 협력 퀘스트에서 서로 돕기 증가. 교사 업무: 출석 체크 5분 단축."></textarea>
-                </label>
-                <button type="button" onclick="void window.addResearchJournalEntry()" class="bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold py-2 px-3 rounded-lg">일지 추가</button>
-                <div id="researchJournalList" class="max-h-40 overflow-y-auto space-y-1.5 text-[9px] text-slate-400 border border-slate-800 rounded-lg p-2 bg-slate-950/50"></div>
             </div>
 
             <!-- ★ 학생 데이터 엑셀 내보내기 ★ -->

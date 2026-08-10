@@ -6708,8 +6708,6 @@ ${subjectLine}
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderResearchStatsDashboard === 'function') {
                 window.renderResearchStatsDashboard();
-                window.renderResearchSurveyPanel();
-                window.renderResearchJournalList();
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
@@ -11034,43 +11032,61 @@ ${subjectLine}
             const panel = document.getElementById('researchStatsPanel');
             if (!panel || !window.playerState?.isAdmin) return;
             try {
-                const dailyQuests = getQuestCatalog().filter((q) => q.type === 'daily');
+                const allQuests = getQuestCatalog();
+                const dailyQuests = allQuests.filter((q) => q.type === 'daily');
                 const stats = computeResearchStats({
                     students: window.allStudentsData || [],
                     studentIds: getActiveStudentIds(),
                     getName: (sid) => STUDENT_NAMES[String(sid)] || String(sid),
                     dailyQuests,
+                    allQuests,
                     today: getLocalDateStr(),
                     period: _researchPeriod,
-                    learningThermometer: window.globalSettings?.learningThermometer,
                 });
                 _lastResearchStats = stats;
                 const periodLabel = _researchPeriod === 'today' ? '오늘' : (_researchPeriod === 'all' ? '전체' : '이번 주');
-                const topHtml = (stats.topQuests || []).slice(0, 5).map((q, i) =>
-                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${q.name}</span><span class="text-fuchsia-300 font-bold">${q.count}회</span></div>`
-                ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                const medal = ['🥇', '🥈', '🥉'];
+                const top3 = Array.isArray(stats.topQuestsPeriod) ? stats.topQuestsPeriod : [];
+                const top3Html = top3.length
+                    ? top3.map((q, i) =>
+                        `<div class="flex items-center justify-between gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-950/30 px-2.5 py-2">
+                            <div class="min-w-0 flex items-center gap-2">
+                                <span class="text-base leading-none">${medal[i] || `${i + 1}.`}</span>
+                                <span class="font-bold text-white truncate">${q.name}</span>
+                            </div>
+                            <span class="shrink-0 text-fuchsia-300 font-black tabular-nums">${q.count}회</span>
+                        </div>`
+                    ).join('')
+                    : '<div class="text-slate-500 text-center py-3">해당 기간 완료 기록이 없습니다.</div>';
                 const xpKey = _researchPeriod === 'today' ? 'xpGainToday' : 'xpGainWeek';
-                const xpTop = (stats.perStudent || []).slice(0, 5).map((r) =>
-                    `<div class="flex justify-between gap-2"><span>${r.name}</span><span class="text-sb-blue font-bold">+${r[xpKey] || 0} XP</span></div>`
+                const sortedXp = [...(stats.perStudent || [])].sort((a, b) => (b[xpKey] || 0) - (a[xpKey] || 0));
+                const xpTop = sortedXp.slice(0, 5).map((r, i) =>
+                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${r.name}</span><span class="text-sb-blue font-bold">+${r[xpKey] || 0} XP</span></div>`
                 ).join('') || '<div class="text-slate-500">기록 없음</div>';
                 const completionRate = _researchPeriod === 'today' ? stats.todayCompletionRate
                     : (_researchPeriod === 'all' ? (stats.allCompletionRate ?? stats.weekCompletionRate) : stats.weekCompletionRate);
+                const avgXp = _researchPeriod === 'today' ? stats.avgXpGainToday : stats.avgXpGainWeek;
+                const shopCount = _researchPeriod === 'all' ? (stats.purchaseCount || 0) : (stats.purchaseCountWeek || 0);
+                const shopLabel = _researchPeriod === 'all' ? '상점 이용(누적)' : '상점 이용(주)';
                 panel.innerHTML = `
                     <div class="text-[9px] text-slate-400 mb-1">기간: <strong class="text-fuchsia-200">${periodLabel}</strong></div>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div class="rounded-xl border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-950/40 to-slate-950/80 p-3 space-y-2">
+                        <div class="text-[11px] text-fuchsia-200 font-black"><i class="fa-solid fa-trophy text-amber-300 mr-1"></i> 퀘스트별 가장 많이 완료 · Top 3</div>
+                        <div class="space-y-1.5">${top3Html}</div>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                         <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">퀘스트 완료율</div><div class="text-lg font-black text-emerald-300 tabular-nums">${completionRate}%</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">평균 XP↑</div><div class="text-lg font-black text-sb-blue tabular-nums">${_researchPeriod === 'today' ? stats.avgXpGainToday : stats.avgXpGainWeek}</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">상점·은행 이용</div><div class="text-lg font-black text-amber-300 tabular-nums">${(stats.purchaseCountWeek || 0) + (stats.bankUseCount || 0)}</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">온도계 평균</div><div class="text-lg font-black text-rose-300 tabular-nums">${stats.thermoAvg != null ? stats.thermoAvg : '—'}</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">평균 XP↑</div><div class="text-lg font-black text-sb-blue tabular-nums">${avgXp}</div></div>
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2 col-span-2 sm:col-span-1"><div class="text-[8px] text-slate-500">${shopLabel}</div><div class="text-lg font-black text-amber-300 tabular-nums">${shopCount}건</div></div>
                     </div>
                     <div class="grid sm:grid-cols-3 gap-2 text-[9px]">
                         <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">전부완료(오늘) <strong class="text-white">${stats.allClearToday}</strong>명</div>
                         <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">상점 이용(주) <strong class="text-white">${stats.purchaseCountWeek}</strong>건</div>
                         <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">은행 이용 <strong class="text-white">${stats.bankUseCount || 0}</strong>건</div>
                     </div>
-                    <div class="grid sm:grid-cols-2 gap-3">
-                        <div><div class="text-[9px] text-fuchsia-300 font-bold mb-1">가장 많이 완료된 퀘스트</div>${topHtml}</div>
-                        <div><div class="text-[9px] text-sb-blue font-bold mb-1">XP 증가량 상위</div>${xpTop}</div>
+                    <div>
+                        <div class="text-[9px] text-sb-blue font-bold mb-1">XP 증가량 상위</div>
+                        ${xpTop}
                     </div>`;
             } catch (e) {
                 console.error('renderResearchStatsDashboard', e);

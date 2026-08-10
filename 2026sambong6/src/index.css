@@ -467,46 +467,27 @@
             overflow: hidden;
         }
 
-        /* 광장 학생 카드 밀도 (크게 / 보통 / 작게) — 24명 한 화면용 */
+        /* 광장 학생 카드 배열: 크게 4명 / 중간 5명 / 작게 6명 (한 줄) */
         .plaza-cards {
             display: grid;
             width: 100%;
         }
         .plaza-cards-lg {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 0.5rem;
         }
-        @media (min-width: 640px) {
-            .plaza-cards-lg { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.65rem; }
-        }
-        @media (min-width: 768px) {
-            .plaza-cards-lg { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-        }
         .plaza-cards-md {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 0.4rem;
         }
-        @media (min-width: 640px) {
-            .plaza-cards-md { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
-        }
-        @media (min-width: 768px) {
-            .plaza-cards-md { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-        }
-        @media (min-width: 1280px) {
-            .plaza-cards-md { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-        }
         .plaza-cards-sm {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 0.3rem;
         }
-        @media (min-width: 640px) {
-            .plaza-cards-sm { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.35rem; }
-        }
-        @media (min-width: 768px) {
-            .plaza-cards-sm { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-        }
-        @media (min-width: 1024px) {
-            .plaza-cards-sm { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+        @media (max-width: 639px) {
+            .plaza-cards-lg { gap: 0.35rem; }
+            .plaza-cards-md { gap: 0.3rem; }
+            .plaza-cards-sm { gap: 0.25rem; }
         }
 
         .plaza-card { min-width: 0; }
@@ -520,10 +501,14 @@
         .plaza-cards-sm .plaza-gm-controls { margin-top: 0.25rem !important; padding-top: 0.25rem !important; gap: 0.15rem !important; }
         .plaza-cards-sm .plaza-gm-controls button { font-size: 7px !important; padding: 0.15rem 0 !important; }
 
-        .plaza-cards-lg .plaza-card { padding: 0.65rem !important; }
-        .plaza-cards-lg .plaza-card-face { font-size: 2.5rem !important; }
+        .plaza-cards-md .plaza-card { padding: 0.4rem !important; }
+        .plaza-cards-md .plaza-card-face { font-size: 1.75rem !important; }
+        .plaza-cards-md .plaza-card-name { font-size: 9px !important; }
+
+        .plaza-cards-lg .plaza-card { padding: 0.55rem !important; }
+        .plaza-cards-lg .plaza-card-face { font-size: 2.25rem !important; }
         @media (min-width: 640px) {
-            .plaza-cards-lg .plaza-card-face { font-size: 3rem !important; }
+            .plaza-cards-lg .plaza-card-face { font-size: 2.75rem !important; }
         }
         .plaza-cards-lg .plaza-card-name { font-size: 11px !important; }
 

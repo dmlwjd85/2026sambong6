@@ -10439,7 +10439,7 @@ ${subjectLine}
             });
         }
 
-        /** 광장 학생 카드 크기: lg(크게) / md(보통) / sm(작게·24명 권장) */
+        /** 광장 학생 카드 크기: lg(크게·4명) / md(중간·5명) / sm(작게·6명) */
         window.setPlazaCardSize = function(size) {
             applyPlazaCardSizeUI(size);
             try { localStorage.setItem(PLAZA_CARD_SIZE_KEY, plazaCardSize); } catch (_) { /* ignore */ }

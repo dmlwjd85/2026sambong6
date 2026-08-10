@@ -585,6 +585,8 @@ function redrawPlazaGrantsUi() {
             vacationPauseClassXp: true,
             vacationPauseBankBonus: true,
             vacationPauseThermometer: true,
+            /** 학급 화폐 단위 — 금액 뒤 표기 (예: B, 봉, 미소, 감자) */
+            currencyUnit: 'B',
         };
 
         function normalizeWorldDateYmd(raw) {
@@ -657,8 +659,24 @@ function redrawPlazaGrantsUi() {
                 vacationPauseClassXp: src.vacationPauseClassXp !== false,
                 vacationPauseBankBonus: src.vacationPauseBankBonus !== false,
                 vacationPauseThermometer: src.vacationPauseThermometer !== false,
+                currencyUnit: sanitizeCurrencyUnit(src.currencyUnit),
             };
         }
+
+        /** 화폐 단위 정규화 (1~8자, 기본 B) */
+        function sanitizeCurrencyUnit(raw) {
+            const s = String(raw ?? DEFAULT_WORLD_SETTINGS.currencyUnit)
+                .replace(/[\r\n\t]/g, '')
+                .trim()
+                .slice(0, 8);
+            return s || DEFAULT_WORLD_SETTINGS.currencyUnit;
+        }
+
+        /** 현재 학급 화폐 단위 (설정 탭에서 변경) */
+        function getCurrencyUnit() {
+            return getWorldSettings().currencyUnit || DEFAULT_WORLD_SETTINGS.currencyUnit;
+        }
+        window.getCurrencyUnit = getCurrencyUnit;
 
         /** 해당 날짜가 설정된 방학 기간(시작·종료 포함)인지 */
         function isWorldVacationDay(d = new Date()) {
@@ -738,8 +756,26 @@ function redrawPlazaGrantsUi() {
             if (plazaMaster) plazaMaster.textContent = getMasterDisplayName();
             const timerWrap = seasonLabel && seasonLabel.closest('.glass-panel');
             if (timerWrap) timerWrap.classList.toggle('hidden', !ws.showSeasonTimer);
+            applyCurrencyUnitLabels();
             updateSeasonTimer();
         }
+
+        /** HTML에 박힌 화폐 단위 표기를 현재 설정값으로 갱신 */
+        function applyCurrencyUnitLabels() {
+            const unit = getCurrencyUnit();
+            document.querySelectorAll('[data-currency-unit]').forEach((el) => {
+                el.textContent = unit;
+            });
+            document.querySelectorAll('[data-currency-placeholder]').forEach((el) => {
+                const tpl = el.getAttribute('data-currency-placeholder') || '';
+                if (tpl) el.setAttribute('placeholder', tpl.replace(/\{u\}/g, unit));
+            });
+            document.querySelectorAll('[data-currency-label]').forEach((el) => {
+                const tpl = el.getAttribute('data-currency-label') || '';
+                if (tpl) el.textContent = tpl.replace(/\{u\}/g, unit);
+            });
+        }
+        window.applyCurrencyUnitLabels = applyCurrencyUnitLabels;
 
         function updateSeasonTimer() {
             const timerEl = document.getElementById('seasonTimerDisplay');
@@ -786,6 +822,7 @@ function redrawPlazaGrantsUi() {
             setVal('wsNavBadge', ws.navBadge);
             setVal('wsTagline', ws.tagline);
             setVal('wsFooterCredit', ws.footerCredit);
+            setVal('wsCurrencyUnit', ws.currencyUnit || 'B');
             setVal('wsSeasonNumber', ws.seasonNumber);
             setVal('wsSeasonLabel', ws.seasonLabel);
             setVal('wsSeasonTheme', ws.seasonTheme);
@@ -867,6 +904,7 @@ function redrawPlazaGrantsUi() {
                 navBadge: text('wsNavBadge'),
                 tagline: text('wsTagline'),
                 footerCredit: text('wsFooterCredit'),
+                currencyUnit: text('wsCurrencyUnit') || 'B',
                 seasonNumber: num('wsSeasonNumber', 1),
                 seasonName: seasonNameVal,
                 seasonLabel: seasonNameVal,
@@ -944,6 +982,8 @@ function redrawPlazaGrantsUi() {
                 }
 
                 applyWorldBranding();
+                if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
+                updateUI();
                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                 if (pwDisplay) pwDisplay.innerText = opsPayload.raidPassword;
                 const npcEl = document.getElementById('npcText');
@@ -1063,7 +1103,7 @@ function redrawPlazaGrantsUi() {
         ];
 
         const SHOP_DATA = [
-            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100B 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
+            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100${getCurrencyUnit()} 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
             { id: 'item_xp_pack', name: '경험치 팩', desc: '20B로 즉시 100 XP 획득', price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
             { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
             { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'fa-ticket', iconColor: 'text-lime-300', isConsumable: true },
@@ -2505,7 +2545,7 @@ function redrawPlazaGrantsUi() {
 
         function formatConvenienceDeliveryFeeLabel(fee) {
             const normalized = normalizeConvenienceDeliveryFee(fee);
-            return normalized > 0 ? `+${formatBongDisplay(normalized)}B` : '무료';
+            return normalized > 0 ? `+${formatBongAmount(normalized)}` : '무료';
         }
 
         /** 주문·결제 직전 Firestore 서버 기준 최신 배달비를 읽어 반영 */
@@ -4138,7 +4178,7 @@ ${subjectLine}
         function updateShopPriceLabels() {
             getAllShopItems().forEach((shop) => {
                 const el = document.getElementById(`shop-price-${shop.id}`);
-                if (el) el.textContent = `${getEffectiveShopPrice(shop.id)} B`;
+                if (el) el.textContent = `${formatBongAmount(getEffectiveShopPrice(shop.id))}`;
             });
         }
 
@@ -4171,7 +4211,7 @@ ${subjectLine}
                             <div class="font-bold text-sm">${shop.name}</div>
                             <div class="text-[10px] text-slate-400">${shop.desc}</div>
                         </div>
-                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${shop.price} B</div>
+                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${formatBongAmount(shop.price)}</div>
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
@@ -4209,15 +4249,21 @@ ${subjectLine}
             return Math.max(0, Math.round(n));
         }
 
-        /** UI 표시용 삼봉(B) 문자열 */
+        /** UI 표시용 삼봉 숫자 문자열 */
         function formatBongDisplay(v) {
             return String(normalizeBongValue(v));
         }
 
-        /** UI — 부족 삼봉 안내 */
+        /** UI 표시용 금액+화폐단위 (예: 10B, 10미소) */
+        function formatBongAmount(v) {
+            return `${formatBongDisplay(v)}${getCurrencyUnit()}`;
+        }
+        window.formatBongAmount = formatBongAmount;
+
+        /** UI — 부족 화폐 안내 */
         function formatInsufficientBongAlert(shortfall) {
-            const need = formatBongDisplay(Math.max(0, Number(shortfall) || 0));
-            return `❌ 돈이 부족해요. ${need}B가 더 필요해요.`;
+            const need = formatBongAmount(Math.max(0, Number(shortfall) || 0));
+            return `❌ 돈이 부족해요. ${need}가 더 필요해요.`;
         }
 
         /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
@@ -4261,7 +4307,7 @@ ${subjectLine}
                     date: today,
                     dateLabel: today,
                     category: '과다 보유',
-                    action: `보유 삼봉 ${formatBongDisplay(totalBong)}B (기준 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B 초과)`,
+                    action: `보유 삼봉 ${formatBongAmount(totalBong)} (기준 ${formatBongAmount(BONG_ANOMALY_TOTAL_HOLD_WARN)} 초과)`,
                 });
             }
 
@@ -4284,10 +4330,10 @@ ${subjectLine}
                     date: today,
                     dateLabel: today,
                     category: '과다 일일 획득',
-                    action: `당일 누적 +${formatBongDisplay(todayGain)}B (기준 ${BONG_ANOMALY_DAILY_GAIN_WARN}B 초과)`,
+                    action: `당일 누적 +${formatBongAmount(todayGain)} (기준 ${formatBongAmount(BONG_ANOMALY_DAILY_GAIN_WARN)} 초과)`,
                     details: todayGainRows.slice(-8).map((row) => ({
                         dateLabel: formatSupervisionDateTime(row.at),
-                        action: `${row.reason || '봉 변경'} (+${formatBongDisplay(row.delta)}B)`,
+                        action: `${row.reason || '봉 변경'} (+${formatBongAmount(row.delta)})`,
                     })),
                 });
             }
@@ -4301,7 +4347,7 @@ ${subjectLine}
                     date: row.at ? getLocalDateStr(new Date(Number(row.at))) : today,
                     dateLabel: formatSupervisionDateTime(row.at),
                     category: '단일 대량 증가',
-                    action: `${row.reason || '봉 변경'} — 단일 +${formatBongDisplay(delta)}B (기준 ${BONG_ANOMALY_SINGLE_DELTA_WARN}B 초과)`,
+                    action: `${row.reason || '봉 변경'} — 단일 +${formatBongAmount(delta)} (기준 ${formatBongAmount(BONG_ANOMALY_SINGLE_DELTA_WARN)} 초과)`,
                 });
             });
 
@@ -4315,7 +4361,7 @@ ${subjectLine}
                     action: `아이템 환불 ${ledger.length}회 누적 (기준 ${BONG_SUPERVISION_REFUND_WARN}회 이상)`,
                     details: recentRefunds.map((row) => ({
                         dateLabel: formatSupervisionDateTime(row.at),
-                        action: `${row.label || row.kind || '환불'} +${formatBongDisplay(row.refundB)}B`,
+                        action: `${row.label || row.kind || '환불'} +${formatBongAmount(row.refundB)}`,
                     })),
                 });
             }
@@ -4508,20 +4554,20 @@ ${subjectLine}
             }
             el.classList.remove('hidden');
             const report = buildBongAnomalyReport(studentsData);
-            const criteriaText = `보유 ${BONG_ANOMALY_TOTAL_HOLD_WARN}B↑ · 당일 +${BONG_ANOMALY_DAILY_GAIN_WARN}B↑ · 단일 +${BONG_ANOMALY_SINGLE_DELTA_WARN}B↑ · 환불 ${BONG_SUPERVISION_REFUND_WARN}회↑`;
+            const criteriaText = `보유 ${formatBongAmount(BONG_ANOMALY_TOTAL_HOLD_WARN)}↑ · 당일 +${formatBongAmount(BONG_ANOMALY_DAILY_GAIN_WARN)}↑ · 단일 +${formatBongAmount(BONG_ANOMALY_SINGLE_DELTA_WARN)}↑ · 환불 ${BONG_SUPERVISION_REFUND_WARN}회↑`;
             if (!report.alertCount) {
                 el.innerHTML = `
                     <div class="flex items-center gap-2 mb-1">
                         <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-building-columns text-emerald-400"></i> 삼봉 금융감독 시스템</h3>
                         <span class="text-[9px] text-emerald-300 font-bold">이상 없음</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">학급 삼봉(B) 거래를 실시간 감시합니다. ${criteriaText} 시 경고·기록됩니다.</p>`;
+                    <p class="text-[9px] text-slate-500 leading-relaxed">학급 ${getCurrencyUnit()} 거래를 실시간 감시합니다. ${criteriaText} 시 경고·기록됩니다.</p>`;
                 return;
             }
             const rowsHtml = report.alerts.map((a) => `
                 <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
                     <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
-                    <div class="text-amber-200/90 mt-0.5">보유 ${formatBongDisplay(a.totalBong)}B · 오늘 +${formatBongDisplay(a.todayGain)}B · 환불 ${a.refundCount}회</div>
+                    <div class="text-amber-200/90 mt-0.5">보유 ${formatBongAmount(a.totalBong)} · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
                     <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
@@ -4570,7 +4616,7 @@ ${subjectLine}
                 }).join('\n\n');
                 await window.customAlert(
                     '⚠️ 삼봉 금융감독 경고\n\n' +
-                    '비정상으로 의심되는 삼봉(B) 거래가 감지되었습니다.\n' +
+                    '비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n' +
                     `허용되지 않은 방법으로 획득·환불한 경우 ${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
                     '[감지 내역]\n' +
                     lines +
@@ -4816,10 +4862,10 @@ ${subjectLine}
             const poolB = normalizeBongValue(Number(lastDraw.poolB) || 0);
             const taxB = normalizeBongValue(Number(lastDraw.taxB) || 0);
             const winnerText = winners.length
-                ? winners.map((w) => `${w.name || w.studentId}: +${formatBongDisplay(w.payoutB || 0)}B`).join('\n')
-                : `당첨자 없음\n${formatBongDisplay(poolB)}B는 다음 회차로 이월됩니다.`;
+                ? winners.map((w) => `${w.name || w.studentId}: +${formatBongAmount(w.payoutB || 0)}`).join('\n')
+                : `당첨자 없음\n${formatBongAmount(poolB)}는 다음 회차로 이월됩니다.`;
             return `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(lastDraw.numbers)}\n` +
-                `누적: ${formatBongDisplay(poolB)}B / 세금(40%): ${formatBongDisplay(taxB)}B\n\n${winnerText}`;
+                `누적: ${formatBongAmount(poolB)} / 세금(40%): ${formatBongAmount(taxB)}\n\n${winnerText}`;
         }
 
         function maybeShowLottoResultPopup() {
@@ -4892,14 +4938,14 @@ ${subjectLine}
                 const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
                 return `<div class="flex justify-between gap-2 border-b border-slate-800/70 pb-1">
                     <span class="text-lime-200 font-bold">${formatLottoNumbers(t.numbers)}</span>
-                    <span class="text-slate-500 shrink-0">${ds} · ${formatBongDisplay(t.price || price)}B</span>
+                    <span class="text-slate-500 shrink-0">${ds} · ${formatBongAmount(t.price || price)}</span>
                 </div>`;
             }).join('');
             const last = state.lastDraw;
             const lastHtml = last
                 ? `<div class="mt-2 rounded-lg bg-slate-950/60 border border-slate-700 px-2 py-1.5">
                     <div class="text-[10px] text-slate-400 font-bold">최근 추첨: <span class="text-lime-200">${formatLottoNumbers(last.numbers)}</span></div>
-                    <div class="text-[9px] text-slate-500">총 ${formatBongDisplay(last.poolB || 0)}B · 세금 ${formatBongDisplay(last.taxB || 0)}B · 지급 ${formatBongDisplay(last.payoutPoolB || 0)}B</div>
+                    <div class="text-[9px] text-slate-500">총 ${formatBongAmount(last.poolB || 0)} · 세금 ${formatBongAmount(last.taxB || 0)} · 지급 ${formatBongAmount(last.payoutPoolB || 0)}</div>
                     <div class="text-[9px] text-slate-400">${last.winners && last.winners.length ? `당첨: ${last.winners.map((w) => escapeConstitutionHtml(w.name || w.studentId)).join(', ')}` : '당첨자 없음 · 당첨금 이월'}</div>
                 </div>`
                 : '';
@@ -4910,10 +4956,10 @@ ${subjectLine}
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
                         <h4 class="text-lime-300 font-black text-xs"><i class="fa-solid fa-ticket"></i> 삼봉 로또</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed">1~30 중 3개를 고릅니다. ${getLottoPurchaseWindowText()} · 가격 ${price}B · 당첨 시 세금 40% 제외 후 지급</p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed">1~30 중 3개를 고릅니다. ${getLottoPurchaseWindowText()} · 가격 ${formatBongAmount(price)} · 당첨 시 세금 40% 제외 후 지급</p>
                     </div>
                     <div class="text-right text-[10px] text-slate-300 shrink-0">
-                        <div>누적: <span class="text-sb-gold font-black">${formatBongDisplay(activePool || 0)}B</span></div>
+                        <div>누적: <span class="text-sb-gold font-black">${formatBongAmount(activePool || 0)}</span></div>
                         <div>이번 회차 티켓: ${ticketCount}장</div>
                     </div>
                 </div>
@@ -4982,7 +5028,7 @@ ${subjectLine}
         function formatWorldCupBetStatusHtml(bet) {
             if (!bet) return '';
             if (bet.status === 'won') {
-                return `<span class="text-emerald-300">적중 +${formatBongDisplay(bet.payout || 0)}B</span>`;
+                return `<span class="text-emerald-300">적중 +${formatBongAmount(bet.payout || 0)}</span>`;
             }
             if (bet.status === 'lost') return '<span class="text-slate-500">미적중</span>';
             if (bet.status === 'cancelled') return '<span class="text-slate-400">취소·환불</span>';
@@ -5010,7 +5056,7 @@ ${subjectLine}
                 return `<div class="rounded-lg border border-slate-700/80 bg-slate-950/40 p-2 mb-2">
                     <div class="text-[10px] font-bold text-red-200 mb-1.5 flex flex-wrap items-center justify-between gap-1">
                         <span>${WORLD_CUP_MARKET_LABELS[market]}</span>
-                        <span class="text-[9px] text-slate-500 font-normal">${rows.length}건 · 대기 ${summary.pending} · ${formatBongDisplay(summary.totalStake)}B</span>
+                        <span class="text-[9px] text-slate-500 font-normal">${rows.length}건 · 대기 ${summary.pending} · ${formatBongAmount(summary.totalStake)}</span>
                     </div>
                     <div class="space-y-1">${rowHtml}</div>
                 </div>`;
@@ -5027,7 +5073,7 @@ ${subjectLine}
                 <div class="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px]">
                     ${studentPart}
                     <span class="text-slate-500 shrink-0">${formatWorldCupBetTime(bet.at)}</span>
-                    <span class="text-red-100">${WORLD_CUP_MARKET_LABELS[bet.market] || bet.market} · ${escapeConvenienceHtml(getWorldCupPickLabel(bet.market, bet.pick))} · ${formatBongDisplay(bet.stake || 0)}B × ${Number(bet.odds || 0).toFixed(2)}</span>
+                    <span class="text-red-100">${WORLD_CUP_MARKET_LABELS[bet.market] || bet.market} · ${escapeConvenienceHtml(getWorldCupPickLabel(bet.market, bet.pick))} · ${formatBongAmount(bet.stake || 0)} × ${Number(bet.odds || 0).toFixed(2)}</span>
                 </div>
                 <span class="shrink-0 text-[9px] sm:text-[10px]">${formatWorldCupBetStatusHtml(bet)}</span>
             </div>`;
@@ -5181,7 +5227,7 @@ ${subjectLine}
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
                         <div>
                             <div class="text-[10px] text-slate-300 font-bold">학급 베팅 내역</div>
-                            <div class="text-[9px] text-slate-500">총 ${classSummary.count}건 · 대기 ${classSummary.pending} · 적중 ${classSummary.won} · 누적 ${formatBongDisplay(classSummary.totalStake)}B</div>
+                            <div class="text-[9px] text-slate-500">총 ${classSummary.count}건 · 대기 ${classSummary.pending} · 적중 ${classSummary.won} · 누적 ${formatBongAmount(classSummary.totalStake)}</div>
                         </div>
                         <button type="button" onclick="window.openWorldCupBetHistoryPanel()" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold py-1.5 px-3 rounded-lg text-[9px]">전체 보기</button>
                     </div>
@@ -5217,7 +5263,7 @@ ${subjectLine}
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
                         <h4 class="text-red-300 font-black text-xs"><i class="fa-solid fa-futbol"></i> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">삼봉(B)으로 32강 진출·탈락 중 1건만 베팅 (최대 ${WORLD_CUP_MAX_STAKE}B). <span class="text-amber-300/90">베팅 마감: ${formatWorldCupBettingDeadlineLabel()} (자동)</span>. 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">${getCurrencyUnit()}으로 32강 진출·탈락 중 1건만 베팅 (최대 ${formatBongAmount(WORLD_CUP_MAX_STAKE)}). <span class="text-amber-300/90">베팅 마감: ${formatWorldCupBettingDeadlineLabel()} (자동)</span>. 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
                     </div>
                     <div class="text-right text-[10px] shrink-0 ${statusClass} font-bold">${statusText}</div>
                 </div>
@@ -5263,7 +5309,7 @@ ${subjectLine}
             const summary = getWorldCupBetHistorySummary(classBets);
             body.innerHTML = `
                 <div class="text-[10px] text-slate-400 mb-3 rounded-lg bg-slate-950/70 border border-slate-700 px-2 py-1.5">
-                    ${WORLD_CUP_MATCH.title} · 총 ${summary.count}건 · 대기 ${summary.pending} · 적중 ${summary.won} · 베팅 합계 ${formatBongDisplay(summary.totalStake)}B
+                    ${WORLD_CUP_MATCH.title} · 총 ${summary.count}건 · 대기 ${summary.pending} · 적중 ${summary.won} · 베팅 합계 ${formatBongAmount(summary.totalStake)}
                 </div>
                 ${buildWorldCupBetHistoryGroupedHtml(classBets, { showStudent: true })}`;
         }
@@ -5305,13 +5351,13 @@ ${subjectLine}
             const balance = normalizeBongValue(Number(window.playerState.bong) || 0);
             const maxStake = Math.min(WORLD_CUP_MAX_STAKE, balance);
             const rawStake = await window.customPrompt(
-                `[${WORLD_CUP_MARKET_LABELS[market]}] ${entry.label}\n배당 ${entry.odds.toFixed(2)}x · 분석 ${Math.round(entry.prob * 100)}%\n\n베팅할 삼봉(B) 금액을 입력하세요.\n(최소 1B · 최대 ${formatBongDisplay(maxStake)}B)`,
+                `[${WORLD_CUP_MARKET_LABELS[market]}] ${entry.label}\n배당 ${entry.odds.toFixed(2)}x · 분석 ${Math.round(entry.prob * 100)}%\n\n베팅할 ${getCurrencyUnit()} 금액을 입력하세요.\n(최소 1${getCurrencyUnit()} · 최대 ${formatBongAmount(maxStake)})`,
                 'number'
             );
             if (rawStake === null) return;
             const stake = normalizeBongValue(Number(rawStake));
-            if (!Number.isFinite(stake) || stake < 1) return await window.customAlert('1B 이상 숫자로 입력해 주세요.');
-            if (stake > WORLD_CUP_MAX_STAKE) return await window.customAlert(`1회 최대 ${WORLD_CUP_MAX_STAKE}B까지 베팅할 수 있습니다.`);
+            if (!Number.isFinite(stake) || stake < 1) return await window.customAlert('1${getCurrencyUnit()} 이상 숫자로 입력해 주세요.');
+            if (stake > WORLD_CUP_MAX_STAKE) return await window.customAlert(`1회 최대 ${formatBongAmount(WORLD_CUP_MAX_STAKE)}까지 베팅할 수 있습니다.`);
             if (!window.playerState.isAdmin && balance + 0.0001 < stake) {
                 return await window.customAlert(formatInsufficientBongAlert(stake - balance));
             }
@@ -5320,8 +5366,8 @@ ${subjectLine}
                 `승부예측 베팅을 확정할까요?\n` +
                 `- 경기: ${WORLD_CUP_MATCH.title}\n` +
                 `- 항목: ${WORLD_CUP_MARKET_LABELS[market]} · ${entry.label}\n` +
-                `- 베팅: ${formatBongDisplay(stake)}B × ${entry.odds.toFixed(2)}배\n` +
-                `- 적중 시 예상 수령: ${formatBongDisplay(potential)}B`
+                `- 베팅: ${formatBongAmount(stake)} × ${entry.odds.toFixed(2)}배\n` +
+                `- 적중 시 예상 수령: ${formatBongAmount(potential)}`
             );
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
@@ -5384,7 +5430,7 @@ ${subjectLine}
                 playSfx('bong', true);
                 updateUI();
                 renderWorldCupBetPanel();
-                await window.customAlert(`✅ 베팅 접수 완료!\n${entry.label} · ${formatBongDisplay(stake)}B × ${entry.odds.toFixed(2)}배`);
+                await window.customAlert(`✅ 베팅 접수 완료!\n${entry.label} · ${formatBongAmount(stake)} × ${entry.odds.toFixed(2)}배`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -5492,7 +5538,7 @@ ${subjectLine}
                 updateUI();
                 renderWorldCupBetPanel();
                 await window.customAlert(
-                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${formatBongDisplay(totalPayout)}B`
+                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${formatBongAmount(totalPayout)}`
                 );
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
@@ -5734,7 +5780,7 @@ ${subjectLine}
                 renderWorldCupBetPanel();
                 await window.customAlert(
                     result.cancelled > 0
-                        ? `✅ ${result.cancelled}건 취소 · ${result.students}명에게 ${formatBongDisplay(result.refunded)}B 환불했습니다.`
+                        ? `✅ ${result.cancelled}건 취소 · ${result.students}명에게 ${formatBongAmount(result.refunded)} 환불했습니다.`
                         : '취소할 대기 베팅이 없습니다.'
                 );
             } catch (e) {
@@ -6016,7 +6062,7 @@ ${subjectLine}
                     const interest = Math.max(0, Math.round(principal * (Number(ratePercent) / 100)));
                     const total = normalizeBongValue(principal + interest);
                     credit = normalizeBongValue(credit + total);
-                    msgs.push(`원금 ${formatBongDisplay(principal)} B + 이자 ${interest} B → 지갑 ${formatBongDisplay(total)} B`);
+                    msgs.push(`원금 ${formatBongAmount(principal)} + 이자 ${formatBongAmount(interest)} → 지갑 ${formatBongAmount(total)}`);
                 } else {
                     left.push(td);
                 }
@@ -8976,7 +9022,7 @@ ${subjectLine}
             const items = Array.isArray(order && order.items) ? order.items : [];
             if (!items.length) return '';
             return `<div class="mt-1 text-[9px] text-slate-300 bg-slate-900/70 border border-slate-700 rounded px-2 py-1 space-y-0.5">
-                ${items.map((item) => `<div class="flex justify-between gap-2"><span class="truncate">${escapeConvenienceHtml(item.name)} × ${Math.max(1, Number(item.qty) || 1)}</span><span class="shrink-0">${formatBongDisplay(item.lineTotal || 0)}B</span></div>`).join('')}
+                ${items.map((item) => `<div class="flex justify-between gap-2"><span class="truncate">${escapeConvenienceHtml(item.name)} × ${Math.max(1, Number(item.qty) || 1)}</span><span class="shrink-0">${formatBongAmount(item.lineTotal || 0)}</span></div>`).join('')}
             </div>`;
         }
 
@@ -8992,10 +9038,10 @@ ${subjectLine}
             const fee = normalizeBongValue(Number(order && order.deliveryFee) || 0);
             const payouts = Array.isArray(order && order.deliveryPayouts) ? order.deliveryPayouts : [];
             const payoutText = payouts.length
-                ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} ${formatBongDisplay(p.payoutB || 0)}B`).join(', ')}`
+                ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} ${formatBongAmount(p.payoutB || 0)}`).join(', ')}`
                 : '';
             return delivery
-                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `${formatBongDisplay(fee)}B 포함` : '무료'}${payoutText}</div>`
+                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `${formatBongAmount(fee)} 포함` : '무료'}${payoutText}</div>`
                 : '<div class="mt-1 text-[9px] text-slate-600">직접 수령</div>';
         }
 
@@ -9039,7 +9085,7 @@ ${subjectLine}
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2 mb-1">
                                 <span class="text-sm font-black text-orange-200"><i class="fa-solid fa-cart-shopping"></i> 장바구니</span>
-                                <span class="text-[10px] text-slate-400">${itemCount}개 · ${formatBongDisplay(itemTotal)}B</span>
+                                <span class="text-[10px] text-slate-400">${itemCount}개 · ${formatBongAmount(itemTotal)}</span>
                             </div>
                             <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
                                 ${entries.map(({ item, qty, lineTotal }) => `
@@ -9049,7 +9095,7 @@ ${subjectLine}
                                             <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', -1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">-</button>
                                             <input type="number" min="1" max="20" value="${qty}" onchange="window.setConvenienceCartQty('${escapeHtmlAttr(item.id)}', this.value)" class="w-12 bg-slate-950 border border-slate-600 rounded px-1 py-0.5 text-center text-white font-bold" />
                                             <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', 1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">+</button>
-                                            <span class="w-14 text-right text-orange-200 font-bold">${formatBongDisplay(lineTotal)}B</span>
+                                            <span class="w-14 text-right text-orange-200 font-bold">${formatBongAmount(lineTotal)}</span>
                                         </div>
                                     </div>
                                 `).join('') || '<div class="text-[10px] text-slate-500 py-1">담은 물품이 없습니다.</div>'}
@@ -9060,7 +9106,7 @@ ${subjectLine}
                             <button type="button" onclick="window.clearConvenienceCart()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-3 rounded-xl text-[10px]">비우기</button>
                         </div>
                     </div>
-                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${formatBongDisplay(getConvenienceDeliveryFee())}B가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
+                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${formatBongAmount(getConvenienceDeliveryFee())}가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
                 </div>`;
             container.innerHTML = items.map((item) => `
                 <div class="bg-slate-800/80 p-3 rounded-xl border border-orange-500/30 flex flex-col gap-2">
@@ -9071,9 +9117,9 @@ ${subjectLine}
                         <div class="flex-1 min-w-0">
                             <div class="text-sm font-bold text-white truncate">${escapeConvenienceHtml(item.name)}</div>
                             <div class="text-[10px] text-slate-400 truncate">${escapeConvenienceHtml(item.desc || '편의점 주문 물품')}</div>
-                            <div class="text-[9px] text-sky-300/80">배달 선택 가능 · 배달비 ${formatBongDisplay(getConvenienceDeliveryFee())}B</div>
+                            <div class="text-[9px] text-sky-300/80">배달 선택 가능 · 배달비 ${formatBongAmount(getConvenienceDeliveryFee())}</div>
                         </div>
-                        <div class="text-orange-200 bg-slate-950 px-2 py-1 rounded border border-orange-500/40 text-xs font-bold shrink-0">${item.price} B</div>
+                        <div class="text-orange-200 bg-slate-950 px-2 py-1 rounded border border-orange-500/40 text-xs font-bold shrink-0">${formatBongAmount(item.price)}</div>
                     </div>
                     <button type="button" onclick="window.addConvenienceToCart('${escapeHtmlAttr(item.id)}')" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-lg text-[10px] border border-orange-500">
                         담기
@@ -9141,7 +9187,7 @@ ${subjectLine}
                         <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 border border-orange-500/20 px-2 py-1.5">
                             <div class="min-w-0">
                                 <div class="text-white text-[10px] font-bold truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
-                                <div class="text-slate-400 text-[9px] truncate">${escapeConvenienceHtml(order.studentName)} · ${order.price}B</div>
+                                <div class="text-slate-400 text-[9px] truncate">${escapeConvenienceHtml(order.studentName)} · ${formatBongAmount(order.price)}</div>
                                 ${getConvenienceOrderItemsHtml(order)}
                                 ${getConvenienceOrderDeliveryHtml(order)}
                                 ${getConvenienceOrderRequestHtml(order)}
@@ -9169,7 +9215,7 @@ ${subjectLine}
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
                                         <div class="text-white font-bold text-sm">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
-                                        <div class="text-[10px] text-slate-400 mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${order.price}B</div>
+                                        <div class="text-[10px] text-slate-400 mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${formatBongAmount(order.price)}</div>
                                         ${getConvenienceOrderItemsHtml(order)}
                                         ${getConvenienceOrderDeliveryHtml(order)}
                                         ${getConvenienceOrderRequestHtml(order)}
@@ -9336,14 +9382,14 @@ ${subjectLine}
             );
             if (requestRaw === null) return;
             const requestNote = String(requestRaw || '').trim().slice(0, 80);
-            const itemLines = entries.map(({ item, qty, lineTotal }) => `- ${item.name} × ${qty}: ${formatBongDisplay(lineTotal)}B`).join('\n');
+            const itemLines = entries.map(({ item, qty, lineTotal }) => `- ${item.name} × ${qty}: ${formatBongAmount(lineTotal)}`).join('\n');
             const ok = await window.customConfirm(
                 `삼봉 편의점 장바구니를 주문할까요?\n${itemLines}\n` +
-                `- 물품 합계: ${formatBongDisplay(itemTotal)}B\n` +
+                `- 물품 합계: ${formatBongAmount(itemTotal)}\n` +
                 `- 수령 방법: ${deliveryRequested ? `배달 (${formatConvenienceDeliveryFeeLabel(deliveryFee)})` : '직접 수령'}\n` +
-                `- 총 결제: ${formatBongDisplay(price)}B\n` +
+                `- 총 결제: ${formatBongAmount(price)}\n` +
                 `${requestNote ? `- 요청사항: ${requestNote}\n` : ''}` +
-                (deliveryPayouts.length ? `- 배달비 지급: ${deliveryPayouts.map((p) => `${p.name} ${formatBongDisplay(p.payoutB)}B`).join(', ')}\n` : '') +
+                (deliveryPayouts.length ? `- 배달비 지급: ${deliveryPayouts.map((p) => `${p.name} ${formatBongAmount(p.payoutB)}`).join(', ')}\n` : '') +
                 '주문 후 편의점 매니저에게 주문창이 뜹니다.'
             );
             if (!ok) return;
@@ -9419,7 +9465,7 @@ ${subjectLine}
                 window.convenienceCart = {};
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${formatBongDisplay(chargedPrice)}B\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${formatBongAmount(chargedPrice)}\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -9456,7 +9502,7 @@ ${subjectLine}
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
-            const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongDisplay(refundB)}B가 돌아갑니다.`);
+            const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongAmount(refundB)}가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
@@ -9500,7 +9546,7 @@ ${subjectLine}
                 }
                 renderConvenienceManagerUi();
                 renderConvenienceOrderModalBody();
-                await window.customAlert(`환불 완료: ${order.studentName}에게 ${formatBongDisplay(refundB)}B가 반환되었습니다.`);
+                await window.customAlert(`환불 완료: ${order.studentName}에게 ${formatBongAmount(refundB)}가 반환되었습니다.`);
             } catch (e) {
                 const msg = String(e && e.message ? e.message : e);
                 if (msg === 'not_pending') return await window.customAlert('이미 처리된 주문입니다.');
@@ -9534,7 +9580,7 @@ ${subjectLine}
                 if (feeEl) feeEl.value = String(fee);
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
-                if (!silent) await window.customAlert(`✅ 편의점 배달비가 ${formatBongDisplay(fee)}B로 저장되었습니다.`);
+                if (!silent) await window.customAlert(`✅ 편의점 배달비가 ${formatBongAmount(fee)}로 저장되었습니다.`);
                 return true;
             } catch (e) {
                 console.error('saveConvenienceDeliveryFeeAdmin', e);
@@ -9635,7 +9681,7 @@ ${subjectLine}
                     return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? 'border-slate-800 opacity-55' : 'border-slate-700'} bg-slate-900/70 px-2 py-1.5">
                         <div class="min-w-0">
                             <div class="text-white font-bold truncate">${q.name} <span class="text-[8px] text-slate-500">(${typeLabel})</span></div>
-                            <div class="text-[9px] text-slate-400 truncate">${q.xp}XP · ${q.bong}B · ${q.desc || '-'}</div>
+                            <div class="text-[9px] text-slate-400 truncate">${q.xp}XP · ${formatBongAmount(q.bong)} · ${q.desc || '-'}</div>
                         </div>
                         ${action}
                     </div>`;
@@ -9653,7 +9699,7 @@ ${subjectLine}
                         <div class="font-bold text-xs sm:text-sm truncate">${job.name} <span class="font-normal text-[9px] sm:text-[10px] text-slate-400">${job.sub}</span></div>
                         <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${job.desc}</div>
                     </div>
-                    <div class="bg-slate-900 text-sb-gold px-2 py-1 rounded font-bold text-[9px] sm:text-[10px] shrink-0 border border-slate-700 whitespace-nowrap">${job.pay} B</div>
+                    <div class="bg-slate-900 text-sb-gold px-2 py-1 rounded font-bold text-[9px] sm:text-[10px] shrink-0 border border-slate-700 whitespace-nowrap">${formatBongAmount(job.pay)}</div>
                 </div>
             `).join('');
         }
@@ -9676,7 +9722,7 @@ ${subjectLine}
                 return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? 'border-slate-800 opacity-55' : 'border-slate-700'} bg-slate-900/70 px-2 py-1.5">
                     <div class="min-w-0">
                         <div class="text-white font-bold truncate"><i class="fa-solid ${job.icon} ${job.color}"></i> ${job.name} <span class="text-[8px] text-slate-500">${job.sub}</span></div>
-                        <div class="text-[9px] text-slate-400 truncate">${job.pay}B · ${job.desc || '-'}</div>
+                        <div class="text-[9px] text-slate-400 truncate">${formatBongAmount(job.pay)} · ${job.desc || '-'}</div>
                     </div>
                     <div class="flex gap-1 shrink-0">
                         <button type="button" onclick="window.editJobAdmin('${job.id}')" class="bg-blue-900/50 hover:bg-blue-800 text-blue-100 border border-blue-800 px-2 py-1 rounded text-[9px] font-bold">수정</button>
@@ -9700,7 +9746,7 @@ ${subjectLine}
                         <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.desc}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
-                        <div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${skin.price} B</div>
+                        <div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}</div>
                     </div>
                 </div>`).join('');
 
@@ -10534,10 +10580,10 @@ ${subjectLine}
                             <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-5X</button>
                         </div>
                         <div class="flex gap-0.5">
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="flex-1 bg-sb-gold/10 text-sb-gold text-[9px] font-bold py-1 rounded">+1B</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${targetId}', this)" class="flex-1 bg-sb-gold/20 text-sb-gold text-[9px] font-bold py-1 rounded">+2B</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1B</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -2, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-2B</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="flex-1 bg-sb-gold/10 text-sb-gold text-[9px] font-bold py-1 rounded">+1${getCurrencyUnit()}</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${targetId}', this)" class="flex-1 bg-sb-gold/20 text-sb-gold text-[9px] font-bold py-1 rounded">+2${getCurrencyUnit()}</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1${getCurrencyUnit()}</button>
+                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -2, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-2${getCurrencyUnit()}</button>
                         </div>
                     </div>` : '';
 
@@ -10587,7 +10633,7 @@ ${subjectLine}
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="text-[9px] sm:text-[10px] font-black ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}B</span>
+                        <span class="text-[9px] sm:text-[10px] font-black ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(walletBong)}</span>
                     </div>
 
                     ${gmControls}
@@ -10660,10 +10706,10 @@ ${subjectLine}
                             ${(stu.xp||0)}
                         </td>
                         <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
-                            ${formatBongDisplay(stu.bong || 0)} B
+                            ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
-                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2B</button></div>` : '-'}
+                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2${getCurrencyUnit()}</button></div>` : '-'}
                         </td>
                         <td class="p-2 text-center border-l border-slate-700/50 min-w-[4.5rem]">
                             ${canEdit ? (() => {
@@ -11281,7 +11327,7 @@ ${subjectLine}
                         </div>
                     </div>
                     <div class="bg-slate-900 px-2 py-1 rounded-lg border border-slate-600 text-right min-w-[52px]">
-                        <div class="text-orange-400 font-black text-xs">${bidAmt > 0 ? '+' : ''}${bidAmt} B</div>
+                        <div class="text-orange-400 font-black text-xs">${bidAmt > 0 ? '+' : ''}${formatBongAmount(bidAmt)}</div>
                     </div>
                 </div>`;
             }).join('');
@@ -11317,7 +11363,7 @@ ${subjectLine}
                     return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)] ${estateAdmin ? 'cursor-pointer transition hover:border-amber-400' : ''}" ${adminClick}>
                         <div class="text-teal-400 font-bold text-xs mb-1">구매 완료</div>
                         <div class="text-white text-[10px]">${ownerName}</div>
-                        ${estateAdmin ? `<div class="text-[9px] text-slate-400 mt-1">${seat.price} B · 관리</div>` : ''}
+                        ${estateAdmin ? `<div class="text-[9px] text-slate-400 mt-1">${formatBongAmount(seat.price)} · 관리</div>` : ''}
                     </div>`;
                 }
                 if (seat.assignee) {
@@ -11328,7 +11374,7 @@ ${subjectLine}
                     return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
                         <div class="text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
                         <div class="text-white text-[10px]">${assignName}</div>
-                        <div class="text-sb-gold text-[9px] mt-1">${seat.price} B</div>
+                        <div class="text-sb-gold text-[9px] mt-1">${formatBongAmount(seat.price)}</div>
                     </div>`;
                 }
                 if (seat.locked) {
@@ -11340,7 +11386,7 @@ ${subjectLine}
                 const clickAction = estateAdmin ? adminClick : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
                 return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-3 text-center cursor-pointer transition group" ${clickAction}>
                     <div class="text-slate-300 font-bold text-xs mb-1 group-hover:text-white">${seat.id + 1}번 자리</div>
-                    <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${seat.price} B</div>
+                    <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${formatBongAmount(seat.price)}</div>
                 </div>`;
             }).join('');
         };
@@ -11413,8 +11459,8 @@ ${subjectLine}
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
             const walletBal = normalizeBongValue(Number(window.playerState.bong) || 0);
             const regularBal = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
-            w.textContent = `${formatBongDisplay(walletBal)} B`;
-            s.textContent = `${formatBongDisplay(regularBal)} B`;
+            w.textContent = `${formatBongAmount(walletBal)}`;
+            s.textContent = `${formatBongAmount(regularBal)}`;
             r.textContent = `${rate.toFixed(1)}`;
             if (dailyLine) {
                 const total = getBankTotalDeposits();
@@ -11425,13 +11471,13 @@ ${subjectLine}
                     const ws = getWorldSettings();
                     dailyLine.textContent = `🏖️ ${ws.vacationLabel || '방학'} 기간에는 예금 주기 보너스가 지급되지 않습니다. (${ws.vacationStartDate} ~ ${ws.vacationEndDate})`;
                 } else if (total < 100) {
-                    dailyLine.textContent = '일반예금+적금 원금 합계 100 B 이상이면, 마지막 지급일 기준 3일마다 1 B가 지갑으로 지급됩니다.';
+                    dailyLine.textContent = `일반예금+적금 원금 합계 100${getCurrencyUnit()} 이상이면, 마지막 지급일 기준 3일마다 1${getCurrencyUnit()}가 지갑으로 지급됩니다.`;
                 } else if (gotToday) {
-                    dailyLine.textContent = '오늘 주기 보너스(1 B)를 이미 받았습니다.';
+                    dailyLine.textContent = `오늘 주기 보너스(1${getCurrencyUnit()})를 이미 받았습니다.`;
                 } else {
                     const diff = last ? bankDaysBetweenLocalDateStr(last, today) : 999;
                     if (!last || diff >= 3) {
-                        dailyLine.textContent = '주기 보너스(1 B): 이번 접속에서 지급 처리됩니다.';
+                        dailyLine.textContent = `주기 보너스(1${getCurrencyUnit()}): 이번 접속에서 지급 처리됩니다.`;
                     } else {
                         dailyLine.textContent = `다음 주기 보너스까지 약 ${3 - diff}일 남았습니다. (3일마다 1 B)`;
                     }
@@ -11452,9 +11498,9 @@ ${subjectLine}
                             <div class="flex justify-between items-start gap-2">
                                 <div class="min-w-0 flex-1">
                                     <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${formatBongDisplay(td.amount)} B</span></div>
+                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${formatBongAmount(td.amount)}</span></div>
                                     <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
-                                    <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${interestPrev} B · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
+                                    <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${formatBongAmount(interestPrev)} · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
                                 </div>
                                 <button type="button" onclick="window.earlyWithdrawTermDeposit('${sid}')" class="text-[10px] shrink-0 bg-red-900/50 hover:bg-red-800 text-red-100 px-2 py-1 rounded border border-red-800/80">중도해지</button>
                             </div>
@@ -11476,9 +11522,9 @@ ${subjectLine}
                         const termTotal = normalizeBongValue(terms.reduce((sum, t) => sum + (Number(t && t.amount) || 0), 0));
                         rows.push(`<div class="grid grid-cols-4 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right text-sb-gold tabular-nums">${formatBongDisplay(wallet)}B</div>
-                            <div class="text-right text-sky-300 tabular-nums">${formatBongDisplay(regular)}B</div>
-                            <div class="text-right text-amber-200 tabular-nums">${formatBongDisplay(termTotal)}B</div>
+                            <div class="text-right text-sb-gold tabular-nums">${formatBongAmount(wallet)}</div>
+                            <div class="text-right text-sky-300 tabular-nums">${formatBongAmount(regular)}</div>
+                            <div class="text-right text-amber-200 tabular-nums">${formatBongAmount(termTotal)}</div>
                         </div>`);
                     });
                     adminList.innerHTML = `<div class="grid grid-cols-4 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700">
@@ -11493,10 +11539,10 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankDepositInput');
             const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert('1B 이상 정수 금액을 입력하세요.');
+            if (amt == null) return window.customAlert('1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.');
             const wallet = normalizeBongValue(Number(window.playerState.bong) || 0);
-            if (wallet < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${formatBongDisplay(wallet)} B)`);
-            const ok = await window.customConfirm(`일반예금 통장에 ${formatBongDisplay(amt)} B를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
+            if (wallet < amt) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 부족합니다. (현재 ${formatBongAmount(wallet)})`);
+            const ok = await window.customConfirm(`일반예금 통장에 ${formatBongAmount(amt)}를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
             if (!ok) return;
             window.playerState.bong = normalizeBongValue(wallet - amt);
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
@@ -11504,7 +11550,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
             if (!saved) return;
-            window.customAlert(`🏦 일반예금에 ${formatBongDisplay(amt)} B를 넣었습니다.`);
+            window.customAlert(`🏦 일반예금에 ${formatBongAmount(amt)}를 넣었습니다.`);
         };
 
         /** 일반예금 출금 */
@@ -11512,10 +11558,10 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankWithdrawInput');
             const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert('1B 이상 정수 금액을 입력하세요.');
+            if (amt == null) return window.customAlert('1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.');
             const sav = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             if (sav < amt) return window.customAlert('일반예금 잔액이 부족합니다.');
-            const ok = await window.customConfirm(`일반예금에서 ${formatBongDisplay(amt)} B를 지갑으로 출금할까요?`);
+            const ok = await window.customConfirm(`일반예금에서 ${formatBongAmount(amt)}를 지갑으로 출금할까요?`);
             if (!ok) return;
             window.playerState.bankRegularSavings = normalizeBongValue(sav - amt);
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + amt);
@@ -11523,7 +11569,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금' });
             if (!saved) return;
-            window.customAlert(`💵 ${formatBongDisplay(amt)} B를 찾았습니다.`);
+            window.customAlert(`💵 ${formatBongAmount(amt)}를 찾았습니다.`);
         };
 
         /** 일반예금 전액을 지갑으로 출금 */
@@ -11531,7 +11577,7 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const sav = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             if (sav <= 0) return window.customAlert('일반예금에 출금할 잔액이 없습니다.');
-            const ok = await window.customConfirm(`일반예금 ${formatBongDisplay(sav)} B를 전부 지갑으로 출금할까요?`);
+            const ok = await window.customConfirm(`일반예금 ${formatBongAmount(sav)}를 전부 지갑으로 출금할까요?`);
             if (!ok) return;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sav);
             window.playerState.bankRegularSavings = 0;
@@ -11540,7 +11586,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금' });
             if (!saved) return;
-            await window.customAlert(`💵 ${formatBongDisplay(sav)} B를 모두 찾았습니다.`);
+            await window.customAlert(`💵 ${formatBongAmount(sav)}를 모두 찾았습니다.`);
         };
 
         /** 적금(보물상자) 가입 — 안내 후 확인 */
@@ -11558,9 +11604,9 @@ ${subjectLine}
             if (!ok) return;
             const inp = document.getElementById('bankTermDepositInput');
             const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert('1B 이상 정수 금액을 입력하세요.');
+            if (amt == null) return window.customAlert('1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.');
             const w0 = normalizeBongValue(Number(window.playerState.bong) || 0);
-            if (w0 < amt) return window.customAlert(`보유 삼봉이 부족합니다. (현재 ${formatBongDisplay(w0)} B)`);
+            if (w0 < amt) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 부족합니다. (현재 ${formatBongAmount(w0)})`);
             if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
             const prevBong = w0;
             const prevTerms = sanitizeBankTermDeposits(window.playerState.bankTermDeposits);
@@ -11575,7 +11621,7 @@ ${subjectLine}
                 return;
             }
             updateUI();
-            await window.customAlert(`🎁 보물상자 적금 ${formatBongDisplay(amt)} B가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
+            await window.customAlert(`🎁 보물상자 적금 ${formatBongAmount(amt)}가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
 
         /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음 */
@@ -11586,7 +11632,7 @@ ${subjectLine}
             if (idx < 0) return window.customAlert('해당 적금을 찾을 수 없어요.');
             const td = arr[idx];
             const ok = await window.customConfirm(
-                `중도 해지 시 이자는 지급되지 않고 원금 ${formatBongDisplay(td.amount)} B만 지갑으로 돌아갑니다.\n해지할까요?`
+                `중도 해지 시 이자는 지급되지 않고 원금 ${formatBongAmount(td.amount)}만 지갑으로 돌아갑니다.\n해지할까요?`
             );
             if (!ok) return;
             const principal = normalizeBongValue(Number(td.amount) || 0);
@@ -11596,7 +11642,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
             if (!saved) return;
-            await window.customAlert(`💰 원금 ${formatBongDisplay(principal)} B가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+            await window.customAlert(`💰 원금 ${formatBongAmount(principal)}가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
         window.saveBankInterestRate = async function() {
@@ -11736,7 +11782,7 @@ ${subjectLine}
                 if (applyBankRegularDailyBonus()) {
                     bankProcessingNeedSave = true;
                     setTimeout(() => {
-                        void window.customAlert('🏦 예금 주기 보너스: 일반+적금 원금 합 100 B 이상 유지로 이번 주기 1 B가 지갑에 들어왔습니다! (3일마다 지급)');
+                        void window.customAlert(`🏦 예금 주기 보너스: 일반+적금 원금 합 100${getCurrencyUnit()} 이상 유지로 이번 주기 1${getCurrencyUnit()}가 지갑에 들어왔습니다! (3일마다 지급)`);
                     }, 120);
                 }
                 /**
@@ -11964,7 +12010,7 @@ ${subjectLine}
                     </div>
                     <div class="shrink-0 bg-slate-800 px-1.5 py-0.5 rounded text-right">
                         <span class="text-sb-blue text-[9px] font-bold block">+${q.xp}</span>
-                        <span class="text-sb-gold text-[9px] font-bold block">+${formatBongDisplay(q.bong)}B</span>
+                        <span class="text-sb-gold text-[9px] font-bold block">+${formatBongAmount(q.bong)}</span>
                     </div>
                 </label>`;
             }).join('');
@@ -12043,7 +12089,7 @@ ${subjectLine}
                         </div>
                         <div class="shrink-0 bg-slate-900 px-2 py-1 rounded text-right">
                             <span class="text-sb-blue font-bold text-[10px] block">+${q.xp}X</span>
-                            <span class="text-sb-gold font-bold text-[10px] block">+${formatBongDisplay(q.bong)}B</span>
+                            <span class="text-sb-gold font-bold text-[10px] block">+${formatBongAmount(q.bong)}</span>
                         </div>
                     </button>`;
                 }).join('');
@@ -12092,7 +12138,7 @@ ${subjectLine}
                             ? (canRefundEquipped
                                 ? `<div class="flex flex-col items-end gap-1">
                                     <span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>
-                                    <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${refundB}B</button>
+                                    <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${formatBongAmount(refundB)}</button>
                                    </div>`
                                 : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>')
                             : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
@@ -12103,7 +12149,7 @@ ${subjectLine}
                         } else { 
                             item.classList.replace('affordable', 'unaffordable'); 
                         }
-                        status.innerHTML = `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${skin.price} B</div>`;
+                        status.innerHTML = `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}</div>`;
                     }
                 }
             });
@@ -12177,7 +12223,7 @@ ${subjectLine}
                         const d = entry.at ? new Date(entry.at) : null;
                         const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
                         const songPart = entry.songTitle ? ` · 🎵 ${escapeConvenienceHtml(String(entry.songTitle).slice(0, 24))}` : '';
-                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}${songPart}</span><span class="text-slate-500 shrink-0">${ds} · ${entry.price}B</span></div>`;
+                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}${songPart}</span><span class="text-slate-500 shrink-0">${ds} · ${formatBongAmount(entry.price)}</span></div>`;
                     });
                     logEl.innerHTML = '<div class="text-[10px] text-slate-500 font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
                     logEl.classList.remove('hidden');
@@ -12228,7 +12274,7 @@ ${subjectLine}
             btn.disabled = locked;
             input.disabled = locked;
             input.max = String(Math.max(0, Math.floor(bal - 10)));
-            input.placeholder = locked ? '투자 불가' : `최대 ${Math.max(0, Math.floor(bal - 10))}B`;
+            input.placeholder = locked ? '투자 불가' : `최대 ${formatBongAmount(Math.max(0, Math.floor(bal - 10)))}`;
         }
 
 
@@ -12593,15 +12639,15 @@ ${subjectLine}
             if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
             
             const bal = Number(window.playerState.bong) || 0;
-            if (bal <= 10) return window.customAlert("보유 삼봉이 10B 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.");
+            if (bal <= 10) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 10${getCurrencyUnit()} 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.`);
 
             const inputEl = document.getElementById('lunchBidInput');
             const amt = parseInt(inputEl.value, 10);
             
             if (isNaN(amt) || amt <= 0) return window.customAlert('정확한 금액을 입력해주세요.');
-            if (amt > bal - 10) return window.customAlert(`밥줄 투자 후 지갑에 최소 10B는 남겨야 해요.\n현재 최대 투자 가능 금액은 ${Math.max(0, Math.floor(bal - 10))}B입니다.`);
+            if (amt > bal - 10) return window.customAlert(`밥줄 투자 후 지갑에 최소 10${getCurrencyUnit()}는 남겨야 해요.\n현재 최대 투자 가능 금액은 ${formatBongAmount(Math.max(0, Math.floor(bal - 10)))}입니다.`);
             
-            const ok = await window.customConfirm(`급식을 먼저 먹기 위해 ${amt}B를 결제할까요?\n(이미 결제했다면 합산됩니다.)`);
+            const ok = await window.customConfirm(`급식을 먼저 먹기 위해 ${formatBongAmount(amt)}를 결제할까요?\n(이미 결제했다면 합산됩니다.)`);
             if (ok) {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
@@ -12628,11 +12674,11 @@ ${subjectLine}
                     window.playerState.lunchBid = nextLunchBid;
                     updateUI();
                     playSfx('bong', false); 
-                    await window.customAlert(`✅ 결제 완료!\n오늘 총 ${window.playerState.lunchBid.amount}B를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
+                    await window.customAlert(`✅ 결제 완료!\n오늘 총 ${formatBongAmount(window.playerState.lunchBid.amount)}를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
                     inputEl.value = '';
                 } catch (e) {
                     if (e && e.message === 'reserve') {
-                        return window.customAlert('서버 최신 지갑 잔액 기준으로 밥줄 투자 후 최소 10B가 남지 않아 차단했습니다.\n은행 예금은 밥줄 투자에 사용되지 않습니다.');
+                        return window.customAlert('서버 최신 지갑 잔액 기준으로 밥줄 투자 후 최소 10${getCurrencyUnit()}가 남지 않아 차단했습니다.\n은행 예금은 밥줄 투자에 사용되지 않습니다.');
                     }
                     console.error('submitLunchBid', e);
                     return window.customAlert('밥줄 투자 저장 중 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.');
@@ -12686,9 +12732,9 @@ ${subjectLine}
             if(seat.owner) return window.customAlert('이미 판매 완료된 자리입니다.');
             if(seat.locked) return window.customAlert('현재 잠겨있는 자리입니다.');
             
-            if(window.playerState.bong < price) return window.customAlert(`자산(B)이 부족합니다! (${price} B 필요)`);
+            if(window.playerState.bong < price) return window.customAlert(`자산(${getCurrencyUnit()})이 부족합니다! (${formatBongAmount(price)} 필요)`);
 
-            const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${price}B에 구매하시겠습니까?`);
+            const ok = await window.customConfirm(`${seatId + 1}번 자리를 ${formatBongAmount(price)}에 구매하시겠습니까?`);
             if(!ok) return;
 
             window.playerState.bong -= price;
@@ -12791,7 +12837,7 @@ ${subjectLine}
                     const newName = newOwner ? (STUDENT_NAMES[newOwner] || newOwner) : '없음 (매물로 전환)';
                     changeLines.push(`- 주인: ${ownerName} → ${newName}`);
                 }
-                if (priceChanged) changeLines.push(`- 가격: ${Number(seat.price) || 0} B → ${newPrice} B`);
+                if (priceChanged) changeLines.push(`- 가격: ${formatBongAmount(Number(seat.price) || 0)} → ${formatBongAmount(newPrice)}`);
                 d.remove();
                 const ok = await window.customConfirm(`${seatId + 1}번 자리를 다음과 같이 변경할까요?\n\n${changeLines.join('\n')}\n\n※ 봉(B) 정산은 자동으로 되지 않습니다.`);
                 if (!ok) return;
@@ -12972,7 +13018,7 @@ ${subjectLine}
                     window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + comp);
                     if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
                     await window.customAlert(
-                        `🎁 [${wp.emoji} ${wp.name}] 중복 획득!\n컬렉션에 추가되었고, 보너스로 ${comp} B를 드려요.`
+                        `🎁 [${wp.emoji} ${wp.name}] 중복 획득!\n컬렉션에 추가되었고, 보너스로 ${formatBongAmount(comp)}를 드려요.`
                     );
                 } else {
                     if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
@@ -13042,7 +13088,7 @@ ${subjectLine}
 
             const qInfo = getQuestCatalog().find(q => q.id === qId);
             const qName = qInfo ? qInfo.name : qId;
-            let alertMsg = `✅ [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongDisplay(finalBong)} B`;
+            let alertMsg = `✅ [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongAmount(finalBong)}`;
             if (dailyAllClearMsg) alertMsg = dailyAllClearMsg.trim() + '\n\n' + alertMsg;
             if (isEarlyBirdJackpot) alertMsg += `\n\n🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`;
             if (buffAmount > 0) alertMsg += `\n\n🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!`;
@@ -13057,7 +13103,7 @@ ${subjectLine}
             if (newLv > oldLv) {
                 const bonus = newLv * 3;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + bonus);
-                alertMsg += `\n\n🎉 레벨업을 축하해요!\n보너스 자산 [${bonus} B]를 드립니다!`;
+                alertMsg += `\n\n🎉 레벨업을 축하해요!\n보너스 자산 [${formatBongAmount(bonus)}]를 드립니다!`;
             }
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
             await window.customAlert(alertMsg.trim());
@@ -13341,7 +13387,7 @@ ${subjectLine}
 
             const floater = document.createElement('div');
             floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center max-w-[95vw] px-2`;
-            floater.innerHTML = `🎁<br>총 ${result} B<br><span class="text-lg sm:text-2xl font-bold">비율 분배 완료</span>`;
+            floater.innerHTML = `🎁<br>총 ${formatBongAmount(result)}<br><span class="text-lg sm:text-2xl font-bold">비율 분배 완료</span>`;
             document.body.appendChild(floater);
             setTimeout(() => floater.remove(), 2500);
 
@@ -13349,18 +13395,18 @@ ${subjectLine}
                 .map((sid) => {
                     const nm = STUDENT_NAMES[String(sid)] || sid;
                     const v = shares[sid];
-                    return `${nm}: +${formatBongDisplay(v)} B`;
+                    return `${nm}: +${formatBongAmount(v)}`;
                 })
                 .join('\n');
             const myId = localStorage.getItem('sambong_student_id');
-            const mine = myId && shares[myId] != null ? `\n\n내 지분: +${formatBongDisplay(shares[myId])} B` : '';
+            const mine = myId && shares[myId] != null ? `\n\n내 지분: +${formatBongAmount(shares[myId])}` : '';
             const profit = result - target;
             let tail = '';
-            if (result > target) tail = `\n\n모둠 순이익: +${formatBongDisplay(profit)} B (총 당첨 − 목표 ${target}B)`;
-            else if (result < target) tail = `\n\n모둠 순손실: ${formatBongDisplay(Math.abs(profit))} B`;
-            else tail = `\n\n모둠 본전 (총 당첨 = 목표 ${target}B)`;
+            if (result > target) tail = `\n\n모둠 순이익: +${formatBongAmount(profit)} (총 당첨 − 목표 ${formatBongAmount(target)})`;
+            else if (result < target) tail = `\n\n모둠 순손실: ${formatBongAmount(Math.abs(profit))}`;
+            else tail = `\n\n모둠 본전 (총 당첨 = 목표 ${formatBongAmount(target)})`;
 
-            await window.customAlert(`🎁 공동구매 랜덤 박스 결과: 총 ${result} B\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
+            await window.customAlert(`🎁 공동구매 랜덤 박스 결과: 총 ${formatBongAmount(result)}\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
         }
 
         window.buyLottoTicket = async function () {
@@ -13382,7 +13428,7 @@ ${subjectLine}
             }
 
             const raw = await window.customPrompt(
-                `삼봉 로또 번호 3개를 입력하세요.\n범위: 1~30 / 예: 3, 14, 27\n가격: ${price}B`,
+                `삼봉 로또 번호 3개를 입력하세요.\n범위: 1~30 / 예: 3, 14, 27\n가격: ${formatBongAmount(price)}`,
                 'text'
             );
             if (raw === null) return;
@@ -13392,7 +13438,7 @@ ${subjectLine}
             }
 
             const ok = await window.customConfirm(
-                `삼봉 로또를 구매할까요?\n번호: ${formatLottoNumbers(numbers)}\n가격: ${price}B\n추첨: 금요일 점심 이후`
+                `삼봉 로또를 구매할까요?\n번호: ${formatLottoNumbers(numbers)}\n가격: ${formatBongAmount(price)}\n추첨: 금요일 점심 이후`
             );
             if (!ok) return;
 
@@ -13460,7 +13506,7 @@ ${subjectLine}
                 }
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`🎟️ 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: ${formatBongDisplay(savedLotto && savedLotto.poolB || 0)}B`);
+                await window.customAlert(`🎟️ 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: ${formatBongAmount(savedLotto && savedLotto.poolB || 0)}`);
             } catch (e) {
                 console.error('buyLottoTicket', e);
                 const msg = String(e && e.message ? e.message : e);
@@ -13617,7 +13663,7 @@ ${subjectLine}
                 }
                 const remainRb = getShopDailyPurchaseRemaining(window.playerState, id);
                 const ok = await window.customConfirm(
-                    `[${name}]을(를) ${price}B에 열어볼까요?\n(0~100B 획득 가능, 각 금액 균등 확률!)\n오늘 남은 구매: ${remainRb}/${SHOP_DAILY_PURCHASE_LIMIT}회`
+                    `[${name}]을(를) ${formatBongAmount(price)}에 열어볼까요?\n(0~100${getCurrencyUnit()} 획득 가능, 각 금액 균등 확률!)\n오늘 남은 구매: ${remainRb}/${SHOP_DAILY_PURCHASE_LIMIT}회`
                 );
                 if (!ok) return;
                 if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
@@ -13627,7 +13673,7 @@ ${subjectLine}
 
                 const floater = document.createElement('div');
                 floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center`;
-                floater.innerHTML = `🎁<br>${result} B 당첨!`;
+                floater.innerHTML = `🎁<br>${formatBongAmount(result)} 당첨!`;
                 document.body.appendChild(floater);
                 setTimeout(() => floater.remove(), 2500);
 
@@ -13644,9 +13690,9 @@ ${subjectLine}
                     return;
                 }
 
-                if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${result} B ] 획득!\n(수익: +${result - price} B)`);
-                else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${result} B ] 획득!`);
-                else await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${result} B ] 획득!\n(손해: ${result - price} B)`);
+                if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!\n(수익: +${formatBongAmount(result - price)})`);
+                else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!`);
+                else await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!\n(손해: ${formatBongAmount(result - price)})`);
                 return;
             }
 
@@ -13669,10 +13715,10 @@ ${subjectLine}
                     return await window.customAlert(formatInsufficientBongAlert(bet - (Number(window.playerState.bong) || 0)));
                 }
 
-                const pick = await window.customPick1to6(`1~6 중에 하나를 선택하세요. (맞추면 ${bet * 5}B)`);
+                const pick = await window.customPick1to6(`1~6 중에 하나를 선택하세요. (맞추면 ${formatBongAmount(bet * 5)})`);
                 if (pick === null) return;
 
-                const ok = await window.customConfirm(`🎲 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${bet}B\n- 성공 보상: ${bet * 5}B`);
+                const ok = await window.customConfirm(`🎲 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${formatBongAmount(bet)}\n- 성공 보상: ${formatBongAmount(bet * 5)}`);
                 if (!ok) return;
 
                 if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - bet);
@@ -13698,12 +13744,12 @@ ${subjectLine}
 
                 const floater = document.createElement('div');
                 floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-5xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(16,185,129,0.9)] text-emerald-400 whitespace-nowrap text-center`;
-                floater.innerHTML = `🎲 ${roll}<br>${win ? `성공! +${payout}B` : `실패... (-${bet}B)`}`;
+                floater.innerHTML = `🎲 ${roll}<br>${win ? `성공! +${formatBongAmount(payout)}` : `실패... (-${formatBongAmount(bet)})`}`;
                 document.body.appendChild(floater);
                 setTimeout(() => floater.remove(), 2500);
 
-                if (win) return await window.customAlert(`🎉 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${payout} B\n(순이익: +${payout - bet} B)`);
-                return await window.customAlert(`💦 실패!\n선택: ${pick}\n주사위: ${roll}\n손해: -${bet} B`);
+                if (win) return await window.customAlert(`🎉 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${formatBongAmount(payout)}\n(순이익: +${formatBongAmount(payout - bet)})`);
+                return await window.customAlert(`💦 실패!\n선택: ${pick}\n주사위: ${roll}\n손해: -${formatBongAmount(bet)}`);
             }
 
             if (id === 'item_xp_pack') {
@@ -13713,7 +13759,7 @@ ${subjectLine}
                     if (window.playerState.bong < packPrice && !window.playerState.isAdmin) {
                         return await window.customAlert(formatInsufficientBongAlert(packPrice - (Number(window.playerState.bong) || 0)));
                     }
-                    const ok = await window.customConfirm(`[경험치 팩]\n${packPrice}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                    const ok = await window.customConfirm(`[경험치 팩]\n${formatBongAmount(packPrice)}를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - packPrice);
                 }
@@ -13732,7 +13778,7 @@ ${subjectLine}
                     if (window.playerState.bong < price && !window.playerState.isAdmin) {
                         return await window.customAlert(formatInsufficientBongAlert(price - (Number(window.playerState.bong) || 0)));
                     }
-                    const ok = await window.customConfirm(`[${currentShopItem.name}]\n${price}B를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                    const ok = await window.customConfirm(`[${currentShopItem.name}]\n${formatBongAmount(price)}를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                 }
@@ -13753,7 +13799,7 @@ ${subjectLine}
                     const songRaw = await window.customPrompt(
                         `[${shop.name}] 신청곡을 입력해 주세요.\n` +
                         `(가수 - 곡명, 유튜브 제목 등 · 최대 ${MUSIC_TIME_SONG_MAX_LEN}자)\n\n` +
-                        `구매가: ${eff}B`,
+                        `구매가: ${formatBongAmount(eff)}`,
                         'text'
                     );
                     if (songRaw === null) return;
@@ -13765,8 +13811,8 @@ ${subjectLine}
                         return await window.customAlert(formatInsufficientBongAlert(eff - (Number(window.playerState.bong) || 0)));
                     }
                     const confirmMsg = String(id) === MUSIC_TIME_SHOP_ID && musicSongTitle
-                        ? `[${shop.name}] ${eff}B를 내고 신청곡을 등록할까요?\n\n🎵 ${musicSongTitle}\n\n삼봉은 즉시 차감되며, 신청곡 리스트에 추가됩니다.`
-                        : `[${shop.name}] ${eff}B를 내고 학급 활동 예약을 할까요?\n` + '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.';
+                        ? `[${shop.name}] ${formatBongAmount(eff)}를 내고 신청곡을 등록할까요?\n\n🎵 ${musicSongTitle}\n\n삼봉은 즉시 차감되며, 신청곡 리스트에 추가됩니다.`
+                        : `[${shop.name}] ${formatBongAmount(eff)}를 내고 학급 활동 예약을 할까요?\n` + '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.';
                     const ok = await window.customConfirm(confirmMsg);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) {
@@ -13823,12 +13869,12 @@ ${subjectLine}
                 }
 
                 if (window.playerState.bong >= price || window.playerState.isAdmin) {
-                    let cMsg = `[${name}] 아이템을 ${price}B에 살까요?`;
+                    let cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?`;
                     if (id === 'item_shield') {
                         const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
                         if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
                         const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
-                        cMsg = `[${name}] 아이템을 ${price}B에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
+                        cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
                     }
 
                     const ok = await window.customConfirm(cMsg);
@@ -14200,8 +14246,8 @@ ${subjectLine}
             if (hint) {
                 hint.textContent = shop
                     ? shopId === 'item_random'
-                        ? `목표 ${getEffectiveShopPrice(shopId)}B가 모이면 실행 시, 랜덤 박스 당첨 삼봉(0~100B)이 출자 비율로 참여자에게 나뉩니다.`
-                        : `목표 금액(${getEffectiveShopPrice(shopId)}B)이 모이면 「구매 실행」으로 상품이 적용됩니다. 내 입금은 10% 차감 후 환불할 수 있어요.`
+                        ? `목표 ${formatBongAmount(getEffectiveShopPrice(shopId))}가 모이면 실행 시, 랜덤 박스 당첨 삼봉(0~100${getCurrencyUnit()})이 출자 비율로 참여자에게 나뉩니다.`
+                        : `목표 금액(${formatBongAmount(getEffectiveShopPrice(shopId))})이 모이면 「구매 실행」으로 상품이 적용됩니다. 내 입금은 10% 차감 후 환불할 수 있어요.`
                     : '';
             }
             window.renderShopGroupBuyModalContent(shopId);
@@ -14240,7 +14286,7 @@ ${subjectLine}
                     rows.length === 0
                         ? '<div class="text-slate-500 text-center py-2">아직 입금 내역이 없어요.</div>'
                         : rows
-                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${r.amt} B</span></div>`)
+                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${formatBongAmount(r.amt)}</span></div>`)
                               .join('');
             }
             const myId =
@@ -14300,12 +14346,12 @@ ${subjectLine}
                         <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div class="font-bold text-white">${shop.name}</div>
-                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${target} B (${pct}%)</div>
+                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${formatBongAmount(target)} (${pct}%)</div>
                             </div>
                             <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
                                 <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
                             </div>
-                            <div class="text-[9px] text-slate-400">${myAmt > 0 ? `내 입금 <span class="text-cyan-300 font-bold">${myAmt} B</span>` : '내 입금 없음'}</div>
+                            <div class="text-[9px] text-slate-400">${myAmt > 0 ? `내 입금 <span class="text-cyan-300 font-bold">${formatBongAmount(myAmt)}</span>` : '내 입금 없음'}</div>
                             <button type="button" onclick="window.openShopGroupBuyModal('${shop.id}')" class="mt-2 w-full bg-cyan-900/70 hover:bg-cyan-800 text-cyan-100 font-bold py-1.5 px-2 rounded text-[9px] border border-cyan-600">이 상품 공동구매 열기</button>
                         </div>`;
                 });
@@ -14361,9 +14407,9 @@ ${subjectLine}
                         ? '<div class="text-slate-500">입금 없음</div>'
                         : contributorRows.map((r) => `<div class="flex flex-wrap items-center justify-between gap-2">
                             <span>${r.name}</span>
-                            <span class="text-cyan-300 font-bold">${r.amount} B</span>
+                            <span class="text-cyan-300 font-bold">${formatBongAmount(r.amount)}</span>
                             <div class="flex gap-1 w-full sm:w-auto">
-                                <input type="number" id="gb_admin_refund_${shop.id}_${r.sid}" min="1" max="${r.amount}" step="1" placeholder="환불할 B" class="flex-1 sm:w-20 bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-[9px] font-bold" />
+                                <input type="number" id="gb_admin_refund_${shop.id}_${r.sid}" min="1" max="${r.amount}" step="1" placeholder="환불할 ${getCurrencyUnit()}" class="flex-1 sm:w-20 bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-[9px] font-bold" />
                                 <button type="button" onclick="window.refundShopGroupBuyStudentAdmin('${shop.id}', '${r.sid}')" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-1 px-2 rounded text-[9px]">학생별 환불</button>
                             </div>
                         </div>`).join('');
@@ -14374,7 +14420,7 @@ ${subjectLine}
                         <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <div class="font-bold text-white">${shop.name}</div>
-                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${target} B (${pct}%)</div>
+                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${formatBongAmount(target)} (${pct}%)</div>
                             </div>
                             <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
                                 <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
@@ -14482,14 +14528,14 @@ ${subjectLine}
                 return await window.customAlert('환불할 입금액은 1 이상의 자연수로 입력해 주세요.');
             }
             if (rawAmount > current) {
-                return await window.customAlert(`환불할 입금액은 현재 입금액(${current}B)을 넘을 수 없습니다.`);
+                return await window.customAlert(`환불할 입금액은 현재 입금액(${formatBongAmount(current)})을 넘을 수 없습니다.`);
             }
 
             const refund = calcShopGroupBuyRefund(rawAmount);
             const shop = getShopItemById(shopId);
             const ok = await window.customConfirm(
-                `「${shop ? shop.name : shopId}」 공동구매\n내 입금 ${rawAmount}B를 환불할까요?\n\n` +
-                `10% 차감 후 지갑으로 +${refund} B\n모금액에서 ${rawAmount}B가 즉시 빠집니다.`
+                `「${shop ? shop.name : shopId}」 공동구매\n내 입금 ${formatBongAmount(rawAmount)}를 환불할까요?\n\n` +
+                `10% 차감 후 지갑으로 +${formatBongAmount(refund)}\n모금액에서 ${formatBongAmount(rawAmount)}가 즉시 빠집니다.`
             );
             if (!ok) return;
 
@@ -14507,9 +14553,9 @@ ${subjectLine}
                 const left = buildSanitizedContributionsMap(poolAfter.contributions)[String(myId)] || 0;
                 const poolSum = sumShopPoolContributions(poolAfter);
                 await window.customAlert(
-                    `♻️ 환불 완료! 지갑 +${result.refund} B\n` +
-                    `모금에서 ${rawAmount}B 차감됨 · 현재 모금 ${poolSum}B` +
-                    (left > 0 ? `\n내 남은 입금: ${left}B` : '\n내 입금은 모두 환불되었습니다.')
+                    `♻️ 환불 완료! 지갑 +${formatBongAmount(result.refund)}\n` +
+                    `모금에서 ${formatBongAmount(rawAmount)} 차감됨 · 현재 모금 ${formatBongAmount(poolSum)}` +
+                    (left > 0 ? `\n내 남은 입금: ${formatBongAmount(left)}` : '\n내 입금은 모두 환불되었습니다.')
                 );
             } catch (e) {
                 const code = e && e.message ? String(e.message) : String(e);
@@ -14532,7 +14578,7 @@ ${subjectLine}
             const refundTotal = Object.keys(mergedContribs).reduce((s, sid) => s + calcShopGroupBuyRefund(mergedContribs[sid]), 0);
             const ok = await window.customConfirm(
                 `「${shop ? shop.name : shopId}」 공동구매를 초기화할까요?\n` +
-                `총 입금 ${total}B 중 10% 차감 환불 합계 ${refundTotal}B가 학생들에게 지급됩니다.\n` +
+                `총 입금 ${formatBongAmount(total)} 중 10% 차감 환불 합계 ${formatBongAmount(refundTotal)}가 학생들에게 지급됩니다.\n` +
                 '소수점 아래는 버림 처리됩니다.'
             );
             if (!ok) return;
@@ -14581,13 +14627,13 @@ ${subjectLine}
             const merged = buildSanitizedContributionsMap(pool.contributions);
             const current = merged[canonId] || 0;
             if (current <= 0) return await window.customAlert('해당 학생의 입금 내역이 없습니다.');
-            if (rawAmount > current) return await window.customAlert(`환불할 입금액은 현재 입금액(${current}B)을 넘을 수 없습니다.`);
+            if (rawAmount > current) return await window.customAlert(`환불할 입금액은 현재 입금액(${formatBongAmount(current)})을 넘을 수 없습니다.`);
             const refund = calcShopGroupBuyRefund(rawAmount);
             const name = STUDENT_NAMES[canonId] || canonId;
             const shop = getShopItemById(shopId);
             const ok = await window.customConfirm(
-                `[${name}] 학생의 「${shop ? shop.name : shopId}」 공동구매 입금 ${rawAmount}B를 환불할까요?\n` +
-                `10% 차감 후 ${refund}B 지급 · 모금액에서 ${rawAmount}B 차감`
+                `[${name}] 학생의 「${shop ? shop.name : shopId}」 공동구매 입금 ${formatBongAmount(rawAmount)}를 환불할까요?\n` +
+                `10% 차감 후 ${formatBongAmount(refund)} 지급 · 모금액에서 ${formatBongAmount(rawAmount)} 차감`
             );
             if (!ok) return;
 
@@ -14603,7 +14649,7 @@ ${subjectLine}
                 const poolAfter = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
                 const poolSum = sumShopPoolContributions(poolAfter);
                 await window.customAlert(
-                    `${name} 학생에게 ${refund}B 환불 완료 (10% 차감)\n모금에서 ${rawAmount}B 차감 · 현재 모금 ${poolSum}B`
+                    `${name} 학생에게 ${formatBongAmount(refund)} 환불 완료 (10% 차감)\n모금에서 ${formatBongAmount(rawAmount)} 차감 · 현재 모금 ${formatBongAmount(poolSum)}`
                 );
             } catch (e) {
                 const code = e && e.message ? String(e.message) : String(e);
@@ -14714,8 +14760,8 @@ ${subjectLine}
                 skin.type === 'aura' ? '테두리(오라)' : skin.type === 'face' ? '얼굴 스킨' : '장식 스킨';
             const ok = await window.customConfirm(
                 `[${skin.name}] ${typeLabel}을(를) 환불할까요?\n\n` +
-                `환불 규정: 구매가 ${skin.price}B의 50%\n` +
-                `돌려받는 삼봉: +${refundB} B\n` +
+                `환불 규정: 구매가 ${formatBongAmount(skin.price)}의 50%\n` +
+                `돌려받는 삼봉: +${formatBongAmount(refundB)}\n` +
                 '환불 시 장착이 즉시 해제되고 아이템이 완전히 삭제됩니다.'
             );
             if (!ok) return;
@@ -14732,7 +14778,7 @@ ${subjectLine}
                 playSfx('bong', true);
                 updateUI();
                 await window.customAlert(
-                    `♻️ [${skin.name}] 환불 완료!\n+${refundB} B가 지급되었습니다.\n(장착 해제 및 삭제됨)`
+                    `♻️ [${skin.name}] 환불 완료!\n+${formatBongAmount(refundB)}가 지급되었습니다.\n(장착 해제 및 삭제됨)`
                 );
                 window.switchTab('plaza');
             } catch (e) {
@@ -14765,7 +14811,7 @@ ${subjectLine}
                 updateUI(); saveDataToCloud(); window.switchTab('plaza');
             } else {
                 if (window.playerState.bong >= skin.price || window.playerState.isAdmin) {
-                    const isOk = await window.customConfirm(`스킨 '${skin.name}'을(를) ${skin.price} B에 살까요?`);
+                    const isOk = await window.customConfirm(`스킨 '${skin.name}'을(를) ${formatBongAmount(skin.price)}에 살까요?`);
                     if (isOk) {
                         if (!window.playerState.isAdmin) window.playerState.bong -= skin.price;
                         window.playerState.ownedSkins[skinId] = true;
@@ -15436,7 +15482,7 @@ ${subjectLine}
             if (window.playerState.isGMA && stuId !== '13') return;
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
 
-            const input = await window.customPrompt(`[${stuName}] 새로운 ${type === 'xp' ? '경험치(XP)' : '삼봉(B)'} 입력 (현재: ${currentVal}):`, 'number');
+            const input = await window.customPrompt(`[${stuName}] 새로운 ${type === 'xp' ? '경험치(XP)' : '${getCurrencyUnit()}'} 입력 (현재: ${currentVal}):`, 'number');
             if (input === null || isNaN(parseFloat(input))) return;
 
             const raw = parseFloat(input);
@@ -15627,7 +15673,7 @@ ${subjectLine}
                     </div>
                     <div class="text-right shrink-0">
                         <div class="text-sb-blue text-[10px] font-bold">+${q.xp} XP</div>
-                        <div class="text-sb-gold text-[10px] font-bold">+${formatBongDisplay(q.bong || 0)} B</div>
+                        <div class="text-sb-gold text-[10px] font-bold">+${formatBongAmount(q.bong || 0)}</div>
                     </div>
                 </div>
             `).join('');
@@ -15794,7 +15840,7 @@ ${subjectLine}
             if (hint) {
                 const rx = Math.max(0, Math.floor(Number(st.rewardXp) || 0));
                 const rb = Math.max(0, Number(st.rewardBong) || 0);
-                hint.textContent = `보상(선착순 ${maxW}명): +${rx} XP · +${rb} B`;
+                hint.textContent = `보상(선착순 ${maxW}명): +${rx} XP · +${formatBongAmount(rb)}`;
             }
 
             if (isFull) {
@@ -16070,7 +16116,7 @@ ${subjectLine}
                 const rxp = s.rewardXpTotal;
                 const rb = s.rewardBongTotal;
                 const sumHtml = fin && rxp != null && rb != null
-                    ? `<div class="text-emerald-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-yellow-200/90">+${rxp}XP</div><div class="text-[8px] text-amber-200/90">+${rb}B</div>`
+                    ? `<div class="text-emerald-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-yellow-200/90">+${rxp}XP</div><div class="text-[8px] text-amber-200/90">+${formatBongAmount(rb)}</div>`
                     : `<div class="text-slate-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-slate-500">${fin ? '완료' : '작성중'}</div>`;
                 body += `<td class="p-1.5 text-[9px] border border-slate-600 align-top">${sumHtml}</td></tr>`;
             });
@@ -16288,7 +16334,7 @@ ${subjectLine}
             d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
             const bodyHtml = mine
                 ? `<p class="text-center text-sm text-white font-bold mt-2">정답 ${mine.score} / ${totalQuestions}문항</p>
-                   <p class="text-center text-[11px] text-yellow-200/90 mt-1">획득 보상: +${mine.rewardXp} XP · +${mine.rewardBong} B (이미 지급됨)</p>`
+                   <p class="text-center text-[11px] text-yellow-200/90 mt-1">획득 보상: +${mine.rewardXp} XP · +${formatBongAmount(mine.rewardBong)} (이미 지급됨)</p>`
                 : `<p class="text-center text-xs text-slate-300 mt-2">이번 골든벨에는 최종 제출 기록이 없어요.<br>다음 골든벨에 꼭 참여해 보세요!</p>`;
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-yellow-500/40 max-w-sm w-full text-center space-y-3 shadow-2xl">
@@ -16385,7 +16431,7 @@ ${subjectLine}
                     const correct = myResults[idx] === true;
                     if (correct) {
                         inputCls = 'bg-emerald-900/20 border-emerald-500 text-white';
-                        resHtml = `<span class="text-emerald-400 font-black text-sm">O</span> <span class="text-[10px] text-emerald-300/90">(+${defRx}XP · +${defB}B)</span>`;
+                        resHtml = `<span class="text-emerald-400 font-black text-sm">O</span> <span class="text-[10px] text-emerald-300/90">(+${defRx}XP · +${formatBongAmount(defB)})</span>`;
                     } else {
                         inputCls = 'bg-red-900/20 border-sb-red text-white';
                         resHtml = `<span class="text-rose-400 font-bold text-sm">X</span> <span class="text-[10px] text-slate-400">(오답)</span>`;
@@ -16398,7 +16444,7 @@ ${subjectLine}
                         <span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span>
                         <span class="text-white/95">${escapeHtmlGb(item.q)}</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 mb-2">이 문항 정답 시: ${defRx} XP · ${defB} B</p>
+                    <p class="text-[9px] text-slate-500 mb-2">이 문항 정답 시: ${defRx} XP · ${formatBongAmount(defB)}</p>
                     <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
                         <input type="text"
                             id="gb_ans_${idx}"
@@ -16476,7 +16522,7 @@ ${subjectLine}
                     <div class="bg-sb-panel p-4 sm:p-6 rounded-3xl border border-yellow-500/40 max-w-md w-full shadow-2xl my-auto max-h-[90vh] flex flex-col">
                         <h3 class="text-lg font-display text-yellow-300 text-center shrink-0">채점 결과</h3>
                         <p class="text-center text-sm text-white font-bold mt-2 shrink-0">정답 ${score} / ${totalQuestions}문항</p>
-                        <p class="text-center text-[11px] text-yellow-200/90 shrink-0 mb-3">보상: +${rewardXp} XP · +${rewardBong} B</p>
+                        <p class="text-center text-[11px] text-yellow-200/90 shrink-0 mb-3">보상: +${rewardXp} XP · +${formatBongAmount(rewardBong)}</p>
                         <div class="overflow-y-auto flex-1 min-h-0 pr-1">${rowsHtml}</div>
                         <button type="button" id="gbGradeOk" class="mt-4 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2.5 px-8 rounded-full w-full shrink-0">확인</button>
                     </div>`;
@@ -16949,7 +16995,7 @@ ${subjectLine}
                 });
 
                 if (paid && window.playerState && window.playerState.isGM) {
-                    window.customAlert(`✅ 보스 격파 보상 지급 완료!\n(개인 데미지 비례 / 최대 ${paidRewardMaxXp}XP, ${paidRewardMaxBong}B)`);
+                    window.customAlert(`✅ 보스 격파 보상 지급 완료!\n(개인 데미지 비례 / 최대 ${paidRewardMaxXp}XP, ${formatBongAmount(paidRewardMaxBong)})`);
                 }
             } catch(e) {
                 console.error('raid reward distribution failed', e);
@@ -17011,7 +17057,7 @@ ${subjectLine}
                 lastLogAnnouncedFor: null,
                 damageBy: {}
             });
-            window.customAlert(`레이드 모집 시작!\n보상 최대치: ${reward.xp}XP / ${reward.bong}B`);
+            window.customAlert(`레이드 모집 시작!\n보상 최대치: ${reward.xp}XP / ${formatBongAmount(reward.bong)}`);
         };
         
         window.saveRaidQuestions = async function() {

@@ -2708,6 +2708,21 @@ function redrawPlazaGrantsUi() {
             return !!(item && !item.isConsumable);
         }
 
+        /**
+         * 공동구매 현황 정렬: 단체 구매 필요가 높은 학급 활동(자유시간·체육 등)을 앞에,
+         * 같은 그룹 안에서는 목표 금액이 큰 순.
+         */
+        function sortShopsForGroupBuyOverview(shops) {
+            return [...(shops || [])].sort((a, b) => {
+                const aClass = isClassShopId(a.id) ? 0 : 1;
+                const bClass = isClassShopId(b.id) ? 0 : 1;
+                if (aClass !== bClass) return aClass - bClass;
+                const priceDiff = getEffectiveShopPrice(b.id) - getEffectiveShopPrice(a.id);
+                if (priceDiff !== 0) return priceDiff;
+                return String(a.name || '').localeCompare(String(b.name || ''), 'ko');
+            });
+        }
+
         // ==========================================
         // ★ 뮤직 타임 신청곡 큐 (학급 공용) ★
         // ==========================================
@@ -14332,7 +14347,7 @@ ${subjectLine}
             const body = document.getElementById('shopGroupBuyStudentOverviewBody');
             if (!modal || !body || modal.classList.contains('hidden')) return;
 
-            const rows = getAllShopItems()
+            const rows = sortShopsForGroupBuyOverview(getAllShopItems())
                 .filter((shop) => shop.id !== 'item_mystery_dice')
                 .map((shop) => {
                     const target = getEffectiveShopPrice(shop.id);
@@ -14387,7 +14402,7 @@ ${subjectLine}
             const body = document.getElementById('shopGroupBuyAdminBody');
             if (!modal || !body || modal.classList.contains('hidden')) return;
 
-            const rows = getAllShopItems()
+            const rows = sortShopsForGroupBuyOverview(getAllShopItems())
                 .filter((shop) => shop.id !== 'item_mystery_dice')
                 .map((shop) => {
                     const target = getEffectiveShopPrice(shop.id);

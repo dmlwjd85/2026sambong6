@@ -559,6 +559,59 @@ function redrawPlazaGrantsUi() {
                 .replace(/삼봉월드/g, 'MATE');
         }
 
+        /** 학교명에서 짧은 브랜드 (예: 충남초등학교 → 충남) */
+        function schoolNameToShortBrand(schoolName) {
+            const school = String(schoolName || '').trim();
+            if (!school) return '';
+            return school
+                .replace(/초등학교|중학교|고등학교|대학교|대학|학교/g, '')
+                .replace(/\s+/g, '')
+                .trim()
+                .slice(0, 12);
+        }
+
+        /** 학교명 → 월드명 (예: 충남초등학교 → 충남월드) */
+        function deriveWorldNameFromSchool(schoolName) {
+            const short = schoolNameToShortBrand(schoolName);
+            if (!short) return '';
+            return `${short}월드`.slice(0, 40);
+        }
+
+        /** 현재 학급의 짧은 브랜드 (학교명 우선, 없으면 월드명에서 추출) */
+        function getSchoolShortBrand() {
+            const fromSchool = schoolNameToShortBrand(window.classMeta?.schoolName);
+            if (fromSchool) return fromSchool;
+            const wn = String(getWorldSettings().worldName || '').trim();
+            if (!wn || wn === 'MATE') return '';
+            return wn.replace(/월드$/u, '').replace(/\s*WORLD$/i, '').trim().slice(0, 12) || wn.slice(0, 12);
+        }
+
+        /** 월드맵 분교 라벨 — 기본 난지도 분교, 배포 학급은 ○○ 분교 */
+        function getPirateIslandLabel() {
+            const custom = String(getWorldSettings().pirateIslandLabel || '').trim();
+            if (custom) return custom.slice(0, 20);
+            const short = getSchoolShortBrand();
+            if (short) return `${short} 분교`;
+            return '난지도 분교';
+        }
+
+        /** 월드맵 은행 라벨 */
+        function getBankMapLabel() {
+            const custom = String(getWorldSettings().bankLabel || '').trim();
+            if (custom) return custom.slice(0, 20);
+            const short = getSchoolShortBrand();
+            if (short) return `${short} 은행`;
+            return '삼봉 은행';
+        }
+
+        /** 헌법 등 고정 문구의 레거시 브랜드를 현재 월드명으로 치환 */
+        function brandLocalizedText(text) {
+            const world = String(getWorldSettings().worldName || 'MATE').trim() || 'MATE';
+            return String(text || '')
+                .replace(/삼봉월드/g, world)
+                .replace(/SAMBONG\s*WORLD/gi, world);
+        }
+
         const DEFAULT_WORLD_SETTINGS = {
             worldName: 'MATE',
             worldNameEn: 'MATE',
@@ -575,6 +628,9 @@ function redrawPlazaGrantsUi() {
             academicYear: 2026,
             semester: 1,
             termLabel: '',
+            /** 월드맵 분교·은행 라벨 (비우면 학교/월드명에서 자동) */
+            pirateIslandLabel: '',
+            bankLabel: '',
             /** 2026 여름방학 기본값 — 기간 중 자동 지급·점심 차감 등 일시정지 */
             vacationEnabled: true,
             vacationLabel: '여름 방학',
@@ -639,6 +695,8 @@ function redrawPlazaGrantsUi() {
                 navBadge: String(src.navBadge || DEFAULT_WORLD_SETTINGS.navBadge).trim().slice(0, 12) || DEFAULT_WORLD_SETTINGS.navBadge,
                 tagline: String(src.tagline || '').trim().slice(0, 80),
                 footerCredit: remapLegacyBrandText(String(src.footerCredit || DEFAULT_WORLD_SETTINGS.footerCredit).trim().slice(0, 120) || DEFAULT_WORLD_SETTINGS.footerCredit),
+                pirateIslandLabel: String(src.pirateIslandLabel || '').trim().slice(0, 20),
+                bankLabel: String(src.bankLabel || '').trim().slice(0, 20),
                 seasonNumber,
                 seasonLabel,
                 seasonName: seasonLabel,
@@ -732,7 +790,7 @@ function redrawPlazaGrantsUi() {
             verEls.forEach((el) => { el.textContent = APP_VERSION; });
 
             const loginTitle = document.getElementById('loginWorldTitle');
-            if (loginTitle) loginTitle.textContent = ws.worldNameEn || ws.worldName;
+            if (loginTitle) loginTitle.textContent = ws.worldName || ws.worldNameEn || 'MATE';
             const loginSub = document.getElementById('loginSeasonSubtitle');
             if (loginSub) {
                 const emoji = ws.seasonNature === 'winter' ? '❄️'
@@ -743,8 +801,8 @@ function redrawPlazaGrantsUi() {
             }
             const navBrand = document.getElementById('navWorldBrand');
             if (navBrand) {
-                const en = String(ws.worldNameEn || 'MATE').trim();
-                navBrand.textContent = en.split(/\s+/)[0] || 'MATE';
+                const brand = String(ws.worldName || ws.worldNameEn || 'MATE').trim();
+                navBrand.textContent = brand || 'MATE';
             }
             const navBadge = document.getElementById('navSeasonBadge');
             if (navBadge) navBadge.textContent = ws.navBadge || `S${ws.seasonNumber}`;
@@ -754,6 +812,10 @@ function redrawPlazaGrantsUi() {
             if (footer) footer.textContent = `- ${ws.footerCredit} -`;
             const plazaMaster = document.getElementById('plazaMasterNameLabel');
             if (plazaMaster) plazaMaster.textContent = getMasterDisplayName();
+            const pirateLabel = document.getElementById('mapPirateIslandLabel');
+            if (pirateLabel) pirateLabel.textContent = getPirateIslandLabel();
+            const bankLabelEl = document.getElementById('mapBankLabel');
+            if (bankLabelEl) bankLabelEl.textContent = getBankMapLabel();
             const timerWrap = seasonLabel && seasonLabel.closest('.glass-panel');
             if (timerWrap) timerWrap.classList.toggle('hidden', !ws.showSeasonTimer);
             applyCurrencyUnitLabels();
@@ -1588,6 +1650,7 @@ function redrawPlazaGrantsUi() {
             syncNameGenderMaps();
             populateLoginSelect();
             updateClassDisplayLabels();
+            applyWorldBranding();
             if (window.playerState && window.playerState.isAdmin && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
             }
@@ -1854,12 +1917,15 @@ function redrawPlazaGrantsUi() {
                         ...copySettings,
                         worldSettings: {
                             ...(copySettings.worldSettings || {}),
-                            worldName: displayName || 'MATE',
+                            worldName: deriveWorldNameFromSchool(schoolName) || displayName || 'MATE',
+                            worldNameEn: deriveWorldNameFromSchool(schoolName) || displayName || 'MATE',
+                            footerCredit: `${deriveWorldNameFromSchool(schoolName) || displayName || 'MATE'} · ${teacherName || '담임 선생님'}`,
                         },
                     }, { merge: true });
                 }
             } else {
                 const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
+                const derivedWorld = deriveWorldNameFromSchool(schoolName) || displayName || 'MATE';
                 await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
                     raidPassword: raidPw,
                     raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
@@ -1869,14 +1935,14 @@ function redrawPlazaGrantsUi() {
                     curriculumTags: DEFAULT_CURRICULUM_TAGS,
                     curriculumMapping: DEFAULT_CURRICULUM_MAPPING,
                     worldSettings: {
-                        worldName: displayName || 'MATE',
-                        worldNameEn: 'MATE',
+                        worldName: derivedWorld,
+                        worldNameEn: derivedWorld,
                         navBadge: 'S1',
                         seasonNumber: 1,
                         seasonLabel: String(seasonLabel || '시즌 1').trim().slice(0, 30) || '시즌 1',
                         seasonTheme: String(seasonTheme || '우리 반 모험').trim().slice(0, 60) || '우리 반 모험',
                         academicYear: schoolYear,
-                        footerCredit: `${displayName || 'MATE'} · ${teacherName || '담임 선생님'}`,
+                        footerCredit: `${derivedWorld} · ${teacherName || '담임 선생님'}`,
                     },
                     applyDefaultTemplatePending: !!applyDefaultTemplate,
                 }, { merge: true });
@@ -4141,7 +4207,7 @@ ${subjectLine}
                 .map((item, idx) => ({
                     id: String(item && item.id ? item.id : `constitution_${idx}_${Date.now().toString(36)}`),
                     type: item && item.type === 'chapter' ? 'chapter' : 'clause',
-                    text: String(item && item.text ? item.text : '').trim()
+                    text: brandLocalizedText(String(item && item.text ? item.text : '').trim())
                 }))
                 .filter((item) => item.text);
         }
@@ -6746,7 +6812,8 @@ ${subjectLine}
         };
 
         window.visitPirateIsland = function() {
-            window.customAlert(`🌊 [보조 구역]\n${getCoMasterDisplayName()}의 구역입니다!\n함께 모험을 떠나는 공간입니다.`);
+            const label = getPirateIslandLabel();
+            window.customAlert(`🌊 [${label}]\n${getCoMasterDisplayName()}의 구역입니다!\n함께 모험을 떠나는 공간입니다.`);
         };
 
         window.openExternalPortal = function() {

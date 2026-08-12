@@ -520,11 +520,11 @@
                     <div class="worldmap-label mt-2 bg-white/95 text-pink-700 px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-pink-200 whitespace-nowrap">상점</div>
                 </div>
 
-                <!-- 3. Top Right: Pirate Island (난지도 분교) -->
+                <!-- 3. Top Right: Pirate Island (월드/학교명 반영) -->
                 <div onclick="window.visitPirateIsland()" class="island-hover absolute top-[20%] left-[75%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <div class="worldmap-emoji absolute bottom-7 text-5xl sm:text-6xl drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] avatar-float pointer-events-none" style="animation-delay: 0.5s;">🏴‍☠️</div>
                     <div class="worldmap-mound w-20 h-10 sm:w-24 sm:h-12 bg-gradient-to-b from-yellow-700 to-yellow-900 rounded-[100%] border-b-6 border-black shadow-xl"></div>
-                    <div class="worldmap-label mt-2 bg-red-950/95 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-red-500 whitespace-nowrap">난지도 분교</div>
+                    <div id="mapPirateIslandLabel" class="worldmap-label mt-2 bg-red-950/95 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-black border border-red-500 whitespace-nowrap">난지도 분교</div>
                 </div>
 
                 <!-- 4. Middle Left: Plaza -->
@@ -575,7 +575,7 @@
                 <div onclick="window.visitBank()" class="island-hover absolute top-[92%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
                     <div class="worldmap-emoji absolute bottom-7 text-4xl sm:text-5xl drop-shadow-[0_0_12px_rgba(56,189,248,0.7)] avatar-float pointer-events-none" style="animation-delay: 0.35s;">🏦</div>
                     <div class="worldmap-mound w-16 h-8 sm:w-20 sm:h-10 bg-gradient-to-b from-sky-500 to-sky-800 rounded-[100%] border-b-4 border-sky-950 shadow-xl"></div>
-                    <div class="worldmap-label mt-1 bg-slate-900/95 text-sky-300 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-sky-500/80 whitespace-nowrap">삼봉 은행</div>
+                    <div id="mapBankLabel" class="worldmap-label mt-1 bg-slate-900/95 text-sky-300 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-sky-500/80 whitespace-nowrap">삼봉 은행</div>
                 </div>
             </div>
 

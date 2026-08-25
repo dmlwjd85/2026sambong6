@@ -12860,7 +12860,8 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                // 은행 정산 거절도 실패로 처리합니다. 빠지면 로컬 지갑이 부풀고 이후 일반 저장이 잔액을 복제합니다.
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

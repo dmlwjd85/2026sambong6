@@ -9697,13 +9697,14 @@ ${subjectLine}
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
+            // 확인 문구에서 쓰기 전에 계산해야 함. const는 TDZ라 아래에서 선언하면 환불 클릭 시 ReferenceError로 전체가 실패한다.
+            const refundB = normalizeBongValue(Number(order.price) || 0);
             const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongAmount(refundB)}가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[managerId] || managerId);
-            const refundB = normalizeBongValue(Number(order.price) || 0);
             try {
                 await runTransaction(db, async (transaction) => {
                     const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
@@ -12836,7 +12837,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,

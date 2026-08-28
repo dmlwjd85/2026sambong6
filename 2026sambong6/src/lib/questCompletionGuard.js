@@ -126,6 +126,39 @@ export function sanitizeWeeklyQuestFlags(state, weeklyQuestIds, weekStart, weekE
     return changed;
 }
 
+/**
+ * 완료 기록에서 해당 퀘스트의 가장 최근 항목을 뺍니다.
+ * 주간은 이번 주(월~일), 그 외는 지정한 날짜만 봅니다.
+ */
+export function removeLatestQuestHistoryMatch(history, qId, opts = {}) {
+    const src = Array.isArray(history) ? history : [];
+    if (!qId) return { changed: false, history: src.slice() };
+    const id = String(qId);
+    const type = opts.type;
+    const dateStr = opts.dateStr;
+    const weekStart = opts.weekStart;
+    const weekEnd = opts.weekEnd;
+    let idx = -1;
+    for (let i = src.length - 1; i >= 0; i--) {
+        const h = src[i];
+        if (!h || String(h.id) !== id || !h.date) continue;
+        if (type === 'weekly') {
+            if (!weekStart || !weekEnd) continue;
+            if (h.date >= weekStart && h.date <= weekEnd) {
+                idx = i;
+                break;
+            }
+        } else if (dateStr && h.date === dateStr) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx === -1) return { changed: false, history: src.slice() };
+    const next = src.slice();
+    next.splice(idx, 1);
+    return { changed: true, history: next };
+}
+
 /** 스크롤·스와이프 후 따라오는 클릭을 무시할 픽셀 임계값 */
 export const ACCIDENTAL_POINTER_MOVE_PX = 12;
 export const ACCIDENTAL_POINTER_SUPPRESS_MS = 450;

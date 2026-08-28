@@ -320,6 +320,50 @@ export function mergeBallotLists(studentBallots, extraBallots, positions) {
     return out;
 }
 
+/**
+ * 원격 공개본을 받을 때 남길 표.
+ * 투표 중 공개본은 득표를 비우므로, 같은 세션의 현장(키패드) 표는 로컬을 유지합니다.
+ */
+export function ballotsToKeepOnRemoteApply(localState, remoteState) {
+    const local = sanitizeElectionState(localState);
+    const remote = sanitizeElectionState(remoteState);
+    if (remote.phase === 'vote' && local.sessionId && remote.sessionId && local.sessionId === remote.sessionId) {
+        return local.ballots;
+    }
+    if (remote.phase === 'vote') {
+        return Object.fromEntries(remote.positions.map((p) => [p.id, []]));
+    }
+    return remote.ballots;
+}
+
+/**
+ * 일반 학생 저장이 선거 표를 덮어쓰지 않도록 서버 값을 강제합니다.
+ */
+export function overlayServerElectionVote(dataToSave, serverData) {
+    const next = dataToSave && typeof dataToSave === 'object' ? dataToSave : {};
+    if (serverData && Object.prototype.hasOwnProperty.call(serverData, 'classElectionVote')) {
+        next.classElectionVote = serverData.classElectionVote;
+    } else if (Object.prototype.hasOwnProperty.call(next, 'classElectionVote')) {
+        delete next.classElectionVote;
+    }
+    return next;
+}
+
+/**
+ * 학생 화면의 전체 명단에서 다른 사람 표를 뺍니다. 비밀투표가 광장 스냅샷으로 새지 않게 합니다.
+ */
+export function redactElectionVotesFromStudentRows(students, { viewerId, isAdmin } = {}) {
+    if (isAdmin) return Array.isArray(students) ? students : [];
+    const me = String(viewerId || '');
+    return (Array.isArray(students) ? students : []).map((s) => {
+        if (!s || typeof s !== 'object') return s;
+        if (me && String(s.id) === me) return s;
+        if (!Object.prototype.hasOwnProperty.call(s, 'classElectionVote')) return s;
+        const { classElectionVote, ...rest } = s;
+        return rest;
+    });
+}
+
 /** 학생 화면에 내려줄 공개 상태 — 투표 중에는 후보자별 표를 숨깁니다. */
 export function toPublishedElection(state) {
     const st = sanitizeElectionState(state);

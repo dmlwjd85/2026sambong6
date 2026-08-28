@@ -39,6 +39,7 @@ import {
     isWeeklyQuestCompletedThisWeek,
     sanitizeDailyQuestFlags,
     sanitizeWeeklyQuestFlags,
+    removeLatestQuestHistoryMatch,
     weekRangeMondaySunday,
 } from './lib/questCompletionGuard.js';
 import {
@@ -48,6 +49,7 @@ import {
     addCandidateToPosition,
     appendBallot,
     ballotCount,
+    ballotsToKeepOnRemoteApply,
     canStartVoting,
     candidateNumbers,
     collectBallotsFromStudentRows,
@@ -56,7 +58,9 @@ import {
     defaultElectionPositions,
     getPosition,
     mergeBallotLists,
+    overlayServerElectionVote,
     recordStudentPick,
+    redactElectionVotesFromStudentRows,
     removeCandidateFromPosition,
     resolveNumericVote,
     resolveNumericVoteOnTimeout,
@@ -8142,6 +8146,30 @@ ${subjectLine}
             );
         }
 
+        /** 마감 직전 서버 최신 학생 문서를 읽어, 스냅샷이 한 박자 늦은 표를 놓치지 않습니다. */
+        async function readStudentRowsPreferServer() {
+            if (!db) return window.allStudentsData || [];
+            try {
+                const studentsRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                let snap;
+                try {
+                    snap = await getDocsFromServer(studentsRef);
+                } catch (e) {
+                    snap = await getDocs(studentsRef);
+                }
+                const students = [];
+                snap.forEach((d) => {
+                    if (d.id === 'student_gm' || d.id === 'student_gm_a') return;
+                    const row = d.data() || {};
+                    students.push({ ...row, id: String(d.id.replace('student_', '')) });
+                });
+                return students.length ? students : (window.allStudentsData || []);
+            } catch (e) {
+                console.warn('readStudentRowsPreferServer', e);
+                return window.allStudentsData || [];
+            }
+        }
+
         async function publishElection(patch = {}) {
             _election = sanitizeElectionState({ ..._election, ...patch });
             persistElection();
@@ -8160,8 +8188,9 @@ ${subjectLine}
             }
         }
 
-        function freezeElectionBallotsFromStudents() {
-            const live = collectLiveStudentBallots();
+        async function freezeElectionBallotsFromStudents() {
+            const rows = await readStudentRowsPreferServer();
+            const live = collectBallotsFromStudentRows(rows, _election.sessionId, _election.positions);
             _election.ballots = mergeBallotLists(live.ballots, _election.ballots, _election.positions);
         }
 
@@ -8182,8 +8211,7 @@ ${subjectLine}
             if (_electionCounting) return;
             if (Date.now() < _electionIgnoreRemoteUntil) return;
             if (remote.phase === 'setup' && !remote.sessionId && _election.phase === 'setup') return;
-            const sameVoteSession = remote.phase === 'vote' && _election.phase === 'vote' && remote.sessionId && remote.sessionId === _election.sessionId;
-            const extras = sameVoteSession ? _election.ballots : (remote.phase === 'vote' ? {} : remote.ballots);
+            const extras = ballotsToKeepOnRemoteApply(_election, remote);
             _election = sanitizeElectionState({ ...remote, ballots: extras });
             persistElection();
             renderClassElectionPanel();
@@ -8636,7 +8664,7 @@ ${subjectLine}
                 setElectionVoteFlash(`다음 직책: ${_election.positions[_election.currentPositionIndex].name}`, 'is-ok');
                 return;
             }
-            freezeElectionBallotsFromStudents();
+            await freezeElectionBallotsFromStudents();
             _election.phase = 'count';
             persistElection();
             await publishElection();
@@ -8860,7 +8888,8 @@ ${subjectLine}
         window.resumeClassElection = function() {
             const remote = getPublishedElection();
             if (remote.sessionId && remote.phase !== 'setup') {
-                _election = remote;
+                const ballots = ballotsToKeepOnRemoteApply(_election, remote);
+                _election = sanitizeElectionState({ ...remote, ballots });
             } else {
                 loadElectionFromStorage();
             }
@@ -8991,20 +9020,30 @@ ${subjectLine}
         window.studentPickElectionCandidate = async function(positionId, number) {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
             if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
-            const pub = getPublishedElection();
-            if (pub.phase !== 'vote' || !pub.sessionId) return window.customAlert('지금은 투표 시간이 아닙니다.');
-            const pos = getPosition(pub, pub.currentPositionIndex);
-            if (!pos || pos.id !== positionId) return window.customAlert('지금 투표 중인 직책이 바뀌었습니다.');
-            const recorded = recordStudentPick(window.playerState.classElectionVote, pub.sessionId, positionId, number, pub.positions);
-            if (!recorded.ok) return window.customAlert('없는 번호입니다. 다시 골라 주세요.');
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
-                await setDoc(currentStudentDocRef, { classElectionVote: recorded.ballot }, { merge: true });
-                window.playerState.classElectionVote = recorded.ballot;
+                const nextBallot = await runTransaction(db, async (transaction) => {
+                    const settingsSnap = await transaction.get(getGlobalSettingsDocRef());
+                    const pub = sanitizeElectionState(settingsSnap.exists() ? (settingsSnap.data() || {}).classElection : null);
+                    if (pub.phase !== 'vote' || !pub.sessionId) throw new Error('not_voting');
+                    const pos = getPosition(pub, pub.currentPositionIndex);
+                    if (!pos || pos.id !== positionId) throw new Error('position_changed');
+                    const stuSnap = await transaction.get(currentStudentDocRef);
+                    const serverBallot = stuSnap.exists() ? (stuSnap.data() || {}).classElectionVote : window.playerState.classElectionVote;
+                    const recorded = recordStudentPick(serverBallot, pub.sessionId, positionId, number, pub.positions);
+                    if (!recorded.ok) throw new Error('invalid_pick');
+                    transaction.set(currentStudentDocRef, { classElectionVote: recorded.ballot }, { merge: true });
+                    return recorded.ballot;
+                });
+                window.playerState.classElectionVote = nextBallot;
                 playElectionOk();
                 renderStudentElectionOverlay();
             } catch (e) {
+                const msg = String(e && e.message ? e.message : e);
+                if (msg.includes('not_voting')) return window.customAlert('지금은 투표 시간이 아닙니다.');
+                if (msg.includes('position_changed')) return window.customAlert('지금 투표 중인 직책이 바뀌었습니다.');
+                if (msg.includes('invalid_pick')) return window.customAlert('없는 번호입니다. 다시 골라 주세요.');
                 console.warn('studentPickElectionCandidate', e);
                 window.customAlert('투표 저장에 실패했습니다. 다시 눌러 주세요.');
             }
@@ -10710,13 +10749,13 @@ ${subjectLine}
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
+            const refundB = normalizeBongValue(Number(order.price) || 0);
             const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongAmount(refundB)}가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[managerId] || managerId);
-            const refundB = normalizeBongValue(Number(order.price) || 0);
             try {
                 await runTransaction(db, async (transaction) => {
                     const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
@@ -11112,12 +11151,18 @@ ${subjectLine}
                                     students.push({ ...row, id: String(d.id.replace('student_', '')) });
                                 }
                             });
-                            
-                            window.allStudentsData = students; 
-                            window.gmData = gmD; 
-                            window.gmaData = gmaD;
-                            
+
                             const myId = localStorage.getItem('sambong_student_id');
+                            const isAdminViewer = myId === 'gm' || myId === 'gm_a';
+                            /** 비밀투표: 학생 광장 스냅샷에 다른 사람 표를 넣지 않습니다. 마스터는 현장 집계용으로 유지합니다. */
+                            const publicStudents = redactElectionVotesFromStudentRows(students, {
+                                viewerId: myId,
+                                isAdmin: isAdminViewer,
+                            });
+                            window.allStudentsData = isAdminViewer ? students : publicStudents;
+                            window.gmData = gmD;
+                            window.gmaData = gmaD;
+
                             if (myId && !window.playerState.isGuest) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
@@ -11158,9 +11203,9 @@ ${subjectLine}
                                 window.renderAdminQuestBoard(students);
                                 if (!isLearningThermometerLocallyBusy()) renderLearningThermometerPanel();
                             }
-                            window.renderPlaza(students, gmD, gmaD); 
-                            window.renderHallOfFame(students);
-                            window.renderLunchQueue(students);
+                            window.renderPlaza(window.allStudentsData || students, gmD, gmaD); 
+                            window.renderHallOfFame(window.allStudentsData || students);
+                            window.renderLunchQueue(window.allStudentsData || students);
                             if (typeof refreshElectionLiveTurnout === 'function') refreshElectionLiveTurnout();
                             if (typeof syncStudentElectionUi === 'function') syncStudentElectionUi();
                         });
@@ -13856,6 +13901,7 @@ ${subjectLine}
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
                         }
+                        overlayServerElectionVote(dataToSave, serverData);
                         const finalXp = Number(dataToSave.xp);
                         if (Number.isFinite(serverXp) && Number.isFinite(finalXp) && Math.floor(finalXp) !== Math.floor(serverXp)) {
                             const logs = Array.isArray(serverData.xpChangeLog) ? serverData.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
@@ -13870,7 +13916,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -14642,12 +14688,20 @@ ${subjectLine}
             if (isOk) {
                 if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
 
-                if (window.playerState.questHistory) {
-                    const now = new Date();
-                    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    const idx = window.playerState.questHistory.map(q => q.id === qId && q.date === dateStr).lastIndexOf(true);
-                    if (idx !== -1) window.playerState.questHistory.splice(idx, 1);
+                const qMetaCancel = getQuestCatalog().find((q) => String(q.id) === String(qId));
+                const todayStr = getLocalDateStr();
+                const week = weekRangeMondaySunday();
+                const removed = removeLatestQuestHistoryMatch(window.playerState.questHistory, qId, {
+                    type: qMetaCancel && qMetaCancel.type,
+                    dateStr: todayStr,
+                    weekStart: week.start,
+                    weekEnd: week.end,
+                });
+                if (!removed.changed) {
+                    updateUI();
+                    return await window.customAlert('완료 기록을 찾지 못해 취소하지 않았습니다.');
                 }
+                window.playerState.questHistory = removed.history;
 
                 const deductBong = rewardBong + 1;
                 window.playerState.xp = Math.max(0, window.playerState.xp - xp);

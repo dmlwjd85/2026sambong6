@@ -7,7 +7,9 @@ import {
     collectBallotsFromStudentRows,
     createElectionState,
     mergeBallotLists,
+    overlayServerElectionVote,
     recordStudentPick,
+    redactElectionVotesFromStudentRows,
     resolveNumericVote,
     resolveNumericVoteOnTimeout,
     sanitizeElectionState,
@@ -16,6 +18,7 @@ import {
     tallyBallots,
     toPublishedElection,
     undoLastBallot,
+    ballotsToKeepOnRemoteApply,
 } from './classElection.js';
 
 describe('후보 번호 즉시 투표', () => {
@@ -194,5 +197,48 @@ describe('학생별 비밀 투표', () => {
             ballots: { pos_chair: [1, 2, 2] },
         });
         assert.deepEqual(counted.ballots.pos_chair, [1, 2, 2]);
+    });
+
+    it('투표 중 원격 공개본을 받아도 같은 세션의 현장 표는 유지한다', () => {
+        const local = {
+            phase: 'vote',
+            sessionId: 'el_1',
+            positions,
+            ballots: { pos_chair: [2, 1] },
+        };
+        const remote = {
+            phase: 'vote',
+            sessionId: 'el_1',
+            positions,
+            ballots: { pos_chair: [] },
+        };
+        assert.deepEqual(ballotsToKeepOnRemoteApply(local, remote).pos_chair, [2, 1]);
+        const otherSession = ballotsToKeepOnRemoteApply(local, { ...remote, sessionId: 'el_2' });
+        assert.deepEqual(otherSession.pos_chair, []);
+    });
+
+    it('일반 저장은 서버에 있는 선거 표를 덮어쓰지 않는다', () => {
+        const saved = overlayServerElectionVote(
+            { xp: 10, classElectionVote: { sessionId: 'old', picks: { pos_chair: 1 } } },
+            { classElectionVote: { sessionId: 'el_1', picks: { pos_chair: 2 } } }
+        );
+        assert.deepEqual(saved.classElectionVote, { sessionId: 'el_1', picks: { pos_chair: 2 } });
+        const cleared = overlayServerElectionVote(
+            { xp: 10, classElectionVote: { sessionId: 'stale', picks: { pos_chair: 1 } } },
+            { xp: 10 }
+        );
+        assert.equal(Object.prototype.hasOwnProperty.call(cleared, 'classElectionVote'), false);
+    });
+
+    it('학생 명단에서 다른 사람 표를 가린다', () => {
+        const rows = [
+            { id: '6', name: 'A', classElectionVote: { sessionId: 'el_1', picks: { pos_chair: 1 } } },
+            { id: '7', name: 'B', classElectionVote: { sessionId: 'el_1', picks: { pos_chair: 2 } } },
+        ];
+        const redacted = redactElectionVotesFromStudentRows(rows, { viewerId: '6', isAdmin: false });
+        assert.deepEqual(redacted[0].classElectionVote.picks, { pos_chair: 1 });
+        assert.equal(Object.prototype.hasOwnProperty.call(redacted[1], 'classElectionVote'), false);
+        const admin = redactElectionVotesFromStudentRows(rows, { viewerId: 'gm', isAdmin: true });
+        assert.deepEqual(admin[1].classElectionVote.picks, { pos_chair: 2 });
     });
 });

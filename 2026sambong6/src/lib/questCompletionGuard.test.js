@@ -6,6 +6,7 @@ import {
     isQuestCompletedForUi,
     sanitizeDailyQuestFlags,
     sanitizeWeeklyQuestFlags,
+    removeLatestQuestHistoryMatch,
     weekRangeMondaySunday,
     didPointerMoveEnough,
     ACCIDENTAL_POINTER_MOVE_PX,
@@ -93,6 +94,27 @@ describe('주간 퀘스트 완료 판정', () => {
         const changed = sanitizeWeeklyQuestFlags(state, ['q2'], week.start, week.end);
         assert.equal(changed, true);
         assert.equal(state.quests.q2, false);
+    });
+
+    it('주간 퀘스트 취소는 오늘이 아니어도 이번 주 기록을 뺀다', () => {
+        const week = weekRangeMondaySunday(new Date(2026, 7, 28)); // 금
+        const history = [
+            { id: 'q2', date: '2026-08-21' },
+            { id: 'q2', date: '2026-08-24' },
+        ];
+        const removed = removeLatestQuestHistoryMatch(history, 'q2', {
+            type: 'weekly',
+            dateStr: '2026-08-28',
+            weekStart: week.start,
+            weekEnd: week.end,
+        });
+        assert.equal(removed.changed, true);
+        assert.deepEqual(removed.history, [{ id: 'q2', date: '2026-08-21' }]);
+        const missed = removeLatestQuestHistoryMatch(history, 'q2', {
+            type: 'daily',
+            dateStr: '2026-08-28',
+        });
+        assert.equal(missed.changed, false);
     });
 });
 

@@ -41,6 +41,26 @@ import {
     sanitizeWeeklyQuestFlags,
     weekRangeMondaySunday,
 } from './lib/questCompletionGuard.js';
+import {
+    MAX_CANDIDATES_PER_POSITION,
+    MAX_POSITIONS,
+    NUMERIC_VOTE_TIMEOUT_MS,
+    addCandidateToPosition,
+    appendBallot,
+    ballotCount,
+    canStartVoting,
+    candidateNumbers,
+    createElectionState,
+    defaultElectionPositions,
+    getPosition,
+    removeCandidateFromPosition,
+    resolveNumericVote,
+    resolveNumericVoteOnTimeout,
+    sanitizeElectionState,
+    shuffleCopy,
+    tallyBallots,
+    undoLastBallot,
+} from './lib/classElection.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -6562,8 +6582,9 @@ ${subjectLine}
             if (isVisible('chalkboardOverlay')) return true;
             if (isVisible('classTimerOverlay')) return true;
             if (isVisible('lotteryDrawOverlay')) return true;
+            if (isVisible('electionOverlay')) return true;
             if (isVisible('classtoolsSection')) return true;
-            if (_lotteryRunning || _classWheelSpinning) return true;
+            if (_lotteryRunning || _classWheelSpinning || _electionCounting) return true;
             if (_classTimerEndAt || _classTimerAlarmId) return true;
             if (isLearningThermometerLocallyBusy() || _learningThermometerSettlementRunning) return true;
             return false;
@@ -6790,6 +6811,7 @@ ${subjectLine}
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
                 renderClassWheelPanel();
+                renderClassElectionPanel();
                 if (window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
                     window.renderClassTimetableAdminPanel();
                     if (typeof window.renderBirthdayCelebrationAdminPanel === 'function') {
@@ -6842,10 +6864,16 @@ ${subjectLine}
             return Date.now() < ignoreAccidentalPointerUntil;
         }
 
+        function isElectionOverlayOpen() {
+            const el = document.getElementById('electionOverlay');
+            return !!(el && !el.classList.contains('hidden'));
+        }
+
         const swipeRoot = document.getElementById('swipeWrapper');
         if (swipeRoot) {
             swipeRoot.addEventListener('touchstart', e => {
                 if (isMartialLawLockingStudent()) return;
+                if (isElectionOverlayOpen()) return;
                 pointerIsDown = true;
                 touchPointerMoved = false;
                 touchstartX = e.changedTouches[0].screenX;
@@ -6865,6 +6893,7 @@ ${subjectLine}
             swipeRoot.addEventListener('touchend', e => {
                 pointerIsDown = false;
                 if (isMartialLawLockingStudent()) return;
+                if (isElectionOverlayOpen()) return;
                 let touchendX = e.changedTouches[0].screenX; 
                 let touchendY = e.changedTouches[0].screenY;
                 let diffX = touchstartX - touchendX; 
@@ -7681,6 +7710,7 @@ ${subjectLine}
         let _lotteryResults = [];
         let _lotteryRunning = false;
         let _lotterySpinTimer = null;
+        let _electionCounting = false;
 
         function escapeHtmlLottery(s) {
             return String(s)
@@ -8045,6 +8075,679 @@ ${subjectLine}
                 _lotteryRunning = false;
             }
         };
+
+        // ==========================================
+        // ★ 수업도구: 학급 임원 선거 ★
+        // ==========================================
+        const ELECTION_STORAGE_KEY = 'sambong_class_election_v1';
+        let _election = createElectionState();
+        let _electionDigits = '';
+        let _electionVoteTimer = null;
+        let _electionCountQueue = [];
+        let _electionCountIndex = 0;
+        let _electionLiveCounts = {};
+        let _electionKeyboardBound = false;
+
+        function escapeHtmlElection(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function persistElection() {
+            try {
+                localStorage.setItem(ELECTION_STORAGE_KEY, JSON.stringify(_election));
+            } catch (e) {
+                console.warn('persistElection', e);
+            }
+        }
+
+        function loadElectionFromStorage() {
+            try {
+                const raw = localStorage.getItem(ELECTION_STORAGE_KEY);
+                if (!raw) return;
+                _election = sanitizeElectionState(JSON.parse(raw));
+            } catch (e) {
+                console.warn('loadElectionFromStorage', e);
+            }
+        }
+
+        function currentElectionPosition() {
+            return getPosition(_election, _election.currentPositionIndex);
+        }
+
+        function syncElectionFormIntoState() {
+            const titleEl = document.getElementById('electionTitleInput');
+            const expEl = document.getElementById('electionExpectedVoters');
+            if (titleEl) _election.title = String(titleEl.value || '').trim() || '학급 임원 선거';
+            if (expEl) {
+                const n = Math.floor(Number(expEl.value) || 0);
+                _election.expectedVoters = Math.max(0, Math.min(200, n));
+            }
+            persistElection();
+        }
+
+        function expectedVoterCount() {
+            if (_election.expectedVoters > 0) return _election.expectedVoters;
+            return getActiveStudentIds().length || 0;
+        }
+
+        function renderClassElectionPanel() {
+            const box = document.getElementById('electionPositionsEditor');
+            if (!box) return;
+            if (!_election || !_election.positions) loadElectionFromStorage();
+            const locked = _election.phase !== 'setup';
+            const titleEl = document.getElementById('electionTitleInput');
+            const expEl = document.getElementById('electionExpectedVoters');
+            if (titleEl && document.activeElement !== titleEl) titleEl.value = _election.title || '학급 임원 선거';
+            if (expEl && document.activeElement !== expEl) {
+                expEl.value = String(_election.expectedVoters || getActiveStudentIds().length || 0);
+            }
+            const rosterIds = getActiveStudentIds();
+            box.innerHTML = _election.positions.map((pos, pi) => {
+                const candRows = (pos.candidates || []).map((c) => `
+                    <div class="election-cand-row">
+                        <span class="election-num-badge">${c.number}</span>
+                        <span class="flex-1 truncate">${escapeHtmlElection(c.name)}</span>
+                        ${locked ? '' : `<button type="button" class="election-mini-btn" onclick="window.electionRemoveCandidate(${pi}, '${escapeHtmlAttr(c.id)}')">삭제</button>`}
+                    </div>
+                `).join('') || '<p class="text-[10px] text-rose-100/50 py-1">후보를 2명 이상 등록하세요.</p>';
+                const rosterOpts = rosterIds.map((sid) => {
+                    const name = escapeHtmlElection(getLotteryDisplayName(sid));
+                    return `<option value="${escapeHtmlAttr(name)}">${escapeHtmlElection(sid)}. ${name}</option>`;
+                }).join('');
+                const editors = locked ? '' : `
+                    <div class="flex flex-col sm:flex-row gap-1.5">
+                        <input type="text" id="electionNewCand_${pi}" maxlength="20" placeholder="후보자 이름" class="election-input flex-1 text-xs" onkeydown="if(event.key==='Enter'){event.preventDefault();window.electionAddNamedCandidate(${pi});}" />
+                        <button type="button" class="election-mini-btn" onclick="window.electionAddNamedCandidate(${pi})">이름 등록</button>
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-1.5 mt-1.5">
+                        <select id="electionRoster_${pi}" class="election-input flex-1 text-xs">
+                            <option value="">명단에서 선택</option>
+                            ${rosterOpts}
+                        </select>
+                        <button type="button" class="election-mini-btn" onclick="window.electionAddRosterCandidate(${pi})">명단 추가</button>
+                    </div>`;
+                return `
+                <div class="election-pos-card">
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="text" value="${escapeHtmlAttr(pos.name)}" maxlength="20" class="election-input flex-1 text-xs font-black" ${locked ? 'readonly' : ''} onchange="window.electionRenamePosition(${pi}, this.value)" />
+                        ${locked ? '' : `<button type="button" class="election-mini-btn" onclick="window.electionRemovePosition(${pi})">직책 삭제</button>`}
+                    </div>
+                    <div class="space-y-1 mb-2">${candRows}</div>
+                    ${editors}
+                </div>`;
+            }).join('');
+            const hint = document.getElementById('electionSetupHint');
+            if (hint) {
+                const check = canStartVoting(_election);
+                if (locked) {
+                    const phaseLabel = _election.phase === 'vote' ? '투표 중' : (_election.phase === 'count' ? '개표 중' : '결과');
+                    hint.textContent = `저장된 진행: ${phaseLabel} · 후보는 바꿀 수 없습니다. 이어서 진행하거나 초기화하세요.`;
+                } else {
+                    hint.textContent = check.ok ? '후보 등록이 끝났으면 투표를 시작하세요.' : check.reason;
+                }
+            }
+        }
+
+        window.electionSyncForm = function() {
+            syncElectionFormIntoState();
+        };
+
+        window.electionAddPosition = function() {
+            if (_election.phase !== 'setup') return window.customAlert('투표가 시작된 뒤에는 직책을 바꿀 수 없습니다. 초기화 후 다시 등록해 주세요.');
+            syncElectionFormIntoState();
+            if (_election.positions.length >= MAX_POSITIONS) return window.customAlert(`직책은 최대 ${MAX_POSITIONS}개까지 만들 수 있습니다.`);
+            _election.positions.push({
+                id: `pos_${Date.now().toString(36)}`,
+                name: `직책 ${_election.positions.length + 1}`,
+                candidates: [],
+            });
+            persistElection();
+            renderClassElectionPanel();
+        };
+
+        window.electionRemovePosition = async function(index) {
+            if (_election.phase !== 'setup') return window.customAlert('투표가 시작된 뒤에는 직책을 바꿀 수 없습니다.');
+            if (_election.positions.length <= 1) return window.customAlert('직책은 최소 1개가 필요합니다.');
+            const pos = _election.positions[index];
+            const ok = await window.customConfirm(`[${pos && pos.name}] 직책을 삭제할까요?`);
+            if (!ok) return;
+            _election.positions.splice(index, 1);
+            persistElection();
+            renderClassElectionPanel();
+        };
+
+        window.electionRenamePosition = function(index, name) {
+            if (_election.phase !== 'setup') return;
+            if (!_election.positions[index]) return;
+            _election.positions[index].name = String(name || '').trim() || _election.positions[index].name;
+            persistElection();
+        };
+
+        window.electionAddNamedCandidate = function(index) {
+            if (_election.phase !== 'setup') return window.customAlert('투표가 시작된 뒤에는 후보를 바꿀 수 없습니다.');
+            const input = document.getElementById(`electionNewCand_${index}`);
+            const name = input ? input.value : '';
+            const pos = _election.positions[index];
+            const res = addCandidateToPosition(pos, name);
+            if (!res.ok) {
+                const msg = res.reason === 'duplicate' ? '같은 이름이 이미 있습니다.' : (res.reason === 'full' ? `후보는 직책당 ${MAX_CANDIDATES_PER_POSITION}명까지입니다.` : '이름을 입력해 주세요.');
+                return window.customAlert(msg);
+            }
+            _election.positions[index] = res.position;
+            if (input) input.value = '';
+            persistElection();
+            renderClassElectionPanel();
+        };
+
+        window.electionAddRosterCandidate = function(index) {
+            if (_election.phase !== 'setup') return window.customAlert('투표가 시작된 뒤에는 후보를 바꿀 수 없습니다.');
+            const sel = document.getElementById(`electionRoster_${index}`);
+            const name = sel ? sel.value : '';
+            const pos = _election.positions[index];
+            const res = addCandidateToPosition(pos, name);
+            if (!res.ok) {
+                const msg = res.reason === 'duplicate' ? '같은 이름이 이미 있습니다.' : (res.reason === 'empty' ? '명단에서 학생을 골라 주세요.' : `후보는 직책당 ${MAX_CANDIDATES_PER_POSITION}명까지입니다.`);
+                return window.customAlert(msg);
+            }
+            _election.positions[index] = res.position;
+            persistElection();
+            renderClassElectionPanel();
+        };
+
+        window.electionRemoveCandidate = function(index, candidateId) {
+            if (_election.phase !== 'setup') return;
+            const pos = _election.positions[index];
+            if (!pos) return;
+            _election.positions[index] = removeCandidateFromPosition(pos, candidateId);
+            persistElection();
+            renderClassElectionPanel();
+        };
+
+        window.electionApplyChairTemplate = async function() {
+            if (_election.phase !== 'setup') return window.customAlert('진행 중인 선거가 있습니다. 초기화 후 템플릿을 쓰세요.');
+            const ok = await window.customConfirm('학급회장·부회장 두 직책으로 되돌릴까요?\n후보·표는 지워집니다.');
+            if (!ok) return;
+            _election = createElectionState({
+                title: _election.title,
+                expectedVoters: expectedVoterCount(),
+                positions: defaultElectionPositions(),
+            });
+            persistElection();
+            renderClassElectionPanel();
+        };
+
+        window.resetClassElection = async function() {
+            if (_electionCounting) return;
+            const ok = await window.customConfirm('선거를 처음 상태로 되돌릴까요?\n후보자와 표가 모두 지워집니다.');
+            if (!ok) return;
+            _election = createElectionState({ expectedVoters: getActiveStudentIds().length });
+            persistElection();
+            renderClassElectionPanel();
+            closeElectionOverlayInternal();
+        };
+
+        function setElectionPane(pane) {
+            const vote = document.getElementById('electionVotePane');
+            const count = document.getElementById('electionCountPane');
+            const result = document.getElementById('electionResultPane');
+            if (vote) vote.classList.toggle('hidden', pane !== 'vote');
+            if (count) count.classList.toggle('hidden', pane !== 'count');
+            if (result) result.classList.toggle('hidden', pane !== 'result');
+        }
+
+        function openElectionOverlay() {
+            const el = document.getElementById('electionOverlay');
+            if (!el) return;
+            el.classList.remove('hidden');
+            document.body.classList.add('election-overlay-active');
+            const title = document.getElementById('electionOverlayTitle');
+            if (title) title.textContent = _election.title || '학급 임원 선거';
+            bindElectionKeyboard();
+            renderElectionKeypad();
+        }
+
+        function closeElectionOverlayInternal() {
+            const el = document.getElementById('electionOverlay');
+            if (el) el.classList.add('hidden');
+            document.body.classList.remove('election-overlay-active');
+            clearElectionVoteTimer();
+            _electionDigits = '';
+            _electionCounting = false;
+        }
+
+        window.closeElectionOverlay = async function() {
+            if (_electionCounting) {
+                const ok = await window.customConfirm('개표가 진행 중입니다. 화면만 닫을까요?\n표는 저장되어 이어서 진행할 수 있습니다.');
+                if (!ok) return;
+            }
+            closeElectionOverlayInternal();
+        };
+
+        function bindElectionKeyboard() {
+            if (_electionKeyboardBound) return;
+            _electionKeyboardBound = true;
+            window.addEventListener('keydown', handleElectionKeydown);
+        }
+
+        function handleElectionKeydown(e) {
+            if (!isElectionOverlayOpen()) return;
+            if (_election.phase !== 'vote') return;
+            if (document.querySelector('.sambong-custom-modal')) return;
+            if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+            if (e.key >= '0' && e.key <= '9') {
+                e.preventDefault();
+                electionPushDigit(e.key);
+            } else if (e.key === 'Backspace') {
+                e.preventDefault();
+                electionPushDigit('back');
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                electionFlushVote(true);
+            }
+        }
+
+        function renderElectionKeypad() {
+            const box = document.getElementById('electionKeypad');
+            if (!box) return;
+            const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'back', '0', 'ok'];
+            box.innerHTML = keys.map((k) => {
+                const label = k === 'back' ? '⌫' : (k === 'ok' ? '확인' : k);
+                return `<button type="button" class="election-key" onclick="window.electionPad('${k}')">${label}</button>`;
+            }).join('');
+        }
+
+        window.electionPad = function(key) {
+            if (_election.phase !== 'vote') return;
+            if (document.querySelector('.sambong-custom-modal')) return;
+            if (key === 'ok') return electionFlushVote(true);
+            electionPushDigit(key);
+        };
+
+        function clearElectionVoteTimer() {
+            if (_electionVoteTimer) {
+                clearTimeout(_electionVoteTimer);
+                _electionVoteTimer = null;
+            }
+        }
+
+        function updateElectionVoteDots() {
+            const el = document.getElementById('electionVoteDots');
+            if (el) el.textContent = _electionDigits ? '●'.repeat(_electionDigits.length) : '';
+        }
+
+        function setElectionVoteFlash(text, kind) {
+            const el = document.getElementById('electionVoteFlash');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.remove('is-ok', 'is-bad');
+            if (kind) el.classList.add(kind);
+        }
+
+        function renderElectionVoteCandidates() {
+            const box = document.getElementById('electionVoteCandidates');
+            const pos = currentElectionPosition();
+            if (!box) return;
+            if (!pos) {
+                box.innerHTML = '';
+                return;
+            }
+            // 번호만 입력하므로 후보 명단은 보여 주되, 득표는 숨깁니다.
+            box.innerHTML = (pos.candidates || []).map((c) => `
+                <div class="election-vote-cand">
+                    <span class="election-vote-cand-num">${c.number}번</span>
+                    <span class="election-vote-cand-name">${escapeHtmlElection(c.name)}</span>
+                </div>
+            `).join('');
+        }
+
+        function updateElectionVoteTally() {
+            const pos = currentElectionPosition();
+            const el = document.getElementById('electionVoteTally');
+            if (!pos || !el) return;
+            const n = ballotCount(_election, pos.id);
+            const exp = expectedVoterCount();
+            el.textContent = exp > 0 ? `${n}표 / 예상 ${exp}명` : `${n}표`;
+        }
+
+        function refreshElectionVoteHeader() {
+            const pos = currentElectionPosition();
+            const posEl = document.getElementById('electionOverlayPosition');
+            const kick = document.getElementById('electionOverlayKicker');
+            if (posEl) posEl.textContent = pos ? `${pos.name} 투표` : '';
+            if (kick) kick.textContent = `SECRET BALLOT · ${_election.currentPositionIndex + 1}/${_election.positions.length}`;
+            renderElectionVoteCandidates();
+            updateElectionVoteTally();
+            setElectionVoteFlash('번호를 입력해 주세요');
+            _electionDigits = '';
+            updateElectionVoteDots();
+        }
+
+        function playElectionTick() {
+            try { playLotteryTickSfx(); } catch (_) { /* 제비 효과음 재사용 */ }
+        }
+
+        function playElectionOk() {
+            try { playLotteryRevealSfx(); } catch (_) { /* 제비 효과음 재사용 */ }
+        }
+
+        function electionPushDigit(key) {
+            if (_election.phase !== 'vote' || _electionCounting) return;
+            const pos = currentElectionPosition();
+            if (!pos) return;
+            if (key === 'back') {
+                _electionDigits = _electionDigits.slice(0, -1);
+                updateElectionVoteDots();
+                clearElectionVoteTimer();
+                if (_electionDigits) armElectionVoteTimeout();
+                return;
+            }
+            if (!/^\d$/.test(String(key))) return;
+            if (_electionDigits.length >= 3) return;
+            _electionDigits += String(key);
+            updateElectionVoteDots();
+            playElectionTick();
+            const resolved = resolveNumericVote(_electionDigits, candidateNumbers(pos));
+            if (resolved.status === 'cast') {
+                clearElectionVoteTimer();
+                electionCastVote(resolved.number);
+                return;
+            }
+            if (resolved.status === 'invalid') {
+                clearElectionVoteTimer();
+                electionRejectVote();
+                return;
+            }
+            armElectionVoteTimeout();
+        }
+
+        function armElectionVoteTimeout() {
+            clearElectionVoteTimer();
+            _electionVoteTimer = setTimeout(() => electionFlushVote(false), NUMERIC_VOTE_TIMEOUT_MS);
+        }
+
+        function electionFlushVote(fromEnter) {
+            clearElectionVoteTimer();
+            if (_election.phase !== 'vote') return;
+            const pos = currentElectionPosition();
+            if (!pos || !_electionDigits) return;
+            const resolved = fromEnter
+                ? resolveNumericVoteOnTimeout(_electionDigits, candidateNumbers(pos))
+                : resolveNumericVoteOnTimeout(_electionDigits, candidateNumbers(pos));
+            if (resolved.status === 'cast') electionCastVote(resolved.number);
+            else electionRejectVote();
+        }
+
+        function electionCastVote(number) {
+            const pos = currentElectionPosition();
+            if (!pos) return;
+            _election = appendBallot(_election, pos.id, number);
+            persistElection();
+            _electionDigits = '';
+            updateElectionVoteDots();
+            updateElectionVoteTally();
+            setElectionVoteFlash('투표가 비밀로 반영되었습니다', 'is-ok');
+            playElectionOk();
+            setTimeout(() => {
+                if (_election.phase === 'vote' && !_electionDigits) setElectionVoteFlash('번호를 입력해 주세요');
+            }, 1200);
+        }
+
+        function electionRejectVote() {
+            _electionDigits = '';
+            updateElectionVoteDots();
+            setElectionVoteFlash('없는 번호입니다. 다시 입력해 주세요.', 'is-bad');
+            playSfx('bong', false);
+        }
+
+        window.electionUndoLastVote = async function() {
+            const pos = currentElectionPosition();
+            if (!pos) return;
+            if (!ballotCount(_election, pos.id)) return window.customAlert('취소할 표가 없습니다.');
+            const ok = await window.customConfirm('가장 마지막에 입력된 표 1장만 취소할까요?\n누구의 표인지는 보여주지 않습니다.');
+            if (!ok) return;
+            _election = undoLastBallot(_election, pos.id);
+            persistElection();
+            updateElectionVoteTally();
+            setElectionVoteFlash('직전 표 1장을 취소했습니다', 'is-ok');
+        };
+
+        window.electionCloseCurrentVote = async function() {
+            const pos = currentElectionPosition();
+            if (!pos) return;
+            const n = ballotCount(_election, pos.id);
+            const ok = await window.customConfirm(`[${pos.name}] 투표를 마감할까요?\n현재 ${n}표가 모여 있습니다.`);
+            if (!ok) return;
+            if (_election.currentPositionIndex < _election.positions.length - 1) {
+                _election.currentPositionIndex += 1;
+                persistElection();
+                refreshElectionVoteHeader();
+                setElectionVoteFlash(`다음 직책: ${_election.positions[_election.currentPositionIndex].name}`, 'is-ok');
+                return;
+            }
+            _election.phase = 'count';
+            persistElection();
+            showElectionCountReady();
+        };
+
+        function showElectionCountReady() {
+            setElectionPane('count');
+            const pos = currentElectionPosition();
+            const posEl = document.getElementById('electionOverlayPosition');
+            if (posEl) posEl.textContent = '개표';
+            const kick = document.getElementById('electionOverlayKicker');
+            if (kick) kick.textContent = 'BALLOT COUNT';
+            const progress = document.getElementById('electionCountProgress');
+            if (progress) progress.textContent = '표를 섞고 한 장씩 공개합니다';
+            const nameEl = document.getElementById('electionCountName');
+            if (nameEl) {
+                nameEl.textContent = '준비';
+                nameEl.classList.remove('is-reveal');
+            }
+            const startBtn = document.getElementById('electionCountStartBtn');
+            const skipBtn = document.getElementById('electionCountSkipBtn');
+            if (startBtn) {
+                startBtn.classList.remove('hidden');
+                startBtn.textContent = '개표 시작';
+            }
+            if (skipBtn) skipBtn.classList.add('hidden');
+            _election.currentPositionIndex = 0;
+            renderElectionCountBars(currentElectionPosition(), {});
+        }
+
+        function renderElectionCountBars(pos, counts) {
+            const box = document.getElementById('electionCountBars');
+            if (!box || !pos) return;
+            const total = Math.max(1, ballotCount(_election, pos.id));
+            box.innerHTML = (pos.candidates || []).map((c) => {
+                const v = counts[c.number] || 0;
+                const pct = Math.round((v / total) * 100);
+                return `<div class="election-bar-row">
+                    <div class="flex justify-between text-[11px] font-black text-rose-50 mb-0.5">
+                        <span>${c.number}. ${escapeHtmlElection(c.name)}</span>
+                        <span class="tabular-nums text-amber-200">${v}표</span>
+                    </div>
+                    <div class="election-bar-track"><div class="election-bar-fill" style="width:${pct}%"></div></div>
+                </div>`;
+            }).join('');
+        }
+
+        window.electionStartCounting = async function() {
+            if (_electionCounting) return;
+            _election.phase = 'count';
+            persistElection();
+            const startBtn = document.getElementById('electionCountStartBtn');
+            const skipBtn = document.getElementById('electionCountSkipBtn');
+            if (startBtn) startBtn.classList.add('hidden');
+            if (skipBtn) skipBtn.classList.remove('hidden');
+            _electionCounting = true;
+            try {
+                for (let pi = 0; pi < _election.positions.length; pi++) {
+                    if (!_electionCounting) return;
+                    _election.currentPositionIndex = pi;
+                    const pos = _election.positions[pi];
+                    const posEl = document.getElementById('electionOverlayPosition');
+                    if (posEl) posEl.textContent = `${pos.name} 개표`;
+                    _electionCountQueue = shuffleCopy(_election.ballots[pos.id] || []);
+                    _electionLiveCounts = {};
+                    (pos.candidates || []).forEach((c) => { _electionLiveCounts[c.number] = 0; });
+                    renderElectionCountBars(pos, _electionLiveCounts);
+                    if (!_electionCountQueue.length) {
+                        const progress = document.getElementById('electionCountProgress');
+                        if (progress) progress.textContent = `${pos.name} · 표 없음`;
+                        await delayMs(900);
+                        continue;
+                    }
+                    for (let i = 0; i < _electionCountQueue.length; i++) {
+                        if (!_electionCounting) return;
+                        _electionCountIndex = i;
+                        await runElectionCountSpin(pos, _electionCountQueue[i], i);
+                    }
+                    spawnElectionConfetti(36);
+                    await delayMs(1100);
+                }
+                showElectionResults(true);
+            } finally {
+                _electionCounting = false;
+            }
+        };
+
+        async function runElectionCountSpin(pos, number, index) {
+            const names = (pos.candidates || []).map((c) => c.name);
+            const winner = (pos.candidates || []).find((c) => c.number === number);
+            const nameEl = document.getElementById('electionCountName');
+            const numEl = document.getElementById('electionCountNumber');
+            const progress = document.getElementById('electionCountProgress');
+            if (progress) progress.textContent = `${index + 1} / ${_electionCountQueue.length} 번째 표`;
+            if (numEl) numEl.textContent = '두구두구';
+            if (nameEl) nameEl.classList.remove('is-reveal');
+            const until = Date.now() + 900;
+            while (Date.now() < until && _electionCounting) {
+                if (nameEl && names.length) nameEl.textContent = names[Math.floor(Math.random() * names.length)];
+                playElectionTick();
+                await delayMs(70);
+            }
+            if (!_electionCounting) return;
+            if (nameEl) {
+                nameEl.textContent = winner ? winner.name : '?';
+                nameEl.classList.add('is-reveal');
+            }
+            if (numEl) numEl.textContent = winner ? `${winner.number}번` : '';
+            _electionLiveCounts[number] = (_electionLiveCounts[number] || 0) + 1;
+            renderElectionCountBars(pos, _electionLiveCounts);
+            playElectionOk();
+            await delayMs(650);
+        }
+
+        window.electionSkipCounting = function() {
+            if (!_electionCounting) {
+                showElectionResults(true);
+                return;
+            }
+            _electionCounting = false;
+            showElectionResults(true);
+        };
+
+        function spawnElectionConfetti(count = 56) {
+            const layer = document.getElementById('electionConfettiLayer');
+            if (!layer) return;
+            layer.innerHTML = '';
+            const colors = ['#fb7185', '#fbbf24', '#f472b6', '#a3e635', '#38bdf8', '#fde68a', '#c084fc'];
+            for (let i = 0; i < count; i++) {
+                const el = document.createElement('div');
+                el.className = 'lottery-confetti-piece';
+                el.style.left = `${Math.random() * 100}%`;
+                el.style.background = colors[i % colors.length];
+                el.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
+                el.style.animationDelay = `${Math.random() * 0.35}s`;
+                layer.appendChild(el);
+            }
+            setTimeout(() => { if (layer) layer.innerHTML = ''; }, 3600);
+        }
+
+        function showElectionResults(celebrate) {
+            _election.phase = 'result';
+            persistElection();
+            setElectionPane('result');
+            const posEl = document.getElementById('electionOverlayPosition');
+            if (posEl) posEl.textContent = '결과 발표';
+            const kick = document.getElementById('electionOverlayKicker');
+            if (kick) kick.textContent = 'FINAL RESULT';
+            const body = document.getElementById('electionResultBody');
+            if (!body) return;
+            body.innerHTML = _election.positions.map((pos) => {
+                const t = tallyBallots(_election.ballots[pos.id] || [], pos.candidates || []);
+                const rows = t.ranked.map((c, i) => {
+                    const crown = i === 0 && c.votes > 0 ? '👑 ' : '';
+                    return `<div class="flex justify-between text-[12px] sm:text-sm font-black text-rose-50 py-0.5">
+                        <span>${crown}${c.number}. ${escapeHtmlElection(c.name)}</span>
+                        <span class="text-amber-200 tabular-nums">${c.votes}표</span>
+                    </div>`;
+                }).join('') || '<p class="text-[11px] text-rose-100/60">표가 없습니다.</p>';
+                let headline = '표가 없어 당선자를 정할 수 없습니다.';
+                if (t.isTie) headline = `동점: ${t.winners.map((w) => w.name).join(', ')}`;
+                else if (t.winners[0]) headline = `당선 · ${t.winners[0].name}`;
+                return `<div class="election-result-card ${t.winners.length === 1 ? 'is-winner' : ''}">
+                    <p class="text-[10px] font-black tracking-widest text-rose-300 mb-1">${escapeHtmlElection(pos.name)}</p>
+                    <p class="font-display text-xl sm:text-2xl text-amber-200 mb-2">${escapeHtmlElection(headline)}</p>
+                    ${rows}
+                    <p class="text-[10px] text-rose-100/50 mt-2">총 ${t.total}표</p>
+                </div>`;
+            }).join('');
+            if (celebrate) spawnElectionConfetti(64);
+        }
+
+        window.electionReplayResults = function() {
+            showElectionResults(true);
+            playElectionOk();
+        };
+
+        window.startClassElectionVote = async function() {
+            if (_electionCounting) return;
+            syncElectionFormIntoState();
+            const check = canStartVoting(_election);
+            if (!check.ok) return window.customAlert(check.reason);
+            if (_election.phase !== 'setup') {
+                const restart = await window.customConfirm(
+                    '이미 진행 중인 선거가 있습니다. 표를 지우고 처음부터 다시 할까요?\n이어가려면 취소를 누른 뒤 「이어서 진행」을 쓰세요.'
+                );
+                if (!restart) return;
+            }
+            const ok = await window.customConfirm(
+                `${_election.title}\n\n비밀 투표를 시작할까요?\n번호만 입력되며, 누구를 찍었는지는 화면에 나오지 않습니다.`
+            );
+            if (!ok) return;
+            _election.phase = 'vote';
+            _election.currentPositionIndex = 0;
+            _election.ballots = {};
+            _election.positions.forEach((p) => { _election.ballots[p.id] = []; });
+            persistElection();
+            renderClassElectionPanel();
+            openElectionOverlay();
+            setElectionPane('vote');
+            refreshElectionVoteHeader();
+        };
+
+        window.resumeClassElection = function() {
+            loadElectionFromStorage();
+            if (_election.phase === 'setup') {
+                return window.customAlert('저장된 투표·개표가 없습니다. 후보를 등록한 뒤 투표를 시작해 주세요.');
+            }
+            openElectionOverlay();
+            if (_election.phase === 'vote') {
+                setElectionPane('vote');
+                refreshElectionVoteHeader();
+            } else if (_election.phase === 'count') {
+                showElectionCountReady();
+            } else {
+                showElectionResults(false);
+            }
+        };
+
+        loadElectionFromStorage();
 
         // ==========================================
         // ★ 수업도구: 원형 돌림판 ★
@@ -9062,8 +9765,8 @@ ${subjectLine}
         // ==========================================
         window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            // 전역 로딩(z-390)·오프라인 배너(z-400)보다 위 — 팝업이 가려져 먹통처럼 보이는 문제 방지
-            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
+            // 전역 로딩(z-390)·오프라인 배너(z-400)·수업도구 오버레이(z-560대)보다 위 — 팝업이 가려져 먹통처럼 보이는 문제 방지
+            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">알림</h3>
@@ -9077,7 +9780,7 @@ ${subjectLine}
 
         window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">확인</h3>
@@ -9096,7 +9799,7 @@ ${subjectLine}
 
         window.customPrompt = (m, type="password") => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-sb-gold">입력</h3>
@@ -9119,7 +9822,7 @@ ${subjectLine}
         // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
         window.customPick1to6 = (m) => new Promise(r => {
             const d = document.createElement('div');
-            d.className = "fixed inset-0 z-[420] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>

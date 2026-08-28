@@ -1508,6 +1508,42 @@
                     </div>
                 </div>
 
+                <!-- 학급 임원 선거 -->
+                <div class="election-panel rounded-2xl p-4 sm:p-6 border-2 border-rose-500/50 shadow-[0_0_40px_rgba(244,63,94,0.18)]">
+                    <div class="flex items-center gap-3 mb-4 border-b border-rose-800/40 pb-3">
+                        <div class="w-12 h-12 rounded-lg bg-rose-950 border-2 border-rose-400/70 flex items-center justify-center text-2xl shadow-inner">🗳️</div>
+                        <div>
+                            <p class="text-[10px] font-black tracking-[0.35em] text-rose-300/90">CLASS ELECTION</p>
+                            <h2 class="text-xl sm:text-2xl font-display text-rose-50 tracking-wide">학급 임원 선거</h2>
+                        </div>
+                    </div>
+                    <p class="text-[10px] sm:text-[11px] text-rose-100/70 mb-4 leading-relaxed">
+                        ① 후보자 등록 → ② 비밀 투표(숫자 키패드 입력 시 자동 반영, 화면에 누구를 찍었는지는 안 보임) → ③ 한 표씩 랜덤 개표 → ④ 결과 발표 순서로 진행합니다.
+                    </p>
+                    <label class="block text-[10px] font-bold text-rose-200/90 mb-3">선거 제목
+                        <input type="text" id="electionTitleInput" maxlength="20" value="학급 임원 선거" class="election-input mt-1 w-full text-sm font-bold" oninput="window.electionSyncForm && window.electionSyncForm()" />
+                    </label>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <button type="button" onclick="window.electionAddPosition()" class="election-mini-btn">직책 추가</button>
+                        <button type="button" onclick="window.electionApplyChairTemplate()" class="election-mini-btn">회장·부회장 템플릿</button>
+                    </div>
+                    <div id="electionPositionsEditor" class="space-y-3 mb-4"></div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                        <label class="block text-[10px] font-bold text-rose-200/90">예상 투표 인원 (진행 표시용)
+                            <input type="number" id="electionExpectedVoters" min="0" max="200" value="0" class="election-input mt-1 w-full text-center text-lg font-black" onchange="window.electionSyncForm && window.electionSyncForm()" />
+                        </label>
+                        <p class="text-[9px] text-rose-100/55 leading-relaxed flex items-end">비워 두면 현재 학급 명단 인원으로 맞춥니다. 투표 중에는 총 표수만 보이고 후보자별 득표는 개표 전까지 숨깁니다.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="window.startClassElectionVote()" class="flex-1 min-w-[10rem] py-3.5 rounded-xl font-display text-base sm:text-lg tracking-wide bg-gradient-to-b from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 text-white border-2 border-rose-200/70 shadow-[0_4px_0_#9f1239] active:translate-y-0.5 transition">
+                            <i class="fa-solid fa-check-to-slot mr-2"></i>투표 시작
+                        </button>
+                        <button type="button" onclick="window.resumeClassElection()" class="election-mini-btn py-3.5 px-4">이어서 진행</button>
+                        <button type="button" onclick="window.resetClassElection()" class="election-mini-btn py-3.5 px-4">초기화</button>
+                    </div>
+                    <p id="electionSetupHint" class="mt-3 text-[10px] text-rose-200/70 font-bold min-h-[1rem]"></p>
+                </div>
+
                 <!-- 사회 수업 연출 (비상계엄) — 마스터 탭에서 이동 -->
                 <div class="glass-panel p-4 rounded-xl border border-red-600/70 bg-red-950/20">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2113,6 +2149,56 @@
             </div>
             <div id="lotteryBatchWinners" class="hidden flex flex-wrap justify-center gap-2 mb-4"></div>
             <p id="lotterySpinHint" class="text-[10px] text-amber-200/60 tracking-widest">두구두구…</p>
+        </div>
+    </div>
+
+    <!-- ★ 수업도구: 학급 임원 선거 전체 화면 ★ -->
+    <div id="electionOverlay" class="hidden fixed inset-0 z-[566] election-overlay flex items-center justify-center p-3 sm:p-6 overflow-hidden" aria-live="polite">
+        <div id="electionConfettiLayer" class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true"></div>
+        <div class="absolute inset-0 election-overlay-bg pointer-events-none" aria-hidden="true"></div>
+        <button type="button" onclick="window.closeElectionOverlay()" class="absolute top-3 right-3 z-30 election-overlay-close">
+            <i class="fa-solid fa-xmark mr-1"></i>닫기
+        </button>
+        <div class="relative z-20 w-full max-w-5xl text-center px-1">
+            <p id="electionOverlayKicker" class="text-[10px] sm:text-xs font-black tracking-[0.4em] text-rose-300/90 mb-1">CLASS ELECTION</p>
+            <h2 id="electionOverlayTitle" class="font-display text-2xl sm:text-4xl text-rose-50 mb-1">학급 임원 선거</h2>
+            <p id="electionOverlayPosition" class="text-sm sm:text-lg font-black text-amber-200 mb-4">—</p>
+
+            <div id="electionVotePane">
+                <p class="text-[11px] sm:text-sm text-rose-100/80 mb-3 leading-relaxed">번호를 입력하면 자동으로 한 표가 들어갑니다. <strong class="text-white">누구를 찍었는지는 화면에 나오지 않습니다.</strong></p>
+                <div id="electionVoteCandidates" class="election-vote-cands mb-4"></div>
+                <div id="electionVoteDots" class="election-vote-dots mb-4" aria-hidden="true"></div>
+                <p id="electionVoteFlash" class="election-vote-flash mb-3">번호를 입력해 주세요</p>
+                <div id="electionKeypad" class="election-keypad mx-auto mb-4"></div>
+                <p id="electionVoteTally" class="text-lg sm:text-2xl font-black text-white tabular-nums mb-4">0표</p>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <button type="button" onclick="window.electionUndoLastVote()" class="election-mini-btn">직전 표 취소</button>
+                    <button type="button" onclick="window.electionCloseCurrentVote()" class="py-2.5 px-4 rounded-xl font-black text-sm bg-rose-600 hover:bg-rose-500 text-white border border-rose-300/50">이 직책 투표 마감</button>
+                </div>
+            </div>
+
+            <div id="electionCountPane" class="hidden">
+                <p id="electionCountProgress" class="text-[10px] sm:text-xs font-black tracking-[0.35em] text-amber-300 mb-3">개표 준비</p>
+                <div class="election-count-drum mx-auto mb-4">
+                    <div class="election-count-drum-inner">
+                        <div id="electionCountNumber" class="text-rose-300 text-sm font-black tracking-widest mb-1">표</div>
+                        <div id="electionCountName" class="election-count-name font-display">—</div>
+                    </div>
+                </div>
+                <div id="electionCountBars" class="election-count-bars mx-auto mb-4 text-left"></div>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <button type="button" id="electionCountStartBtn" onclick="window.electionStartCounting()" class="py-2.5 px-5 rounded-xl font-black text-sm bg-amber-500 hover:bg-amber-400 text-amber-950">개표 시작</button>
+                    <button type="button" id="electionCountSkipBtn" onclick="window.electionSkipCounting()" class="election-mini-btn hidden">나머지 한 번에</button>
+                </div>
+            </div>
+
+            <div id="electionResultPane" class="hidden">
+                <div id="electionResultBody" class="space-y-4 mb-5"></div>
+                <div class="flex flex-wrap justify-center gap-2">
+                    <button type="button" onclick="window.electionReplayResults()" class="py-2.5 px-5 rounded-xl font-black text-sm bg-amber-500 hover:bg-amber-400 text-amber-950">결과 다시 보기</button>
+                    <button type="button" onclick="window.closeElectionOverlay()" class="election-mini-btn py-2.5 px-4">닫기</button>
+                </div>
+            </div>
         </div>
     </div>
 

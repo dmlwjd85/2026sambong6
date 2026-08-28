@@ -1232,6 +1232,209 @@
         }
         body.lottery-draw-active { overflow: hidden !important; }
 
+        /* 수업도구 — 학급 임원 선거 */
+        .election-panel {
+            background: linear-gradient(145deg, rgba(64, 16, 28, 0.96) 0%, rgba(24, 8, 14, 0.98) 100%);
+            box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.14);
+        }
+        .election-input {
+            background: #1a0a10;
+            border: 2px solid rgba(244, 63, 94, 0.4);
+            color: #ffe4e6;
+            border-radius: 0.75rem;
+            padding: 0.45rem 0.6rem;
+        }
+        .election-input:focus {
+            outline: none;
+            border-color: #fb7185;
+            box-shadow: 0 0 0 2px rgba(251, 113, 133, 0.25);
+        }
+        .election-mini-btn {
+            padding: 0.4rem 0.7rem;
+            font-size: 10px;
+            font-weight: 800;
+            color: #fecdd3;
+            background: rgba(40, 10, 18, 0.9);
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            border-radius: 0.5rem;
+        }
+        .election-mini-btn:hover {
+            background: rgba(136, 19, 55, 0.45);
+            border-color: #fb7185;
+        }
+        .election-pos-card {
+            border: 1px solid rgba(244, 63, 94, 0.28);
+            background: rgba(15, 6, 10, 0.72);
+            border-radius: 1rem;
+            padding: 0.75rem;
+        }
+        .election-cand-row {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.04);
+            font-size: 11px;
+            font-weight: 800;
+            color: #ffe4e6;
+        }
+        .election-num-badge {
+            min-width: 1.6rem;
+            height: 1.6rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #be123c;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .election-overlay {
+            background: radial-gradient(ellipse at center, #3f1020 0%, #0a0408 72%);
+        }
+        .election-overlay-bg {
+            background-image:
+                radial-gradient(circle at 18% 22%, rgba(244, 63, 94, 0.16) 0%, transparent 42%),
+                radial-gradient(circle at 82% 78%, rgba(251, 191, 36, 0.1) 0%, transparent 40%);
+        }
+        .election-overlay-close {
+            padding: 0.45rem 0.75rem;
+            font-size: 11px;
+            font-weight: 800;
+            color: #fecdd3;
+            background: rgba(20, 8, 12, 0.85);
+            border: 1px solid rgba(244, 63, 94, 0.45);
+            border-radius: 9999px;
+        }
+        .election-vote-cands {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(7.2rem, 1fr));
+            gap: 0.45rem;
+            max-width: 44rem;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .election-vote-cand {
+            border: 1px solid rgba(251, 113, 133, 0.38);
+            background: rgba(20, 8, 12, 0.58);
+            border-radius: 0.85rem;
+            padding: 0.55rem 0.4rem;
+        }
+        .election-vote-cand-num {
+            display: block;
+            font-size: 1.15rem;
+            font-weight: 900;
+            color: #fda4af;
+            line-height: 1.1;
+        }
+        .election-vote-cand-name {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: #fff1f2;
+            margin-top: 0.15rem;
+        }
+        .election-vote-dots {
+            min-height: 2rem;
+            font-size: 1.75rem;
+            letter-spacing: 0.45rem;
+            color: #fda4af;
+            font-weight: 900;
+        }
+        .election-vote-flash {
+            min-height: 1.5rem;
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: #ffe4e6;
+        }
+        .election-vote-flash.is-ok { color: #86efac; }
+        .election-vote-flash.is-bad { color: #fecaca; animation: election-shake 0.35s ease; }
+        @keyframes election-shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-6px); }
+            75% { transform: translateX(6px); }
+        }
+        .election-keypad {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(4.2rem, 5.5rem));
+            gap: 0.45rem;
+            justify-content: center;
+        }
+        .election-key {
+            min-height: 3.2rem;
+            border-radius: 0.85rem;
+            font-size: 1.35rem;
+            font-weight: 900;
+            color: #fff;
+            background: linear-gradient(180deg, #881337 0%, #4c0519 100%);
+            border: 2px solid rgba(254, 205, 211, 0.35);
+            box-shadow: 0 3px 0 #9f1239;
+        }
+        .election-key:active { transform: translateY(2px); box-shadow: none; }
+        .election-count-drum {
+            width: min(100%, 18rem);
+            aspect-ratio: 1;
+            border-radius: 50%;
+            padding: 6px;
+            background: linear-gradient(135deg, #fb7185, #be123c, #881337);
+            box-shadow: 0 0 50px rgba(244, 63, 94, 0.35);
+        }
+        .election-count-drum-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: linear-gradient(180deg, #2a0a14 0%, #12040a 100%);
+            border: 3px solid rgba(251, 113, 133, 0.35);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .election-count-name {
+            font-size: clamp(1.4rem, 5vw, 2.4rem);
+            color: #fff1f2;
+            text-shadow: 0 0 18px rgba(251, 113, 133, 0.45);
+            min-height: 2.6rem;
+        }
+        .election-count-name.is-reveal {
+            animation: election-reveal-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+            color: #fde68a;
+        }
+        @keyframes election-reveal-pop {
+            from { transform: scale(0.6); opacity: 0.2; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .election-count-bars { max-width: 28rem; }
+        .election-bar-row { margin-bottom: 0.45rem; }
+        .election-bar-track {
+            height: 0.7rem;
+            border-radius: 9999px;
+            background: rgba(255,255,255,0.08);
+            overflow: hidden;
+        }
+        .election-bar-fill {
+            height: 100%;
+            width: 0;
+            border-radius: 9999px;
+            background: linear-gradient(90deg, #fb7185, #fbbf24);
+            transition: width 0.35s ease;
+        }
+        .election-result-card {
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            background: rgba(20, 8, 12, 0.72);
+            border-radius: 1rem;
+            padding: 0.85rem 1rem;
+            text-align: left;
+        }
+        .election-result-card.is-winner {
+            border-color: #fbbf24;
+            box-shadow: 0 0 24px rgba(251, 191, 36, 0.25);
+        }
+        body.election-overlay-active { overflow: hidden !important; }
+
         /* 여름 물방울·거품 장식 (시원한 시각 효과) */
         .summer-bubbles { pointer-events: none; position: fixed; inset: 0; z-index: 1; overflow: hidden; }
         .summer-bubbles span {

@@ -33,10 +33,15 @@ export function createElectionState(opts = {}) {
         positions,
         currentPositionIndex: 0,
         phase: 'setup',
+        sessionId: opts.sessionId || '',
         ballots: {},
         expectedVoters: Math.max(0, Math.floor(Number(opts.expectedVoters) || 0)),
         createdAt: Date.now(),
     });
+}
+
+export function createElectionSessionId() {
+    return `el_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export function sanitizeCandidate(raw, index) {
@@ -92,6 +97,7 @@ export function sanitizeElectionState(raw) {
         positions,
         currentPositionIndex,
         phase,
+        sessionId: String(src.sessionId || ''),
         ballots,
         expectedVoters: Math.max(0, Math.min(200, Math.floor(Number(src.expectedVoters) || 0))),
         createdAt: Number(src.createdAt) || Date.now(),
@@ -235,4 +241,92 @@ export function canStartVoting(state) {
 export function ballotCount(state, positionId) {
     const list = state && state.ballots && state.ballots[positionId];
     return Array.isArray(list) ? list.length : 0;
+}
+
+/** 학생 문서에 저장하는 한 사람 표 — 세션이 다르면 버립니다. */
+export function sanitizeStudentBallot(raw, positions) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const picks = {};
+    const posList = Array.isArray(positions) ? positions : [];
+    posList.forEach((p) => {
+        const nums = new Set(candidateNumbers(p));
+        const n = Math.floor(Number(src.picks && src.picks[p.id]));
+        if (nums.has(n)) picks[p.id] = n;
+    });
+    return {
+        sessionId: String(src.sessionId || ''),
+        picks,
+    };
+}
+
+export function recordStudentPick(ballot, sessionId, positionId, number, positions) {
+    const next = sanitizeStudentBallot(ballot, positions);
+    if (String(sessionId || '') && next.sessionId && next.sessionId !== String(sessionId)) {
+        next.picks = {};
+    }
+    next.sessionId = String(sessionId || '');
+    const pos = (Array.isArray(positions) ? positions : []).find((p) => p.id === positionId);
+    const n = Math.floor(Number(number));
+    if (!pos || !candidateNumbers(pos).includes(n) || !next.sessionId) {
+        return { ok: false, ballot: next };
+    }
+    next.picks = { ...next.picks, [positionId]: n };
+    return { ok: true, ballot: next };
+}
+
+/**
+ * 학생 문서들에서 익명 표 묶음을 만듭니다.
+ * 한 학생·한 직책당 마지막 선택만 남습니다.
+ */
+export function collectBallotsFromStudentRows(students, sessionId, positions) {
+    const posList = Array.isArray(positions) ? positions : [];
+    const ballots = {};
+    const voterIdsByPosition = {};
+    posList.forEach((p) => {
+        ballots[p.id] = [];
+        voterIdsByPosition[p.id] = [];
+    });
+    const sid = String(sessionId || '');
+    const votedStudentIds = [];
+    if (!sid) {
+        return { ballots, voterIdsByPosition, votedStudentIds };
+    }
+    (Array.isArray(students) ? students : []).forEach((stu) => {
+        const id = String((stu && stu.id) || '');
+        if (!id || id === 'gm' || id === 'gm_a') return;
+        const ballot = sanitizeStudentBallot(stu && stu.classElectionVote, posList);
+        if (ballot.sessionId !== sid) return;
+        let any = false;
+        posList.forEach((p) => {
+            const n = ballot.picks[p.id];
+            if (n == null) return;
+            ballots[p.id].push(n);
+            voterIdsByPosition[p.id].push(id);
+            any = true;
+        });
+        if (any) votedStudentIds.push(id);
+    });
+    return { ballots, voterIdsByPosition, votedStudentIds };
+}
+
+export function mergeBallotLists(studentBallots, extraBallots, positions) {
+    const out = {};
+    (Array.isArray(positions) ? positions : []).forEach((p) => {
+        out[p.id] = [
+            ...((studentBallots && studentBallots[p.id]) || []),
+            ...((extraBallots && extraBallots[p.id]) || []),
+        ];
+    });
+    return out;
+}
+
+/** 학생 화면에 내려줄 공개 상태 — 투표 중에는 후보자별 표를 숨깁니다. */
+export function toPublishedElection(state) {
+    const st = sanitizeElectionState(state);
+    return {
+        ...st,
+        ballots: st.phase === 'vote'
+            ? Object.fromEntries(st.positions.map((p) => [p.id, []]))
+            : st.ballots,
+    };
 }

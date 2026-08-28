@@ -50,15 +50,21 @@ import {
     ballotCount,
     canStartVoting,
     candidateNumbers,
+    collectBallotsFromStudentRows,
+    createElectionSessionId,
     createElectionState,
     defaultElectionPositions,
     getPosition,
+    mergeBallotLists,
+    recordStudentPick,
     removeCandidateFromPosition,
     resolveNumericVote,
     resolveNumericVoteOnTimeout,
     sanitizeElectionState,
+    sanitizeStudentBallot,
     shuffleCopy,
     tallyBallots,
+    toPublishedElection,
     undoLastBallot,
 } from './lib/classElection.js';
 
@@ -2521,7 +2527,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -6583,6 +6589,7 @@ ${subjectLine}
             if (isVisible('classTimerOverlay')) return true;
             if (isVisible('lotteryDrawOverlay')) return true;
             if (isVisible('electionOverlay')) return true;
+            if (isVisible('studentElectionOverlay')) return true;
             if (isVisible('classtoolsSection')) return true;
             if (_lotteryRunning || _classWheelSpinning || _electionCounting) return true;
             if (_classTimerEndAt || _classTimerAlarmId) return true;
@@ -6869,11 +6876,16 @@ ${subjectLine}
             return !!(el && !el.classList.contains('hidden'));
         }
 
+        function isStudentElectionOverlayOpen() {
+            const el = document.getElementById('studentElectionOverlay');
+            return !!(el && !el.classList.contains('hidden'));
+        }
+
         const swipeRoot = document.getElementById('swipeWrapper');
         if (swipeRoot) {
             swipeRoot.addEventListener('touchstart', e => {
                 if (isMartialLawLockingStudent()) return;
-                if (isElectionOverlayOpen()) return;
+                if (isElectionOverlayOpen() || isStudentElectionOverlayOpen()) return;
                 pointerIsDown = true;
                 touchPointerMoved = false;
                 touchstartX = e.changedTouches[0].screenX;
@@ -6893,7 +6905,7 @@ ${subjectLine}
             swipeRoot.addEventListener('touchend', e => {
                 pointerIsDown = false;
                 if (isMartialLawLockingStudent()) return;
-                if (isElectionOverlayOpen()) return;
+                if (isElectionOverlayOpen() || isStudentElectionOverlayOpen()) return;
                 let touchendX = e.changedTouches[0].screenX; 
                 let touchendY = e.changedTouches[0].screenY;
                 let diffX = touchstartX - touchendX; 
@@ -8087,6 +8099,10 @@ ${subjectLine}
         let _electionCountIndex = 0;
         let _electionLiveCounts = {};
         let _electionKeyboardBound = false;
+        let _electionIgnoreRemoteUntil = 0;
+        let _masterElectionDismissed = false;
+        let _studentElectionDismissed = false;
+        let _studentElectionUiKey = '';
 
         function escapeHtmlElection(s) {
             return String(s)
@@ -8112,6 +8128,81 @@ ${subjectLine}
             } catch (e) {
                 console.warn('loadElectionFromStorage', e);
             }
+        }
+
+        function getPublishedElection() {
+            return sanitizeElectionState(window.globalSettings && window.globalSettings.classElection);
+        }
+
+        function collectLiveStudentBallots() {
+            return collectBallotsFromStudentRows(
+                window.allStudentsData || [],
+                _election.sessionId,
+                _election.positions
+            );
+        }
+
+        async function publishElection(patch = {}) {
+            _election = sanitizeElectionState({ ..._election, ...patch });
+            persistElection();
+            if (!db) return false;
+            const published = toPublishedElection(_election);
+            _electionIgnoreRemoteUntil = Date.now() + 1600;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+                await setDoc(getGlobalSettingsDocRef(), { classElection: published }, { merge: true });
+                if (window.globalSettings) window.globalSettings.classElection = published;
+                return true;
+            } catch (e) {
+                console.warn('publishElection', e);
+                return false;
+            }
+        }
+
+        function freezeElectionBallotsFromStudents() {
+            const live = collectLiveStudentBallots();
+            _election.ballots = mergeBallotLists(live.ballots, _election.ballots, _election.positions);
+        }
+
+        function applyRemoteClassElection(raw) {
+            if (!raw || typeof raw !== 'object') {
+                syncStudentElectionUi();
+                return;
+            }
+            const remote = sanitizeElectionState(raw);
+            if (!remote.sessionId && remote.phase === 'setup') {
+                if (window.globalSettings) window.globalSettings.classElection = remote;
+                syncStudentElectionUi();
+                return;
+            }
+            if (window.globalSettings) window.globalSettings.classElection = toPublishedElection(remote);
+            syncStudentElectionUi();
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (_electionCounting) return;
+            if (Date.now() < _electionIgnoreRemoteUntil) return;
+            if (remote.phase === 'setup' && !remote.sessionId && _election.phase === 'setup') return;
+            const sameVoteSession = remote.phase === 'vote' && _election.phase === 'vote' && remote.sessionId && remote.sessionId === _election.sessionId;
+            const extras = sameVoteSession ? _election.ballots : (remote.phase === 'vote' ? {} : remote.ballots);
+            _election = sanitizeElectionState({ ...remote, ballots: extras });
+            persistElection();
+            renderClassElectionPanel();
+            if (!_masterElectionDismissed && (remote.phase === 'vote' || remote.phase === 'count' || remote.phase === 'result')) {
+                openElectionOverlay();
+                if (remote.phase === 'vote') {
+                    setElectionPane('vote');
+                    refreshElectionVoteHeader();
+                } else if (remote.phase === 'count') {
+                    showElectionCountReady();
+                } else {
+                    showElectionResults(false);
+                }
+            }
+        }
+
+        function refreshElectionLiveTurnout() {
+            if (_election.phase === 'vote') updateElectionVoteTally();
+            syncStudentElectionUi();
         }
 
         function currentElectionPosition() {
@@ -8288,6 +8379,7 @@ ${subjectLine}
             persistElection();
             renderClassElectionPanel();
             closeElectionOverlayInternal();
+            await publishElection();
         };
 
         function setElectionPane(pane) {
@@ -8302,6 +8394,7 @@ ${subjectLine}
         function openElectionOverlay() {
             const el = document.getElementById('electionOverlay');
             if (!el) return;
+            _masterElectionDismissed = false;
             el.classList.remove('hidden');
             document.body.classList.add('election-overlay-active');
             const title = document.getElementById('electionOverlayTitle');
@@ -8324,6 +8417,7 @@ ${subjectLine}
                 const ok = await window.customConfirm('개표가 진행 중입니다. 화면만 닫을까요?\n표는 저장되어 이어서 진행할 수 있습니다.');
                 if (!ok) return;
             }
+            _masterElectionDismissed = true;
             closeElectionOverlayInternal();
         };
 
@@ -8407,10 +8501,23 @@ ${subjectLine}
         function updateElectionVoteTally() {
             const pos = currentElectionPosition();
             const el = document.getElementById('electionVoteTally');
+            const pendingEl = document.getElementById('electionVotePending');
             if (!pos || !el) return;
-            const n = ballotCount(_election, pos.id);
+            const live = collectLiveStudentBallots();
+            const studentN = (live.voterIdsByPosition[pos.id] || []).length;
+            const extraN = ballotCount(_election, pos.id);
             const exp = expectedVoterCount();
-            el.textContent = exp > 0 ? `${n}표 / 예상 ${exp}명` : `${n}표`;
+            const total = studentN + extraN;
+            let text = exp > 0 ? `${studentN}명 투표 / 예상 ${exp}명` : `${studentN}명 투표`;
+            if (extraN) text += ` · 현장 ${extraN}표`;
+            el.textContent = text;
+            if (pendingEl) {
+                const voted = new Set(live.voterIdsByPosition[pos.id] || []);
+                const pending = getActiveStudentIds().filter((id) => !voted.has(String(id)));
+                pendingEl.textContent = pending.length
+                    ? `아직: ${pending.map((id) => getLotteryDisplayName(id)).join(', ')}`
+                    : (studentN ? '전원 투표했습니다.' : '학생 화면에 후보가 떠 있습니다.');
+            }
         }
 
         function refreshElectionVoteHeader() {
@@ -8518,18 +8625,21 @@ ${subjectLine}
         window.electionCloseCurrentVote = async function() {
             const pos = currentElectionPosition();
             if (!pos) return;
-            const n = ballotCount(_election, pos.id);
+            const n = (collectLiveStudentBallots().voterIdsByPosition[pos.id] || []).length + ballotCount(_election, pos.id);
             const ok = await window.customConfirm(`[${pos.name}] 투표를 마감할까요?\n현재 ${n}표가 모여 있습니다.`);
             if (!ok) return;
             if (_election.currentPositionIndex < _election.positions.length - 1) {
                 _election.currentPositionIndex += 1;
                 persistElection();
+                await publishElection();
                 refreshElectionVoteHeader();
                 setElectionVoteFlash(`다음 직책: ${_election.positions[_election.currentPositionIndex].name}`, 'is-ok');
                 return;
             }
+            freezeElectionBallotsFromStudents();
             _election.phase = 'count';
             persistElection();
+            await publishElection();
             showElectionCountReady();
         };
 
@@ -8668,18 +8778,10 @@ ${subjectLine}
             setTimeout(() => { if (layer) layer.innerHTML = ''; }, 3600);
         }
 
-        function showElectionResults(celebrate) {
-            _election.phase = 'result';
-            persistElection();
-            setElectionPane('result');
-            const posEl = document.getElementById('electionOverlayPosition');
-            if (posEl) posEl.textContent = '결과 발표';
-            const kick = document.getElementById('electionOverlayKicker');
-            if (kick) kick.textContent = 'FINAL RESULT';
-            const body = document.getElementById('electionResultBody');
-            if (!body) return;
-            body.innerHTML = _election.positions.map((pos) => {
-                const t = tallyBallots(_election.ballots[pos.id] || [], pos.candidates || []);
+        function buildElectionResultHtml(state) {
+            const st = sanitizeElectionState(state);
+            return st.positions.map((pos) => {
+                const t = tallyBallots(st.ballots[pos.id] || [], pos.candidates || []);
                 const rows = t.ranked.map((c, i) => {
                     const crown = i === 0 && c.votes > 0 ? '👑 ' : '';
                     return `<div class="flex justify-between text-[12px] sm:text-sm font-black text-rose-50 py-0.5">
@@ -8697,6 +8799,20 @@ ${subjectLine}
                     <p class="text-[10px] text-rose-100/50 mt-2">총 ${t.total}표</p>
                 </div>`;
             }).join('');
+        }
+
+        function showElectionResults(celebrate) {
+            _election.phase = 'result';
+            persistElection();
+            void publishElection();
+            setElectionPane('result');
+            const posEl = document.getElementById('electionOverlayPosition');
+            if (posEl) posEl.textContent = '결과 발표';
+            const kick = document.getElementById('electionOverlayKicker');
+            if (kick) kick.textContent = 'FINAL RESULT';
+            const body = document.getElementById('electionResultBody');
+            if (!body) return;
+            body.innerHTML = buildElectionResultHtml(_election);
             if (celebrate) spawnElectionConfetti(64);
         }
 
@@ -8717,22 +8833,37 @@ ${subjectLine}
                 if (!restart) return;
             }
             const ok = await window.customConfirm(
-                `${_election.title}\n\n비밀 투표를 시작할까요?\n번호만 입력되며, 누구를 찍었는지는 화면에 나오지 않습니다.`
+                `${_election.title}\n\n비밀 투표를 시작할까요?\n학생 각자 화면에 후보가 뜨고, 누구를 찍었는지는 개표 전까지 비밀입니다.`
             );
             if (!ok) return;
             _election.phase = 'vote';
+            _election.sessionId = createElectionSessionId();
             _election.currentPositionIndex = 0;
             _election.ballots = {};
             _election.positions.forEach((p) => { _election.ballots[p.id] = []; });
             persistElection();
             renderClassElectionPanel();
+            const published = await publishElection();
+            if (!published) {
+                _election.phase = 'setup';
+                _election.sessionId = '';
+                persistElection();
+                renderClassElectionPanel();
+                await window.customAlert('학생 화면으로 보내기 실패. 네트워크를 확인한 뒤 다시 시작해 주세요.');
+                return;
+            }
             openElectionOverlay();
             setElectionPane('vote');
             refreshElectionVoteHeader();
         };
 
         window.resumeClassElection = function() {
-            loadElectionFromStorage();
+            const remote = getPublishedElection();
+            if (remote.sessionId && remote.phase !== 'setup') {
+                _election = remote;
+            } else {
+                loadElectionFromStorage();
+            }
             if (_election.phase === 'setup') {
                 return window.customAlert('저장된 투표·개표가 없습니다. 후보를 등록한 뒤 투표를 시작해 주세요.');
             }
@@ -8744,6 +8875,138 @@ ${subjectLine}
                 showElectionCountReady();
             } else {
                 showElectionResults(false);
+            }
+        };
+
+        function hideStudentElectionChrome() {
+            const overlay = document.getElementById('studentElectionOverlay');
+            const dock = document.getElementById('studentElectionDock');
+            if (overlay) overlay.classList.add('hidden');
+            if (dock) dock.classList.add('hidden');
+            document.body.classList.remove('student-election-active');
+        }
+
+        function renderStudentElectionOverlay() {
+            const pub = getPublishedElection();
+            const overlay = document.getElementById('studentElectionOverlay');
+            if (!overlay || !pub.sessionId || pub.phase === 'setup') return;
+            const title = document.getElementById('studentElectionTitle');
+            const posEl = document.getElementById('studentElectionPosition');
+            const hint = document.getElementById('studentElectionHint');
+            const picks = document.getElementById('studentElectionPicks');
+            const status = document.getElementById('studentElectionStatus');
+            const wait = document.getElementById('studentElectionWait');
+            const result = document.getElementById('studentElectionResult');
+            const closeBtn = document.getElementById('studentElectionCloseBtn');
+            if (title) title.textContent = pub.title || '학급 임원 선거';
+            const pos = getPosition(pub, pub.currentPositionIndex);
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const isGuest = !!(window.playerState && window.playerState.isGuest);
+            if (closeBtn) closeBtn.classList.toggle('hidden', pub.phase !== 'vote');
+            if (picks) picks.classList.toggle('hidden', pub.phase !== 'vote');
+            if (status) status.classList.toggle('hidden', pub.phase !== 'vote');
+            if (hint) hint.classList.toggle('hidden', pub.phase !== 'vote');
+            if (wait) wait.classList.toggle('hidden', pub.phase === 'vote' || pub.phase === 'result');
+            if (result) result.classList.toggle('hidden', pub.phase !== 'result');
+            if (pub.phase === 'vote') {
+                if (posEl) posEl.textContent = pos ? `${pos.name} 투표` : '';
+                if (hint) hint.textContent = '후보를 누르면 비밀로 반영됩니다. 마감 전까지 다시 고를 수 있습니다.';
+                const mine = sanitizeStudentBallot(window.playerState && window.playerState.classElectionVote, pub.positions);
+                const myPick = mine.sessionId === pub.sessionId && pos ? mine.picks[pos.id] : null;
+                if (isGuest) {
+                    if (picks) picks.innerHTML = '';
+                    if (status) {
+                        status.textContent = '로그인한 학생만 투표할 수 있습니다.';
+                        status.className = 'election-vote-flash mb-2 is-bad';
+                    }
+                } else if (isAdmin) {
+                    hideStudentElectionChrome();
+                    return;
+                } else if (picks && pos) {
+                    picks.innerHTML = (pos.candidates || []).map((c) => `
+                        <button type="button" class="student-election-pick ${myPick === c.number ? 'is-selected' : ''}" onclick="window.studentPickElectionCandidate('${escapeHtmlAttr(pos.id)}', ${c.number})">
+                            <span class="student-election-pick-num">${c.number}</span>
+                            <span>${escapeHtmlElection(c.name)}</span>
+                        </button>
+                    `).join('');
+                    if (status) {
+                        status.textContent = myPick ? '비밀로 반영되었습니다. 마감 전까지 바꿀 수 있어요.' : '후보를 골라 주세요';
+                        status.className = `election-vote-flash mb-2 ${myPick ? 'is-ok' : ''}`;
+                    }
+                }
+            } else if (pub.phase === 'count') {
+                if (posEl) posEl.textContent = '개표 중';
+                if (wait) wait.textContent = '개표하고 있습니다. TV 화면을 봐 주세요.';
+            } else if (pub.phase === 'result') {
+                if (posEl) posEl.textContent = '결과 발표';
+                if (result) result.innerHTML = buildElectionResultHtml(pub);
+            }
+        }
+
+        function syncStudentElectionUi() {
+            const pub = getPublishedElection();
+            if (!pub.sessionId || pub.phase === 'setup') {
+                _studentElectionUiKey = '';
+                _studentElectionDismissed = false;
+                hideStudentElectionChrome();
+                return;
+            }
+            if (window.playerState && window.playerState.isAdmin) {
+                hideStudentElectionChrome();
+                return;
+            }
+            const key = `${pub.sessionId}:${pub.phase}:${pub.currentPositionIndex}`;
+            if (key !== _studentElectionUiKey) {
+                _studentElectionUiKey = key;
+                _studentElectionDismissed = false;
+            }
+            const overlay = document.getElementById('studentElectionOverlay');
+            const dock = document.getElementById('studentElectionDock');
+            if (_studentElectionDismissed && pub.phase === 'vote') {
+                if (overlay) overlay.classList.add('hidden');
+                document.body.classList.remove('student-election-active');
+                if (dock) dock.classList.remove('hidden');
+                return;
+            }
+            if (overlay) overlay.classList.remove('hidden');
+            document.body.classList.add('student-election-active');
+            if (dock) dock.classList.add('hidden');
+            renderStudentElectionOverlay();
+        }
+
+        window.openStudentElectionOverlay = function() {
+            _studentElectionDismissed = false;
+            syncStudentElectionUi();
+        };
+
+        window.closeStudentElectionOverlay = function() {
+            _studentElectionDismissed = true;
+            const overlay = document.getElementById('studentElectionOverlay');
+            const dock = document.getElementById('studentElectionDock');
+            if (overlay) overlay.classList.add('hidden');
+            document.body.classList.remove('student-election-active');
+            if (dock) dock.classList.remove('hidden');
+        };
+
+        window.studentPickElectionCandidate = async function(positionId, number) {
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
+            const pub = getPublishedElection();
+            if (pub.phase !== 'vote' || !pub.sessionId) return window.customAlert('지금은 투표 시간이 아닙니다.');
+            const pos = getPosition(pub, pub.currentPositionIndex);
+            if (!pos || pos.id !== positionId) return window.customAlert('지금 투표 중인 직책이 바뀌었습니다.');
+            const recorded = recordStudentPick(window.playerState.classElectionVote, pub.sessionId, positionId, number, pub.positions);
+            if (!recorded.ok) return window.customAlert('없는 번호입니다. 다시 골라 주세요.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+                await setDoc(currentStudentDocRef, { classElectionVote: recorded.ballot }, { merge: true });
+                window.playerState.classElectionVote = recorded.ballot;
+                playElectionOk();
+                renderStudentElectionOverlay();
+            } catch (e) {
+                console.warn('studentPickElectionCandidate', e);
+                window.customAlert('투표 저장에 실패했습니다. 다시 눌러 주세요.');
             }
         };
 
@@ -10898,6 +11161,8 @@ ${subjectLine}
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
                             window.renderLunchQueue(students);
+                            if (typeof refreshElectionLiveTurnout === 'function') refreshElectionLiveTurnout();
+                            if (typeof syncStudentElectionUi === 'function') syncStudentElectionUi();
                         });
 
                         if(unsubscribeSettings) unsubscribeSettings();
@@ -10953,6 +11218,12 @@ ${subjectLine}
                                     window.globalSettings.learningThermometer = keepLocalLearningThermometer
                                         ? localLearningThermometer
                                         : sanitizeLearningThermometerState(settingsData.learningThermometer);
+                                }
+                                if (settingsData.classElection !== undefined) {
+                                    window.globalSettings.classElection = sanitizeElectionState(settingsData.classElection);
+                                    if (typeof applyRemoteClassElection === 'function') {
+                                        applyRemoteClassElection(settingsData.classElection);
+                                    }
                                 }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');

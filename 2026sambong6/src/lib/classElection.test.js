@@ -4,12 +4,17 @@ import {
     addCandidateToPosition,
     appendBallot,
     canStartVoting,
+    collectBallotsFromStudentRows,
     createElectionState,
+    mergeBallotLists,
+    recordStudentPick,
     resolveNumericVote,
     resolveNumericVoteOnTimeout,
     sanitizeElectionState,
+    sanitizeStudentBallot,
     shuffleCopy,
     tallyBallots,
+    toPublishedElection,
     undoLastBallot,
 } from './classElection.js';
 
@@ -127,5 +132,67 @@ describe('개표 순서 섞기', () => {
         assert.deepEqual(src, [1, 2, 2, 3]);
         assert.equal(out.length, 4);
         assert.deepEqual([...out].sort(), [1, 2, 2, 3]);
+    });
+});
+
+describe('학생별 비밀 투표', () => {
+    const positions = [{
+        id: 'pos_chair',
+        name: '학급회장',
+        candidates: [
+            { id: 'a', name: '김단엘', number: 1 },
+            { id: 'b', name: '백시율', number: 2 },
+        ],
+    }];
+
+    it('같은 학생은 마지막 선택만 남긴다', () => {
+        let ballot = { sessionId: '', picks: {} };
+        ballot = recordStudentPick(ballot, 'el_1', 'pos_chair', 1, positions).ballot;
+        ballot = recordStudentPick(ballot, 'el_1', 'pos_chair', 2, positions).ballot;
+        assert.equal(ballot.picks.pos_chair, 2);
+        const collected = collectBallotsFromStudentRows(
+            [{ id: '6', classElectionVote: ballot }],
+            'el_1',
+            positions
+        );
+        assert.deepEqual(collected.ballots.pos_chair, [2]);
+        assert.deepEqual(collected.voterIdsByPosition.pos_chair, ['6']);
+    });
+
+    it('다른 세션 표는 버린다', () => {
+        const collected = collectBallotsFromStudentRows(
+            [{ id: '6', classElectionVote: { sessionId: 'old', picks: { pos_chair: 1 } } }],
+            'el_1',
+            positions
+        );
+        assert.deepEqual(collected.ballots.pos_chair, []);
+    });
+
+    it('없는 후보 번호는 저장하지 않는다', () => {
+        const r = recordStudentPick({ sessionId: '', picks: {} }, 'el_1', 'pos_chair', 9, positions);
+        assert.equal(r.ok, false);
+        assert.deepEqual(sanitizeStudentBallot({ sessionId: 'el_1', picks: { pos_chair: 9 } }, positions).picks, {});
+    });
+
+    it('학생 표와 현장 추가표를 합친다', () => {
+        const merged = mergeBallotLists({ pos_chair: [1, 2] }, { pos_chair: [1] }, positions);
+        assert.deepEqual(merged.pos_chair, [1, 2, 1]);
+    });
+
+    it('투표 중 공개본에는 득표를 넣지 않는다', () => {
+        const pub = toPublishedElection({
+            phase: 'vote',
+            sessionId: 'el_1',
+            positions,
+            ballots: { pos_chair: [1, 2, 2] },
+        });
+        assert.deepEqual(pub.ballots.pos_chair, []);
+        const counted = toPublishedElection({
+            phase: 'count',
+            sessionId: 'el_1',
+            positions,
+            ballots: { pos_chair: [1, 2, 2] },
+        });
+        assert.deepEqual(counted.ballots.pos_chair, [1, 2, 2]);
     });
 });

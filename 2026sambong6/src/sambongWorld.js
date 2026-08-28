@@ -31,6 +31,16 @@ import {
     researchStatsToCsv,
     downloadTextFile,
 } from './lib/researchStats.js';
+import {
+    ACCIDENTAL_POINTER_SUPPRESS_MS,
+    didPointerMoveEnough,
+    isDailyQuestCompletedToday,
+    isQuestCompletedForUi,
+    isWeeklyQuestCompletedThisWeek,
+    sanitizeDailyQuestFlags,
+    sanitizeWeeklyQuestFlags,
+    weekRangeMondaySunday,
+} from './lib/questCompletionGuard.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -5999,27 +6009,21 @@ ${subjectLine}
             return getQuestCatalog().filter(q => q.type === 'daily').map(q => q.id);
         }
 
+        function getWeeklyQuestIds() {
+            return getQuestCatalog().filter(q => q.type === 'weekly').map(q => q.id);
+        }
+
         function sanitizeDailyQuestFlagsForDate(state, gameDateStr) {
-            if (!state || !gameDateStr) return false;
-            const dailyQuestIds = getDailyQuestIds();
-            const dailyQuestIdSet = new Set(dailyQuestIds);
-            const history = Array.isArray(state.questHistory) ? state.questHistory : [];
-            const doneToday = new Set(
-                history
-                    .filter((q) => q && q.date === gameDateStr && dailyQuestIdSet.has(q.id))
-                    .map((q) => q.id)
-            );
-            const quests = { ...(state.quests || {}) };
-            let changed = false;
-            dailyQuestIds.forEach((qId) => {
-                if (quests[qId] && !doneToday.has(qId)) {
-                    quests[qId] = false;
-                    changed = true;
-                }
-            });
-            if (changed) {
-                state.quests = quests;
-                /** stale 플래그만 해제 — 당일 전부 완료 보너스 수령 기록은 유지(중복 +10 B 방지) */
+            return sanitizeDailyQuestFlags(state, getDailyQuestIds(), gameDateStr);
+        }
+
+        function sanitizeWeeklyQuestFlagsForCurrentWeek(state, now = new Date()) {
+            const week = weekRangeMondaySunday(now);
+            const changed = sanitizeWeeklyQuestFlags(state, getWeeklyQuestIds(), week.start, week.end);
+            if (!state) return changed;
+            if (state.lastWeeklyReset !== week.start) {
+                state.lastWeeklyReset = week.start;
+                return true;
             }
             return changed;
         }
@@ -6094,8 +6098,8 @@ ${subjectLine}
         }
 
         /**
-         * 일일 퀘스트 완료 플래그·밥줄(lunchBid)을 로컬 달력 날짜와 맞춤.
-         * 과거 체크가 오늘 완료처럼 남지 않도록, 오늘 questHistory에 없는 일일퀘스트 체크는 즉시 해제합니다.
+         * 일일·주간 퀘스트 완료 플래그·밥줄(lunchBid)을 로컬 달력과 맞춤.
+         * 과거 체크가 오늘/이번 주 완료처럼 남지 않도록, 해당 기간 questHistory에 없는 체크는 즉시 해제합니다.
          * @param {{ silent?: boolean }} opts silent: true면 알림 없음(스냅샷·백그라운드 동기화용)
          * @returns {{ needSave: boolean, alertNewDay: boolean }}
          */
@@ -6106,34 +6110,29 @@ ${subjectLine}
             }
             const gameDateStr = getLocalDateStr();
             const dailyQuestIds = getDailyQuestIds();
+            const weeklyChanged = sanitizeWeeklyQuestFlagsForCurrentWeek(window.playerState);
+
             if (!window.playerState.lastDailyReset) {
-                const updatedQuests = { ...(window.playerState.quests || {}) };
-                dailyQuestIds.forEach((qId) => {
-                    if (updatedQuests[qId]) updatedQuests[qId] = false;
-                });
-                window.playerState.quests = updatedQuests;
+                /** 첫 보정에서도 오늘 실제 완료 기록은 보존해 중복 보상을 막습니다. */
+                ensureShopDailyPurchaseCounts(window.playerState);
+                sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr);
                 window.playerState.lastDailyReset = gameDateStr;
-                window.playerState.shopDailyPurchase = { date: gameDateStr, item_random: 0, item_mystery_dice: 0 };
-                if (window.playerState.dailyAllClearBonusDate === gameDateStr) window.playerState.dailyAllClearBonusDate = '';
                 return { needSave: true, alertNewDay: false };
             }
             if (window.playerState.lastDailyReset === gameDateStr) {
                 const shopReset = ensureShopDailyPurchaseCounts(window.playerState);
                 const questSanitized = sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr);
-                return { needSave: shopReset || questSanitized, alertNewDay: false };
+                return { needSave: shopReset || questSanitized || weeklyChanged, alertNewDay: false };
             }
 
             const updatedQuests = { ...(window.playerState.quests || {}) };
             let hadCompletedDaily = false;
             dailyQuestIds.forEach((qId) => {
-                if (updatedQuests[qId]) {
-                    hadCompletedDaily = true;
-                    updatedQuests[qId] = false;
-                }
+                if (updatedQuests[qId]) hadCompletedDaily = true;
             });
-            window.playerState.quests = updatedQuests;
             window.playerState.lastDailyReset = gameDateStr;
             window.playerState.shopDailyPurchase = { date: gameDateStr, item_random: 0, item_mystery_dice: 0 };
+            sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr);
 
             let lunchReset = false;
             if (!window.playerState.lunchBid || window.playerState.lunchBid.date !== gameDateStr) {
@@ -6461,11 +6460,13 @@ ${subjectLine}
                 snap.forEach((studentDoc) => {
                     if (studentDoc.id === 'student_gm' || studentDoc.id === 'student_gm_a') return;
                     const data = { ...(studentDoc.data() || {}) };
-                    const changed = sanitizeDailyQuestFlagsForDate(data, gameDateStr);
-                    if (changed || data.lastDailyReset !== gameDateStr) {
+                    const dailyChanged = sanitizeDailyQuestFlagsForDate(data, gameDateStr);
+                    const weeklyChanged = sanitizeWeeklyQuestFlagsForCurrentWeek(data);
+                    if (dailyChanged || weeklyChanged || data.lastDailyReset !== gameDateStr) {
                         const patch = {
                             quests: data.quests || {},
                             lastDailyReset: gameDateStr,
+                            lastWeeklyReset: data.lastWeeklyReset || weekRangeMondaySunday().start,
                             dailyQuestSanitizedAt: new Date().toISOString(),
                         };
                         if (Object.prototype.hasOwnProperty.call(data, 'dailyAllClearBonusDate')) {
@@ -6480,7 +6481,7 @@ ${subjectLine}
                     date: gameDateStr,
                     touched,
                     sanitizedAt: new Date().toISOString(),
-                    note: '일일퀘스트 과거 체크 잔존 보정',
+                    note: '일일·주간 퀘스트 과거 체크 잔존 보정',
                 }, { merge: true });
                 await batch.commit();
             } catch (e) {
@@ -6828,41 +6829,87 @@ ${subjectLine}
 
         let touchstartX = 0; 
         let touchstartY = 0;
+        let touchPointerMoved = false;
+        let pointerIsDown = false;
+        let ignoreAccidentalPointerUntil = 0;
+
+        /** 스크롤·스와이프 뒤에 따라오는 클릭이 퀘스트/직업을 누르지 못하게 잠시 막습니다. */
+        function markAccidentalPointerSuppression(ms = ACCIDENTAL_POINTER_SUPPRESS_MS) {
+            ignoreAccidentalPointerUntil = Date.now() + ms;
+        }
+
+        function shouldIgnoreAccidentalPointer() {
+            return Date.now() < ignoreAccidentalPointerUntil;
+        }
+
+        const swipeRoot = document.getElementById('swipeWrapper');
+        if (swipeRoot) {
+            swipeRoot.addEventListener('touchstart', e => {
+                if (isMartialLawLockingStudent()) return;
+                pointerIsDown = true;
+                touchPointerMoved = false;
+                touchstartX = e.changedTouches[0].screenX;
+                touchstartY = e.changedTouches[0].screenY;
+            }, {passive: true});
+
+            swipeRoot.addEventListener('touchmove', e => {
+                if (isMartialLawLockingStudent() || !e.changedTouches || !e.changedTouches[0]) return;
+                const x = e.changedTouches[0].screenX;
+                const y = e.changedTouches[0].screenY;
+                if (didPointerMoveEnough(touchstartX, touchstartY, x, y)) {
+                    touchPointerMoved = true;
+                    markAccidentalPointerSuppression();
+                }
+            }, {passive: true});
         
-        document.getElementById('swipeWrapper').addEventListener('touchstart', e => {
-            if (isMartialLawLockingStudent()) return;
-            touchstartX = e.changedTouches[0].screenX;
-            touchstartY = e.changedTouches[0].screenY;
-        }, {passive: true});
-        
-        document.getElementById('swipeWrapper').addEventListener('touchend', e => {
-            if (isMartialLawLockingStudent()) return;
-            let touchendX = e.changedTouches[0].screenX; 
-            let touchendY = e.changedTouches[0].screenY;
-            let diffX = touchstartX - touchendX; 
-            let diffY = touchstartY - touchendY;
+            swipeRoot.addEventListener('touchend', e => {
+                pointerIsDown = false;
+                if (isMartialLawLockingStudent()) return;
+                let touchendX = e.changedTouches[0].screenX; 
+                let touchendY = e.changedTouches[0].screenY;
+                let diffX = touchstartX - touchendX; 
+                let diffY = touchstartY - touchendY;
+                if (touchPointerMoved || didPointerMoveEnough(touchstartX, touchstartY, touchendX, touchendY)) {
+                    markAccidentalPointerSuppression();
+                }
             
-            if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
-                if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs') || e.target.closest('.learning-thermometer-stage')) return;
+                if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
+                    if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs') || e.target.closest('.learning-thermometer-stage')) return;
                 
-                let visibleTabs = TABS.filter(t => {
-                    const btn = document.getElementById('tab-' + t);
-                    return btn && !btn.classList.contains('hidden') && !btn.hasAttribute('aria-hidden');
-                });
-                let cIdx = visibleTabs.indexOf(TABS[currentTabIndex]);
-                if (cIdx < 0) cIdx = visibleTabs.indexOf(TABS[currentTabIndex] === 'shop' || TABS[currentTabIndex] === 'bank' || TABS[currentTabIndex] === 'estate' ? 'economy' : (TABS[currentTabIndex] === 'goldenbell' ? 'challenge' : TABS[currentTabIndex]));
-                if (cIdx < 0) {
-                    const active = document.querySelector('#mainTabBar button.border-sb-gold, #mainTabBar button.border-yellow-400, #mainTabBar button.border-pink-500, #mainTabBar button.border-orange-400, #mainTabBar button.border-amber-300, #mainTabBar button.border-lime-500, #mainTabBar button.border-cyan-400, #mainTabBar button.border-violet-400');
-                    if (active && active.id) cIdx = visibleTabs.indexOf(active.id.replace(/^tab-/, ''));
-                }
+                    let visibleTabs = TABS.filter(t => {
+                        const btn = document.getElementById('tab-' + t);
+                        return btn && !btn.classList.contains('hidden') && !btn.hasAttribute('aria-hidden');
+                    });
+                    let cIdx = visibleTabs.indexOf(TABS[currentTabIndex]);
+                    if (cIdx < 0) cIdx = visibleTabs.indexOf(TABS[currentTabIndex] === 'shop' || TABS[currentTabIndex] === 'bank' || TABS[currentTabIndex] === 'estate' ? 'economy' : (TABS[currentTabIndex] === 'goldenbell' ? 'challenge' : TABS[currentTabIndex]));
+                    if (cIdx < 0) {
+                        const active = document.querySelector('#mainTabBar button.border-sb-gold, #mainTabBar button.border-yellow-400, #mainTabBar button.border-pink-500, #mainTabBar button.border-orange-400, #mainTabBar button.border-amber-300, #mainTabBar button.border-lime-500, #mainTabBar button.border-cyan-400, #mainTabBar button.border-violet-400');
+                        if (active && active.id) cIdx = visibleTabs.indexOf(active.id.replace(/^tab-/, ''));
+                    }
                 
-                if (diffX > 0 && cIdx < visibleTabs.length - 1) {
-                    window.switchTab(visibleTabs[cIdx + 1]);
-                } else if (diffX < 0 && cIdx > 0) {
-                    window.switchTab(visibleTabs[cIdx - 1]);
+                    if (diffX > 0 && cIdx < visibleTabs.length - 1) {
+                        window.switchTab(visibleTabs[cIdx + 1]);
+                    } else if (diffX < 0 && cIdx > 0) {
+                        window.switchTab(visibleTabs[cIdx - 1]);
+                    }
                 }
-            }
-        });
+            });
+
+            swipeRoot.addEventListener('touchcancel', () => {
+                pointerIsDown = false;
+            }, {passive: true});
+
+            swipeRoot.addEventListener('click', (e) => {
+                if (!shouldIgnoreAccidentalPointer()) return;
+                e.preventDefault();
+                e.stopPropagation();
+            }, true);
+        }
+
+        const todoPanelEl = document.getElementById('todoPanel');
+        if (todoPanelEl) {
+            todoPanelEl.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
+        }
 
         // ==========================================
         // ★ 수업도구: 학습 온도계 ★
@@ -11421,9 +11468,9 @@ ${subjectLine}
             const dailyQuests = getQuestCatalog().filter(q => q.type === 'daily');
             const total = dailyQuests.length;
             const now = new Date();
-            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const todayStr = getLocalDateStr(now);
 
-            // 열별 오늘 완료 인원 수(한 줄 요약 배지용)
+            // 열별 오늘 완료 인원 수(한 줄 요약 배지용) — 완료 기록(questHistory)만 인정
             const colDone = dailyQuests.map(() => 0);
             let sumDoneAll = 0;
             let allClearStudents = 0;
@@ -11438,10 +11485,9 @@ ${subjectLine}
             let bodyRows = '';
             studentIds.forEach((sid) => {
                 const stu = studentsData.find(s => s.id === String(sid));
-                const resetOk = stu && stu.lastDailyReset === todayStr;
                 let rowDone = 0;
                 const cells = dailyQuests.map((q, qi) => {
-                    const ok = !!(resetOk && stu.quests && stu.quests[q.id]);
+                    const ok = !!(stu && isDailyQuestCompletedToday(stu, q.id, todayStr));
                     if (ok) {
                         rowDone++;
                         colDone[qi]++;
@@ -12241,11 +12287,16 @@ ${subjectLine}
             }
 
             const dailyQuestList = getQuestCatalog().filter(q => q.type === 'daily');
-            document.getElementById('todoContainer').innerHTML = dailyQuestList.map(q => {
-                const done = window.playerState.quests && window.playerState.quests[q.id];
+            const todayStrUi = getLocalDateStr();
+            const weekRangeUi = weekRangeMondaySunday();
+            if (pointerIsDown) markAccidentalPointerSuppression();
+            const todoBox = document.getElementById('todoContainer');
+            if (todoBox) {
+                todoBox.innerHTML = dailyQuestList.map(q => {
+                const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
+                const act = done ? 'cancelQuest' : 'attemptQuest';
                 return `
-                <label class="flex items-center gap-2 p-2.5 rounded-xl border cursor-pointer transition ${done ? 'border-cyan-400/80 bg-gradient-to-r from-cyan-950/70 to-slate-900/80 shadow-[0_0_12px_rgba(34,211,238,0.15)] ring-1 ring-cyan-500/30' : 'bg-slate-900/60 border-slate-700'}">
-                    <input type="checkbox" class="todo-checkbox hidden" ${done ? 'checked' : ''} onchange="window.${done ? 'cancelQuest' : 'attemptQuest'}('${q.id}', ${q.xp}, ${q.bong})">
+                <button type="button" class="flex items-center gap-2 p-2.5 rounded-xl border w-full text-left cursor-pointer transition touch-manipulation ${done ? 'border-cyan-400/80 bg-gradient-to-r from-cyan-950/70 to-slate-900/80 shadow-[0_0_12px_rgba(34,211,238,0.15)] ring-1 ring-cyan-500/30' : 'bg-slate-900/60 border-slate-700'}" onclick="window.${act}('${q.id}', ${q.xp}, ${q.bong})">
                     <div class="w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${done?'border-cyan-400 bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]':'border-slate-500'}">
                         <i class="fa-solid fa-check text-white text-[10px] ${done?'opacity-100':'opacity-0'}"></i>
                     </div>
@@ -12256,13 +12307,14 @@ ${subjectLine}
                         <span class="text-sb-blue text-[9px] font-bold block">+${q.xp}</span>
                         <span class="text-sb-gold text-[9px] font-bold block">+${formatBongAmount(q.bong)}</span>
                     </div>
-                </label>`;
-            }).join('');
+                </button>`;
+                }).join('');
+            }
 
             const dqHint = document.getElementById('dailyQuestProgressHint');
             if (dqHint && window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
                 const n = dailyQuestList.length;
-                const doneN = dailyQuestList.filter((q) => window.playerState.quests && window.playerState.quests[q.id]).length;
+                const doneN = dailyQuestList.filter((q) => isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi)).length;
                 dqHint.textContent = `오늘 일일퀘스트 ${doneN} / ${n} 완료 · 서버에 저장되어 새로고침해도 유지됩니다`;
                 dqHint.classList.remove('hidden');
             } else if (dqHint) {
@@ -12295,7 +12347,7 @@ ${subjectLine}
             const renderQuests = (quests, containerId) => {
                 const today = new Date().getDay();
                 document.getElementById(containerId).innerHTML = quests.map(q => {
-                    const done = window.playerState.quests && window.playerState.quests[q.id];
+                    const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                     const unlocked = window.playerState.unlockedQuests && window.playerState.unlockedQuests[q.id];
                     let cls = "border-slate-700"; 
                     let act = `window.attemptQuest('${q.id}', ${q.xp}, ${q.bong})`; 
@@ -12326,7 +12378,7 @@ ${subjectLine}
                     if(q.id === 'q1') ext = `<span class="text-orange-400 text-[9px] ml-1">(🔥${window.playerState.earlyBirdCount||0}/5)</span>`;
 
                     return `
-                    <button onclick="${act}" class="w-full text-left p-3 rounded-xl border bg-slate-800/50 transition flex justify-between items-center ${cls}">
+                    <button type="button" onclick="${act}" class="w-full text-left p-3 rounded-xl border bg-slate-800/50 transition flex justify-between items-center touch-manipulation ${cls}">
                         <div class="flex-grow min-w-0 pr-2">
                             <div class="font-bold ${done?'text-slate-400':q.color} text-sm truncate">${icn}${q.name}${ext}</div>
                             <div class="text-[9px] text-slate-400 truncate">${q.desc}</div>
@@ -12768,7 +12820,15 @@ ${subjectLine}
                         if (opts.questCompletionId) {
                             const qid = String(opts.questCompletionId);
                             const serverQuests = serverData.quests || {};
-                            if (serverQuests[qid]) {
+                            const qMetaDup = getQuestCatalog().find((q) => String(q.id) === qid);
+                            const todayDup = getLocalDateStr();
+                            const weekDup = weekRangeMondaySunday();
+                            const alreadyDone = qMetaDup && qMetaDup.type === 'daily'
+                                ? isDailyQuestCompletedToday(serverData, qid, todayDup)
+                                : qMetaDup && qMetaDup.type === 'weekly'
+                                    ? isWeeklyQuestCompletedThisWeek(serverData, qid, weekDup.start, weekDup.end)
+                                    : !!(serverQuests[qid]);
+                            if (alreadyDone) {
                                 blockedByDuplicateQuest = true;
                                 serverRestoreData = serverData;
                                 return;
@@ -13418,6 +13478,7 @@ ${subjectLine}
 
         window.equipWeapon = async function(wpId) {
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (shouldIgnoreAccidentalPointer()) return;
             if (window.playerState.equippedWeapon === wpId) window.playerState.equippedWeapon = null; 
             else window.playerState.equippedWeapon = wpId; 
             updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
@@ -13480,17 +13541,27 @@ ${subjectLine}
 
         window.attemptQuest = async function(qId, xp, bong) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (shouldIgnoreAccidentalPointer()) return;
+            if (window._questActionRunning) return;
             applyDailyQuestResetIfNewDay({ silent: true });
-            if (window.playerState.quests[qId]) return;
 
             const todayStr = getLocalDateStr();
+            const week = weekRangeMondaySunday();
             const qMetaEarly = getQuestCatalog().find((q) => q.id === qId);
-            if (qMetaEarly && qMetaEarly.type === 'daily' && questBongAlreadyEarnedToday(window.playerState, qId, todayStr)) {
+            if (qMetaEarly && qMetaEarly.type === 'daily' && isDailyQuestCompletedToday(window.playerState, qId, todayStr)) {
                 window.playerState.quests[qId] = true;
                 updateUI();
                 return await window.customAlert('오늘 이미 완료·보상을 받은 일일 퀘스트입니다.');
             }
+            if (qMetaEarly && qMetaEarly.type === 'weekly' && isWeeklyQuestCompletedThisWeek(window.playerState, qId, week.start, week.end)) {
+                window.playerState.quests[qId] = true;
+                updateUI();
+                return await window.customAlert('이번 주에 이미 완료·보상을 받은 주간 퀘스트입니다.');
+            }
+            if (qMetaEarly && qMetaEarly.type !== 'daily' && qMetaEarly.type !== 'weekly' && window.playerState.quests && window.playerState.quests[qId]) return;
 
+            window._questActionRunning = true;
+            try {
             const bongBefore = normalizeBongValue(Number(window.playerState.bong) || 0);
 
             let finalXp = xp;
@@ -13520,11 +13591,20 @@ ${subjectLine}
                 window.playerState.lastDailyReset = getLocalDateStr();
             }
 
-            // 일일 퀘스트를 모두 완료한 날 1회 보너스 (50 XP, 10 B)
+            const qInfo = getQuestCatalog().find(q => q.id === qId);
+            const qName = qInfo ? qInfo.name : qId;
+
+            if(!window.playerState.questHistory) window.playerState.questHistory = [];
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if(qInfo) {
+                window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
+            }
+
+            // 일일 퀘스트를 모두 완료한 날 1회 보너스 (50 XP, 10 B) — 기록 기준
             const dailyIdsAll = getQuestCatalog().filter(q => q.type === 'daily').map(q => q.id);
-            const allDailyDone = dailyIdsAll.length > 0 && dailyIdsAll.every(id => window.playerState.quests[id]);
-            const nowBonus = new Date();
-            const todayStrBonus = `${nowBonus.getFullYear()}-${String(nowBonus.getMonth() + 1).padStart(2, '0')}-${String(nowBonus.getDate()).padStart(2, '0')}`;
+            const allDailyDone = dailyIdsAll.length > 0 && dailyIdsAll.every(id => isDailyQuestCompletedToday(window.playerState, id, dateStr));
+            const todayStrBonus = dateStr;
             let dailyAllClearMsg = '';
             if (allDailyDone && !hadDailyAllClearBonusToday(window.playerState, todayStrBonus)) {
                 window.playerState.dailyAllClearBonusDate = todayStrBonus;
@@ -13535,19 +13615,10 @@ ${subjectLine}
 
             const newLv = getLevelInfo(window.playerState.xp).index;
 
-            const qInfo = getQuestCatalog().find(q => q.id === qId);
-            const qName = qInfo ? qInfo.name : qId;
             let alertMsg = `✅ [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongAmount(finalBong)}`;
             if (dailyAllClearMsg) alertMsg = dailyAllClearMsg.trim() + '\n\n' + alertMsg;
             if (isEarlyBirdJackpot) alertMsg += `\n\n🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`;
             if (buffAmount > 0) alertMsg += `\n\n🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!`;
-
-            if(!window.playerState.questHistory) window.playerState.questHistory = [];
-            const now = new Date();
-            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            if(qInfo) {
-                window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
-            }
 
             if (newLv > oldLv) {
                 const bonus = newLv * 3;
@@ -13581,11 +13652,16 @@ ${subjectLine}
                 console.error('attemptQuest persist', e);
                 await window.customAlert('퀘스트 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
             }
+            } finally {
+                window._questActionRunning = false;
+            }
         };
 
         // ★ 버그 수정: 퀘스트 취소 시 UI 초기화 기능 개선
         window.cancelQuest = async function(qId, xp, bong) {
             if (window.playerState.isGuest) return;
+            if (shouldIgnoreAccidentalPointer()) return;
+            if (window._questActionRunning) return;
             const rewardBong = normalizeQuestBongReward(bong);
             const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(1 B)가 깎여요.");
             
@@ -13602,7 +13678,9 @@ ${subjectLine}
                 const deductBong = rewardBong + 1;
                 window.playerState.xp = Math.max(0, window.playerState.xp - xp);
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - deductBong);
-                delete window.playerState.quests[qId]; 
+                if (!window.playerState.quests) window.playerState.quests = {};
+                /** delete는 Firestore merge 시 서버 true가 되살아나므로 명시적으로 false를 남깁니다. */
+                window.playerState.quests[qId] = false;
                 updateUI(); 
                 saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
             } else {
@@ -15178,6 +15256,7 @@ ${subjectLine}
 
         window.toggleJob = async function(jobName, iconClass, colorClass) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (shouldIgnoreAccidentalPointer()) return;
             if (!window.playerState.jobs) window.playerState.jobs = [];
             const existingIndex = window.playerState.jobs.findIndex(j => j.name === jobName);
             if (existingIndex > -1) window.playerState.jobs.splice(existingIndex, 1);
@@ -15314,7 +15393,7 @@ ${subjectLine}
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
+            'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
         ];
 

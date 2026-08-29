@@ -467,7 +467,7 @@
             overflow: hidden;
         }
 
-        /* 광장 학생 카드 배열: 크게 4명 / 중간 5명 / 작게 6명 (한 줄) */
+        /* 광장 학생 카드 배열: 크게 4명 / 중간 5명 / 작게 6명 (한 줄, 넓은 화면) */
         .plaza-cards {
             display: grid;
             width: 100%;
@@ -483,11 +483,6 @@
         .plaza-cards-sm {
             grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 0.3rem;
-        }
-        @media (max-width: 639px) {
-            .plaza-cards-lg { gap: 0.35rem; }
-            .plaza-cards-md { gap: 0.3rem; }
-            .plaza-cards-sm { gap: 0.25rem; }
         }
 
         .plaza-card { min-width: 0; }
@@ -511,6 +506,88 @@
             .plaza-cards-lg .plaza-card-face { font-size: 2.75rem !important; }
         }
         .plaza-cards-lg .plaza-card-name { font-size: 11px !important; }
+
+        /* 스마트폰: 한 줄 2명, 이름·수치를 키워 확대 없이 읽히게 합니다. */
+        @media (max-width: 639px) {
+            .plaza-cards-lg,
+            .plaza-cards-md,
+            .plaza-cards-sm {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.55rem;
+            }
+            .plaza-card-name {
+                white-space: normal !important;
+                overflow: hidden;
+                text-overflow: clip;
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                line-height: 1.35;
+                word-break: keep-all;
+                letter-spacing: -0.02em;
+            }
+            .plaza-card {
+                min-height: 11.5rem;
+            }
+            .plaza-card-stats {
+                gap: 0.2rem;
+                padding: 0.28rem 0.35rem !important;
+                margin-top: 0.4rem !important;
+            }
+
+            .plaza-cards-lg .plaza-card,
+            .plaza-cards-md .plaza-card,
+            .plaza-cards-sm .plaza-card {
+                padding: 0.75rem 0.5rem 0.65rem !important;
+                border-radius: 1rem !important;
+            }
+            .plaza-cards-lg .plaza-card-face,
+            .plaza-cards-md .plaza-card-face,
+            .plaza-cards-sm .plaza-card-face {
+                font-size: 2.75rem !important;
+                margin-bottom: 0.35rem !important;
+            }
+            .plaza-cards-lg .plaza-card-lv,
+            .plaza-cards-md .plaza-card-lv,
+            .plaza-cards-sm .plaza-card-lv {
+                font-size: 12px !important;
+                padding: 0.2rem 0.45rem !important;
+                margin-bottom: 0.3rem !important;
+            }
+            .plaza-cards-lg .plaza-card-name,
+            .plaza-cards-md .plaza-card-name,
+            .plaza-cards-sm .plaza-card-name {
+                font-size: 16px !important;
+                padding: 0.28rem 0.35rem !important;
+            }
+            .plaza-cards-lg .plaza-card-stats span,
+            .plaza-cards-md .plaza-card-stats span,
+            .plaza-cards-sm .plaza-card-stats span {
+                font-size: 13px !important;
+            }
+            .plaza-cards-lg .plaza-learning-thermometer,
+            .plaza-cards-md .plaza-learning-thermometer,
+            .plaza-cards-sm .plaza-learning-thermometer {
+                min-width: 2.3rem;
+                max-width: 2.8rem;
+                height: 1.2rem;
+                font-size: 11px;
+            }
+            .plaza-cards-sm .plaza-gm-controls,
+            .plaza-cards-md .plaza-gm-controls,
+            .plaza-cards-lg .plaza-gm-controls {
+                margin-top: 0.45rem !important;
+                padding-top: 0.45rem !important;
+                gap: 0.3rem !important;
+            }
+            .plaza-cards-sm .plaza-gm-controls button,
+            .plaza-cards-md .plaza-gm-controls button,
+            .plaza-cards-lg .plaza-gm-controls button {
+                font-size: 12px !important;
+                padding: 0.5rem 0 !important;
+                min-height: 40px;
+            }
+        }
 
         /* 광장 마스터·해적두목 무대 — 학생 카드보다 크게·화려하게 */
         .plaza-staff-row {

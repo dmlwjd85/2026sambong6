@@ -11709,7 +11709,7 @@ ${subjectLine}
             });
         }
 
-        /** 광장 학생 카드 크기: lg(크게·4명) / md(중간·5명) / sm(작게·6명) */
+        /** 광장 학생 카드 크기: lg(크게) / md(중간) / sm(작게). 휴대폰에서는 한 줄 2명으로 자동 조정됩니다. */
         window.setPlazaCardSize = function(size) {
             applyPlazaCardSizeUI(size);
             try { localStorage.setItem(PLAZA_CARD_SIZE_KEY, plazaCardSize); } catch (_) { /* ignore */ }

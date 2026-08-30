@@ -614,7 +614,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.4';
+        const APP_VERSION = 'v1.5';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -6800,10 +6800,35 @@ ${subjectLine}
         let currentTabIndex = 1; // plaza
         /** 경제 서브: shop | bank | estate | groupbuy */
         let economySub = 'shop';
+        /** 상점 하위: skin | item | convenience | class | lotto */
+        let shopSub = 'skin';
         /** 도전 서브: goldenbell | speedquiz | raid */
         let challengeSub = 'goldenbell';
         /** 수업도구 서브: timetable | thermo | chalk ... */
         let classtoolSub = 'timetable';
+        /** 탭 내부 아이콘 패널 현재 선택값 */
+        const innerPaneState = {};
+        let _classtoolFsPane = null;
+
+        /** 탭 안 세부 화면을 아이콘으로 전환합니다. */
+        window.switchInnerPane = function(group, paneId) {
+            const g = String(group || '');
+            const id = String(paneId || '');
+            if (!g || !id) return;
+            innerPaneState[g] = id;
+            document.querySelectorAll(`.inner-pane-btn[data-pane-group="${g}"]`).forEach((btn) => {
+                btn.classList.toggle('is-active', btn.getAttribute('data-pane') === id);
+            });
+            document.querySelectorAll(`.inner-pane[data-pane-group="${g}"]`).forEach((pane) => {
+                pane.classList.toggle('hidden', pane.getAttribute('data-pane') !== id);
+            });
+            if (g === 'shop') shopSub = id;
+        };
+
+        window.switchShopSub = function(sub) {
+            shopSub = sub || 'skin';
+            window.switchInnerPane('shop', shopSub);
+        };
 
         window.switchEconomySub = function(sub) {
             economySub = sub || 'shop';
@@ -6831,6 +6856,7 @@ ${subjectLine}
                 const sec = document.getElementById(economySub + 'Section');
                 if (sec) sec.classList.remove('hidden');
                 if (economySub === 'shop') {
+                    window.switchShopSub(shopSub || 'skin');
                     renderShopCatalog();
                     renderConvenienceStore();
                     renderConvenienceAdminPanel();
@@ -6838,7 +6864,10 @@ ${subjectLine}
                     renderLottoPanel();
                     renderWorldCupBetPanel();
                 }
-                if (economySub === 'bank' && window.updateBankPanel) window.updateBankPanel();
+                if (economySub === 'bank' && window.updateBankPanel) {
+                    window.updateBankPanel();
+                    window.switchInnerPane('bank', innerPaneState.bank || 'summary');
+                }
                 if (economySub === 'estate' && typeof window.renderEstate === 'function') window.renderEstate();
             }
             const ecoSec = document.getElementById('economySection');
@@ -6941,7 +6970,8 @@ ${subjectLine}
                 window.switchEconomySub(economySub);
             }
             if (tabId === 'classtools') {
-                if (typeof window.switchClassTool === 'function') window.switchClassTool(classtoolSub);
+                if (typeof window.closeClassToolFullscreen === 'function') window.closeClassToolFullscreen();
+                if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
                 renderLearningThermometerPanel();
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
@@ -6953,9 +6983,21 @@ ${subjectLine}
                         window.renderBirthdayCelebrationAdminPanel();
                     }
                 }
+            } else if (typeof window.closeClassToolFullscreen === 'function') {
+                window.closeClassToolFullscreen();
             }
+            if (tabId === 'dashboard') window.switchInnerPane('dashboard', innerPaneState.dashboard || 'map');
+            if (tabId === 'quests') window.switchInnerPane('quests', innerPaneState.quests || 'daily');
+            if (tabId === 'jobs') window.switchInnerPane('jobs', innerPaneState.jobs || 'list');
+            if (tabId === 'admin') window.switchInnerPane('admin', innerPaneState.admin || 'quests');
             if (tabId === 'settings' && window.playerState && window.playerState.isAdmin) {
+                window.switchInnerPane('settings', innerPaneState.settings || 'world');
                 window.renderWorldSettingsPanel();
+            }
+            if (tabId === 'lunch') window.switchInnerPane('lunch', innerPaneState.lunch || 'invest');
+            if (tabId === 'help') window.switchInnerPane('help', innerPaneState.help || 'guide');
+            if (tabId === 'economy' && economySub === 'bank') {
+                window.switchInnerPane('bank', innerPaneState.bank || 'summary');
             }
             currentTabIndex = TABS.indexOf(tabId);
             window.scrollTo(0,0);
@@ -7013,7 +7055,7 @@ ${subjectLine}
         if (swipeRoot) {
             swipeRoot.addEventListener('touchstart', e => {
                 if (isMartialLawLockingStudent()) return;
-                if (isElectionOverlayOpen() || isStudentElectionOverlayOpen()) return;
+                if (isElectionOverlayOpen() || isStudentElectionOverlayOpen() || isClassToolFullscreenOpen()) return;
                 pointerIsDown = true;
                 touchPointerMoved = false;
                 touchstartX = e.changedTouches[0].screenX;
@@ -7033,7 +7075,7 @@ ${subjectLine}
             swipeRoot.addEventListener('touchend', e => {
                 pointerIsDown = false;
                 if (isMartialLawLockingStudent()) return;
-                if (isElectionOverlayOpen() || isStudentElectionOverlayOpen()) return;
+                if (isElectionOverlayOpen() || isStudentElectionOverlayOpen() || isClassToolFullscreenOpen()) return;
                 let touchendX = e.changedTouches[0].screenX; 
                 let touchendY = e.changedTouches[0].screenY;
                 let diffX = touchstartX - touchendX; 
@@ -7101,32 +7143,94 @@ ${subjectLine}
             return !!(window.playerState && window.playerState.isAdmin);
         }
 
+        function isClassToolFullscreenOpen() {
+            const el = document.getElementById('classtoolFullscreen');
+            return !!(el && !el.classList.contains('hidden'));
+        }
+
+        function restoreClassToolPane() {
+            const home = document.getElementById('classtoolPanesHome');
+            if (_classtoolFsPane && home) {
+                home.appendChild(_classtoolFsPane);
+                _classtoolFsPane.classList.add('hidden');
+            }
+            _classtoolFsPane = null;
+        }
+
+        window.closeClassToolFullscreen = function() {
+            restoreClassToolPane();
+            const overlay = document.getElementById('classtoolFullscreen');
+            if (overlay) overlay.classList.add('hidden');
+            document.body.classList.remove('classtool-fs-open');
+        };
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || !isClassToolFullscreenOpen()) return;
+            const chalk = document.getElementById('chalkboardOverlay');
+            if (chalk && !chalk.classList.contains('hidden')) return;
+            window.closeClassToolFullscreen();
+        });
+
+        const CLASSTOOL_TITLES = {
+            timetable: '시간표',
+            thermo: '학습 온도계',
+            chalk: '전자칠판',
+            timer: '타이머',
+            lottery: '제비뽑기',
+            vote: '학급투표',
+            wheel: '돌림판',
+            martial: '비상계엄',
+            morning: '아침안내',
+        };
+
         window.switchClassTool = function(toolId) {
             const isAdmin = canEditLearningThermometer();
             const next = String(toolId || classtoolSub || 'timetable');
             classtoolSub = (!isAdmin) ? 'timetable' : next;
+            updateClassToolsPanelVisibility();
+
+            restoreClassToolPane();
+            const pane = document.querySelector(`.classtool-pane[data-tool="${classtoolSub}"]`);
+            const overlay = document.getElementById('classtoolFullscreen');
+            const body = document.getElementById('classtoolFullscreenBody');
+            const titleEl = document.getElementById('classtoolFullscreenTitle');
+            if (!pane || !overlay || !body) return;
+            if (!isAdmin && pane.getAttribute('data-student') !== '1') return;
+
+            body.appendChild(pane);
+            pane.classList.remove('hidden');
+            _classtoolFsPane = pane;
+            if (titleEl) titleEl.textContent = CLASSTOOL_TITLES[classtoolSub] || '수업도구';
+            overlay.classList.remove('hidden');
+            document.body.classList.add('classtool-fs-open');
+            if (classtoolSub === 'chalk' && typeof window.openChalkboard === 'function') {
+                window.openChalkboard();
+            }
+            if (classtoolSub === 'thermo') renderLearningThermometerPanel();
+            if (classtoolSub === 'lottery') {
+                renderLotteryParticipantList();
+                renderLotteryResultsPanel();
+            }
+            if (classtoolSub === 'wheel') renderClassWheelPanel();
+            if (classtoolSub === 'vote') renderClassElectionPanel();
+            if (classtoolSub === 'timetable' && window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
+                window.renderClassTimetableAdminPanel();
+            }
+        };
+
+        function updateClassToolsPanelVisibility() {
+            const grid = document.getElementById('classtoolsAppGrid');
+            const isAdmin = canEditLearningThermometer();
+            if (grid) grid.classList.remove('hidden');
             document.querySelectorAll('#classtoolsAppGrid .app-tool-item').forEach((btn) => {
                 const id = btn.getAttribute('data-tool');
                 const studentOk = btn.getAttribute('data-student') === '1';
                 btn.classList.toggle('hidden', !isAdmin && !studentOk);
                 btn.classList.toggle('is-active', id === classtoolSub);
             });
-            document.querySelectorAll('.classtool-pane').forEach((pane) => {
-                const id = pane.getAttribute('data-tool');
-                const studentOk = pane.getAttribute('data-student') === '1';
-                if (!isAdmin && !studentOk) {
-                    pane.classList.add('hidden');
-                    return;
-                }
-                pane.classList.toggle('hidden', id !== classtoolSub);
+            document.querySelectorAll('#classtoolPanesHome .classtool-pane').forEach((pane) => {
+                if (pane !== _classtoolFsPane) pane.classList.add('hidden');
             });
-        };
-
-        function updateClassToolsPanelVisibility() {
-            const grid = document.getElementById('classtoolsAppGrid');
-            const isAdmin = canEditLearningThermometer();
-            if (grid) grid.classList.toggle('hidden', !isAdmin);
-            window.switchClassTool(isAdmin ? classtoolSub : 'timetable');
         }
 
         function enforceClassToolsAccess() {
@@ -10486,17 +10590,24 @@ ${subjectLine}
         // ★ 동적 콘텐츠 렌더링 ★
         // ==========================================
         function renderShopCatalog() {
-            const container = document.getElementById('shopContainer');
-            if (!container) return;
             const allItems = getAllShopItems();
-            const shopInstant = allItems.filter((s) => s.isConsumable);
+            const shopInstant = allItems.filter((s) => s.isConsumable && s.id !== 'item_lotto');
             const shopClass = allItems.filter((s) => !s.isConsumable);
-            container.innerHTML = `
-                <div class="xl:col-span-2 text-[10px] text-slate-400 font-bold mb-1 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>바로 적용되는 아이템</div>
-                ${shopInstant.map((shop) => buildShopCardHtml(shop)).join('')}
-                <div class="xl:col-span-2 text-[10px] text-slate-400 font-bold mb-1 mt-2 pb-1 border-b border-slate-700/80"><i class="fa-solid fa-school text-pink-400 mr-1"></i>학급 특별 활동 <span class="font-normal text-slate-500">(삼봉 결제 · 선생님과 일정 조율)</span></div>
-                ${shopClass.map((shop) => buildShopCardHtml(shop)).join('')}
-            `;
+            const shopLotto = allItems.filter((s) => s.id === 'item_lotto');
+            const instantEl = document.getElementById('shopInstantContainer') || document.getElementById('shopContainer');
+            const classEl = document.getElementById('shopClassContainer');
+            const lottoEl = document.getElementById('shopLottoItemContainer');
+            if (instantEl) {
+                instantEl.innerHTML = shopInstant.map((shop) => buildShopCardHtml(shop)).join('')
+                    || '<p class="text-[10px] text-slate-500">등록된 즉시 아이템이 없습니다.</p>';
+            }
+            if (classEl) {
+                classEl.innerHTML = shopClass.map((shop) => buildShopCardHtml(shop)).join('')
+                    || '<p class="text-[10px] text-slate-500">등록된 학급 아이템이 없습니다.</p>';
+            }
+            if (lottoEl) {
+                lottoEl.innerHTML = shopLotto.map((shop) => buildShopCardHtml(shop)).join('');
+            }
             updateShopPriceLabels();
             renderMusicTimeQueueBar();
         }
@@ -12173,7 +12284,7 @@ ${subjectLine}
                             <div class="plaza-staff-ring" aria-hidden="true"></div>
                             <div class="plaza-card-face plaza-staff-face relative">
                                 ${isA ? '🏴‍☠️' : '🐉'}
-                                <span class="absolute -bottom-1 -right-2 text-2xl sm:text-3xl drop-shadow-lg">${isA ? '🌊' : '🔥'}</span>
+                                <span class="absolute -bottom-0.5 -right-1 text-sm drop-shadow-lg">${isA ? '🌊' : '🔥'}</span>
                                 ${overlays}
                             </div>
                         </div>
@@ -13468,8 +13579,10 @@ ${subjectLine}
                 if (gbMasterPanel) gbMasterPanel.classList.remove('hidden');
                 const masterSpeedQuizPanelAll = document.getElementById('masterSpeedQuizPanel');
                 if (masterSpeedQuizPanelAll) masterSpeedQuizPanelAll.classList.remove('hidden');
-                const classTimetablePanelOn = document.getElementById('classTimetablePanel');
-                if (classTimetablePanelOn) classTimetablePanelOn.classList.remove('hidden');
+                document.querySelectorAll('.inner-pane-gm').forEach((el) => {
+                    el.classList.toggle('hidden', !window.playerState.isGM);
+                });
+                document.querySelectorAll('.inner-pane-admin').forEach((el) => el.classList.remove('hidden'));
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
                 const tabSettingsOff = document.getElementById('tab-settings');
@@ -13501,8 +13614,8 @@ ${subjectLine}
                 if (masterSpeedQuizPanelOff) masterSpeedQuizPanelOff.classList.add('hidden');
                 const classAdminSectionOff = document.getElementById('classAdminSection');
                 if (classAdminSectionOff) classAdminSectionOff.classList.add('hidden');
-                const classTimetablePanelOff = document.getElementById('classTimetablePanel');
-                if (classTimetablePanelOff) classTimetablePanelOff.classList.add('hidden');
+                document.querySelectorAll('.inner-pane-gm').forEach((el) => el.classList.add('hidden'));
+                document.querySelectorAll('.inner-pane-admin').forEach((el) => el.classList.add('hidden'));
             }
             
             checkTimeEvents();

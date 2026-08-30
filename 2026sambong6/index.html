@@ -24,7 +24,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
-    <div id="appVersionCorner" data-app-version class="fixed bottom-28 right-3 z-[380] text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.4</div>
+    <div id="appVersionCorner" data-app-version class="fixed bottom-28 right-3 z-[380] md:top-[8.65rem] md:bottom-auto text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.4</div>
     <!-- 네트워크·로딩 UX -->
     <div id="offlineBanner" class="hidden fixed top-0 inset-x-0 z-[400] bg-amber-600 text-white text-center text-[11px] sm:text-xs font-bold py-2.5 px-3 shadow-lg">
         <i class="fa-solid fa-wifi"></i> 연결이 불안정합니다. 자동으로 다시 시도합니다.
@@ -193,9 +193,9 @@
         </div>
     </nav>
 
-    <!-- 하단 앱 아이콘 독 (스마트폰·태블릿처럼 선택 시 활성화) -->
+    <!-- 앱 아이콘 독: 모바일 하단 · 웹(768px+) 상단 -->
     <nav id="appNavDock" class="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-700/70 bg-slate-950/95 backdrop-blur-md" aria-label="주요 메뉴">
-        <div class="app-nav-dock max-w-3xl mx-auto" id="mainTabBar">
+        <div class="app-nav-dock max-w-7xl mx-auto" id="mainTabBar">
             <button type="button" id="tab-dashboard" onclick="window.switchTab('dashboard')" class="app-nav-item" aria-label="홈">
                 <span class="app-nav-icon"><img src="nav/nav-home.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">홈</span>
@@ -459,7 +459,23 @@
                 <div id="seasonTimerDisplay" class="font-display text-cyan-400 tracking-wider text-sm sm:text-base">계산중...</div>
             </div>
 
+            <div class="app-sub-dock cols-3 mb-3" data-pane-group="dashboard" role="tablist">
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="dashboard" data-pane="map" onclick="window.switchInnerPane('dashboard','map')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-map"></i></span>
+                    <span>월드맵</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="dashboard" data-pane="character" onclick="window.switchInnerPane('dashboard','character')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-user"></i></span>
+                    <span>내 캐릭터</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="dashboard" data-pane="status" onclick="window.switchInnerPane('dashboard','status')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-heart-pulse"></i></span>
+                    <span>컨디션·할일</span>
+                </button>
+            </div>
+
             <!-- ★ 추가된 3D 월드맵 영역 ★ -->
+            <div class="inner-pane" data-pane-group="dashboard" data-pane="map">
             <div id="worldMapArea" class="night-sky w-full h-[360px] sm:h-[420px] xl:h-[460px] rounded-3xl border-4 border-slate-700 shadow-[0_0_30px_rgba(0,0,0,0.5)] overflow-hidden relative mb-4">
                 <!-- 배경 반짝이는 별들 -->
                 <div class="star w-1 h-1 top-[10%] left-[20%]"></div>
@@ -617,8 +633,10 @@
                     <div id="mapBankLabel" class="worldmap-label mt-1 bg-slate-900/95 text-sky-300 px-2 py-1 rounded-full text-[9px] sm:text-[10px] font-black border border-sky-500/80 whitespace-nowrap">삼봉 은행</div>
                 </div>
             </div>
+            </div>
 
             <!-- 하단 스탯 및 대시보드 그리드 배치 -->
+            <div class="inner-pane hidden" data-pane-group="dashboard" data-pane="character">
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
                 
                 <!-- 1열 (아바타 카드 & 무기고) -->
@@ -647,7 +665,11 @@
                         </div>
                     </div>
                 </div>
+            </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="dashboard" data-pane="status">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <!-- 2열 (상태 바 & 컨디션) -->
                 <div class="flex flex-col gap-4 sm:gap-6">
                     <!-- 경험치 바 & 컨디션 선택기 -->
@@ -729,6 +751,7 @@
                     </div>
                 </div>
 
+            </div>
             </div>
 
             <!-- ★ 드래곤볼 보물상자 보관함 (슬림 & 가로형) — 스폰 수집은 아래 버튼 영역 ★ -->
@@ -854,24 +877,8 @@
                     <button type="button" id="plazaSize-sm" onclick="window.setPlazaCardSize('sm')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/60 bg-emerald-900/40 text-emerald-200" title="작게 (휴대폰 2명 / 큰 화면 6명)">작게</button>
                 </div>
             </div>
-            <div class="glass-panel p-2.5 sm:p-3 rounded-2xl shadow-xl">
-                <!-- 마스터·해적두목 전용 무대 (학생 카드와 분리) -->
-                <div id="plazaStaffRow" class="plaza-staff-row" aria-label="마스터와 해적두목"></div>
-                <div class="plaza-cards plaza-cards-sm w-full" id="plazaContainer">
-                    <div class="text-slate-500 text-xs p-4">데이터 로딩 중...</div>
-                </div>
-            </div>
-            
-            <!-- 명예의 전당 -->
-            <div id="hallOfFameSection" class="hidden mt-12 relative text-center">
-                <h2 class="text-2xl sm:text-3xl font-display text-yellow-500 mb-4"><i class="fa-solid fa-trophy"></i> 명예의 전당</h2>
-                <div id="hofContainer" class="flex flex-wrap gap-4 justify-center px-2"></div>
-            </div>
-
-            <!-- 아래부터 마스터·학급 운영 도구 (스크롤 하단) -->
-            <div class="mt-10 space-y-4 border-t border-slate-700/60 pt-6">
                 <!-- 마스터 전용 광장 일괄 컨트롤 -->
-                <div id="plazaGMControls" class="hidden bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
+                <div id="plazaGMControls" class="hidden mb-3 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="text-sb-gold font-bold text-sm"><i class="fa-solid fa-wand-magic-sparkles"></i> 반 전체 일괄 컨트롤</h3>
                     </div>
@@ -897,6 +904,22 @@
                     </div>
                 </div>
 
+            <div class="glass-panel p-2.5 sm:p-3 rounded-2xl shadow-xl">
+                <!-- 마스터·해적두목 전용 무대 (학생 카드와 분리) -->
+                <div id="plazaStaffRow" class="plaza-staff-row" aria-label="마스터와 해적두목"></div>
+                <div class="plaza-cards plaza-cards-sm w-full" id="plazaContainer">
+                    <div class="text-slate-500 text-xs p-4">데이터 로딩 중...</div>
+                </div>
+            </div>
+            
+            <!-- 명예의 전당 -->
+            <div id="hallOfFameSection" class="hidden mt-12 relative text-center">
+                <h2 class="text-2xl sm:text-3xl font-display text-yellow-500 mb-4"><i class="fa-solid fa-trophy"></i> 명예의 전당</h2>
+                <div id="hofContainer" class="flex flex-wrap gap-4 justify-center px-2"></div>
+            </div>
+
+            <!-- 아래부터 마스터·학급 운영 도구 -->
+            <div class="mt-10 space-y-4 border-t border-slate-700/60 pt-6">
                 <!-- 선생님 온보딩 안내 -->
                 <div id="teacherOnboardingBanner" class="hidden glass-panel p-4 rounded-2xl border-2 border-emerald-400/60 bg-emerald-950/50 space-y-3">
                     <div class="flex flex-wrap items-start justify-between gap-2">
@@ -965,22 +988,41 @@
 
         <!-- ★ 3. 퀘스트 탭 ★ -->
         <section id="questsSection" class="hidden space-y-4">
+            <div class="app-sub-dock cols-4 mb-1">
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="quests" data-pane="daily" onclick="window.switchInnerPane('quests','daily')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-calendar-day"></i></span>
+                    <span>일일</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="weekly" onclick="window.switchInnerPane('quests','weekly')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-calendar-week"></i></span>
+                    <span>주간</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="raid" onclick="window.switchInnerPane('quests','raid')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-star"></i></span>
+                    <span>레이드</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="quests" data-pane="gm" onclick="window.switchInnerPane('quests','gm')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-list-check"></i></span>
+                    <span>GM 관리</span>
+                </button>
+            </div>
             <div class="grid md:grid-cols-2 gap-3">
-                <div class="glass-panel p-3 rounded-2xl">
+                <div class="inner-pane glass-panel p-3 rounded-2xl" data-pane-group="quests" data-pane="daily">
                     <h3 class="font-bold text-sm text-slate-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
                     <div id="dailyQuestContainer" class="space-y-2"></div>
                 </div>
-                <div class="glass-panel p-3 rounded-2xl">
+                <div class="inner-pane hidden glass-panel p-3 rounded-2xl" data-pane-group="quests" data-pane="weekly">
                     <h3 class="font-bold text-sm text-yellow-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
                     <div id="weeklyQuestContainer" class="space-y-2"></div>
                 </div>
-                <div class="glass-panel p-3 rounded-2xl md:col-span-2">
+                <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="raid">
                     <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
                     <div id="specialQuestContainer" class="space-y-2"></div>
                 </div>
             </div>
 
             <!-- 퀘스트 항목 관리 -->
+            <div class="inner-pane hidden" data-pane-group="quests" data-pane="gm">
             <div id="gmQuestManagePanel" class="hidden glass-panel p-4 rounded-xl border border-emerald-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-list-check text-emerald-400"></i> 퀘스트 항목 관리</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 퀘스트는 숨김 처리되고, 추가 퀘스트는 삭제됩니다. 이미 학생에게 기록된 과거 퀘스트 이력은 보존됩니다.</p>
@@ -1006,6 +1048,7 @@
                     </select>
                 </div>
                 <button type="button" onclick="window.addCustomQuestAdmin()" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">퀘스트 추가</button>
+            </div>
             </div>
 
         </section>
@@ -1040,6 +1083,28 @@
 
         <!-- ★ 4b. 상점 (경제 서브) ★ -->
         <section id="shopSection" class="hidden space-y-4">
+            <div id="shopSubtabs" class="app-sub-dock cols-5 mb-1">
+                <button type="button" id="shopSub-skin" class="app-sub-item inner-pane-btn is-active" data-pane-group="shop" data-pane="skin" onclick="window.switchShopSub('skin')">
+                    <span class="app-sub-icon"><img src="nav/shop-skin.webp" alt="" width="192" height="192"></span>
+                    <span>스킨상점</span>
+                </button>
+                <button type="button" id="shopSub-item" class="app-sub-item inner-pane-btn" data-pane-group="shop" data-pane="item" onclick="window.switchShopSub('item')">
+                    <span class="app-sub-icon"><img src="nav/nav-shop.webp" alt="" width="192" height="192"></span>
+                    <span>아이템상점</span>
+                </button>
+                <button type="button" id="shopSub-convenience" class="app-sub-item inner-pane-btn" data-pane-group="shop" data-pane="convenience" onclick="window.switchShopSub('convenience')">
+                    <span class="app-sub-icon"><img src="nav/shop-convenience.webp" alt="" width="192" height="192"></span>
+                    <span>편의점</span>
+                </button>
+                <button type="button" id="shopSub-class" class="app-sub-item inner-pane-btn" data-pane-group="shop" data-pane="class" onclick="window.switchShopSub('class')">
+                    <span class="app-sub-icon"><img src="nav/shop-class.webp" alt="" width="192" height="192"></span>
+                    <span>학급 아이템</span>
+                </button>
+                <button type="button" id="shopSub-lotto" class="app-sub-item inner-pane-btn" data-pane-group="shop" data-pane="lotto" onclick="window.switchShopSub('lotto')">
+                    <span class="app-sub-icon"><img src="nav/tool-lottery.webp" alt="" width="192" height="192"></span>
+                    <span>복권상점</span>
+                </button>
+            </div>
             <div id="shopTopActions" class="glass-panel p-3 rounded-2xl border border-cyan-500/35 bg-slate-900/80 space-y-3">
                 <div id="musicTimeQueueBar"></div>
                 <div class="flex flex-wrap gap-2">
@@ -1048,85 +1113,99 @@
                     </button>
                 </div>
             </div>
-            <div class="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
-                <div class="space-y-3" id="shopArea">
-                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-500">
-                        <h3 class="font-bold text-sm text-pink-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
-                        <p class="text-[9px] text-slate-500 mb-2">장착 중인 스킨은 구매가의 50%로 환불할 수 있습니다.</p>
-                        <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 xl:max-h-56 overflow-y-auto scrollbar-hide"></div>
-                    </div>
-                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-sb-gold">
-                        <h3 class="font-bold text-sm text-sb-gold mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
-                        <p class="text-[9px] text-slate-500 mb-2">위쪽은 즉시 사용, 아래는 삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목이에요.</p>
-                        <div id="shopContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
-                        <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
-                        <div id="lottoPanel" class="hidden mt-3 pt-3 border-t border-lime-500/30 text-[9px] text-slate-400"></div>
-                        <div id="worldCupBetPanel" class="hidden mt-3 pt-3 border-t border-red-500/40 text-[9px] text-slate-400"></div>
-                    </div>
+
+            <div class="inner-pane" data-pane-group="shop" data-pane="skin">
+                <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-500">
+                    <h3 class="font-bold text-sm text-pink-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
+                    <p class="text-[9px] text-slate-500 mb-2">장착 중인 스킨은 구매가의 50%로 환불할 수 있습니다.</p>
+                    <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto scrollbar-hide"></div>
                 </div>
+            </div>
 
-                <div class="space-y-3">
-                    <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-orange-400 bg-gradient-to-b from-orange-950/30 to-slate-900/90">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 border-b border-orange-500/30 pb-2">
-                            <div>
-                                <h3 class="font-bold text-sm text-orange-300"><i class="fa-solid fa-store mr-1"></i> 삼봉 편의점</h3>
-                                <p class="text-[9px] text-orange-100/60 mt-1">물품을 장바구니에 담아 수량을 정하고 주문하면 편의점 매니저에게 실시간 주문창이 뜹니다.</p>
-                            </div>
-                            <button type="button" onclick="window.openConvenienceOrderPanel()" class="hidden convenience-manager-only bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-xl text-[10px] border border-orange-500">
-                                <i class="fa-solid fa-clipboard-list"></i> 주문 목록
-                            </button>
+            <div class="inner-pane hidden" data-pane-group="shop" data-pane="item">
+                <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-sb-gold mb-3">
+                    <h3 class="font-bold text-sm text-sb-gold mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-store"></i> 아이템 상점</h3>
+                    <p class="text-[9px] text-slate-500 mb-2">바로 적용되는 아이템입니다.</p>
+                    <div id="shopInstantContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
+                    <div id="shopContainer" class="hidden"></div>
+                </div>
+                <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl border border-pink-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 관리</h3>
+                    <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 화폐(<span data-currency-unit>B</span>) 가격을 수정하고, 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
+                    <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
+                    <div class="mt-3 pt-3 border-t border-slate-700/70">
+                        <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                            <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="number" id="gmCustomShopPrice" min="0" step="1" placeholder="가격(B)" data-currency-placeholder="가격({u})" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                            <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                                <option value="class">학급 활동 예약</option>
+                                <option value="xp">경험치 지급</option>
+                            </select>
+                            <input type="number" id="gmCustomShopXp" min="0" max="50" step="1" placeholder="지급 XP(최대 50)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                         </div>
-                        <div id="convenienceStoreContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
-                        <div id="convenienceOrderMiniPanel" class="hidden mt-3 pt-3 border-t border-orange-500/30"></div>
-                    </div>
-
-                    <!-- 편의점 물품 관리 (마스터 J) -->
-                    <div id="gmConveniencePanel" class="hidden glass-panel p-4 rounded-xl border border-orange-500/50 bg-slate-900/80">
-                        <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-basket-shopping text-orange-300"></i> 편의점 물품 관리</h3>
-                        <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">삼봉 편의점에 표시할 물품명·가격·설명과 배달비를 설정합니다. 학생이 구매하면 주문 목록에 대기 상태로 올라갑니다.</p>
-                        <div class="mb-3 rounded-xl border border-orange-500/30 bg-orange-950/20 p-3">
-                            <label class="block text-[10px] text-orange-200 font-bold mb-1">배달비(<span data-currency-unit>B</span>)</label>
-                            <div class="flex flex-col sm:flex-row gap-2">
-                                <input type="number" id="gmConvenienceDeliveryFee" min="0" step="1" placeholder="예: 1" onblur="window.saveConvenienceDeliveryFeeAdmin({ silent: true })" class="flex-1 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                                <button type="button" onclick="window.saveConvenienceDeliveryFeeAdmin()" class="bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">배달비 저장</button>
-                            </div>
-                            <p class="text-[9px] text-slate-500 mt-1">저장 전에는 기본 배달비 1.0B가 적용됩니다. 값을 입력한 뒤 포커스를 빼면 자동 저장됩니다.</p>
-                        </div>
-                        <div id="gmConvenienceItemList" class="max-h-52 overflow-y-auto scrollbar-hide mb-3 pr-1 text-[10px] space-y-2"></div>
-                        <div class="mt-3 pt-3 border-t border-slate-700/70">
-                            <h4 class="text-[10px] text-orange-200 font-bold mb-2">새 편의점 물품 추가</h4>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                                <input type="text" id="gmConvenienceName" placeholder="물품 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                                <input type="number" id="gmConveniencePrice" min="0" step="1" placeholder="가격(B)" data-currency-placeholder="가격({u})" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                                <input type="text" id="gmConvenienceDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
-                            </div>
-                            <button type="button" onclick="window.addConvenienceItemAdmin()" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">편의점 물품 추가</button>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
+                            <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 아이템 상점 관리 (마스터 J) -->
-            <div id="gmShopPricePanel" class="hidden glass-panel p-4 rounded-xl border border-pink-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tags text-pink-400"></i> 아이템 상점 관리</h3>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">각 항목의 화폐(<span data-currency-unit>B</span>) 가격을 수정하고, 새 상점 아이템을 추가·삭제할 수 있습니다. 기본 아이템은 삭제되지 않습니다.</p>
-                <div id="gmShopPriceInputs" class="max-h-64 overflow-y-auto scrollbar-hide mb-3 pr-1"></div>
-                <div class="mt-3 pt-3 border-t border-slate-700/70">
-                    <h4 class="text-[10px] text-pink-200 font-bold mb-2">새 아이템 추가</h4>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                        <input type="text" id="gmCustomShopName" placeholder="아이템 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <input type="number" id="gmCustomShopPrice" min="0" step="1" placeholder="가격(B)" data-currency-placeholder="가격({u})" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <input type="text" id="gmCustomShopDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
-                        <select id="gmCustomShopType" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
-                            <option value="class">학급 활동 예약</option>
-                            <option value="xp">경험치 지급</option>
-                        </select>
-                        <input type="number" id="gmCustomShopXp" min="0" max="50" step="1" placeholder="지급 XP(최대 50)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+            <div class="inner-pane hidden" data-pane-group="shop" data-pane="convenience">
+                <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-orange-400 bg-gradient-to-b from-orange-950/30 to-slate-900/90 mb-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 border-b border-orange-500/30 pb-2">
+                        <div>
+                            <h3 class="font-bold text-sm text-orange-300"><i class="fa-solid fa-store mr-1"></i> 삼봉 편의점</h3>
+                            <p class="text-[9px] text-orange-100/60 mt-1">물품을 장바구니에 담아 수량을 정하고 주문하면 편의점 매니저에게 실시간 주문창이 뜹니다.</p>
+                        </div>
+                        <button type="button" onclick="window.openConvenienceOrderPanel()" class="hidden convenience-manager-only bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-xl text-[10px] border border-orange-500">
+                            <i class="fa-solid fa-clipboard-list"></i> 주문 목록
+                        </button>
                     </div>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <button type="button" onclick="window.saveShopPricesAdmin()" class="flex-1 bg-pink-600 hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-xl text-[10px]">가격 저장</button>
-                        <button type="button" onclick="window.addCustomShopItemAdmin()" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">아이템 추가</button>
+                    <div id="convenienceStoreContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+                    <div id="convenienceOrderMiniPanel" class="hidden mt-3 pt-3 border-t border-orange-500/30"></div>
+                </div>
+                <div id="gmConveniencePanel" class="hidden glass-panel p-4 rounded-xl border border-orange-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-basket-shopping text-orange-300"></i> 편의점 물품 관리</h3>
+                    <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">삼봉 편의점에 표시할 물품명·가격·설명과 배달비를 설정합니다. 학생이 구매하면 주문 목록에 대기 상태로 올라갑니다.</p>
+                    <div class="mb-3 rounded-xl border border-orange-500/30 bg-orange-950/20 p-3">
+                        <label class="block text-[10px] text-orange-200 font-bold mb-1">배달비(<span data-currency-unit>B</span>)</label>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="number" id="gmConvenienceDeliveryFee" min="0" step="1" placeholder="예: 1" onblur="window.saveConvenienceDeliveryFeeAdmin({ silent: true })" class="flex-1 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <button type="button" onclick="window.saveConvenienceDeliveryFeeAdmin()" class="bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">배달비 저장</button>
+                        </div>
+                        <p class="text-[9px] text-slate-500 mt-1">저장 전에는 기본 배달비 1.0B가 적용됩니다. 값을 입력한 뒤 포커스를 빼면 자동 저장됩니다.</p>
                     </div>
+                    <div id="gmConvenienceItemList" class="max-h-52 overflow-y-auto scrollbar-hide mb-3 pr-1 text-[10px] space-y-2"></div>
+                    <div class="mt-3 pt-3 border-t border-slate-700/70">
+                        <h4 class="text-[10px] text-orange-200 font-bold mb-2">새 편의점 물품 추가</h4>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                            <input type="text" id="gmConvenienceName" placeholder="물품 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="number" id="gmConveniencePrice" min="0" step="1" placeholder="가격(B)" data-currency-placeholder="가격({u})" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            <input type="text" id="gmConvenienceDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
+                        </div>
+                        <button type="button" onclick="window.addConvenienceItemAdmin()" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">편의점 물품 추가</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="inner-pane hidden" data-pane-group="shop" data-pane="class">
+                <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-400">
+                    <h3 class="font-bold text-sm text-pink-300 mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-school"></i> 학급 아이템</h3>
+                    <p class="text-[9px] text-slate-500 mb-2">삼봉을 내고 학급 활동을 &quot;구매 예약&quot;하는 항목입니다. 선생님과 일정을 조율하세요.</p>
+                    <div id="shopClassContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
+                    <div id="classPurchaseLog" class="hidden mt-3 pt-3 border-t border-slate-700/80 text-[9px] text-slate-400 space-y-1"></div>
+                </div>
+            </div>
+
+            <div class="inner-pane hidden" data-pane-group="shop" data-pane="lotto">
+                <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-lime-400 space-y-3">
+                    <h3 class="font-bold text-sm text-lime-300 mb-1 border-b border-slate-700 pb-2"><i class="fa-solid fa-ticket"></i> 복권상점</h3>
+                    <div id="shopLottoItemContainer" class="grid grid-cols-1 xl:grid-cols-2 gap-2"></div>
+                    <div id="lottoPanel" class="hidden mt-3 pt-3 border-t border-lime-500/30 text-[9px] text-slate-400"></div>
+                    <div id="worldCupBetPanel" class="hidden mt-3 pt-3 border-t border-red-500/40 text-[9px] text-slate-400"></div>
                 </div>
             </div>
         </section>
@@ -1137,7 +1216,20 @@
                 <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 직업 목록</h2>
                 <p class="text-[10px] sm:text-xs text-slate-400 mt-1">매주 금요일 오후 3시 이후, 누군가 앱에 접속하면 직업 합산 주급이 자동 지급돼요. 카드를 눌러 직업을 선택하세요.</p>
             </div>
+            <div class="app-sub-dock cols-3 mb-3">
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="jobs" data-pane="list" onclick="window.switchInnerPane('jobs','list')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-briefcase"></i></span>
+                    <span>목록</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="jobs" data-pane="gm" onclick="window.switchInnerPane('jobs','gm')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-pen-to-square"></i></span>
+                    <span>GM 관리</span>
+                </button>
+            </div>
+            <div class="inner-pane" data-pane-group="jobs" data-pane="list">
             <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3"></div>
+            </div>
+            <div class="inner-pane hidden" data-pane-group="jobs" data-pane="gm">
             <div id="gmJobManagePanel" class="hidden glass-panel p-4 rounded-xl mt-4 border border-blue-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-briefcase text-blue-300"></i> 직업 항목 관리</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 직업은 숨김/복구 또는 수정할 수 있고, 추가 직업은 삭제할 수 있습니다. 이미 선택한 학생의 직업 기록은 그대로 유지됩니다.</p>
@@ -1164,6 +1256,7 @@
                     <button type="button" onclick="window.clearJobAdminForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-4 rounded-xl text-[10px]">입력칸 비우기</button>
                 </div>
             </div>
+            </div>
         </section>
 
         <!-- ★ 5. 밥줄(점심) 탭 ★ -->
@@ -1173,9 +1266,19 @@
                     <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
                     <p class="text-[9px] sm:text-[10px] text-slate-300 mt-0.5">평일 낮 12시 이후 점심값(10<span data-currency-unit>B</span>)이 자동 차감됩니다. 투자액이 많을수록 먼저 먹고, 동점이면 레벨(XP)이 높은 사람이 이깁니다.</p>
                     <p id="lunchInvestLockHint" class="hidden text-[9px] text-red-400 font-bold mt-1" data-currency-label="보유 {u}이(가) 10{u} 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
+                    <div class="app-sub-dock cols-3 mt-3">
+                        <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="lunch" data-pane="invest" onclick="window.switchInnerPane('lunch','invest')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-coins"></i></span>
+                            <span>투자</span>
+                        </button>
+                        <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="lunch" data-pane="rank" onclick="window.switchInnerPane('lunch','rank')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-ranking-star"></i></span>
+                            <span>순위</span>
+                        </button>
+                    </div>
                 </div>
                 
-                <div class="glass-panel p-3 rounded-2xl border border-orange-500/30">
+                <div class="inner-pane glass-panel p-3 rounded-2xl border border-orange-500/30" data-pane-group="lunch" data-pane="invest">
                     <h3 class="font-bold text-xs text-white mb-2">식권 투자하기</h3>
                     <div class="flex gap-2">
                         <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" data-currency-placeholder="추가 투자할 {u} 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
@@ -1184,11 +1287,13 @@
                 </div>
 
                 <!-- 12시 10분 전까지 학생들에게는 이 영역이 숨겨집니다 -->
+                <div class="inner-pane hidden lg:col-span-2" data-pane-group="lunch" data-pane="rank">
                 <div id="lunchQueueWrapper" class="glass-panel p-3 sm:p-4 rounded-2xl hidden shadow-xl border-t-4 border-t-orange-500">
                     <h3 class="font-bold text-xs sm:text-sm text-white mb-2"><i class="fa-solid fa-ranking-star text-orange-400"></i> 오늘의 급식 순위 <span class="text-[9px] text-slate-400 font-normal">(12시 10분 공개)</span></h3>
                     <div id="lunchQueueContainer" class="space-y-1.5">
                         <div class="text-slate-500 text-xs p-2">데이터 로딩 중...</div>
                     </div>
+                </div>
                 </div>
             </div>
         </section>
@@ -1348,14 +1453,32 @@
                 <div class="mb-2 lg:col-span-3">
                     <h2 class="text-xl sm:text-2xl font-display text-sky-400"><i class="fa-solid fa-building-columns"></i> 삼봉 은행</h2>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">일반예금은 이자 없음 · 일반예금+적금 원금 합 100 <span data-currency-unit>B</span> 이상이면 마지막 지급일 기준 3일마다 1 <span data-currency-unit>B</span>. 적금은 30일 보물상자 잠금 후 만기 이자(반올림) 지급.</p>
+                    <div class="app-sub-dock cols-4 mt-3">
+                        <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="bank" data-pane="summary" onclick="window.switchInnerPane('bank','summary')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-wallet"></i></span>
+                            <span>잔액</span>
+                        </button>
+                        <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="bank" data-pane="regular" onclick="window.switchInnerPane('bank','regular')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-piggy-bank"></i></span>
+                            <span>일반예금</span>
+                        </button>
+                        <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="bank" data-pane="term" onclick="window.switchInnerPane('bank','term')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-box-open"></i></span>
+                            <span>적금</span>
+                        </button>
+                        <button type="button" class="app-sub-item inner-pane-btn inner-pane-admin hidden" data-pane-group="bank" data-pane="admin" onclick="window.switchInnerPane('bank','admin')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-percent"></i></span>
+                            <span>관리</span>
+                        </button>
+                    </div>
                 </div>
-                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-sky-500/40 space-y-2">
+                <div class="inner-pane glass-panel p-4 sm:p-5 rounded-2xl border border-sky-500/40 space-y-2 lg:col-span-3" data-pane-group="bank" data-pane="summary">
                     <div class="flex justify-between text-sm"><span class="text-slate-400">지갑(<span data-currency-unit>B</span>)</span><span id="bankWalletDisplay" class="font-bold text-sb-gold">0</span></div>
                     <div class="flex justify-between text-sm"><span class="text-slate-400">일반예금 잔액</span><span id="bankRegularDisplay" class="font-bold text-sky-300">0</span></div>
                     <div class="flex justify-between text-xs border-t border-slate-700 pt-2"><span class="text-slate-500">적금 만기 이자율 (마스터 설정)</span><span class="text-slate-300"><span id="bankRateDisplay">0</span>%</span></div>
                     <p id="bankDailyBonusLine" class="text-[9px] sm:text-[10px] text-emerald-300/90 leading-snug border-t border-slate-700/80 pt-2"></p>
                 </div>
-                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3">
+                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="regular">
                     <h3 class="text-sky-200 font-bold text-sm"><i class="fa-solid fa-piggy-bank"></i> 일반예금</h3>
                     <p class="text-[9px] text-slate-500">이자 없음. 입·출금 자유.</p>
                     <div class="flex gap-2 flex-wrap items-center">
@@ -1368,7 +1491,7 @@
                         <button type="button" onclick="window.withdrawBankAll()" class="bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold py-2 px-3 rounded-xl text-[10px] shrink-0 border border-slate-500">전액 출금</button>
                     </div>
                 </div>
-                <div class="glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/40 space-y-3">
+                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="term">
                     <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-box-open"></i> 적금 (보물상자)</h3>
                     <p class="text-[9px] text-slate-500">건당 30일 잠금 · 만기 시 이자 지급 · 중도 해지는 원금만</p>
                     <div id="bankTermDepositsList" class="min-h-[2rem]"></div>
@@ -1379,6 +1502,7 @@
                 </div>
 
                 <!-- 은행 관리 (마스터 J) -->
+                <div class="inner-pane hidden lg:col-span-3 space-y-3" data-pane-group="bank" data-pane="admin">
                 <div id="bankInterestAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-sky-500/50 bg-slate-900/80">
                     <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 적금 만기 이자율 (%)</h3>
                     <p class="text-[9px] text-slate-400 mb-2">적금 보물상자가 30일 만기될 때, 원금에 대해 이 비율(%)만큼 이자가 반올림되어 지급됩니다. 이율 변경 시 이후 만기분부터 변경된 비율이 적용됩니다.</p>
@@ -1392,6 +1516,7 @@
                     <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-vault text-cyan-300"></i> 학생 통장 잔고</h3>
                     <p class="text-[9px] text-slate-400 mb-2">지갑, 일반예금, 적금 원금 합계를 한 번에 확인합니다.</p>
                     <div id="bankAdminBalancesList" class="max-h-72 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 text-[10px]"></div>
+                </div>
                 </div>
             </div>
         </section>
@@ -1439,6 +1564,7 @@
                 </button>
             </div>
 
+            <div id="classtoolPanesHome">
             <!-- 주간 시간표 -->
             <div id="classTimetablePanel" class="classtool-pane hidden glass-panel p-4 rounded-xl mb-4 border border-violet-500/50 bg-slate-900/80" data-tool="timetable" data-student="1">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -1716,6 +1842,7 @@
                     </div>
                 </div>
             </div>
+            </div>
         </section>
 
         <!-- ★ 8. 마스터 관리자 탭 ★ -->
@@ -1726,19 +1853,62 @@
                 </div>
             </div>
 
+            <div class="app-sub-dock cols-9 mb-3">
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="admin" data-pane="roster" onclick="window.switchInnerPane('admin','roster')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-users"></i></span>
+                    <span>명단</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="admin" data-pane="finance" onclick="window.switchInnerPane('admin','finance')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-building-columns"></i></span>
+                    <span>금융·XP</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="admin" data-pane="quests" onclick="window.switchInnerPane('admin','quests')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-table-cells"></i></span>
+                    <span>퀘스트</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="admin" data-pane="stats" onclick="window.switchInnerPane('admin','stats')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-chart-line"></i></span>
+                    <span>통계</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="admin" data-pane="export" onclick="window.switchInnerPane('admin','export')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-file-excel"></i></span>
+                    <span>내보내기</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="admin" data-pane="notice" onclick="window.switchInnerPane('admin','notice')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-bullhorn"></i></span>
+                    <span>공지</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="admin" data-pane="dragon" onclick="window.switchInnerPane('admin','dragon')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-dragon"></i></span>
+                    <span>드래곤볼</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="admin" data-pane="students" onclick="window.switchInnerPane('admin','students')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-table"></i></span>
+                    <span>학생표</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="admin" data-pane="reset" onclick="window.switchInnerPane('admin','reset')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                    <span>초기화</span>
+                </button>
+            </div>
             <!-- 학급·명단 관리 (담임 전용) -->
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="roster">
             <div id="classAdminSection" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-users text-emerald-400"></i> 학급·명단 관리</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">학생 명단은 Firestore에 저장됩니다. 내년에는 <strong class="text-emerald-200">새 학급 만들기</strong>로 데이터를 분리하고, 다른 선생님은 초대 코드로 접속할 수 있습니다.</p>
                 <div id="classAdminPanel" class="text-[10px] text-slate-400">마스터로 로그인하면 편집할 수 있습니다.</div>
             </div>
+            </div>
 
             <!-- ★ 삼봉 금융감독 시스템 (마스터 J) ★ -->
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="finance">
             <div id="bongAnomalyPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-amber-500/50 bg-slate-900/80"></div>
             <!-- ★ 경험치 감시 시스템 (마스터 J) ★ -->
             <div id="xpAnomalyPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-sky-500/50 bg-slate-900/80"></div>
+            </div>
 
             <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->
+            <div class="inner-pane" data-pane-group="admin" data-pane="quests">
             <div class="glass-panel p-2 sm:p-3 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
                     <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
@@ -1749,8 +1919,10 @@
                     <div class="text-slate-500 text-[9px] text-center py-6"><i class="fa-solid fa-spinner fa-spin mr-1"></i>데이터 로딩 중…</div>
                 </div>
             </div>
+            </div>
 
             <!-- ★ 활용 통계 대시보드 ★ -->
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="stats">
             <div class="glass-panel p-4 rounded-xl mb-4 border border-fuchsia-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chart-line text-fuchsia-400"></i> 활용 통계</h3>
@@ -1770,8 +1942,10 @@
                     <button type="button" onclick="void window.downloadResearchStatsJson()" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg border border-slate-500">JSON 저장</button>
                 </div>
             </div>
+            </div>
 
             <!-- ★ 학생 데이터 엑셀 내보내기 ★ -->
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="export">
             <div class="glass-panel p-4 rounded-xl mb-4 border border-lime-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
                     <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-file-excel text-lime-400"></i> 학생 데이터 내보내기</h3>
@@ -1796,10 +1970,13 @@
                     </button>
                 </div>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="notice">
             <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> 전체 공지사항</h3>
                 <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
+            </div>
             </div>
 
             <!-- 주간 시간표는 수업도구 탭으로 이동 -->
@@ -1807,6 +1984,7 @@
             <!-- (비상계엄·아침활동 안내 패널은 「수업도구」 탭으로 이동했습니다) -->
 
             <!-- 드래곤볼 보관함 복구 (마스터 J) — 버그 등으로 비워진 경우 Firestore에 성구·주말 키 복구 -->
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="dragon">
             <div id="dragonBallRecoveryPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-amber-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-dragon text-amber-400"></i> 드래곤볼 보관함 복구</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">보관함이 비워진 학생에게 복구할 성구(1~7)를 지정합니다. Firestore에 저장되며 주말 키도 맞춰 두어 다시 잘못 초기화되지 않게 합니다. 학번·성구는 쉼표로 여러 개 입력할 수 있습니다.</p>
@@ -1820,7 +1998,9 @@
                 </div>
                 <button type="button" onclick="window.restoreDragonBallsAdmin()" class="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-4 rounded text-[10px] w-full sm:w-auto">보관함 복구 저장</button>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="students">
             <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">XP·삼봉 숫자를 눌러 직접 수정할 수 있습니다. 비정상 <strong class="text-sb-blue">XP 상승</strong>은 마스터 탭에서 낮추거나 -5X로 조정하세요. 학생 저장은 1회 +650 XP까지만 반영됩니다.</p>
             <div class="glass-panel p-2 sm:p-4 rounded-xl overflow-x-auto border border-sb-red/30 scrollbar-hide">
                 <table class="w-full text-left text-[10px] sm:text-xs text-slate-300 min-w-[600px]">
@@ -1838,8 +2018,10 @@
                     <button onclick="window.resetRaids()" class="bg-red-600 hover:bg-red-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">레이드초기화</button>
                 </div>
             </div>
+            </div>
 
             <!-- ★ 완전 초기화 (맨 아래·위험) ★ -->
+            <div class="inner-pane hidden" data-pane-group="admin" data-pane="reset">
             <div id="gmResetPanel" class="hidden bg-red-900/30 border border-red-500/50 p-4 rounded-xl mt-8 mb-2 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
                 <h3 class="text-red-400 font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation"></i> 이 학급만 초기화 (위험)</h3>
                 <p class="text-[10px] text-slate-300 mb-2 leading-relaxed">현재 접속 중인 <strong class="text-red-200">이 학급</strong> 학생 데이터만 초기화합니다. 다른 학급·전체 서버는 건드리지 않습니다. (개별 백업은 자동 저장)</p>
@@ -1849,6 +2031,7 @@
                     <li>3단계: 최종 실행 확인</li>
                 </ul>
                 <button onclick="void window.hardResetAll()" class="w-full sm:w-auto bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-6 rounded-lg shadow-lg text-xs transition">이 학급 초기화 (3단계 확인)</button>
+            </div>
             </div>
         </section>
 
@@ -1861,7 +2044,39 @@
 
             <div id="settingsStatus" class="text-[10px] text-violet-300/90 font-bold min-h-[1rem]">—</div>
 
+            <div class="app-sub-dock cols-7 mb-3">
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="settings" data-pane="world" onclick="window.switchInnerPane('settings','world')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-globe"></i></span>
+                    <span>월드</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="season" onclick="window.switchInnerPane('settings','season')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-calendar-week"></i></span>
+                    <span>시즌</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="academic" onclick="window.switchInnerPane('settings','academic')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span>학사</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="vacation" onclick="window.switchInnerPane('settings','vacation')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-umbrella-beach"></i></span>
+                    <span>방학</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="class" onclick="window.switchInnerPane('settings','class')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-school"></i></span>
+                    <span>학급</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="curriculum" onclick="window.switchInnerPane('settings','curriculum')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-sitemap"></i></span>
+                    <span>교육과정</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="ops" onclick="window.switchInnerPane('settings','ops')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-screwdriver-wrench"></i></span>
+                    <span>운영</span>
+                </button>
+            </div>
+
             <!-- 1. 월드 기본 -->
+            <div class="inner-pane" data-pane-group="settings" data-pane="world">
             <div class="glass-panel p-4 rounded-2xl border border-violet-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-globe text-violet-400"></i> 1. 월드 기본</h3>
                 <div class="grid sm:grid-cols-2 gap-3">
@@ -1886,8 +2101,10 @@
                     <p class="text-[9px] text-slate-500 sm:col-span-1 self-end pb-1 leading-relaxed">금액 뒤에 붙는 단위입니다. 예: <span class="text-sb-gold font-bold">10B</span>, <span class="text-sb-gold font-bold">10미소</span>, <span class="text-sb-gold font-bold">10감자</span></p>
                 </div>
             </div>
+            </div>
 
             <!-- 2. 시즌 -->
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="season">
             <div class="glass-panel p-4 rounded-2xl border border-cyan-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week text-cyan-400"></i> 2. 시즌</h3>
                 <div class="grid sm:grid-cols-2 gap-3">
@@ -1927,8 +2144,10 @@
                     </div>
                 </div>
             </div>
+            </div>
 
             <!-- 3. 학사 -->
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="academic">
             <div class="glass-panel p-4 rounded-2xl border border-emerald-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-graduation-cap text-emerald-400"></i> 3. 학사 일정</h3>
                 <div class="grid sm:grid-cols-2 gap-3">
@@ -1946,8 +2165,10 @@
                     </label>
                 </div>
             </div>
+            </div>
 
             <!-- 4. 방학 -->
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="vacation">
             <div class="glass-panel p-4 rounded-2xl border border-sky-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-umbrella-beach text-sky-400"></i> 4. 방학</h3>
                 <p class="text-[9px] text-slate-500 leading-relaxed">방학 기간에는 아래 선택한 자동 지급·차감이 멈춥니다. (시작일·종료일 포함)</p>
@@ -1992,8 +2213,10 @@
                     </label>
                 </div>
             </div>
+            </div>
 
             <!-- 5. 학급 -->
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="class">
             <div id="settingsClassPanel" class="glass-panel p-4 rounded-2xl border border-amber-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-school text-amber-400"></i> 5. 학급 정보</h3>
                 <p class="text-[9px] text-slate-500">학급 ID·명단 상세는 마스터 탭 「학급·명단 관리」에서도 다룰 수 있습니다.</p>
@@ -2032,15 +2255,19 @@
                     <button type="button" onclick="void window.applyDefaultClassTemplates()" class="w-full min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold rounded-xl">기본 템플릿 적용</button>
                 </div>
             </div>
+            </div>
 
             <!-- 5-b. 교육과정 매핑 -->
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="curriculum">
             <div class="glass-panel p-4 rounded-2xl border border-lime-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-sitemap text-lime-400"></i> 교육과정 매핑</h3>
                 <p class="text-[9px] text-slate-500">기능 ↔ 역량/성취기준 연결표입니다. 연구·타당성 증빙에 활용하세요.</p>
                 <div id="curriculumMappingPanel" class="text-[10px] text-slate-400">설정을 열면 불러옵니다.</div>
             </div>
+            </div>
 
             <!-- 6. 운영 기본값 -->
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="ops">
             <div class="glass-panel p-4 rounded-2xl border border-pink-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-screwdriver-wrench text-pink-400"></i> 6. 운영 기본값</h3>
                 <div class="grid sm:grid-cols-2 gap-3">
@@ -2064,6 +2291,7 @@
                     </label>
                 </div>
             </div>
+            </div>
 
             <div class="sticky bottom-2 z-10 flex flex-col sm:flex-row gap-2">
                 <button type="button" onclick="window.saveWorldSettingsFromPanel()" class="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-3 px-4 rounded-xl text-sm border border-violet-300/40 shadow-lg">
@@ -2082,6 +2310,38 @@
                 <p class="text-[10px] text-slate-400 mt-1">시작 가이드 · 학생 이용 · 차별화 · FAQ · 개인정보 · 출처 <span data-app-version class="text-slate-500">v1.2</span></p>
             </div>
 
+            <div class="app-sub-dock cols-7 mb-3">
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="help" data-pane="guide" onclick="window.switchInnerPane('help','guide')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-chalkboard-user"></i></span>
+                    <span>시작</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="help" data-pane="student" onclick="window.switchInnerPane('help','student')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span>학생</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="help" data-pane="diff" onclick="window.switchInnerPane('help','diff')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-star"></i></span>
+                    <span>차별화</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="help" data-pane="scale" onclick="window.switchInnerPane('help','scale')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-sitemap"></i></span>
+                    <span>다교실</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="help" data-pane="faq" onclick="window.switchInnerPane('help','faq')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-comments"></i></span>
+                    <span>FAQ</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="help" data-pane="privacy" onclick="window.switchInnerPane('help','privacy')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-shield-halved"></i></span>
+                    <span>개인정보</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="help" data-pane="license" onclick="window.switchInnerPane('help','license')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-copyright"></i></span>
+                    <span>출처</span>
+                </button>
+            </div>
+
+            <div class="inner-pane" data-pane-group="help" data-pane="guide">
             <div class="glass-panel p-4 rounded-2xl border border-sky-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chalkboard-user text-sky-400"></i> 선생님 시작 가이드 (5단계)</h3>
                 <ol class="text-[11px] text-slate-300 leading-relaxed list-decimal pl-4 space-y-1.5">
@@ -2093,7 +2353,9 @@
                 </ol>
                 <button type="button" onclick="void window.applyDefaultClassTemplates()" class="mt-2 w-full sm:w-auto min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">기본 템플릿 적용</button>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="help" data-pane="student">
             <div class="glass-panel p-4 rounded-2xl border border-cyan-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-graduation-cap text-cyan-400"></i> 학생 이용 방법</h3>
                 <ol class="text-[11px] text-slate-300 leading-relaxed list-decimal pl-4 space-y-1.5">
@@ -2103,12 +2365,16 @@
                     <li>퀘스트·경제(상점·은행·부동산)·직업·도전 등 탭에서 활동</li>
                 </ol>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="help" data-pane="diff">
             <div class="glass-panel p-4 rounded-2xl border border-cyan-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-star text-cyan-400"></i> ClassDojo와 다른 점</h3>
                 <p class="text-[11px] text-slate-300 leading-relaxed">MATE는 단순 행동 점수 앱이 아닙니다. <strong class="text-cyan-200">학급 경제(봉)·직업·헌법·도전(골든벨·퀴즈·레이드)·시즌</strong>이 한 메타버스로 연결되어, 교실을 ‘살아있는 사회 시뮬레이션’으로 운영합니다. 학급마다 데이터가 완전히 분리됩니다.</p>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="help" data-pane="scale">
             <div class="glass-panel p-4 rounded-2xl border border-emerald-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-sitemap text-emerald-400"></i> 다교실·1000학급 구조</h3>
                 <ul class="text-[11px] text-slate-300 leading-relaxed list-disc pl-4 space-y-1.5">
@@ -2119,7 +2385,9 @@
                     <li>대규모 운영 시 Firebase <strong class="text-amber-200">Blaze + 예산 알림</strong> 권장</li>
                 </ul>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="help" data-pane="faq">
             <div class="glass-panel p-4 rounded-2xl border border-violet-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-comments text-violet-400"></i> 자주 묻는 질문</h3>
                 <ul class="text-[11px] text-slate-300 leading-relaxed space-y-2">
@@ -2130,13 +2398,17 @@
                     <li><strong class="text-white">Q. 레이드 비밀번호는?</strong> A. 마스터 설정에서 직접 설정합니다. 기본 1234는 사용하지 않습니다.</li>
                 </ul>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="help" data-pane="privacy">
             <div class="glass-panel p-4 rounded-2xl border border-amber-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-amber-400"></i> 개인정보 처리방침</h3>
                 <p class="text-[11px] text-slate-300 leading-relaxed">학번·이름·게임 진행 데이터는 수업 운영 목적으로만 사용됩니다. 수집·이용·보관·제3자 미제공·열람·삭제 요청 방법은 방침에서 확인하세요.</p>
                 <button type="button" onclick="window.openPrivacyPolicyModal()" class="min-h-[44px] bg-amber-700 hover:bg-amber-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">개인정보 처리방침 보기</button>
             </div>
+            </div>
 
+            <div class="inner-pane hidden" data-pane-group="help" data-pane="license">
             <div class="glass-panel p-4 rounded-2xl border border-slate-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-copyright text-slate-300"></i> 출처 및 라이선스</h3>
                 <ul class="text-[10px] text-slate-400 leading-relaxed list-disc pl-4 space-y-1">
@@ -2145,6 +2417,7 @@
                     <li>아이콘: Font Awesome 6 (CDN, Font Awesome Free)</li>
                     <li>백엔드: Google Firebase (Firestore 등)</li>
                 </ul>
+            </div>
             </div>
         </section>
         
@@ -2175,6 +2448,18 @@
                 <p><strong class="text-white">6. 문의</strong> — 학급 담임(마스터)에게 문의하세요.</p>
             </div>
         </div>
+    </div>
+
+
+    <!-- 수업도구 전체화면 실행 -->
+    <div id="classtoolFullscreen" class="hidden fixed inset-0 z-[260] classtool-fs flex flex-col">
+        <div class="classtool-fs-bar">
+            <button type="button" onclick="window.closeClassToolFullscreen()" class="min-h-[44px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-black border border-slate-600">
+                <i class="fa-solid fa-chevron-left mr-1"></i>뒤로
+            </button>
+            <span id="classtoolFullscreenTitle" class="text-sm font-black text-lime-200">수업도구</span>
+        </div>
+        <div id="classtoolFullscreenBody" class="classtool-fs-body"></div>
     </div>
 
     <!-- ★ 판서 모드(전자칠판) 오버레이 — 마스터 전용 ★

@@ -592,10 +592,11 @@
         /* 광장 마스터·해적두목 무대 — 학생 카드보다 크게·화려하게 */
         .plaza-staff-row {
             display: none;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.75rem;
-            margin-bottom: 0.85rem;
-            padding: 0.65rem 0.5rem 0.85rem;
+            grid-template-columns: repeat(2, minmax(0, 9.5rem));
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 0.65rem;
+            padding: 0.4rem 0.35rem 0.5rem;
             border-radius: 1.1rem;
             background:
                 radial-gradient(ellipse 55% 80% at 18% 40%, rgba(251, 191, 36, 0.18), transparent 55%),
@@ -607,7 +608,7 @@
             display: grid;
         }
         .plaza-staff-row:has(> :only-child) {
-            grid-template-columns: minmax(0, 18rem);
+            grid-template-columns: minmax(0, 9.5rem);
             justify-content: center;
         }
         @media (max-width: 479px) {
@@ -620,8 +621,8 @@
             flex-direction: column;
             align-items: center;
             min-width: 0;
-            padding: 1rem 0.75rem 0.85rem !important;
-            border-radius: 1.15rem !important;
+            padding: 0.55rem 0.4rem 0.5rem !important;
+            border-radius: 0.9rem !important;
             border-width: 2px !important;
             isolation: isolate;
         }
@@ -666,17 +667,18 @@
                 0 10px 24px rgba(0, 0, 0, 0.45) !important;
             animation: plaza-staff-pulse-cyan 2.4s ease-in-out infinite alternate;
         }
+        /* 마스터 얼굴 ≈ 학생 카드(작게 1.35rem)의 약 2배 */
         .plaza-staff-face-wrap {
             position: relative;
-            width: 5.5rem;
-            height: 5.5rem;
-            margin-bottom: 0.65rem;
+            width: 3.15rem;
+            height: 3.15rem;
+            margin-bottom: 0.35rem;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         @media (min-width: 640px) {
-            .plaza-staff-face-wrap { width: 7rem; height: 7rem; margin-bottom: 0.75rem; }
+            .plaza-staff-face-wrap { width: 3.5rem; height: 3.5rem; margin-bottom: 0.4rem; }
         }
         .plaza-staff-ring {
             position: absolute;
@@ -695,14 +697,14 @@
             box-shadow: 0 0 18px rgba(34, 211, 238, 0.55), inset 0 0 14px rgba(34, 211, 238, 0.2);
         }
         .plaza-staff-face {
-            font-size: 3.4rem !important;
+            font-size: 2.7rem !important;
             line-height: 1;
-            filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.35));
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3));
             animation: plaza-staff-float 2.8s ease-in-out infinite;
             margin-bottom: 0 !important;
         }
         @media (min-width: 640px) {
-            .plaza-staff-face { font-size: 4.5rem !important; }
+            .plaza-staff-face { font-size: 2.7rem !important; }
         }
         .plaza-staff-badge {
             position: absolute;
@@ -1671,12 +1673,37 @@
         .rank-badge-plaza { width: 1.15rem; height: 1.15rem; }
         .rank-badge-emoji { display: inline-flex; align-items: center; justify-content: center; font-size: 1.1em; }
 
-        /* 하단 앱 아이콘 독 */
+        /* 앱 아이콘 독: 모바일 하단, 웹(768px+) 상단 */
         .app-nav-dock {
             display: grid;
             grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 0.15rem 0.2rem;
             padding: 0.4rem 0.4rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+        }
+        @media (min-width: 768px) {
+            #appNavDock {
+                top: 3.5rem;
+                bottom: auto;
+                border-top: 0;
+                border-bottom: 1px solid rgba(51, 65, 85, 0.7);
+                background: rgba(2, 6, 23, 0.96);
+            }
+            .app-nav-dock {
+                grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr));
+                max-width: 72rem;
+                padding: 0.35rem 0.5rem 0.4rem;
+            }
+            .app-nav-item.is-active {
+                transform: translateY(2px);
+            }
+            #swipeWrapper {
+                padding-top: 9.25rem !important;
+                padding-bottom: 2.25rem !important;
+            }
+            #appVersionCorner {
+                bottom: auto;
+                top: 8.65rem;
+            }
         }
         .app-nav-item {
             display: flex;
@@ -1743,6 +1770,34 @@
         #challengeSubtabs.app-sub-dock {
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
+        #shopSubtabs.app-sub-dock,
+        .app-sub-dock.cols-5 {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+        .app-sub-dock.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .app-sub-dock.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .app-sub-dock.cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .app-sub-dock.cols-7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .app-sub-dock.cols-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .app-sub-dock.cols-9 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        @media (min-width: 640px) {
+            .app-sub-dock.cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+            .app-sub-dock.cols-7 { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+            .app-sub-dock.cols-8 { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+            .app-sub-dock.cols-9 { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+        }
+        .app-sub-fa {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 0.85rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            background: #0f172a;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+        }
+        .inner-pane.hidden { display: none !important; }
         .app-sub-item {
             display: flex;
             flex-direction: column;
@@ -1812,6 +1867,26 @@
         }
         .app-tool-item.hidden { display: none !important; }
         .classtool-pane.hidden { display: none !important; }
+
+        /* 수업도구 전체화면 실행 */
+        body.classtool-fs-open { overflow: hidden; }
+        .classtool-fs-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-top, 0px));
+            border-bottom: 1px solid rgba(51, 65, 85, 0.8);
+            background: rgba(15, 23, 42, 0.95);
+        }
+        .classtool-fs-body {
+            flex: 1;
+            overflow: auto;
+            padding: 0.75rem 0.75rem calc(1rem + env(safe-area-inset-bottom, 0px));
+        }
+        .classtool-fs-body > .classtool-pane {
+            margin: 0 auto;
+            max-width: 80rem;
+        }
 
         @keyframes bounce-subtle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
         @keyframes flex-muscle { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1) rotate(5deg); } }

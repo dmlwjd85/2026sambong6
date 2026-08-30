@@ -97,6 +97,7 @@ import {
     weaponDropMultiplier,
     worldSettingsForSeason2,
 } from './lib/season2.js';
+import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -614,7 +615,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.6';
+        const APP_VERSION = 'v1.7';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -12152,7 +12153,7 @@ ${subjectLine}
             const container = document.getElementById('plazaContainer');
             if (container) {
                 container.classList.remove('plaza-cards-lg', 'plaza-cards-md', 'plaza-cards-sm');
-                container.classList.add('plaza-cards', `plaza-cards-${plazaCardSize}`);
+                container.classList.add('plaza-cards', `plaza-cards-${plazaCardSize}`, 'plaza-cards-seating');
             }
             ['lg', 'md', 'sm'].forEach((s) => {
                 const btn = document.getElementById('plazaSize-' + s);
@@ -12164,10 +12165,13 @@ ${subjectLine}
             });
         }
 
-        /** 광장 학생 카드 크기: lg(크게) / md(중간) / sm(작게). 휴대폰에서는 한 줄 2명으로 자동 조정됩니다. */
+        /** 광장 학생 카드 크기: lg(크게) / md(중간) / sm(작게). 열 수는 부동산 자리표를 따릅니다. */
         window.setPlazaCardSize = function(size) {
             applyPlazaCardSizeUI(size);
             try { localStorage.setItem(PLAZA_CARD_SIZE_KEY, plazaCardSize); } catch (_) { /* ignore */ }
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
         };
 
         window.renderPlaza = function(studentsData, gmData, gmaData) {
@@ -12320,30 +12324,100 @@ ${subjectLine}
             };
 
             const staffRow = document.getElementById('plazaStaffRow');
-            const morningOn = window._morningActivityPreviewActive || (isMorningActivityTime() && !window._morningActivityDismissed);
-            if (morningOn) {
+            const pirateRow = document.getElementById('plazaPirateRow');
+            const unseatedEl = document.getElementById('plazaUnseated');
+            const hidePlazaExtras = () => {
                 if (staffRow) {
                     staffRow.classList.remove('is-visible');
                     staffRow.innerHTML = '';
                 }
+                if (pirateRow) {
+                    pirateRow.classList.remove('is-visible');
+                    pirateRow.innerHTML = '';
+                }
+                if (unseatedEl) {
+                    unseatedEl.classList.add('hidden');
+                    unseatedEl.innerHTML = '';
+                }
+            };
+            const morningOn = window._morningActivityPreviewActive || (isMorningActivityTime() && !window._morningActivityDismissed);
+            const classroomEl = container.closest('.plaza-classroom');
+            if (classroomEl) classroomEl.classList.toggle('is-morning', !!morningOn);
+            if (morningOn) {
+                hidePlazaExtras();
                 container.innerHTML = buildMorningActivityPlazaHtml({ preview: !!window._morningActivityPreviewActive });
                 return;
             }
 
-            let staffHtml = createCard(gmData || { id: 'gm', xp: 0, bong: 0 }, true, getStaffCardLabel('gm'));
-            if (gmaData || window.playerState.isGMA) {
-                staffHtml += createCard(gmaData || { id: 'gm_a', xp: 0, bong: 0 }, true, getStaffCardLabel('gm_a'));
-            }
+            // 마스터는 교실 앞(세로로 긴 카드), 해적섬 두목은 교실 뒤
             if (staffRow) {
-                staffRow.innerHTML = staffHtml;
+                staffRow.innerHTML = createCard(gmData || { id: 'gm', xp: 0, bong: 0 }, true, getStaffCardLabel('gm'));
                 staffRow.classList.add('is-visible');
             }
+            if (pirateRow) {
+                pirateRow.innerHTML = createCard(gmaData || { id: 'gm_a', xp: 0, bong: 0 }, true, getStaffCardLabel('gm_a'));
+                pirateRow.classList.add('is-visible');
+            }
+
+            const activeIds = getActiveStudentIds();
+            const studentRows = Array.isArray(studentsData) ? studentsData : [];
+            const estateReady = window.estateState && Array.isArray(window.estateState.seats) && window.estateState.seats.length > 0;
+            const layout = estateReady ? getEstateLayout(window.estateState) : null;
+            const sizeCols = plazaCardSize === 'lg' ? 4 : plazaCardSize === 'md' ? 5 : 6;
+            const plan = estateReady
+                ? buildPlazaSeatingPlan({
+                    seats: window.estateState.seats,
+                    rows: layout.rows,
+                    cols: layout.cols,
+                    activeStudentIds: activeIds,
+                })
+                : {
+                    rows: Math.max(1, Math.ceil(activeIds.length / sizeCols)),
+                    cols: sizeCols,
+                    cells: activeIds.map((sid) => ({ type: 'student', studentId: sid, seatId: null })),
+                    unseated: [],
+                };
+
+            container.classList.add('plaza-cards-seating');
+            container.style.setProperty('--plaza-seat-cols', String(plan.cols));
+
+            const emptySeatHtml = (seatId, kind) => {
+                const num = Number.isFinite(Number(seatId)) ? `${Number(seatId) + 1}번` : '';
+                if (kind === 'hidden') {
+                    return `<div class="plaza-seat plaza-seat-hidden" aria-hidden="true"><span>통로</span></div>`;
+                }
+                return `<div class="plaza-seat plaza-seat-empty" aria-label="${num} 빈 자리"><span>${num}</span></div>`;
+            };
 
             let html = '';
-            getActiveStudentIds().forEach((sid) => {
-                html += createCard(studentsData.find(s => s.id === String(sid)), false, getStudentDisplayLabel(sid));
+            plan.cells.forEach((cell) => {
+                if (cell.type === 'student') {
+                    html += createCard(
+                        studentRows.find((s) => s.id === String(cell.studentId)),
+                        false,
+                        getStudentDisplayLabel(cell.studentId)
+                    );
+                } else {
+                    html += emptySeatHtml(cell.seatId, cell.type);
+                }
             });
             container.innerHTML = html;
+
+            if (unseatedEl) {
+                if (plan.unseated.length > 0) {
+                    unseatedEl.classList.remove('hidden');
+                    unseatedEl.innerHTML = `<div class="plaza-unseated-label">자리 미지정</div><div class="plaza-unseated-grid">${
+                        plan.unseated.map((sid) => createCard(
+                            studentRows.find((s) => s.id === String(sid)),
+                            false,
+                            getStudentDisplayLabel(sid)
+                        )).join('')
+                    }</div>`;
+                } else {
+                    unseatedEl.classList.add('hidden');
+                    unseatedEl.innerHTML = '';
+                }
+            }
         };
 
         window.renderAdminTable = function(studentsData) {
@@ -13109,6 +13183,11 @@ ${subjectLine}
                     <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${formatBongAmount(seat.price)}</div>
                 </div>`;
             }).join('');
+
+            // 자리 배열·배치가 바뀌면 광장 교실 격자에도 바로 반영
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
         };
 
         window.visitBank = function() {

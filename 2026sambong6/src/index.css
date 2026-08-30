@@ -576,6 +576,11 @@
             grid-template-columns: repeat(6, minmax(0, 1fr));
             gap: 0.3rem;
         }
+        /* 부동산 자리표와 같은 열 수 — 카드 크기(lg/md/sm)는 유지하고 열만 자리표에 맞춤 */
+        .plaza-cards.plaza-cards-seating {
+            grid-template-columns: repeat(var(--plaza-seat-cols, 4), minmax(0, 1fr));
+            gap: 0.3rem;
+        }
 
         .plaza-card { min-width: 0; }
         .plaza-cards-sm .plaza-card { padding: 0.3rem !important; border-radius: 0.65rem !important; }
@@ -599,11 +604,11 @@
         }
         .plaza-cards-lg .plaza-card-name { font-size: 11px !important; }
 
-        /* 스마트폰: 한 줄 2명, 이름·수치를 키워 확대 없이 읽히게 합니다. */
+        /* 스마트폰: 한 줄 2명, 이름·수치를 키워 확대 없이 읽히게 합니다. (자리표 연동 격자는 제외) */
         @media (max-width: 639px) {
-            .plaza-cards-lg,
-            .plaza-cards-md,
-            .plaza-cards-sm {
+            .plaza-cards-lg:not(.plaza-cards-seating),
+            .plaza-cards-md:not(.plaza-cards-seating),
+            .plaza-cards-sm:not(.plaza-cards-seating) {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 0.55rem;
             }
@@ -679,6 +684,117 @@
                 padding: 0.5rem 0 !important;
                 min-height: 40px;
             }
+
+            /* 자리표 연동: 부동산과 같은 열을 유지하고 칸을 압축 */
+            .plaza-cards.plaza-cards-seating {
+                grid-template-columns: repeat(var(--plaza-seat-cols, 4), minmax(0, 1fr));
+                gap: 0.22rem;
+            }
+            .plaza-cards-seating .plaza-card {
+                min-height: 0;
+                padding: 0.28rem 0.12rem 0.3rem !important;
+                border-radius: 0.55rem !important;
+            }
+            .plaza-cards-seating .plaza-card-face {
+                font-size: 1.15rem !important;
+                margin-bottom: 0.08rem !important;
+            }
+            .plaza-cards-seating .plaza-card-lv {
+                font-size: 7px !important;
+                padding: 0 0.15rem !important;
+                margin-bottom: 0.08rem !important;
+            }
+            .plaza-cards-seating .plaza-card-name {
+                font-size: 9px !important;
+                padding: 0.1rem 0.12rem !important;
+            }
+            .plaza-cards-seating .plaza-card-stats {
+                padding: 0.08rem 0.1rem !important;
+                margin-top: 0.1rem !important;
+            }
+            .plaza-cards-seating .plaza-card-stats span {
+                font-size: 7px !important;
+            }
+            .plaza-cards-seating .plaza-learning-thermometer {
+                min-width: 1.1rem;
+                max-width: 1.45rem;
+                height: 0.7rem;
+                font-size: 6px;
+            }
+            .plaza-cards-seating .plaza-gm-controls {
+                display: none;
+            }
+            .plaza-cards-seating .plaza-seat {
+                min-height: 2.6rem;
+                font-size: 8px;
+            }
+            .plaza-cards-seating .plaza-seat-hidden {
+                min-height: 1.6rem;
+            }
+        }
+
+        /* 광장 교실 무대 — 앞쪽 마스터 / 자리표 격자 / 뒤쪽 해적섬 두목 */
+        .plaza-classroom {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .plaza-classroom-board {
+            width: 100%;
+            text-align: center;
+            background: #1e293b;
+            color: #94a3b8;
+            font-weight: 800;
+            letter-spacing: 0.28em;
+            font-size: 10px;
+            padding: 0.45rem 0.5rem;
+            border-radius: 0.8rem;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+        }
+        .plaza-classroom.is-morning .plaza-classroom-board {
+            display: none;
+        }
+        .plaza-seat {
+            min-width: 0;
+            min-height: 4.2rem;
+            border-radius: 0.7rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 800;
+        }
+        .plaza-seat-empty {
+            border: 1px dashed rgba(148, 163, 184, 0.4);
+            background: rgba(15, 23, 42, 0.35);
+            color: #64748b;
+        }
+        .plaza-seat-hidden {
+            border: 1px dashed rgba(71, 85, 105, 0.35);
+            background: repeating-linear-gradient(45deg, rgba(15, 23, 42, 0.2) 0 6px, rgba(30, 41, 59, 0.25) 6px 12px);
+            color: #475569;
+            min-height: 2.4rem;
+            opacity: 0.75;
+        }
+        .plaza-unseated {
+            margin-top: 0.1rem;
+            padding: 0.45rem 0.35rem 0.5rem;
+            border-radius: 0.85rem;
+            border: 1px dashed rgba(148, 163, 184, 0.35);
+            background: rgba(15, 23, 42, 0.4);
+        }
+        .plaza-unseated-label {
+            text-align: center;
+            font-size: 10px;
+            font-weight: 800;
+            color: #94a3b8;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.35rem;
+        }
+        .plaza-unseated-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));
+            gap: 0.3rem;
         }
 
         /* 광장 마스터·해적두목 무대 — 학생 카드보다 크게·화려하게 */
@@ -687,7 +803,7 @@
             grid-template-columns: repeat(2, minmax(0, 9.5rem));
             justify-content: center;
             gap: 0.5rem;
-            margin-bottom: 0.65rem;
+            margin-bottom: 0.15rem;
             padding: 0.4rem 0.35rem 0.5rem;
             border-radius: 1.1rem;
             background:
@@ -699,12 +815,55 @@
         .plaza-staff-row.is-visible {
             display: grid;
         }
+        .plaza-staff-front {
+            background:
+                radial-gradient(ellipse 70% 90% at 50% 35%, rgba(251, 191, 36, 0.22), transparent 62%),
+                linear-gradient(180deg, rgba(15, 23, 42, 0.55) 0%, rgba(15, 23, 42, 0.12) 100%);
+        }
+        .plaza-staff-front.is-visible {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 0.45rem;
+        }
+        .plaza-staff-front .plaza-staff-card {
+            width: min(10.5rem, 48vw);
+            min-height: 15.5rem;
+            padding: 1rem 0.55rem 0.85rem !important;
+            justify-content: center;
+        }
+        .plaza-staff-front .plaza-staff-face-wrap {
+            width: 4.65rem;
+            height: 4.65rem;
+            margin-bottom: 0.55rem;
+        }
+        .plaza-staff-front .plaza-staff-face {
+            font-size: 3.35rem !important;
+        }
+        .plaza-staff-back {
+            margin-top: 0.15rem;
+            margin-bottom: 0;
+            background:
+                radial-gradient(ellipse 70% 90% at 50% 55%, rgba(34, 211, 238, 0.2), transparent 62%),
+                linear-gradient(180deg, rgba(15, 23, 42, 0.12) 0%, rgba(15, 23, 42, 0.55) 100%);
+        }
+        .plaza-staff-back.is-visible {
+            display: grid;
+            grid-template-columns: minmax(0, 14rem);
+            justify-content: center;
+        }
+        .plaza-staff-back .plaza-staff-card {
+            width: 100%;
+            min-height: 7.25rem;
+        }
         .plaza-staff-row:has(> :only-child) {
             grid-template-columns: minmax(0, 9.5rem);
             justify-content: center;
         }
         @media (max-width: 479px) {
             .plaza-staff-row { gap: 0.5rem; padding: 0.5rem 0.35rem 0.65rem; }
+            .plaza-staff-front .plaza-staff-card { min-height: 13.5rem; }
         }
         .plaza-staff-card {
             position: relative;

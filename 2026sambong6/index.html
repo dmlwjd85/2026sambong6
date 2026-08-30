@@ -867,14 +867,14 @@
             <div class="mb-4 flex flex-wrap justify-between items-end gap-2">
                 <div>
                     <h2 class="text-xl sm:text-2xl font-display text-emerald-400"><i class="fa-solid fa-users"></i> 우리반 광장</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">친구들의 상태를 한눈에 확인해봐요.</p>
-                    <p class="text-[9px] text-slate-500 mt-0.5 sm:hidden">휴대폰에서는 한 줄에 2명씩, 이름과 수치가 크게 보입니다.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">부동산 자리표와 같은 교실 배열입니다. 앞쪽은 마스터, 뒤쪽은 해적섬 두목입니다.</p>
+                    <p class="text-[9px] text-slate-500 mt-0.5 sm:hidden">자리 배열·배치는 부동산에서 바꾸면 광장에도 바로 반영됩니다.</p>
                 </div>
                 <div id="plazaCardSizeBar" class="flex items-center gap-1 shrink-0" role="group" aria-label="학생 카드 크기">
-                    <span class="text-[9px] text-slate-500 font-bold mr-0.5 hidden sm:inline">한 줄</span>
-                    <button type="button" id="plazaSize-lg" onclick="window.setPlazaCardSize('lg')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300" title="크게 (휴대폰 2명 / 큰 화면 4명)">크게</button>
-                    <button type="button" id="plazaSize-md" onclick="window.setPlazaCardSize('md')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300" title="중간 (휴대폰 2명 / 큰 화면 5명)">중간</button>
-                    <button type="button" id="plazaSize-sm" onclick="window.setPlazaCardSize('sm')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/60 bg-emerald-900/40 text-emerald-200" title="작게 (휴대폰 2명 / 큰 화면 6명)">작게</button>
+                    <span class="text-[9px] text-slate-500 font-bold mr-0.5 hidden sm:inline">카드</span>
+                    <button type="button" id="plazaSize-lg" onclick="window.setPlazaCardSize('lg')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300" title="크게">크게</button>
+                    <button type="button" id="plazaSize-md" onclick="window.setPlazaCardSize('md')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300" title="중간">중간</button>
+                    <button type="button" id="plazaSize-sm" onclick="window.setPlazaCardSize('sm')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/60 bg-emerald-900/40 text-emerald-200" title="작게">작게</button>
                 </div>
             </div>
                 <!-- 마스터 전용 광장 일괄 컨트롤 -->
@@ -904,12 +904,16 @@
                     </div>
                 </div>
 
-            <div class="glass-panel p-2.5 sm:p-3 rounded-2xl shadow-xl">
-                <!-- 마스터·해적두목 전용 무대 (학생 카드와 분리) -->
-                <div id="plazaStaffRow" class="plaza-staff-row" aria-label="마스터와 해적두목"></div>
-                <div class="plaza-cards plaza-cards-sm w-full" id="plazaContainer">
+            <div class="glass-panel p-2.5 sm:p-3 rounded-2xl shadow-xl plaza-classroom">
+                <div class="plaza-classroom-board" aria-hidden="true">칠판 (교실 앞)</div>
+                <!-- 마스터: 교실 앞쪽, 세로로 긴 카드 -->
+                <div id="plazaStaffRow" class="plaza-staff-row plaza-staff-front" aria-label="마스터 (교실 앞)"></div>
+                <div class="plaza-cards plaza-cards-sm plaza-cards-seating w-full" id="plazaContainer">
                     <div class="text-slate-500 text-xs p-4">데이터 로딩 중...</div>
                 </div>
+                <div id="plazaUnseated" class="plaza-unseated hidden" aria-label="자리 미지정"></div>
+                <!-- 해적섬 두목: 교실 뒤쪽 -->
+                <div id="plazaPirateRow" class="plaza-staff-row plaza-staff-back" aria-label="해적섬 두목 (교실 뒤)"></div>
             </div>
             
             <!-- 명예의 전당 -->

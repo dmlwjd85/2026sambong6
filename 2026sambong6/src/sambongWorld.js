@@ -614,7 +614,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.3';
+        const APP_VERSION = 'v1.4';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -6794,7 +6794,7 @@ ${subjectLine}
         // ==========================================
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
-        /** 상단 탭 + 경제 하위 섹션(shop/bank/estate) — 스와이프는 보이는 탭만 */
+        /** 하단 앱 독 + 경제 하위 섹션(shop/bank/estate) — 스와이프는 보이는 탭만 */
         const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'economy', 'lunch', 'challenge', 'constitution', 'classtools', 'admin', 'settings', 'help', 'shop', 'bank', 'estate', 'goldenbell'];
         /** 기본 탭: 홈(dashboard) */
         let currentTabIndex = 1; // plaza
@@ -6802,21 +6802,14 @@ ${subjectLine}
         let economySub = 'shop';
         /** 도전 서브: goldenbell | speedquiz | raid */
         let challengeSub = 'goldenbell';
+        /** 수업도구 서브: timetable | thermo | chalk ... */
+        let classtoolSub = 'timetable';
 
         window.switchEconomySub = function(sub) {
             economySub = sub || 'shop';
-            const idle = 'border-slate-600 bg-slate-800/60 text-slate-300';
-            const map = {
-                shop: 'border-pink-500/50 bg-pink-900/40 text-pink-200',
-                bank: 'border-sky-500/50 bg-sky-900/40 text-sky-200',
-                estate: 'border-teal-500/50 bg-teal-900/40 text-teal-200',
-                groupbuy: 'border-cyan-500/50 bg-cyan-900/40 text-cyan-200'
-            };
             ['shop', 'bank', 'estate', 'groupbuy'].forEach(s => {
                 const btn = document.getElementById('economySub-' + s);
-                if (!btn) return;
-                btn.classList.remove('border-pink-500/50', 'bg-pink-900/40', 'text-pink-200', 'border-sky-500/50', 'bg-sky-900/40', 'text-sky-200', 'border-teal-500/50', 'bg-teal-900/40', 'text-teal-200', 'border-cyan-500/50', 'bg-cyan-900/40', 'text-cyan-200', 'border-slate-600', 'bg-slate-800/60', 'text-slate-300');
-                (s === economySub ? map[s] : idle).split(/\s+/).forEach(c => btn.classList.add(c));
+                if (btn) btn.classList.toggle('is-active', s === economySub);
             });
             ['shop', 'bank', 'estate'].forEach(s => {
                 const sec = document.getElementById(s + 'Section');
@@ -6854,17 +6847,9 @@ ${subjectLine}
 
         window.switchChallengeSub = function(sub) {
             challengeSub = sub || 'goldenbell';
-            const idle = 'border-slate-600 bg-slate-800/60 text-slate-300';
-            const map = {
-                goldenbell: 'border-yellow-500/50 bg-yellow-900/40 text-yellow-200',
-                speedquiz: 'border-cyan-500/50 bg-cyan-900/40 text-cyan-200',
-                raid: 'border-purple-500/50 bg-purple-900/40 text-purple-200'
-            };
             ['goldenbell', 'speedquiz', 'raid'].forEach(s => {
                 const btn = document.getElementById('challengeSub-' + s);
-                if (!btn) return;
-                btn.classList.remove('border-yellow-500/50', 'bg-yellow-900/40', 'text-yellow-200', 'border-cyan-500/50', 'bg-cyan-900/40', 'text-cyan-200', 'border-purple-500/50', 'bg-purple-900/40', 'text-purple-200', 'border-slate-600', 'bg-slate-800/60', 'text-slate-300');
-                (s === challengeSub ? map[s] : idle).split(/\s+/).forEach(c => btn.classList.add(c));
+                if (btn) btn.classList.toggle('is-active', s === challengeSub);
                 const pane = document.getElementById('challengePane-' + s);
                 if (pane) {
                     if (s === challengeSub) pane.classList.remove('hidden');
@@ -6924,8 +6909,8 @@ ${subjectLine}
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'text-violet-300', 'border-violet-400', 'text-cyan-300', 'border-cyan-400', 'bg-slate-800/50'); 
-                    btn.classList.add('text-slate-400', 'border-transparent'); 
+                    btn.classList.remove('is-active', 'border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'text-violet-300', 'border-violet-400', 'text-cyan-300', 'border-cyan-400', 'bg-slate-800/50'); 
+                    btn.removeAttribute('aria-current');
                 }
             });
             
@@ -6934,15 +6919,8 @@ ${subjectLine}
             
             const activeBtn = document.getElementById('tab-' + tabId);
             if(activeBtn) { 
-                activeBtn.classList.remove('text-slate-400', 'border-transparent'); 
-                if (tabId === 'lunch') activeBtn.classList.add('border-orange-400', 'text-orange-400', 'bg-slate-800/50'); 
-                else if (tabId === 'challenge') activeBtn.classList.add('border-yellow-400', 'text-yellow-400', 'bg-slate-800/50'); 
-                else if (tabId === 'economy') activeBtn.classList.add('border-pink-500', 'text-pink-400', 'bg-slate-800/50');
-                else if (tabId === 'constitution') activeBtn.classList.add('border-amber-300', 'text-amber-300', 'bg-slate-800/50');
-                else if (tabId === 'classtools') activeBtn.classList.add('border-lime-500', 'text-lime-400', 'bg-slate-800/50');
-                else if (tabId === 'settings') activeBtn.classList.add('border-violet-400', 'text-violet-300', 'bg-slate-800/50');
-                else if (tabId === 'help') activeBtn.classList.add('border-cyan-400', 'text-cyan-300', 'bg-slate-800/50');
-                else activeBtn.classList.add('border-sb-gold', 'text-sb-gold', 'bg-slate-800/50'); 
+                activeBtn.classList.add('is-active');
+                activeBtn.setAttribute('aria-current', 'page');
             }
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
@@ -6963,6 +6941,7 @@ ${subjectLine}
                 window.switchEconomySub(economySub);
             }
             if (tabId === 'classtools') {
+                if (typeof window.switchClassTool === 'function') window.switchClassTool(classtoolSub);
                 renderLearningThermometerPanel();
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
@@ -7068,12 +7047,12 @@ ${subjectLine}
                 
                     let visibleTabs = TABS.filter(t => {
                         const btn = document.getElementById('tab-' + t);
-                        return btn && !btn.classList.contains('hidden') && !btn.hasAttribute('aria-hidden');
+                        return btn && btn.classList.contains('app-nav-item') && !btn.classList.contains('hidden') && !btn.hasAttribute('aria-hidden');
                     });
                     let cIdx = visibleTabs.indexOf(TABS[currentTabIndex]);
                     if (cIdx < 0) cIdx = visibleTabs.indexOf(TABS[currentTabIndex] === 'shop' || TABS[currentTabIndex] === 'bank' || TABS[currentTabIndex] === 'estate' ? 'economy' : (TABS[currentTabIndex] === 'goldenbell' ? 'challenge' : TABS[currentTabIndex]));
                     if (cIdx < 0) {
-                        const active = document.querySelector('#mainTabBar button.border-sb-gold, #mainTabBar button.border-yellow-400, #mainTabBar button.border-pink-500, #mainTabBar button.border-orange-400, #mainTabBar button.border-amber-300, #mainTabBar button.border-lime-500, #mainTabBar button.border-cyan-400, #mainTabBar button.border-violet-400');
+                        const active = document.querySelector('#mainTabBar button.app-nav-item.is-active');
                         if (active && active.id) cIdx = visibleTabs.indexOf(active.id.replace(/^tab-/, ''));
                     }
                 
@@ -7122,14 +7101,32 @@ ${subjectLine}
             return !!(window.playerState && window.playerState.isAdmin);
         }
 
-        function updateClassToolsPanelVisibility() {
-            const section = document.getElementById('classtoolsSection');
-            const content = section && section.firstElementChild;
-            if (!content) return;
-            Array.from(content.children).forEach((child, index) => {
-                if (index === 0) child.classList.remove('hidden');
-                else child.classList.toggle('hidden', !canEditLearningThermometer());
+        window.switchClassTool = function(toolId) {
+            const isAdmin = canEditLearningThermometer();
+            const next = String(toolId || classtoolSub || 'timetable');
+            classtoolSub = (!isAdmin) ? 'timetable' : next;
+            document.querySelectorAll('#classtoolsAppGrid .app-tool-item').forEach((btn) => {
+                const id = btn.getAttribute('data-tool');
+                const studentOk = btn.getAttribute('data-student') === '1';
+                btn.classList.toggle('hidden', !isAdmin && !studentOk);
+                btn.classList.toggle('is-active', id === classtoolSub);
             });
+            document.querySelectorAll('.classtool-pane').forEach((pane) => {
+                const id = pane.getAttribute('data-tool');
+                const studentOk = pane.getAttribute('data-student') === '1';
+                if (!isAdmin && !studentOk) {
+                    pane.classList.add('hidden');
+                    return;
+                }
+                pane.classList.toggle('hidden', id !== classtoolSub);
+            });
+        };
+
+        function updateClassToolsPanelVisibility() {
+            const grid = document.getElementById('classtoolsAppGrid');
+            const isAdmin = canEditLearningThermometer();
+            if (grid) grid.classList.toggle('hidden', !isAdmin);
+            window.switchClassTool(isAdmin ? classtoolSub : 'timetable');
         }
 
         function enforceClassToolsAccess() {

@@ -2,7 +2,7 @@
 <html lang="ko" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
             <title id="docTitle">MATE</title>
     <meta name="theme-color" content="#0ea5e9">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -24,7 +24,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
-    <div id="appVersionCorner" data-app-version class="fixed bottom-2 right-3 z-[380] text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.2</div>
+    <div id="appVersionCorner" data-app-version class="fixed bottom-28 right-3 z-[380] text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.4</div>
     <!-- 네트워크·로딩 UX -->
     <div id="offlineBanner" class="hidden fixed top-0 inset-x-0 z-[400] bg-amber-600 text-white text-center text-[11px] sm:text-xs font-bold py-2.5 px-3 shadow-lg">
         <i class="fa-solid fa-wifi"></i> 연결이 불안정합니다. 자동으로 다시 시도합니다.
@@ -191,25 +191,64 @@
                 <button onclick="window.logout()" class="text-[10px] sm:text-xs bg-slate-700 hover:bg-slate-600 text-white px-2.5 py-1.5 rounded-lg transition"><i class="fa-solid fa-right-from-bracket"></i></button>
             </div>
         </div>
-        <!-- 탭 버튼 영역 (IA: 홈·퀘스트·직업·경제·밥줄·도전·헌법 + 조건부 수업도구/마스터) -->
-        <div class="flex w-full overflow-x-auto scrollbar-hide border-t border-slate-700/50" id="mainTabBar">
-            <button id="tab-dashboard" onclick="window.switchTab('dashboard')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">홈</button>
-            <button id="tab-plaza" onclick="window.switchTab('plaza')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-sb-gold text-sb-gold bg-slate-800/50">광장</button>
-            <button id="tab-quests" onclick="window.switchTab('quests')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">퀘스트</button>
-            <button id="tab-jobs" onclick="window.switchTab('jobs')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">직업</button>
-            <button id="tab-economy" onclick="window.switchTab('economy')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-pink-400">경제</button>
-            <button id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-orange-400">밥줄</button>
-            <button id="tab-challenge" onclick="window.switchTab('challenge')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-yellow-400">도전</button>
-            <button id="tab-constitution" onclick="window.switchTab('constitution')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-amber-300">헌법</button>
-            <button id="tab-classtools" onclick="window.switchTab('classtools')" class="hidden flex-1 min-w-[72px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-lime-400">수업도구</button>
-            <button id="tab-admin" onclick="window.switchTab('admin')" class="hidden flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">마스터</button>
-            <button id="tab-settings" onclick="window.switchTab('settings')" class="hidden flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-violet-300">설정</button>
-            <button id="tab-help" onclick="window.switchTab('help')" class="flex-1 min-w-[64px] py-2.5 text-xs sm:text-sm font-bold transition-all border-b-2 border-transparent text-slate-400">도움말</button>
+    </nav>
+
+    <!-- 하단 앱 아이콘 독 (스마트폰·태블릿처럼 선택 시 활성화) -->
+    <nav id="appNavDock" class="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-700/70 bg-slate-950/95 backdrop-blur-md" aria-label="주요 메뉴">
+        <div class="app-nav-dock max-w-3xl mx-auto" id="mainTabBar">
+            <button type="button" id="tab-dashboard" onclick="window.switchTab('dashboard')" class="app-nav-item" aria-label="홈">
+                <span class="app-nav-icon"><img src="nav/nav-home.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">홈</span>
+            </button>
+            <button type="button" id="tab-plaza" onclick="window.switchTab('plaza')" class="app-nav-item is-active" aria-label="광장" aria-current="page">
+                <span class="app-nav-icon"><img src="nav/nav-plaza.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">광장</span>
+            </button>
+            <button type="button" id="tab-quests" onclick="window.switchTab('quests')" class="app-nav-item" aria-label="퀘스트">
+                <span class="app-nav-icon"><img src="nav/nav-quests.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">퀘스트</span>
+            </button>
+            <button type="button" id="tab-jobs" onclick="window.switchTab('jobs')" class="app-nav-item" aria-label="직업">
+                <span class="app-nav-icon"><img src="nav/nav-jobs.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">직업</span>
+            </button>
+            <button type="button" id="tab-economy" onclick="window.switchTab('economy')" class="app-nav-item" aria-label="경제">
+                <span class="app-nav-icon"><img src="nav/nav-economy.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">경제</span>
+            </button>
+            <button type="button" id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden app-nav-item" aria-label="밥줄">
+                <span class="app-nav-icon"><img src="nav/nav-lunch.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">밥줄</span>
+            </button>
+            <button type="button" id="tab-challenge" onclick="window.switchTab('challenge')" class="app-nav-item" aria-label="도전">
+                <span class="app-nav-icon"><img src="nav/nav-challenge.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">도전</span>
+            </button>
+            <button type="button" id="tab-constitution" onclick="window.switchTab('constitution')" class="app-nav-item" aria-label="헌법">
+                <span class="app-nav-icon"><img src="nav/nav-constitution.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">헌법</span>
+            </button>
+            <button type="button" id="tab-classtools" onclick="window.switchTab('classtools')" class="hidden app-nav-item" aria-label="수업도구">
+                <span class="app-nav-icon"><img src="nav/nav-classtools.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">수업</span>
+            </button>
+            <button type="button" id="tab-admin" onclick="window.switchTab('admin')" class="hidden app-nav-item" aria-label="마스터">
+                <span class="app-nav-icon"><img src="nav/nav-admin.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">마스터</span>
+            </button>
+            <button type="button" id="tab-settings" onclick="window.switchTab('settings')" class="hidden app-nav-item" aria-label="설정">
+                <span class="app-nav-icon"><img src="nav/nav-settings.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">설정</span>
+            </button>
+            <button type="button" id="tab-help" onclick="window.switchTab('help')" class="app-nav-item" aria-label="도움말">
+                <span class="app-nav-icon"><img src="nav/nav-help.webp" alt="" width="192" height="192"></span>
+                <span class="app-nav-label">도움말</span>
+            </button>
             <!-- 레거시 딥링크용 숨김 탭 (상점·은행·부동산·골든벨 → 경제/도전으로 리다이렉트) -->
-            <button id="tab-shop" onclick="window.switchTab('shop')" class="hidden" aria-hidden="true" tabindex="-1">상점</button>
-            <button id="tab-bank" onclick="window.switchTab('bank')" class="hidden" aria-hidden="true" tabindex="-1">은행</button>
-            <button id="tab-estate" onclick="window.switchTab('estate')" class="hidden" aria-hidden="true" tabindex="-1">부동산</button>
-            <button id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="hidden" aria-hidden="true" tabindex="-1">골든벨</button>
+            <button type="button" id="tab-shop" onclick="window.switchTab('shop')" class="hidden" aria-hidden="true" tabindex="-1">상점</button>
+            <button type="button" id="tab-bank" onclick="window.switchTab('bank')" class="hidden" aria-hidden="true" tabindex="-1">은행</button>
+            <button type="button" id="tab-estate" onclick="window.switchTab('estate')" class="hidden" aria-hidden="true" tabindex="-1">부동산</button>
+            <button type="button" id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="hidden" aria-hidden="true" tabindex="-1">골든벨</button>
         </div>
     </nav>
 
@@ -406,7 +445,7 @@
     </div>
 
     <!-- 메인 콘텐츠 영역 (스와이프 래퍼) -->
-    <div id="swipeWrapper" class="relative z-[2] pt-24 sm:pt-28 pb-16 px-3 sm:px-4 2xl:px-6 max-w-[1600px] mx-auto w-full min-h-screen">
+    <div id="swipeWrapper" class="relative z-[2] pt-16 sm:pt-20 pb-32 sm:pb-36 px-3 sm:px-4 2xl:px-6 max-w-[1600px] mx-auto w-full min-h-screen">
 
         <!-- ★ 1. 대시보드 탭 (월드맵 + 스탯 통합) ★ -->
         <section id="dashboardSection" class="hidden space-y-4">
@@ -978,11 +1017,23 @@
                     <h2 class="text-xl sm:text-2xl font-display text-pink-300"><i class="fa-solid fa-coins"></i> 경제</h2>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">상점 · 은행 · 부동산 · 공동구매를 한곳에서 이용합니다.</p>
                 </div>
-                <div id="economySubtabs" class="flex flex-wrap gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide pb-1">
-                    <button type="button" id="economySub-shop" onclick="window.switchEconomySub('shop')" class="economy-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-pink-500/50 bg-pink-900/40 text-pink-200">상점</button>
-                    <button type="button" id="economySub-bank" onclick="window.switchEconomySub('bank')" class="economy-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300">은행</button>
-                    <button type="button" id="economySub-estate" onclick="window.switchEconomySub('estate')" class="economy-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300">부동산</button>
-                    <button type="button" id="economySub-groupbuy" onclick="window.switchEconomySub('groupbuy')" class="economy-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300">공동구매</button>
+                <div id="economySubtabs" class="app-sub-dock">
+                    <button type="button" id="economySub-shop" onclick="window.switchEconomySub('shop')" class="app-sub-item is-active">
+                        <span class="app-sub-icon"><img src="nav/nav-shop.webp" alt="" width="192" height="192"></span>
+                        <span>상점</span>
+                    </button>
+                    <button type="button" id="economySub-bank" onclick="window.switchEconomySub('bank')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-bank.webp" alt="" width="192" height="192"></span>
+                        <span>은행</span>
+                    </button>
+                    <button type="button" id="economySub-estate" onclick="window.switchEconomySub('estate')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-estate.webp" alt="" width="192" height="192"></span>
+                        <span>부동산</span>
+                    </button>
+                    <button type="button" id="economySub-groupbuy" onclick="window.switchEconomySub('groupbuy')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-groupbuy.webp" alt="" width="192" height="192"></span>
+                        <span>공동구매</span>
+                    </button>
                 </div>
             </div>
         </section>
@@ -1149,10 +1200,19 @@
                     <h2 class="text-xl sm:text-2xl font-display text-yellow-300"><i class="fa-solid fa-trophy"></i> 도전</h2>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 협동 레이드에 참가합니다. 출제·시작은 마스터만 사용할 수 있어요.</p>
                 </div>
-                <div id="challengeSubtabs" class="flex flex-wrap gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide pb-1">
-                    <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="challenge-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-yellow-500/50 bg-yellow-900/40 text-yellow-200">골든벨</button>
-                    <button type="button" id="challengeSub-speedquiz" onclick="window.switchChallengeSub('speedquiz')" class="challenge-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300">스피드퀴즈</button>
-                    <button type="button" id="challengeSub-raid" onclick="window.switchChallengeSub('raid')" class="challenge-sub-btn min-h-[40px] px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold border border-slate-600 bg-slate-800/60 text-slate-300">보스레이드</button>
+                <div id="challengeSubtabs" class="app-sub-dock">
+                    <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="app-sub-item is-active">
+                        <span class="app-sub-icon"><img src="nav/nav-goldenbell.webp" alt="" width="192" height="192"></span>
+                        <span>골든벨</span>
+                    </button>
+                    <button type="button" id="challengeSub-speedquiz" onclick="window.switchChallengeSub('speedquiz')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-speedquiz.webp" alt="" width="192" height="192"></span>
+                        <span>스피드퀴즈</span>
+                    </button>
+                    <button type="button" id="challengeSub-raid" onclick="window.switchChallengeSub('raid')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-raid.webp" alt="" width="192" height="192"></span>
+                        <span>보스레이드</span>
+                    </button>
                 </div>
 
                 <div id="challengePane-goldenbell" class="space-y-3">
@@ -1340,8 +1400,47 @@
         <section id="classtoolsSection" class="hidden">
             <div class="max-w-7xl mx-auto px-1 pb-10 space-y-6">
 
+            <div id="classtoolsAppGrid" class="app-tool-grid hidden">
+                <button type="button" class="app-tool-item is-active" data-tool="timetable" data-student="1" onclick="window.switchClassTool('timetable')">
+                    <span class="app-tool-icon"><img src="nav/tool-timetable.webp" alt="" width="192" height="192"></span>
+                    <span>시간표</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="thermo" onclick="window.switchClassTool('thermo')">
+                    <span class="app-tool-icon"><img src="nav/tool-thermo.webp" alt="" width="192" height="192"></span>
+                    <span>온도계</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="chalk" onclick="window.switchClassTool('chalk')">
+                    <span class="app-tool-icon"><img src="nav/tool-chalk.webp" alt="" width="192" height="192"></span>
+                    <span>칠판</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="timer" onclick="window.switchClassTool('timer')">
+                    <span class="app-tool-icon"><img src="nav/tool-timer.webp" alt="" width="192" height="192"></span>
+                    <span>타이머</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="lottery" onclick="window.switchClassTool('lottery')">
+                    <span class="app-tool-icon"><img src="nav/tool-lottery.webp" alt="" width="192" height="192"></span>
+                    <span>제비뽑기</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="vote" onclick="window.switchClassTool('vote')">
+                    <span class="app-tool-icon"><img src="nav/tool-vote.webp" alt="" width="192" height="192"></span>
+                    <span>학급투표</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="wheel" onclick="window.switchClassTool('wheel')">
+                    <span class="app-tool-icon"><img src="nav/tool-wheel.webp" alt="" width="192" height="192"></span>
+                    <span>돌림판</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="martial" onclick="window.switchClassTool('martial')">
+                    <span class="app-tool-icon"><img src="nav/tool-martial.webp" alt="" width="192" height="192"></span>
+                    <span>비상계엄</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="morning" onclick="window.switchClassTool('morning')">
+                    <span class="app-tool-icon"><img src="nav/tool-morning.webp" alt="" width="192" height="192"></span>
+                    <span>아침안내</span>
+                </button>
+            </div>
+
             <!-- 주간 시간표 -->
-            <div id="classTimetablePanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-violet-500/50 bg-slate-900/80">
+            <div id="classTimetablePanel" class="classtool-pane hidden glass-panel p-4 rounded-xl mb-4 border border-violet-500/50 bg-slate-900/80" data-tool="timetable" data-student="1">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-calendar-days text-violet-400"></i> 주간 시간표</h3>
                     <button type="button" onclick="window.saveClassTimetableFromAdmin()" class="bg-violet-600 hover:bg-violet-500 text-white text-[10px] py-1.5 px-3 rounded font-bold">저장</button>
@@ -1362,7 +1461,7 @@
             </div>
 
                 <!-- 학습 온도계 -->
-                <div class="learning-thermometer-panel rounded-2xl p-4 sm:p-6 border-2 border-sky-500/50 shadow-[0_0_45px_rgba(14,165,233,0.22)]">
+                <div class="classtool-pane hidden learning-thermometer-panel rounded-2xl p-4 sm:p-6 border-2 border-sky-500/50 shadow-[0_0_45px_rgba(14,165,233,0.22)]" data-tool="thermo">
                     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4 border-b border-sky-500/30 pb-3">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-lg bg-sky-950 border-2 border-sky-500/70 flex items-center justify-center text-2xl shadow-inner">🌡️</div>
@@ -1409,7 +1508,7 @@
                 </div>
 
                 <!-- 판서 모드 (전자칠판) -->
-                <div class="chalk-launch-panel rounded-2xl p-4 sm:p-6 border-2 border-emerald-700/60 shadow-[0_0_40px_rgba(16,93,61,0.3)]">
+                <div class="classtool-pane hidden chalk-launch-panel rounded-2xl p-4 sm:p-6 border-2 border-emerald-700/60 shadow-[0_0_40px_rgba(16,93,61,0.3)]" data-tool="chalk">
                     <div class="flex items-center gap-3 mb-3 border-b border-emerald-800/50 pb-3">
                         <div class="w-12 h-12 rounded-lg bg-emerald-950 border-2 border-emerald-600/70 flex items-center justify-center text-2xl shadow-inner">🖍️</div>
                         <div>
@@ -1417,13 +1516,13 @@
                             <h2 class="text-xl sm:text-2xl font-display text-emerald-100 tracking-wide">판서 모드 (전자칠판)</h2>
                         </div>
                     </div>
-                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트, 분필·형광펜·지우개, 도형 그리기(그린 뒤 2초 유지 시 반듯하게 정렬), 여러 페이지 관리, 판서 저장·불러오기, 이미지 첨부, 전체화면을 지원합니다. 칠판이 열린 상태에서도 위쪽 탭을 눌러 다른 탭으로 이동할 수 있어요(내용은 유지됩니다).</p>
+                    <p class="text-[10px] sm:text-xs text-emerald-200/70 mb-4 leading-relaxed">칠판 모양 화면에 공지·필기를 띄웁니다. 글자 색·크기·폰트, 분필·형광펜·지우개, 도형 그리기(그린 뒤 2초 유지 시 반듯하게 정렬), 여러 페이지 관리, 판서 저장·불러오기, 이미지 첨부, 전체화면을 지원합니다. 칠판이 열린 상태에서도 아래 메뉴를 눌러 다른 화면으로 이동할 수 있어요(내용은 유지됩니다).</p>
                     <button type="button" onclick="window.openChalkboard()" class="w-full py-4 rounded-xl font-display text-lg sm:text-xl tracking-widest bg-gradient-to-b from-emerald-600 to-emerald-800 hover:from-emerald-500 hover:to-emerald-700 text-emerald-50 border-2 border-emerald-400/80 shadow-[0_4px_0_#064e3b,inset_0_1px_0_rgba(255,255,255,0.25)] active:translate-y-0.5 active:shadow-none transition">
                         <i class="fa-solid fa-chalkboard mr-2"></i>칠판 열기
                     </button>
                 </div>
 
-                <div class="military-panel rounded-2xl p-4 sm:p-6 border-2 border-lime-700/60 shadow-[0_0_40px_rgba(74,93,50,0.35)]">
+                <div class="classtool-pane hidden military-panel rounded-2xl p-4 sm:p-6 border-2 border-lime-700/60 shadow-[0_0_40px_rgba(74,93,50,0.35)]" data-tool="timer">
                     <div class="flex items-center gap-3 mb-4 border-b border-lime-800/50 pb-3">
                         <div class="w-12 h-12 rounded-lg bg-lime-950 border-2 border-lime-600/70 flex items-center justify-center text-2xl shadow-inner">⏱</div>
                         <div>
@@ -1462,7 +1561,7 @@
                     </button>
                 </div>
 
-                <div class="lottery-panel rounded-2xl p-4 sm:p-6 border-2 border-amber-600/50 shadow-[0_0_40px_rgba(245,158,11,0.2)]">
+                <div class="classtool-pane hidden lottery-panel rounded-2xl p-4 sm:p-6 border-2 border-amber-600/50 shadow-[0_0_40px_rgba(245,158,11,0.2)]" data-tool="lottery">
                     <div class="flex items-center gap-3 mb-4 border-b border-amber-800/40 pb-3">
                         <div class="w-12 h-12 rounded-lg bg-amber-950 border-2 border-amber-500/70 flex items-center justify-center text-2xl shadow-inner">🎫</div>
                         <div>
@@ -1510,7 +1609,7 @@
                 </div>
 
                 <!-- 학급 투표(의견 수렴) -->
-                <div class="election-panel rounded-2xl p-4 sm:p-6 border-2 border-rose-500/50 shadow-[0_0_40px_rgba(244,63,94,0.18)]">
+                <div class="classtool-pane hidden election-panel rounded-2xl p-4 sm:p-6 border-2 border-rose-500/50 shadow-[0_0_40px_rgba(244,63,94,0.18)]" data-tool="vote">
                     <div class="flex items-center gap-3 mb-4 border-b border-rose-800/40 pb-3">
                         <div class="w-12 h-12 rounded-lg bg-rose-950 border-2 border-rose-400/70 flex items-center justify-center text-2xl shadow-inner">🗳️</div>
                         <div>
@@ -1550,7 +1649,7 @@
                 </div>
 
                 <!-- 사회 수업 연출 (비상계엄) — 마스터 탭에서 이동 -->
-                <div class="glass-panel p-4 rounded-xl border border-red-600/70 bg-red-950/20">
+                <div class="classtool-pane hidden glass-panel p-4 rounded-xl border border-red-600/70 bg-red-950/20" data-tool="martial">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div>
                             <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-triangle-exclamation text-red-400"></i> 사회 수업 연출</h3>
@@ -1563,7 +1662,7 @@
                 </div>
 
                 <!-- 아침활동시간 안내 — 마스터 탭에서 이동 -->
-                <div class="glass-panel p-4 rounded-xl border border-amber-500/50 bg-slate-900/80">
+                <div class="classtool-pane hidden glass-panel p-4 rounded-xl border border-amber-500/50 bg-slate-900/80" data-tool="morning">
                     <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-mug-hot text-amber-300"></i> 아침활동시간 안내</h3>
                     <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">평일 오전 8시 40분이 되면 TV에 띄워 둔 광장 화면이 아침활동 안내 화면으로 자동 전환됩니다.</p>
                     <textarea id="gmMorningActivityNoticeInput" rows="3" placeholder="예: 아침활동 시간입니다. 오늘의 책을 꺼내고 조용히 독서/과제를 시작하세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
@@ -1574,7 +1673,7 @@
                 </div>
 
                 <!-- 원형 돌림판 -->
-                <div class="class-wheel-panel rounded-2xl p-4 sm:p-6 border-2 border-fuchsia-500/50 shadow-[0_0_45px_rgba(217,70,239,0.22)]">
+                <div class="classtool-pane hidden class-wheel-panel rounded-2xl p-4 sm:p-6 border-2 border-fuchsia-500/50 shadow-[0_0_45px_rgba(217,70,239,0.22)]" data-tool="wheel">
                     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-4 border-b border-fuchsia-500/30 pb-3">
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-lg bg-fuchsia-950 border-2 border-fuchsia-400/70 flex items-center justify-center text-2xl shadow-inner">🎡</div>

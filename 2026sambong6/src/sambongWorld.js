@@ -68,6 +68,35 @@ import {
     toPublishedElection,
     undoLastBallot,
 } from './lib/classElection.js';
+import {
+    DAILY_ALL_CLEAR_BONG,
+    DAILY_ALL_CLEAR_XP,
+    DRAGON_BALL_COMPLETE_XP,
+    DRAGON_BALL_XP,
+    SEASON2,
+    SKIN_REFUND_MAX_PER_DAY,
+    SKIN_REFUND_MAX_PER_SEASON,
+    WEAPON_QUEST_XP_BUFF_RATE,
+    XP_ANOMALY_AHEAD_OF_PACE_WARN,
+    XP_ANOMALY_DAILY_GAIN_WARN,
+    XP_ANOMALY_SINGLE_DELTA_WARN,
+    XP_PACK_DAILY_LIMIT,
+    XP_PACK_GAIN,
+    CUSTOM_SHOP_XP_MAX,
+    CUSTOM_SHOP_XP_DAILY_LIMIT,
+    CUSTOM_QUEST_XP_MAX,
+    buildSeason2StudentPatch,
+    buildXpSupervisionIncidents,
+    canRefundSkinThisSeason,
+    canStartSeason2,
+    catalogQuestRewards,
+    estimateSeason2QuestXp,
+    expectedXpPace,
+    season2SchoolDaysTotal,
+    uniqueInventory,
+    weaponDropMultiplier,
+    worldSettingsForSeason2,
+} from './lib/season2.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -585,7 +614,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.2';
+        const APP_VERSION = 'v1.3';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -857,6 +886,7 @@ function redrawPlazaGrantsUi() {
             if (timerWrap) timerWrap.classList.toggle('hidden', !ws.showSeasonTimer);
             applyCurrencyUnitLabels();
             updateSeasonTimer();
+            if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
         }
 
         /** HTML에 박힌 화폐 단위 표기를 현재 설정값으로 갱신 */
@@ -967,7 +997,7 @@ function redrawPlazaGrantsUi() {
             window.renderCurriculumMappingPanel?.();
             setVal('wsBankInterest', window.globalSettings && window.globalSettings.bankInterestPercent != null
                 ? window.globalSettings.bankInterestPercent : 0);
-            setVal('wsRaidRewardXp', (window.globalSettings && window.globalSettings.weekendRaidRewardXp) || 100);
+            setVal('wsRaidRewardXp', (window.globalSettings && window.globalSettings.weekendRaidRewardXp) || 40);
             setVal('wsRaidRewardBong', (window.globalSettings && window.globalSettings.weekendRaidRewardBong) || 20);
             setVal('wsAnnouncement', (window.globalSettings && window.globalSettings.announcement) || '');
             setVal('wsMorningNotice', (window.globalSettings && window.globalSettings.morningActivityNotice) || DEFAULT_MORNING_ACTIVITY_NOTICE);
@@ -982,6 +1012,7 @@ function redrawPlazaGrantsUi() {
             }
             const status = document.getElementById('settingsStatus');
             if (status) status.textContent = '현재 설정을 불러왔습니다. 수정 후 「설정 저장」을 누르세요.';
+            if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
         };
 
         window.saveWorldSettingsFromPanel = async function() {
@@ -1031,7 +1062,7 @@ function redrawPlazaGrantsUi() {
                 raidPassword: text('wsRaidPassword') || (window.globalSettings?.raidPassword || ''),
                 raidPasswordNeedsSetup: !text('wsRaidPassword'),
                 bankInterestPercent: Math.max(0, Math.min(100, num('wsBankInterest', 0))),
-                weekendRaidRewardXp: Math.max(0, Math.floor(num('wsRaidRewardXp', 100))),
+                weekendRaidRewardXp: Math.max(0, Math.floor(num('wsRaidRewardXp', 40))),
                 weekendRaidRewardBong: Math.max(0, Math.floor(num('wsRaidRewardBong', 20))),
                 announcement: text('wsAnnouncement'),
                 morningActivityNotice: text('wsMorningNotice') || DEFAULT_MORNING_ACTIVITY_NOTICE,
@@ -1109,11 +1140,11 @@ function redrawPlazaGrantsUi() {
         // ★ 환경 설정 및 데이터 정의 ★
         // ==========================================
         const BASE_BOSS_HP = 500;
-        const RAID_REWARD = { xp: 500, bong: 50 };
+        const RAID_REWARD = { xp: 120, bong: 20 };
         const RAID_TURN_MS = 20000;
         const RAID_CRITICAL_MS = 10000;
-        const RAID_SUCCESS_REWARD_XP = 150;
-        const RAID_SUCCESS_REWARD_BONG = 30;
+        const RAID_SUCCESS_REWARD_XP = 40;
+        const RAID_SUCCESS_REWARD_BONG = 10;
 
         const EMOTIONS = [
             { id: 'e1', icon: '😄', label: '기쁨', color: 'text-yellow-400' }, { id: 'e2', icon: '😊', label: '평온', color: 'text-emerald-400' },
@@ -1165,24 +1196,24 @@ function redrawPlazaGrantsUi() {
         ];
 
         const QUEST_DATA = [
-            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '8:40 전 등교', xp: 10, bong: 0.5, icon: 'fa-sun', color: 'text-yellow-200', tags: ['#자기관리'] },
-            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 50, bong: 7.0, icon: 'fa-hands-holding-child', color: 'text-pink-300', tags: ['#협력'] },
-            { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 20, bong: 5.0, icon: 'fa-dumbbell', color: 'text-blue-300', tags: ['#자기관리'] },
-            { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 20, bong: 5.0, icon: 'fa-person-snowboarding', color: 'text-emerald-300', tags: ['#자기관리'] },
-            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 20, bong: 5.0, icon: 'fa-child-reaching', color: 'text-orange-300', tags: ['#자기관리'] },
-            { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 20, bong: 2.0, icon: 'fa-utensils', color: 'text-orange-300', tags: ['#자기관리'] },
-            { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 30, bong: 3.0, icon: 'fa-broom', color: 'text-teal-300', tags: ['#자기관리', '#협력'] },
-            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 10, bong: 0.5, icon: 'fa-tooth', color: 'text-cyan-200', tags: ['#자기관리'] },
-            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 25, bong: 5.5, icon: 'fa-gauge-high', color: 'text-emerald-400', tags: ['#자기관리'] },
-            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 25, bong: 6.0, icon: 'fa-fire', color: 'text-orange-400', tags: ['#자기관리'] },
-            { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 50, bong: 2.0, icon: 'fa-calendar-check', color: 'text-white', tags: ['#자기관리'] },
-            { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-flask', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-hammer', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-language', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-music', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-masks-theater', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 100, bong: 5.0, icon: 'fa-person-chalkboard', color: 'text-amber-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 500, bong: 20.0, icon: 'fa-scroll', color: 'text-red-300', tags: ['#교과연계', '#자기관리'] }
+            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '8:40 전 등교', xp: 8, bong: 1, icon: 'fa-sun', color: 'text-yellow-200', tags: ['#자기관리'] },
+            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 38, bong: 4, icon: 'fa-hands-holding-child', color: 'text-pink-300', tags: ['#협력'] },
+            { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 16, bong: 3, icon: 'fa-dumbbell', color: 'text-blue-300', tags: ['#자기관리'] },
+            { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 16, bong: 3, icon: 'fa-person-snowboarding', color: 'text-emerald-300', tags: ['#자기관리'] },
+            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 16, bong: 3, icon: 'fa-child-reaching', color: 'text-orange-300', tags: ['#자기관리'] },
+            { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 16, bong: 2, icon: 'fa-utensils', color: 'text-orange-300', tags: ['#자기관리'] },
+            { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 22, bong: 2, icon: 'fa-broom', color: 'text-teal-300', tags: ['#자기관리', '#협력'] },
+            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 8, bong: 1, icon: 'fa-tooth', color: 'text-cyan-200', tags: ['#자기관리'] },
+            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 20, bong: 3, icon: 'fa-gauge-high', color: 'text-emerald-400', tags: ['#자기관리'] },
+            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 20, bong: 3, icon: 'fa-fire', color: 'text-orange-400', tags: ['#자기관리'] },
+            { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 40, bong: 2, icon: 'fa-calendar-check', color: 'text-white', tags: ['#자기관리'] },
+            { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 40, bong: 3, icon: 'fa-flask', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 40, bong: 3, icon: 'fa-hammer', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 40, bong: 3, icon: 'fa-language', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 40, bong: 3, icon: 'fa-music', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 40, bong: 3, icon: 'fa-masks-theater', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 40, bong: 3, icon: 'fa-person-chalkboard', color: 'text-amber-300', tags: ['#교과연계', '#협력'] },
+            { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 80, bong: 8, icon: 'fa-scroll', color: 'text-red-300', tags: ['#교과연계', '#자기관리'] }
         ];
 
         const SKIN_DATA = [
@@ -1203,7 +1234,7 @@ function redrawPlazaGrantsUi() {
 
         const SHOP_DATA = [
             { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100${getCurrencyUnit()} 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
-            { id: 'item_xp_pack', name: '경험치 팩', desc: '20B로 즉시 100 XP 획득', price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
+            { id: 'item_xp_pack', name: '경험치 팩', desc: `20B로 즉시 ${XP_PACK_GAIN} XP (1인 1일 ${XP_PACK_DAILY_LIMIT}회)`, price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
             { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
             { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'fa-ticket', iconColor: 'text-lime-300', isConsumable: true },
             { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
@@ -1215,13 +1246,22 @@ function redrawPlazaGrantsUi() {
         ];
 
         const LEVEL_DATA = [
-            { max: 1499, name: '새내기', prop: '🥚', borderColor: 'border-slate-600', bgColor: 'bg-slate-800', textColor: 'text-slate-400', anim: 'avatar-bounce' },
-            { max: 4499, name: '초보', prop: '🐣', borderColor: 'border-sb-green', bgColor: 'bg-green-900/30', textColor: 'text-sb-green', anim: 'avatar-bounce' },
-            { max: 9999, name: '중수', prop: '🐥', borderColor: 'border-blue-400', bgColor: 'bg-blue-900/30', textColor: 'text-blue-400', anim: 'avatar-bounce' },
-            { max: 21999, name: '고수', prop: '🦅', borderColor: 'border-yellow-500', bgColor: 'bg-yellow-900/30', textColor: 'text-yellow-500', anim: 'avatar-flex' },
-            { max: 39999, name: '수호자', prop: '☄️', borderColor: 'border-purple-500', bgColor: 'bg-purple-900/30', textColor: 'text-purple-400', anim: 'avatar-float' },
-            { max: Infinity, name: '전설', prop: '🐦‍🔥', borderColor: 'border-sb-red', bgColor: 'bg-red-900/30', textColor: 'text-sb-red', anim: 'avatar-legend' }
+            { max: 1499, name: '새내기', prop: '🥚', img: 'ranks/rank-saenaegi.webp', borderColor: 'border-slate-600', bgColor: 'bg-slate-800', textColor: 'text-slate-400', anim: 'avatar-bounce' },
+            { max: 4499, name: '초보', prop: '🐣', img: 'ranks/rank-chobo.webp', borderColor: 'border-sb-green', bgColor: 'bg-green-900/30', textColor: 'text-sb-green', anim: 'avatar-bounce' },
+            { max: 9999, name: '중수', prop: '🐥', img: 'ranks/rank-jungsu.webp', borderColor: 'border-blue-400', bgColor: 'bg-blue-900/30', textColor: 'text-blue-400', anim: 'avatar-bounce' },
+            { max: 21999, name: '고수', prop: '🦅', img: 'ranks/rank-gosu.webp', borderColor: 'border-yellow-500', bgColor: 'bg-yellow-900/30', textColor: 'text-yellow-500', anim: 'avatar-flex' },
+            { max: 39999, name: '수호자', prop: '☄️', img: 'ranks/rank-guardian.webp', borderColor: 'border-purple-500', bgColor: 'bg-purple-900/30', textColor: 'text-purple-400', anim: 'avatar-float' },
+            { max: Infinity, name: '전설', prop: '🐦‍🔥', img: 'ranks/rank-legend.webp', borderColor: 'border-sb-red', bgColor: 'bg-red-900/30', textColor: 'text-sb-red', anim: 'avatar-legend' }
         ];
+
+        function rankBadgeHtml(info, extraClass = '') {
+            const name = escapeHtmlAttr((info && info.name) || '');
+            const cls = `rank-badge ${extraClass}`.trim();
+            if (info && info.img) {
+                return `<img src="${info.img}" alt="${name}" class="${cls}" />`;
+            }
+            return `<span class="${cls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
+        }
 
         const STUDENT_NAMES = { 
             "1": "김단엘", "2": "김라희", "3": "김민지", "4": "김정훈", 
@@ -1967,7 +2007,7 @@ function redrawPlazaGrantsUi() {
                     raidPassword: raidPw,
                     raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
                     shieldStock: 10,
-                    weekendRaidRewardXp: 100,
+                    weekendRaidRewardXp: 40,
                     weekendRaidRewardBong: 20,
                     curriculumTags: DEFAULT_CURRICULUM_TAGS,
                     curriculumMapping: DEFAULT_CURRICULUM_MAPPING,
@@ -2528,7 +2568,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 100, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -2849,7 +2889,7 @@ function redrawPlazaGrantsUi() {
                     type: ['daily', 'weekly', 'locked'].includes(q.type) ? q.type : 'daily',
                     name: String(q.name),
                     desc: String(q.desc || ''),
-                    xp: Math.max(0, Math.floor(Number(q.xp) || 0)),
+                    xp: Math.min(CUSTOM_QUEST_XP_MAX, Math.max(0, Math.floor(Number(q.xp) || 0))),
                     bong: normalizeQuestBongReward(Number(q.bong) || 0),
                     icon: q.icon || 'fa-star',
                     color: q.color || 'text-emerald-300',
@@ -4192,7 +4232,7 @@ ${subjectLine}
         }
 
         function getWeekendRaidRewardSettings() {
-            const rawXp = window.globalSettings && window.globalSettings.weekendRaidRewardXp != null ? window.globalSettings.weekendRaidRewardXp : 100;
+            const rawXp = window.globalSettings && window.globalSettings.weekendRaidRewardXp != null ? window.globalSettings.weekendRaidRewardXp : 40;
             const rawBong = window.globalSettings && window.globalSettings.weekendRaidRewardBong != null ? window.globalSettings.weekendRaidRewardBong : 20;
             const xp = Math.max(0, Math.floor(Number(rawXp) || 0));
             const bong = normalizeBongValue(Math.max(0, Number(rawBong) || 0));
@@ -4682,6 +4722,9 @@ ${subjectLine}
                 const ledger = Array.isArray(data.itemRefundLedger) ? data.itemRefundLedger.slice() : [];
                 if (ledger.some((row) => row && row.refundId === refundId)) throw new Error('duplicate_refund');
 
+                const refundGate = canRefundSkinThisSeason(data, getLocalDateStr());
+                if (!refundGate.ok) throw new Error(refundGate.reason === 'season' ? 'season_refund_cap' : 'day_refund_cap');
+
                 const built = buildSkinRefundServerPatch(data, itemId);
                 const itemPatch = {
                     ownedSkins: built.ownedSkins,
@@ -4704,14 +4747,17 @@ ${subjectLine}
                     label: label || '',
                 });
 
+                const seasonCount = Math.max(0, Math.floor(Number(data.seasonSkinRefundCount) || 0)) + 1;
                 transaction.set(currentStudentDocRef, {
                     ...itemPatch,
                     bong: increment(amount),
                     itemRefundLedger: ledger.slice(-60),
                     bongChangeLog: bongLogs,
+                    seasonSkinRefundCount: seasonCount,
+                    lastSkinRefundDate: getLocalDateStr(),
                 }, { merge: true });
 
-                synced = { nextBong, itemPatch, ledgerEntry: ledger[ledger.length - 1], bongLog: bongLogs[bongLogs.length - 1] };
+                synced = { nextBong, itemPatch, ledgerEntry: ledger[ledger.length - 1], bongLog: bongLogs[bongLogs.length - 1], seasonSkinRefundCount: seasonCount };
             });
 
             return synced;
@@ -4732,6 +4778,9 @@ ${subjectLine}
             if (!Array.isArray(window.playerState.bongChangeLog)) window.playerState.bongChangeLog = [];
             window.playerState.bongChangeLog.push(synced.bongLog);
             window.playerState.bongChangeLog = window.playerState.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT);
+            if (synced.seasonSkinRefundCount != null) {
+                window.playerState.seasonSkinRefundCount = synced.seasonSkinRefundCount;
+            }
         }
 
         function getStudentBongGainToday(bongChangeLog, gameDateStr) {
@@ -4815,6 +4864,93 @@ ${subjectLine}
 
         window.renderSamBongFinancialSupervisionPanel = renderSamBongFinancialSupervisionPanel;
         window.renderBongAnomalyPanel = renderSamBongFinancialSupervisionPanel;
+
+        function buildXpAnomalyReport(studentsData) {
+            const today = getLocalDateStr();
+            const pace = expectedXpPace(today);
+            const rows = Array.isArray(studentsData) ? studentsData : [];
+            const alerts = [];
+            rows.forEach((stu) => {
+                const sid = String((stu && stu.id) || '');
+                if (!sid || sid === 'gm' || sid === 'gm_a' || sid === 'guest') return;
+                const incidents = buildXpSupervisionIncidents(stu, today, pace);
+                if (!incidents.length) return;
+                alerts.push({
+                    sid,
+                    name: STUDENT_NAMES[sid] || stu.name || sid,
+                    xp: Math.max(0, Math.floor(Number(stu.xp) || 0)),
+                    incidents,
+                });
+            });
+            alerts.sort((a, b) => b.xp - a.xp);
+            return { today, pace, alerts, alertCount: alerts.length };
+        }
+
+        function renderXpSupervisionPanel(studentsData) {
+            const el = document.getElementById('xpAnomalyPanel');
+            if (!el) return;
+            if (!window.playerState || !window.playerState.isGM) {
+                el.classList.add('hidden');
+                return;
+            }
+            el.classList.remove('hidden');
+            const report = buildXpAnomalyReport(studentsData);
+            const criteriaText = `당일 +${XP_ANOMALY_DAILY_GAIN_WARN} XP↑ · 단일 +${XP_ANOMALY_SINGLE_DELTA_WARN} XP↑ · 예상 페이스+${XP_ANOMALY_AHEAD_OF_PACE_WARN.toLocaleString()} XP↑`;
+            if (!report.alertCount) {
+                el.innerHTML = `
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-sky-400"></i> 경험치 감시 시스템</h3>
+                        <span class="text-[9px] text-emerald-300 font-bold">이상 없음</span>
+                    </div>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">퀘스트·상점·로그 XP를 감시합니다. 오늘 예상 페이스 ${report.pace.toLocaleString()} XP. ${criteriaText} 시 경고됩니다.</p>`;
+                return;
+            }
+            const rowsHtml = report.alerts.map((a) => `
+                <div class="rounded-lg border border-sky-600/40 bg-sky-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
+                    <div class="font-bold text-sky-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span> · ${a.xp.toLocaleString()} XP</div>
+                    <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
+                </div>`).join('');
+            el.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2 mb-2">
+                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-sky-300"></i> 경험치 감시 시스템</h3>
+                    <span class="text-[9px] bg-sky-900/60 text-sky-100 px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 감독 대상</span>
+                    <button type="button" onclick="window.renderXpSupervisionPanel(window.allStudentsData)" class="ml-auto text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded border border-slate-600">새로고침</button>
+                </div>
+                <p class="text-[9px] text-slate-500 mb-2 leading-relaxed">비정상 급등·과다 일일 획득을 날짜·행위와 함께 표시합니다. 당사자에게도 경고가 갑니다.</p>
+                <div class="space-y-2 max-h-52 overflow-y-auto scrollbar-hide">${rowsHtml}</div>`;
+        }
+        window.renderXpSupervisionPanel = renderXpSupervisionPanel;
+
+        let _xpSupervisionStudentAlertRunning = false;
+        async function maybeAlertStudentXpSupervision() {
+            if (_xpSupervisionStudentAlertRunning) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            const sid = String(localStorage.getItem('sambong_student_id') || '');
+            if (!sid) return;
+            const today = getLocalDateStr();
+            const incidents = buildXpSupervisionIncidents(window.playerState, today, expectedXpPace(today));
+            if (!incidents.length) return;
+            const storageKey = `sambong_xp_supervision_seen_${sid}`;
+            let seen = {};
+            try { seen = JSON.parse(localStorage.getItem(storageKey) || '{}'); } catch (e) { seen = {}; }
+            const newOnes = incidents.filter((inc) => !seen[inc.id]);
+            if (!newOnes.length) return;
+            _xpSupervisionStudentAlertRunning = true;
+            try {
+                const lines = newOnes.map((inc) => `· ${buildSupervisionIncidentSummaryLine(inc)}`).join('\n');
+                await window.customAlert(
+                    '⚠️ 경험치 감시 경고\n\n' +
+                    '허용되지 않은 방법으로 경험치가 급증한 것으로 보입니다.\n' +
+                    `${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
+                    '[감지 내역]\n' + lines
+                );
+                newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
+                localStorage.setItem(storageKey, JSON.stringify(seen));
+            } finally {
+                _xpSupervisionStudentAlertRunning = false;
+            }
+        }
+        window.maybeAlertStudentXpSupervision = maybeAlertStudentXpSupervision;
 
         let _supervisionStudentAlertRunning = false;
 
@@ -4982,7 +5118,14 @@ ${subjectLine}
 
         /** 랜덤 박스·미스테리 박스 1인 1일 구매 상한(각각) */
         const SHOP_DAILY_PURCHASE_LIMIT = 3;
-        const SHOP_DAILY_LIMIT_ITEM_IDS = ['item_random', 'item_mystery_dice'];
+        const CUSTOM_XP_DAILY_KEY = 'custom_xp';
+        const SHOP_DAILY_ITEM_LIMITS = {
+            item_random: SHOP_DAILY_PURCHASE_LIMIT,
+            item_mystery_dice: SHOP_DAILY_PURCHASE_LIMIT,
+            item_xp_pack: XP_PACK_DAILY_LIMIT,
+            [CUSTOM_XP_DAILY_KEY]: CUSTOM_SHOP_XP_DAILY_LIMIT,
+        };
+        const SHOP_DAILY_LIMIT_ITEM_IDS = Object.keys(SHOP_DAILY_ITEM_LIMITS);
 
         /** 날짜가 바뀌면 상점 일일 구매 횟수 초기화 */
         function ensureShopDailyPurchaseCounts(state) {
@@ -4990,7 +5133,7 @@ ${subjectLine}
             const today = getLocalDateStr();
             const cur = state.shopDailyPurchase;
             if (!cur || cur.date !== today) {
-                state.shopDailyPurchase = { date: today, item_random: 0, item_mystery_dice: 0 };
+                state.shopDailyPurchase = { date: today, item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 };
                 return true;
             }
             return false;
@@ -5003,9 +5146,14 @@ ${subjectLine}
             return Math.max(0, Math.floor(Number(n) || 0));
         }
 
+        function getShopItemDailyLimit(itemId) {
+            return Math.max(0, Math.floor(Number(SHOP_DAILY_ITEM_LIMITS[itemId]) || 0));
+        }
+
         function getShopDailyPurchaseRemaining(state, itemId) {
-            if (!state || state.isAdmin) return SHOP_DAILY_PURCHASE_LIMIT;
-            return Math.max(0, SHOP_DAILY_PURCHASE_LIMIT - getShopDailyPurchaseUsed(state, itemId));
+            const cap = getShopItemDailyLimit(itemId) || SHOP_DAILY_PURCHASE_LIMIT;
+            if (!state || state.isAdmin) return cap;
+            return Math.max(0, cap - getShopDailyPurchaseUsed(state, itemId));
         }
 
         function canShopItemBePurchasedToday(state, itemId) {
@@ -6158,7 +6306,7 @@ ${subjectLine}
                 if (updatedQuests[qId]) hadCompletedDaily = true;
             });
             window.playerState.lastDailyReset = gameDateStr;
-            window.playerState.shopDailyPurchase = { date: gameDateStr, item_random: 0, item_mystery_dice: 0 };
+            window.playerState.shopDailyPurchase = { date: gameDateStr, item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 };
             sanitizeDailyQuestFlagsForDate(window.playerState, gameDateStr);
 
             let lunchReset = false;
@@ -12046,7 +12194,7 @@ ${subjectLine}
                     ${shieldHtml}${jobHtml}${condHtml}
                     <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
                         <div class="relative inline-block leading-none">${face}${overlays}</div>
-                        <div class="text-[0.6em] leading-none animate-pulse">${lv.info.prop}</div>
+                        <div class="text-[0.6em] leading-none">${rankBadgeHtml(lv.info, 'rank-badge-plaza')}</div>
                     </div>
                     <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv} ${lv.info.name}</div>
                     <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
@@ -12149,6 +12297,7 @@ ${subjectLine}
                 }
             });
             renderBongAnomalyPanel(studentsData);
+            if (typeof window.renderXpSupervisionPanel === 'function') window.renderXpSupervisionPanel(studentsData);
         };
 
         /** 마스터 엑셀 내보내기 — 체크박스 패널 렌더 */
@@ -13393,7 +13542,7 @@ ${subjectLine}
             const dashCard = document.getElementById('dashAvatarCard');
             if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             
-            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="text-[0.5em] absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':lvInfo.info.prop}</div>`;
+            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`;
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
             document.getElementById('dashXp').innerText = xp.toLocaleString();
@@ -13667,10 +13816,11 @@ ${subjectLine}
                             } else {
                                 const used = getShopDailyPurchaseUsed(window.playerState, shop.id);
                                 const remain = getShopDailyPurchaseRemaining(window.playerState, shop.id);
+                                const cap = getShopItemDailyLimit(shop.id) || SHOP_DAILY_PURCHASE_LIMIT;
                                 limitDiv.innerText =
                                     remain > 0
-                                        ? `(오늘 ${used}/${SHOP_DAILY_PURCHASE_LIMIT}회 · 남음 ${remain}회)`
-                                        : `(오늘 ${SHOP_DAILY_PURCHASE_LIMIT}회 모두 사용)`;
+                                        ? `(오늘 ${used}/${cap}회 · 남음 ${remain}회)`
+                                        : `(오늘 ${cap}회 모두 사용)`;
                                 limitDiv.className =
                                     remain > 0
                                         ? 'shop-daily-limit text-[10px] font-bold mt-0.5 text-amber-300'
@@ -13721,6 +13871,7 @@ ${subjectLine}
             if (typeof updateRaidEntryUI === 'function') updateRaidEntryUI();
             if (canRunBankSideEffects) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
+                setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
             }
         }
 
@@ -13858,7 +14009,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -13916,15 +14067,19 @@ ${subjectLine}
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }
             const xpFloor = getQuestHistoryXpFloor(dataToSave);
-            if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) {
+            const localSeasonApplied = Math.floor(Number(dataToSave.seasonNumberApplied) || 0);
+            if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp') && localSeasonApplied < 2) {
                 const nextXp = Math.floor(Number(dataToSave.xp) || 0);
                 dataToSave.xp = Math.max(nextXp, xpFloor);
+            } else if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) {
+                dataToSave.xp = Math.max(0, Math.floor(Number(dataToSave.xp) || 0));
             }
             /** 직후 스냅샷의 XP 상승을 '내 저장'과 구분해 잘못된 안내 방지 */
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
             let blockedByDuplicateQuest = false;
+            let blockedByStaleSeason2 = false;
             let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -13936,6 +14091,13 @@ ${subjectLine}
                     const snap = await transaction.get(currentStudentDocRef);
                     if (snap.exists()) {
                         const serverData = snap.data() || {};
+                        const serverSeason = Math.floor(Number(serverData.seasonNumberApplied) || 0);
+                        const localSeason = Math.floor(Number(dataToSave.seasonNumberApplied) || 0);
+                        if (serverSeason >= 2 && localSeason < 2) {
+                            blockedByStaleSeason2 = true;
+                            serverRestoreData = serverData;
+                            return;
+                        }
                         const serverXp = Number(serverData.xp);
                         const nextXp = Number(dataToSave.xp);
                         if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && nextXp < serverXp) {
@@ -13947,7 +14109,9 @@ ${subjectLine}
                             }
                         }
                         if (Number.isFinite(serverXp) && Number.isFinite(nextXp) && nextXp > serverXp) {
-                            const maxRise = STUDENT_MAX_XP_INCREASE_PER_SAVE;
+                            const maxRise = (window.playerState && window.playerState.isAdmin)
+                                ? STUDENT_MAX_XP_INCREASE_PER_SAVE
+                                : 250;
                             if (nextXp > serverXp + maxRise) {
                                 dataToSave.xp = Math.floor(serverXp + maxRise);
                             }
@@ -14068,7 +14232,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -14078,6 +14242,10 @@ ${subjectLine}
                         };
                         window.playerState = { ...serverRestoreData, ...roleFlags };
                         if (typeof updateUI === 'function') updateUI();
+                    }
+                    if (blockedByStaleSeason2) {
+                        await window.customAlert('시즌 2가 시작되어 시즌 1 경험치는 정산되었습니다.\n화면을 맞춰 두었습니다. 새 시즌을 이어서 플레이해 주세요.');
+                        return false;
                     }
                     await window.customAlert(
                         blockedByDuplicateQuest
@@ -14651,63 +14819,48 @@ ${subjectLine}
         window.equipWeapon = async function(wpId) {
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
+            window.playerState.inventory = uniqueInventory(window.playerState.inventory);
+            if (!window.playerState.inventory.includes(wpId)) return;
             if (window.playerState.equippedWeapon === wpId) window.playerState.equippedWeapon = null; 
             else window.playerState.equippedWeapon = wpId; 
             updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
         };
 
         async function handleQuestDrop(xp, opts = {}) {
-            // 기본 드랍 확률 배율 (무기 인벤 0개면 가중↑, 1개면 기본, 2개 이상이면 감쇠)
-            let dropMultiplier = 1.0;
             if (!window.playerState.inventory) window.playerState.inventory = [];
+            window.playerState.inventory = uniqueInventory(window.playerState.inventory);
             const invenCount = window.playerState.inventory.length;
-            
-            if (invenCount === 0) dropMultiplier = opts.allDailyDone ? 10.0 : 6.0;
-            else if (invenCount === 1) dropMultiplier = 1.0;
-            else dropMultiplier = 0.5;
-
-            // 총 경험치가 낮은 학생일수록 무기 획득 확률 추가 가중 (퀘스트 보상 xp와는 별개)
-            const totalXp = Number(window.playerState.xp) || 0;
-            dropMultiplier *= (1 + getLowXpBoostFactor(totalXp) * 2.0) * getXpWeaponDropFactor(totalXp);
+            let dropMultiplier = weaponDropMultiplier(invenCount);
 
             const rand = Math.random() * 100;
             let dropped = null;
             
-            // 아주 낮은 기본 드랍율 설정
-            if (xp >= 500) {
-                if (rand < 2 * dropMultiplier) dropped = 'wp5'; 
-                else if (rand < 5 * dropMultiplier) dropped = 'wp4'; 
-                else if (rand < 10 * dropMultiplier) dropped = 'wp3';
-            } else if (xp >= 100) {
-                if (rand < 0.5 * dropMultiplier) dropped = 'wp4'; 
-                else if (rand < 2 * dropMultiplier) dropped = 'wp3'; 
-                else if (rand < 5 * dropMultiplier) dropped = 'wp2';
-            } else if (xp >= 50) {
+            if (xp >= 80) {
+                if (rand < 1.2 * dropMultiplier) dropped = 'wp5'; 
+                else if (rand < 3 * dropMultiplier) dropped = 'wp4'; 
+                else if (rand < 6 * dropMultiplier) dropped = 'wp3';
+            } else if (xp >= 30) {
+                if (rand < 0.4 * dropMultiplier) dropped = 'wp4'; 
+                else if (rand < 1.5 * dropMultiplier) dropped = 'wp3'; 
+                else if (rand < 3.5 * dropMultiplier) dropped = 'wp2';
+            } else if (xp >= 16) {
                 if (rand < 0.2 * dropMultiplier) dropped = 'wp3'; 
                 else if (rand < 1 * dropMultiplier) dropped = 'wp2'; 
-                else if (rand < 3 * dropMultiplier) dropped = 'wp1';
+                else if (rand < 2.5 * dropMultiplier) dropped = 'wp1';
             } else {
-                if (rand < 0.1 * dropMultiplier) dropped = 'wp2'; 
-                else if (rand < 1.5 * dropMultiplier) dropped = 'wp1';
+                if (rand < 0.8 * dropMultiplier) dropped = 'wp1';
             }
 
             if (dropped) {
                 const wp = WEAPON_DATA.find(w => w.id === dropped);
-                const hadSame = (window.playerState.inventory || []).filter((id) => id === dropped).length;
-                window.playerState.inventory.push(dropped);
-                if (hadSame > 0) {
-                    const comp = 10;
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + comp);
-                    if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
-                    await window.customAlert(
-                        `🎁 [${wp.emoji} ${wp.name}] 중복 획득!\n컬렉션에 추가되었고, 보너스로 ${formatBongAmount(comp)}를 드려요.`
-                    );
-                } else {
-                    if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
-                    await window.customAlert(
-                        `🎉 [무기 획득!]\n[${wp.emoji} ${wp.name}] (데미지 +${wp.bonus}) 이 컬렉션에 추가되었어요!\n같은 종류를 탭하면 장착합니다.`
-                    );
+                if ((window.playerState.inventory || []).includes(dropped)) {
+                    return;
                 }
+                window.playerState.inventory.push(dropped);
+                if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
+                await window.customAlert(
+                    `🎉 [무기 획득!]\n[${wp.emoji} ${wp.name}] (데미지 +${wp.bonus}) 이 컬렉션에 추가되었어요!\n같은 종류를 탭하면 장착합니다. 착용 효과는 레이드 데미지만 적용됩니다.`
+                );
             }
         }
 
@@ -14735,14 +14888,15 @@ ${subjectLine}
             window._questActionRunning = true;
             try {
             const bongBefore = normalizeBongValue(Number(window.playerState.bong) || 0);
+            const catalogPay = catalogQuestRewards(qMetaEarly, xp, bong);
 
-            let finalXp = xp;
-            let finalBong = qMetaEarly ? qMetaEarly.bong : normalizeQuestBongReward(bong);
+            let finalXp = catalogPay.xp;
+            let finalBong = catalogPay.bong;
             let isEarlyBirdJackpot = false;
             let buffAmount = 0;
             
-            if (window.playerState.equippedWeapon) {
-                buffAmount = Math.max(1, Math.floor(xp * 0.05));
+            if (window.playerState.equippedWeapon && WEAPON_QUEST_XP_BUFF_RATE > 0) {
+                buffAmount = Math.max(1, Math.floor(finalXp * WEAPON_QUEST_XP_BUFF_RATE));
                 finalXp += buffAmount;
             }
             
@@ -14773,16 +14927,16 @@ ${subjectLine}
                 window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
             }
 
-            // 일일 퀘스트를 모두 완료한 날 1회 보너스 (50 XP, 10 B) — 기록 기준
+            // 일일 퀘스트를 모두 완료한 날 1회 보너스 — 기록 기준
             const dailyIdsAll = getQuestCatalog().filter(q => q.type === 'daily').map(q => q.id);
             const allDailyDone = dailyIdsAll.length > 0 && dailyIdsAll.every(id => isDailyQuestCompletedToday(window.playerState, id, dateStr));
             const todayStrBonus = dateStr;
             let dailyAllClearMsg = '';
             if (allDailyDone && !hadDailyAllClearBonusToday(window.playerState, todayStrBonus)) {
                 window.playerState.dailyAllClearBonusDate = todayStrBonus;
-                window.playerState.xp += 50;
-                window.playerState.bong = normalizeBongValue(window.playerState.bong + 10);
-                dailyAllClearMsg = `🌟 [일일 퀘스트 전부 완료!]\n보너스 경험치 +50 XP · 삼봉 +10 B\n\n`;
+                window.playerState.xp += DAILY_ALL_CLEAR_XP;
+                window.playerState.bong = normalizeBongValue(window.playerState.bong + DAILY_ALL_CLEAR_BONG);
+                dailyAllClearMsg = `🌟 [일일 퀘스트 전부 완료!]\n보너스 경험치 +${DAILY_ALL_CLEAR_XP} XP · 삼봉 +${DAILY_ALL_CLEAR_BONG} B\n\n`;
             }
 
             const newLv = getLevelInfo(window.playerState.xp).index;
@@ -14800,7 +14954,7 @@ ${subjectLine}
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
             await window.customAlert(alertMsg.trim());
 
-            await handleQuestDrop(xp, { allDailyDone });
+            await handleQuestDrop(catalogPay.xp, { allDailyDone });
 
             updateUI();
 
@@ -14834,27 +14988,32 @@ ${subjectLine}
             if (window.playerState.isGuest) return;
             if (shouldIgnoreAccidentalPointer()) return;
             if (window._questActionRunning) return;
-            const rewardBong = normalizeQuestBongReward(bong);
+            const rewardBong = catalogQuestRewards(getQuestCatalog().find((q) => q.id === qId), xp, bong).bong;
             const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(1 B)가 깎여요.");
             
             if (isOk) {
                 if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
 
+                let deductXp = catalogQuestRewards(getQuestCatalog().find((q) => q.id === qId), xp, bong).xp;
                 if (window.playerState.questHistory) {
                     const now = new Date();
                     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                     const idx = window.playerState.questHistory.map(q => q.id === qId && q.date === dateStr).lastIndexOf(true);
-                    if (idx !== -1) window.playerState.questHistory.splice(idx, 1);
+                    if (idx !== -1) {
+                        const histXp = Math.floor(Number(window.playerState.questHistory[idx].xp) || 0);
+                        if (histXp > 0) deductXp = histXp;
+                        window.playerState.questHistory.splice(idx, 1);
+                    }
                 }
 
                 const deductBong = rewardBong + 1;
-                window.playerState.xp = Math.max(0, window.playerState.xp - xp);
+                window.playerState.xp = Math.max(0, window.playerState.xp - deductXp);
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - deductBong);
                 if (!window.playerState.quests) window.playerState.quests = {};
                 /** delete는 Firestore merge 시 서버 true가 되살아나므로 명시적으로 false를 남깁니다. */
                 window.playerState.quests[qId] = false;
                 updateUI(); 
-                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: xp, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
+                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: deductXp, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();
@@ -15453,16 +15612,20 @@ ${subjectLine}
 
             if (id === 'item_xp_pack') {
                 const packPrice = getEffectiveShopPrice('item_xp_pack');
-                const gainXp = 100;
+                const gainXp = XP_PACK_GAIN;
                 if (!groupEx) {
+                    if (!canShopItemBePurchasedToday(window.playerState, id)) {
+                        return await window.customAlert(`오늘 경험치 팩은 1인당 ${XP_PACK_DAILY_LIMIT}회까지만 살 수 있어요.`);
+                    }
                     if (window.playerState.bong < packPrice && !window.playerState.isAdmin) {
                         return await window.customAlert(formatInsufficientBongAlert(packPrice - (Number(window.playerState.bong) || 0)));
                     }
-                    const ok = await window.customConfirm(`[경험치 팩]\n${formatBongAmount(packPrice)}를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                    const ok = await window.customConfirm(`[경험치 팩]\n${formatBongAmount(packPrice)}를 사용해 즉시 ${gainXp} XP를 획득할까요?\n(1인 1일 ${XP_PACK_DAILY_LIMIT}회)`);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - packPrice);
                 }
                 window.playerState.xp += gainXp;
+                if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, id);
                 playSfx('xp', true);
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : packPrice, requireServerBongBalance: !groupEx, operationLabel: '경험치 팩 구매' });
@@ -15471,17 +15634,21 @@ ${subjectLine}
             }
 
             if (currentShopItem && currentShopItem.custom && currentShopItem.effect === 'xp') {
-                const gainXp = Math.max(0, parseInt(currentShopItem.xpReward, 10) || 0);
+                const gainXp = Math.min(CUSTOM_SHOP_XP_MAX, Math.max(0, parseInt(currentShopItem.xpReward, 10) || 0));
                 if (gainXp <= 0) return await window.customAlert('지급 XP가 설정되지 않은 아이템입니다.');
                 if (!groupEx) {
+                    if (!canShopItemBePurchasedToday(window.playerState, CUSTOM_XP_DAILY_KEY)) {
+                        return await window.customAlert(`시즌 2 상점 경험치 아이템은 1인 1일 ${CUSTOM_SHOP_XP_DAILY_LIMIT}회까지입니다.`);
+                    }
                     if (window.playerState.bong < price && !window.playerState.isAdmin) {
                         return await window.customAlert(formatInsufficientBongAlert(price - (Number(window.playerState.bong) || 0)));
                     }
-                    const ok = await window.customConfirm(`[${currentShopItem.name}]\n${formatBongAmount(price)}를 사용해 즉시 ${gainXp} XP를 획득할까요?`);
+                    const ok = await window.customConfirm(`[${currentShopItem.name}]\n${formatBongAmount(price)}를 사용해 즉시 ${gainXp} XP를 획득할까요?\n(시즌 2: 상점 XP는 최대 ${CUSTOM_SHOP_XP_MAX} · 1일 ${CUSTOM_SHOP_XP_DAILY_LIMIT}회)`);
                     if (!ok) return;
                     if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                 }
                 window.playerState.xp = (Number(window.playerState.xp) || 0) + gainXp;
+                if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, CUSTOM_XP_DAILY_KEY);
                 playSfx('xp', true);
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, operationLabel: '경험치 아이템 구매' });
@@ -15645,10 +15812,10 @@ ${subjectLine}
             const desc = descEl ? String(descEl.value || '').trim() : '';
             const price = normalizeBongValue(parseFloat(priceEl ? priceEl.value : ''));
             const type = typeEl ? String(typeEl.value || 'class') : 'class';
-            const xpReward = Math.max(0, parseInt(xpEl ? xpEl.value : '0', 10) || 0);
+            const xpReward = Math.min(CUSTOM_SHOP_XP_MAX, Math.max(0, parseInt(xpEl ? xpEl.value : '0', 10) || 0));
             if (!name) return await window.customAlert('아이템 이름을 입력해 주세요.');
             if (!Number.isFinite(price) || price < 0) return await window.customAlert('가격은 0 이상의 숫자로 입력해 주세요.');
-            if (type === 'xp' && xpReward <= 0) return await window.customAlert('경험치 아이템은 지급 XP를 1 이상으로 입력해 주세요.');
+            if (type === 'xp' && xpReward <= 0) return await window.customAlert(`경험치 아이템은 지급 XP를 1~${CUSTOM_SHOP_XP_MAX}으로 입력해 주세요.`);
 
             const baseId = name
                 .toLowerCase()
@@ -15725,7 +15892,7 @@ ${subjectLine}
             const name = nameEl ? String(nameEl.value || '').trim() : '';
             const type = typeEl ? String(typeEl.value || 'daily') : 'daily';
             const desc = descEl ? String(descEl.value || '').trim() : '';
-            const xp = Math.max(0, Math.floor(Number(xpEl ? xpEl.value : 0) || 0));
+            const xp = Math.min(CUSTOM_QUEST_XP_MAX, Math.max(0, Math.floor(Number(xpEl ? xpEl.value : 0) || 0)));
             const bong = normalizeBongValue(Math.max(0, Number(bongEl ? bongEl.value : 0) || 0));
             const icon = iconEl && iconEl.value ? String(iconEl.value).trim() : 'fa-star';
             const color = colorEl ? String(colorEl.value || 'text-emerald-300') : 'text-emerald-300';
@@ -16455,6 +16622,13 @@ ${subjectLine}
 
             const refundB = getEquippedSkinRefundBong(skin);
             if (refundB <= 0) return await window.customAlert('환불할 수 없는 스킨입니다.');
+            const refundGate = canRefundSkinThisSeason(window.playerState, getLocalDateStr());
+            if (!refundGate.ok) {
+                if (refundGate.reason === 'season') {
+                    return await window.customAlert(`시즌 2 환불은 학생당 ${SKIN_REFUND_MAX_PER_SEASON}회까지입니다.`);
+                }
+                return await window.customAlert(`환불은 하루에 ${SKIN_REFUND_MAX_PER_DAY}회만 할 수 있어요.`);
+            }
 
             const typeLabel =
                 skin.type === 'aura' ? '테두리(오라)' : skin.type === 'face' ? '얼굴 스킨' : '장식 스킨';
@@ -16486,8 +16660,11 @@ ${subjectLine}
                 if (code === 'not_equipped') {
                     return await window.customAlert('이미 환불되었거나 장착 중인 스킨이 아닙니다. 새로고침 후 다시 확인해 주세요.');
                 }
-                if (code === 'duplicate_refund') {
-                    return await window.customAlert('이미 처리된 환불 요청입니다.');
+                if (code === 'season_refund_cap') {
+                    return await window.customAlert(`시즌 2 환불은 학생당 ${SKIN_REFUND_MAX_PER_SEASON}회까지입니다.`);
+                }
+                if (code === 'day_refund_cap') {
+                    return await window.customAlert(`환불은 하루에 ${SKIN_REFUND_MAX_PER_DAY}회만 할 수 있어요.`);
                 }
                 console.error('refundEquippedSkin', e);
                 await window.customAlert('환불 실패: ' + code);
@@ -16567,6 +16744,7 @@ ${subjectLine}
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
+            'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',
         ];
 
         function extractStudentGameData(existingData = {}) {
@@ -16591,6 +16769,113 @@ ${subjectLine}
             await setDoc(getStudentBackupRef(stuId), payload);
             return payload;
         }
+
+        function isSeason2AlreadyStarted() {
+            return !!(window.globalSettings && window.globalSettings.season2StartedAt);
+        }
+
+        window.refreshSeason2StartPanel = function() {
+            const hint = document.getElementById('season2StartHint');
+            const btn = document.getElementById('season2StartBtn');
+            if (!hint || !btn) return;
+            const today = getLocalDateStr();
+            const days = season2SchoolDaysTotal();
+            const questXp = estimateSeason2QuestXp(days);
+            const started = isSeason2AlreadyStarted();
+            const gate = canStartSeason2(today, started);
+            hint.textContent = started
+                ? `시즌 2가 이미 시작되었습니다. 졸업(1/7)까지 수업 ${days}일 · 퀘스트 경로 약 ${questXp.toLocaleString()} XP, 수업 중 부여분 약 ${SEASON2.teacherXpBudget.toLocaleString()} XP.`
+                : `9월 1일 아침 「시즌 2 시작」을 누르면 시즌 1 XP 1만당 100봉을 지급하고 경험치를 0으로 되돌립니다. 수업 ${days}일 · 퀘스트 약 ${questXp.toLocaleString()} XP + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()} XP ≈ 목표 ${SEASON2.targetXp.toLocaleString()} XP.`;
+            btn.disabled = !window.playerState || !window.playerState.isGM || !gate.ok;
+            btn.textContent = started ? '시즌 2 진행 중' : (gate.reason === 'before' ? '9월 1일부터 시작' : '시즌 2 시작');
+        };
+
+        window.startSeason2 = async function() {
+            if (!window.playerState || !window.playerState.isGM) {
+                return window.customAlert('시즌 2 시작은 마스터 J만 실행할 수 있습니다.');
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+            const today = getLocalDateStr();
+            const gate = canStartSeason2(today, isSeason2AlreadyStarted());
+            if (!gate.ok) {
+                if (gate.reason === 'already') return window.customAlert('시즌 2는 이미 시작되었습니다.');
+                if (gate.reason === 'before') return window.customAlert('시즌 2는 2026년 9월 1일부터 시작할 수 있습니다.');
+                return window.customAlert('시즌 2를 시작할 수 없습니다.');
+            }
+            const ok = await window.customConfirm(
+                'MATE 시즌 2를 시작할까요?\n\n' +
+                '· 시즌 1 경험치 10,000당 100봉을 보상으로 지급합니다.\n' +
+                '· 모든 학생 경험치·퀘스트 기록은 0/빈 값으로 돌아갑니다.\n' +
+                '· 직업·은행·스킨·봉(정산분 포함)은 유지합니다.\n' +
+                '· 중복 무기는 종류당 1개만 남깁니다.\n' +
+                '· 종료일: 2027-01-07(졸업)\n\n' +
+                '이 작업은 한 번만 실행됩니다.'
+            );
+            if (!ok) return;
+            const ok2 = await window.customConfirm('최종 확인: 지금 시즌 2를 시작할까요?');
+            if (!ok2) return;
+
+            try {
+                window.showGlobalLoading('시즌 2 시작 중…');
+                const nowMs = Date.now();
+                const ids = getActiveStudentIds();
+                const rows = [];
+                ids.forEach((sid) => {
+                    const stu = (window.allStudentsData || []).find((s) => String(s.id) === String(sid)) || { id: sid };
+                    const built = buildSeason2StudentPatch(stu, nowMs);
+                    rows.push({ sid, stu, built });
+                });
+
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    rows.forEach(({ sid, stu, built }) => {
+                        if (built.skip) return;
+                        batch.set(getStudentBackupRef(sid), {
+                            studentId: String(sid),
+                            savedAt: new Date().toISOString(),
+                            reason: 'season2Start',
+                            data: extractStudentGameData(stu),
+                        });
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            built.patch,
+                            { merge: true }
+                        );
+                    });
+                    const nextWorld = sanitizeWorldSettings(worldSettingsForSeason2(getWorldSettings()));
+                    batch.set(getGlobalSettingsDocRef(), {
+                        worldSettings: nextWorld,
+                        season2StartedAt: nowMs,
+                        season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
+                        announcement: 'MATE 시즌 2가 시작되었습니다! 시즌 1 경험치는 1만당 100봉으로 정산되었고, 졸업(1/7)까지 새 모험이 이어집니다.',
+                    }, { merge: true });
+                    await batch.commit();
+                    setLocalWorldSettings(nextWorld);
+                    if (window.globalSettings) {
+                        window.globalSettings.season2StartedAt = nowMs;
+                    }
+                }, '시즌 2 시작');
+
+                applyWorldBranding();
+                const paid = rows.filter((r) => !r.built.skip);
+                const totalBong = paid.reduce((s, r) => s + (r.built.rewardBong || 0), 0);
+                const myId = localStorage.getItem('sambong_student_id');
+                const mine = paid.find((r) => String(r.sid) === String(myId));
+                if (mine && mine.built.patch && window.playerState && !window.playerState.isAdmin) {
+                    Object.assign(window.playerState, mine.built.patch);
+                    updateUI();
+                }
+                window.refreshSeason2StartPanel();
+                await window.customAlert(
+                    `✅ 시즌 2를 시작했습니다.\n정산 학생 ${paid.length}명 · 지급 봉 합계 ${formatBongAmount(totalBong)}.\n목표: 1월 7일까지 ${SEASON2.targetXp.toLocaleString()} XP (퀘스트 약 ${SEASON2.questXpBudget.toLocaleString()} + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()}).`
+                );
+            } catch (e) {
+                console.error('startSeason2', e);
+                await window.customAlert('시즌 2 시작 중 오류: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
 
         function ensureStudentBackupSubscription() {
             if (!db) return;
@@ -18457,12 +18742,12 @@ ${subjectLine}
             window.playerState.dragonBalls.sort((a, b) => a - b);
             const satKey = getWeekendSaturdayKey();
             if (satKey) window.playerState.dragonBallWeekendKey = satKey;
-            window.playerState.xp += 50;
-            await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다! (+50 XP)\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
+            window.playerState.xp += DRAGON_BALL_XP;
+            await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다! (+${DRAGON_BALL_XP} XP)\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
             
             if(window.playerState.dragonBalls.length >= 7) {
-                window.playerState.xp += 700;
-                await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복으로 엄청난 경험치(+700 XP)를 획득했습니다!`);
+                window.playerState.xp += DRAGON_BALL_COMPLETE_XP;
+                await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복으로 경험치(+${DRAGON_BALL_COMPLETE_XP} XP)를 획득했습니다!`);
             }
             
             const dragonBallRef = doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state');

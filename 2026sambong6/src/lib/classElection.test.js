@@ -4,14 +4,17 @@ import {
     addCandidateToPosition,
     appendBallot,
     canStartVoting,
+    chairElectionPositions,
     collectBallotsFromStudentRows,
     createElectionState,
+    defaultElectionPositions,
     mergeBallotLists,
     recordStudentPick,
     resolveNumericVote,
     resolveNumericVoteOnTimeout,
     sanitizeElectionState,
     sanitizeStudentBallot,
+    setPositionCount,
     shuffleCopy,
     tallyBallots,
     toPublishedElection,
@@ -73,12 +76,39 @@ describe('집계와 동점', () => {
 });
 
 describe('선거 상태', () => {
-    it('후보 2명 미만이면 투표를 시작하지 않는다', () => {
+    it('기본은 투표 항목 1개다', () => {
+        const st = createElectionState();
+        assert.equal(st.positions.length, 1);
+        assert.equal(defaultElectionPositions().length, 1);
+        assert.equal(chairElectionPositions().length, 2);
+    });
+
+    it('항목 수를 1~10개로 맞춘다', () => {
+        let st = createElectionState();
+        st = setPositionCount(st, 10);
+        assert.equal(st.positions.length, 10);
+        st = setPositionCount(st, 1);
+        assert.equal(st.positions.length, 1);
+        st = setPositionCount(st, 99);
+        assert.equal(st.positions.length, 10);
+        st = setPositionCount(st, 0);
+        assert.equal(st.positions.length, 1);
+    });
+
+    it('항목 하나·선택지 둘이면 투표를 시작할 수 있다', () => {
+        let st = createElectionState();
+        st.positions[0] = addCandidateToPosition(st.positions[0], '짜장').position;
+        st.positions[0] = addCandidateToPosition(st.positions[0], '볶음밥').position;
+        assert.equal(canStartVoting(st).ok, true);
+    });
+
+    it('선택지 2개 미만이면 투표를 시작하지 않는다', () => {
         const st = createElectionState();
         assert.equal(canStartVoting(st).ok, false);
         const added = addCandidateToPosition(st.positions[0], '김단엘');
         st.positions[0] = added.position;
         assert.equal(canStartVoting(st).ok, false);
+        assert.match(canStartVoting(st).reason, /선택지/);
     });
 
     it('표 추가·직전 취소가 동작한다', () => {

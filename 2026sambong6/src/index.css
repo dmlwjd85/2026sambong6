@@ -356,7 +356,11 @@
             gap: 0.65rem;
             padding: 1rem 1rem 1.15rem;
             z-index: 3;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
+        .learning-thermometer-students::-webkit-scrollbar { display: none; }
         .learning-thermometer-students::before {
             content: '';
             position: absolute;
@@ -450,6 +454,94 @@
             top: 50%;
             border-top: 2px solid rgba(255,255,255,0.55);
         }
+
+        /* 스마트폰: 가로 스크롤 없이 2~3줄 격자로 한 화면에서 조절 (슬라이더 오터치 방지) */
+        @media (max-width: 767px) {
+            .learning-thermometer-panel {
+                padding: 0.55rem !important;
+            }
+            .learning-thermometer-panel h2 {
+                font-size: 1.05rem;
+            }
+            .learning-thermometer-stage {
+                min-height: 0;
+            }
+            .learning-thermometer-heaven,
+            .learning-thermometer-hell {
+                height: 1.45rem;
+                gap: 0.35rem;
+            }
+            .learning-thermometer-heaven span:first-child,
+            .learning-thermometer-hell span:last-child {
+                font-size: 0.85rem !important;
+            }
+            .learning-thermometer-zero-line {
+                display: none;
+            }
+            .learning-thermometer-students {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(3.15rem, 1fr));
+                grid-auto-flow: row;
+                align-items: stretch;
+                gap: 0.32rem;
+                padding: 0.4rem 0.35rem 0.5rem;
+                min-height: 0;
+                overflow-x: hidden;
+                overflow-y: visible;
+            }
+            .learning-thermometer-students::before {
+                display: none;
+            }
+            .learning-thermometer-card {
+                min-width: 0;
+                width: auto;
+                padding: 0.32rem 0.18rem 0.38rem;
+                gap: 0.18rem;
+                border-radius: 0.7rem;
+            }
+            .learning-thermometer-name {
+                font-size: 9px;
+            }
+            .learning-thermometer-value {
+                min-width: 0;
+                width: 100%;
+                font-size: 10px;
+                padding: 0.12rem 0.1rem;
+            }
+            .learning-thermometer-readonly-zero {
+                display: none;
+            }
+            .learning-thermometer-btn {
+                min-height: 2.2rem;
+                padding: 0.35rem 0.45rem;
+            }
+            .learning-thermometer-input {
+                padding: 0.35rem 0.4rem;
+            }
+            /* 세로 슬라이더는 옆으로 밀 때 값이 바뀌므로 폰에서는 숨기고 +/- 만 사용 */
+            .learning-thermometer-slider {
+                display: none;
+            }
+            .learning-thermometer-readonly-track {
+                width: 100%;
+                height: 0.38rem;
+            }
+            .learning-thermometer-stepper {
+                flex-direction: column;
+                gap: 0.18rem;
+            }
+            .learning-thermometer-stepper button {
+                min-height: 1.85rem;
+                font-size: 13px;
+                line-height: 1;
+            }
+        }
+        @media (max-width: 767px) and (min-width: 400px) {
+            .learning-thermometer-students {
+                grid-template-columns: repeat(auto-fill, minmax(3.45rem, 1fr));
+            }
+        }
+
         .plaza-learning-thermometer {
             display: inline-flex;
             align-items: center;
@@ -1882,6 +1974,11 @@
             flex: 1;
             overflow: auto;
             padding: 0.75rem 0.75rem calc(1rem + env(safe-area-inset-bottom, 0px));
+        }
+        @media (max-width: 767px) {
+            .classtool-fs-body {
+                padding: 0.4rem 0.4rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+            }
         }
         .classtool-fs-body > .classtool-pane {
             margin: 0 auto;

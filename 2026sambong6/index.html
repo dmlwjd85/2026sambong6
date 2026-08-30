@@ -1592,11 +1592,11 @@
                         <div class="flex items-center gap-3">
                             <div class="w-12 h-12 rounded-lg bg-sky-950 border-2 border-sky-500/70 flex items-center justify-center text-2xl shadow-inner">🌡️</div>
                             <div>
-                                <p class="text-[10px] font-black tracking-[0.35em] text-sky-300/90">CLASS TEMPERATURE</p>
+                                <p class="text-[10px] font-black tracking-[0.35em] text-sky-300/90 hidden sm:block">CLASS TEMPERATURE</p>
                                 <h2 class="text-xl sm:text-2xl font-display text-sky-50 tracking-wide">학습 온도계</h2>
                             </div>
                         </div>
-                        <div class="text-[9px] sm:text-[10px] text-sky-100/70 leading-relaxed lg:text-right">
+                        <div class="text-[9px] sm:text-[10px] text-sky-100/70 leading-relaxed lg:text-right hidden md:block">
                             학생별 수업태도·과제 결과를 위아래로 조절합니다.<br>
                             매일 15:00 이후 1회 실제 XP에 반영되고 자동 초기화됩니다.
                         </div>
@@ -1625,7 +1625,7 @@
                             <span class="text-[10px] font-black tracking-[0.4em] text-sky-950/70">천국</span>
                         </div>
                         <div class="learning-thermometer-zero-line" aria-hidden="true"><span>0</span></div>
-                        <div id="learningThermometerStudents" class="learning-thermometer-students overflow-x-auto scrollbar-hide"></div>
+                        <div id="learningThermometerStudents" class="learning-thermometer-students"></div>
                         <div class="learning-thermometer-hell" aria-hidden="true">
                             <span class="text-[10px] font-black tracking-[0.4em] text-red-100/80">지옥</span>
                             <span class="text-2xl sm:text-3xl">🔥 😈 🌋</span>

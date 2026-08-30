@@ -614,7 +614,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.5';
+        const APP_VERSION = 'v1.6';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -7340,7 +7340,8 @@ ${subjectLine}
             const students = document.getElementById('learningThermometerStudents');
             if (!line || !stage || !students) return;
             const slider = students.querySelector('.learning-thermometer-slider');
-            if (!slider) {
+            // 스마트폰 격자 모드에서는 슬라이더를 숨기므로 기준선을 맞추지 않습니다.
+            if (!slider || slider.offsetHeight < 8) {
                 line.style.top = '';
                 students.style.removeProperty('--lt-zero-y');
                 return;

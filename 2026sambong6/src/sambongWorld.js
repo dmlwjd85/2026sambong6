@@ -623,7 +623,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.14';
+        const APP_VERSION = 'v1.15';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1233,6 +1233,16 @@ function redrawPlazaGrantsUi() {
             { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️', img: 'chars/face-mer.webp' },
             { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴', img: 'chars/face-king.webp' },
             { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸', img: 'chars/face-queen.webp' },
+            { id: 'f_knight', type: 'face', name: '기사', desc: '방패의 수호자', price: 280, emoji: '🛡️', img: 'chars/face-knight.webp' },
+            { id: 'f_mage', type: 'face', name: '마법사', desc: '별의 주문', price: 280, emoji: '🧙', img: 'chars/face-mage.webp' },
+            { id: 'f_archer', type: 'face', name: '궁수', desc: '숲의 명사수', price: 260, emoji: '🏹', img: 'chars/face-archer.webp' },
+            { id: 'f_pirate', type: 'face', name: '해적', desc: '바다의 모험가', price: 300, emoji: '🏴‍☠️', img: 'chars/face-pirate.webp' },
+            { id: 'f_dokkaebi', type: 'face', name: '도깨비', desc: '방망이의 장난', price: 320, emoji: '👺', img: 'chars/face-dokkaebi.webp' },
+            { id: 'f_robot', type: 'face', name: '로봇', desc: '미래의 친구', price: 300, emoji: '🤖', img: 'chars/face-robot.webp' },
+            { id: 'f_chef', type: 'face', name: '요리사', desc: '맛의 연금술', price: 240, emoji: '👨‍🍳', img: 'chars/face-chef.webp' },
+            { id: 'f_wolf', type: 'face', name: '늑대', desc: '달빛 수호대', price: 320, emoji: '🐺', img: 'chars/face-wolf.webp' },
+            { id: 'f_phoenix', type: 'face', name: '봉황', desc: '불꽃의 날개', price: 380, emoji: '🔥', img: 'chars/face-phoenix.webp' },
+            { id: 'f_scholar', type: 'face', name: '선비', desc: '지혜의 책', price: 260, emoji: '📜', img: 'chars/face-scholar.webp' },
             { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 100, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
             { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
             { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
@@ -11466,14 +11476,14 @@ ${subjectLine}
             renderConvenienceStore();
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
-                <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
-                    <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
+                <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
+                    <div class="bg-amber-50 w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden border border-white/70">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
-                        <div class="font-bold text-xs sm:text-sm truncate">${skin.name}</div>
-                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}</div>
+                        <div class="font-bold text-sm sm:text-base truncate text-white">${skin.name}</div>
+                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
-                        <div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}</div>
+                        <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold">${formatBongAmount(skin.price)}</div>
                     </div>
                 </div>`).join('');
 
@@ -12256,7 +12266,7 @@ ${subjectLine}
                 if (!data && !isGMCard) {
                     return `<div class="plaza-card flex flex-col items-center p-2 rounded-xl border border-slate-700 bg-slate-800/30 w-full opacity-50">
                                 <div class="plaza-card-face text-3xl mb-1 opacity-30 grayscale">👤</div>
-                                <div class="plaza-card-name font-bold bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
+                                <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
                             </div>`;
                 }
 

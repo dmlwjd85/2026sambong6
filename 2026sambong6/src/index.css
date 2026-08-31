@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-        body { color: #ecfeff; overflow-x: hidden; transition: background 0.5s ease-in-out; }
+        body { color: #f8fafc; overflow-x: hidden; transition: background 0.5s ease-in-out; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
         /* ★ 탭별 배경 — 게임 UI는 유지하되 웹에서 너무 어둡지 않게 명도를 올립니다 ★ */
@@ -1891,15 +1891,17 @@
         /* 여름 햇살 글로우 (상단) — 웹에서 화면이 가라앉지 않게 밝게 잡습니다 */
         .summer-sun-glow {
             pointer-events: none; position: fixed; top: -20%; left: 50%; transform: translateX(-50%);
-            width: 140%; height: 45vh; z-index: 0;
-            background: radial-gradient(ellipse 50% 80% at 50% 100%, rgba(125, 211, 252, 0.32) 0%, rgba(253, 224, 71, 0.16) 35%, transparent 70%);
+            width: 140%; height: 28vh; z-index: 0;
+            opacity: 0.35;
+            background: radial-gradient(ellipse 50% 80% at 50% 100%, rgba(125, 211, 252, 0.18) 0%, transparent 70%);
         }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
 
-        .glass-panel { background: rgba(56, 90, 130, 0.58); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.16); }
+        /* 반투명 블러 대신 불투명 패널로 글자가 또렷하게 보이게 합니다 */
+        .glass-panel { background: #1b4f78; backdrop-filter: none; border: 1px solid rgba(255, 255, 255, 0.28); }
 
         /* 비상계엄: 학생 화면 전면 잠금(교사 연출 화면만 조작 가능) */
         body.class-timer-active { overflow: hidden !important; }
@@ -1910,7 +1912,7 @@
         .quest-btn.active { background-color: rgba(30, 41, 59, 0.9); border-color: #3b82f6; }
         .quest-btn.locked { opacity: 0.5; filter: grayscale(50%); }
         .shop-btn.affordable { border-color: #fbbf24; opacity: 1; cursor: pointer; }
-        .shop-btn.unaffordable { border-color: #ef4444; opacity: 0.5; cursor: not-allowed; filter: grayscale(80%); }
+        .shop-btn.unaffordable { border-color: #f87171; opacity: 0.88; cursor: not-allowed; filter: none; }
 
         /* 캐릭터 & 지도 애니메이션 */
         .avatar-bounce { animation: bounce-subtle 2s infinite ease-in-out; }
@@ -1955,8 +1957,9 @@
                 transform: translateY(2px);
             }
             .summer-sun-glow {
-                height: 58vh;
-                background: radial-gradient(ellipse 55% 85% at 50% 100%, rgba(186, 230, 253, 0.42) 0%, rgba(253, 224, 71, 0.2) 38%, transparent 72%);
+                height: 32vh;
+                opacity: 0.28;
+                background: radial-gradient(ellipse 55% 85% at 50% 100%, rgba(186, 230, 253, 0.2) 0%, transparent 72%);
             }
             #swipeWrapper {
                 padding-top: 9.25rem !important;
@@ -2209,26 +2212,21 @@
             object-position: center 42%;
             pointer-events: none;
             z-index: 0;
-            filter: saturate(1.06) contrast(1) brightness(1.18);
+            filter: saturate(1.12) contrast(1.12) brightness(1.02);
         }
         #worldMapArea .worldmap-vignette {
             position: absolute;
             inset: 0;
             z-index: 1;
             pointer-events: none;
-            background:
-                radial-gradient(ellipse 72% 68% at 50% 46%, transparent 52%, rgba(12, 28, 48, 0.18) 100%),
-                linear-gradient(180deg, rgba(255, 236, 179, 0.12) 0%, transparent 22%, transparent 72%, rgba(12, 28, 48, 0.2) 100%);
+            display: none;
         }
         #worldMapArea .worldmap-mist {
             position: absolute;
             inset: 0;
             z-index: 2;
             pointer-events: none;
-            background:
-                radial-gradient(ellipse 40% 18% at 50% 58%, rgba(255, 214, 140, 0.12), transparent 70%),
-                radial-gradient(ellipse 28% 16% at 78% 22%, rgba(120, 80, 180, 0.14), transparent 70%);
-            animation: worldmap-mist-drift 14s ease-in-out infinite alternate;
+            display: none;
         }
         @keyframes worldmap-mist-drift {
             from { opacity: 0.7; transform: translate3d(-1%, 0, 0); }
@@ -2243,9 +2241,9 @@
             font-size: 9px;
             font-weight: 800;
             letter-spacing: 0.16em;
-            color: #f3e2b8;
-            background: linear-gradient(180deg, rgba(42, 30, 16, 0.86), rgba(18, 12, 8, 0.9));
-            border: 1px solid rgba(196, 165, 116, 0.65);
+            color: #fffbeb;
+            background: #0b1220;
+            border: 2px solid #fde68a;
             border-radius: 999px;
             padding: 0.28rem 0.7rem;
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
@@ -2322,16 +2320,16 @@
             position: relative;
             z-index: 30;
             padding: 0.22rem 0.55rem;
-            font-size: 9px;
+            font-size: 11px;
             font-weight: 800;
             letter-spacing: 0.04em;
-            color: #f3e6c4;
-            background: linear-gradient(180deg, rgba(48, 34, 18, 0.92) 0%, rgba(18, 12, 8, 0.94) 100%);
-            border: 1px solid rgba(196, 165, 116, 0.7);
-            border-radius: 0.2rem;
+            color: #fffbeb;
+            background: #0b1220;
+            border: 2px solid #fbbf24;
+            border-radius: 0.35rem;
             white-space: nowrap;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 230, 180, 0.16);
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+            text-shadow: none;
         }
         @media (min-width: 640px) {
             #worldMapArea .worldmap-label { font-size: 11px; padding: 0.26rem 0.65rem; }
@@ -2375,8 +2373,9 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             object-fit: contain;
             border-radius: 0.7rem;
             display: block;
-            background: #f7f1e4;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28);
+            background: #fff8e7;
+            box-shadow: 0 0 0 2px #fff, 0 3px 8px rgba(0, 0, 0, 0.35);
+            image-rendering: auto;
         }
         .char-portrait-lg { width: 7.4rem; height: 7.4rem; border-radius: 1.05rem; }
         .char-portrait-sm { width: 2.35rem; height: 2.35rem; border-radius: 0.5rem; }
@@ -2450,7 +2449,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             min-width: 0;
         }
         .char-dress-slot.is-on { border-color: #fbbf24; }
-        .char-dress-slot-label { display: block; font-size: 9px; font-weight: 900; color: #94a3b8; }
+        .char-dress-slot-label { display: block; font-size: 9px; font-weight: 900; color: #e2e8f0; }
         .char-dress-slot-art {
             display: flex;
             align-items: center;
@@ -2556,4 +2555,26 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         @keyframes class-watch-scan {
             0%, 100% { top: 18%; opacity: 0.55; }
             50% { top: 62%; opacity: 1; }
+        }
+
+        /* 보조 글자·레터박스가 배경과 비슷한 색으로 묻히지 않게 대비를 올립니다 */
+        #swipeWrapper .text-slate-500,
+        #loginOverlay .text-slate-500,
+        #appNavDock .text-slate-500,
+        [data-app-version].text-slate-500 {
+            color: #e2e8f0 !important;
+        }
+        #swipeWrapper .text-slate-400,
+        #loginOverlay .text-slate-400 {
+            color: #f1f5f9 !important;
+        }
+        .plaza-card-name {
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+        }
+        .plaza-card-name:not(.plaza-staff-name) {
+            color: #ffffff;
+        }
+        .summer-bubbles { opacity: 0.22; }
+        #appNavDock {
+            backdrop-filter: none;
         }

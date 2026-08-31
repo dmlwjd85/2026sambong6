@@ -582,7 +582,7 @@
             gap: 0.3rem;
         }
 
-        .plaza-card { min-width: 0; }
+        .plaza-card { min-width: 0; overflow: visible; }
         .plaza-cards-sm .plaza-card { padding: 0.3rem !important; border-radius: 0.65rem !important; }
         .plaza-cards-sm .plaza-card-face { font-size: 1.35rem !important; margin-bottom: 0.15rem !important; }
         .plaza-cards-sm .plaza-card-lv { font-size: 7px !important; padding: 0 0.25rem !important; }
@@ -2351,14 +2351,17 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
     }
 }
 
-        /* 시즌 2 캐릭터 초상·장식 슬롯 */
+        /* 스티커북 코디: 초상과 착장을 같은 1:1 프레임에 겹칩니다 */
+        .char-avatar-stack { overflow: visible; }
+        #dashAvatar { overflow: visible; padding-left: 1.5rem; }
         .char-portrait {
             width: 3.15rem;
             height: 3.15rem;
-            object-fit: cover;
+            object-fit: contain;
             border-radius: 0.7rem;
             display: block;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+            background: #f7f1e4;
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28);
         }
         .char-portrait-lg { width: 7.4rem; height: 7.4rem; border-radius: 1.05rem; }
         .char-portrait-sm { width: 2.35rem; height: 2.35rem; border-radius: 0.5rem; }
@@ -2368,17 +2371,31 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         @media (max-width: 639px) {
             .plaza-cards-seating .char-portrait { width: 1.75rem; height: 1.75rem; border-radius: 0.45rem; }
         }
+        .char-sticker-layer {
+            position: absolute;
+            inset: 0;
+            display: block;
+            pointer-events: none;
+            z-index: 20;
+        }
+        .char-sticker-layer img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+        /* 레거시 이모지 장식 위치 */
         .char-overlay { position: absolute; display: block; pointer-events: none; }
         .char-overlay img { width: 100%; height: 100%; object-fit: contain; }
         .char-overlay-hair { top: -16%; left: 8%; width: 84%; height: 52%; }
         .char-overlay-head { top: -20%; left: 10%; width: 80%; height: 46%; }
         .char-overlay-eyes { top: 30%; left: 14%; width: 72%; height: 26%; }
         .char-overlay-ear { top: 40%; left: auto; right: -6%; width: 30%; height: 30%; }
-        .char-weapon { position: absolute; left: -36%; top: 30%; width: 44%; height: 44%; pointer-events: none; }
+        .char-weapon { position: absolute; left: -42%; top: 22%; width: 56%; height: 56%; pointer-events: none; }
         .char-weapon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55)); }
-        .weapon-slot-art img { width: 1.7rem; height: 1.7rem; object-fit: contain; display: block; margin: 0 auto; }
+        .weapon-slot-art img { width: 2.15rem; height: 2.15rem; object-fit: contain; display: block; margin: 0 auto; }
         @media (min-width: 640px) {
-            .weapon-slot-art img { width: 2.15rem; height: 2.15rem; }
+            .weapon-slot-art img { width: 2.7rem; height: 2.7rem; }
         }
         .base-face-btn {
             flex: 1;
@@ -2388,7 +2405,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             background: rgba(15, 23, 42, 0.72);
             padding: 0.28rem;
         }
-        .base-face-btn img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 0.5rem; display: block; }
+        .base-face-btn img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 0.5rem; display: block; background: #f7f1e4; }
         .base-face-btn span { display: block; font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 0.2rem; }
         .base-face-btn.is-on { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.7); }
 

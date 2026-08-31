@@ -1,6 +1,6 @@
 /**
  * 시즌 2 캐릭터 외형 — 성별 기본 얼굴 3종 + 장식 슬롯.
- * 화면 렌더는 sambongWorld.js에서 이 목록을 사용합니다.
+ * 초상은 스티커북 코디용 단순 얼굴이고, 화면 렌더는 sambongWorld.js에서 이 목록을 사용합니다.
  */
 
 export const CHARACTER_BASES = [

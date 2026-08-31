@@ -621,7 +621,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.9';
+        const APP_VERSION = 'v1.10';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1231,12 +1231,12 @@ function redrawPlazaGrantsUi() {
             { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️' },
             { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴' },
             { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸' },
-            { id: 'hair_wolf', type: 'overlay', slot: 'hair', name: '늑대컷', desc: '거친 모험가 머리', price: 80, emoji: '🐺', img: 'chars/hair-wolf.webp', overlayClass: 'char-overlay-hair' },
-            { id: 'hair_braid', type: 'overlay', slot: 'hair', name: '리본 땋은머리', desc: '정성 들인 땋기', price: 80, emoji: '🎀', img: 'chars/hair-braid.webp', overlayClass: 'char-overlay-hair' },
-            { id: 'sk_hat_s2', type: 'overlay', slot: 'head', name: '별무리 마법모자', desc: '별자리 자수 모자', price: 120, emoji: '🎩', img: 'chars/acc-magehat.webp', overlayClass: 'char-overlay-head' },
-            { id: 'sk_circlet', type: 'overlay', slot: 'head', name: '에메랄드 서클릿', desc: '요정의 머리테', price: 120, emoji: '👑', img: 'chars/acc-circlet.webp', overlayClass: 'char-overlay-head' },
-            { id: 'sk_goggles', type: 'overlay', slot: 'eyes', name: '정찰대 고글', desc: '안개 속 시야', price: 90, emoji: '🥽', img: 'chars/acc-goggles.webp', overlayClass: 'char-overlay-eyes' },
-            { id: 'sk_earrings', type: 'overlay', slot: 'ear', name: '사파이어 귀걸이', desc: '항해자의 징표', price: 70, emoji: '💎', img: 'chars/acc-earrings.webp', overlayClass: 'char-overlay-ear' },
+            { id: 'hair_wolf', type: 'overlay', slot: 'hair', name: '늑대컷', desc: '거친 모험가 머리', price: 80, emoji: '🐺', img: 'chars/hair-wolf.webp', overlayClass: 'char-sticker-layer' },
+            { id: 'hair_braid', type: 'overlay', slot: 'hair', name: '리본 땋은머리', desc: '정성 들인 땋기', price: 80, emoji: '🎀', img: 'chars/hair-braid.webp', overlayClass: 'char-sticker-layer' },
+            { id: 'sk_hat_s2', type: 'overlay', slot: 'head', name: '별무리 마법모자', desc: '별자리 자수 모자', price: 120, emoji: '🎩', img: 'chars/acc-magehat.webp', overlayClass: 'char-sticker-layer' },
+            { id: 'sk_circlet', type: 'overlay', slot: 'head', name: '에메랄드 서클릿', desc: '요정의 머리테', price: 120, emoji: '👑', img: 'chars/acc-circlet.webp', overlayClass: 'char-sticker-layer' },
+            { id: 'sk_goggles', type: 'overlay', slot: 'eyes', name: '정찰대 고글', desc: '안개 속 시야', price: 90, emoji: '🥽', img: 'chars/acc-goggles.webp', overlayClass: 'char-sticker-layer' },
+            { id: 'sk_earrings', type: 'overlay', slot: 'ear', name: '사파이어 귀걸이', desc: '항해자의 징표', price: 70, emoji: '💎', img: 'chars/acc-earrings.webp', overlayClass: 'char-sticker-layer' },
             { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 100, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
             { id: 'sk2', type: 'overlay', name: '선글라스', desc: '인싸 아이템', price: 100, emoji: '🕶️', overlayClass: 'top-[0.25em] left-[-0.05em] text-[1.1em]' },
             { id: 'sk3', type: 'overlay', name: '귀걸이', desc: '매력 스탯', price: 100, emoji: '💎', overlayClass: 'bottom-[0.1em] right-[-0.2em] text-[0.5em]' },
@@ -1251,7 +1251,8 @@ function redrawPlazaGrantsUi() {
 
         function cosmeticMarkHtml(skin) {
             if (skin.img) {
-                return `<span class="char-overlay ${skin.overlayClass || ''} pointer-events-none z-20"><img src="${skin.img}" alt=""></span>`;
+                // 스티커북: 악세서리를 초상과 같은 프레임에 그대로 겹칩니다.
+                return `<span class="char-sticker-layer ${skin.overlayClass || ''} pointer-events-none z-20"><img src="${skin.img}" alt=""></span>`;
             }
             return `<span class="absolute ${skin.overlayClass || ''} z-20 pointer-events-none">${skin.emoji || ''}</span>`;
         }
@@ -11473,7 +11474,7 @@ ${subjectLine}
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
-                    <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-cover">` : skin.emoji}</div>
+                    <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-xs sm:text-sm truncate">${skin.name}</div>
                         <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.slot === 'hair' ? '헤어 · ' : skin.slot === 'head' ? '모자 · ' : skin.slot === 'eyes' ? '눈장식 · ' : skin.slot === 'ear' ? '귀장식 · ' : ''}${skin.desc}</div>

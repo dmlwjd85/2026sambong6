@@ -621,7 +621,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.10';
+        const APP_VERSION = 'v1.11';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -16980,7 +16980,16 @@ ${subjectLine}
         function applyClassWatchUI() {
             const on = !!(window.globalSettings && window.globalSettings.classWatchOn);
             const overlay = document.getElementById('classWatchOverlay');
-            if (overlay) overlay.classList.toggle('hidden', !on);
+            if (overlay) {
+                overlay.classList.toggle('hidden', !on);
+                overlay.setAttribute('aria-hidden', on ? 'false' : 'true');
+                // GitHub Pages 하위 경로에서도 이미지가 열리도록 배포 base를 붙입니다.
+                const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
+                const src = `${base}chars/dragon-eye.webp`.replace(/([^:]\/)\/+/g, '$1');
+                overlay.querySelectorAll('img.class-watch-eye').forEach((img) => {
+                    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+                });
+            }
             document.body.classList.toggle('class-watch-on', on);
             const btn = document.getElementById('classWatchToggleBtn');
             if (btn) {

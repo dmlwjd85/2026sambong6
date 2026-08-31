@@ -2409,7 +2409,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .base-face-btn span { display: block; font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 0.2rem; }
         .base-face-btn.is-on { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.7); }
 
-        /* 용의 눈 · 레이저 감시 */
+        /* 용의 눈 · 레이저 감시 — 어두운 화면에 잘 보이도록 밝고 크게 */
         .class-watch-toggle { margin-left: auto; }
         .class-watch-toggle.is-on {
             background: #7f1d1d;
@@ -2420,17 +2420,19 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .class-watch-overlay {
             position: fixed;
             inset: 0;
-            z-index: 265;
+            z-index: 355;
             pointer-events: none;
         }
         .class-watch-eye {
             position: absolute;
-            width: min(28vw, 11rem);
-            filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.55));
+            width: min(38vw, 14rem);
+            height: min(38vw, 14rem);
+            object-fit: contain;
+            filter: drop-shadow(0 0 10px #fde047) drop-shadow(0 0 22px rgba(251, 191, 36, 0.9));
             animation: class-watch-blink 5.2s ease-in-out infinite;
         }
-        .class-watch-eye-l { top: 3.5%; left: 2.5%; transform: rotate(-8deg); }
-        .class-watch-eye-r { top: 3.5%; right: 2.5%; transform: scaleX(-1) rotate(-8deg); animation-delay: 0.45s; }
+        .class-watch-eye-l { top: 0.6%; left: 0.6%; transform: rotate(-8deg); }
+        .class-watch-eye-r { top: 0.6%; right: 0.6%; transform: scaleX(-1) rotate(-8deg); animation-delay: 0.45s; }
         .class-watch-laser {
             position: absolute;
             left: 8%;
@@ -2459,8 +2461,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             white-space: nowrap;
         }
         @keyframes class-watch-blink {
-            0%, 78%, 100% { opacity: 1; filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.55)); }
-            82% { opacity: 0.15; }
+            0%, 78%, 100% { opacity: 1; filter: drop-shadow(0 0 10px #fde047) drop-shadow(0 0 22px rgba(251, 191, 36, 0.9)); }
+            82% { opacity: 0.35; }
             88% { opacity: 1; }
         }
         @keyframes class-watch-scan {

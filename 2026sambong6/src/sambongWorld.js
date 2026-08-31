@@ -89,6 +89,7 @@ import {
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
     canStartSeason2,
+    collectSeason2TargetIds,
     catalogQuestRewards,
     estimateSeason2QuestXp,
     expectedXpPace,
@@ -17227,46 +17228,77 @@ ${subjectLine}
             try {
                 window.showGlobalLoading('시즌 2 시작 중…');
                 const nowMs = Date.now();
-                const ids = getActiveStudentIds();
-                const rows = [];
-                ids.forEach((sid) => {
-                    const stu = (window.allStudentsData || []).find((s) => String(s.id) === String(sid)) || { id: sid };
-                    const built = buildSeason2StudentPatch(stu, nowMs);
-                    rows.push({ sid, stu, built });
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                const settingsRef = getGlobalSettingsDocRef();
+                let serverSnap;
+                try {
+                    serverSnap = await getDocsFromServer(colRef);
+                } catch (eSnap) {
+                    console.warn('startSeason2 getDocsFromServer', eSnap);
+                    serverSnap = await getDocs(colRef);
+                }
+                const serverIds = [];
+                serverSnap.forEach((d) => {
+                    serverIds.push(String(d.id || '').replace(/^student_/, ''));
                 });
+                const ids = collectSeason2TargetIds(getActiveStudentIds(), serverIds);
+                if (ids.length > 200) {
+                    return await window.customAlert('학생 수가 너무 많아 한 번에 정산할 수 없습니다. 명단을 확인한 뒤 다시 시도해 주세요.');
+                }
 
-                await runWithNetworkRetry(async () => {
-                    const batch = writeBatch(db);
-                    rows.forEach(({ sid, stu, built }) => {
-                        if (built.skip) return;
-                        batch.set(getStudentBackupRef(sid), {
-                            studentId: String(sid),
-                            savedAt: new Date().toISOString(),
-                            reason: 'season2Start',
-                            data: extractStudentGameData(stu),
-                        });
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            built.patch,
-                            { merge: true }
-                        );
+                /** 광장 캐시의 절대 bong/xp로 덮지 않습니다. 트랜잭션이 서버 문서를 다시 읽어 동시 구매·퀘스트와 충돌 시 재시도합니다. */
+                const result = await runWithNetworkRetry(async () => {
+                    return await runTransaction(db, async (transaction) => {
+                        const settingsSnap = await transaction.get(settingsRef);
+                        const settingsData = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
+                        if (settingsData.season2StartedAt) {
+                            return { already: true, rows: [], nextWorld: null };
+                        }
+                        const rows = [];
+                        for (const sid of ids) {
+                            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                            const stuSnap = await transaction.get(stuRef);
+                            const stu = stuSnap.exists() ? { ...(stuSnap.data() || {}), id: String(sid) } : { id: String(sid) };
+                            rows.push({ sid: String(sid), stu, built: buildSeason2StudentPatch(stu, nowMs), stuRef });
+                        }
+                        for (const { sid, stu, built, stuRef } of rows) {
+                            if (built.skip) continue;
+                            transaction.set(getStudentBackupRef(sid), {
+                                studentId: String(sid),
+                                savedAt: new Date().toISOString(),
+                                reason: 'season2Start',
+                                data: extractStudentGameData(stu),
+                            });
+                            transaction.set(stuRef, built.patch, { merge: true });
+                        }
+                        const prevWorld = sanitizeWorldSettings(settingsData.worldSettings || getWorldSettings());
+                        const nextWorld = sanitizeWorldSettings(worldSettingsForSeason2(prevWorld));
+                        transaction.set(settingsRef, {
+                            worldSettings: nextWorld,
+                            season2StartedAt: nowMs,
+                            season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
+                            announcement: 'MATE 시즌 2가 시작되었습니다! 시즌 1 경험치는 1만당 100봉으로 정산되었고, 졸업(1/7)까지 새 모험이 이어집니다.',
+                        }, { merge: true });
+                        return { already: false, rows, nextWorld };
                     });
-                    const nextWorld = sanitizeWorldSettings(worldSettingsForSeason2(getWorldSettings()));
-                    batch.set(getGlobalSettingsDocRef(), {
-                        worldSettings: nextWorld,
-                        season2StartedAt: nowMs,
-                        season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
-                        announcement: 'MATE 시즌 2가 시작되었습니다! 시즌 1 경험치는 1만당 100봉으로 정산되었고, 졸업(1/7)까지 새 모험이 이어집니다.',
-                    }, { merge: true });
-                    await batch.commit();
-                    setLocalWorldSettings(nextWorld);
-                    if (window.globalSettings) {
-                        window.globalSettings.season2StartedAt = nowMs;
-                    }
                 }, '시즌 2 시작');
 
+                if (result && result.already) {
+                    if (window.globalSettings) window.globalSettings.season2StartedAt = window.globalSettings.season2StartedAt || nowMs;
+                    window.refreshSeason2StartPanel();
+                    await window.customAlert('시즌 2는 이미 시작되었습니다.');
+                    return;
+                }
+
+                if (result && result.nextWorld) setLocalWorldSettings(result.nextWorld);
+                if (window.globalSettings) window.globalSettings.season2StartedAt = nowMs;
                 applyWorldBranding();
-                const paid = rows.filter((r) => !r.built.skip);
+                try {
+                    await refreshStudentsCacheFromServer();
+                } catch (eRefresh) {
+                    console.warn('startSeason2 refreshStudentsCacheFromServer', eRefresh);
+                }
+                const paid = (result && result.rows ? result.rows : []).filter((r) => r.built && !r.built.skip);
                 const totalBong = paid.reduce((s, r) => s + (r.built.rewardBong || 0), 0);
                 const myId = localStorage.getItem('sambong_student_id');
                 const mine = paid.find((r) => String(r.sid) === String(myId));

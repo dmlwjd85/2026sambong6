@@ -133,6 +133,24 @@ export function canStartSeason2(todayYmd, alreadyStarted) {
     return { ok: true };
 }
 
+/**
+ * 시즌 2 정산 대상 학번 — 명단 + 서버 학생 문서를 합칩니다.
+ * 광장 캐시만 쓰면 스냅샷에 없는 학생은 xp/bong이 0인 빈 객체로 덮일 수 있습니다.
+ */
+export function collectSeason2TargetIds(rosterIds, serverStudentIds) {
+    const out = [];
+    const seen = new Set();
+    const add = (raw) => {
+        const sid = String(raw || '').replace(/^student_/, '');
+        if (!sid || sid === 'gm' || sid === 'gm_a' || seen.has(sid)) return;
+        seen.add(sid);
+        out.push(sid);
+    };
+    (Array.isArray(rosterIds) ? rosterIds : []).forEach(add);
+    (Array.isArray(serverStudentIds) ? serverStudentIds : []).forEach(add);
+    return out;
+}
+
 export function isSeason2Applied(stu) {
     return Math.floor(Number(stu && stu.seasonNumberApplied) || 0) >= SEASON2.number;
 }

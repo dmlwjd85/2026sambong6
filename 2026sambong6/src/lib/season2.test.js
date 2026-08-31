@@ -8,6 +8,7 @@ import {
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
     canStartSeason2,
+    collectSeason2TargetIds,
     CUSTOM_QUEST_XP_MAX,
     CUSTOM_SHOP_XP_MAX,
     catalogQuestRewards,
@@ -76,6 +77,22 @@ describe('시즌 1 정산', () => {
     it('이미 시즌 2가 적용된 학생은 건너뛴다', () => {
         const r = buildSeason2StudentPatch({ xp: 10000, seasonNumberApplied: 2 });
         assert.equal(r.skip, true);
+    });
+
+    it('정산 금액은 넘긴 문서의 XP·봉을 따른다 (캐시가 아니라 서버 값이어야 함)', () => {
+        const fromStaleCache = buildSeason2StudentPatch({ xp: 10000, bong: 50 });
+        const fromServer = buildSeason2StudentPatch({ xp: 25400, bong: 80 });
+        assert.equal(fromStaleCache.rewardBong, 100);
+        assert.equal(fromStaleCache.patch.bong, 150);
+        assert.equal(fromServer.rewardBong, 200);
+        assert.equal(fromServer.patch.bong, 280);
+    });
+
+    it('정산 대상은 명단과 서버 학번을 합치고 마스터는 뺀다', () => {
+        assert.deepEqual(
+            collectSeason2TargetIds(['1', '2', 'gm'], ['student_2', '3', 'gm_a', '']),
+            ['1', '2', '3']
+        );
     });
 
     it('9월 1일 전에는 시즌 2를 시작하지 않는다', () => {

@@ -98,6 +98,12 @@ import {
     worldSettingsForSeason2,
 } from './lib/season2.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
+import {
+    STAFF_PORTRAITS,
+    listCharacterBases,
+    resolveCharacterBase,
+    unequipSameSlot,
+} from './lib/characterLooks.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -615,7 +621,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.8';
+        const APP_VERSION = 'v1.9';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1160,11 +1166,11 @@ function redrawPlazaGrantsUi() {
         ];
 
         const WEAPON_DATA = [
-            { id: 'wp1', name: '나뭇가지', desc: '데미지 +10', bonus: 10, emoji: '🌿', border: 'border-amber-700', bg: 'bg-amber-900/40' },
-            { id: 'wp2', name: '낡은 단검', desc: '데미지 +20', bonus: 20, emoji: '🗡️', border: 'border-slate-500', bg: 'bg-slate-700/40' },
-            { id: 'wp3', name: '기사의 검', desc: '데미지 +35', bonus: 35, emoji: '⚔️', border: 'border-blue-400', bg: 'bg-blue-900/40' },
-            { id: 'wp4', name: '마법 지팡이', desc: '데미지 +50', bonus: 50, emoji: '🪄', border: 'border-purple-500', bg: 'bg-purple-900/40' },
-            { id: 'wp5', name: '화염의 성검', desc: '데미지 +80', bonus: 80, emoji: '🔥', border: 'border-red-500', bg: 'bg-red-900/40' }
+            { id: 'wp1', name: '나뭇가지', desc: '데미지 +10', bonus: 10, emoji: '🌿', img: 'chars/wp1.webp', border: 'border-amber-700', bg: 'bg-amber-900/40' },
+            { id: 'wp2', name: '낡은 단검', desc: '데미지 +20', bonus: 20, emoji: '🗡️', img: 'chars/wp2.webp', border: 'border-slate-500', bg: 'bg-slate-700/40' },
+            { id: 'wp3', name: '기사의 검', desc: '데미지 +35', bonus: 35, emoji: '⚔️', img: 'chars/wp3.webp', border: 'border-blue-400', bg: 'bg-blue-900/40' },
+            { id: 'wp4', name: '마법 지팡이', desc: '데미지 +50', bonus: 50, emoji: '🪄', img: 'chars/wp4.webp', border: 'border-purple-500', bg: 'bg-purple-900/40' },
+            { id: 'wp5', name: '화염의 성검', desc: '데미지 +80', bonus: 80, emoji: '🔥', img: 'chars/wp5.webp', border: 'border-red-500', bg: 'bg-red-900/40' }
         ];
 
         const JOB_DATA = [
@@ -1225,6 +1231,12 @@ function redrawPlazaGrantsUi() {
             { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️' },
             { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴' },
             { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸' },
+            { id: 'hair_wolf', type: 'overlay', slot: 'hair', name: '늑대컷', desc: '거친 모험가 머리', price: 80, emoji: '🐺', img: 'chars/hair-wolf.webp', overlayClass: 'char-overlay-hair' },
+            { id: 'hair_braid', type: 'overlay', slot: 'hair', name: '리본 땋은머리', desc: '정성 들인 땋기', price: 80, emoji: '🎀', img: 'chars/hair-braid.webp', overlayClass: 'char-overlay-hair' },
+            { id: 'sk_hat_s2', type: 'overlay', slot: 'head', name: '별무리 마법모자', desc: '별자리 자수 모자', price: 120, emoji: '🎩', img: 'chars/acc-magehat.webp', overlayClass: 'char-overlay-head' },
+            { id: 'sk_circlet', type: 'overlay', slot: 'head', name: '에메랄드 서클릿', desc: '요정의 머리테', price: 120, emoji: '👑', img: 'chars/acc-circlet.webp', overlayClass: 'char-overlay-head' },
+            { id: 'sk_goggles', type: 'overlay', slot: 'eyes', name: '정찰대 고글', desc: '안개 속 시야', price: 90, emoji: '🥽', img: 'chars/acc-goggles.webp', overlayClass: 'char-overlay-eyes' },
+            { id: 'sk_earrings', type: 'overlay', slot: 'ear', name: '사파이어 귀걸이', desc: '항해자의 징표', price: 70, emoji: '💎', img: 'chars/acc-earrings.webp', overlayClass: 'char-overlay-ear' },
             { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 100, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
             { id: 'sk2', type: 'overlay', name: '선글라스', desc: '인싸 아이템', price: 100, emoji: '🕶️', overlayClass: 'top-[0.25em] left-[-0.05em] text-[1.1em]' },
             { id: 'sk3', type: 'overlay', name: '귀걸이', desc: '매력 스탯', price: 100, emoji: '💎', overlayClass: 'bottom-[0.1em] right-[-0.2em] text-[0.5em]' },
@@ -1232,6 +1244,66 @@ function redrawPlazaGrantsUi() {
             { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
             { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
         ];
+
+        function charImgTag(src, extraClass = '') {
+            return `<img src="${src}" alt="" class="char-portrait ${extraClass}" draggable="false">`;
+        }
+
+        function cosmeticMarkHtml(skin) {
+            if (skin.img) {
+                return `<span class="char-overlay ${skin.overlayClass || ''} pointer-events-none z-20"><img src="${skin.img}" alt=""></span>`;
+            }
+            return `<span class="absolute ${skin.overlayClass || ''} z-20 pointer-events-none">${skin.emoji || ''}</span>`;
+        }
+
+        function weaponMarkHtml(wp) {
+            if (wp.img) {
+                return `<span class="char-weapon pointer-events-none z-30"><img src="${wp.img}" alt=""></span>`;
+            }
+            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none">${wp.emoji || ''}</span>`;
+        }
+
+        /** 학생/스태프 초상 + 장식·무기. 나중에 슬롯을 더 쌓아 꾸밀 수 있습니다. */
+        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, portraitClass = '' } = {}) {
+            const row = data || {};
+            const equipped = row.equippedSkins || {};
+            let inner = '';
+            if (isStaff) {
+                const meta = STAFF_PORTRAITS[studentId] || STAFF_PORTRAITS.gm;
+                inner = charImgTag(meta.img, `char-portrait-staff ${portraitClass}`.trim());
+            } else {
+                const faceSkin = SKIN_DATA.find((s) => s.type === 'face' && equipped[s.id]);
+                if (faceSkin) {
+                    inner = faceSkin.img ? charImgTag(faceSkin.img, portraitClass) : (faceSkin.emoji || '');
+                } else {
+                    const gender = STUDENT_GENDERS[String(studentId)] === 'F' ? 'F' : 'M';
+                    const base = resolveCharacterBase(row.baseFaceId, gender);
+                    inner = charImgTag(base.img, portraitClass);
+                }
+            }
+            let overlays = '';
+            SKIN_DATA.forEach((s) => {
+                if (equipped[s.id] && s.type === 'overlay') overlays += cosmeticMarkHtml(s);
+            });
+            if (showWeapon && row.equippedWeapon) {
+                const wp = WEAPON_DATA.find((w) => w.id === row.equippedWeapon);
+                if (wp) overlays += weaponMarkHtml(wp);
+            }
+            return `<div class="char-avatar-stack relative inline-block leading-none">${inner}${overlays}</div>`;
+        }
+
+        function applyEquippedAura(data, fallbackBorder, fallbackGlow) {
+            let border = fallbackBorder;
+            let glow = fallbackGlow;
+            const equipped = (data && data.equippedSkins) || {};
+            SKIN_DATA.forEach((s) => {
+                if (equipped[s.id] && s.type === 'aura') {
+                    border = s.border;
+                    glow = s.glow;
+                }
+            });
+            return { border, glow };
+        }
 
         const SHOP_DATA = [
             { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100${getCurrencyUnit()} 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
@@ -2557,7 +2629,7 @@ function redrawPlazaGrantsUi() {
 
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
-            ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 0, 
+            ownedSkins: {}, equippedSkins: {}, baseFaceId: '', hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
@@ -11401,10 +11473,10 @@ ${subjectLine}
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800/80 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
-                    <div class="bg-slate-900 w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-lg sm:text-xl shrink-0">${skin.emoji}</div>
+                    <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-cover">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-xs sm:text-sm truncate">${skin.name}</div>
-                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.desc}</div>
+                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.slot === 'hair' ? '헤어 · ' : skin.slot === 'head' ? '모자 · ' : skin.slot === 'eyes' ? '눈장식 · ' : skin.slot === 'ear' ? '귀장식 · ' : ''}${skin.desc}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
                         <div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}</div>
@@ -11726,6 +11798,7 @@ ${subjectLine}
                                 if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
+                                applyClassWatchUI();
                                 updateUI();
                             }
                         });
@@ -12210,25 +12283,15 @@ ${subjectLine}
                 const lv = getLevelInfo(displayData.xp || 0);
                 const exactLv = calculateExactLevel(displayData.xp || 0);
 
-                let face = STUDENT_GENDERS[targetId] === 'F' ? '👧' : '👦';
-                let overlays = ''; 
-                let border = lv.info.borderColor; 
-                let glow = 'shadow-md';
-                
-                if (displayData.equippedSkins) {
-                    SKIN_DATA.forEach(s => {
-                        if (displayData.equippedSkins[s.id]) {
-                            if (s.type === 'face') face = s.emoji; 
-                            else if (s.type === 'overlay') overlays += `<span class="absolute ${s.overlayClass} z-20 pointer-events-none">${s.emoji}</span>`;
-                            else if (s.type === 'aura') { border = s.border; glow = s.glow; }
-                        }
-                    });
-                }
-
-                if (displayData.equippedWeapon) {
-                    const wp = WEAPON_DATA.find(w => w.id === displayData.equippedWeapon);
-                    if (wp) overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md">${wp.emoji}</span>`;
-                }
+                const aura = applyEquippedAura(displayData, lv.info.borderColor, 'shadow-md');
+                let border = aura.border;
+                let glow = aura.glow;
+                const face = buildCharacterAvatarHtml({
+                    studentId: targetId,
+                    data: displayData,
+                    isStaff: !!isGMCard,
+                });
+                const overlays = '';
                 
                 const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
                 const shieldHtml = hp > 0 ? `<div class="absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
@@ -12288,9 +12351,8 @@ ${subjectLine}
                         <div class="plaza-staff-face-wrap">
                             <div class="plaza-staff-ring" aria-hidden="true"></div>
                             <div class="plaza-card-face plaza-staff-face relative">
-                                ${isA ? '🏴‍☠️' : '🐉'}
+                                ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: false, portraitClass: 'char-portrait-staff' })}
                                 <span class="absolute -bottom-0.5 -right-1 text-sm drop-shadow-lg">${isA ? '🌊' : '🔥'}</span>
-                                ${overlays}
                             </div>
                         </div>
                         <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
@@ -12306,7 +12368,7 @@ ${subjectLine}
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
                     ${shieldHtml}${jobHtml}${condHtml}
                     <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
-                        <div class="relative inline-block leading-none">${face}${overlays}</div>
+                        <div class="relative inline-block leading-none">${face}</div>
                         <div class="text-[0.6em] leading-none">${rankBadgeHtml(lv.info, 'rank-badge-plaza')}</div>
                     </div>
                     <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv} ${lv.info.name}</div>
@@ -12431,13 +12493,7 @@ ${subjectLine}
                 
                 if(stu) {
                     const exactLv = calculateExactLevel(stu.xp || 0);
-                    let faceEmoji = STUDENT_GENDERS[String(sid)] === 'F' ? '👧' : '👦';
-                    
-                    if (stu.equippedSkins) SKIN_DATA.forEach(sk => { if (stu.equippedSkins[sk.id] && sk.type === 'face') faceEmoji = sk.emoji; }); 
-                    if (stu.equippedWeapon) {
-                        const wp = WEAPON_DATA.find(w => w.id === stu.equippedWeapon);
-                        if (wp) faceEmoji += wp.emoji;
-                    }
+                    const faceEmoji = buildCharacterAvatarHtml({ studentId: sid, data: stu, portraitClass: 'char-portrait-xs' });
                     
                     let condStr = '';
                     if(stu.condition && stu.condition.emotion) {
@@ -13045,8 +13101,7 @@ ${subjectLine}
             if (legends.length > 0) {
                 hofSec.classList.remove('hidden');
                 document.getElementById('hofContainer').innerHTML = legends.map(s => {
-                    let face = STUDENT_GENDERS[s.id] === 'F' ? '👧' : '👦';
-                    if (s.equippedSkins) SKIN_DATA.forEach(sk => { if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; });
+                    const face = buildCharacterAvatarHtml({ studentId: s.id, data: s, showWeapon: false, portraitClass: 'char-portrait-sm' });
                     return `
                     <div class="glass-panel p-4 rounded-xl border-2 border-yellow-500 bg-gradient-to-b from-yellow-900/60 flex flex-col items-center w-28">
                         <div class="text-3xl mb-1 drop-shadow-lg avatar-legend">👑</div>
@@ -13079,9 +13134,7 @@ ${subjectLine}
             container.innerHTML = queue.map((s, idx) => {
                 const bidAmt = (s.lunchBid && s.lunchBid.date === todayStr) ? s.lunchBid.amount : 0;
                 const exactLv = calculateExactLevel(s.xp || 0);
-                let face = STUDENT_GENDERS[s.id] === 'F' ? '👧' : '👦';
-                
-                if (s.equippedSkins) SKIN_DATA.forEach(sk => { if (s.equippedSkins[sk.id] && sk.type === 'face') face = sk.emoji; });
+                const face = buildCharacterAvatarHtml({ studentId: s.id, data: s, showWeapon: false, portraitClass: 'char-portrait-sm' });
                 
                 const rankColor = idx === 0 ? 'text-yellow-400 font-black' : (idx < 3 ? 'text-orange-300 font-bold' : 'text-slate-300 font-bold');
                 const borderClass = idx === 0 ? 'border-yellow-500 bg-yellow-900/40 ring-1 ring-yellow-500' : 'border-slate-700 bg-slate-800/50';
@@ -13699,6 +13752,7 @@ ${subjectLine}
             }
             
             checkTimeEvents();
+            applyClassWatchUI();
             renderConvenienceManagerUi();
             maybeShowConvenienceOrderPopup();
             maybeShowMusicTimeRequestPopup({ fromCache: false });
@@ -13707,32 +13761,23 @@ ${subjectLine}
             const lvInfo = getLevelInfo(xp); 
             const exactLv = calculateExactLevel(xp);
             
-            let face = STUDENT_GENDERS[localStorage.getItem('sambong_student_id')] === 'F' ? '👧' : '👦';
-            if (window.playerState.isAdmin) face = window.playerState.isGM ? '🐉' : '🏴‍☠️';
-            let overlays = '';
-            
-            let cardBorder = 'border-slate-600';
-            let cardGlow = 'shadow-lg';
-
-            if(window.playerState.equippedSkins) { 
-                SKIN_DATA.forEach(s => { 
-                    if(window.playerState.equippedSkins[s.id]) { 
-                        if(s.type === 'face' && !window.playerState.isAdmin) face = s.emoji; 
-                        if(s.type === 'overlay') overlays += `<span class="absolute ${s.overlayClass} pointer-events-none">${s.emoji}</span>`; 
-                        if(s.type === 'aura') { cardBorder = s.border; cardGlow = s.glow; }
-                    }
-                }); 
-            }
-
-            if(window.playerState.equippedWeapon) {
-                const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
-                if(wp) overlays += `<span class="absolute top-1/2 -translate-y-1/2 -left-12 text-[0.6em] z-30 drop-shadow-lg animate-bounce">${wp.emoji}</span>`;
-            }
+            const mySid = localStorage.getItem('sambong_student_id');
+            const dashAura = applyEquippedAura(window.playerState, 'border-slate-600', 'shadow-lg');
+            let cardBorder = dashAura.border;
+            let cardGlow = dashAura.glow;
+            const face = buildCharacterAvatarHtml({
+                studentId: mySid,
+                data: window.playerState,
+                isStaff: !!window.playerState.isAdmin,
+                portraitClass: window.playerState.isAdmin ? 'char-portrait-staff char-portrait-lg' : 'char-portrait-lg',
+            });
+            const overlays = '';
             
             const dashCard = document.getElementById('dashAvatarCard');
             if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`;
+            if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
             document.getElementById('dashXp').innerText = xp.toLocaleString();
@@ -13780,7 +13825,7 @@ ${subjectLine}
                     return `
                         <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
                             ${isEquipped && n > 0 ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
-                            <div class="text-lg sm:text-2xl mb-0.5 leading-none">${wp.emoji}</div>
+                            <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art">${wp.img ? `<img src="${wp.img}" alt="${wp.name}">` : wp.emoji}</div>
                             <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${wp.name}</div>
                             <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">×${n}</div>
                             ${
@@ -14199,7 +14244,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -16871,10 +16916,9 @@ ${subjectLine}
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
             if (window.playerState.ownedSkins[skinId]) {
-                if (skin.type === 'aura') SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
-                else if (skin.type === 'face') SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
-                
-                window.playerState.equippedSkins[skinId] = !window.playerState.equippedSkins[skinId];
+                const wasOn = !!window.playerState.equippedSkins[skinId];
+                window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
+                window.playerState.equippedSkins[skinId] = !wasOn;
                 updateUI(); saveDataToCloud(); window.switchTab('plaza');
             } else {
                 if (window.playerState.bong >= skin.price || window.playerState.isAdmin) {
@@ -16885,9 +16929,7 @@ ${subjectLine}
                         if (!window.playerState.ownedSkinInstances) window.playerState.ownedSkinInstances = {};
                         window.playerState.ownedSkinInstances[skinId] = `ski_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
                         
-                        if (skin.type === 'aura') SKIN_DATA.forEach(s => { if(s.type === 'aura') window.playerState.equippedSkins[s.id] = false; });
-                        else if (skin.type === 'face') SKIN_DATA.forEach(s => { if(s.type === 'face') window.playerState.equippedSkins[s.id] = false; });
-                        
+                        window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
                         window.playerState.equippedSkins[skinId] = true; 
                         await window.customAlert(`🎉 획득 완료! 바로 장착했어요.`); 
                         updateUI();
@@ -16896,6 +16938,72 @@ ${subjectLine}
                         window.switchTab('plaza');
                     }
                 } else await window.customAlert(formatInsufficientBongAlert(skin.price - (Number(window.playerState.bong) || 0))); 
+            }
+        };
+
+        function renderBaseFacePicker() {
+            const box = document.getElementById('baseFacePicker');
+            if (!box) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+                return;
+            }
+            const sid = localStorage.getItem('sambong_student_id');
+            const gender = STUDENT_GENDERS[String(sid)] === 'F' ? 'F' : 'M';
+            const current = resolveCharacterBase(window.playerState.baseFaceId, gender);
+            const bases = listCharacterBases(gender);
+            box.classList.remove('hidden');
+            box.innerHTML = `<p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 얼굴 (성별 3종 · 무료)</p>
+                <div class="flex gap-1.5 justify-center">${bases.map((b) => {
+                    const on = b.id === current.id;
+                    return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
+                        <img src="${b.img}" alt="${b.name}">
+                        <span>${b.name}</span>
+                    </button>`;
+                }).join('')}</div>
+                <p class="text-[9px] text-slate-400 mt-1.5 text-center">헤어·모자는 스킨 상점에서 사서 겹쳐 꾸밀 수 있습니다.</p>`;
+        }
+
+        window.setBaseFace = function(baseId) {
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            const sid = localStorage.getItem('sambong_student_id');
+            const gender = STUDENT_GENDERS[String(sid)] === 'F' ? 'F' : 'M';
+            const base = resolveCharacterBase(baseId, gender);
+            if (base.id !== String(baseId)) return;
+            window.playerState.baseFaceId = base.id;
+            updateUI();
+            saveDataToCloud();
+        };
+
+        function applyClassWatchUI() {
+            const on = !!(window.globalSettings && window.globalSettings.classWatchOn);
+            const overlay = document.getElementById('classWatchOverlay');
+            if (overlay) overlay.classList.toggle('hidden', !on);
+            document.body.classList.toggle('class-watch-on', on);
+            const btn = document.getElementById('classWatchToggleBtn');
+            if (btn) {
+                const admin = !!(window.playerState && window.playerState.isAdmin);
+                btn.classList.toggle('hidden', !admin);
+                btn.classList.toggle('is-on', on);
+                btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+                btn.innerHTML = on
+                    ? '<i class="fa-solid fa-eye"></i> 용의 눈 켜짐'
+                    : '<i class="fa-solid fa-eye-slash"></i> 용의 눈';
+            }
+        }
+
+        window.toggleClassWatch = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!window.globalSettings) window.globalSettings = {};
+            const next = !window.globalSettings.classWatchOn;
+            window.globalSettings.classWatchOn = next;
+            applyClassWatchUI();
+            if (!db) return;
+            try {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { classWatchOn: next }, { merge: true });
+            } catch (e) {
+                console.error('toggleClassWatch', e);
             }
         };
 
@@ -16928,7 +17036,7 @@ ${subjectLine}
         // ==========================================
         /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
         const STUDENT_GAME_FIELD_KEYS = [
-            'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins',
+            'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId',
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',

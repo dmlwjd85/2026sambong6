@@ -569,6 +569,7 @@
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
                         <div id="dashAvatar" class="text-6xl sm:text-7xl mb-4 relative z-10 drop-shadow-xl avatar-bounce mt-4">👦</div>
+                        <div id="baseFacePicker" class="hidden w-full mt-1 mb-2 z-10"></div>
                         <h3 id="dashName" class="text-2xl font-display text-white mt-2 z-10 tracking-wider">이름</h3>
                         <div id="dashLevelName" class="text-xs font-bold text-sb-blue mb-4 z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
                         <div class="flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
@@ -1044,7 +1045,7 @@
             <div class="inner-pane" data-pane-group="shop" data-pane="skin">
                 <div class="glass-panel p-3 rounded-2xl border-t-4 border-t-pink-500">
                     <h3 class="font-bold text-sm text-pink-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-shirt"></i> 스킨 상점</h3>
-                    <p class="text-[9px] text-slate-500 mb-2">장착 중인 스킨은 구매가의 50%로 환불할 수 있습니다.</p>
+                    <p class="text-[9px] text-slate-500 mb-2">기본 얼굴은 내 캐릭터에서 고르고, 여기서 헤어·모자·안경을 사서 겹쳐 꾸밉니다. 장착 중 스킨은 구매가의 50%로 환불할 수 있습니다.</p>
                     <div id="skinContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[70vh] overflow-y-auto scrollbar-hide"></div>
                 </div>
             </div>
@@ -2378,6 +2379,14 @@
     </div>
 
 
+    <!-- 수업 중 마스터 감시(용의 눈·레이저) -->
+    <div id="classWatchOverlay" class="hidden class-watch-overlay" aria-hidden="true">
+        <img class="class-watch-eye class-watch-eye-l" src="chars/dragon-eye.webp" alt="">
+        <img class="class-watch-eye class-watch-eye-r" src="chars/dragon-eye.webp" alt="">
+        <div class="class-watch-laser"></div>
+        <div class="class-watch-caption">세계수의 용이 교실을 지켜보고 있다</div>
+    </div>
+
     <!-- 수업도구 전체화면 실행 -->
     <div id="classtoolFullscreen" class="hidden fixed inset-0 z-[260] classtool-fs flex flex-col">
         <div class="classtool-fs-bar">
@@ -2385,6 +2394,9 @@
                 <i class="fa-solid fa-chevron-left mr-1"></i>뒤로
             </button>
             <span id="classtoolFullscreenTitle" class="text-sm font-black text-lime-200">수업도구</span>
+            <button type="button" id="classWatchToggleBtn" onclick="window.toggleClassWatch()" class="class-watch-toggle min-h-[44px] px-3 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-100 text-xs font-black border border-amber-500/60" aria-pressed="false">
+                <i class="fa-solid fa-eye-slash"></i> 용의 눈
+            </button>
         </div>
         <div id="classtoolFullscreenBody" class="classtool-fs-body"></div>
     </div>

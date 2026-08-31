@@ -921,15 +921,15 @@
         /* 마스터 얼굴 ≈ 학생 카드(작게 1.35rem)의 약 2배 */
         .plaza-staff-face-wrap {
             position: relative;
-            width: 3.15rem;
-            height: 3.15rem;
+            width: 4.4rem;
+            height: 4.4rem;
             margin-bottom: 0.35rem;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         @media (min-width: 640px) {
-            .plaza-staff-face-wrap { width: 3.5rem; height: 3.5rem; margin-bottom: 0.4rem; }
+            .plaza-staff-face-wrap { width: 5rem; height: 5rem; margin-bottom: 0.4rem; }
         }
         .plaza-staff-ring {
             position: absolute;
@@ -2350,3 +2350,103 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         min-height: 44px;
     }
 }
+
+        /* 시즌 2 캐릭터 초상·장식 슬롯 */
+        .char-portrait {
+            width: 3.15rem;
+            height: 3.15rem;
+            object-fit: cover;
+            border-radius: 0.7rem;
+            display: block;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+        }
+        .char-portrait-lg { width: 7.4rem; height: 7.4rem; border-radius: 1.05rem; }
+        .char-portrait-sm { width: 2.35rem; height: 2.35rem; border-radius: 0.5rem; }
+        .char-portrait-xs { width: 1.65rem; height: 1.65rem; border-radius: 0.4rem; }
+        .char-portrait-staff { width: 4.25rem; height: 4.25rem; border-radius: 0.9rem; }
+        .plaza-cards-seating .char-portrait { width: 2.35rem; height: 2.35rem; }
+        @media (max-width: 639px) {
+            .plaza-cards-seating .char-portrait { width: 1.75rem; height: 1.75rem; border-radius: 0.45rem; }
+        }
+        .char-overlay { position: absolute; display: block; pointer-events: none; }
+        .char-overlay img { width: 100%; height: 100%; object-fit: contain; }
+        .char-overlay-hair { top: -16%; left: 8%; width: 84%; height: 52%; }
+        .char-overlay-head { top: -20%; left: 10%; width: 80%; height: 46%; }
+        .char-overlay-eyes { top: 30%; left: 14%; width: 72%; height: 26%; }
+        .char-overlay-ear { top: 40%; left: auto; right: -6%; width: 30%; height: 30%; }
+        .char-weapon { position: absolute; left: -36%; top: 30%; width: 44%; height: 44%; pointer-events: none; }
+        .char-weapon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55)); }
+        .weapon-slot-art img { width: 1.7rem; height: 1.7rem; object-fit: contain; display: block; margin: 0 auto; }
+        @media (min-width: 640px) {
+            .weapon-slot-art img { width: 2.15rem; height: 2.15rem; }
+        }
+        .base-face-btn {
+            flex: 1;
+            min-width: 0;
+            border-radius: 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(15, 23, 42, 0.72);
+            padding: 0.28rem;
+        }
+        .base-face-btn img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 0.5rem; display: block; }
+        .base-face-btn span { display: block; font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 0.2rem; }
+        .base-face-btn.is-on { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.7); }
+
+        /* 용의 눈 · 레이저 감시 */
+        .class-watch-toggle { margin-left: auto; }
+        .class-watch-toggle.is-on {
+            background: #7f1d1d;
+            border-color: #f87171;
+            color: #fee2e2;
+            box-shadow: 0 0 16px rgba(248, 113, 113, 0.45);
+        }
+        .class-watch-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 265;
+            pointer-events: none;
+        }
+        .class-watch-eye {
+            position: absolute;
+            width: min(28vw, 11rem);
+            filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.55));
+            animation: class-watch-blink 5.2s ease-in-out infinite;
+        }
+        .class-watch-eye-l { top: 3.5%; left: 2.5%; transform: rotate(-8deg); }
+        .class-watch-eye-r { top: 3.5%; right: 2.5%; transform: scaleX(-1) rotate(-8deg); animation-delay: 0.45s; }
+        .class-watch-laser {
+            position: absolute;
+            left: 8%;
+            right: 8%;
+            top: 22%;
+            height: 3px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, transparent, #f87171, #fde68a, #f87171, transparent);
+            box-shadow: 0 0 18px #f87171, 0 0 32px rgba(251, 191, 36, 0.45);
+            animation: class-watch-scan 3.4s ease-in-out infinite;
+        }
+        .class-watch-caption {
+            position: absolute;
+            bottom: 7%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: 0.14em;
+            color: #fde68a;
+            text-shadow: 0 0 12px rgba(251, 191, 36, 0.7);
+            background: rgba(15, 10, 6, 0.55);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            border-radius: 999px;
+            padding: 0.35rem 0.9rem;
+            white-space: nowrap;
+        }
+        @keyframes class-watch-blink {
+            0%, 78%, 100% { opacity: 1; filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.55)); }
+            82% { opacity: 0.15; }
+            88% { opacity: 1; }
+        }
+        @keyframes class-watch-scan {
+            0%, 100% { top: 18%; opacity: 0.55; }
+            50% { top: 62%; opacity: 1; }
+        }

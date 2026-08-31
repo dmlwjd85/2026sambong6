@@ -99,10 +99,11 @@ import {
 } from './lib/season2.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
-    STAFF_PORTRAITS,
     listCharacterBases,
+    listStaffLooks,
     resolveCharacterBase,
     resolveRankLook,
+    resolveStaffLook,
     unequipSameSlot,
 } from './lib/characterLooks.js';
 
@@ -622,7 +623,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.12';
+        const APP_VERSION = 'v1.13';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1225,22 +1226,13 @@ function redrawPlazaGrantsUi() {
         ];
 
         const SKIN_DATA = [
-            { id: 'f_ninja', type: 'face', name: '닌자', desc: '어둠의 암살자', price: 200, emoji: '🥷' },
-            { id: 'f_fairy', type: 'face', name: '요정', desc: '숲의 신비', price: 250, emoji: '🧚‍♀️' },
-            { id: 'f_astroM', type: 'face', name: '우주탐험가', desc: '미지의 세계', price: 250, emoji: '👨‍🚀' },
-            { id: 'f_vamp', type: 'face', name: '뱀파이어', desc: '밤의 지배자', price: 300, emoji: '🧛‍♂️' },
-            { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️' },
-            { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴' },
-            { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸' },
-            { id: 'hair_wolf', type: 'overlay', slot: 'hair', name: '늑대컷', desc: '거친 모험가 머리', price: 80, emoji: '🐺', img: 'chars/hair-wolf.webp', overlayClass: 'char-sticker-layer' },
-            { id: 'hair_braid', type: 'overlay', slot: 'hair', name: '리본 땋은머리', desc: '정성 들인 땋기', price: 80, emoji: '🎀', img: 'chars/hair-braid.webp', overlayClass: 'char-sticker-layer' },
-            { id: 'sk_hat_s2', type: 'overlay', slot: 'head', name: '별무리 마법모자', desc: '별자리 자수 모자', price: 120, emoji: '🎩', img: 'chars/acc-magehat.webp', overlayClass: 'char-sticker-layer' },
-            { id: 'sk_circlet', type: 'overlay', slot: 'head', name: '에메랄드 서클릿', desc: '요정의 머리테', price: 120, emoji: '👑', img: 'chars/acc-circlet.webp', overlayClass: 'char-sticker-layer' },
-            { id: 'sk_goggles', type: 'overlay', slot: 'eyes', name: '정찰대 고글', desc: '안개 속 시야', price: 90, emoji: '🥽', img: 'chars/acc-goggles.webp', overlayClass: 'char-sticker-layer' },
-            { id: 'sk_earrings', type: 'overlay', slot: 'ear', name: '사파이어 귀걸이', desc: '항해자의 징표', price: 70, emoji: '💎', img: 'chars/acc-earrings.webp', overlayClass: 'char-sticker-layer' },
-            { id: 'sk1', type: 'overlay', name: '마법사 모자', desc: '지능 상승', price: 100, emoji: '🎩', overlayClass: 'top-[-0.6em] right-[-0.2em] text-[0.8em] rotate-[15deg]' },
-            { id: 'sk2', type: 'overlay', name: '선글라스', desc: '인싸 아이템', price: 100, emoji: '🕶️', overlayClass: 'top-[0.25em] left-[-0.05em] text-[1.1em]' },
-            { id: 'sk3', type: 'overlay', name: '귀걸이', desc: '매력 스탯', price: 100, emoji: '💎', overlayClass: 'bottom-[0.1em] right-[-0.2em] text-[0.5em]' },
+            { id: 'f_ninja', type: 'face', name: '닌자', desc: '어둠의 암살자', price: 200, emoji: '🥷', img: 'chars/face-ninja.webp' },
+            { id: 'f_fairy', type: 'face', name: '요정', desc: '숲의 신비', price: 250, emoji: '🧚‍♀️', img: 'chars/face-fairy.webp' },
+            { id: 'f_astroM', type: 'face', name: '우주탐험가', desc: '미지의 세계', price: 250, emoji: '👨‍🚀', img: 'chars/face-astro.webp' },
+            { id: 'f_vamp', type: 'face', name: '뱀파이어', desc: '밤의 지배자', price: 300, emoji: '🧛‍♂️', img: 'chars/face-vamp.webp' },
+            { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️', img: 'chars/face-mer.webp' },
+            { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴', img: 'chars/face-king.webp' },
+            { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸', img: 'chars/face-queen.webp' },
             { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 100, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
             { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
             { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
@@ -1252,7 +1244,7 @@ function redrawPlazaGrantsUi() {
 
         function cosmeticMarkHtml(skin) {
             if (skin.img) {
-                // 스티커북: 악세서리를 초상과 같은 프레임에 그대로 겹칩니다.
+                // 무기 등 투명 PNG를 초상 프레임 위에 겹칩니다.
                 return `<span class="char-sticker-layer ${skin.overlayClass || ''} pointer-events-none z-20"><img src="${skin.img}" alt=""></span>`;
             }
             return `<span class="absolute ${skin.overlayClass || ''} z-20 pointer-events-none">${skin.emoji || ''}</span>`;
@@ -1265,14 +1257,14 @@ function redrawPlazaGrantsUi() {
             return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none">${wp.emoji || ''}</span>`;
         }
 
-        /** 학생/스태프 초상 + 등급 착장·장식·무기. 나중에 슬롯을 더 쌓아 꾸밀 수 있습니다. */
+        /** 학생/스태프 초상 + 통짜 캐릭터·무기. */
         function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, portraitClass = '' } = {}) {
             const row = data || {};
             const equipped = row.equippedSkins || {};
             let inner = '';
             if (isStaff) {
-                const meta = STAFF_PORTRAITS[studentId] || STAFF_PORTRAITS.gm;
-                inner = charImgTag(meta.img, `char-portrait-staff ${portraitClass}`.trim());
+                const look = resolveStaffLook(row.staffLookId, studentId);
+                inner = charImgTag(look.img, `char-portrait-staff ${portraitClass}`.trim());
             } else {
                 const faceSkin = SKIN_DATA.find((s) => s.type === 'face' && equipped[s.id]);
                 if (faceSkin) {
@@ -1284,17 +1276,6 @@ function redrawPlazaGrantsUi() {
                 }
             }
             let overlays = '';
-            // 등급 기본 옷·표정은 스킨보다 아래에 깔아 레벨업이 바로 보이게 합니다.
-            if (!isStaff) {
-                const rankName = getLevelInfo(row.xp || 0).info.name;
-                const rankLook = resolveRankLook(rankName);
-                if (rankLook && rankLook.img) {
-                    overlays += `<span class="char-sticker-layer char-rank-look pointer-events-none z-[15]"><img src="${rankLook.img}" alt=""></span>`;
-                }
-            }
-            SKIN_DATA.forEach((s) => {
-                if (equipped[s.id] && s.type === 'overlay') overlays += cosmeticMarkHtml(s);
-            });
             if (showWeapon && row.equippedWeapon) {
                 const wp = WEAPON_DATA.find((w) => w.id === row.equippedWeapon);
                 if (wp) overlays += weaponMarkHtml(wp);
@@ -2639,7 +2620,7 @@ function redrawPlazaGrantsUi() {
 
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
-            ownedSkins: {}, equippedSkins: {}, baseFaceId: '', hasShield: false, shieldHP: 0, 
+            ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
             condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
@@ -11489,7 +11470,7 @@ ${subjectLine}
                     <div class="bg-slate-900 w-10 h-10 sm:w-12 sm:h-12 rounded-lg flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-xs sm:text-sm truncate">${skin.name}</div>
-                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.slot === 'hair' ? '헤어 · ' : skin.slot === 'head' ? '모자 · ' : skin.slot === 'eyes' ? '눈장식 · ' : skin.slot === 'ear' ? '귀장식 · ' : ''}${skin.desc}</div>
+                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
                         <div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}</div>
@@ -12307,7 +12288,7 @@ ${subjectLine}
                 const overlays = '';
                 
                 const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
-                const shieldHtml = hp > 0 ? `<div class="absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
+                const shieldHtml = hp > 0 ? `<div class="plaza-card-extra absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
                 let jobHtml = '';
                 if (displayData.jobs && displayData.jobs.length > 0) {
@@ -12317,7 +12298,7 @@ ${subjectLine}
                         </div>
                     `).join('');
                     const topMargin = hp > 0 ? 'top-4' : 'top-1'; 
-                    jobHtml = `<div class="absolute ${topMargin} left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
+                    jobHtml = `<div class="plaza-card-extra absolute ${topMargin} left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
                 }
 
                 let condHtml = '';
@@ -12325,7 +12306,7 @@ ${subjectLine}
                     const emo = displayData.condition.emotion.icon;
                     const bColor = displayData.condition.body ? displayData.condition.body.color : 'text-slate-400';
                     const bIcon = displayData.condition.body ? displayData.condition.body.icon : 'fa-battery-half';
-                    condHtml = `<div class="absolute top-1 right-1 bg-slate-900/80 px-1.5 py-0.5 rounded-full border border-slate-600 flex items-center gap-1 shadow z-20">
+                    condHtml = `<div class="plaza-card-extra absolute top-1 right-1 bg-slate-900/80 px-1.5 py-0.5 rounded-full border border-slate-600 flex items-center gap-1 shadow z-20">
                                     <span class="text-[10px] leading-none">${emo}</span><i class="fa-solid ${bIcon} text-[10px] ${bColor} leading-none"></i>
                                 </div>`;
                 }
@@ -12378,14 +12359,14 @@ ${subjectLine}
                         <div class="relative inline-block leading-none">${face}</div>
                         <div class="text-[0.6em] leading-none">${rankBadgeHtml(lv.info, 'rank-badge-plaza')}</div>
                     </div>
-                    <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv} ${lv.info.name}</div>
+                    <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                     <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
                     
-                    <!-- XP 및 B 동시 표기 -->
+                    <!-- 파랑=경험치, 금색=봉. 단위는 생략하고 색으로 구분합니다. -->
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
-                        <span class="text-[9px] sm:text-[10px] text-sb-blue font-black">${(displayData.xp || 0).toLocaleString()}XP</span>
+                        <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="text-[9px] sm:text-[10px] font-black ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(walletBong)}</span>
+                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
 
                     ${gmControls}
@@ -14261,7 +14242,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -16864,19 +16845,19 @@ ${subjectLine}
             if (window.playerState.isAdmin) return await window.customAlert('마스터 계정은 환불 대상이 아닙니다.');
             if (window._skinRefundRunning) return;
             const skin = SKIN_DATA.find((s) => s.id === skinId);
-            if (!skin) return await window.customAlert('스킨 정보를 찾을 수 없어요.');
+            if (!skin) return await window.customAlert('캐릭터 정보를 찾을 수 없어요.');
 
             if (!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
             if (!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
             if (!window.playerState.ownedSkins[skinId]) {
-                return await window.customAlert('보유하지 않은 스킨입니다.');
+                return await window.customAlert('보유하지 않은 캐릭터입니다.');
             }
             if (!window.playerState.equippedSkins[skinId]) {
-                return await window.customAlert('장착 중인 스킨만 환불할 수 있습니다.\n먼저 장착한 뒤 환불 버튼을 눌러 주세요.');
+                return await window.customAlert('사용 중인 캐릭터만 환불할 수 있습니다.\n먼저 장착한 뒤 환불 버튼을 눌러 주세요.');
             }
 
             const refundB = getEquippedSkinRefundBong(skin);
-            if (refundB <= 0) return await window.customAlert('환불할 수 없는 스킨입니다.');
+            if (refundB <= 0) return await window.customAlert('환불할 수 없는 캐릭터입니다.');
             const refundGate = canRefundSkinThisSeason(window.playerState, getLocalDateStr());
             if (!refundGate.ok) {
                 if (refundGate.reason === 'season') {
@@ -16886,7 +16867,7 @@ ${subjectLine}
             }
 
             const typeLabel =
-                skin.type === 'aura' ? '테두리(오라)' : skin.type === 'face' ? '얼굴 스킨' : '장식 스킨';
+                skin.type === 'aura' ? '테두리(오라)' : skin.type === 'face' ? '캐릭터' : '아이템';
             const ok = await window.customConfirm(
                 `[${skin.name}] ${typeLabel}을(를) 환불할까요?\n\n` +
                 `환불 규정: 구매가 ${formatBongAmount(skin.price)}의 50%\n` +
@@ -16913,7 +16894,7 @@ ${subjectLine}
             } catch (e) {
                 const code = e && e.message ? e.message : String(e);
                 if (code === 'not_equipped') {
-                    return await window.customAlert('이미 환불되었거나 장착 중인 스킨이 아닙니다. 새로고침 후 다시 확인해 주세요.');
+                    return await window.customAlert('이미 환불되었거나 사용 중인 캐릭터가 아닙니다. 새로고침 후 다시 확인해 주세요.');
                 }
                 if (code === 'season_refund_cap') {
                     return await window.customAlert(`시즌 2 환불은 학생당 ${SKIN_REFUND_MAX_PER_SEASON}회까지입니다.`);
@@ -16931,10 +16912,12 @@ ${subjectLine}
         window.handleSkin = async function(skinId, stayOnPage) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             const skin = SKIN_DATA.find(s => s.id === skinId);
+            if (!skin) return;
             
             if(!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
+            const kindLabel = skin.type === 'aura' ? '오라' : '캐릭터';
             if (window.playerState.ownedSkins[skinId]) {
                 const wasOn = !!window.playerState.equippedSkins[skinId];
                 window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
@@ -16943,7 +16926,7 @@ ${subjectLine}
                 if (!stayOnPage) window.switchTab('plaza');
             } else {
                 if (window.playerState.bong >= skin.price || window.playerState.isAdmin) {
-                    const isOk = await window.customConfirm(`스킨 '${skin.name}'을(를) ${formatBongAmount(skin.price)}에 살까요?`);
+                    const isOk = await window.customConfirm(`${kindLabel} '${skin.name}'을(를) ${formatBongAmount(skin.price)}에 살까요?`);
                     if (isOk) {
                         if (!window.playerState.isAdmin) window.playerState.bong -= skin.price;
                         window.playerState.ownedSkins[skinId] = true;
@@ -16952,9 +16935,9 @@ ${subjectLine}
                         
                         window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
                         window.playerState.equippedSkins[skinId] = true; 
-                        await window.customAlert(`🎉 획득 완료! 바로 장착했어요.`); 
+                        await window.customAlert(`🎉 획득 완료! 바로 ${kindLabel === '오라' ? '적용' : '내 캐릭터로 사용'}했어요.`); 
                         updateUI();
-                        const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price, requireServerBongBalance: true, operationLabel: `${skin.name} 스킨 구매` });
+                        const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price, requireServerBongBalance: true, operationLabel: `${skin.name} ${kindLabel} 구매` });
                         if (!saved) return;
                         window.switchTab('plaza');
                     }
@@ -16965,9 +16948,26 @@ ${subjectLine}
         function renderBaseFacePicker() {
             const box = document.getElementById('baseFacePicker');
             if (!box) return;
-            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+            if (!window.playerState || window.playerState.isGuest) {
                 box.classList.add('hidden');
                 box.innerHTML = '';
+                return;
+            }
+            if (window.playerState.isAdmin) {
+                const sid = localStorage.getItem('sambong_student_id');
+                const current = resolveStaffLook(window.playerState.staffLookId, sid);
+                const looks = listStaffLooks();
+                box.classList.remove('hidden');
+                box.innerHTML = `
+                    <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터 (마스터 전용)</p>
+                    <div class="grid grid-cols-4 gap-1.5">${looks.map((b) => {
+                        const on = b.id === current.id;
+                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
+                            <img src="${b.img}" alt="${b.name}">
+                            <span>${b.name}</span>
+                        </button>`;
+                    }).join('')}</div>
+                    <p class="text-[9px] text-slate-400 mt-1.5 text-center">용 · 호랑이 · 현무 · 해태 중에서 고르면 광장 카드에도 바로 반영됩니다.</p>`;
                 return;
             }
             const sid = localStorage.getItem('sambong_student_id');
@@ -16978,58 +16978,45 @@ ${subjectLine}
             const look = resolveRankLook(rank.name);
             const owned = window.playerState.ownedSkins || {};
             const equipped = window.playerState.equippedSkins || {};
-            const slots = [
-                { key: 'hair', label: '헤어' },
-                { key: 'head', label: '모자' },
-                { key: 'eyes', label: '눈장식' },
-                { key: 'ear', label: '귀장식' },
-            ];
-            const slotHtml = slots.map((slot) => {
-                const items = SKIN_DATA.filter((s) => s.slot === slot.key);
-                const worn = items.find((s) => equipped[s.id]);
-                const ownedOnes = items.filter((s) => owned[s.id]);
-                const thumb = worn
-                    ? (worn.img ? `<img src="${worn.img}" alt="">` : (worn.emoji || ''))
-                    : '<span class="char-dress-empty">+</span>';
-                const name = worn ? worn.name : '비어 있음';
-                const click = worn
-                    ? `onclick="window.handleSkin('${worn.id}', true)"`
+            const faces = SKIN_DATA.filter((s) => s.type === 'face');
+            const faceHtml = faces.map((s) => {
+                const have = !!owned[s.id];
+                const on = !!equipped[s.id];
+                const click = have
+                    ? `onclick="window.handleSkin('${s.id}', true)"`
                     : `onclick="window.openSkinShop()"`;
-                return `<button type="button" ${click} class="char-dress-slot ${worn ? 'is-on' : ''}" title="${slot.label}">
-                    <span class="char-dress-slot-label">${slot.label}</span>
-                    <span class="char-dress-slot-art">${thumb}</span>
-                    <span class="char-dress-slot-name">${name}</span>
-                    ${ownedOnes.length && !worn ? `<span class="char-dress-slot-own">보유 ${ownedOnes.length}</span>` : ''}
+                return `<button type="button" ${click} class="char-dress-slot ${on ? 'is-on' : ''} ${have ? '' : 'opacity-60'}" title="${s.name}">
+                    <span class="char-dress-slot-art">${s.img ? `<img src="${s.img}" alt="">` : s.emoji}</span>
+                    <span class="char-dress-slot-name">${s.name}</span>
+                    <span class="char-dress-slot-own">${on ? '사용 중' : have ? '보유' : `${s.price}`}</span>
                 </button>`;
             }).join('');
             const wp = WEAPON_DATA.find((w) => w.id === window.playerState.equippedWeapon);
             box.classList.remove('hidden');
             box.innerHTML = `
-                <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 얼굴 (성별 3종 · 무료)</p>
+                <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 캐릭터 (성별 3종 · 무료)</p>
                 <div class="flex gap-1.5 justify-center">${bases.map((b) => {
-                    const on = b.id === current.id;
+                    const on = b.id === current.id && !faces.some((s) => equipped[s.id]);
                     return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
                         <img src="${b.img}" alt="${b.name}">
                         <span>${b.name}</span>
                     </button>`;
                 }).join('')}</div>
                 <div class="char-dress-rank">
-                    <img src="${look.img}" alt="">
+                    ${rank.img ? `<img src="${rank.img}" alt="">` : ''}
                     <div>
-                        <p class="char-dress-rank-title">등급 착장 · ${rank.name}</p>
+                        <p class="char-dress-rank-title">등급 · ${rank.name}</p>
                         <p class="char-dress-rank-hint">${look.hint}</p>
-                        <p class="text-[9px] text-slate-400">레벨이 오르면 옷과 표정이 자동으로 바뀝니다.</p>
                     </div>
                 </div>
-                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">스티커 코디</p>
-                <div class="char-dress-grid">${slotHtml}
-                    <button type="button" class="char-dress-slot ${wp ? 'is-on' : ''}" onclick="window.openSkinShop()">
-                        <span class="char-dress-slot-label">무기</span>
-                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
-                        <span class="char-dress-slot-name">${wp ? wp.name : '미장착'}</span>
-                    </button>
+                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">상점 캐릭터</p>
+                <div class="char-dress-grid">${faceHtml}</div>
+                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">무기</p>
+                <div class="char-dress-slot ${wp ? 'is-on' : ''}" style="max-width:7rem">
+                    <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                    <span class="char-dress-slot-name">${wp ? wp.name : '미장착'}</span>
                 </div>
-                <button type="button" onclick="window.openSkinShop()" class="char-dress-shop-btn">스킨 상점에서 더 꾸미기</button>`;
+                <button type="button" onclick="window.openSkinShop()" class="char-dress-shop-btn">캐릭터 상점으로</button>`;
         }
 
         window.openSkinShop = function() {
@@ -17043,7 +17030,7 @@ ${subjectLine}
             host.classList.remove('hidden');
             host.innerHTML = `
                 <div class="rank-up-card">
-                    ${look && look.img ? `<img src="${look.img}" alt="">` : ''}
+                    ${rank && rank.img ? `<img src="${rank.img}" alt="">` : ''}
                     <p class="rank-up-title">${rank && rank.name ? rank.name : '레벨업'} 달성!</p>
                     <p class="rank-up-hint">${(look && look.hint) || ''}</p>
                 </div>`;
@@ -17061,6 +17048,21 @@ ${subjectLine}
             const base = resolveCharacterBase(baseId, gender);
             if (base.id !== String(baseId)) return;
             window.playerState.baseFaceId = base.id;
+            // 무료 기본 캐릭터를 고르면 상점 캐릭터는 벗깁니다.
+            if (!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
+            SKIN_DATA.forEach((s) => {
+                if (s.type === 'face') window.playerState.equippedSkins[s.id] = false;
+            });
+            updateUI();
+            saveDataToCloud();
+        };
+
+        window.setStaffLook = function(lookId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const sid = localStorage.getItem('sambong_student_id');
+            const look = resolveStaffLook(lookId, sid);
+            if (look.id !== String(lookId)) return;
+            window.playerState.staffLookId = look.id;
             updateUI();
             saveDataToCloud();
         };
@@ -17135,7 +17137,7 @@ ${subjectLine}
         // ==========================================
         /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
         const STUDENT_GAME_FIELD_KEYS = [
-            'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId',
+            'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',

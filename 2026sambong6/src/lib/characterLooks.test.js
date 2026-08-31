@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
     getCosmeticSlot,
     listCharacterBases,
+    listStaffLooks,
     RANK_LOOKS,
     resolveCharacterBase,
     resolveRankLook,
+    resolveStaffLook,
     unequipSameSlot,
 } from './characterLooks.js';
 
@@ -21,13 +23,24 @@ describe('성별 기본 얼굴', () => {
     });
 });
 
-describe('등급 착장', () => {
-    it('6개 등급마다 다른 레이어가 있다', () => {
+describe('등급 안내', () => {
+    it('6개 등급 이름이 있다', () => {
         assert.equal(RANK_LOOKS.length, 6);
         const names = RANK_LOOKS.map((r) => r.name);
         assert.deepEqual(names, ['새내기', '초보', '중수', '고수', '수호자', '전설']);
         assert.equal(resolveRankLook('고수').name, '고수');
         assert.equal(resolveRankLook('없는등급').name, '새내기');
+    });
+});
+
+describe('마스터 수호 캐릭터', () => {
+    it('용·호랑이·현무·해태 4종이다', () => {
+        const looks = listStaffLooks();
+        assert.equal(looks.length, 4);
+        assert.deepEqual(looks.map((l) => l.name), ['용', '호랑이', '현무', '해태']);
+        assert.equal(resolveStaffLook('staff_haetae', 'gm').id, 'staff_haetae');
+        assert.equal(resolveStaffLook('', 'gm_a').id, 'staff_tiger');
+        assert.equal(resolveStaffLook('', 'gm').id, 'staff_dragon');
     });
 });
 
@@ -43,5 +56,17 @@ describe('장식 슬롯', () => {
         assert.equal(next.h2, false);
         assert.equal(next.hat, true);
         assert.equal(getCosmeticSlot(catalog[0]), 'hair');
+    });
+
+    it('얼굴 캐릭터는 하나만 켠다', () => {
+        const catalog = [
+            { id: 'f_ninja', type: 'face' },
+            { id: 'f_king', type: 'face' },
+            { id: 'sk_red', type: 'aura' },
+        ];
+        const next = unequipSameSlot({ f_ninja: true, sk_red: true }, catalog, catalog[1]);
+        assert.equal(next.f_ninja, false);
+        assert.equal(next.f_king, false);
+        assert.equal(next.sk_red, true);
     });
 });

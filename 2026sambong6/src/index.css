@@ -583,6 +583,9 @@
         }
 
         .plaza-card { min-width: 0; overflow: visible; }
+        /* 파랑=경험치, 금색=봉. 단위 글자는 생략하고 색으로만 구분합니다. */
+        .plaza-stat-xp { color: #60a5fa; font-variant-numeric: tabular-nums; }
+        .plaza-stat-bong { color: #fbbf24; font-variant-numeric: tabular-nums; }
         .plaza-cards-sm .plaza-card { padding: 0.3rem !important; border-radius: 0.65rem !important; }
         .plaza-cards-sm .plaza-card-face { font-size: 1.35rem !important; margin-bottom: 0.15rem !important; }
         .plaza-cards-sm .plaza-card-lv { font-size: 7px !important; padding: 0 0.25rem !important; }
@@ -684,6 +687,9 @@
                 padding: 0.5rem 0 !important;
                 min-height: 40px;
             }
+            /* 스마트폰: 방패·직업·컨디션·등급이름은 숨기고 얼굴·이름·수치만 남깁니다. */
+            .plaza-card-extra { display: none !important; }
+            .plaza-rank-name { display: none; }
 
             /* 자리표 연동: 부동산과 같은 열을 유지하고 칸을 압축 */
             .plaza-cards.plaza-cards-seating {

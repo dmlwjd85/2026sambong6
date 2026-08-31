@@ -1,6 +1,6 @@
 /**
- * 시즌 2 캐릭터 외형 — 성별 기본 얼굴 3종 + 장식 슬롯.
- * 초상은 스티커북 코디용 단순 얼굴이고, 화면 렌더는 sambongWorld.js에서 이 목록을 사용합니다.
+ * 시즌 2 캐릭터 외형 — 성별 기본 얼굴 3종 + 통짜 캐릭터(얼굴 스킨).
+ * 화면 렌더는 sambongWorld.js에서 이 목록을 사용합니다.
  */
 
 export const CHARACTER_BASES = [
@@ -12,24 +12,43 @@ export const CHARACTER_BASES = [
     { id: 'base_f3', gender: 'F', name: '마법 견습', desc: '세계수의 불꽃을 배우는 견습생', img: 'chars/base-f3.webp' },
 ];
 
+/** 마스터 홈에서 고르는 수호 캐릭터 4종 */
+export const STAFF_LOOKS = [
+    { id: 'staff_dragon', name: '용', desc: '세계수를 지키는 용왕', img: 'chars/staff-dragon.webp', emoji: '🐉' },
+    { id: 'staff_tiger', name: '호랑이', desc: '산을 지키는 호랑이', img: 'chars/staff-tiger.webp', emoji: '🐯' },
+    { id: 'staff_hyunmu', name: '현무', desc: '북쪽을 지키는 현무', img: 'chars/staff-hyunmu.webp', emoji: '🐢' },
+    { id: 'staff_haetae', name: '해태', desc: '정의를 지키는 해태', img: 'chars/staff-haetae.webp', emoji: '🦁' },
+];
+
 export const STAFF_PORTRAITS = {
-    gm: { img: 'chars/staff-master.webp', emoji: '🐉', label: '세계수 용왕' },
-    gm_a: { img: 'chars/staff-pirate.webp', emoji: '🏴‍☠️', label: '해적섬 두목' },
+    gm: { img: 'chars/staff-dragon.webp', emoji: '🐉', label: '세계수 용왕', lookId: 'staff_dragon' },
+    gm_a: { img: 'chars/staff-tiger.webp', emoji: '🐯', label: '산군 호랑이', lookId: 'staff_tiger' },
 };
 
-/** 등급별 기본 착장·표정. 레벨(경험치 구간)이 오르면 자동으로 겹칩니다. */
+/** 등급 안내 문구 — 착장은 통짜 캐릭터로 바꾸고, 등급은 이름·배지로 표현합니다. */
 export const RANK_LOOKS = [
-    { name: '새내기', img: 'chars/rank-look-saenaegi.webp', hint: '수줍은 미소 · 회색 조끼' },
-    { name: '초보', img: 'chars/rank-look-chobo.webp', hint: '활짝 웃는 얼굴 · 초록 스카프' },
-    { name: '중수', img: 'chars/rank-look-jungsu.webp', hint: '다부진 미소 · 파란 망토' },
-    { name: '고수', img: 'chars/rank-look-gosu.webp', hint: '자신감 있는 웃음 · 금색 망토' },
-    { name: '수호자', img: 'chars/rank-look-guardian.webp', hint: '차분한 미소 · 보라 별 망토' },
-    { name: '전설', img: 'chars/rank-look-legend.webp', hint: '전설의 웃음 · 붉은 불꽃 망토' },
+    { name: '새내기', hint: '모험의 첫걸음' },
+    { name: '초보', hint: '숲길을 익히는 중' },
+    { name: '중수', hint: '실력이 자리 잡았어요' },
+    { name: '고수', hint: '반에서 든든한 선배' },
+    { name: '수호자', hint: '학급을 지키는 수호자' },
+    { name: '전설', hint: '전설이 되었어요' },
 ];
 
 export function resolveRankLook(rankName) {
     const name = String(rankName || '');
     return RANK_LOOKS.find((r) => r.name === name) || RANK_LOOKS[0];
+}
+
+export function listStaffLooks() {
+    return STAFF_LOOKS.slice();
+}
+
+export function resolveStaffLook(staffLookId, studentId) {
+    const found = STAFF_LOOKS.find((l) => l.id === String(staffLookId || ''));
+    if (found) return found;
+    const fallbackId = String(studentId) === 'gm_a' ? 'staff_tiger' : 'staff_dragon';
+    return STAFF_LOOKS.find((l) => l.id === fallbackId) || STAFF_LOOKS[0];
 }
 
 export function normalizeGender(raw) {
@@ -48,7 +67,7 @@ export function resolveCharacterBase(baseFaceId, gender) {
     return found || list[0] || CHARACTER_BASES[0];
 }
 
-/** 같은 슬롯은 하나만 착용 — 나중에 헤어/모자/안경을 겹쳐 꾸밀 수 있게 합니다. */
+/** 같은 슬롯은 하나만 착용 — 얼굴 캐릭터·오라는 종류별로 하나만 켭니다. */
 export function getCosmeticSlot(skin) {
     if (!skin) return '';
     if (skin.slot) return String(skin.slot);

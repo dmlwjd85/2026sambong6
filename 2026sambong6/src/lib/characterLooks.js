@@ -17,6 +17,21 @@ export const STAFF_PORTRAITS = {
     gm_a: { img: 'chars/staff-pirate.webp', emoji: '🏴‍☠️', label: '해적섬 두목' },
 };
 
+/** 등급별 기본 착장·표정. 레벨(경험치 구간)이 오르면 자동으로 겹칩니다. */
+export const RANK_LOOKS = [
+    { name: '새내기', img: 'chars/rank-look-saenaegi.webp', hint: '수줍은 미소 · 회색 조끼' },
+    { name: '초보', img: 'chars/rank-look-chobo.webp', hint: '활짝 웃는 얼굴 · 초록 스카프' },
+    { name: '중수', img: 'chars/rank-look-jungsu.webp', hint: '다부진 미소 · 파란 망토' },
+    { name: '고수', img: 'chars/rank-look-gosu.webp', hint: '자신감 있는 웃음 · 금색 망토' },
+    { name: '수호자', img: 'chars/rank-look-guardian.webp', hint: '차분한 미소 · 보라 별 망토' },
+    { name: '전설', img: 'chars/rank-look-legend.webp', hint: '전설의 웃음 · 붉은 불꽃 망토' },
+];
+
+export function resolveRankLook(rankName) {
+    const name = String(rankName || '');
+    return RANK_LOOKS.find((r) => r.name === name) || RANK_LOOKS[0];
+}
+
 export function normalizeGender(raw) {
     return String(raw || '').toUpperCase() === 'F' ? 'F' : 'M';
 }

@@ -872,10 +872,11 @@
             flex-direction: column;
             align-items: center;
             min-width: 0;
-            padding: 0.55rem 0.4rem 0.5rem !important;
+            padding: 0.7rem 0.5rem 0.65rem !important;
             border-radius: 0.9rem !important;
             border-width: 2px !important;
             isolation: isolate;
+            gap: 0.15rem;
         }
         .plaza-staff-card::before {
             content: '';
@@ -2408,6 +2409,79 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .base-face-btn img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: 0.5rem; display: block; background: #f7f1e4; }
         .base-face-btn span { display: block; font-size: 9px; font-weight: 800; color: #cbd5e1; margin-top: 0.2rem; }
         .base-face-btn.is-on { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.7); }
+        .char-dress-panel { text-align: left; }
+        .char-dress-rank {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            margin-top: 0.65rem;
+            padding: 0.4rem 0.5rem;
+            border-radius: 0.7rem;
+            background: rgba(15, 23, 42, 0.72);
+            border: 1px solid rgba(251, 191, 36, 0.35);
+        }
+        .char-dress-rank img { width: 2.6rem; height: 2.6rem; object-fit: contain; background: #f7f1e4; border-radius: 0.45rem; }
+        .char-dress-rank-title { font-size: 11px; font-weight: 900; color: #fde68a; }
+        .char-dress-rank-hint { font-size: 10px; color: #e2e8f0; font-weight: 700; }
+        .char-dress-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.4rem;
+        }
+        .char-dress-slot {
+            border-radius: 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(15, 23, 42, 0.72);
+            padding: 0.3rem 0.25rem 0.35rem;
+            min-width: 0;
+        }
+        .char-dress-slot.is-on { border-color: #fbbf24; }
+        .char-dress-slot-label { display: block; font-size: 9px; font-weight: 900; color: #94a3b8; }
+        .char-dress-slot-art {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 2.2rem;
+            margin: 0.15rem 0;
+        }
+        .char-dress-slot-art img { width: 2rem; height: 2rem; object-fit: contain; }
+        .char-dress-empty { color: #64748b; font-size: 18px; font-weight: 900; }
+        .char-dress-slot-name { display: block; font-size: 9px; font-weight: 800; color: #e2e8f0; line-height: 1.2; }
+        .char-dress-slot-own { display: block; font-size: 8px; color: #86efac; font-weight: 800; }
+        .char-dress-shop-btn {
+            width: 100%;
+            margin-top: 0.55rem;
+            min-height: 40px;
+            border-radius: 0.7rem;
+            border: 1px solid rgba(244, 114, 182, 0.5);
+            background: rgba(80, 7, 36, 0.65);
+            color: #fbcfe8;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .rank-up-celebrate {
+            position: fixed;
+            inset: 0;
+            z-index: 370;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            background: rgba(2, 6, 23, 0.35);
+        }
+        .rank-up-card {
+            min-width: 12rem;
+            max-width: 18rem;
+            text-align: center;
+            padding: 1rem 1.1rem;
+            border-radius: 1.1rem;
+            border: 2px solid #fbbf24;
+            background: rgba(15, 23, 42, 0.94);
+            box-shadow: 0 0 28px rgba(251, 191, 36, 0.45);
+        }
+        .rank-up-card img { width: 5.5rem; height: 5.5rem; object-fit: contain; margin: 0 auto 0.4rem; background: #f7f1e4; border-radius: 0.7rem; }
+        .rank-up-title { font-size: 16px; font-weight: 900; color: #fde68a; }
+        .rank-up-hint { font-size: 11px; color: #e2e8f0; margin-top: 0.25rem; }
 
         /* 용의 눈 · 레이저 감시 — 어두운 화면에 잘 보이도록 밝고 크게 */
         .class-watch-toggle { margin-left: auto; }

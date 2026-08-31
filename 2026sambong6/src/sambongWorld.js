@@ -102,6 +102,7 @@ import {
     STAFF_PORTRAITS,
     listCharacterBases,
     resolveCharacterBase,
+    resolveRankLook,
     unequipSameSlot,
 } from './lib/characterLooks.js';
 
@@ -621,7 +622,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.11';
+        const APP_VERSION = 'v1.12';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1264,7 +1265,7 @@ function redrawPlazaGrantsUi() {
             return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none">${wp.emoji || ''}</span>`;
         }
 
-        /** 학생/스태프 초상 + 장식·무기. 나중에 슬롯을 더 쌓아 꾸밀 수 있습니다. */
+        /** 학생/스태프 초상 + 등급 착장·장식·무기. 나중에 슬롯을 더 쌓아 꾸밀 수 있습니다. */
         function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, portraitClass = '' } = {}) {
             const row = data || {};
             const equipped = row.equippedSkins || {};
@@ -1283,6 +1284,14 @@ function redrawPlazaGrantsUi() {
                 }
             }
             let overlays = '';
+            // 등급 기본 옷·표정은 스킨보다 아래에 깔아 레벨업이 바로 보이게 합니다.
+            if (!isStaff) {
+                const rankName = getLevelInfo(row.xp || 0).info.name;
+                const rankLook = resolveRankLook(rankName);
+                if (rankLook && rankLook.img) {
+                    overlays += `<span class="char-sticker-layer char-rank-look pointer-events-none z-[15]"><img src="${rankLook.img}" alt=""></span>`;
+                }
+            }
             SKIN_DATA.forEach((s) => {
                 if (equipped[s.id] && s.type === 'overlay') overlays += cosmeticMarkHtml(s);
             });
@@ -7046,6 +7055,7 @@ ${subjectLine}
             if (tabId === 'classtools') {
                 if (typeof window.closeClassToolFullscreen === 'function') window.closeClassToolFullscreen();
                 if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
+                if (typeof applyClassWatchUI === 'function') applyClassWatchUI();
                 renderLearningThermometerPanel();
                 renderLotteryParticipantList();
                 renderLotteryResultsPanel();
@@ -7295,6 +7305,8 @@ ${subjectLine}
         function updateClassToolsPanelVisibility() {
             const grid = document.getElementById('classtoolsAppGrid');
             const isAdmin = canEditLearningThermometer();
+            const masterBar = document.getElementById('classtoolsMasterBar');
+            if (masterBar) masterBar.classList.toggle('hidden', !isAdmin);
             if (grid) grid.classList.remove('hidden');
             document.querySelectorAll('#classtoolsAppGrid .app-tool-item').forEach((btn) => {
                 const id = btn.getAttribute('data-tool');
@@ -12344,16 +12356,10 @@ ${subjectLine}
                     return `
                     <div class="plaza-card plaza-staff-card ${themeClass} w-full relative">
                         <span class="plaza-staff-badge">${badge}</span>
-                        <span class="plaza-staff-spark" style="top:18%;left:12%;animation-delay:0s"></span>
-                        <span class="plaza-staff-spark" style="top:28%;right:14%;animation-delay:.4s"></span>
-                        <span class="plaza-staff-spark" style="bottom:22%;left:18%;animation-delay:.8s"></span>
-                        <span class="plaza-staff-spark" style="bottom:16%;right:20%;animation-delay:1.2s"></span>
-                        ${shieldHtml}${jobHtml}${condHtml}
                         <div class="plaza-staff-face-wrap">
                             <div class="plaza-staff-ring" aria-hidden="true"></div>
-                            <div class="plaza-card-face plaza-staff-face relative">
+                            <div class="plaza-card-face plaza-staff-face">
                                 ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: false, portraitClass: 'char-portrait-staff' })}
-                                <span class="absolute -bottom-0.5 -right-1 text-sm drop-shadow-lg">${isA ? '🌊' : '🔥'}</span>
                             </div>
                         </div>
                         <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
@@ -13791,12 +13797,22 @@ ${subjectLine}
             }
 
             const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
-            document.getElementById('dashShield').innerHTML = hp > 0 ? `🛡️<span class="text-[10px] bg-indigo-600 px-1 rounded absolute -top-1 -right-2 font-bold text-white border border-indigo-400 shadow">${hp}</span>` : '';
+            const dashShieldEl = document.getElementById('dashShield');
+            if (dashShieldEl) {
+                dashShieldEl.innerHTML = (!window.playerState.isAdmin && hp > 0)
+                    ? `🛡️<span class="text-[10px] bg-indigo-600 px-1 rounded absolute -top-1 -right-2 font-bold text-white border border-indigo-400 shadow">${hp}</span>`
+                    : '';
+            }
             
-            document.getElementById('dashJobBadge').innerHTML = (window.playerState.jobs||[]).map(j => `
+            const dashJobEl = document.getElementById('dashJobBadge');
+            if (dashJobEl) {
+                dashJobEl.innerHTML = window.playerState.isAdmin
+                    ? ''
+                    : (window.playerState.jobs||[]).map(j => `
                 <div class="w-6 h-6 rounded-full bg-slate-900 border flex items-center justify-center ${j.color}">
                     <i class="fa-solid ${j.icon} text-[10px]"></i>
                 </div>`).join('');
+            }
 
             let prevMax = lvInfo.index > 0 ? LEVEL_DATA[lvInfo.index-1].max : 0;
             let curMax = lvInfo.info.max === Infinity ? xp : lvInfo.info.max;
@@ -15185,7 +15201,10 @@ ${subjectLine}
             if (newLv > oldLv) {
                 const bonus = newLv * 3;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + bonus);
-                alertMsg += `\n\n🎉 레벨업을 축하해요!\n보너스 자산 [${formatBongAmount(bonus)}]를 드립니다!`;
+                const newRank = LEVEL_DATA[newLv] || LEVEL_DATA[LEVEL_DATA.length - 1];
+                const look = resolveRankLook(newRank.name);
+                alertMsg += `\n\n🎉 등급이 [${newRank.name}]이 되었어요!\n${look.hint}\n보너스 자산 [${formatBongAmount(bonus)}]를 드립니다!`;
+                showRankUpCelebrate(newRank, look);
             }
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
             await window.customAlert(alertMsg.trim());
@@ -16909,7 +16928,7 @@ ${subjectLine}
             }
         };
 
-        window.handleSkin = async function(skinId) {
+        window.handleSkin = async function(skinId, stayOnPage) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             const skin = SKIN_DATA.find(s => s.id === skinId);
             
@@ -16920,7 +16939,8 @@ ${subjectLine}
                 const wasOn = !!window.playerState.equippedSkins[skinId];
                 window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
                 window.playerState.equippedSkins[skinId] = !wasOn;
-                updateUI(); saveDataToCloud(); window.switchTab('plaza');
+                updateUI(); saveDataToCloud();
+                if (!stayOnPage) window.switchTab('plaza');
             } else {
                 if (window.playerState.bong >= skin.price || window.playerState.isAdmin) {
                     const isOk = await window.customConfirm(`스킨 '${skin.name}'을(를) ${formatBongAmount(skin.price)}에 살까요?`);
@@ -16954,8 +16974,38 @@ ${subjectLine}
             const gender = STUDENT_GENDERS[String(sid)] === 'F' ? 'F' : 'M';
             const current = resolveCharacterBase(window.playerState.baseFaceId, gender);
             const bases = listCharacterBases(gender);
+            const rank = getLevelInfo(window.playerState.xp || 0).info;
+            const look = resolveRankLook(rank.name);
+            const owned = window.playerState.ownedSkins || {};
+            const equipped = window.playerState.equippedSkins || {};
+            const slots = [
+                { key: 'hair', label: '헤어' },
+                { key: 'head', label: '모자' },
+                { key: 'eyes', label: '눈장식' },
+                { key: 'ear', label: '귀장식' },
+            ];
+            const slotHtml = slots.map((slot) => {
+                const items = SKIN_DATA.filter((s) => s.slot === slot.key);
+                const worn = items.find((s) => equipped[s.id]);
+                const ownedOnes = items.filter((s) => owned[s.id]);
+                const thumb = worn
+                    ? (worn.img ? `<img src="${worn.img}" alt="">` : (worn.emoji || ''))
+                    : '<span class="char-dress-empty">+</span>';
+                const name = worn ? worn.name : '비어 있음';
+                const click = worn
+                    ? `onclick="window.handleSkin('${worn.id}', true)"`
+                    : `onclick="window.openSkinShop()"`;
+                return `<button type="button" ${click} class="char-dress-slot ${worn ? 'is-on' : ''}" title="${slot.label}">
+                    <span class="char-dress-slot-label">${slot.label}</span>
+                    <span class="char-dress-slot-art">${thumb}</span>
+                    <span class="char-dress-slot-name">${name}</span>
+                    ${ownedOnes.length && !worn ? `<span class="char-dress-slot-own">보유 ${ownedOnes.length}</span>` : ''}
+                </button>`;
+            }).join('');
+            const wp = WEAPON_DATA.find((w) => w.id === window.playerState.equippedWeapon);
             box.classList.remove('hidden');
-            box.innerHTML = `<p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 얼굴 (성별 3종 · 무료)</p>
+            box.innerHTML = `
+                <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 얼굴 (성별 3종 · 무료)</p>
                 <div class="flex gap-1.5 justify-center">${bases.map((b) => {
                     const on = b.id === current.id;
                     return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
@@ -16963,7 +17013,45 @@ ${subjectLine}
                         <span>${b.name}</span>
                     </button>`;
                 }).join('')}</div>
-                <p class="text-[9px] text-slate-400 mt-1.5 text-center">헤어·모자는 스킨 상점에서 사서 겹쳐 꾸밀 수 있습니다.</p>`;
+                <div class="char-dress-rank">
+                    <img src="${look.img}" alt="">
+                    <div>
+                        <p class="char-dress-rank-title">등급 착장 · ${rank.name}</p>
+                        <p class="char-dress-rank-hint">${look.hint}</p>
+                        <p class="text-[9px] text-slate-400">레벨이 오르면 옷과 표정이 자동으로 바뀝니다.</p>
+                    </div>
+                </div>
+                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">스티커 코디</p>
+                <div class="char-dress-grid">${slotHtml}
+                    <button type="button" class="char-dress-slot ${wp ? 'is-on' : ''}" onclick="window.openSkinShop()">
+                        <span class="char-dress-slot-label">무기</span>
+                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-name">${wp ? wp.name : '미장착'}</span>
+                    </button>
+                </div>
+                <button type="button" onclick="window.openSkinShop()" class="char-dress-shop-btn">스킨 상점에서 더 꾸미기</button>`;
+        }
+
+        window.openSkinShop = function() {
+            window.switchTab('shop');
+            if (typeof window.switchShopSub === 'function') window.switchShopSub('skin');
+        };
+
+        function showRankUpCelebrate(rank, look) {
+            const host = document.getElementById('rankUpCelebrate');
+            if (!host) return;
+            host.classList.remove('hidden');
+            host.innerHTML = `
+                <div class="rank-up-card">
+                    ${look && look.img ? `<img src="${look.img}" alt="">` : ''}
+                    <p class="rank-up-title">${rank && rank.name ? rank.name : '레벨업'} 달성!</p>
+                    <p class="rank-up-hint">${(look && look.hint) || ''}</p>
+                </div>`;
+            clearTimeout(window._rankUpCelebrateTimer);
+            window._rankUpCelebrateTimer = setTimeout(() => {
+                host.classList.add('hidden');
+                host.innerHTML = '';
+            }, 3200);
         }
 
         window.setBaseFace = function(baseId) {
@@ -16991,16 +17079,17 @@ ${subjectLine}
                 });
             }
             document.body.classList.toggle('class-watch-on', on);
-            const btn = document.getElementById('classWatchToggleBtn');
-            if (btn) {
-                const admin = !!(window.playerState && window.playerState.isAdmin);
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            const masterBar = document.getElementById('classtoolsMasterBar');
+            if (masterBar) masterBar.classList.toggle('hidden', !admin);
+            document.querySelectorAll('.js-class-watch-toggle').forEach((btn) => {
                 btn.classList.toggle('hidden', !admin);
                 btn.classList.toggle('is-on', on);
                 btn.setAttribute('aria-pressed', on ? 'true' : 'false');
                 btn.innerHTML = on
                     ? '<i class="fa-solid fa-eye"></i> 용의 눈 켜짐'
                     : '<i class="fa-solid fa-eye-slash"></i> 용의 눈';
-            }
+            });
         }
 
         window.toggleClassWatch = async function() {

@@ -569,7 +569,7 @@
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
                         <div id="dashAvatar" class="text-6xl sm:text-7xl mb-4 relative z-10 drop-shadow-xl avatar-bounce mt-4">👦</div>
-                        <div id="baseFacePicker" class="hidden w-full mt-1 mb-2 z-10"></div>
+                        <div id="baseFacePicker" class="hidden w-full mt-1 mb-2 z-10 char-dress-panel"></div>
                         <h3 id="dashName" class="text-2xl font-display text-white mt-2 z-10 tracking-wider">이름</h3>
                         <div id="dashLevelName" class="text-xs font-bold text-sb-blue mb-4 z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
                         <div class="flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
@@ -1452,6 +1452,16 @@
         <!-- ★ 수업도구 탭 (타이머 · 제비뽑기) ★ -->
         <section id="classtoolsSection" class="hidden">
             <div class="max-w-7xl mx-auto px-1 pb-10 space-y-6">
+
+            <div id="classtoolsMasterBar" class="hidden mb-3 flex flex-wrap items-center justify-between gap-2 glass-panel p-3 rounded-xl border border-amber-500/55 bg-amber-950/40">
+                <div class="min-w-0">
+                    <p class="text-xs font-black text-amber-100">수업 감시</p>
+                    <p class="text-[10px] text-slate-400 leading-snug">켜면 학생 화면에 용의 눈이 나타납니다.</p>
+                </div>
+                <button type="button" class="js-class-watch-toggle class-watch-toggle min-h-[44px] px-3 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-100 text-xs font-black border border-amber-500/60" onclick="window.toggleClassWatch()" aria-pressed="false">
+                    <i class="fa-solid fa-eye-slash"></i> 용의 눈
+                </button>
+            </div>
 
             <div id="classtoolsAppGrid" class="app-tool-grid hidden">
                 <button type="button" class="app-tool-item is-active" data-tool="timetable" data-student="1" onclick="window.switchClassTool('timetable')">
@@ -2379,6 +2389,8 @@
     </div>
 
 
+    <div id="rankUpCelebrate" class="hidden rank-up-celebrate" aria-live="polite"></div>
+
     <!-- 수업 중 마스터 감시(용의 눈·레이저) -->
     <div id="classWatchOverlay" class="hidden class-watch-overlay" aria-hidden="true">
         <img class="class-watch-eye class-watch-eye-l" src="/2026sambong6/chars/dragon-eye.webp" alt="">
@@ -2394,7 +2406,7 @@
                 <i class="fa-solid fa-chevron-left mr-1"></i>뒤로
             </button>
             <span id="classtoolFullscreenTitle" class="text-sm font-black text-lime-200">수업도구</span>
-            <button type="button" id="classWatchToggleBtn" onclick="window.toggleClassWatch()" class="class-watch-toggle min-h-[44px] px-3 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-100 text-xs font-black border border-amber-500/60" aria-pressed="false">
+            <button type="button" class="js-class-watch-toggle class-watch-toggle min-h-[44px] px-3 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-100 text-xs font-black border border-amber-500/60" onclick="window.toggleClassWatch()" aria-pressed="false">
                 <i class="fa-solid fa-eye-slash"></i> 용의 눈
             </button>
         </div>

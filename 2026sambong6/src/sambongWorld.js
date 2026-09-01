@@ -17231,7 +17231,7 @@ ${subjectLine}
             const isMaster = !!(window.playerState && window.playerState.isAdmin);
             const hintText = started
                 ? `시즌 2가 이미 시작되었습니다. 졸업(1/7)까지 수업 ${days}일 · 퀘스트 경로 약 ${questXp.toLocaleString()} XP, 수업 중 부여분 약 ${SEASON2.teacherXpBudget.toLocaleString()} XP.`
-                : `「시즌 2 시작」을 누르면 경험치·퀘스트만 0으로 되돌립니다. 지갑·은행·공동구매 봉은 그대로 두고, 시즌 1 XP 1만당 100봉만 추가로 지급합니다. 수업 ${days}일 · 퀘스트 약 ${questXp.toLocaleString()} XP + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()} XP ≈ 목표 ${SEASON2.targetXp.toLocaleString()} XP.`;
+                : `「시즌 2 시작」을 누르면 경험치·퀘스트·보유 무기를 비웁니다. 지갑·은행·공동구매 봉과 스킨은 그대로 두고, 시즌 1 XP 1만당 100봉만 추가로 지급합니다. 수업 ${days}일 · 퀘스트 약 ${questXp.toLocaleString()} XP + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()} XP ≈ 목표 ${SEASON2.targetXp.toLocaleString()} XP.`;
             hints.forEach((el) => { el.textContent = hintText; });
             const canClick = isMaster && gate.ok;
             btns.forEach((btn) => {

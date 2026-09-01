@@ -495,10 +495,66 @@ export function sanitizeDragonBallRewards(raw) {
     };
 }
 
-/** 시즌 1 정산 XP. 없으면 0입니다. */
-export function season1RecordXp(stu) {
+/** 시즌 1 전설 등급 XP (4만). */
+export const SEASON1_LEGEND_XP = 40000;
+
+/**
+ * 시즌 1 정산 때 빠진 기록.
+ * 학번과 이름이 모두 맞을 때만 보정합니다.
+ */
+export const SEASON1_XP_CORRECTIONS = Object.freeze([
+    Object.freeze({ id: '12', name: '황훈태', season1Xp: SEASON1_LEGEND_XP }),
+]);
+
+function studentDisplayName(stu, nameMap = {}) {
+    const id = String((stu && stu.id) || '');
+    return String((nameMap && nameMap[id]) || (stu && stu.name) || '').trim();
+}
+
+/** 문서에 저장된 시즌 1 XP. 보정 전 값입니다. */
+export function storedSeason1Xp(stu) {
     const n = Math.floor(Number(stu && stu.season1Xp));
     return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** 정산 누락분. 다른 학급의 같은 학번은 이름이 다르면 적용하지 않습니다. */
+export function season1CorrectionXp(stu, nameMap = {}) {
+    const id = String((stu && stu.id) || '');
+    if (!id) return 0;
+    const name = studentDisplayName(stu, nameMap);
+    const hit = SEASON1_XP_CORRECTIONS.find((c) => c.id === id && name === c.name);
+    if (!hit) return 0;
+    const n = Math.floor(Number(hit.season1Xp));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** 시즌 1 정산 XP. 누락 보정이 있으면 더 큰 값을 씁니다. */
+export function season1RecordXp(stu, nameMap = {}) {
+    return Math.max(storedSeason1Xp(stu), season1CorrectionXp(stu, nameMap));
+}
+
+export function isSeason1LegendXp(xp) {
+    return Math.floor(Number(xp) || 0) >= SEASON1_LEGEND_XP;
+}
+
+/**
+ * 빠진 시즌 1 XP를 문서에 채울 패치.
+ * 지갑 봉은 건드리지 않습니다.
+ */
+export function buildSeason1XpCorrectionPatch(stu, nameMap = {}, nowMs = Date.now()) {
+    const target = season1CorrectionXp(stu, nameMap);
+    if (target <= 0) return { skip: true, patch: null };
+    const fromStore = storedSeason1Xp(stu);
+    if (fromStore >= target) return { skip: true, patch: null };
+    return {
+        skip: false,
+        patch: {
+            season1Xp: target,
+            season1SettledAt: (stu && stu.season1SettledAt) ? stu.season1SettledAt : nowMs,
+            season1XpCorrectedAt: nowMs,
+            season1XpCorrectedFrom: fromStore,
+        },
+    };
 }
 
 /**
@@ -506,18 +562,28 @@ export function season1RecordXp(stu) {
  * 마스터·게스트는 빼고, 시즌 1 XP 높은 순입니다.
  */
 export function buildSeason1HallOfFame(students, nameMap = {}) {
-    const rows = (Array.isArray(students) ? students : [])
+    const list = Array.isArray(students) ? students.slice() : [];
+    const seen = new Set(list.map((s) => String((s && s.id) || '')).filter(Boolean));
+    SEASON1_XP_CORRECTIONS.forEach((c) => {
+        if (seen.has(c.id)) return;
+        const mapped = String((nameMap && nameMap[c.id]) || '').trim();
+        if (mapped !== c.name) return;
+        list.push({ id: c.id, name: c.name, season1Xp: 0 });
+    });
+    const rows = list
         .filter((s) => {
             const id = String((s && s.id) || '');
             return id && id !== 'gm' && id !== 'gm_a' && id !== 'guest';
         })
         .map((s) => {
             const id = String(s.id);
+            const season1Xp = season1RecordXp(s, nameMap);
             return {
                 id,
-                name: nameMap[id] || id,
-                season1Xp: season1RecordXp(s),
+                name: nameMap[id] || s.name || id,
+                season1Xp,
                 season1BongReward: Math.max(0, Math.floor(Number(s.season1BongReward) || 0)),
+                isLegend: isSeason1LegendXp(season1Xp),
             };
         })
         .sort((a, b) => b.season1Xp - a.season1Xp || a.id.localeCompare(b.id, 'ko'));

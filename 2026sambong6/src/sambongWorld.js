@@ -88,6 +88,8 @@ import {
     applyShieldToXpDeduct,
     buildSeason1HallOfFame,
     buildSeason1ItemRefundPatch,
+    buildSeason1XpCorrectionPatch,
+    season1RecordXp,
     buildSeason2StudentPatch,
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
@@ -644,7 +646,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.24';
+        const APP_VERSION = 'v1.25';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -7231,8 +7233,9 @@ ${subjectLine}
                 return;
             }
             el.innerHTML = top.map((r) => {
-                const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank);
-                return `<div class="hof-mini-row"><span class="hof-mini-rank">${medal}</span><span class="truncate">${escapeHofText(r.name)}</span><span class="ml-auto text-amber-200">${r.season1Xp.toLocaleString()} XP</span></div>`;
+                const medal = r.isLegend ? '👑' : (r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank));
+                const legend = r.isLegend ? '<span class="text-amber-300">전설</span>' : '';
+                return `<div class="hof-mini-row"><span class="hof-mini-rank">${medal}</span><span class="truncate">${escapeHofText(r.name)}</span>${legend}<span class="ml-auto text-amber-200">${r.season1Xp.toLocaleString()} XP</span></div>`;
             }).join('');
         }
 
@@ -7251,17 +7254,28 @@ ${subjectLine}
                 body.innerHTML = '<p class="text-[11px] text-amber-100/80 px-1 py-6 text-center leading-relaxed">시즌 1 정산 기록이 아직 없습니다.<br>시즌 2가 시작되면 당시 경험치가 여기에 남습니다.</p>';
                 return;
             }
-            body.innerHTML = rows.map((r) => {
+            const legends = rows.filter((r) => r.isLegend);
+            const legendHtml = legends.length
+                ? `<div class="hof-legend-banner">${legends.map((r) => `
+                    <div class="hof-legend-card">
+                        <div class="text-3xl mb-1">👑</div>
+                        <strong>${escapeHofText(r.name)}</strong>
+                        <span>시즌 1 · Lv.${calculateExactLevel(r.season1Xp)} 전설</span>
+                        <em>${r.season1Xp.toLocaleString()} XP</em>
+                    </div>`).join('')}</div>`
+                : '';
+            body.innerHTML = legendHtml + rows.map((r) => {
                 const lv = calculateExactLevel(r.season1Xp);
                 const lvInfo = getLevelInfo(r.season1Xp);
                 const me = String(r.id) === myId;
                 const top = r.rank <= 3 && r.season1Xp > 0;
-                const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank);
+                const medal = r.isLegend ? '👑' : (r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank));
                 const bongLine = r.season1BongReward > 0 ? ` · 정산 ${formatBongAmount(r.season1BongReward)}` : '';
-                return `<div class="hof-library-row${me ? ' is-me' : ''}${top ? ' is-top' : ''}">
+                const legendMark = r.isLegend ? ' <span class="text-amber-300">전설</span>' : '';
+                return `<div class="hof-library-row${me ? ' is-me' : ''}${top ? ' is-top' : ''}${r.isLegend ? ' is-legend' : ''}">
                     <div class="hof-library-rank">${medal}</div>
                     <div class="hof-library-name">
-                        <strong>${escapeHofText(r.name)}${me ? ' <span class="text-amber-300">나</span>' : ''}</strong>
+                        <strong>${escapeHofText(r.name)}${legendMark}${me ? ' <span class="text-amber-300">나</span>' : ''}</strong>
                         <span>시즌 1 · Lv.${lv} ${escapeHofText((lvInfo.info && lvInfo.info.name) || '')}${bongLine}</span>
                     </div>
                     <div class="hof-library-xp">${r.season1Xp.toLocaleString()}<div class="text-[9px] font-bold text-amber-200/80">XP</div></div>
@@ -13412,19 +13426,31 @@ ${subjectLine}
         };
 
         window.renderHallOfFame = function(students) {
-            const legends = students.filter(s => calculateExactLevel(s.xp || 0) >= 100);
+            const list = Array.isArray(students) ? students.slice() : [];
+            const byId = new Map(list.map((s) => [String(s.id), s]));
+            const legendIds = new Set();
+            list.forEach((s) => {
+                if (calculateExactLevel(s.xp || 0) >= 100) legendIds.add(String(s.id));
+            });
+            buildSeason1HallOfFame(list, STUDENT_NAMES).forEach((r) => {
+                if (r.isLegend) legendIds.add(String(r.id));
+            });
+            const legends = [...legendIds].map((id) => byId.get(id) || { id, xp: 0, season1Xp: 0 });
             const hofSec = document.getElementById('hallOfFameSection');
             
             if (legends.length > 0) {
                 hofSec.classList.remove('hidden');
                 document.getElementById('hofContainer').innerHTML = legends.map(s => {
                     const face = buildCharacterAvatarHtml({ studentId: s.id, data: s, showWeapon: false, portraitClass: 'char-portrait-sm' });
+                    const s1Xp = season1RecordXp(s, STUDENT_NAMES);
+                    const fromSeason1 = calculateExactLevel(s.xp || 0) < 100 && s1Xp >= 40000;
+                    const caption = fromSeason1 ? '시즌 1 · Lv.100 전설' : 'Lv.100 전설';
                     return `
                     <div class="glass-panel p-4 rounded-xl border-2 border-yellow-500 bg-gradient-to-b from-yellow-900/60 flex flex-col items-center w-28">
                         <div class="text-3xl mb-1 drop-shadow-lg avatar-legend">👑</div>
                         <div class="text-3xl mb-2 drop-shadow-md">${face}</div>
-                        <div class="font-display text-white text-sm">${STUDENT_NAMES[s.id]}</div>
-                        <div class="text-[9px] text-yellow-400 mt-1 font-bold">Lv.100 전설</div>
+                        <div class="font-display text-white text-sm">${STUDENT_NAMES[s.id] || s.name || s.id}</div>
+                        <div class="text-[9px] text-yellow-400 mt-1 font-bold">${caption}</div>
                     </div>`;
                 }).join('');
             } else { 
@@ -17717,6 +17743,7 @@ ${subjectLine}
                 if (typeof window.ensureSeason2WeaponReset === 'function') await window.ensureSeason2WeaponReset();
                 if (typeof window.ensureSeason2DragonBallReset === 'function') await window.ensureSeason2DragonBallReset();
                 if (typeof window.ensureSeason1ItemRefund === 'function') await window.ensureSeason1ItemRefund();
+                if (typeof window.ensureSeason1XpCorrections === 'function') await window.ensureSeason1XpCorrections();
                 if (typeof window.ensureShieldStockFixedTo5 === 'function') await window.ensureShieldStockFixedTo5();
                 window._adminOneShotMigrationsDone = true;
             } catch (e) {
@@ -17857,6 +17884,58 @@ ${subjectLine}
                 console.error('ensureSeason1ItemRefund', e);
             } finally {
                 window._season1ItemRefundRunning = false;
+            }
+        };
+
+        /** 시즌 1 정산에서 빠진 XP를 문서에 채웁니다. 지갑 봉은 건드리지 않습니다. */
+        window.ensureSeason1XpCorrections = async function() {
+            if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (window._season1XpCorrectionRunning) return;
+            window._season1XpCorrectionRunning = true;
+            try {
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                let snap;
+                try {
+                    snap = await getDocsFromServer(colRef);
+                } catch (e) {
+                    snap = await getDocs(colRef);
+                }
+                const nowMs = Date.now();
+                const patches = [];
+                snap.forEach((d) => {
+                    const sid = String(d.id).replace(/^student_/, '');
+                    const stu = { ...(d.data() || {}), id: sid };
+                    const built = buildSeason1XpCorrectionPatch(stu, STUDENT_NAMES, nowMs);
+                    if (built.skip) return;
+                    patches.push({ sid, patch: built.patch });
+                });
+                if (!patches.length) return;
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    patches.forEach(({ sid, patch }) => {
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            patch,
+                            { merge: true }
+                        );
+                    });
+                    await batch.commit();
+                }, '시즌 1 XP 누락 보정');
+                const list = window.allStudentsData;
+                if (list && list.length) {
+                    patches.forEach(({ sid, patch }) => {
+                        const row = list.find((s) => String(s.id) === sid);
+                        if (row) Object.assign(row, patch);
+                    });
+                }
+                if (typeof window.renderHallOfFame === 'function') window.renderHallOfFame(window.allStudentsData || []);
+                if (typeof window.showToast === 'function') {
+                    window.showToast('시즌 1 명예의 전당 기록을 보정했습니다.');
+                }
+            } catch (e) {
+                console.error('ensureSeason1XpCorrections', e);
+            } finally {
+                window._season1XpCorrectionRunning = false;
             }
         };
 

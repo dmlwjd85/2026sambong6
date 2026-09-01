@@ -25,6 +25,9 @@ import {
     sanitizeDragonBallRewards,
     season1RecordXp,
     buildSeason1HallOfFame,
+    buildSeason1XpCorrectionPatch,
+    isSeason1LegendXp,
+    SEASON1_LEGEND_XP,
     uniqueInventory,
     weaponDropMultiplier,
     worldSettingsForSeason2,
@@ -254,20 +257,40 @@ describe('절대 방패', () => {
 describe('시즌 1 명예의 전당', () => {
     it('시즌 1 XP 높은 순으로 순위를 매긴다', () => {
         const rows = buildSeason1HallOfFame([
-            { id: '12', season1Xp: 12000, season1BongReward: 100 },
+            { id: '5', season1Xp: 12000, season1BongReward: 100 },
             { id: '1', season1Xp: 40000, season1BongReward: 400 },
             { id: 'gm', season1Xp: 99999 },
             { id: 'gm_a', season1Xp: 88888 },
             { id: 'guest', season1Xp: 77777 },
             { id: '6', season1Xp: 40000, season1BongReward: 400 },
-        ], { 1: '김단엘', 6: '박소윤', 12: '황훈태' });
-        assert.equal(rows.length, 3);
+        ], { 1: '김단엘', 5: '박문경', 6: '박소윤', 12: '황훈태' });
+        assert.equal(rows.length, 4);
         assert.equal(rows[0].id, '1');
         assert.equal(rows[0].rank, 1);
         assert.equal(rows[0].name, '김단엘');
-        assert.equal(rows[1].id, '6');
-        assert.equal(rows[2].id, '12');
+        assert.equal(rows[0].isLegend, true);
+        assert.equal(rows[1].id, '12');
+        assert.equal(rows[1].name, '황훈태');
+        assert.equal(rows[1].season1Xp, SEASON1_LEGEND_XP);
+        assert.equal(rows[1].isLegend, true);
+        assert.equal(rows[2].id, '6');
+        assert.equal(rows[3].id, '5');
         assert.equal(season1RecordXp({ season1Xp: '25400' }), 25400);
         assert.equal(season1RecordXp({}), 0);
+        assert.equal(isSeason1LegendXp(39999), false);
+        assert.equal(isSeason1LegendXp(40000), true);
+    });
+
+    it('황훈태 시즌1 4만 XP 누락을 보정하고 전설로 올린다', () => {
+        const huntae = { id: '12', name: '황훈태', season1Xp: 0 };
+        assert.equal(season1RecordXp(huntae, { 12: '황훈태' }), 40000);
+        const patch = buildSeason1XpCorrectionPatch(huntae, { 12: '황훈태' }, 123);
+        assert.equal(patch.skip, false);
+        assert.equal(patch.patch.season1Xp, 40000);
+        assert.equal(patch.patch.season1XpCorrectedFrom, 0);
+        const already = buildSeason1XpCorrectionPatch({ id: '12', name: '황훈태', season1Xp: 40000 }, { 12: '황훈태' });
+        assert.equal(already.skip, true);
+        const other = season1RecordXp({ id: '12', name: '다른학생', season1Xp: 100 }, { 12: '다른학생' });
+        assert.equal(other, 100);
     });
 });

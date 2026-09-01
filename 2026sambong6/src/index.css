@@ -2580,6 +2580,46 @@
         }
         .hof-library-row.is-me { border-color: #fbbf24; box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35); }
         .hof-library-row.is-top { background: rgba(120, 53, 15, 0.55); }
+        .hof-library-row.is-legend {
+            border-color: #f59e0b;
+            background: linear-gradient(90deg, rgba(127, 29, 29, 0.62), rgba(120, 53, 15, 0.55));
+            box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35), 0 8px 18px rgba(0, 0, 0, 0.25);
+        }
+        .hof-legend-banner {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.65rem;
+            justify-content: center;
+            margin-bottom: 0.35rem;
+        }
+        .hof-legend-card {
+            min-width: 7.5rem;
+            text-align: center;
+            padding: 0.7rem 0.8rem 0.8rem;
+            border-radius: 0.95rem;
+            border: 2px solid #fbbf24;
+            background: linear-gradient(180deg, rgba(180, 83, 9, 0.55), rgba(69, 26, 3, 0.85));
+        }
+        .hof-legend-card strong {
+            display: block;
+            color: #fffbeb;
+            font-size: 0.95rem;
+        }
+        .hof-legend-card span {
+            display: block;
+            color: #fcd34d;
+            font-size: 9px;
+            font-weight: 800;
+            margin-top: 0.15rem;
+        }
+        .hof-legend-card em {
+            display: block;
+            color: #fde68a;
+            font-style: normal;
+            font-weight: 900;
+            font-size: 0.8rem;
+            margin-top: 0.2rem;
+        }
         .hof-library-rank {
             width: 1.7rem;
             text-align: center;

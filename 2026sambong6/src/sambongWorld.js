@@ -623,7 +623,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.16';
+        const APP_VERSION = 'v1.17';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1320,12 +1320,12 @@ function redrawPlazaGrantsUi() {
         ];
 
         const LEVEL_DATA = [
-            { max: 1499, name: '새내기', prop: '🥚', img: 'ranks/rank-saenaegi.webp', borderColor: 'border-slate-600', bgColor: 'bg-slate-800', textColor: 'text-slate-400', anim: 'avatar-bounce' },
-            { max: 4499, name: '초보', prop: '🐣', img: 'ranks/rank-chobo.webp', borderColor: 'border-sb-green', bgColor: 'bg-green-900/30', textColor: 'text-sb-green', anim: 'avatar-bounce' },
-            { max: 9999, name: '중수', prop: '🐥', img: 'ranks/rank-jungsu.webp', borderColor: 'border-blue-400', bgColor: 'bg-blue-900/30', textColor: 'text-blue-400', anim: 'avatar-bounce' },
-            { max: 21999, name: '고수', prop: '🦅', img: 'ranks/rank-gosu.webp', borderColor: 'border-yellow-500', bgColor: 'bg-yellow-900/30', textColor: 'text-yellow-500', anim: 'avatar-flex' },
-            { max: 39999, name: '수호자', prop: '☄️', img: 'ranks/rank-guardian.webp', borderColor: 'border-purple-500', bgColor: 'bg-purple-900/30', textColor: 'text-purple-400', anim: 'avatar-float' },
-            { max: Infinity, name: '전설', prop: '🐦‍🔥', img: 'ranks/rank-legend.webp', borderColor: 'border-sb-red', bgColor: 'bg-red-900/30', textColor: 'text-sb-red', anim: 'avatar-legend' }
+            { max: 1499, name: '새내기', prop: '🥚', img: 'ranks/rank-saenaegi.webp', borderColor: 'border-slate-300', bgColor: 'bg-slate-800', textColor: 'text-slate-100', anim: 'avatar-bounce' },
+            { max: 4499, name: '초보', prop: '🐣', img: 'ranks/rank-chobo.webp', borderColor: 'border-sb-green', bgColor: 'bg-green-800', textColor: 'text-sb-green', anim: 'avatar-bounce' },
+            { max: 9999, name: '중수', prop: '🐥', img: 'ranks/rank-jungsu.webp', borderColor: 'border-sky-400', bgColor: 'bg-sky-800', textColor: 'text-sky-300', anim: 'avatar-bounce' },
+            { max: 21999, name: '고수', prop: '🦅', img: 'ranks/rank-gosu.webp', borderColor: 'border-yellow-400', bgColor: 'bg-yellow-800', textColor: 'text-yellow-300', anim: 'avatar-flex' },
+            { max: 39999, name: '수호자', prop: '☄️', img: 'ranks/rank-guardian.webp', borderColor: 'border-fuchsia-400', bgColor: 'bg-fuchsia-800', textColor: 'text-fuchsia-200', anim: 'avatar-float' },
+            { max: Infinity, name: '전설', prop: '🐦‍🔥', img: 'ranks/rank-legend.webp', borderColor: 'border-sb-red', bgColor: 'bg-rose-800', textColor: 'text-sb-red', anim: 'avatar-legend' }
         ];
 
         function rankBadgeHtml(info, extraClass = '') {
@@ -12270,7 +12270,7 @@ ${subjectLine}
                 const gmCursor = canEdit && !isGMCard ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : '';
 
                 if (!data && !isGMCard) {
-                    return `<div class="plaza-card flex flex-col items-center p-2 rounded-xl border border-slate-700 bg-slate-800/30 w-full opacity-50">
+                    return `<div class="plaza-card flex flex-col items-center p-2 rounded-xl border-2 border-slate-400 bg-slate-800 w-full opacity-70">
                                 <div class="plaza-card-face text-3xl mb-1 opacity-30 grayscale">👤</div>
                                 <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
                             </div>`;
@@ -12360,7 +12360,7 @@ ${subjectLine}
                             </div>
                         </div>
                         <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
-                        <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} w-full text-center truncate border ${isA ? 'border-cyan-300/40' : 'border-amber-200/50'}">
+                        <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} w-full text-center truncate border-2 ${isA ? 'border-cyan-300' : 'border-amber-300'}">
                             ${idLabel}
                         </div>
                     </div>`;

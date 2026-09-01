@@ -25,6 +25,11 @@ import {
     uniqueInventory,
     weaponDropMultiplier,
     worldSettingsForSeason2,
+    applyShieldToXpDeduct,
+    nextShieldStockAfterAdd,
+    readShieldStock,
+    SHIELD_STOCK_DEFAULT,
+    SHIELD_STOCK_LEGACY_DEFAULT,
 } from './season2.js';
 
 describe('시즌 2 학사·경험치 예산', () => {
@@ -200,5 +205,40 @@ describe('드래곤볼 보상 입력', () => {
         assert.equal(sanitizeDragonBallRewards({ completeXp: 9999 }).completeXp, 300);
         assert.equal(sanitizeDragonBallRewards(null).findXp, DRAGON_BALL_XP);
         assert.equal(sanitizeDragonBallRewards(null).completeXp, DRAGON_BALL_COMPLETE_XP);
+    });
+});
+
+describe('절대 방패', () => {
+    it('재고가 없으면 15개, 있으면 그 값을 쓴다', () => {
+        assert.equal(readShieldStock(null), SHIELD_STOCK_DEFAULT);
+        assert.equal(readShieldStock({}), SHIELD_STOCK_DEFAULT);
+        assert.equal(readShieldStock({ shieldStock: 3 }), 3);
+        assert.equal(readShieldStock({ shieldStock: 0 }), 0);
+    });
+
+    it('재고 5개 추가는 예전 기본 10개에 더한다', () => {
+        assert.equal(nextShieldStockAfterAdd({}), SHIELD_STOCK_LEGACY_DEFAULT + 5);
+        assert.equal(nextShieldStockAfterAdd({ shieldStock: 2 }), 7);
+        assert.equal(nextShieldStockAfterAdd({ shieldStock: 0 }), 5);
+    });
+
+    it('경험치 차감은 방패가 막고 남은 양만 돌려준다', () => {
+        const full = applyShieldToXpDeduct({ hasShield: true, shieldHP: 40 }, 5);
+        assert.equal(full.remainingDeduct, 0);
+        assert.equal(full.absorbed, 5);
+        assert.equal(full.updates.shieldHP, 135);
+        assert.equal(full.updates.hasShield, false);
+
+        const overflow = applyShieldToXpDeduct({ hasShield: false, shieldHP: 3 }, 10);
+        assert.equal(overflow.remainingDeduct, 7);
+        assert.equal(overflow.absorbed, 3);
+        assert.equal(overflow.updates.shieldHP, 0);
+    });
+
+    it('방패가 없으면 경험치 차감 전부를 남긴다', () => {
+        const r = applyShieldToXpDeduct({ hasShield: false, shieldHP: 0 }, 5);
+        assert.equal(r.remainingDeduct, 5);
+        assert.equal(r.absorbed, 0);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.updates, 'shieldHP'), false);
     });
 });

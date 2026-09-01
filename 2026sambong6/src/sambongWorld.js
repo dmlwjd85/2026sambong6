@@ -85,6 +85,7 @@ import {
     CUSTOM_SHOP_XP_MAX,
     CUSTOM_SHOP_XP_DAILY_LIMIT,
     CUSTOM_QUEST_XP_MAX,
+    applyShieldToXpDeduct,
     buildSeason1ItemRefundPatch,
     buildSeason2StudentPatch,
     buildXpSupervisionIncidents,
@@ -94,8 +95,11 @@ import {
     estimateSeason2QuestXp,
     expectedXpPace,
     filterLogsSince,
+    nextShieldStockAfterAdd,
+    readShieldStock,
     sanitizeDragonBallRewards,
     season2SchoolDaysTotal,
+    SHIELD_STOCK_DEFAULT,
     season2SupervisionSinceMs,
     uniqueInventory,
     weaponDropMultiplier,
@@ -640,7 +644,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.20';
+        const APP_VERSION = 'v1.21';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1338,7 +1342,7 @@ function redrawPlazaGrantsUi() {
             { id: 'item_xp_pack', name: '경험치 팩', desc: `20B로 즉시 ${XP_PACK_GAIN} XP (1인 1일 ${XP_PACK_DAILY_LIMIT}회)`, price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
             { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
             { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'fa-ticket', iconColor: 'text-lime-300', isConsumable: true },
-            { id: 'item_shield', name: '절대 방패', desc: '차감 방어(내구100)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
+            { id: 'item_shield', name: '절대 방패', desc: '경험치 차감만 방어(내구100, 봉 무관)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
             { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기 (구매 시 곡명 입력)', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
             { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' },
             { id: 's_movie', name: '영화시간', desc: '다같이 영화 시청', price: 400, icon: 'fa-film', iconColor: 'text-blue-400' },
@@ -2107,7 +2111,7 @@ function redrawPlazaGrantsUi() {
                 await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
                     raidPassword: raidPw,
                     raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
-                    shieldStock: 10,
+                    shieldStock: SHIELD_STOCK_DEFAULT,
                     weekendRaidRewardXp: 40,
                     weekendRaidRewardBong: 20,
                     curriculumTags: DEFAULT_CURRICULUM_TAGS,
@@ -2669,7 +2673,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: 10, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -4342,6 +4346,10 @@ ${subjectLine}
             const xp = Math.max(0, Math.floor(Number(rawXp) || 0));
             const bong = normalizeBongValue(Math.max(0, Number(rawBong) || 0));
             return { xp, bong };
+        }
+
+        function getShieldStockNow() {
+            return readShieldStock(window.globalSettings);
         }
 
         function getDragonBallRewards() {
@@ -13997,6 +14005,9 @@ ${subjectLine}
             if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason1ItemRefund === 'function') {
                 void window.ensureSeason1ItemRefund();
             }
+            if (window.playerState && window.playerState.isAdmin && typeof window.ensureShieldStockPlus5 === 'function') {
+                void window.ensureShieldStockPlus5();
+            }
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
             document.getElementById('dashXp').innerText = xp.toLocaleString();
@@ -14246,7 +14257,7 @@ ${subjectLine}
                 if (item) {
                     const eff = getEffectiveShopPrice(shop.id);
                     if (shop.id === 'item_shield') {
-                        const stock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                        const stock = getShieldStockNow();
                         let stockDiv = item.querySelector('.stock-display');
                         if (!stockDiv) {
                             stockDiv = document.createElement('div');
@@ -16197,12 +16208,12 @@ ${subjectLine}
 
             if (isConsumable) {
                 if (groupEx && id === 'item_shield') {
-                    const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                    const currentStock = getShieldStockNow();
                     if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
                     const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
                     window.playerState.shieldHP = hp + 100;
                     window.playerState.hasShield = false;
-                    const stNow = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                    const stNow = getShieldStockNow();
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, stNow - 1) }, { merge: true });
                     updateUI();
                     const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, operationLabel: '방패 구매' });
@@ -16213,10 +16224,10 @@ ${subjectLine}
                 if (window.playerState.bong >= price || window.playerState.isAdmin) {
                     let cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?`;
                     if (id === 'item_shield') {
-                        const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                        const currentStock = getShieldStockNow();
                         if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
                         const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
-                        cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
+                        cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?\n경험치 차감만 막습니다(봉과 무관).\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
                     }
 
                     const ok = await window.customConfirm(cMsg);
@@ -16228,7 +16239,7 @@ ${subjectLine}
                             const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
                             window.playerState.shieldHP = hp + 100;
                             window.playerState.hasShield = false;
-                            const currentStock = window.globalSettings.shieldStock !== undefined ? window.globalSettings.shieldStock : 10;
+                            const currentStock = getShieldStockNow();
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
                             updateUI();
                             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '방패 구매' });
@@ -17725,6 +17736,36 @@ ${subjectLine}
             }
         };
 
+        /** 상점 절대 방패 재고를 한 번만 5개 더합니다. */
+        window.ensureShieldStockPlus5 = async function() {
+            if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (window.globalSettings && window.globalSettings.shieldStockPlus5At) return;
+            if (window._shieldStockPlus5Running) return;
+            window._shieldStockPlus5Running = true;
+            try {
+                const nowMs = Date.now();
+                const next = nextShieldStockAfterAdd(window.globalSettings || {});
+                await runWithNetworkRetry(async () => {
+                    await setDoc(getGlobalSettingsDocRef(), {
+                        shieldStock: next,
+                        shieldStockPlus5At: nowMs,
+                    }, { merge: true });
+                }, '절대 방패 재고 추가');
+                if (window.globalSettings) {
+                    window.globalSettings.shieldStock = next;
+                    window.globalSettings.shieldStockPlus5At = nowMs;
+                }
+                if (typeof window.showToast === 'function') {
+                    window.showToast(`절대 방패 재고를 5개 추가했습니다. (현재 ${next}개)`);
+                }
+                if (typeof updateUI === 'function') updateUI();
+            } catch (e) {
+                console.error('ensureShieldStockPlus5', e);
+            } finally {
+                window._shieldStockPlus5Running = false;
+            }
+        };
+
         window.saveDragonBallRewardsAdmin = async function() {
             if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 저장할 수 있습니다.');
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
@@ -17960,7 +18001,7 @@ ${subjectLine}
                             buildStudentResetPayload(stu)
                         );
                     });
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: 10 }, { merge: true });
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: SHIELD_STOCK_DEFAULT }, { merge: true });
                     await batch.commit();
                 }, '학급 초기화');
                 await window.customAlert(`✅ 「${classLabel}」 학급 초기화가 완료되었습니다.\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.`);
@@ -18180,18 +18221,12 @@ ${subjectLine}
                     }
                 } else {
                     let updates = {};
-                    let hp = (Number(stu.shieldHP) || 0) + (stu.hasShield ? 100 : 0);
-                    if (stu.hasShield) updates.hasShield = false;
-
                     let dAmt = Math.abs(amount);
-                    if (hp > 0) {
-                        if (hp >= dAmt) {
-                            updates.shieldHP = hp - dAmt;
-                            dAmt = 0;
-                        } else {
-                            dAmt -= hp;
-                            updates.shieldHP = 0;
-                        }
+                    // 절대 방패는 경험치 차감만 막습니다. 봉 차감은 방패와 무관합니다.
+                    if (type === 'xp') {
+                        const shielded = applyShieldToXpDeduct(stu, dAmt);
+                        Object.assign(updates, shielded.updates);
+                        dAmt = shielded.remainingDeduct;
                     }
 
                     if (dAmt > 0) {
@@ -18281,7 +18316,11 @@ ${subjectLine}
         window.bulkDeduct = async function(type, amount) {
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
-            const ok = await window.customConfirm(`모든 학생의 ${type==='xp'?'XP':'B'}를 ${amount} 차감합니까?\n⚠️ 방패 보유자는 방패가 깎입니다.`); 
+            const ok = await window.customConfirm(
+                type === 'xp'
+                    ? `모든 학생의 XP를 ${amount} 차감합니까?\n⚠️ 절대 방패 보유자는 경험치 대신 방패가 깎입니다.`
+                    : `모든 학생의 B를 ${amount} 차감합니까?\n절대 방패는 봉 차감과 무관합니다.`
+            );
             if(!ok) return;
             
             let pCount = 0, aCount = 0;
@@ -18309,20 +18348,13 @@ ${subjectLine}
                     bong = normalizeBongValue(bong);
 
                     let updates = {};
-                    let hp = (Number(stu.shieldHP) || 0) + (stu.hasShield ? 100 : 0);
-                    if (stu.hasShield) updates.hasShield = false;
-
                     let dAmt = amount;
-                    if (hp > 0) {
-                        if (hp >= dAmt) {
-                            updates.shieldHP = hp - dAmt;
-                            dAmt = 0;
-                            pCount++;
-                        } else {
-                            dAmt -= hp;
-                            updates.shieldHP = 0;
-                            pCount++;
-                        }
+                    // 절대 방패는 경험치 차감만 막습니다. 봉 차감은 방패와 무관합니다.
+                    if (type === 'xp') {
+                        const shielded = applyShieldToXpDeduct(stu, dAmt);
+                        Object.assign(updates, shielded.updates);
+                        dAmt = shielded.remainingDeduct;
+                        if (shielded.absorbed > 0) pCount++;
                     }
                     if (dAmt > 0) {
                         const cur = type === 'bong' ? bong : xp;
@@ -18341,7 +18373,11 @@ ${subjectLine}
                 } catch (eRef) {
                     console.warn('bulkDeduct refreshStudentsCacheFromServer', eRef);
                 }
-                window.customAlert(`💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`);
+                window.customAlert(
+                    type === 'xp'
+                        ? `💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`
+                        : `💥 일괄 차감 완료\n피해: ${aCount}명\n(절대 방패는 봉과 무관합니다)`
+                );
             } catch (e) {
                 console.error('bulkDeduct', e);
                 await window.customAlert('일괄 차감 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));

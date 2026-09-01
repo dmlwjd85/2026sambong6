@@ -430,6 +430,59 @@ export function buildSeason1ItemRefundPatch(stu, catalog = [], opts = {}) {
     };
 }
 
+export const SHIELD_STOCK_DEFAULT = 15;
+export const SHIELD_STOCK_LEGACY_DEFAULT = 10;
+export const SHIELD_STOCK_BONUS = 5;
+
+/** 상점 절대 방패 남은 재고. 값이 없으면 새 기본 15개를 씁니다. */
+export function readShieldStock(settings) {
+    if (!settings || settings.shieldStock === undefined || settings.shieldStock === null || settings.shieldStock === '') {
+        return SHIELD_STOCK_DEFAULT;
+    }
+    const n = Math.floor(Number(settings.shieldStock));
+    if (!Number.isFinite(n)) return SHIELD_STOCK_DEFAULT;
+    return Math.max(0, n);
+}
+
+/** 기존 재고에 5개를 더합니다. 필드가 없으면 예전 기본 10개로 보고 더합니다. */
+export function nextShieldStockAfterAdd(settings, add = SHIELD_STOCK_BONUS) {
+    const extra = Math.max(0, Math.floor(Number(add) || 0));
+    const hasField = !!(settings && settings.shieldStock !== undefined && settings.shieldStock !== null && settings.shieldStock !== '');
+    const current = hasField
+        ? Math.max(0, Math.floor(Number(settings.shieldStock)) || 0)
+        : SHIELD_STOCK_LEGACY_DEFAULT;
+    return current + extra;
+}
+
+/** 절대 방패 내구도. hasShield(레거시)는 100으로 칩니다. */
+export function shieldHpOf(stu) {
+    const hp = (Number(stu && stu.shieldHP) || 0) + (stu && stu.hasShield ? 100 : 0);
+    return Math.max(0, Math.floor(hp));
+}
+
+/**
+ * 경험치 차감에만 절대 방패를 씁니다. 봉 차감 경로에서는 호출하지 마세요.
+ */
+export function applyShieldToXpDeduct(stu, deductAmt) {
+    let remainingDeduct = Math.max(0, Math.abs(Math.floor(Number(deductAmt) || 0)));
+    let hp = shieldHpOf(stu);
+    const updates = {};
+    if (stu && stu.hasShield) updates.hasShield = false;
+    let absorbed = 0;
+    if (hp > 0 && remainingDeduct > 0) {
+        if (hp >= remainingDeduct) {
+            absorbed = remainingDeduct;
+            updates.shieldHP = hp - remainingDeduct;
+            remainingDeduct = 0;
+        } else {
+            absorbed = hp;
+            remainingDeduct -= hp;
+            updates.shieldHP = 0;
+        }
+    }
+    return { updates, remainingDeduct, absorbed };
+}
+
 export function sanitizeDragonBallRewards(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const clamp = (v, fallback) => {

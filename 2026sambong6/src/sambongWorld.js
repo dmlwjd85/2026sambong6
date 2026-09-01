@@ -85,6 +85,7 @@ import {
     CUSTOM_SHOP_XP_MAX,
     CUSTOM_SHOP_XP_DAILY_LIMIT,
     CUSTOM_QUEST_XP_MAX,
+    buildSeason1ItemRefundPatch,
     buildSeason2StudentPatch,
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
@@ -93,6 +94,7 @@ import {
     estimateSeason2QuestXp,
     expectedXpPace,
     filterLogsSince,
+    sanitizeDragonBallRewards,
     season2SchoolDaysTotal,
     season2SupervisionSinceMs,
     uniqueInventory,
@@ -638,7 +640,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.19';
+        const APP_VERSION = 'v1.20';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1023,6 +1025,11 @@ function redrawPlazaGrantsUi() {
                 ? window.globalSettings.bankInterestPercent : 0);
             setVal('wsRaidRewardXp', (window.globalSettings && window.globalSettings.weekendRaidRewardXp) || 40);
             setVal('wsRaidRewardBong', (window.globalSettings && window.globalSettings.weekendRaidRewardBong) || 20);
+            const dbReward = getDragonBallRewards();
+            setVal('wsDragonBallFindXp', dbReward.findXp);
+            setVal('wsDragonBallFindBong', dbReward.findBong);
+            setVal('wsDragonBallCompleteXp', dbReward.completeXp);
+            setVal('wsDragonBallCompleteBong', dbReward.completeBong);
             setVal('wsAnnouncement', (window.globalSettings && window.globalSettings.announcement) || '');
             setVal('wsMorningNotice', (window.globalSettings && window.globalSettings.morningActivityNotice) || DEFAULT_MORNING_ACTIVITY_NOTICE);
 
@@ -1091,6 +1098,11 @@ function redrawPlazaGrantsUi() {
                 announcement: text('wsAnnouncement'),
                 morningActivityNotice: text('wsMorningNotice') || DEFAULT_MORNING_ACTIVITY_NOTICE,
             };
+            const dbRewards = getDragonBallRewardsFromInputs('wsDragonBallFindXp', 'wsDragonBallFindBong', 'wsDragonBallCompleteXp', 'wsDragonBallCompleteBong');
+            opsPayload.dragonBallFindXp = dbRewards.findXp;
+            opsPayload.dragonBallFindBong = dbRewards.findBong;
+            opsPayload.dragonBallCompleteXp = dbRewards.completeXp;
+            opsPayload.dragonBallCompleteBong = dbRewards.completeBong;
 
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -4332,6 +4344,39 @@ ${subjectLine}
             return { xp, bong };
         }
 
+        function getDragonBallRewards() {
+            return sanitizeDragonBallRewards(window.globalSettings || {});
+        }
+
+        function getDragonBallRewardsFromInputs(findXpId, findBongId, completeXpId, completeBongId) {
+            const num = (id) => {
+                const el = document.getElementById(id);
+                return el ? el.value : undefined;
+            };
+            return sanitizeDragonBallRewards({
+                findXp: num(findXpId),
+                findBong: num(findBongId),
+                completeXp: num(completeXpId),
+                completeBong: num(completeBongId),
+            });
+        }
+
+        function fillDragonBallRewardInputs() {
+            const r = getDragonBallRewards();
+            const setVal = (id, v) => {
+                const el = document.getElementById(id);
+                if (el && document.activeElement !== el) el.value = String(v);
+            };
+            setVal('wsDragonBallFindXp', r.findXp);
+            setVal('wsDragonBallFindBong', r.findBong);
+            setVal('wsDragonBallCompleteXp', r.completeXp);
+            setVal('wsDragonBallCompleteBong', r.completeBong);
+            setVal('dragonBallFindXpInput', r.findXp);
+            setVal('dragonBallFindBongInput', r.findBong);
+            setVal('dragonBallCompleteXpInput', r.completeXp);
+            setVal('dragonBallCompleteBongInput', r.completeBong);
+        }
+
         const DEFAULT_CONSTITUTION_ITEMS = [
             { id: 'c1', type: 'chapter', text: '제1장 강령' },
             { id: 'c1_a1', type: 'clause', text: '제1조 ① 삼봉월드는 추억과 사랑이다.' },
@@ -6659,9 +6704,10 @@ ${subjectLine}
 
         /**
          * 2026-04-25 주말 장애 복구: 지정 학생의 성구를 기존 보관함과 합쳐 1회 보정합니다.
-         * 배포 직후 직접 복구 스크립트를 실행하지 못해도 첫 접속에서 서버 문서가 복구되도록 둡니다.
+         * 시즌 2에서 드래곤볼을 초기화하므로 예전 성구를 다시 넣지 않습니다.
          */
         async function applyDragonBallEmergencyRestores() {
+            return;
             if (!db) return;
             const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'dragonball_restore_2026_04_25_v1');
             try {
@@ -11919,6 +11965,7 @@ ${subjectLine}
                                 if (raidRewardBongEl && window.globalSettings.weekendRaidRewardBong != null) {
                                     raidRewardBongEl.value = String(window.globalSettings.weekendRaidRewardBong);
                                 }
+                                if (typeof fillDragonBallRewardInputs === 'function') fillDragonBallRewardInputs();
                                 renderShopCatalog();
                                 renderShopManagementAdminPanel();
                                 renderConvenienceStore();
@@ -13938,11 +13985,17 @@ ${subjectLine}
             const dashCard = document.getElementById('dashAvatarCard');
             if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             
-            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`;
+            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>${window.playerState.isAdmin ? '' : `<div class="absolute -bottom-1 -right-2 animate-pulse">${rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`}`;
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();
             if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason2WeaponReset === 'function') {
                 void window.ensureSeason2WeaponReset();
+            }
+            if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason2DragonBallReset === 'function') {
+                void window.ensureSeason2DragonBallReset();
+            }
+            if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason1ItemRefund === 'function') {
+                void window.ensureSeason1ItemRefund();
             }
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
@@ -17573,6 +17626,140 @@ ${subjectLine}
             }
         };
 
+        /** 시즌 2 학급의 드래곤볼 보관함·스폰 상태를 한 번만 비웁니다. */
+        window.ensureSeason2DragonBallReset = async function() {
+            if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (window.globalSettings && window.globalSettings.season2DragonBallsClearedAt) return;
+            if (window._season2DragonBallResetRunning) return;
+            window._season2DragonBallResetRunning = true;
+            try {
+                const ids = getActiveStudentIds();
+                const nowMs = Date.now();
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    ids.forEach((sid) => {
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            { dragonBalls: [], dragonBallWeekendKey: '' },
+                            { merge: true }
+                        );
+                    });
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), {
+                        isActive: false,
+                        spawnedStarsThisWeekend: [],
+                        weekendKey: '',
+                        nextSpawnTime: 0,
+                        lastClaimTime: nowMs,
+                    }, { merge: true });
+                    batch.set(getGlobalSettingsDocRef(), { season2DragonBallsClearedAt: nowMs }, { merge: true });
+                    await batch.commit();
+                }, '드래곤볼 초기화');
+                if (window.globalSettings) window.globalSettings.season2DragonBallsClearedAt = nowMs;
+                if (window.dragonBallState) {
+                    window.dragonBallState.isActive = false;
+                    window.dragonBallState.spawnedStarsThisWeekend = [];
+                }
+                const list = window.allStudentsData;
+                if (list && list.length) {
+                    list.forEach((row) => {
+                        row.dragonBalls = [];
+                        row.dragonBallWeekendKey = '';
+                    });
+                }
+                if (typeof window.showToast === 'function') window.showToast('드래곤볼 보관함을 초기화했습니다.');
+            } catch (e) {
+                console.error('ensureSeason2DragonBallReset', e);
+            } finally {
+                window._season2DragonBallResetRunning = false;
+            }
+        };
+
+        /** 시즌 1에 산 캐릭터·오라·방패를 50% 환불하고 한 번만 비웁니다. */
+        window.ensureSeason1ItemRefund = async function() {
+            if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (window.globalSettings && window.globalSettings.season1ItemsRefundedAt) return;
+            if (window._season1ItemRefundRunning) return;
+            window._season1ItemRefundRunning = true;
+            try {
+                const nowMs = Date.now();
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                let snap;
+                try {
+                    snap = await getDocsFromServer(colRef);
+                } catch (e) {
+                    snap = await getDocs(colRef);
+                }
+                let paidCount = 0;
+                let totalRefund = 0;
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    snap.forEach((d) => {
+                        const sid = String(d.id).replace(/^student_/, '');
+                        if (sid === 'gm' || sid === 'gm_a') return;
+                        const stu = { ...(d.data() || {}), id: sid };
+                        const built = buildSeason1ItemRefundPatch(stu, SKIN_DATA, { nowMs, shieldPrice: 50 });
+                        if (built.skip) return;
+                        const payload = { ...built.patch };
+                        if ((built.refundBong || 0) > 0) payload.bong = increment(built.refundBong);
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            payload,
+                            { merge: true }
+                        );
+                        paidCount += 1;
+                        totalRefund += built.refundBong || 0;
+                    });
+                    batch.set(getGlobalSettingsDocRef(), { season1ItemsRefundedAt: nowMs }, { merge: true });
+                    await batch.commit();
+                }, '시즌 1 아이템 환불');
+                if (window.globalSettings) window.globalSettings.season1ItemsRefundedAt = nowMs;
+                if (typeof window.showToast === 'function') {
+                    window.showToast(paidCount
+                        ? `시즌 1 아이템 ${paidCount}명 · 50% 환불 ${formatBongAmount(totalRefund)}`
+                        : '시즌 1 보유 아이템이 없어 환불할 것이 없습니다.');
+                }
+            } catch (e) {
+                console.error('ensureSeason1ItemRefund', e);
+            } finally {
+                window._season1ItemRefundRunning = false;
+            }
+        };
+
+        window.saveDragonBallRewardsAdmin = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 저장할 수 있습니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const reward = getDragonBallRewardsFromInputs(
+                'dragonBallFindXpInput',
+                'dragonBallFindBongInput',
+                'dragonBallCompleteXpInput',
+                'dragonBallCompleteBongInput'
+            );
+            try {
+                window.showGlobalLoading('드래곤볼 보상 저장 중…');
+                await setDoc(getGlobalSettingsDocRef(), {
+                    dragonBallFindXp: reward.findXp,
+                    dragonBallFindBong: reward.findBong,
+                    dragonBallCompleteXp: reward.completeXp,
+                    dragonBallCompleteBong: reward.completeBong,
+                }, { merge: true });
+                window.globalSettings = {
+                    ...window.globalSettings,
+                    dragonBallFindXp: reward.findXp,
+                    dragonBallFindBong: reward.findBong,
+                    dragonBallCompleteXp: reward.completeXp,
+                    dragonBallCompleteBong: reward.completeBong,
+                };
+                fillDragonBallRewardInputs();
+                await window.customAlert(
+                    `드래곤볼 보상을 저장했습니다.\n1개: ${reward.findXp} XP · ${formatBongAmount(reward.findBong)}\n7개 완성: ${reward.completeXp} XP · ${formatBongAmount(reward.completeBong)}`
+                );
+            } catch (e) {
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
         function ensureStudentBackupSubscription() {
             if (!db) return;
             if (!window.playerState?.isAdmin) {
@@ -19441,12 +19628,25 @@ ${subjectLine}
             window.playerState.dragonBalls.sort((a, b) => a - b);
             const satKey = getWeekendSaturdayKey();
             if (satKey) window.playerState.dragonBallWeekendKey = satKey;
-            window.playerState.xp += DRAGON_BALL_XP;
-            await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다! (+${DRAGON_BALL_XP} XP)\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
+            const reward = getDragonBallRewards();
+            window.playerState.xp += reward.findXp;
+            if (reward.findBong > 0) {
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + reward.findBong);
+            }
+            const findBits = [];
+            if (reward.findXp > 0) findBits.push(`+${reward.findXp} XP`);
+            if (reward.findBong > 0) findBits.push(`+${formatBongAmount(reward.findBong)}`);
+            await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다!${findBits.length ? ` (${findBits.join(' · ')})` : ''}\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
             
             if(window.playerState.dragonBalls.length >= 7) {
-                window.playerState.xp += DRAGON_BALL_COMPLETE_XP;
-                await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복으로 경험치(+${DRAGON_BALL_COMPLETE_XP} XP)를 획득했습니다!`);
+                window.playerState.xp += reward.completeXp;
+                if (reward.completeBong > 0) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + reward.completeBong);
+                }
+                const doneBits = [];
+                if (reward.completeXp > 0) doneBits.push(`+${reward.completeXp} XP`);
+                if (reward.completeBong > 0) doneBits.push(`+${formatBongAmount(reward.completeBong)}`);
+                await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복${doneBits.length ? `(${doneBits.join(' · ')})` : ''}을 획득했습니다!`);
             }
             
             const dragonBallRef = doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state');

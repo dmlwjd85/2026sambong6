@@ -343,3 +343,104 @@ export function buildXpSupervisionIncidents(stu, todayYmd, expectedXp, sinceMs =
 
     return incidents;
 }
+
+export const SEASON1_ITEM_REFUND_RATE = 0.5;
+export const SHIELD_CATALOG_PRICE = 50;
+export const DRAGON_BALL_REWARD_MAX = 300;
+
+/** 보유 스킨 id 목록 — 객체/배열 모두 허용 */
+export function listOwnedSkinIds(ownedSkins) {
+    if (Array.isArray(ownedSkins)) return ownedSkins.map((id) => String(id)).filter(Boolean);
+    if (ownedSkins && typeof ownedSkins === 'object') {
+        return Object.keys(ownedSkins).filter((id) => !!ownedSkins[id]);
+    }
+    return [];
+}
+
+export function refundBongForPrice(price, rate = SEASON1_ITEM_REFUND_RATE) {
+    const n = Number(price);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.floor(n * rate);
+}
+
+/**
+ * 시즌 1에 산 캐릭터·오라·방패를 50% 환불하고 비우는 패치.
+ * 지갑 봉은 increment로 더하도록 refundBong만 반환합니다.
+ */
+export function buildSeason1ItemRefundPatch(stu, catalog = [], opts = {}) {
+    const nowMs = Number(opts.nowMs) || Date.now();
+    const shieldPrice = Math.max(0, Number(opts.shieldPrice) || SHIELD_CATALOG_PRICE);
+    const items = [];
+    let refundBong = 0;
+    const byId = new Map((catalog || []).map((s) => [String(s.id), s]));
+    listOwnedSkinIds(stu && stu.ownedSkins).forEach((id) => {
+        const skin = byId.get(String(id));
+        const price = skin ? Number(skin.price) || 0 : 0;
+        const refund = refundBongForPrice(price);
+        refundBong += refund;
+        items.push({
+            id,
+            name: (skin && skin.name) || id,
+            kind: 'skin',
+            refundB: refund,
+        });
+    });
+    const hasShield = !!(stu && (stu.hasShield || (Number(stu.shieldHP) || 0) > 0));
+    if (hasShield) {
+        const refund = refundBongForPrice(shieldPrice);
+        refundBong += refund;
+        items.push({ id: 'item_shield', name: '절대 방패', kind: 'shield', refundB: refund });
+    }
+    if (!items.length) {
+        return { skip: true, refundBong: 0, items: [], patch: null };
+    }
+    const prevBong = Number(stu && stu.bong);
+    const walletBong = Number.isFinite(prevBong) ? prevBong : 0;
+    const names = items.map((it) => it.name);
+    const bongLogs = Array.isArray(stu && stu.bongChangeLog) ? stu.bongChangeLog.slice() : [];
+    bongLogs.push({
+        at: nowMs,
+        reason: `시즌 1 아이템 50% 환불 (${names.join(', ')})`,
+        before: walletBong,
+        after: walletBong + refundBong,
+        delta: refundBong,
+        source: 'season1ItemRefund',
+    });
+    const ledger = Array.isArray(stu && stu.itemRefundLedger) ? stu.itemRefundLedger.slice() : [];
+    ledger.push({
+        at: nowMs,
+        kind: 'season1_items',
+        refundB: refundBong,
+        names,
+        source: 'season1ItemRefund',
+    });
+    return {
+        skip: false,
+        refundBong,
+        items,
+        patch: {
+            ownedSkins: {},
+            equippedSkins: {},
+            ownedSkinInstances: {},
+            hasShield: false,
+            shieldHP: 0,
+            bongChangeLog: bongLogs.slice(-80),
+            itemRefundLedger: ledger.slice(-80),
+        },
+    };
+}
+
+export function sanitizeDragonBallRewards(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const clamp = (v, fallback) => {
+        const n = Math.floor(Number(v));
+        if (!Number.isFinite(n)) return fallback;
+        return Math.max(0, Math.min(DRAGON_BALL_REWARD_MAX, n));
+    };
+    return {
+        findXp: clamp(src.findXp != null ? src.findXp : src.dragonBallFindXp, DRAGON_BALL_XP),
+        findBong: clamp(src.findBong != null ? src.findBong : src.dragonBallFindBong, 0),
+        completeXp: clamp(src.completeXp != null ? src.completeXp : src.dragonBallCompleteXp, DRAGON_BALL_COMPLETE_XP),
+        completeBong: clamp(src.completeBong != null ? src.completeBong : src.dragonBallCompleteBong, 0),
+    };
+}

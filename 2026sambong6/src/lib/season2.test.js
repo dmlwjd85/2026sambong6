@@ -4,6 +4,9 @@ import {
     SEASON2,
     SEASON2_DAILY_QUEST_XP_SUM,
     DAILY_ALL_CLEAR_XP,
+    DRAGON_BALL_COMPLETE_XP,
+    DRAGON_BALL_XP,
+    buildSeason1ItemRefundPatch,
     buildSeason2StudentPatch,
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
@@ -18,6 +21,7 @@ import {
     expectedXpPace,
     season1SettlementBong,
     season2SchoolDaysTotal,
+    sanitizeDragonBallRewards,
     uniqueInventory,
     weaponDropMultiplier,
     worldSettingsForSeason2,
@@ -152,5 +156,49 @@ describe('시즌 2 악용 가드', () => {
             xpChangeLog: [{ at: Date.parse('2026-09-02T10:00:00'), delta: 450, reason: '비정상' }],
         }, today, expectedXpPace(today));
         assert.ok(incidents.some((i) => i.category === '과다 일일 XP'));
+    });
+});
+
+describe('시즌 1 아이템 50% 환불', () => {
+    it('보유 스킨과 방패를 반액 환불하고 비운다', () => {
+        const r = buildSeason1ItemRefundPatch({
+            bong: 10,
+            ownedSkins: { f_ninja: true, f_king: true },
+            equippedSkins: { f_ninja: true },
+            hasShield: true,
+            shieldHP: 40,
+            bongChangeLog: [],
+            itemRefundLedger: [],
+        }, [
+            { id: 'f_ninja', name: '닌자', price: 200 },
+            { id: 'f_king', name: '국왕', price: 400 },
+        ]);
+        assert.equal(r.skip, false);
+        assert.equal(r.refundBong, 100 + 200 + 25);
+        assert.deepEqual(r.patch.ownedSkins, {});
+        assert.deepEqual(r.patch.equippedSkins, {});
+        assert.equal(r.patch.hasShield, false);
+        assert.equal(r.patch.shieldHP, 0);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'bong'), false);
+    });
+
+    it('보유가 없으면 건너뛴다', () => {
+        const r = buildSeason1ItemRefundPatch({ ownedSkins: {}, hasShield: false });
+        assert.equal(r.skip, true);
+        assert.equal(r.refundBong, 0);
+    });
+});
+
+describe('드래곤볼 보상 입력', () => {
+    it('직접 입력값을 0~300으로 맞춘다', () => {
+        const r = sanitizeDragonBallRewards({ dragonBallFindXp: 15, dragonBallFindBong: 2, dragonBallCompleteXp: 50, dragonBallCompleteBong: 5 });
+        assert.equal(r.findXp, 15);
+        assert.equal(r.findBong, 2);
+        assert.equal(r.completeXp, 50);
+        assert.equal(r.completeBong, 5);
+        assert.equal(sanitizeDragonBallRewards({ findXp: -3, completeXp: 9999 }).findXp, 0);
+        assert.equal(sanitizeDragonBallRewards({ completeXp: 9999 }).completeXp, 300);
+        assert.equal(sanitizeDragonBallRewards(null).findXp, DRAGON_BALL_XP);
+        assert.equal(sanitizeDragonBallRewards(null).completeXp, DRAGON_BALL_COMPLETE_XP);
     });
 });

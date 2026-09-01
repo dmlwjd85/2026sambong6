@@ -26,10 +26,8 @@ import {
     weaponDropMultiplier,
     worldSettingsForSeason2,
     applyShieldToXpDeduct,
-    nextShieldStockAfterAdd,
     readShieldStock,
     SHIELD_STOCK_DEFAULT,
-    SHIELD_STOCK_LEGACY_DEFAULT,
 } from './season2.js';
 
 describe('시즌 2 학사·경험치 예산', () => {
@@ -209,17 +207,12 @@ describe('드래곤볼 보상 입력', () => {
 });
 
 describe('절대 방패', () => {
-    it('재고가 없으면 15개, 있으면 그 값을 쓴다', () => {
-        assert.equal(readShieldStock(null), SHIELD_STOCK_DEFAULT);
-        assert.equal(readShieldStock({}), SHIELD_STOCK_DEFAULT);
+    it('재고가 없으면 5개, 있으면 그 값을 쓴다', () => {
+        assert.equal(SHIELD_STOCK_DEFAULT, 5);
+        assert.equal(readShieldStock(null), 5);
+        assert.equal(readShieldStock({}), 5);
         assert.equal(readShieldStock({ shieldStock: 3 }), 3);
         assert.equal(readShieldStock({ shieldStock: 0 }), 0);
-    });
-
-    it('재고 5개 추가는 예전 기본 10개에 더한다', () => {
-        assert.equal(nextShieldStockAfterAdd({}), SHIELD_STOCK_LEGACY_DEFAULT + 5);
-        assert.equal(nextShieldStockAfterAdd({ shieldStock: 2 }), 7);
-        assert.equal(nextShieldStockAfterAdd({ shieldStock: 0 }), 5);
     });
 
     it('경험치 차감은 방패가 막고 남은 양만 돌려준다', () => {

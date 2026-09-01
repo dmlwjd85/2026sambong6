@@ -150,7 +150,7 @@ async function main() {
     {
       raidPassword: 'demo',
       raidPasswordNeedsSetup: false,
-      shieldStock: 15,
+      shieldStock: 5,
       weekendRaidRewardXp: 100,
       weekendRaidRewardBong: 20,
       applyDefaultTemplatePending: true,

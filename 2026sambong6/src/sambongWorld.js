@@ -95,7 +95,6 @@ import {
     estimateSeason2QuestXp,
     expectedXpPace,
     filterLogsSince,
-    nextShieldStockAfterAdd,
     readShieldStock,
     sanitizeDragonBallRewards,
     season2SchoolDaysTotal,
@@ -644,7 +643,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.21';
+        const APP_VERSION = 'v1.22';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -14005,8 +14004,8 @@ ${subjectLine}
             if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason1ItemRefund === 'function') {
                 void window.ensureSeason1ItemRefund();
             }
-            if (window.playerState && window.playerState.isAdmin && typeof window.ensureShieldStockPlus5 === 'function') {
-                void window.ensureShieldStockPlus5();
+            if (window.playerState && window.playerState.isAdmin && typeof window.ensureShieldStockFixedTo5 === 'function') {
+                void window.ensureShieldStockFixedTo5();
             }
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
@@ -17736,33 +17735,32 @@ ${subjectLine}
             }
         };
 
-        /** 상점 절대 방패 재고를 한 번만 5개 더합니다. */
-        window.ensureShieldStockPlus5 = async function() {
+        /** 상점 절대 방패 재고를 한 번만 5개로 맞춥니다. */
+        window.ensureShieldStockFixedTo5 = async function() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
-            if (window.globalSettings && window.globalSettings.shieldStockPlus5At) return;
-            if (window._shieldStockPlus5Running) return;
-            window._shieldStockPlus5Running = true;
+            if (window.globalSettings && window.globalSettings.shieldStockFixedTo5At) return;
+            if (window._shieldStockFixedTo5Running) return;
+            window._shieldStockFixedTo5Running = true;
             try {
                 const nowMs = Date.now();
-                const next = nextShieldStockAfterAdd(window.globalSettings || {});
                 await runWithNetworkRetry(async () => {
                     await setDoc(getGlobalSettingsDocRef(), {
-                        shieldStock: next,
-                        shieldStockPlus5At: nowMs,
+                        shieldStock: SHIELD_STOCK_DEFAULT,
+                        shieldStockFixedTo5At: nowMs,
                     }, { merge: true });
-                }, '절대 방패 재고 추가');
+                }, '절대 방패 재고 5개');
                 if (window.globalSettings) {
-                    window.globalSettings.shieldStock = next;
-                    window.globalSettings.shieldStockPlus5At = nowMs;
+                    window.globalSettings.shieldStock = SHIELD_STOCK_DEFAULT;
+                    window.globalSettings.shieldStockFixedTo5At = nowMs;
                 }
                 if (typeof window.showToast === 'function') {
-                    window.showToast(`절대 방패 재고를 5개 추가했습니다. (현재 ${next}개)`);
+                    window.showToast('절대 방패 재고를 5개로 맞췄습니다.');
                 }
                 if (typeof updateUI === 'function') updateUI();
             } catch (e) {
-                console.error('ensureShieldStockPlus5', e);
+                console.error('ensureShieldStockFixedTo5', e);
             } finally {
-                window._shieldStockPlus5Running = false;
+                window._shieldStockFixedTo5Running = false;
             }
         };
 

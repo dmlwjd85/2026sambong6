@@ -430,11 +430,9 @@ export function buildSeason1ItemRefundPatch(stu, catalog = [], opts = {}) {
     };
 }
 
-export const SHIELD_STOCK_DEFAULT = 15;
-export const SHIELD_STOCK_LEGACY_DEFAULT = 10;
-export const SHIELD_STOCK_BONUS = 5;
+export const SHIELD_STOCK_DEFAULT = 5;
 
-/** 상점 절대 방패 남은 재고. 값이 없으면 새 기본 15개를 씁니다. */
+/** 상점 절대 방패 남은 재고. 값이 없으면 기본 5개를 씁니다. */
 export function readShieldStock(settings) {
     if (!settings || settings.shieldStock === undefined || settings.shieldStock === null || settings.shieldStock === '') {
         return SHIELD_STOCK_DEFAULT;
@@ -442,16 +440,6 @@ export function readShieldStock(settings) {
     const n = Math.floor(Number(settings.shieldStock));
     if (!Number.isFinite(n)) return SHIELD_STOCK_DEFAULT;
     return Math.max(0, n);
-}
-
-/** 기존 재고에 5개를 더합니다. 필드가 없으면 예전 기본 10개로 보고 더합니다. */
-export function nextShieldStockAfterAdd(settings, add = SHIELD_STOCK_BONUS) {
-    const extra = Math.max(0, Math.floor(Number(add) || 0));
-    const hasField = !!(settings && settings.shieldStock !== undefined && settings.shieldStock !== null && settings.shieldStock !== '');
-    const current = hasField
-        ? Math.max(0, Math.floor(Number(settings.shieldStock)) || 0)
-        : SHIELD_STOCK_LEGACY_DEFAULT;
-    return current + extra;
 }
 
 /** 절대 방패 내구도. hasShield(레거시)는 100으로 칩니다. */

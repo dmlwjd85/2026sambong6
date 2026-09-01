@@ -26,6 +26,7 @@ import {
     season1RecordXp,
     buildSeason1HallOfFame,
     uniqueInventory,
+    collectSeason2TargetIds,
     weaponDropMultiplier,
     worldSettingsForSeason2,
     applyShieldToXpDeduct,
@@ -133,6 +134,13 @@ describe('시즌 1 정산', () => {
 describe('시즌 2 악용 가드', () => {
     it('무기는 종류당 1개만 남긴다', () => {
         assert.deepEqual(uniqueInventory(['wp5', 'wp5', 'wp2', '']), ['wp5', 'wp2']);
+    });
+
+    it('시즌 2 정산 대상은 명단·서버 학번을 합치고 마스터는 뺀다', () => {
+        assert.deepEqual(
+            collectSeason2TargetIds(['1', '2', 'gm'], ['student_2', '3', 'gm_a', 'guest']),
+            ['1', '2', '3']
+        );
     });
 
     it('무기 드랍 배율은 0개 2배·2개 이상 0.25배로 묶는다', () => {

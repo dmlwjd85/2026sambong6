@@ -125,6 +125,24 @@ export function uniqueInventory(ids) {
     return out;
 }
 
+/**
+ * 시즌 2 정산 대상 학번.
+ * 명단과 서버 문서를 합치고, 마스터·게스트는 뺍니다.
+ */
+export function collectSeason2TargetIds(rosterIds, serverStudentIds) {
+    const out = [];
+    const seen = new Set();
+    const add = (raw) => {
+        const sid = String(raw || '').replace(/^student_/, '');
+        if (!sid || sid === 'gm' || sid === 'gm_a' || sid === 'guest' || seen.has(sid)) return;
+        seen.add(sid);
+        out.push(sid);
+    };
+    (Array.isArray(rosterIds) ? rosterIds : []).forEach(add);
+    (Array.isArray(serverStudentIds) ? serverStudentIds : []).forEach(add);
+    return out;
+}
+
 /** 시즌 2 감독·정산은 이 시각 이후 로그만 봅니다. */
 export function season2SupervisionSinceMs(stu, season2StartedAt) {
     const settled = Math.max(0, Math.floor(Number(stu && stu.season1SettledAt) || 0));

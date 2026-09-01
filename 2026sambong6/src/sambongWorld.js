@@ -92,6 +92,7 @@ import {
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
     canStartSeason2,
+    collectSeason2TargetIds,
     catalogQuestRewards,
     estimateSeason2QuestXp,
     expectedXpPace,
@@ -11519,13 +11520,13 @@ ${subjectLine}
             if (!isConvenienceManager()) return await window.customAlert('편의점 매니저만 환불할 수 있습니다.');
             const order = (window.convenienceOrders || []).find((o) => String(o.id) === String(orderId));
             if (!order || order.status !== 'pending') return await window.customAlert('환불할 대기 주문을 찾을 수 없습니다.');
+            const refundB = normalizeBongValue(Number(order.price) || 0);
             const ok = await window.customConfirm(`[${order.itemName}] 주문을 재고 없음으로 환불할까요?\n${order.studentName}에게 ${formatBongAmount(refundB)}가 돌아갑니다.`);
             if (!ok) return;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             const managerId = String(localStorage.getItem('sambong_student_id') || '');
             const managerName = window.playerState.isAdmin ? (window.playerState.isGM ? getMasterDisplayName() : getCoMasterDisplayName()) : (STUDENT_NAMES[managerId] || managerId);
-            const refundB = normalizeBongValue(Number(order.price) || 0);
             try {
                 await runTransaction(db, async (transaction) => {
                     const orderRef = doc(db, 'artifacts', appId, 'public', 'data', 'convenienceOrders', String(orderId));
@@ -14817,7 +14818,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -17602,6 +17603,9 @@ ${subjectLine}
                 return window.customAlert('시즌 2 시작은 마스터만 실행할 수 있습니다.');
             }
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
+            if (window._startSeason2Running) {
+                return window.customAlert('시즌 2 시작이 이미 진행 중입니다.');
+            }
             const today = getLocalDateStr();
             const gate = canStartSeason2(today, isSeason2AlreadyStarted());
             if (!gate.ok) {
@@ -17623,73 +17627,113 @@ ${subjectLine}
             const ok2 = await window.customConfirm('최종 확인: 지금 시즌 2를 시작할까요?');
             if (!ok2) return;
 
+            window._startSeason2Running = true;
             try {
                 window.showGlobalLoading('시즌 2 시작 중…');
                 const nowMs = Date.now();
-                const ids = getActiveStudentIds();
-                const rows = [];
-                for (const sid of ids) {
-                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-                    let serverData = {};
-                    try {
-                        const snap = await readStudentDocPreferServer(ref);
-                        if (snap && snap.exists()) serverData = snap.data() || {};
-                    } catch (e) {
-                        const cached = (window.allStudentsData || []).find((s) => String(s.id) === String(sid));
-                        serverData = cached || {};
-                    }
-                    const stu = { id: sid, ...serverData };
-                    const built = buildSeason2StudentPatch(stu, nowMs);
-                    rows.push({ sid, stu, built });
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
+                const settingsRef = getGlobalSettingsDocRef();
+                let serverSnap;
+                try {
+                    serverSnap = await getDocsFromServer(colRef);
+                } catch (eSnap) {
+                    console.warn('startSeason2 getDocsFromServer', eSnap);
+                    serverSnap = await getDocs(colRef);
+                }
+                const serverIds = [];
+                serverSnap.forEach((d) => {
+                    serverIds.push(String(d.id || '').replace(/^student_/, ''));
+                });
+                const ids = collectSeason2TargetIds(getActiveStudentIds(), serverIds);
+                if (ids.length > 200) {
+                    return await window.customAlert('학생 수가 너무 많아 한 번에 정산할 수 없습니다. 명단을 확인한 뒤 다시 시도해 주세요.');
                 }
 
-                await runWithNetworkRetry(async () => {
-                    const batch = writeBatch(db);
-                    rows.forEach(({ sid, stu, built }) => {
-                        if (built.skip) return;
-                        batch.set(getStudentBackupRef(sid), {
-                            studentId: String(sid),
-                            savedAt: new Date().toISOString(),
-                            reason: 'season2Start',
-                            data: extractStudentGameData(stu),
-                        });
-                        const payload = { ...built.patch };
-                        // 지갑·은행 잔액은 절대값으로 쓰지 않습니다. 정산분만 increment로 가산합니다.
-                        // 공동구매(shopGroupBuy) 컬렉션은 이 배치에서 읽지도 쓰지도 않습니다.
-                        delete payload.bong;
-                        delete payload.bankRegularSavings;
-                        delete payload.bankTermDeposits;
-                        delete payload.bankDailyBonusLastDate;
-                        if ((built.bongDelta || 0) > 0) payload.bong = increment(built.bongDelta);
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            payload,
-                            { merge: true }
-                        );
+                /**
+                 * 광장 캐시·선행 읽기 값으로 덮지 않습니다.
+                 * 트랜잭션이 서버 문서를 다시 읽고, season2StartedAt이 있으면 중단해
+                 * 재시도·다른 탭의 increment 이중 지급을 막습니다.
+                 */
+                const result = await runWithNetworkRetry(async () => {
+                    return await runTransaction(db, async (transaction) => {
+                        const settingsSnap = await transaction.get(settingsRef);
+                        const settingsData = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
+                        if (settingsData.season2StartedAt) {
+                            return { already: true, rows: [], nextWorld: null };
+                        }
+                        const rows = [];
+                        for (const sid of ids) {
+                            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                            const stuSnap = await transaction.get(stuRef);
+                            const stu = stuSnap.exists() ? { ...(stuSnap.data() || {}), id: String(sid) } : { id: String(sid) };
+                            rows.push({
+                                sid: String(sid),
+                                stu,
+                                built: buildSeason2StudentPatch(stu, nowMs),
+                                stuRef,
+                                exists: stuSnap.exists(),
+                            });
+                        }
+                        for (const { sid, stu, built, stuRef, exists } of rows) {
+                            if (built.skip) continue;
+                            if (exists) {
+                                transaction.set(getStudentBackupRef(sid), {
+                                    studentId: String(sid),
+                                    savedAt: new Date().toISOString(),
+                                    reason: 'season2Start',
+                                    data: extractStudentGameData(stu),
+                                });
+                            }
+                            const payload = { ...built.patch };
+                            // 지갑·은행 잔액은 절대값으로 쓰지 않습니다. 정산분만 increment로 가산합니다.
+                            // 공동구매(shopGroupBuy) 컬렉션은 이 트랜잭션에서 읽지도 쓰지도 않습니다.
+                            delete payload.bong;
+                            delete payload.bankRegularSavings;
+                            delete payload.bankTermDeposits;
+                            delete payload.bankDailyBonusLastDate;
+                            if ((built.bongDelta || 0) > 0) payload.bong = increment(built.bongDelta);
+                            transaction.set(stuRef, payload, { merge: true });
+                        }
+                        const prevWorld = sanitizeWorldSettings(settingsData.worldSettings || getWorldSettings());
+                        const nextWorld = sanitizeWorldSettings(worldSettingsForSeason2(prevWorld));
+                        transaction.set(settingsRef, {
+                            worldSettings: nextWorld,
+                            season2StartedAt: nowMs,
+                            season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
+                            season2WeaponsClearedAt: nowMs,
+                            announcement: 'MATE 시즌 2가 시작되었습니다! 경험치와 무기는 새로 시작하고, 지갑·은행·공동구매 봉은 그대로입니다.',
+                        }, { merge: true });
+                        return { already: false, rows, nextWorld };
                     });
-                    const nextWorld = sanitizeWorldSettings(worldSettingsForSeason2(getWorldSettings()));
-                    batch.set(getGlobalSettingsDocRef(), {
-                        worldSettings: nextWorld,
-                        season2StartedAt: nowMs,
-                        season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
-                        season2WeaponsClearedAt: nowMs,
-                        announcement: 'MATE 시즌 2가 시작되었습니다! 경험치와 무기는 새로 시작하고, 지갑·은행·공동구매 봉은 그대로입니다.',
-                    }, { merge: true });
-                    await batch.commit();
-                    setLocalWorldSettings(nextWorld);
-                    if (window.globalSettings) {
-                        window.globalSettings.season2StartedAt = nowMs;
-                        window.globalSettings.season2WeaponsClearedAt = nowMs;
-                    }
                 }, '시즌 2 시작');
 
+                if (result && result.already) {
+                    if (window.globalSettings) window.globalSettings.season2StartedAt = window.globalSettings.season2StartedAt || nowMs;
+                    window.refreshSeason2StartPanel();
+                    await window.customAlert('시즌 2는 이미 시작되었습니다.');
+                    return;
+                }
+
+                if (result && result.nextWorld) setLocalWorldSettings(result.nextWorld);
+                if (window.globalSettings) {
+                    window.globalSettings.season2StartedAt = nowMs;
+                    window.globalSettings.season2WeaponsClearedAt = nowMs;
+                }
                 applyWorldBranding();
-                const paid = rows.filter((r) => !r.built.skip);
+                try {
+                    await refreshStudentsCacheFromServer();
+                } catch (eRefresh) {
+                    console.warn('startSeason2 refreshStudentsCacheFromServer', eRefresh);
+                }
+                const paid = (result && result.rows ? result.rows : []).filter((r) => r.built && !r.built.skip);
                 const totalBong = paid.reduce((s, r) => s + (r.built.rewardBong || 0), 0);
                 const myId = localStorage.getItem('sambong_student_id');
                 const mine = paid.find((r) => String(r.sid) === String(myId));
                 if (mine && mine.built.patch && window.playerState && !window.playerState.isAdmin) {
                     Object.assign(window.playerState, mine.built.patch);
+                    if ((mine.built.bongDelta || 0) > 0) {
+                        window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + mine.built.bongDelta);
+                    }
                     updateUI();
                 }
                 window.refreshSeason2StartPanel();
@@ -17700,6 +17744,7 @@ ${subjectLine}
                 console.error('startSeason2', e);
                 await window.customAlert('시즌 2 시작 중 오류: ' + (e && e.message ? e.message : String(e)));
             } finally {
+                window._startSeason2Running = false;
                 window.hideGlobalLoading();
             }
         };
@@ -17729,15 +17774,17 @@ ${subjectLine}
         /** 시즌 2가 이미 시작된 학급은 보유 무기를 한 번만 비웁니다. */
         window.ensureSeason2WeaponReset = async function() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
-            if (!isSeason2AlreadyStarted()) return;
             if (window._season2WeaponResetRunning) return;
             window._season2WeaponResetRunning = true;
             try {
-                const gate = await confirmGlobalMigrationFlag('season2WeaponsClearedAt');
-                if (!gate.proceed) return;
-                const ids = getActiveStudentIds();
                 const nowMs = Date.now();
-                await runWithNetworkRetry(async () => {
+                const result = await runWithNetworkRetry(async () => {
+                    // 재시도 때마다 서버 플래그를 다시 읽어, 이미 성공한 커밋을 한 번 더 쓰지 않습니다.
+                    window._globalSettingsFromServer = false;
+                    const gate = await confirmGlobalMigrationFlag('season2WeaponsClearedAt');
+                    if (!gate.proceed) return { skipped: true };
+                    if (!isSeason2AlreadyStarted()) return { skipped: true };
+                    const ids = getActiveStudentIds();
                     const batch = writeBatch(db);
                     ids.forEach((sid) => {
                         batch.set(
@@ -17748,7 +17795,9 @@ ${subjectLine}
                     });
                     batch.set(getGlobalSettingsDocRef(), { season2WeaponsClearedAt: nowMs }, { merge: true });
                     await batch.commit();
+                    return { skipped: false };
                 }, '시즌 2 무기 초기화');
+                if (result && result.skipped) return;
                 if (window.globalSettings) window.globalSettings.season2WeaponsClearedAt = nowMs;
                 if (window.playerState && !window.playerState.isAdmin) {
                     window.playerState.inventory = [];
@@ -17767,11 +17816,12 @@ ${subjectLine}
             if (window._season2DragonBallResetRunning) return;
             window._season2DragonBallResetRunning = true;
             try {
-                const gate = await confirmGlobalMigrationFlag('season2DragonBallsClearedAt');
-                if (!gate.proceed) return;
-                const ids = getActiveStudentIds();
                 const nowMs = Date.now();
-                await runWithNetworkRetry(async () => {
+                const result = await runWithNetworkRetry(async () => {
+                    window._globalSettingsFromServer = false;
+                    const gate = await confirmGlobalMigrationFlag('season2DragonBallsClearedAt');
+                    if (!gate.proceed) return { skipped: true };
+                    const ids = getActiveStudentIds();
                     const batch = writeBatch(db);
                     ids.forEach((sid) => {
                         batch.set(
@@ -17789,7 +17839,9 @@ ${subjectLine}
                     }, { merge: true });
                     batch.set(getGlobalSettingsDocRef(), { season2DragonBallsClearedAt: nowMs }, { merge: true });
                     await batch.commit();
+                    return { skipped: false };
                 }, '드래곤볼 초기화');
+                if (result && result.skipped) return;
                 if (window.globalSettings) window.globalSettings.season2DragonBallsClearedAt = nowMs;
                 if (window.dragonBallState) {
                     window.dragonBallState.isActive = false;
@@ -17816,40 +17868,60 @@ ${subjectLine}
             if (window._season1ItemRefundRunning) return;
             window._season1ItemRefundRunning = true;
             try {
-                const gate = await confirmGlobalMigrationFlag('season1ItemsRefundedAt');
-                if (!gate.proceed) return;
                 const nowMs = Date.now();
                 const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
-                let snap;
-                try {
-                    snap = await getDocsFromServer(colRef);
-                } catch (e) {
-                    snap = await getDocs(colRef);
-                }
-                let paidCount = 0;
-                let totalRefund = 0;
-                await runWithNetworkRetry(async () => {
-                    const batch = writeBatch(db);
+                const settingsRef = getGlobalSettingsDocRef();
+                const result = await runWithNetworkRetry(async () => {
+                    let snap;
+                    try {
+                        snap = await getDocsFromServer(colRef);
+                    } catch (e) {
+                        snap = await getDocs(colRef);
+                    }
+                    const ids = [];
                     snap.forEach((d) => {
                         const sid = String(d.id).replace(/^student_/, '');
-                        if (sid === 'gm' || sid === 'gm_a') return;
-                        const stu = { ...(d.data() || {}), id: sid };
-                        const built = buildSeason1ItemRefundPatch(stu, SKIN_DATA, { nowMs, shieldPrice: 50 });
-                        if (built.skip) return;
-                        const payload = { ...built.patch };
-                        if ((built.refundBong || 0) > 0) payload.bong = increment(built.refundBong);
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            payload,
-                            { merge: true }
-                        );
-                        paidCount += 1;
-                        totalRefund += built.refundBong || 0;
+                        if (sid === 'gm' || sid === 'gm_a' || sid === 'guest') return;
+                        ids.push(sid);
                     });
-                    batch.set(getGlobalSettingsDocRef(), { season1ItemsRefundedAt: nowMs }, { merge: true });
-                    await batch.commit();
+                    return await runTransaction(db, async (transaction) => {
+                        const settingsSnap = await transaction.get(settingsRef);
+                        const settingsData = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
+                        if (settingsData.season1ItemsRefundedAt) {
+                            return { already: true, paidCount: 0, totalRefund: 0 };
+                        }
+                        const writes = [];
+                        let paidCount = 0;
+                        let totalRefund = 0;
+                        for (const sid of ids) {
+                            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                            const stuSnap = await transaction.get(stuRef);
+                            if (!stuSnap.exists()) continue;
+                            const stu = { ...(stuSnap.data() || {}), id: sid };
+                            const built = buildSeason1ItemRefundPatch(stu, SKIN_DATA, { nowMs, shieldPrice: 50 });
+                            if (built.skip) continue;
+                            const payload = { ...built.patch };
+                            if ((built.refundBong || 0) > 0) payload.bong = increment(built.refundBong);
+                            writes.push({ stuRef, payload, refundBong: built.refundBong || 0 });
+                            paidCount += 1;
+                            totalRefund += built.refundBong || 0;
+                        }
+                        writes.forEach((row) => {
+                            transaction.set(row.stuRef, row.payload, { merge: true });
+                        });
+                        transaction.set(settingsRef, { season1ItemsRefundedAt: nowMs }, { merge: true });
+                        return { already: false, paidCount, totalRefund };
+                    });
                 }, '시즌 1 아이템 환불');
+                if (result && result.already) {
+                    if (window.globalSettings) {
+                        window.globalSettings.season1ItemsRefundedAt = window.globalSettings.season1ItemsRefundedAt || nowMs;
+                    }
+                    return;
+                }
                 if (window.globalSettings) window.globalSettings.season1ItemsRefundedAt = nowMs;
+                const paidCount = (result && result.paidCount) || 0;
+                const totalRefund = (result && result.totalRefund) || 0;
                 if (paidCount > 0 && typeof window.showToast === 'function') {
                     window.showToast(`시즌 1 아이템 ${paidCount}명 · 50% 환불 ${formatBongAmount(totalRefund)}`);
                 }
@@ -17866,15 +17938,18 @@ ${subjectLine}
             if (window._shieldStockFixedTo5Running) return;
             window._shieldStockFixedTo5Running = true;
             try {
-                const gate = await confirmGlobalMigrationFlag('shieldStockFixedTo5At');
-                if (!gate.proceed) return;
                 const nowMs = Date.now();
-                await runWithNetworkRetry(async () => {
+                const result = await runWithNetworkRetry(async () => {
+                    window._globalSettingsFromServer = false;
+                    const gate = await confirmGlobalMigrationFlag('shieldStockFixedTo5At');
+                    if (!gate.proceed) return { skipped: true };
                     await setDoc(getGlobalSettingsDocRef(), {
                         shieldStock: SHIELD_STOCK_DEFAULT,
                         shieldStockFixedTo5At: nowMs,
                     }, { merge: true });
+                    return { skipped: false };
                 }, '절대 방패 재고 5개');
+                if (result && result.skipped) return;
                 if (window.globalSettings) {
                     window.globalSettings.shieldStock = SHIELD_STOCK_DEFAULT;
                     window.globalSettings.shieldStockFixedTo5At = nowMs;

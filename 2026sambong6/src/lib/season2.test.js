@@ -54,10 +54,15 @@ describe('시즌 1 정산', () => {
         assert.equal(season1SettlementBong(40000), 400);
     });
 
-    it('시즌 2 패치는 XP를 0으로 돌리고 봉을 더한다', () => {
+    it('시즌 2 패치는 XP만 0으로 돌리고 지갑·은행 봉 필드는 넣지 않는다', () => {
         const r = buildSeason2StudentPatch({
             xp: 25400,
-            bong: 80,
+            bong: 80.5,
+            bankRegularSavings: 300,
+            bankTermDeposits: [{ id: 't1', amount: 50 }],
+            bankDailyBonusLastDate: '2026-08-31',
+            jobs: [{ id: 'farmer' }],
+            ownedSkins: ['skin1'],
             inventory: ['wp1', 'wp1', 'wp3'],
             equippedWeapon: 'wp1',
             questHistory: [{ id: 'q1', xp: 10 }],
@@ -65,8 +70,14 @@ describe('시즌 1 정산', () => {
         assert.equal(r.skip, false);
         assert.equal(r.season1Xp, 25400);
         assert.equal(r.rewardBong, 200);
+        assert.equal(r.bongDelta, 200);
         assert.equal(r.patch.xp, 0);
-        assert.equal(r.patch.bong, 280);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'bong'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'bankRegularSavings'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'bankTermDeposits'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'bankDailyBonusLastDate'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'jobs'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'ownedSkins'), false);
         assert.deepEqual(r.patch.inventory, ['wp1', 'wp3']);
         assert.equal(r.patch.equippedWeapon, 'wp1');
         assert.deepEqual(r.patch.questHistory, []);

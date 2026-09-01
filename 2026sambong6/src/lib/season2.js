@@ -139,14 +139,15 @@ export function isSeason2Applied(stu) {
 
 /**
  * 시즌 2 시작 시 학생 문서에 쓸 패치.
- * XP는 0으로 되돌리고, 시즌 1 XP 1만당 100봉을 더합니다.
- * 퀘스트 기록·레이드 잠금은 비워 시즌 2를 새로 진행합니다.
+ * XP만 0으로 되돌립니다. 지갑·은행·공동구매 봉 필드는 넣지 않아 merge 시 그대로 남습니다.
+ * 시즌 1 XP 1만당 100봉은 bongDelta로만 알려, 호출 측이 increment로 더합니다.
  */
 export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
-    if (isSeason2Applied(stu)) return { skip: true, patch: null, rewardBong: 0, season1Xp: 0 };
+    if (isSeason2Applied(stu)) return { skip: true, patch: null, rewardBong: 0, bongDelta: 0, season1Xp: 0 };
     const season1Xp = Math.max(0, Math.floor(Number(stu && stu.xp) || 0));
     const rewardBong = season1SettlementBong(season1Xp);
-    const beforeBong = Math.floor(Number(stu && stu.bong) || 0);
+    const beforeBong = Number(stu && stu.bong);
+    const walletBong = Number.isFinite(beforeBong) ? beforeBong : 0;
     const inventory = uniqueInventory(stu && stu.inventory);
     const equipped = inventory.includes(stu && stu.equippedWeapon) ? stu.equippedWeapon : (inventory[0] || null);
     const xpLog = [{
@@ -164,8 +165,8 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
         bongLogs.push({
             at: nowMs,
             reason: `시즌 1 경험치 정산 (${season1Xp.toLocaleString()} XP → +${rewardBong}봉)`,
-            before: beforeBong,
-            after: beforeBong + rewardBong,
+            before: walletBong,
+            after: walletBong + rewardBong,
             delta: rewardBong,
             source: 'season2Start',
         });
@@ -173,6 +174,7 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
     return {
         skip: false,
         rewardBong,
+        bongDelta: rewardBong,
         season1Xp,
         patch: {
             seasonNumberApplied: SEASON2.number,
@@ -180,7 +182,6 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
             season1SettledAt: nowMs,
             season1BongReward: rewardBong,
             xp: 0,
-            bong: beforeBong + rewardBong,
             quests: {},
             unlockedQuests: {},
             questHistory: [],

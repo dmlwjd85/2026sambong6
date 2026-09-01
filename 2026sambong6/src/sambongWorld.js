@@ -623,7 +623,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.15';
+        const APP_VERSION = 'v1.16';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -7066,8 +7066,14 @@ ${subjectLine}
             if (tabId === 'jobs') window.switchInnerPane('jobs', innerPaneState.jobs || 'list');
             if (tabId === 'admin') window.switchInnerPane('admin', innerPaneState.admin || 'quests');
             if (tabId === 'settings' && window.playerState && window.playerState.isAdmin) {
-                window.switchInnerPane('settings', innerPaneState.settings || 'world');
+                const seasonReady = !isSeason2AlreadyStarted() && canStartSeason2(getLocalDateStr(), false).ok;
+                const settingsPane = innerPaneState.settings || (seasonReady ? 'season' : 'world');
+                window.switchInnerPane('settings', settingsPane);
                 window.renderWorldSettingsPanel();
+            }
+            if ((tabId === 'admin' || tabId === 'plaza' || tabId === 'dashboard' || tabId === 'settings')
+                && typeof window.refreshSeason2StartPanel === 'function') {
+                window.refreshSeason2StartPanel();
             }
             if (tabId === 'lunch') window.switchInnerPane('lunch', innerPaneState.lunch || 'invest');
             if (tabId === 'help') window.switchInnerPane('help', innerPaneState.help || 'guide');
@@ -13714,6 +13720,7 @@ ${subjectLine}
                     el.classList.toggle('hidden', !window.playerState.isGM);
                 });
                 document.querySelectorAll('.inner-pane-admin').forEach((el) => el.classList.remove('hidden'));
+                if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
             } else {
                 document.getElementById('tab-admin').classList.add('hidden');
                 const tabSettingsOff = document.getElementById('tab-settings');
@@ -13747,6 +13754,7 @@ ${subjectLine}
                 if (classAdminSectionOff) classAdminSectionOff.classList.add('hidden');
                 document.querySelectorAll('.inner-pane-gm').forEach((el) => el.classList.add('hidden'));
                 document.querySelectorAll('.inner-pane-admin').forEach((el) => el.classList.add('hidden'));
+                if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
             }
             
             checkTimeEvents();
@@ -14112,6 +14120,7 @@ ${subjectLine}
             if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
             if (typeof updateDragonBallUI === 'function') updateDragonBallUI();
             if (typeof updateRaidEntryUI === 'function') updateRaidEntryUI();
+            if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
             if (canRunBankSideEffects) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
@@ -17184,24 +17193,34 @@ ${subjectLine}
         }
 
         window.refreshSeason2StartPanel = function() {
-            const hint = document.getElementById('season2StartHint');
-            const btn = document.getElementById('season2StartBtn');
-            if (!hint || !btn) return;
+            const hints = document.querySelectorAll('.js-season2-start-hint, #season2StartHint');
+            const btns = document.querySelectorAll('.js-season2-start-btn, #season2StartBtn');
+            const cards = document.querySelectorAll('.js-season2-start-card');
+            if (!hints.length && !btns.length) return;
             const today = getLocalDateStr();
             const days = season2SchoolDaysTotal();
             const questXp = estimateSeason2QuestXp(days);
             const started = isSeason2AlreadyStarted();
             const gate = canStartSeason2(today, started);
-            hint.textContent = started
+            const isMaster = !!(window.playerState && window.playerState.isAdmin);
+            const hintText = started
                 ? `시즌 2가 이미 시작되었습니다. 졸업(1/7)까지 수업 ${days}일 · 퀘스트 경로 약 ${questXp.toLocaleString()} XP, 수업 중 부여분 약 ${SEASON2.teacherXpBudget.toLocaleString()} XP.`
-                : `9월 1일 아침 「시즌 2 시작」을 누르면 시즌 1 XP 1만당 100봉을 지급하고 경험치를 0으로 되돌립니다. 수업 ${days}일 · 퀘스트 약 ${questXp.toLocaleString()} XP + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()} XP ≈ 목표 ${SEASON2.targetXp.toLocaleString()} XP.`;
-            btn.disabled = !window.playerState || !window.playerState.isGM || !gate.ok;
-            btn.textContent = started ? '시즌 2 진행 중' : (gate.reason === 'before' ? '9월 1일부터 시작' : '시즌 2 시작');
+                : `「시즌 2 시작」을 누르면 경험치·퀘스트만 0으로 되돌립니다. 지갑·은행·공동구매 봉은 그대로 두고, 시즌 1 XP 1만당 100봉만 추가로 지급합니다. 수업 ${days}일 · 퀘스트 약 ${questXp.toLocaleString()} XP + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()} XP ≈ 목표 ${SEASON2.targetXp.toLocaleString()} XP.`;
+            hints.forEach((el) => { el.textContent = hintText; });
+            const canClick = isMaster && gate.ok;
+            btns.forEach((btn) => {
+                btn.disabled = !canClick;
+                btn.textContent = started ? '시즌 2 진행 중' : (gate.reason === 'before' ? '9월 1일부터 시작' : '시즌 2 시작');
+            });
+            // 시작 전에는 마스터 광장·홈·설정 맨 위에 노란 카드를 바로 보여 줍니다.
+            cards.forEach((card) => {
+                card.classList.toggle('hidden', !isMaster || started);
+            });
         };
 
         window.startSeason2 = async function() {
-            if (!window.playerState || !window.playerState.isGM) {
-                return window.customAlert('시즌 2 시작은 마스터 J만 실행할 수 있습니다.');
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('시즌 2 시작은 마스터만 실행할 수 있습니다.');
             }
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
             const today = getLocalDateStr();
@@ -17213,9 +17232,10 @@ ${subjectLine}
             }
             const ok = await window.customConfirm(
                 'MATE 시즌 2를 시작할까요?\n\n' +
-                '· 시즌 1 경험치 10,000당 100봉을 보상으로 지급합니다.\n' +
-                '· 모든 학생 경험치·퀘스트 기록은 0/빈 값으로 돌아갑니다.\n' +
-                '· 직업·은행·스킨·봉(정산분 포함)은 유지합니다.\n' +
+                '· 모든 학생 경험치·퀘스트 기록만 0/빈 값으로 돌아갑니다.\n' +
+                '· 지갑 봉, 은행(일반예금·적금), 공동구매 모금액은 그대로 둡니다.\n' +
+                '· 직업·스킨·무기도 유지합니다.\n' +
+                '· 시즌 1 경험치 10,000당 100봉만 지갑에 추가로 지급합니다.\n' +
                 '· 중복 무기는 종류당 1개만 남깁니다.\n' +
                 '· 종료일: 2027-01-07(졸업)\n\n' +
                 '이 작업은 한 번만 실행됩니다.'
@@ -17229,11 +17249,20 @@ ${subjectLine}
                 const nowMs = Date.now();
                 const ids = getActiveStudentIds();
                 const rows = [];
-                ids.forEach((sid) => {
-                    const stu = (window.allStudentsData || []).find((s) => String(s.id) === String(sid)) || { id: sid };
+                for (const sid of ids) {
+                    const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                    let serverData = {};
+                    try {
+                        const snap = await readStudentDocPreferServer(ref);
+                        if (snap && snap.exists()) serverData = snap.data() || {};
+                    } catch (e) {
+                        const cached = (window.allStudentsData || []).find((s) => String(s.id) === String(sid));
+                        serverData = cached || {};
+                    }
+                    const stu = { id: sid, ...serverData };
                     const built = buildSeason2StudentPatch(stu, nowMs);
                     rows.push({ sid, stu, built });
-                });
+                }
 
                 await runWithNetworkRetry(async () => {
                     const batch = writeBatch(db);
@@ -17245,9 +17274,17 @@ ${subjectLine}
                             reason: 'season2Start',
                             data: extractStudentGameData(stu),
                         });
+                        const payload = { ...built.patch };
+                        // 지갑·은행 잔액은 절대값으로 쓰지 않습니다. 정산분만 increment로 가산합니다.
+                        // 공동구매(shopGroupBuy) 컬렉션은 이 배치에서 읽지도 쓰지도 않습니다.
+                        delete payload.bong;
+                        delete payload.bankRegularSavings;
+                        delete payload.bankTermDeposits;
+                        delete payload.bankDailyBonusLastDate;
+                        if ((built.bongDelta || 0) > 0) payload.bong = increment(built.bongDelta);
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            built.patch,
+                            payload,
                             { merge: true }
                         );
                     });
@@ -17256,7 +17293,7 @@ ${subjectLine}
                         worldSettings: nextWorld,
                         season2StartedAt: nowMs,
                         season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
-                        announcement: 'MATE 시즌 2가 시작되었습니다! 시즌 1 경험치는 1만당 100봉으로 정산되었고, 졸업(1/7)까지 새 모험이 이어집니다.',
+                        announcement: 'MATE 시즌 2가 시작되었습니다! 경험치는 새로 시작하고, 지갑·은행·공동구매 봉은 그대로입니다.',
                     }, { merge: true });
                     await batch.commit();
                     setLocalWorldSettings(nextWorld);

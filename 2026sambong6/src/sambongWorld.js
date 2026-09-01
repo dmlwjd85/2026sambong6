@@ -643,7 +643,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.22';
+        const APP_VERSION = 'v1.23';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -2866,6 +2866,42 @@ function redrawPlazaGrantsUi() {
 
         function getGlobalSettingsDocRef() {
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+        }
+
+        /**
+         * 서버의 학급 설정을 읽어 메모리에 합칩니다.
+         * 실패하면 null — 스킨 환불처럼 되돌리기 어려운 작업은 실행하지 않습니다.
+         */
+        async function hydrateGlobalSettingsFromServer() {
+            if (!db) return null;
+            try {
+                const snap = await getDocFromServer(getGlobalSettingsDocRef());
+                const data = snap.exists() ? (snap.data() || {}) : {};
+                window.globalSettings = { ...(window.globalSettings || {}), ...data };
+                window._globalSettingsFromServer = true;
+                return data;
+            } catch (e) {
+                console.warn('hydrateGlobalSettingsFromServer', e);
+                return null;
+            }
+        }
+
+        /**
+         * 1회 마이그레이션 플래그가 서버에 있으면 건너뜁니다.
+         * 메모리 기본값만 보고 실행하면 접속마다 환불·초기화가 다시 돕니다.
+         */
+        async function confirmGlobalMigrationFlag(flagKey) {
+            if (window.globalSettings && window.globalSettings[flagKey]) {
+                return { proceed: false };
+            }
+            const data = window._globalSettingsFromServer
+                ? (window.globalSettings || {})
+                : await hydrateGlobalSettingsFromServer();
+            if (!data) return { proceed: false };
+            if (data[flagKey] || (window.globalSettings && window.globalSettings[flagKey])) {
+                return { proceed: false };
+            }
+            return { proceed: true };
         }
 
         /** 마스터가 Firestore에 저장하기 전까지 적용되는 기본 배달비 */
@@ -13995,17 +14031,8 @@ ${subjectLine}
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>${window.playerState.isAdmin ? '' : `<div class="absolute -bottom-1 -right-2 animate-pulse">${rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`}`;
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();
-            if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason2WeaponReset === 'function') {
-                void window.ensureSeason2WeaponReset();
-            }
-            if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason2DragonBallReset === 'function') {
-                void window.ensureSeason2DragonBallReset();
-            }
-            if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason1ItemRefund === 'function') {
-                void window.ensureSeason1ItemRefund();
-            }
-            if (window.playerState && window.playerState.isAdmin && typeof window.ensureShieldStockFixedTo5 === 'function') {
-                void window.ensureShieldStockFixedTo5();
+            if (window.playerState && window.playerState.isAdmin) {
+                void runAdminOneShotMigrations();
             }
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
@@ -17602,14 +17629,37 @@ ${subjectLine}
             }
         };
 
+        /** 마스터 접속 시 1회 마이그레이션은 서버 설정을 확인한 뒤에만 돌립니다. */
+        async function runAdminOneShotMigrations() {
+            if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (window._adminOneShotMigrationsDone || window._adminOneShotMigrationsRunning) return;
+            window._adminOneShotMigrationsRunning = true;
+            try {
+                if (!window._globalSettingsFromServer) {
+                    const data = await hydrateGlobalSettingsFromServer();
+                    if (data == null) return;
+                }
+                if (typeof window.ensureSeason2WeaponReset === 'function') await window.ensureSeason2WeaponReset();
+                if (typeof window.ensureSeason2DragonBallReset === 'function') await window.ensureSeason2DragonBallReset();
+                if (typeof window.ensureSeason1ItemRefund === 'function') await window.ensureSeason1ItemRefund();
+                if (typeof window.ensureShieldStockFixedTo5 === 'function') await window.ensureShieldStockFixedTo5();
+                window._adminOneShotMigrationsDone = true;
+            } catch (e) {
+                console.warn('runAdminOneShotMigrations', e);
+            } finally {
+                window._adminOneShotMigrationsRunning = false;
+            }
+        }
+
         /** 시즌 2가 이미 시작된 학급은 보유 무기를 한 번만 비웁니다. */
         window.ensureSeason2WeaponReset = async function() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
             if (!isSeason2AlreadyStarted()) return;
-            if (window.globalSettings && window.globalSettings.season2WeaponsClearedAt) return;
             if (window._season2WeaponResetRunning) return;
             window._season2WeaponResetRunning = true;
             try {
+                const gate = await confirmGlobalMigrationFlag('season2WeaponsClearedAt');
+                if (!gate.proceed) return;
                 const ids = getActiveStudentIds();
                 const nowMs = Date.now();
                 await runWithNetworkRetry(async () => {
@@ -17639,10 +17689,11 @@ ${subjectLine}
         /** 시즌 2 학급의 드래곤볼 보관함·스폰 상태를 한 번만 비웁니다. */
         window.ensureSeason2DragonBallReset = async function() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
-            if (window.globalSettings && window.globalSettings.season2DragonBallsClearedAt) return;
             if (window._season2DragonBallResetRunning) return;
             window._season2DragonBallResetRunning = true;
             try {
+                const gate = await confirmGlobalMigrationFlag('season2DragonBallsClearedAt');
+                if (!gate.proceed) return;
                 const ids = getActiveStudentIds();
                 const nowMs = Date.now();
                 await runWithNetworkRetry(async () => {
@@ -17687,10 +17738,11 @@ ${subjectLine}
         /** 시즌 1에 산 캐릭터·오라·방패를 50% 환불하고 한 번만 비웁니다. */
         window.ensureSeason1ItemRefund = async function() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
-            if (window.globalSettings && window.globalSettings.season1ItemsRefundedAt) return;
             if (window._season1ItemRefundRunning) return;
             window._season1ItemRefundRunning = true;
             try {
+                const gate = await confirmGlobalMigrationFlag('season1ItemsRefundedAt');
+                if (!gate.proceed) return;
                 const nowMs = Date.now();
                 const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'students');
                 let snap;
@@ -17723,10 +17775,8 @@ ${subjectLine}
                     await batch.commit();
                 }, '시즌 1 아이템 환불');
                 if (window.globalSettings) window.globalSettings.season1ItemsRefundedAt = nowMs;
-                if (typeof window.showToast === 'function') {
-                    window.showToast(paidCount
-                        ? `시즌 1 아이템 ${paidCount}명 · 50% 환불 ${formatBongAmount(totalRefund)}`
-                        : '시즌 1 보유 아이템이 없어 환불할 것이 없습니다.');
+                if (paidCount > 0 && typeof window.showToast === 'function') {
+                    window.showToast(`시즌 1 아이템 ${paidCount}명 · 50% 환불 ${formatBongAmount(totalRefund)}`);
                 }
             } catch (e) {
                 console.error('ensureSeason1ItemRefund', e);
@@ -17738,10 +17788,11 @@ ${subjectLine}
         /** 상점 절대 방패 재고를 한 번만 5개로 맞춥니다. */
         window.ensureShieldStockFixedTo5 = async function() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
-            if (window.globalSettings && window.globalSettings.shieldStockFixedTo5At) return;
             if (window._shieldStockFixedTo5Running) return;
             window._shieldStockFixedTo5Running = true;
             try {
+                const gate = await confirmGlobalMigrationFlag('shieldStockFixedTo5At');
+                if (!gate.proceed) return;
                 const nowMs = Date.now();
                 await runWithNetworkRetry(async () => {
                     await setDoc(getGlobalSettingsDocRef(), {

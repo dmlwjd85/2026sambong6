@@ -363,11 +363,20 @@ export function refundBongForPrice(price, rate = SEASON1_ITEM_REFUND_RATE) {
     return Math.floor(n * rate);
 }
 
+/** 이미 시즌 1 아이템 환불을 받은 학생은 다시 스킨을 비우지 않습니다. */
+export function studentAlreadyGotSeason1ItemRefund(stu) {
+    const ledger = Array.isArray(stu && stu.itemRefundLedger) ? stu.itemRefundLedger : [];
+    return ledger.some((row) => row && (row.source === 'season1ItemRefund' || row.kind === 'season1_items'));
+}
+
 /**
  * 시즌 1에 산 캐릭터·오라·방패를 50% 환불하고 비우는 패치.
  * 지갑 봉은 increment로 더하도록 refundBong만 반환합니다.
  */
 export function buildSeason1ItemRefundPatch(stu, catalog = [], opts = {}) {
+    if (studentAlreadyGotSeason1ItemRefund(stu)) {
+        return { skip: true, refundBong: 0, items: [], patch: null, alreadyRefunded: true };
+    }
     const nowMs = Number(opts.nowMs) || Date.now();
     const shieldPrice = Math.max(0, Number(opts.shieldPrice) || SHIELD_CATALOG_PRICE);
     const items = [];

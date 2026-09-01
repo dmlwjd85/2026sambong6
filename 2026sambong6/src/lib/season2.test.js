@@ -21,6 +21,7 @@ import {
     expectedXpPace,
     season1SettlementBong,
     season2SchoolDaysTotal,
+    studentAlreadyGotSeason1ItemRefund,
     sanitizeDragonBallRewards,
     uniqueInventory,
     weaponDropMultiplier,
@@ -189,6 +190,18 @@ describe('시즌 1 아이템 50% 환불', () => {
         const r = buildSeason1ItemRefundPatch({ ownedSkins: {}, hasShield: false });
         assert.equal(r.skip, true);
         assert.equal(r.refundBong, 0);
+    });
+
+    it('이미 환불받은 학생은 스킨을 다시 비우지 않는다', () => {
+        const r = buildSeason1ItemRefundPatch({
+            ownedSkins: { f_ninja: true },
+            itemRefundLedger: [{ kind: 'season1_items', source: 'season1ItemRefund' }],
+        }, [{ id: 'f_ninja', name: '닌자', price: 200 }]);
+        assert.equal(r.skip, true);
+        assert.equal(r.alreadyRefunded, true);
+        assert.equal(studentAlreadyGotSeason1ItemRefund({
+            itemRefundLedger: [{ source: 'season1ItemRefund' }],
+        }), true);
     });
 });
 

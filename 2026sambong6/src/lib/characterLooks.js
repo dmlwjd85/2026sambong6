@@ -4,12 +4,12 @@
  */
 
 export const CHARACTER_BASES = [
-    { id: 'base_m1', gender: 'M', name: '견습 기사', desc: '방패를 든 초보 모험가', img: 'chars/base-m1.webp' },
-    { id: 'base_m2', gender: 'M', name: '숲의 견습', desc: '활시위를 익히는 정찰대', img: 'chars/base-m2.webp' },
-    { id: 'base_m3', gender: 'M', name: '마법 견습', desc: '세계수의 불꽃을 배우는 견습생', img: 'chars/base-m3.webp' },
-    { id: 'base_f1', gender: 'F', name: '견습 기사', desc: '방패를 든 초보 모험가', img: 'chars/base-f1.webp' },
-    { id: 'base_f2', gender: 'F', name: '숲의 견습', desc: '활시위를 익히는 정찰대', img: 'chars/base-f2.webp' },
-    { id: 'base_f3', gender: 'F', name: '마법 견습', desc: '세계수의 불꽃을 배우는 견습생', img: 'chars/base-f3.webp' },
+    { id: 'base_m1', gender: 'M', name: '동양 백성', desc: '기운 저고리를 입은 평범한 아이', img: 'chars/base-m1.webp' },
+    { id: 'base_m2', gender: 'M', name: '서양 백성', desc: '기운 튜닉을 입은 평범한 아이', img: 'chars/base-m2.webp' },
+    { id: 'base_m3', gender: 'M', name: '초원 백성', desc: '가죽옷을 입은 평범한 아이', img: 'chars/base-m3.webp' },
+    { id: 'base_f1', gender: 'F', name: '동양 백성', desc: '기운 저고리를 입은 평범한 아이', img: 'chars/base-f1.webp' },
+    { id: 'base_f2', gender: 'F', name: '서양 백성', desc: '기운 튜닉을 입은 평범한 아이', img: 'chars/base-f2.webp' },
+    { id: 'base_f3', gender: 'F', name: '초원 백성', desc: '가죽옷을 입은 평범한 아이', img: 'chars/base-f3.webp' },
 ];
 
 /** 마스터 홈에서 고르는 수호 캐릭터 4종 */

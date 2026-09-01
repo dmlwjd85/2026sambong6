@@ -125,6 +125,25 @@ export function uniqueInventory(ids) {
     return out;
 }
 
+/** 시즌 2 감독·정산은 이 시각 이후 로그만 봅니다. */
+export function season2SupervisionSinceMs(stu, season2StartedAt) {
+    const settled = Math.max(0, Math.floor(Number(stu && stu.season1SettledAt) || 0));
+    const started = Math.max(0, Math.floor(Number(season2StartedAt) || 0));
+    const fromDate = Date.parse(SEASON2.startAt);
+    const seasonOpen = Number.isFinite(fromDate) ? fromDate : 0;
+    return Math.max(settled, started, seasonOpen);
+}
+
+export function filterLogsSince(logs, sinceMs) {
+    const since = Math.max(0, Math.floor(Number(sinceMs) || 0));
+    return (Array.isArray(logs) ? logs : []).filter((row) => {
+        if (!row) return false;
+        const at = Number(row.at);
+        if (!Number.isFinite(at)) return false;
+        return at >= since;
+    });
+}
+
 export function canStartSeason2(todayYmd, alreadyStarted) {
     if (alreadyStarted) return { ok: false, reason: 'already' };
     const today = toYmd(todayYmd);
@@ -139,8 +158,9 @@ export function isSeason2Applied(stu) {
 
 /**
  * 시즌 2 시작 시 학생 문서에 쓸 패치.
- * XP만 0으로 되돌립니다. 지갑·은행·공동구매 봉 필드는 넣지 않아 merge 시 그대로 남습니다.
+ * XP·퀘스트·보유 무기를 비웁니다. 지갑·은행·공동구매 봉 필드는 넣지 않아 merge 시 그대로 남습니다.
  * 시즌 1 XP 1만당 100봉은 bongDelta로만 알려, 호출 측이 increment로 더합니다.
+ * 금융감독용 로그는 시즌 2 정산분부터만 남깁니다.
  */
 export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
     if (isSeason2Applied(stu)) return { skip: true, patch: null, rewardBong: 0, bongDelta: 0, season1Xp: 0 };
@@ -148,8 +168,6 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
     const rewardBong = season1SettlementBong(season1Xp);
     const beforeBong = Number(stu && stu.bong);
     const walletBong = Number.isFinite(beforeBong) ? beforeBong : 0;
-    const inventory = uniqueInventory(stu && stu.inventory);
-    const equipped = inventory.includes(stu && stu.equippedWeapon) ? stu.equippedWeapon : (inventory[0] || null);
     const xpLog = [{
         at: nowMs,
         reason: '시즌 2 시작 · 시즌 1 경험치 정산',
@@ -160,7 +178,7 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
         season1Xp,
         rewardBong,
     }];
-    const bongLogs = Array.isArray(stu && stu.bongChangeLog) ? stu.bongChangeLog.slice(-79) : [];
+    const bongLogs = [];
     if (rewardBong > 0) {
         bongLogs.push({
             at: nowMs,
@@ -190,8 +208,9 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
             usedRaidPasswords: [],
             dragonBalls: [],
             dragonBallWeekendKey: '',
-            inventory,
-            equippedWeapon: equipped,
+            inventory: [],
+            equippedWeapon: null,
+            itemRefundLedger: [],
             seasonSkinRefundCount: 0,
             lastSkinRefundDate: '',
             xpChangeLog: xpLog,
@@ -265,12 +284,12 @@ export function catalogQuestRewards(quest, fallbackXp, fallbackBong) {
     return { xp, bong };
 }
 
-export function buildXpSupervisionIncidents(stu, todayYmd, expectedXp) {
+export function buildXpSupervisionIncidents(stu, todayYmd, expectedXp, sinceMs = 0) {
     if (!stu) return [];
     const today = toYmd(todayYmd);
     const incidents = [];
     const xp = Math.max(0, Math.floor(Number(stu.xp) || 0));
-    const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog : [];
+    const logs = filterLogsSince(stu.xpChangeLog, sinceMs);
     const pace = Math.max(0, Math.floor(Number(expectedXp) || 0));
 
     if (pace > 0 && xp > pace + XP_ANOMALY_AHEAD_OF_PACE_WARN) {

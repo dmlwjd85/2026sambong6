@@ -92,7 +92,9 @@ import {
     catalogQuestRewards,
     estimateSeason2QuestXp,
     expectedXpPace,
+    filterLogsSince,
     season2SchoolDaysTotal,
+    season2SupervisionSinceMs,
     uniqueInventory,
     weaponDropMultiplier,
     worldSettingsForSeason2,
@@ -623,7 +625,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.17';
+        const APP_VERSION = 'v1.18';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -4640,23 +4642,17 @@ ${subjectLine}
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         }
 
-        /** 학생 1명의 금융감독 이상 거래 목록 (날짜·행위 포함) */
+        function getSupervisionSinceMs(stu) {
+            return season2SupervisionSinceMs(stu, window.globalSettings && window.globalSettings.season2StartedAt);
+        }
+
+        /** 학생 1명의 금융감독 이상 거래 목록 (날짜·행위 포함, 시즌 2 이후 로그만) */
         function buildStudentSupervisionIncidents(stu, today) {
             if (!stu) return [];
             const incidents = [];
-            const totalBong = normalizeBongValue(Number(stu.bong) || 0);
-            const logs = Array.isArray(stu.bongChangeLog) ? stu.bongChangeLog : [];
-            const ledger = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger : [];
-
-            if (totalBong >= BONG_ANOMALY_TOTAL_HOLD_WARN) {
-                incidents.push({
-                    id: `hold_${today}_${totalBong}`,
-                    date: today,
-                    dateLabel: today,
-                    category: '과다 보유',
-                    action: `보유 삼봉 ${formatBongAmount(totalBong)} (기준 ${formatBongAmount(BONG_ANOMALY_TOTAL_HOLD_WARN)} 초과)`,
-                });
-            }
+            const sinceMs = getSupervisionSinceMs(stu);
+            const logs = filterLogsSince(stu.bongChangeLog, sinceMs);
+            const ledger = filterLogsSince(stu.itemRefundLedger, sinceMs);
 
             let todayGain = 0;
             const todayGainRows = [];
@@ -4857,8 +4853,8 @@ ${subjectLine}
             }
         }
 
-        function getStudentBongGainToday(bongChangeLog, gameDateStr) {
-            const logs = Array.isArray(bongChangeLog) ? bongChangeLog : [];
+        function getStudentBongGainToday(bongChangeLog, gameDateStr, sinceMs = 0) {
+            const logs = filterLogsSince(bongChangeLog, sinceMs);
             let gain = 0;
             logs.forEach((row) => {
                 if (!row || !row.at) return;
@@ -4883,9 +4879,10 @@ ${subjectLine}
                 const name = STUDENT_NAMES[sid] || stu.name || sid;
                 const incidents = buildStudentSupervisionIncidents(stu, today);
                 if (!incidents.length) return;
+                const sinceMs = getSupervisionSinceMs(stu);
                 const totalBong = normalizeBongValue(Number(stu.bong) || 0);
-                const todayGain = getStudentBongGainToday(stu.bongChangeLog, today);
-                const refundCount = Array.isArray(stu.itemRefundLedger) ? stu.itemRefundLedger.length : 0;
+                const todayGain = getStudentBongGainToday(stu.bongChangeLog, today, sinceMs);
+                const refundCount = filterLogsSince(stu.itemRefundLedger, sinceMs).length;
                 alerts.push({
                     sid,
                     name,
@@ -4910,7 +4907,7 @@ ${subjectLine}
             }
             el.classList.remove('hidden');
             const report = buildBongAnomalyReport(studentsData);
-            const criteriaText = `보유 ${formatBongAmount(BONG_ANOMALY_TOTAL_HOLD_WARN)}↑ · 당일 +${formatBongAmount(BONG_ANOMALY_DAILY_GAIN_WARN)}↑ · 단일 +${formatBongAmount(BONG_ANOMALY_SINGLE_DELTA_WARN)}↑ · 환불 ${BONG_SUPERVISION_REFUND_WARN}회↑`;
+            const criteriaText = `시즌 2 이후 기록만 · 당일 +${formatBongAmount(BONG_ANOMALY_DAILY_GAIN_WARN)}↑ · 단일 +${formatBongAmount(BONG_ANOMALY_SINGLE_DELTA_WARN)}↑ · 환불 ${BONG_SUPERVISION_REFUND_WARN}회↑`;
             if (!report.alertCount) {
                 el.innerHTML = `
                     <div class="flex items-center gap-2 mb-1">
@@ -4947,7 +4944,7 @@ ${subjectLine}
             rows.forEach((stu) => {
                 const sid = String((stu && stu.id) || '');
                 if (!sid || sid === 'gm' || sid === 'gm_a' || sid === 'guest') return;
-                const incidents = buildXpSupervisionIncidents(stu, today, pace);
+                const incidents = buildXpSupervisionIncidents(stu, today, pace, getSupervisionSinceMs(stu));
                 if (!incidents.length) return;
                 alerts.push({
                     sid,
@@ -4976,7 +4973,7 @@ ${subjectLine}
                         <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-sky-400"></i> 경험치 감시 시스템</h3>
                         <span class="text-[9px] text-emerald-300 font-bold">이상 없음</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">퀘스트·상점·로그 XP를 감시합니다. 오늘 예상 페이스 ${report.pace.toLocaleString()} XP. ${criteriaText} 시 경고됩니다.</p>`;
+                    <p class="text-[9px] text-slate-500 leading-relaxed">시즌 2 이후 XP 로그만 감시합니다. 오늘 예상 페이스 ${report.pace.toLocaleString()} XP. ${criteriaText} 시 경고됩니다.</p>`;
                 return;
             }
             const rowsHtml = report.alerts.map((a) => `
@@ -13784,6 +13781,10 @@ ${subjectLine}
             
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div><div class="absolute -bottom-1 -right-2 animate-pulse">${window.playerState.isAdmin?'👑':rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`;
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
+            if (typeof renderSkinVault === 'function') renderSkinVault();
+            if (window.playerState && window.playerState.isAdmin && typeof window.ensureSeason2WeaponReset === 'function') {
+                void window.ensureSeason2WeaponReset();
+            }
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
             document.getElementById('dashXp').innerText = xp.toLocaleString();
@@ -17013,7 +17014,7 @@ ${subjectLine}
             const wp = WEAPON_DATA.find((w) => w.id === window.playerState.equippedWeapon);
             box.classList.remove('hidden');
             box.innerHTML = `
-                <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 캐릭터 (성별 3종 · 무료)</p>
+                <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 백성 (동양 · 서양 · 초원 · 무료)</p>
                 <div class="flex gap-1.5 justify-center">${bases.map((b) => {
                     const on = b.id === current.id && !faces.some((s) => equipped[s.id]);
                     return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
@@ -17036,6 +17037,31 @@ ${subjectLine}
                     <span class="char-dress-slot-name">${wp ? wp.name : '미장착'}</span>
                 </div>
                 <button type="button" onclick="window.openSkinShop()" class="char-dress-shop-btn">캐릭터 상점으로</button>`;
+        }
+
+        function renderSkinVault() {
+            const box = document.getElementById('skinVault');
+            if (!box) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+                box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">학생 계정에서 보유 스킨을 볼 수 있습니다.</span>';
+                return;
+            }
+            const owned = window.playerState.ownedSkins || {};
+            const equipped = window.playerState.equippedSkins || {};
+            const have = SKIN_DATA.filter((s) => owned[s.id]);
+            if (!have.length) {
+                box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">아직 산 스킨이 없습니다. 상점에서 캐릭터를 사면 여기에 모입니다.</span>';
+                return;
+            }
+            box.innerHTML = have.map((s) => {
+                const on = !!equipped[s.id];
+                const art = s.img ? `<img src="${s.img}" alt="" class="w-full h-full object-contain">` : `<span class="text-2xl">${s.emoji || ''}</span>`;
+                return `<button type="button" onclick="window.handleSkin('${s.id}', true)" class="rounded-xl border-2 ${on ? 'border-yellow-300 bg-amber-900' : 'border-cyan-400 bg-slate-950'} p-1.5 text-center">
+                    <div class="w-full aspect-square rounded-lg overflow-hidden bg-amber-50 mb-1">${art}</div>
+                    <div class="text-[10px] font-black text-white truncate">${s.name}</div>
+                    <div class="text-[9px] font-bold ${on ? 'text-yellow-200' : 'text-cyan-200'}">${on ? '사용 중' : '보유'}</div>
+                </button>`;
+            }).join('');
         }
 
         window.openSkinShop = function() {
@@ -17233,10 +17259,10 @@ ${subjectLine}
             const ok = await window.customConfirm(
                 'MATE 시즌 2를 시작할까요?\n\n' +
                 '· 모든 학생 경험치·퀘스트 기록만 0/빈 값으로 돌아갑니다.\n' +
+                '· 보유 무기는 전부 초기화합니다.\n' +
                 '· 지갑 봉, 은행(일반예금·적금), 공동구매 모금액은 그대로 둡니다.\n' +
-                '· 직업·스킨·무기도 유지합니다.\n' +
+                '· 직업·스킨은 유지합니다.\n' +
                 '· 시즌 1 경험치 10,000당 100봉만 지갑에 추가로 지급합니다.\n' +
-                '· 중복 무기는 종류당 1개만 남깁니다.\n' +
                 '· 종료일: 2027-01-07(졸업)\n\n' +
                 '이 작업은 한 번만 실행됩니다.'
             );
@@ -17293,12 +17319,14 @@ ${subjectLine}
                         worldSettings: nextWorld,
                         season2StartedAt: nowMs,
                         season2StartedBy: localStorage.getItem('sambong_student_id') || 'gm',
-                        announcement: 'MATE 시즌 2가 시작되었습니다! 경험치는 새로 시작하고, 지갑·은행·공동구매 봉은 그대로입니다.',
+                        season2WeaponsClearedAt: nowMs,
+                        announcement: 'MATE 시즌 2가 시작되었습니다! 경험치와 무기는 새로 시작하고, 지갑·은행·공동구매 봉은 그대로입니다.',
                     }, { merge: true });
                     await batch.commit();
                     setLocalWorldSettings(nextWorld);
                     if (window.globalSettings) {
                         window.globalSettings.season2StartedAt = nowMs;
+                        window.globalSettings.season2WeaponsClearedAt = nowMs;
                     }
                 }, '시즌 2 시작');
 
@@ -17313,13 +17341,47 @@ ${subjectLine}
                 }
                 window.refreshSeason2StartPanel();
                 await window.customAlert(
-                    `✅ 시즌 2를 시작했습니다.\n정산 학생 ${paid.length}명 · 지급 봉 합계 ${formatBongAmount(totalBong)}.\n목표: 1월 7일까지 ${SEASON2.targetXp.toLocaleString()} XP (퀘스트 약 ${SEASON2.questXpBudget.toLocaleString()} + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()}).`
+                    `✅ 시즌 2를 시작했습니다.\n정산 학생 ${paid.length}명 · 지급 봉 합계 ${formatBongAmount(totalBong)}.\n보유 무기는 모두 초기화되었습니다.\n목표: 1월 7일까지 ${SEASON2.targetXp.toLocaleString()} XP (퀘스트 약 ${SEASON2.questXpBudget.toLocaleString()} + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()}).`
                 );
             } catch (e) {
                 console.error('startSeason2', e);
                 await window.customAlert('시즌 2 시작 중 오류: ' + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
+            }
+        };
+
+        /** 시즌 2가 이미 시작된 학급은 보유 무기를 한 번만 비웁니다. */
+        window.ensureSeason2WeaponReset = async function() {
+            if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (!isSeason2AlreadyStarted()) return;
+            if (window.globalSettings && window.globalSettings.season2WeaponsClearedAt) return;
+            if (window._season2WeaponResetRunning) return;
+            window._season2WeaponResetRunning = true;
+            try {
+                const ids = getActiveStudentIds();
+                const nowMs = Date.now();
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    ids.forEach((sid) => {
+                        batch.set(
+                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                            { inventory: [], equippedWeapon: null },
+                            { merge: true }
+                        );
+                    });
+                    batch.set(getGlobalSettingsDocRef(), { season2WeaponsClearedAt: nowMs }, { merge: true });
+                    await batch.commit();
+                }, '시즌 2 무기 초기화');
+                if (window.globalSettings) window.globalSettings.season2WeaponsClearedAt = nowMs;
+                if (window.playerState && !window.playerState.isAdmin) {
+                    window.playerState.inventory = [];
+                    window.playerState.equippedWeapon = null;
+                }
+            } catch (e) {
+                console.error('ensureSeason2WeaponReset', e);
+            } finally {
+                window._season2WeaponResetRunning = false;
             }
         };
 

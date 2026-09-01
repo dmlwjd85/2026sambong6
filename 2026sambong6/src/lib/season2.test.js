@@ -8,6 +8,8 @@ import {
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
     canStartSeason2,
+    filterLogsSince,
+    season2SupervisionSinceMs,
     CUSTOM_QUEST_XP_MAX,
     CUSTOM_SHOP_XP_MAX,
     catalogQuestRewards,
@@ -78,15 +80,29 @@ describe('시즌 1 정산', () => {
         assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'bankDailyBonusLastDate'), false);
         assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'jobs'), false);
         assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'ownedSkins'), false);
-        assert.deepEqual(r.patch.inventory, ['wp1', 'wp3']);
-        assert.equal(r.patch.equippedWeapon, 'wp1');
+        assert.deepEqual(r.patch.inventory, []);
+        assert.equal(r.patch.equippedWeapon, null);
+        assert.deepEqual(r.patch.itemRefundLedger, []);
         assert.deepEqual(r.patch.questHistory, []);
         assert.equal(r.patch.seasonNumberApplied, 2);
+        assert.equal(r.patch.xpChangeLog.length, 1);
+        assert.equal(r.patch.bongChangeLog.length, 1);
     });
 
     it('이미 시즌 2가 적용된 학생은 건너뛴다', () => {
         const r = buildSeason2StudentPatch({ xp: 10000, seasonNumberApplied: 2 });
         assert.equal(r.skip, true);
+    });
+
+    it('금융감독은 시즌 2 시작 이후 로그만 남긴다', () => {
+        const since = season2SupervisionSinceMs({ season1SettledAt: Date.parse('2026-09-01T09:00:00') }, Date.parse('2026-09-01T08:00:00'));
+        assert.ok(since >= Date.parse('2026-09-01T08:00:00'));
+        const logs = filterLogsSince([
+            { at: Date.parse('2026-08-20T10:00:00'), delta: 500 },
+            { at: Date.parse('2026-09-01T10:00:00'), delta: 10 },
+        ], since);
+        assert.equal(logs.length, 1);
+        assert.equal(logs[0].delta, 10);
     });
 
     it('9월 1일 전에는 시즌 2를 시작하지 않는다', () => {

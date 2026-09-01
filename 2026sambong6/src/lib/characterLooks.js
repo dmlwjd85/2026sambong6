@@ -60,11 +60,17 @@ export function listCharacterBases(gender) {
     return CHARACTER_BASES.filter((b) => b.gender === g);
 }
 
+/** 마스터 미리보기용 — 남·여 기본 얼굴 전부 */
+export function listAllCharacterBases() {
+    return CHARACTER_BASES.slice();
+}
+
 export function resolveCharacterBase(baseFaceId, gender) {
+    const foundAll = CHARACTER_BASES.find((b) => b.id === String(baseFaceId || ''));
+    if (foundAll) return foundAll;
     const g = normalizeGender(gender);
     const list = listCharacterBases(g);
-    const found = list.find((b) => b.id === String(baseFaceId || ''));
-    return found || list[0] || CHARACTER_BASES[0];
+    return list[0] || CHARACTER_BASES[0];
 }
 
 /** 같은 슬롯은 하나만 착용 — 얼굴 캐릭터·오라는 종류별로 하나만 켭니다. */

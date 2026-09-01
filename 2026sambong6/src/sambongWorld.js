@@ -101,6 +101,7 @@ import {
 } from './lib/season2.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
+    listAllCharacterBases,
     listCharacterBases,
     listStaffLooks,
     resolveCharacterBase,
@@ -108,6 +109,16 @@ import {
     resolveStaffLook,
     unequipSameSlot,
 } from './lib/characterLooks.js';
+import {
+    FEATURE_UNLOCK_PRICE,
+    canOpenClassTool,
+    featureIdForClassTool,
+    getFeatureUnlockItem,
+    hasUnlockedFeature,
+    isMasterOnlyClassTool,
+    sanitizeStatusMessage,
+    sanitizeUnlockedFeatures,
+} from './lib/featureUnlock.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -168,6 +179,8 @@ async function refreshStudentsCacheFromServer() {
 
     if (window.playerState && window.playerState.isAdmin) {
         window.renderAdminTable(students);
+    }
+    if (typeof window.renderAdminQuestBoard === 'function') {
         window.renderAdminQuestBoard(students);
     }
     window.renderPlaza(students, gmD, gmaD);
@@ -625,7 +638,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.18';
+        const APP_VERSION = 'v1.19';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -2633,7 +2646,7 @@ function redrawPlazaGrantsUi() {
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
-            condition: null, dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
             conveniencePurchases: [],
@@ -3655,10 +3668,11 @@ function redrawPlazaGrantsUi() {
         window.renderClassTimetableAdminPanel = function() {
             const grid = document.getElementById('classTimetableGrid');
             if (!grid) return;
-            if (!window.playerState || !window.playerState.isAdmin) {
-                grid.innerHTML = '<div class="text-slate-500 text-[9px] text-center py-4">마스터만 편집할 수 있습니다.</div>';
-                return;
-            }
+            const canEdit = !!(window.playerState && window.playerState.isAdmin);
+            const saveBtn = document.getElementById('classTimetableSaveBtn');
+            if (saveBtn) saveBtn.classList.toggle('hidden', !canEdit);
+            const bdayWrap = document.getElementById('birthdayCelebrationAdminWrap');
+            if (bdayWrap) bdayWrap.classList.toggle('hidden', !canEdit);
             const tt = getClassTimetable();
             const headerCells = CLASS_TIMETABLE_DAYS.map((d) =>
                 `<th class="p-1.5 text-center text-violet-200 min-w-[72px]">${d.label}</th>`
@@ -3666,11 +3680,14 @@ function redrawPlazaGrantsUi() {
             const periodRows = CLASS_TIMETABLE_PERIODS.map((period) => {
                 const cells = CLASS_TIMETABLE_DAYS.map((d) => {
                     const val = tt.days[d.key][period.id] || '';
-                    return `<td class="p-1">
-                        <input type="text" data-tt-day="${d.key}" data-tt-period="${period.id}" value="${escapeHtmlAttr(val)}" maxlength="30"
-                            class="w-full min-w-[64px] bg-slate-950 border border-slate-700 text-white px-1.5 py-1 rounded text-[10px] font-bold focus:outline-none focus:border-violet-500"
-                            placeholder="과목" />
-                    </td>`;
+                    if (canEdit) {
+                        return `<td class="p-1">
+                            <input type="text" data-tt-day="${d.key}" data-tt-period="${period.id}" value="${escapeHtmlAttr(val)}" maxlength="30"
+                                class="w-full min-w-[64px] bg-slate-950 border border-slate-700 text-white px-1.5 py-1 rounded text-[10px] font-bold focus:outline-none focus:border-violet-500"
+                                placeholder="과목" />
+                        </td>`;
+                    }
+                    return `<td class="p-1.5 text-center text-[10px] font-bold text-white">${val ? escapeConvenienceHtml(val) : '<span class="text-slate-600">—</span>'}</td>`;
                 }).join('');
                 return `<tr class="border-b border-slate-800">
                     <td class="p-1.5 text-[9px] text-slate-400 whitespace-nowrap font-bold">${period.label}<br><span class="text-[8px] text-slate-500">${period.start}~${period.end}</span></td>
@@ -6894,6 +6911,12 @@ ${subjectLine}
                 pane.classList.toggle('hidden', pane.getAttribute('data-pane') !== id);
             });
             if (g === 'shop') shopSub = id;
+            if (g === 'quests' && id === 'daily' && typeof window.renderAdminQuestBoard === 'function') {
+                window.renderAdminQuestBoard(window.allStudentsData || []);
+            }
+            if (g === 'quests' && id === 'stats' && typeof window.renderResearchStatsDashboard === 'function') {
+                window.renderResearchStatsDashboard();
+            }
         };
 
         window.switchShopSub = function(sub) {
@@ -7262,9 +7285,16 @@ ${subjectLine}
         };
 
         window.switchClassTool = function(toolId) {
-            const isAdmin = canEditLearningThermometer();
             const next = String(toolId || classtoolSub || 'timetable');
-            classtoolSub = (!isAdmin) ? 'timetable' : next;
+            if (isMasterOnlyClassTool(next) && !(window.playerState && window.playerState.isAdmin)) {
+                return;
+            }
+            if (!canOpenClassTool(window.playerState, next)) {
+                const fid = featureIdForClassTool(next);
+                if (fid) void window.unlockFeature(fid, { openTool: next });
+                return;
+            }
+            classtoolSub = next;
             updateClassToolsPanelVisibility();
 
             restoreClassToolPane();
@@ -7273,7 +7303,6 @@ ${subjectLine}
             const body = document.getElementById('classtoolFullscreenBody');
             const titleEl = document.getElementById('classtoolFullscreenTitle');
             if (!pane || !overlay || !body) return;
-            if (!isAdmin && pane.getAttribute('data-student') !== '1') return;
 
             body.appendChild(pane);
             pane.classList.remove('hidden');
@@ -7291,7 +7320,7 @@ ${subjectLine}
             }
             if (classtoolSub === 'wheel') renderClassWheelPanel();
             if (classtoolSub === 'vote') renderClassElectionPanel();
-            if (classtoolSub === 'timetable' && window.playerState && window.playerState.isAdmin && typeof window.renderClassTimetableAdminPanel === 'function') {
+            if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
             }
         };
@@ -7304,14 +7333,99 @@ ${subjectLine}
             if (grid) grid.classList.remove('hidden');
             document.querySelectorAll('#classtoolsAppGrid .app-tool-item').forEach((btn) => {
                 const id = btn.getAttribute('data-tool');
-                const studentOk = btn.getAttribute('data-student') === '1';
-                btn.classList.toggle('hidden', !isAdmin && !studentOk);
-                btn.classList.toggle('is-active', id === classtoolSub);
+                const masterOnly = isMasterOnlyClassTool(id);
+                const unlocked = canOpenClassTool(window.playerState, id);
+                btn.classList.toggle('hidden', !isAdmin && masterOnly);
+                btn.classList.toggle('is-active', id === classtoolSub && unlocked);
+                btn.classList.toggle('is-locked', !isAdmin && !masterOnly && !unlocked);
+                let badge = btn.querySelector('.app-tool-lock');
+                if (!isAdmin && !masterOnly && !unlocked) {
+                    if (!badge) {
+                        badge = document.createElement('span');
+                        badge.className = 'app-tool-lock';
+                        btn.appendChild(badge);
+                    }
+                    badge.textContent = `${FEATURE_UNLOCK_PRICE}B`;
+                } else if (badge) {
+                    badge.remove();
+                }
             });
             document.querySelectorAll('#classtoolPanesHome .classtool-pane').forEach((pane) => {
                 if (pane !== _classtoolFsPane) pane.classList.add('hidden');
             });
         }
+
+        function renderQuestStatsLockGate() {
+            const gate = document.getElementById('questStatsLockPanel');
+            const body = document.getElementById('questStatsBody');
+            const unlocked = hasUnlockedFeature(window.playerState, 'stats');
+            if (body) body.classList.toggle('hidden', !unlocked);
+            if (!gate) return;
+            if (unlocked) {
+                gate.classList.add('hidden');
+                gate.innerHTML = '';
+                return;
+            }
+            gate.classList.remove('hidden');
+            const price = formatBongAmount(FEATURE_UNLOCK_PRICE);
+            gate.innerHTML = `
+                <div class="rounded-xl border border-amber-500/40 bg-slate-950/70 p-4 text-center space-y-2">
+                    <p class="text-sm font-black text-amber-100"><i class="fa-solid fa-lock mr-1"></i>퀘스트 통계 잠금</p>
+                    <p class="text-[10px] text-slate-400 leading-relaxed">${price}으로 잠금 해제하면 학급 퀘스트 완료율과 Top 3를 볼 수 있습니다.</p>
+                    <button type="button" onclick="void window.unlockFeature('stats')" class="min-h-[44px] px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-900 text-xs font-black">${price} 잠금 해제</button>
+                </div>`;
+        }
+
+        /** 학생: 300봉으로 통계·수업도구를 엽니다. 마스터는 결제 없이 사용. */
+        let _featureUnlockRunning = false;
+        window.unlockFeature = async function(featureId, opts = {}) {
+            if (_featureUnlockRunning) return;
+            if (!window.playerState || window.playerState.isGuest) {
+                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            }
+            const item = getFeatureUnlockItem(featureId);
+            if (!item) return;
+            if (hasUnlockedFeature(window.playerState, item.id)) {
+                if (opts.openTool) window.switchClassTool(opts.openTool);
+                else if (item.id === 'stats') window.renderResearchStatsDashboard();
+                return;
+            }
+            if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
+            const price = FEATURE_UNLOCK_PRICE;
+            const have = Number(window.playerState.bong) || 0;
+            if (have < price) {
+                return window.customAlert(formatInsufficientBongAlert(price - have));
+            }
+            _featureUnlockRunning = true;
+            try {
+            const ok = await window.customConfirm(`'${item.label}'을(를) ${formatBongAmount(price)}에 잠금 해제할까요?`);
+            if (!ok) return;
+            if (!window.playerState.unlockedFeatures) window.playerState.unlockedFeatures = {};
+            window.playerState.unlockedFeatures = sanitizeUnlockedFeatures({
+                ...window.playerState.unlockedFeatures,
+                [item.id]: true,
+            });
+            window.playerState.bong = normalizeBongValue(have - price);
+            updateUI();
+            const saved = await saveDataToCloud({
+                allowBongDecrease: true,
+                maxBongDecrease: price,
+                requireServerBongBalance: true,
+                operationLabel: `${item.label} 잠금 해제`,
+            });
+            if (!saved) {
+                window.playerState.unlockedFeatures[item.id] = false;
+                window.playerState.unlockedFeatures = sanitizeUnlockedFeatures(window.playerState.unlockedFeatures);
+                return;
+            }
+            await window.customAlert(`🔓 ${item.label}을(를) 열었습니다.`);
+            updateClassToolsPanelVisibility();
+            if (item.id === 'stats') window.renderResearchStatsDashboard();
+            if (opts.openTool) window.switchClassTool(opts.openTool);
+            } finally {
+                _featureUnlockRunning = false;
+            }
+        };
 
         function enforceClassToolsAccess() {
             const tab = document.getElementById('tab-classtools');
@@ -11583,6 +11697,25 @@ ${subjectLine}
             }
         };
 
+        window.onStatusMessageInput = function(raw) {
+            const el = document.getElementById('statusMessageInput');
+            const next = sanitizeStatusMessage(raw);
+            if (el && el.value !== next) el.value = next;
+        };
+
+        window.saveStatusMessage = async function() {
+            if (!window.playerState || window.playerState.isGuest) return;
+            const el = document.getElementById('statusMessageInput');
+            const next = sanitizeStatusMessage(el ? el.value : window.playerState.statusMessage);
+            if (el) el.value = next;
+            if (next === sanitizeStatusMessage(window.playerState.statusMessage)) return;
+            window.playerState.statusMessage = next;
+            await saveDataToCloud();
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
+            }
+        };
+
 
         // ==========================================
         // ★ Firebase 초기화 및 연동 ★
@@ -11685,11 +11818,13 @@ ${subjectLine}
                                 }
                             }
                             
-                            if (window.playerState && window.playerState.isAdmin) {
-                                window.renderAdminTable(students);
-                                window.renderAdminQuestBoard(students);
-                                if (!isLearningThermometerLocallyBusy()) renderLearningThermometerPanel();
-                            }
+            if (window.playerState && window.playerState.isAdmin) {
+                window.renderAdminTable(students);
+                if (!isLearningThermometerLocallyBusy()) renderLearningThermometerPanel();
+            }
+            if (typeof window.renderAdminQuestBoard === 'function') {
+                window.renderAdminQuestBoard(students);
+            }
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
                             window.renderLunchQueue(students);
@@ -12254,6 +12389,12 @@ ${subjectLine}
             }
         };
 
+        function buildPlazaStatusMessageHtml(data) {
+            const msg = sanitizeStatusMessage(data && data.statusMessage);
+            if (!msg) return '';
+            return `<div class="plaza-card-status" title="${escapeHtmlAttr(msg)}">${escapeConvenienceHtml(msg)}</div>`;
+        }
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
@@ -12285,6 +12426,7 @@ ${subjectLine}
                         isGMA: window.playerState.isGMA,
                         isAdmin: window.playerState.isAdmin,
                         isGuest: window.playerState.isGuest,
+                        statusMessage: window.playerState.statusMessage || data.statusMessage,
                     }
                     : data;
                 const lv = getLevelInfo(displayData.xp || 0);
@@ -12360,6 +12502,7 @@ ${subjectLine}
                         <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} w-full text-center truncate border-2 ${isA ? 'border-cyan-300' : 'border-amber-300'}">
                             ${idLabel}
                         </div>
+                        ${buildPlazaStatusMessageHtml(displayData)}
                     </div>`;
                 }
 
@@ -12374,6 +12517,7 @@ ${subjectLine}
                     </div>
                     <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                     <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
+                    ${buildPlazaStatusMessageHtml(displayData)}
                     
                     <!-- 파랑=경험치, 금색=봉. 단위는 생략하고 색으로 구분합니다. -->
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
@@ -12704,8 +12848,12 @@ ${subjectLine}
         };
 
         window.renderResearchStatsDashboard = function() {
-            const panel = document.getElementById('researchStatsPanel');
-            if (!panel || !window.playerState?.isAdmin) return;
+            renderQuestStatsLockGate();
+            const panels = ['researchStatsPanel', 'questStatsPanel']
+                .map((id) => document.getElementById(id))
+                .filter(Boolean);
+            if (!panels.length) return;
+            if (!hasUnlockedFeature(window.playerState, 'stats')) return;
             try {
                 const allQuests = getQuestCatalog();
                 const dailyQuests = allQuests.filter((q) => q.type === 'daily');
@@ -12743,7 +12891,7 @@ ${subjectLine}
                 const avgXp = _researchPeriod === 'today' ? stats.avgXpGainToday : stats.avgXpGainWeek;
                 const shopCount = _researchPeriod === 'all' ? (stats.purchaseCount || 0) : (stats.purchaseCountWeek || 0);
                 const shopLabel = _researchPeriod === 'all' ? '상점 이용(누적)' : '상점 이용(주)';
-                panel.innerHTML = `
+                const html = `
                     <div class="text-[9px] text-slate-400 mb-1">기간: <strong class="text-fuchsia-200">${periodLabel}</strong></div>
                     <div class="rounded-xl border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-950/40 to-slate-950/80 p-3 space-y-2">
                         <div class="text-[11px] text-fuchsia-200 font-black"><i class="fa-solid fa-trophy text-amber-300 mr-1"></i> 퀘스트별 가장 많이 완료 · Top 3</div>
@@ -12763,9 +12911,12 @@ ${subjectLine}
                         <div class="text-[9px] text-sb-blue font-bold mb-1">XP 증가량 상위</div>
                         ${xpTop}
                     </div>`;
+                panels.forEach((panel) => { panel.innerHTML = html; });
             } catch (e) {
                 console.error('renderResearchStatsDashboard', e);
-                panel.innerHTML = `<div class="text-red-300 text-center py-3">통계 집계 오류: ${e && e.message ? e.message : e}</div>`;
+                panels.forEach((panel) => {
+                    panel.innerHTML = `<div class="text-red-300 text-center py-3">통계 집계 오류: ${e && e.message ? e.message : e}</div>`;
+                });
             }
         };
 
@@ -13022,9 +13173,10 @@ ${subjectLine}
         };
 
         window.renderAdminQuestBoard = function(studentsData) {
-            const board = document.getElementById('adminQuestBoard');
-            const summaryEl = document.getElementById('adminQuestSummary');
-            if(!board) return;
+            const boards = Array.from(document.querySelectorAll('.js-quest-live-board'));
+            const summaryEls = Array.from(document.querySelectorAll('.js-quest-live-summary'));
+            if (!boards.length) return;
+            const rows = Array.isArray(studentsData) ? studentsData : [];
             
             const dailyQuests = getQuestCatalog().filter(q => q.type === 'daily');
             const total = dailyQuests.length;
@@ -13045,7 +13197,7 @@ ${subjectLine}
             const studentIds = getActiveStudentIds();
             let bodyRows = '';
             studentIds.forEach((sid) => {
-                const stu = studentsData.find(s => s.id === String(sid));
+                const stu = rows.find(s => s.id === String(sid));
                 let rowDone = 0;
                 const cells = dailyQuests.map((q, qi) => {
                     const ok = !!(stu && isDailyQuestCompletedToday(stu, q.id, todayStr));
@@ -13074,7 +13226,7 @@ ${subjectLine}
                 `<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-800/90 border border-slate-600/60 text-[8px] text-slate-300 shrink-0" title="${q.name}"><i class="fa-solid ${q.icon} ${q.color} text-[7px]"></i>${colDone[qi]}</span>`
             ).join('');
 
-            board.innerHTML = `
+            const html = `
                 <table class="w-full min-w-[280px] text-[8px] sm:text-[9px] border-collapse">
                     <thead>
                         <tr>
@@ -13089,10 +13241,10 @@ ${subjectLine}
                     <span class="text-[8px] text-slate-500 font-bold shrink-0 self-center">열별 완료</span>
                     ${badgeLine}
                 </div>`;
+            boards.forEach((board) => { board.innerHTML = html; });
 
-            if (summaryEl) {
-                summaryEl.innerHTML = `평균 <span class="text-emerald-300">${avg.toFixed(1)}</span>/${total} · 전원완료 <span class="text-yellow-300">${allClearStudents}</span>명`;
-            }
+            const summaryHtml = `평균 <span class="text-emerald-300">${avg.toFixed(1)}</span>/${total} · 전원완료 <span class="text-yellow-300">${allClearStudents}</span>명`;
+            summaryEls.forEach((el) => { el.innerHTML = summaryHtml; });
         };
 
         window.renderHallOfFame = function(students) {
@@ -13753,6 +13905,12 @@ ${subjectLine}
                 document.querySelectorAll('.inner-pane-admin').forEach((el) => el.classList.add('hidden'));
                 if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
             }
+            const questDock = document.querySelector('#questsSection .app-sub-dock');
+            if (questDock) {
+                const showGm = !!(window.playerState && window.playerState.isGM);
+                questDock.classList.toggle('cols-5', showGm);
+                questDock.classList.toggle('cols-4', !showGm);
+            }
             
             checkTimeEvents();
             applyClassWatchUI();
@@ -13768,11 +13926,12 @@ ${subjectLine}
             const dashAura = applyEquippedAura(window.playerState, 'border-slate-600', 'shadow-lg');
             let cardBorder = dashAura.border;
             let cardGlow = dashAura.glow;
+            const useStudentLook = !window.playerState.isAdmin || window.playerState.homeLookMode === 'student';
             const face = buildCharacterAvatarHtml({
                 studentId: mySid,
                 data: window.playerState,
-                isStaff: !!window.playerState.isAdmin,
-                portraitClass: window.playerState.isAdmin ? 'char-portrait-staff char-portrait-lg' : 'char-portrait-lg',
+                isStaff: window.playerState.isAdmin && !useStudentLook,
+                portraitClass: (window.playerState.isAdmin && !useStudentLook) ? 'char-portrait-staff char-portrait-lg' : 'char-portrait-lg',
             });
             const overlays = '';
             
@@ -13858,6 +14017,12 @@ ${subjectLine}
                 window.selectEmotion(window.playerState.condition.emotion.id, false);
                 window.selectBody(window.playerState.condition.body.val, false);
             }
+            const statusEl = document.getElementById('statusMessageInput');
+            if (statusEl && document.activeElement !== statusEl) {
+                statusEl.value = sanitizeStatusMessage(window.playerState.statusMessage);
+            }
+            if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
+            if (typeof renderQuestStatsLockGate === 'function') renderQuestStatsLockGate();
 
             const dailyQuestList = getQuestCatalog().filter(q => q.type === 'daily');
             const todayStrUi = getLocalDateStr();
@@ -14316,6 +14481,8 @@ ${subjectLine}
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
+            dataToSave.unlockedFeatures = sanitizeUnlockedFeatures(dataToSave.unlockedFeatures);
+            dataToSave.statusMessage = sanitizeStatusMessage(dataToSave.statusMessage);
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
                 dataToSave.bong = normalizeBongValue(dataToSave.bong);
             }
@@ -16938,10 +17105,23 @@ ${subjectLine}
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
             const kindLabel = skin.type === 'aura' ? '오라' : '캐릭터';
+            if (window.playerState.isAdmin && !window.playerState.ownedSkins[skinId]) {
+                const wasOn = !!window.playerState.equippedSkins[skinId];
+                window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
+                window.playerState.equippedSkins[skinId] = !wasOn;
+                if (skin.type === 'face') window.playerState.homeLookMode = 'student';
+                updateUI();
+                saveDataToCloud();
+                if (!stayOnPage) window.switchTab('plaza');
+                return;
+            }
             if (window.playerState.ownedSkins[skinId]) {
                 const wasOn = !!window.playerState.equippedSkins[skinId];
                 window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
                 window.playerState.equippedSkins[skinId] = !wasOn;
+                if (window.playerState.isAdmin && skin.type === 'face' && window.playerState.equippedSkins[skinId]) {
+                    window.playerState.homeLookMode = 'student';
+                }
                 updateUI(); saveDataToCloud();
                 if (!stayOnPage) window.switchTab('plaza');
             } else {
@@ -16973,55 +17153,57 @@ ${subjectLine}
                 box.innerHTML = '';
                 return;
             }
-            if (window.playerState.isAdmin) {
-                const sid = localStorage.getItem('sambong_student_id');
-                const current = resolveStaffLook(window.playerState.staffLookId, sid);
-                const looks = listStaffLooks();
-                box.classList.remove('hidden');
-                box.innerHTML = `
-                    <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터 (마스터 전용)</p>
-                    <div class="grid grid-cols-4 gap-1.5">${looks.map((b) => {
-                        const on = b.id === current.id;
-                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
-                            <img src="${b.img}" alt="${b.name}">
-                            <span>${b.name}</span>
-                        </button>`;
-                    }).join('')}</div>
-                    <p class="text-[9px] text-slate-400 mt-1.5 text-center">용 · 호랑이 · 현무 · 해태 중에서 고르면 광장 카드에도 바로 반영됩니다.</p>`;
-                return;
-            }
             const sid = localStorage.getItem('sambong_student_id');
             const gender = STUDENT_GENDERS[String(sid)] === 'F' ? 'F' : 'M';
             const current = resolveCharacterBase(window.playerState.baseFaceId, gender);
-            const bases = listCharacterBases(gender);
-            const rank = getLevelInfo(window.playerState.xp || 0).info;
-            const look = resolveRankLook(rank.name);
             const owned = window.playerState.ownedSkins || {};
             const equipped = window.playerState.equippedSkins || {};
             const faces = SKIN_DATA.filter((s) => s.type === 'face');
             const faceHtml = faces.map((s) => {
-                const have = !!owned[s.id];
-                const on = !!equipped[s.id];
+                const have = !!owned[s.id] || !!window.playerState.isAdmin;
+                const on = !!equipped[s.id] && (!window.playerState.isAdmin || window.playerState.homeLookMode === 'student');
                 const click = have
                     ? `onclick="window.handleSkin('${s.id}', true)"`
                     : `onclick="window.openSkinShop()"`;
                 return `<button type="button" ${click} class="char-dress-slot ${on ? 'is-on' : ''} ${have ? '' : 'opacity-60'}" title="${s.name}">
                     <span class="char-dress-slot-art">${s.img ? `<img src="${s.img}" alt="">` : s.emoji}</span>
                     <span class="char-dress-slot-name">${s.name}</span>
-                    <span class="char-dress-slot-own">${on ? '사용 중' : have ? '보유' : `${s.price}`}</span>
+                    <span class="char-dress-slot-own">${on ? '사용 중' : have ? (owned[s.id] ? '보유' : '살펴보기') : `${s.price}`}</span>
                 </button>`;
             }).join('');
             const wp = WEAPON_DATA.find((w) => w.id === window.playerState.equippedWeapon);
-            box.classList.remove('hidden');
-            box.innerHTML = `
+            const studentBases = window.playerState.isAdmin ? listAllCharacterBases() : listCharacterBases(gender);
+            const baseOn = (b) => b.id === current.id && !faces.some((s) => equipped[s.id]) && (!window.playerState.isAdmin || window.playerState.homeLookMode === 'student');
+            const studentBaseHtml = `
                 <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 백성 (동양 · 서양 · 초원 · 무료)</p>
-                <div class="flex gap-1.5 justify-center">${bases.map((b) => {
-                    const on = b.id === current.id && !faces.some((s) => equipped[s.id]);
+                <div class="flex flex-wrap gap-1.5 justify-center">${studentBases.map((b) => {
+                    const on = baseOn(b);
                     return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
                         <img src="${b.img}" alt="${b.name}">
-                        <span>${b.name}</span>
+                        <span>${b.gender === 'F' ? '여 · ' : window.playerState.isAdmin ? '남 · ' : ''}${b.name}</span>
                     </button>`;
-                }).join('')}</div>
+                }).join('')}</div>`;
+            let staffHtml = '';
+            if (window.playerState.isAdmin) {
+                const staffCurrent = resolveStaffLook(window.playerState.staffLookId, sid);
+                const looks = listStaffLooks();
+                staffHtml = `
+                    <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터 (광장 카드)</p>
+                    <div class="grid grid-cols-4 gap-1.5">${looks.map((b) => {
+                        const on = b.id === staffCurrent.id && window.playerState.homeLookMode !== 'student';
+                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
+                            <img src="${b.img}" alt="${b.name}">
+                            <span>${b.name}</span>
+                        </button>`;
+                    }).join('')}</div>
+                    <p class="text-[9px] text-slate-400 mt-1.5 text-center">광장에서는 수호 캐릭터가 보이고, 아래 백성·상점 스킨은 홈에서 학생 화면처럼 살펴볼 수 있습니다.</p>`;
+            }
+            const rank = getLevelInfo(window.playerState.xp || 0).info;
+            const look = resolveRankLook(rank.name);
+            box.classList.remove('hidden');
+            box.innerHTML = `
+                ${staffHtml}
+                ${studentBaseHtml}
                 <div class="char-dress-rank">
                     ${rank.img ? `<img src="${rank.img}" alt="">` : ''}
                     <div>
@@ -17042,24 +17224,28 @@ ${subjectLine}
         function renderSkinVault() {
             const box = document.getElementById('skinVault');
             if (!box) return;
-            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
-                box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">학생 계정에서 보유 스킨을 볼 수 있습니다.</span>';
+            if (!window.playerState || window.playerState.isGuest) {
+                box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">로그인하면 보유 스킨을 볼 수 있습니다.</span>';
                 return;
             }
             const owned = window.playerState.ownedSkins || {};
             const equipped = window.playerState.equippedSkins || {};
-            const have = SKIN_DATA.filter((s) => owned[s.id]);
+            const have = window.playerState.isAdmin
+                ? SKIN_DATA.slice()
+                : SKIN_DATA.filter((s) => owned[s.id]);
             if (!have.length) {
                 box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">아직 산 스킨이 없습니다. 상점에서 캐릭터를 사면 여기에 모입니다.</span>';
                 return;
             }
             box.innerHTML = have.map((s) => {
                 const on = !!equipped[s.id];
+                const mine = !!owned[s.id];
                 const art = s.img ? `<img src="${s.img}" alt="" class="w-full h-full object-contain">` : `<span class="text-2xl">${s.emoji || ''}</span>`;
+                const sub = on ? '사용 중' : (mine ? '보유' : '살펴보기');
                 return `<button type="button" onclick="window.handleSkin('${s.id}', true)" class="rounded-xl border-2 ${on ? 'border-yellow-300 bg-amber-900' : 'border-cyan-400 bg-slate-950'} p-1.5 text-center">
                     <div class="w-full aspect-square rounded-lg overflow-hidden bg-amber-50 mb-1">${art}</div>
                     <div class="text-[10px] font-black text-white truncate">${s.name}</div>
-                    <div class="text-[9px] font-bold ${on ? 'text-yellow-200' : 'text-cyan-200'}">${on ? '사용 중' : '보유'}</div>
+                    <div class="text-[9px] font-bold ${on ? 'text-yellow-200' : 'text-cyan-200'}">${sub}</div>
                 </button>`;
             }).join('');
         }
@@ -17087,12 +17273,13 @@ ${subjectLine}
         }
 
         window.setBaseFace = function(baseId) {
-            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return;
+            if (!window.playerState || window.playerState.isGuest) return;
             const sid = localStorage.getItem('sambong_student_id');
             const gender = STUDENT_GENDERS[String(sid)] === 'F' ? 'F' : 'M';
             const base = resolveCharacterBase(baseId, gender);
             if (base.id !== String(baseId)) return;
             window.playerState.baseFaceId = base.id;
+            if (window.playerState.isAdmin) window.playerState.homeLookMode = 'student';
             // 무료 기본 캐릭터를 고르면 상점 캐릭터는 벗깁니다.
             if (!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
             SKIN_DATA.forEach((s) => {
@@ -17108,6 +17295,7 @@ ${subjectLine}
             const look = resolveStaffLook(lookId, sid);
             if (look.id !== String(lookId)) return;
             window.playerState.staffLookId = look.id;
+            window.playerState.homeLookMode = 'staff';
             updateUI();
             saveDataToCloud();
         };
@@ -17183,7 +17371,7 @@ ${subjectLine}
         /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
         const STUDENT_GAME_FIELD_KEYS = [
             'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
-            'hasShield', 'shieldHP', 'condition', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
+            'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
@@ -17428,6 +17616,9 @@ ${subjectLine}
                 hasShield: false,
                 shieldHP: 0,
                 condition: null,
+                statusMessage: '',
+                unlockedFeatures: {},
+                homeLookMode: '',
                 dragonBalls: [],
                 dragonBallWeekendKey: '',
                 earlyBirdCount: 0,

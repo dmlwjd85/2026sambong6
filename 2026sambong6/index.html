@@ -601,7 +601,7 @@
                         <h3 class="font-bold text-sm text-white mb-2">
                             <i class="fa-solid fa-box-open text-pink-300 mr-1"></i> 스킨 보관함
                         </h3>
-                        <p class="text-[10px] text-slate-100 mb-2">산 캐릭터와 오라를 여기서 보고 착용할 수 있습니다. 기본 얼굴은 위 3종에서 고릅니다.</p>
+                        <p class="text-[10px] text-slate-100 mb-2">산 캐릭터와 오라를 여기서 보고 착용할 수 있습니다. 기본 얼굴은 위 백성 스킨에서 고릅니다. 마스터도 학생과 같은 보관함·기본 스킨을 살펴볼 수 있습니다.</p>
                         <div id="skinVault" class="grid grid-cols-3 sm:grid-cols-4 gap-2">
                             <span class="text-[10px] text-slate-300 col-span-3">보유한 스킨이 없습니다.</span>
                         </div>
@@ -644,6 +644,18 @@
                                     <div class="text-[10px] text-slate-400 mb-1.5 font-bold">체력</div>
                                     <div class="flex flex-wrap gap-1.5" id="bodyBtns"></div>
                                 </div>
+                            </div>
+                            <div class="mt-4">
+                                <div class="flex items-end justify-between gap-2 mb-1.5">
+                                    <div class="text-[10px] text-slate-400 font-bold">상태 메시지</div>
+                                    <span class="text-[9px] text-slate-500">10글자 · 광장 프로필</span>
+                                </div>
+                                <input id="statusMessageInput" type="text" maxlength="10" autocomplete="off" placeholder="오늘 기분 좋아요"
+                                    class="w-full bg-slate-900 border border-amber-500/40 text-amber-100 text-sm font-bold px-3 py-2 rounded-xl"
+                                    oninput="window.onStatusMessageInput(this.value)"
+                                    onchange="void window.saveStatusMessage()"
+                                    onblur="void window.saveStatusMessage()" />
+                                <p class="mt-1 text-[9px] text-slate-500 leading-snug">광장 카드 이름 아래에 프로필 메시지처럼 보입니다.</p>
                             </div>
                         </div>
 
@@ -941,7 +953,7 @@
 
         <!-- ★ 3. 퀘스트 탭 ★ -->
         <section id="questsSection" class="hidden space-y-4">
-            <div class="app-sub-dock cols-4 mb-1">
+            <div class="app-sub-dock cols-5 mb-1">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="quests" data-pane="daily" onclick="window.switchInnerPane('quests','daily')">
                     <span class="app-sub-fa"><i class="fa-solid fa-calendar-day"></i></span>
                     <span>일일</span>
@@ -954,15 +966,29 @@
                     <span class="app-sub-fa"><i class="fa-solid fa-star"></i></span>
                     <span>레이드</span>
                 </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="stats" onclick="window.switchInnerPane('quests','stats')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-chart-line"></i></span>
+                    <span>통계</span>
+                </button>
                 <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="quests" data-pane="gm" onclick="window.switchInnerPane('quests','gm')">
                     <span class="app-sub-fa"><i class="fa-solid fa-list-check"></i></span>
                     <span>GM 관리</span>
                 </button>
             </div>
             <div class="grid md:grid-cols-2 gap-3">
-                <div class="inner-pane glass-panel p-3 rounded-2xl" data-pane-group="quests" data-pane="daily">
+                <div class="inner-pane glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="daily">
                     <h3 class="font-bold text-sm text-slate-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
                     <div id="dailyQuestContainer" class="space-y-2"></div>
+                    <div class="mt-4 pt-3 border-t border-emerald-700/50">
+                        <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+                            <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
+                            <span id="dailyQuestSummary" class="js-quest-live-summary text-[9px] text-emerald-300/90 font-bold tabular-nums shrink-0">—</span>
+                        </div>
+                        <p class="text-[8px] text-slate-400 mb-1.5 leading-tight">서로 보면서 오늘 일일 퀘스트 완료(✓)를 확인합니다. 행: 학생 · 열: 퀘스트.</p>
+                        <div id="dailyQuestBoard" class="js-quest-live-board overflow-x-auto max-h-[240px] sm:max-h-[280px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
+                            <div class="text-slate-500 text-[9px] text-center py-6"><i class="fa-solid fa-spinner fa-spin mr-1"></i>데이터 로딩 중…</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl" data-pane-group="quests" data-pane="weekly">
                     <h3 class="font-bold text-sm text-yellow-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
@@ -971,6 +997,20 @@
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="raid">
                     <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
                     <div id="specialQuestContainer" class="space-y-2"></div>
+                </div>
+                <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="stats">
+                    <h3 class="font-bold text-sm text-fuchsia-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-chart-line"></i> 퀘스트 통계</h3>
+                    <div id="questStatsLockPanel"></div>
+                    <div id="questStatsBody" class="hidden space-y-3">
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" data-research-period="today" onclick="window.setResearchStatsPeriod('today')" class="bg-slate-800 text-slate-300 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-slate-600 min-h-[44px]">오늘</button>
+                            <button type="button" data-research-period="week" onclick="window.setResearchStatsPeriod('week')" class="bg-fuchsia-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg min-h-[44px]">이번 주</button>
+                            <button type="button" data-research-period="all" onclick="window.setResearchStatsPeriod('all')" class="bg-slate-800 text-slate-300 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-slate-600 min-h-[44px]">전체</button>
+                            <button type="button" onclick="window.renderResearchStatsDashboard()" class="bg-fuchsia-700 hover:bg-fuchsia-600 text-white text-[10px] py-2 px-3 rounded font-bold min-h-[44px]">새로고침</button>
+                        </div>
+                        <p class="text-[9px] text-slate-400 leading-relaxed">퀘스트 완료율, XP 상위, 퀘스트별 완료 Top 3, 상점·은행 이용을 봅니다.</p>
+                        <div id="questStatsPanel" class="space-y-3 text-[10px] text-slate-300"></div>
+                    </div>
                 </div>
             </div>
 
@@ -1532,7 +1572,7 @@
             <div id="classTimetablePanel" class="classtool-pane hidden glass-panel p-4 rounded-xl mb-4 border border-violet-500/50 bg-slate-900/80" data-tool="timetable" data-student="1">
                 <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                     <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-calendar-days text-violet-400"></i> 주간 시간표</h3>
-                    <button type="button" onclick="window.saveClassTimetableFromAdmin()" class="bg-violet-600 hover:bg-violet-500 text-white text-[10px] py-1.5 px-3 rounded font-bold">저장</button>
+                    <button type="button" id="classTimetableSaveBtn" onclick="window.saveClassTimetableFromAdmin()" class="bg-violet-600 hover:bg-violet-500 text-white text-[10px] py-1.5 px-3 rounded font-bold">저장</button>
                 </div>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">월~금요일 · 1~6교시. 각 칸에 과목명을 입력하세요. 교시 시작 시점에 <strong class="text-violet-200">수업 준비 알림</strong>이 표시됩니다.</p>
                 <div class="text-[8px] text-slate-500 mb-2 leading-relaxed">
@@ -1542,7 +1582,7 @@
                     <div class="text-slate-500 text-[9px] text-center py-4">수업도구 탭을 열면 불러옵니다.</div>
                 </div>
                 <p id="classTimetableStatus" class="text-[10px] text-violet-300/90 font-bold mt-2 min-h-[1rem]">—</p>
-                <div class="mt-3 pt-3 border-t border-pink-500/30 space-y-2">
+                <div class="mt-3 pt-3 border-t border-pink-500/30 space-y-2" id="birthdayCelebrationAdminWrap">
                     <h4 class="text-pink-200 font-black text-xs"><i class="fa-solid fa-cake-candles"></i> 생일 축하 파티</h4>
                     <p class="text-[9px] text-slate-400 leading-relaxed">이름·날짜를 등록하면 해당 날짜의 지정 교시 알림에서 생일 파티를 열 수 있습니다. 여러 명을 추가할 수 있습니다.</p>
                     <div id="birthdayCelebrationAdminPanel"></div>
@@ -1882,10 +1922,10 @@
             <div class="glass-panel p-2 sm:p-3 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
                     <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
-                    <span id="adminQuestSummary" class="text-[9px] text-emerald-300/90 font-bold tabular-nums shrink-0">—</span>
+                    <span id="adminQuestSummary" class="js-quest-live-summary text-[9px] text-emerald-300/90 font-bold tabular-nums shrink-0">—</span>
                 </div>
                 <p class="text-[8px] text-slate-500 mb-1.5 leading-tight">행: 학생 · 열: 오늘 일일 퀘스트 완료(✓). 가로 스크롤로 전체 열 확인.</p>
-                <div id="adminQuestBoard" class="overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
+                <div id="adminQuestBoard" class="js-quest-live-board overflow-x-auto max-h-[200px] sm:max-h-[220px] overflow-y-auto rounded-lg border border-slate-700/80 bg-slate-950/50">
                     <div class="text-slate-500 text-[9px] text-center py-6"><i class="fa-solid fa-spinner fa-spin mr-1"></i>데이터 로딩 중…</div>
                 </div>
             </div>

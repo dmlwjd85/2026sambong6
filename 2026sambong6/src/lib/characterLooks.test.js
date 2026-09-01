@@ -21,6 +21,11 @@ describe('성별 기본 얼굴', () => {
         assert.equal(resolveCharacterBase('nope', 'F').id, 'base_f1');
         assert.equal(resolveCharacterBase('base_m2', 'M').id, 'base_m2');
     });
+
+    it('id가 있으면 성별과 달라도 그 얼굴을 쓴다', () => {
+        assert.equal(resolveCharacterBase('base_f2', 'M').id, 'base_f2');
+        assert.equal(resolveCharacterBase('base_m3', 'F').id, 'base_m3');
+    });
 });
 
 describe('등급 안내', () => {

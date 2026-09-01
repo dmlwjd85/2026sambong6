@@ -590,6 +590,25 @@
         .plaza-cards-sm .plaza-card-face { font-size: 1.35rem !important; margin-bottom: 0.15rem !important; }
         .plaza-cards-sm .plaza-card-lv { font-size: 7px !important; padding: 0 0.25rem !important; }
         .plaza-cards-sm .plaza-card-name { font-size: 8px !important; }
+        .plaza-card-status {
+            font-size: 8px;
+            font-weight: 800;
+            color: #fde68a;
+            background: rgba(15, 23, 42, 0.82);
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            border-radius: 999px;
+            padding: 0.05rem 0.4rem;
+            margin-top: 0.2rem;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-align: center;
+            line-height: 1.4;
+        }
+        .plaza-cards-sm .plaza-card-status { font-size: 7px; padding: 0 0.28rem; }
+        .plaza-cards-md .plaza-card-status { font-size: 8px; }
+        .plaza-cards-lg .plaza-card-status { font-size: 10px; }
         .plaza-cards-sm .plaza-card-stats { margin-top: 0.15rem !important; }
         .plaza-cards-sm .plaza-card-stats span { font-size: 8px !important; }
         .plaza-cards-sm .plaza-learning-thermometer { min-width: 1.6rem; max-width: 2rem; height: 0.9rem; font-size: 7px; }
@@ -2135,6 +2154,21 @@
             box-shadow: 0 0 0 2px rgba(132, 204, 22, 0.45);
         }
         .app-tool-item.hidden { display: none !important; }
+        .app-tool-item.is-locked { position: relative; opacity: 0.78; }
+        .app-tool-lock {
+            position: absolute;
+            top: 0.2rem;
+            right: 0.2rem;
+            font-size: 8px;
+            font-weight: 900;
+            color: #fde68a;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1px solid rgba(251, 191, 36, 0.55);
+            border-radius: 999px;
+            padding: 0.05rem 0.32rem;
+            line-height: 1.3;
+            pointer-events: none;
+        }
         .classtool-pane.hidden { display: none !important; }
 
         /* 수업도구 전체화면 실행 */

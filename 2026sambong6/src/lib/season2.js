@@ -494,3 +494,32 @@ export function sanitizeDragonBallRewards(raw) {
         completeBong: clamp(src.completeBong != null ? src.completeBong : src.dragonBallCompleteBong, 0),
     };
 }
+
+/** 시즌 1 정산 XP. 없으면 0입니다. */
+export function season1RecordXp(stu) {
+    const n = Math.floor(Number(stu && stu.season1Xp));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * 시즌 1 명예의 전당 순위.
+ * 마스터·게스트는 빼고, 시즌 1 XP 높은 순입니다.
+ */
+export function buildSeason1HallOfFame(students, nameMap = {}) {
+    const rows = (Array.isArray(students) ? students : [])
+        .filter((s) => {
+            const id = String((s && s.id) || '');
+            return id && id !== 'gm' && id !== 'gm_a' && id !== 'guest';
+        })
+        .map((s) => {
+            const id = String(s.id);
+            return {
+                id,
+                name: nameMap[id] || id,
+                season1Xp: season1RecordXp(s),
+                season1BongReward: Math.max(0, Math.floor(Number(s.season1BongReward) || 0)),
+            };
+        })
+        .sort((a, b) => b.season1Xp - a.season1Xp || a.id.localeCompare(b.id, 'ko'));
+    return rows.map((row, i) => ({ ...row, rank: i + 1 }));
+}

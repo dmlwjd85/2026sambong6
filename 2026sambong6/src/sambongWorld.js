@@ -86,6 +86,7 @@ import {
     CUSTOM_SHOP_XP_DAILY_LIMIT,
     CUSTOM_QUEST_XP_MAX,
     applyShieldToXpDeduct,
+    buildSeason1HallOfFame,
     buildSeason1ItemRefundPatch,
     buildSeason2StudentPatch,
     buildXpSupervisionIncidents,
@@ -643,7 +644,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.23';
+        const APP_VERSION = 'v1.24';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -7006,6 +7007,9 @@ ${subjectLine}
             if (g === 'quests' && id === 'stats' && typeof window.renderResearchStatsDashboard === 'function') {
                 window.renderResearchStatsDashboard();
             }
+            if (g === 'dashboard' && id === 'map' && typeof window.renderSeason1HallOfFame === 'function') {
+                window.renderSeason1HallOfFame();
+            }
         };
 
         window.switchShopSub = function(sub) {
@@ -7204,6 +7208,76 @@ ${subjectLine}
         window.visitPirateIsland = function() {
             const label = getPirateIslandLabel();
             window.customAlert(`🌊 [${label}]\n${getCoMasterDisplayName()}의 구역입니다!\n함께 모험을 떠나는 공간입니다.`);
+        };
+
+        function escapeHofText(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function getSeason1HallRows() {
+            return buildSeason1HallOfFame(window.allStudentsData || [], STUDENT_NAMES);
+        }
+
+        function renderSeason1HallMinimap() {
+            const el = document.getElementById('season1HallMinimapList');
+            if (!el) return;
+            const rows = getSeason1HallRows();
+            const top = rows.filter((r) => r.season1Xp > 0).slice(0, 3);
+            if (!top.length) {
+                el.innerHTML = '<p class="text-[10px] text-amber-100/80">시즌 1 기록이 있으면 여기에 순위가 보입니다. 눌러서 도서관에 들어가 보세요.</p>';
+                return;
+            }
+            el.innerHTML = top.map((r) => {
+                const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank);
+                return `<div class="hof-mini-row"><span class="hof-mini-rank">${medal}</span><span class="truncate">${escapeHofText(r.name)}</span><span class="ml-auto text-amber-200">${r.season1Xp.toLocaleString()} XP</span></div>`;
+            }).join('');
+        }
+
+        window.renderSeason1HallOfFame = function() {
+            renderSeason1HallMinimap();
+            const body = document.getElementById('season1HallModalBody');
+            if (!body) return;
+            const rows = getSeason1HallRows();
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            if (!rows.length) {
+                body.innerHTML = '<p class="text-[11px] text-amber-100/80 px-1 py-6 text-center">아직 학생 기록이 없습니다.</p>';
+                return;
+            }
+            const hasXp = rows.some((r) => r.season1Xp > 0);
+            if (!hasXp) {
+                body.innerHTML = '<p class="text-[11px] text-amber-100/80 px-1 py-6 text-center leading-relaxed">시즌 1 정산 기록이 아직 없습니다.<br>시즌 2가 시작되면 당시 경험치가 여기에 남습니다.</p>';
+                return;
+            }
+            body.innerHTML = rows.map((r) => {
+                const lv = calculateExactLevel(r.season1Xp);
+                const lvInfo = getLevelInfo(r.season1Xp);
+                const me = String(r.id) === myId;
+                const top = r.rank <= 3 && r.season1Xp > 0;
+                const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank);
+                const bongLine = r.season1BongReward > 0 ? ` · 정산 ${formatBongAmount(r.season1BongReward)}` : '';
+                return `<div class="hof-library-row${me ? ' is-me' : ''}${top ? ' is-top' : ''}">
+                    <div class="hof-library-rank">${medal}</div>
+                    <div class="hof-library-name">
+                        <strong>${escapeHofText(r.name)}${me ? ' <span class="text-amber-300">나</span>' : ''}</strong>
+                        <span>시즌 1 · Lv.${lv} ${escapeHofText((lvInfo.info && lvInfo.info.name) || '')}${bongLine}</span>
+                    </div>
+                    <div class="hof-library-xp">${r.season1Xp.toLocaleString()}<div class="text-[9px] font-bold text-amber-200/80">XP</div></div>
+                </div>`;
+            }).join('');
+        };
+
+        window.openSeason1HallOfFame = function() {
+            window.renderSeason1HallOfFame();
+            const modal = document.getElementById('season1HallModal');
+            if (modal) modal.classList.remove('hidden');
+        };
+
+        window.closeSeason1HallOfFame = function() {
+            const modal = document.getElementById('season1HallModal');
+            if (modal) modal.classList.add('hidden');
         };
 
         window.openExternalPortal = function() {
@@ -13356,6 +13430,7 @@ ${subjectLine}
             } else { 
                 hofSec.classList.add('hidden'); 
             }
+            if (typeof window.renderSeason1HallOfFame === 'function') window.renderSeason1HallOfFame();
         };
 
         window.renderLunchQueue = function(studentsData) {

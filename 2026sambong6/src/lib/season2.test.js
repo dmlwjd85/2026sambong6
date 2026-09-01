@@ -23,6 +23,8 @@ import {
     season2SchoolDaysTotal,
     studentAlreadyGotSeason1ItemRefund,
     sanitizeDragonBallRewards,
+    season1RecordXp,
+    buildSeason1HallOfFame,
     uniqueInventory,
     weaponDropMultiplier,
     worldSettingsForSeason2,
@@ -246,5 +248,26 @@ describe('절대 방패', () => {
         assert.equal(r.remainingDeduct, 5);
         assert.equal(r.absorbed, 0);
         assert.equal(Object.prototype.hasOwnProperty.call(r.updates, 'shieldHP'), false);
+    });
+});
+
+describe('시즌 1 명예의 전당', () => {
+    it('시즌 1 XP 높은 순으로 순위를 매긴다', () => {
+        const rows = buildSeason1HallOfFame([
+            { id: '12', season1Xp: 12000, season1BongReward: 100 },
+            { id: '1', season1Xp: 40000, season1BongReward: 400 },
+            { id: 'gm', season1Xp: 99999 },
+            { id: 'gm_a', season1Xp: 88888 },
+            { id: 'guest', season1Xp: 77777 },
+            { id: '6', season1Xp: 40000, season1BongReward: 400 },
+        ], { 1: '김단엘', 6: '박소윤', 12: '황훈태' });
+        assert.equal(rows.length, 3);
+        assert.equal(rows[0].id, '1');
+        assert.equal(rows[0].rank, 1);
+        assert.equal(rows[0].name, '김단엘');
+        assert.equal(rows[1].id, '6');
+        assert.equal(rows[2].id, '12');
+        assert.equal(season1RecordXp({ season1Xp: '25400' }), 25400);
+        assert.equal(season1RecordXp({}), 0);
     });
 });

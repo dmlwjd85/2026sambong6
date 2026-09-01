@@ -432,6 +432,21 @@
         </div>
     </div>
 
+    <!-- ★ 시즌 1 명예의 전당 (도서관) ★ -->
+    <div id="season1HallModal" class="hidden fixed inset-0 z-[266] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6" onclick="if(event.target===this)window.closeSeason1HallOfFame()">
+        <div class="hof-library-modal relative w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="hof-library-modal-head">
+                <div>
+                    <p class="text-[10px] font-black tracking-[0.28em] text-amber-200/90">SEASON 1 ARCHIVE</p>
+                    <h3 class="text-xl sm:text-2xl font-display text-amber-50 mt-0.5"><i class="fa-solid fa-book-bookmark text-amber-300"></i> 시즌 1 명예의 전당</h3>
+                    <p class="text-[10px] text-amber-100/75 mt-1">시즌 1에서 쌓은 경험치 기록입니다. 시즌 2 시작 때 정산된 값이 남습니다.</p>
+                </div>
+                <button type="button" onclick="window.closeSeason1HallOfFame()" class="shrink-0 min-h-[44px] px-3 text-amber-100 hover:text-white text-xs font-bold">닫기</button>
+            </div>
+            <div id="season1HallModalBody" class="hof-library-modal-body"></div>
+        </div>
+    </div>
+
     <!-- ★ 퀘스트 기록 모달 ★ -->
     <div id="questHistoryModal" class="hidden fixed inset-0 z-[250] bg-black/80 flex items-center justify-center px-4 transition-all duration-300">
         <div class="glass-panel p-6 rounded-3xl max-w-md w-full max-h-[80vh] flex flex-col relative border-t-4 border-t-sb-blue shadow-2xl">
@@ -562,7 +577,43 @@
                     <span class="worldmap-crest worldmap-crest-bank pointer-events-none" aria-hidden="true"><i class="fa-solid fa-landmark"></i></span>
                     <div id="mapBankLabel" class="worldmap-label worldmap-label-arcane mt-1.5">삼봉 은행</div>
                 </div>
+
+                <!-- 11. 명예의 전당 (시즌 1 기록 도서관) -->
+                <div onclick="window.openSeason1HallOfFame()" class="island-hover worldmap-pin worldmap-pin-library absolute top-[36%] left-[62%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
+                    <span class="hof-library-pin" aria-hidden="true">
+                        <span class="hof-library-pin-roof"></span>
+                        <span class="hof-library-pin-body">
+                            <span class="hof-library-pin-window"></span>
+                            <span class="hof-library-pin-window"></span>
+                            <span class="hof-library-pin-door"></span>
+                        </span>
+                    </span>
+                    <div class="worldmap-label worldmap-label-gold mt-1.5">명예의 전당</div>
+                </div>
             </div>
+
+            <button type="button" id="season1HallMinimap" onclick="window.openSeason1HallOfFame()" class="hof-library-minimap w-full mt-0 mb-4 text-left">
+                <div class="hof-library-minimap-inner">
+                    <div class="hof-library-minimap-head">
+                        <div>
+                            <p class="hof-library-minimap-kicker">LIBRARY · SEASON 1</p>
+                            <h3 class="hof-library-minimap-title"><i class="fa-solid fa-book-open"></i> 명예의 전당</h3>
+                        </div>
+                        <span class="hof-library-minimap-enter">기록 보기</span>
+                    </div>
+                    <div class="hof-library-floorplan" aria-hidden="true">
+                        <span class="hof-shelf hof-shelf-a"></span>
+                        <span class="hof-shelf hof-shelf-b"></span>
+                        <span class="hof-shelf hof-shelf-c"></span>
+                        <span class="hof-table"></span>
+                        <span class="hof-lamp"></span>
+                        <span class="hof-entrance">입구</span>
+                    </div>
+                    <div id="season1HallMinimapList" class="hof-library-minimap-list">
+                        <p class="text-[10px] text-amber-100/80">시즌 1 기록을 도서관에서 볼 수 있습니다.</p>
+                    </div>
+                </div>
+            </button>
             </div>
 
             <!-- 하단 스탯 및 대시보드 그리드 배치 -->

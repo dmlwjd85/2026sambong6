@@ -499,7 +499,7 @@
                         <a id="schoolWeatherLink" href="https://weather.naver.com/today/15270320" target="_blank" rel="noopener noreferrer" class="mt-1 text-[10px] font-black text-cyan-300 hover:text-cyan-200">네이버 날씨 자세히 보기</a>
                         <div id="schoolWeatherSearchWrap" class="hidden mt-2 space-y-1">
                             <div class="flex gap-1">
-                                <input id="schoolWeatherSearch" type="text" maxlength="40" placeholder="지역명 검색 (예: 석문면, 종로구)" class="flex-1 min-w-0 bg-slate-950 border border-sky-500/40 text-white px-2 py-1.5 rounded-lg text-[10px] font-bold" onkeydown="if(event.key==='Enter'){event.preventDefault();void window.searchSchoolWeatherRegion();}">
+                                <input id="schoolWeatherSearch" type="text" maxlength="40" placeholder="동·읍·면 이름 (예: 행당동, 석문면)" class="flex-1 min-w-0 bg-slate-950 border border-sky-500/40 text-white px-2 py-1.5 rounded-lg text-[10px] font-bold" onkeydown="if(event.key==='Enter'){event.preventDefault();void window.searchSchoolWeatherRegion();}">
                                 <button type="button" onclick="void window.searchSchoolWeatherRegion()" class="shrink-0 min-h-[36px] px-2 bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black rounded-lg">검색</button>
                             </div>
                             <div id="schoolWeatherSearchResults" class="space-y-1"></div>

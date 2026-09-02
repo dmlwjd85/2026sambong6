@@ -154,9 +154,8 @@ import {
     stageRewards,
 } from './lib/catBattle.js';
 import {
-    openMeteoGeocodeUrl,
+    fetchWeatherRegionHits,
     openMeteoSchoolUrl,
-    parseGeocodeResults,
     parseOpenMeteoWeather,
     sanitizeWeatherRegion,
     SCHOOL_WEATHER_NAVER_URL,
@@ -1268,15 +1267,12 @@ function redrawPlazaGrantsUi() {
             const inp = document.getElementById('schoolWeatherSearch');
             const box = document.getElementById('schoolWeatherSearchResults');
             const q = String(inp && inp.value || '').trim();
-            if (!q) return window.customAlert('지역명을 입력해 주세요. 예: 석문면, 종로구');
+            if (!q) return window.customAlert('지역명을 입력해 주세요. 예: 행당동, 석문면');
             if (box) box.innerHTML = '<p class="text-[10px] text-slate-400">검색 중…</p>';
             try {
-                const res = await fetch(openMeteoGeocodeUrl(q));
-                if (!res.ok) throw new Error('geocode http ' + res.status);
-                const json = await res.json();
-                _weatherSearchHits = parseGeocodeResults(json);
+                _weatherSearchHits = await fetchWeatherRegionHits(q);
                 if (!_weatherSearchHits.length) {
-                    if (box) box.innerHTML = '<p class="text-[10px] text-amber-200">해당하는 지역을 찾지 못했습니다. 시·군·구·읍면 이름으로 다시 검색해 보세요.</p>';
+                    if (box) box.innerHTML = '<p class="text-[10px] text-amber-200">해당하는 지역을 찾지 못했습니다. 동·읍·면 또는 시·군·구 이름으로 다시 검색해 보세요.</p>';
                     return;
                 }
                 if (box) {

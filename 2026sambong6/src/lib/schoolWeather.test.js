@@ -40,7 +40,7 @@ describe('학교 날씨', () => {
         assert.match(hits[0].label, /석문면/);
         const seoul = sanitizeWeatherRegion({ label: '서울 종로구', lat: 37.57, lon: 126.98 });
         assert.equal(seoul.label, '서울 종로구');
-        assert.match(weatherSourceUrl(seoul), /종로구/);
+        assert.match(decodeURIComponent(weatherSourceUrl(seoul)), /종로구/);
         assert.equal(SCHOOL_WEATHER_NAVER_ID, '15270320');
     });
 });

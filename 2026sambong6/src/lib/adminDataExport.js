@@ -261,11 +261,15 @@ function buildInventoryRows(ctx) {
         const name = studentName(ctx, sid);
         const inv = Array.isArray(stu.inventory) ? stu.inventory : [];
         inv.forEach((itemId) => {
-            rows.push([sid, name, '무기/인벤토리', itemId, resolveItemName(ctx, itemId), stu.equippedWeapon === itemId ? '장착중' : '']);
+            const equippedNote = stu.equippedWeapon === itemId || stu.equippedShield === itemId || stu.equippedShoes === itemId ? '장착중' : '';
+            rows.push([sid, name, '장비/인벤토리', itemId, resolveItemName(ctx, itemId), equippedNote]);
         });
-        if (stu.equippedWeapon && !inv.includes(stu.equippedWeapon)) {
-            rows.push([sid, name, '장착무기', stu.equippedWeapon, resolveItemName(ctx, stu.equippedWeapon), '장착중']);
-        }
+        ['equippedWeapon', 'equippedShield', 'equippedShoes'].forEach((key) => {
+            const id = stu[key];
+            if (id && !inv.includes(id)) {
+                rows.push([sid, name, '장착장비', id, resolveItemName(ctx, id), '장착중']);
+            }
+        });
         const owned = stu.ownedSkins && typeof stu.ownedSkins === 'object' ? stu.ownedSkins : {};
         Object.keys(owned).forEach((skinId) => {
             if (!owned[skinId]) return;

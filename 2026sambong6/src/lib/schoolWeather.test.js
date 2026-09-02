@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import {
     SCHOOL_WEATHER_NAVER_ID,
     parseOpenMeteoWeather,
+    parseGeocodeResults,
+    sanitizeWeatherRegion,
     wmoToScene,
     weatherSceneMeta,
+    weatherSourceUrl,
 } from './schoolWeather.js';
 import { applyBankTransfer, canBankTransfer, sanitizeBankTransferFee } from './bankTransfer.js';
 
@@ -24,6 +27,21 @@ describe('학교 날씨', () => {
         assert.equal(parsed.temp, 21.7);
         assert.equal(parsed.scene, 'sunny');
         assert.equal(parsed.tempMax, 25);
+        assert.equal(parsed.regionLabel, '당진시 석문면');
+    });
+
+    it('지역 검색 결과와 좌표 저장본을 맞춘다', () => {
+        const hits = parseGeocodeResults({
+            results: [
+                { name: '석문면', admin1: '충청남도', admin2: '당진시', latitude: 36.98, longitude: 126.59, country: '대한민국' },
+            ],
+        });
+        assert.equal(hits.length, 1);
+        assert.match(hits[0].label, /석문면/);
+        const seoul = sanitizeWeatherRegion({ label: '서울 종로구', lat: 37.57, lon: 126.98 });
+        assert.equal(seoul.label, '서울 종로구');
+        assert.match(weatherSourceUrl(seoul), /종로구/);
+        assert.equal(SCHOOL_WEATHER_NAVER_ID, '15270320');
     });
 });
 

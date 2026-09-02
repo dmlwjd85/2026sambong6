@@ -210,6 +210,8 @@ export function buildSeason2StudentPatch(stu, nowMs = Date.now()) {
             dragonBallWeekendKey: '',
             inventory: [],
             equippedWeapon: null,
+            equippedShield: null,
+            equippedShoes: null,
             itemRefundLedger: [],
             seasonSkinRefundCount: 0,
             lastSkinRefundDate: '',

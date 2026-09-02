@@ -496,6 +496,13 @@
                         </div>
                         <p id="schoolWeatherMeta" class="text-[10px] sm:text-[11px] text-slate-300 mt-1 leading-snug">당진시 석문면</p>
                         <a id="schoolWeatherLink" href="https://weather.naver.com/today/15270320" target="_blank" rel="noopener noreferrer" class="mt-1 text-[10px] font-black text-cyan-300 hover:text-cyan-200">네이버 날씨 자세히 보기</a>
+                        <div id="schoolWeatherSearchWrap" class="hidden mt-2 space-y-1">
+                            <div class="flex gap-1">
+                                <input id="schoolWeatherSearch" type="text" maxlength="40" placeholder="지역명 검색 (예: 석문면, 종로구)" class="flex-1 min-w-0 bg-slate-950 border border-sky-500/40 text-white px-2 py-1.5 rounded-lg text-[10px] font-bold" onkeydown="if(event.key==='Enter'){event.preventDefault();void window.searchSchoolWeatherRegion();}">
+                                <button type="button" onclick="void window.searchSchoolWeatherRegion()" class="shrink-0 min-h-[36px] px-2 bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black rounded-lg">검색</button>
+                            </div>
+                            <div id="schoolWeatherSearchResults" class="space-y-1"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -665,12 +672,18 @@
                     
                     <!-- 내 무기고 (종류별 컬렉션) -->
                     <div class="glass-panel rounded-3xl p-4 shadow-lg border-t-4 border-t-purple-500 bg-slate-800/80">
-                        <h3 class="font-bold text-sm text-slate-300 mb-2 flex justify-between items-center">
-                            <span><i class="fa-solid fa-khanda text-purple-400 mr-1"></i> 무기 컬렉션 <span class="text-[9px] font-normal text-slate-400">(종류별 보관 · 장착 시 XP 버프 5%)</span></span>
+                        <h3 class="font-bold text-sm text-slate-300 mb-2">
+                            <span><i class="fa-solid fa-khanda text-purple-400 mr-1"></i> 장비 컬렉션</span>
                         </h3>
+                        <p class="text-[9px] text-slate-400 mb-2 leading-snug">퀘스트에서 무기·방패·신발이 나옵니다. 무기는 작은 데미지만큼 추가 XP가 뜰 확률이 있고, 방패는 경험치 차감을 막을 확률입니다. 신발은 그 확률을 조금 올립니다.</p>
+                        <p class="text-[9px] text-purple-200 font-bold mb-1">무기</p>
                         <div id="weaponSlots" class="grid grid-cols-5 gap-1.5 sm:gap-2 py-1">
                             <span class="text-[10px] text-slate-500 col-span-5">퀘스트 완료 시 무기가 추가됩니다.</span>
                         </div>
+                        <p class="text-[9px] text-indigo-200 font-bold mt-2 mb-1">방패</p>
+                        <div id="shieldSlots" class="grid grid-cols-5 gap-1.5 sm:gap-2 py-1"></div>
+                        <p class="text-[9px] text-emerald-200 font-bold mt-2 mb-1">신발</p>
+                        <div id="shoeSlots" class="grid grid-cols-5 gap-1.5 sm:gap-2 py-1"></div>
                     </div>
 
                     <!-- 스킨 보관함 -->

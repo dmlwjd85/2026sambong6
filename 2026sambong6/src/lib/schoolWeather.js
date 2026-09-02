@@ -1,6 +1,6 @@
 /**
- * 학교 지역 날씨 — 네이버 날씨 당진시 석문면(15270320) 좌표를 항상 씁니다.
- * 브라우저는 네이버 페이지를 직접 읽지 못하므로, 같은 위치의 공개 예보로 화면을 채웁니다.
+ * 학교 지역 날씨 — 기본은 네이버 날씨 당진시 석문면(15270320)입니다.
+ * 지역명은 검색으로 바꿀 수 있고, 브라우저는 같은 좌표의 공개 예보를 씁니다.
  */
 
 export const SCHOOL_WEATHER_NAVER_ID = '15270320';
@@ -8,6 +8,13 @@ export const SCHOOL_WEATHER_NAVER_URL = `https://weather.naver.com/today/${SCHOO
 export const SCHOOL_WEATHER_REGION_LABEL = '당진시 석문면';
 export const SCHOOL_WEATHER_LAT = 36.981918;
 export const SCHOOL_WEATHER_LON = 126.590825;
+
+export const DEFAULT_WEATHER_REGION = Object.freeze({
+    label: SCHOOL_WEATHER_REGION_LABEL,
+    lat: SCHOOL_WEATHER_LAT,
+    lon: SCHOOL_WEATHER_LON,
+    naverId: SCHOOL_WEATHER_NAVER_ID,
+});
 
 export const WEATHER_SCENES = Object.freeze(['sunny', 'cloudy', 'rain', 'snow', 'storm', 'night']);
 
@@ -48,6 +55,61 @@ export function isNightHour(hour, isDayFlag) {
     return h < 6 || h >= 19;
 }
 
+export function sanitizeWeatherRegion(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const lat = Number(src.lat);
+    const lon = Number(src.lon);
+    const label = String(src.label || src.name || '').trim().slice(0, 40);
+    const naverId = String(src.naverId || '').replace(/\D/g, '').slice(0, 12);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !label) {
+        return { ...DEFAULT_WEATHER_REGION };
+    }
+    return {
+        label,
+        lat: Math.max(-90, Math.min(90, lat)),
+        lon: Math.max(-180, Math.min(180, lon)),
+        naverId: naverId || '',
+    };
+}
+
+export function weatherSourceUrl(region) {
+    const r = sanitizeWeatherRegion(region);
+    if (r.naverId) return `https://weather.naver.com/today/${r.naverId}`;
+    return `https://search.naver.com/search.naver?query=${encodeURIComponent(r.label + ' 날씨')}`;
+}
+
+export function openMeteoGeocodeUrl(name) {
+    const q = String(name || '').trim().slice(0, 40);
+    const params = new URLSearchParams({
+        name: q,
+        count: '8',
+        language: 'ko',
+        format: 'json',
+    });
+    return `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`;
+}
+
+export function parseGeocodeResults(json) {
+    const rows = json && Array.isArray(json.results) ? json.results : [];
+    const out = [];
+    rows.forEach((r) => {
+        const lat = Number(r && r.latitude);
+        const lon = Number(r && r.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        const bits = [r.admin1, r.admin2, r.name].map((x) => String(x || '').trim()).filter(Boolean);
+        const label = (bits.join(' ') || String(r.name || '')).slice(0, 40);
+        if (!label) return;
+        out.push({
+            label,
+            name: String(r.name || label).slice(0, 40),
+            lat,
+            lon,
+            country: String(r.country || ''),
+        });
+    });
+    return out;
+}
+
 export function sanitizeSchoolWeather(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const temp = Number(src.temp);
@@ -60,8 +122,8 @@ export function sanitizeSchoolWeather(raw) {
     const meta = weatherSceneMeta(scene);
     return {
         ok: src.ok !== false,
-        regionLabel: String(src.regionLabel || SCHOOL_WEATHER_REGION_LABEL),
-        sourceUrl: String(src.sourceUrl || SCHOOL_WEATHER_NAVER_URL),
+        regionLabel: String(src.regionLabel || DEFAULT_WEATHER_REGION.label),
+        sourceUrl: String(src.sourceUrl || weatherSourceUrl(src)),
         temp: Number.isFinite(temp) ? Math.round(temp * 10) / 10 : null,
         tempMax: Number.isFinite(tMax) ? Math.round(tMax) : null,
         tempMin: Number.isFinite(tMin) ? Math.round(tMin) : null,
@@ -74,17 +136,19 @@ export function sanitizeSchoolWeather(raw) {
     };
 }
 
-export function parseOpenMeteoWeather(json, nowMs = Date.now()) {
+export function parseOpenMeteoWeather(json, nowMs = Date.now(), region) {
     const cur = json && json.current ? json.current : {};
     const daily = json && json.daily ? json.daily : {};
     const hour = Number(String(cur.time || '').slice(11, 13));
     const night = isNightHour(hour, cur.is_day);
     const scene = wmoToScene(cur.weather_code, night);
     const meta = weatherSceneMeta(scene);
+    const place = sanitizeWeatherRegion(region);
     return sanitizeSchoolWeather({
         ok: true,
-        regionLabel: SCHOOL_WEATHER_REGION_LABEL,
-        sourceUrl: SCHOOL_WEATHER_NAVER_URL,
+        regionLabel: place.label,
+        sourceUrl: weatherSourceUrl(place),
+        naverId: place.naverId,
         temp: cur.temperature_2m,
         tempMax: Array.isArray(daily.temperature_2m_max) ? daily.temperature_2m_max[0] : null,
         tempMin: Array.isArray(daily.temperature_2m_min) ? daily.temperature_2m_min[0] : null,
@@ -97,10 +161,11 @@ export function parseOpenMeteoWeather(json, nowMs = Date.now()) {
     });
 }
 
-export function openMeteoSchoolUrl() {
+export function openMeteoSchoolUrl(region) {
+    const place = sanitizeWeatherRegion(region);
     const params = new URLSearchParams({
-        latitude: String(SCHOOL_WEATHER_LAT),
-        longitude: String(SCHOOL_WEATHER_LON),
+        latitude: String(place.lat),
+        longitude: String(place.lon),
         current: 'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation,is_day',
         daily: 'temperature_2m_max,temperature_2m_min',
         timezone: 'Asia/Seoul',

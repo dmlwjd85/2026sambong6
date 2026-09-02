@@ -76,7 +76,6 @@ import {
     SEASON2,
     SKIN_REFUND_MAX_PER_DAY,
     SKIN_REFUND_MAX_PER_SEASON,
-    WEAPON_QUEST_XP_BUFF_RATE,
     XP_ANOMALY_AHEAD_OF_PACE_WARN,
     XP_ANOMALY_DAILY_GAIN_WARN,
     XP_ANOMALY_SINGLE_DELTA_WARN,
@@ -104,9 +103,21 @@ import {
     SHIELD_STOCK_DEFAULT,
     season2SupervisionSinceMs,
     uniqueInventory,
-    weaponDropMultiplier,
     worldSettingsForSeason2,
 } from './lib/season2.js';
+import {
+    SHIELD_GEAR,
+    SHOE_GEAR,
+    WEAPON_GEAR,
+    applyXpDeductWithGear,
+    getGear,
+    gearSlotLabel,
+    grantMasterGear,
+    pickQuestDropId,
+    resolveQuestWeaponProc,
+    skinStatLabel,
+    staffLookStatLabel,
+} from './lib/gear.js';
 import {
     applyBankTransfer,
     canBankTransfer,
@@ -114,8 +125,11 @@ import {
     BANK_TRANSFER_AMOUNT_MAX,
 } from './lib/bankTransfer.js';
 import {
+    openMeteoGeocodeUrl,
     openMeteoSchoolUrl,
+    parseGeocodeResults,
     parseOpenMeteoWeather,
+    sanitizeWeatherRegion,
     SCHOOL_WEATHER_NAVER_URL,
     SCHOOL_WEATHER_REGION_LABEL,
     weatherSceneMeta,
@@ -688,7 +702,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.29';
+        const APP_VERSION = 'v1.30';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1010,7 +1024,24 @@ function redrawPlazaGrantsUi() {
 
         let _schoolWeather = null;
         let _schoolWeatherTimer = null;
+        let _weatherSearchHits = [];
+        let _lastWeatherRegionKey = '';
+        let _masterGearSaving = false;
         const WEATHER_SCENES_CSS = ['sunny', 'cloudy', 'rain', 'snow', 'storm', 'night'];
+
+        function weatherRegionKey(region) {
+            const r = sanitizeWeatherRegion(region);
+            return `${r.label}|${r.lat}|${r.lon}`;
+        }
+
+        function getWeatherRegion() {
+            return sanitizeWeatherRegion(window.globalSettings && window.globalSettings.weatherRegion);
+        }
+
+        function syncSchoolWeatherSearchUi() {
+            const wrap = document.getElementById('schoolWeatherSearchWrap');
+            if (wrap) wrap.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
+        }
 
         function applySchoolWeatherScene(scene) {
             const meta = weatherSceneMeta(scene);
@@ -1068,21 +1099,23 @@ function redrawPlazaGrantsUi() {
 
         async function refreshSchoolWeather(force) {
             const now = Date.now();
+            const region = getWeatherRegion();
+            _lastWeatherRegionKey = weatherRegionKey(region);
             if (!force && _schoolWeather && now - (_schoolWeather.fetchedAt || 0) < 10 * 60 * 1000) {
                 renderSchoolWeatherCard(_schoolWeather);
                 return _schoolWeather;
             }
             try {
-                const res = await fetch(openMeteoSchoolUrl());
+                const res = await fetch(openMeteoSchoolUrl(region));
                 if (!res.ok) throw new Error('weather http ' + res.status);
                 const json = await res.json();
-                _schoolWeather = parseOpenMeteoWeather(json, now);
+                _schoolWeather = parseOpenMeteoWeather(json, now, region);
                 renderSchoolWeatherCard(_schoolWeather);
             } catch (e) {
                 console.warn('school weather', e);
                 if (!_schoolWeather) {
                     const textEl = document.getElementById('schoolWeatherText');
-                    if (textEl) textEl.textContent = `${SCHOOL_WEATHER_REGION_LABEL} 날씨를 잠시 후 다시 불러옵니다.`;
+                    if (textEl) textEl.textContent = `${region.label} 날씨를 잠시 후 다시 불러옵니다.`;
                 }
             }
             return _schoolWeather;
@@ -1090,6 +1123,55 @@ function redrawPlazaGrantsUi() {
         window.refreshSchoolWeather = refreshSchoolWeather;
         void refreshSchoolWeather(true);
         _schoolWeatherTimer = setInterval(() => { void refreshSchoolWeather(false); }, 10 * 60 * 1000);
+
+        window.searchSchoolWeatherRegion = async function() {
+            const inp = document.getElementById('schoolWeatherSearch');
+            const box = document.getElementById('schoolWeatherSearchResults');
+            const q = String(inp && inp.value || '').trim();
+            if (!q) return window.customAlert('지역명을 입력해 주세요. 예: 석문면, 종로구');
+            if (box) box.innerHTML = '<p class="text-[10px] text-slate-400">검색 중…</p>';
+            try {
+                const res = await fetch(openMeteoGeocodeUrl(q));
+                if (!res.ok) throw new Error('geocode http ' + res.status);
+                const json = await res.json();
+                _weatherSearchHits = parseGeocodeResults(json);
+                if (!_weatherSearchHits.length) {
+                    if (box) box.innerHTML = '<p class="text-[10px] text-amber-200">해당하는 지역을 찾지 못했습니다. 시·군·구·읍면 이름으로 다시 검색해 보세요.</p>';
+                    return;
+                }
+                if (box) {
+                    box.innerHTML = _weatherSearchHits.map((hit, i) => (
+                        `<button type="button" class="w-full text-left min-h-[36px] px-2 py-1.5 rounded-lg bg-slate-950 border border-sky-500/30 text-[10px] font-bold text-sky-100 hover:bg-sky-900" onclick="void window.pickSchoolWeatherRegion(${i})">${escapeHofText(hit.label)}${hit.country ? ` <span class="text-slate-500 font-normal">${escapeHofText(hit.country)}</span>` : ''}</button>`
+                    )).join('');
+                }
+            } catch (e) {
+                console.warn('weather geocode', e);
+                if (box) box.innerHTML = '<p class="text-[10px] text-rose-200">검색에 실패했습니다. 네트워크를 확인해 주세요.</p>';
+            }
+        };
+
+        window.pickSchoolWeatherRegion = async function(idx) {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 학급 날씨 지역을 바꿀 수 있습니다.');
+            }
+            const hit = _weatherSearchHits[Number(idx)];
+            if (!hit) return;
+            const region = sanitizeWeatherRegion({ label: hit.label, lat: hit.lat, lon: hit.lon });
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+                await setDoc(getGlobalSettingsDocRef(), { weatherRegion: region }, { merge: true });
+                if (window.globalSettings) window.globalSettings.weatherRegion = region;
+                _schoolWeather = null;
+                await refreshSchoolWeather(true);
+                const box = document.getElementById('schoolWeatherSearchResults');
+                if (box) box.innerHTML = '';
+                window.showToast && window.showToast(`${region.label} 날씨로 바꿨습니다.`);
+            } catch (e) {
+                console.error('pickSchoolWeatherRegion', e);
+                await window.customAlert('지역 저장에 실패했습니다.');
+            }
+        };
 
         window.renderWorldSettingsPanel = function() {
             if (!window.playerState || !window.playerState.isAdmin) return;
@@ -1325,13 +1407,82 @@ function redrawPlazaGrantsUi() {
             { val: 5, label: '최상', icon: 'fa-battery-full', color: 'text-emerald-500' }
         ];
 
-        const WEAPON_DATA = [
-            { id: 'wp1', name: '나뭇가지', desc: '데미지 +10', bonus: 10, emoji: '🌿', img: 'chars/wp1.webp', border: 'border-amber-700', bg: 'bg-amber-900/40' },
-            { id: 'wp2', name: '낡은 단검', desc: '데미지 +20', bonus: 20, emoji: '🗡️', img: 'chars/wp2.webp', border: 'border-slate-500', bg: 'bg-slate-700/40' },
-            { id: 'wp3', name: '기사의 검', desc: '데미지 +35', bonus: 35, emoji: '⚔️', img: 'chars/wp3.webp', border: 'border-blue-400', bg: 'bg-blue-900/40' },
-            { id: 'wp4', name: '마법 지팡이', desc: '데미지 +50', bonus: 50, emoji: '🪄', img: 'chars/wp4.webp', border: 'border-purple-500', bg: 'bg-purple-900/40' },
-            { id: 'wp5', name: '화염의 성검', desc: '데미지 +80', bonus: 80, emoji: '🔥', img: 'chars/wp5.webp', border: 'border-red-500', bg: 'bg-red-900/40' }
-        ];
+        const WEAPON_DATA = WEAPON_GEAR.map((w) => ({
+            ...w,
+            bonus: w.raidBonus,
+            border: w.id === 'wp1' ? 'border-amber-700' : w.id === 'wp2' ? 'border-slate-500' : w.id === 'wp3' ? 'border-blue-400' : w.id === 'wp4' ? 'border-purple-500' : 'border-red-500',
+            bg: w.id === 'wp1' ? 'bg-amber-900/40' : w.id === 'wp2' ? 'bg-slate-700/40' : w.id === 'wp3' ? 'bg-blue-900/40' : w.id === 'wp4' ? 'bg-purple-900/40' : 'bg-red-900/40',
+        }));
+
+        const SHIELD_DATA = SHIELD_GEAR.map((g) => ({
+            ...g,
+            border: g.id === 'sh1' ? 'border-amber-800' : g.id === 'sh2' ? 'border-yellow-700' : g.id === 'sh3' ? 'border-slate-400' : g.id === 'sh4' ? 'border-indigo-400' : 'border-rose-400',
+            bg: g.id === 'sh1' ? 'bg-stone-900/50' : g.id === 'sh2' ? 'bg-yellow-950/40' : g.id === 'sh3' ? 'bg-slate-800/50' : g.id === 'sh4' ? 'bg-indigo-950/40' : 'bg-rose-950/40',
+        }));
+
+        const SHOE_DATA = SHOE_GEAR.map((g) => ({
+            ...g,
+            border: g.id === 'shoe1' ? 'border-lime-800' : g.id === 'shoe2' ? 'border-amber-600' : g.id === 'shoe3' ? 'border-sky-500' : g.id === 'shoe4' ? 'border-cyan-400' : 'border-yellow-300',
+            bg: g.id === 'shoe1' ? 'bg-lime-950/40' : g.id === 'shoe2' ? 'bg-amber-950/40' : g.id === 'shoe3' ? 'bg-sky-950/40' : g.id === 'shoe4' ? 'bg-cyan-950/40' : 'bg-yellow-950/40',
+        }));
+
+        /** 마스터는 무기·방패·신발을 모두 보유한 것으로 맞춥니다. */
+        function ensureMasterAllGear() {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            window.playerState.inventory = uniqueInventory(window.playerState.inventory);
+            const next = grantMasterGear(window.playerState.inventory);
+            const changed = next.length !== window.playerState.inventory.length
+                || next.some((id) => !(window.playerState.inventory || []).includes(id));
+            if (changed) window.playerState.inventory = next;
+            return changed;
+        }
+
+        function gearStatLine(g) {
+            if (!g) return '';
+            if (g.slot === 'weapon') return `${g.dmgMin}~${g.dmgMax} · ${Math.round((g.proc || 0) * 100)}%`;
+            if (g.slot === 'shield') return `방어 ${Math.round((g.block || 0) * 100)}%`;
+            if (g.slot === 'shoes') return `+${((g.procBonus || 0) * 100).toFixed(1)}%p`;
+            return g.desc || '';
+        }
+
+        function renderGearSlotRow(panelId, list, equippedId) {
+            const invPanel = document.getElementById(panelId);
+            if (!invPanel) return;
+            const inv = window.playerState.inventory || [];
+            const counts = {};
+            inv.forEach((id) => {
+                counts[id] = (counts[id] || 0) + 1;
+            });
+            const isMaster = !!(window.playerState && window.playerState.isAdmin);
+            invPanel.innerHTML = list.map((g) => {
+                const n = counts[g.id] || 0;
+                const have = isMaster || n > 0;
+                const isEquipped = have && equippedId === g.id;
+                const borderCls =
+                    !have
+                        ? 'opacity-40 border-slate-700 bg-slate-900/50'
+                        : isEquipped
+                          ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
+                          : `${g.border} ${g.bg}`;
+                const click = have ? `onclick="window.equipGear('${g.id}')"` : '';
+                const cursor = have ? 'cursor-pointer hover:scale-105' : 'cursor-default';
+                const art = g.img
+                    ? `<img src="${g.img}" alt="${g.name}">`
+                    : `<span>${g.emoji || ''}</span>`;
+                return `
+                    <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
+                        ${isEquipped ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
+                        <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art">${art}</div>
+                        <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${g.name}</div>
+                        <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">${have ? `×${isMaster ? Math.max(n, 1) : n}` : '미보유'}</div>
+                        ${
+                            have
+                                ? `<div class="text-[7px] text-emerald-400 font-bold text-center leading-tight">${gearStatLine(g)}</div>`
+                                : '<div class="text-[7px] text-slate-600">미보유</div>'
+                        }
+                    </div>`;
+            }).join('');
+        }
 
         const JOB_DATA = [
             { id: 'job_sp', name: '학생회 연합대장', sub: '(전교회장)', icon: 'fa-crown', color: 'text-amber-400', pay: 15, desc: '학교의 평화 리더', tags: ['#민주시민', '#협력'] },
@@ -2793,7 +2944,7 @@ function redrawPlazaGrantsUi() {
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
-            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
             conveniencePurchases: [],
@@ -12628,7 +12779,7 @@ ${subjectLine}
                     <div class="bg-amber-50 w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden border border-white/70">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-sm sm:text-base truncate text-white">${skin.name}</div>
-                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}</div>
+                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
                         <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold">${formatBongAmount(skin.price)}</div>
@@ -12927,6 +13078,14 @@ ${subjectLine}
                                     _electionChromeReady = true;
                                 }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
+                                if (settingsData.weatherRegion !== undefined) {
+                                    const nextKey = weatherRegionKey(settingsData.weatherRegion);
+                                    if (nextKey !== _lastWeatherRegionKey) {
+                                        _lastWeatherRegionKey = nextKey;
+                                        _schoolWeather = null;
+                                        void refreshSchoolWeather(true);
+                                    }
+                                }
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '설정 필요';
                                 
@@ -13766,7 +13925,7 @@ ${subjectLine}
                 getStudentJobName,
                 calculateExactLevel,
                 getLocalDateStr,
-                weaponData: WEAPON_DATA,
+                weaponData: [...WEAPON_DATA, ...SHIELD_DATA, ...SHOE_DATA],
                 skinData: SKIN_DATA,
             };
         }
@@ -15224,38 +15383,15 @@ ${subjectLine}
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);
 
-            const invPanel = document.getElementById('weaponSlots');
-            if (invPanel) {
-                const inv = window.playerState.inventory || [];
-                const counts = {};
-                inv.forEach((id) => {
-                    counts[id] = (counts[id] || 0) + 1;
-                });
-                invPanel.innerHTML = WEAPON_DATA.map((wp) => {
-                    const n = counts[wp.id] || 0;
-                    const isEquipped = window.playerState.equippedWeapon === wp.id;
-                    const borderCls =
-                        n === 0
-                            ? 'opacity-40 border-slate-700 bg-slate-900/50'
-                            : isEquipped
-                              ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
-                              : `${wp.border} ${wp.bg}`;
-                    const click = n > 0 ? `onclick="window.equipWeapon('${wp.id}')"` : '';
-                    const cursor = n > 0 ? 'cursor-pointer hover:scale-105' : 'cursor-default';
-                    return `
-                        <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
-                            ${isEquipped && n > 0 ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
-                            <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art">${wp.img ? `<img src="${wp.img}" alt="${wp.name}">` : wp.emoji}</div>
-                            <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${wp.name}</div>
-                            <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">×${n}</div>
-                            ${
-                                n > 0
-                                    ? `<div class="text-[7px] text-emerald-400 font-bold">+${wp.bonus}</div>`
-                                    : '<div class="text-[7px] text-slate-600">미보유</div>'
-                            }
-                        </div>`;
-                }).join('');
+            const inv = uniqueInventory(window.playerState.inventory || []);
+            window.playerState.inventory = inv;
+            if (ensureMasterAllGear() && !window.playerState.isGuest && currentStudentDocRef && !_masterGearSaving) {
+                _masterGearSaving = true;
+                void saveDataToCloud().finally(() => { _masterGearSaving = false; });
             }
+            renderGearSlotRow('weaponSlots', WEAPON_DATA, window.playerState.equippedWeapon);
+            renderGearSlotRow('shieldSlots', SHIELD_DATA, window.playerState.equippedShield);
+            renderGearSlotRow('shoeSlots', SHOE_DATA, window.playerState.equippedShoes);
 
             if(window.playerState.condition && window.playerState.condition.emotion) {
                 window.selectEmotion(window.playerState.condition.emotion.id, false);
@@ -15534,6 +15670,7 @@ ${subjectLine}
             if (typeof updateRaidEntryUI === 'function') updateRaidEntryUI();
             if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
             if (typeof refreshSchoolWeather === 'function') void refreshSchoolWeather(false);
+            if (typeof syncSchoolWeatherSearchUi === 'function') syncSchoolWeatherSearchUi();
             if (canRunBankSideEffects) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
@@ -15587,7 +15724,7 @@ ${subjectLine}
                 xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
-                inventory: ['wp1'], equippedWeapon: 'wp1', lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
+                inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 dragonBalls: [], dragonBallWeekendKey: '',
                 bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
@@ -15674,11 +15811,12 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                if (isAdmin) ensureMasterAllGear();
                 localStorage.setItem('sambong_student_id', studentId);
                 localStorage.setItem('sambong_student_pin', pin);
                 currentStudentDocRef = docRef;
@@ -16484,51 +16622,36 @@ ${subjectLine}
         };
 
         window.equipWeapon = async function(wpId) {
+            return window.equipGear(wpId);
+        };
+
+        window.equipGear = async function(gearId) {
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
             window.playerState.inventory = uniqueInventory(window.playerState.inventory);
-            if (!window.playerState.inventory.includes(wpId)) return;
-            if (window.playerState.equippedWeapon === wpId) window.playerState.equippedWeapon = null; 
-            else window.playerState.equippedWeapon = wpId; 
-            updateUI(); saveDataToCloud(); window.switchTab('plaza'); 
+            const g = getGear(gearId);
+            if (!g) return;
+            if (!window.playerState.isAdmin && !window.playerState.inventory.includes(gearId)) return;
+            const key = g.slot === 'weapon' ? 'equippedWeapon' : g.slot === 'shield' ? 'equippedShield' : 'equippedShoes';
+            if (window.playerState[key] === gearId) window.playerState[key] = null;
+            else window.playerState[key] = gearId;
+            updateUI();
+            saveDataToCloud();
         };
 
         async function handleQuestDrop(xp, opts = {}) {
             if (!window.playerState.inventory) window.playerState.inventory = [];
             window.playerState.inventory = uniqueInventory(window.playerState.inventory);
-            const invenCount = window.playerState.inventory.length;
-            let dropMultiplier = weaponDropMultiplier(invenCount);
-
-            const rand = Math.random() * 100;
-            let dropped = null;
-            
-            if (xp >= 80) {
-                if (rand < 1.2 * dropMultiplier) dropped = 'wp5'; 
-                else if (rand < 3 * dropMultiplier) dropped = 'wp4'; 
-                else if (rand < 6 * dropMultiplier) dropped = 'wp3';
-            } else if (xp >= 30) {
-                if (rand < 0.4 * dropMultiplier) dropped = 'wp4'; 
-                else if (rand < 1.5 * dropMultiplier) dropped = 'wp3'; 
-                else if (rand < 3.5 * dropMultiplier) dropped = 'wp2';
-            } else if (xp >= 16) {
-                if (rand < 0.2 * dropMultiplier) dropped = 'wp3'; 
-                else if (rand < 1 * dropMultiplier) dropped = 'wp2'; 
-                else if (rand < 2.5 * dropMultiplier) dropped = 'wp1';
-            } else {
-                if (rand < 0.8 * dropMultiplier) dropped = 'wp1';
-            }
-
-            if (dropped) {
-                const wp = WEAPON_DATA.find(w => w.id === dropped);
-                if ((window.playerState.inventory || []).includes(dropped)) {
-                    return;
-                }
-                window.playerState.inventory.push(dropped);
-                if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
-                await window.customAlert(
-                    `🎉 [무기 획득!]\n[${wp.emoji} ${wp.name}] (데미지 +${wp.bonus}) 이 컬렉션에 추가되었어요!\n같은 종류를 탭하면 장착합니다. 착용 효과는 레이드 데미지만 적용됩니다.`
-                );
-            }
+            const dropped = pickQuestDropId(xp, window.playerState.inventory);
+            if (!dropped) return;
+            if ((window.playerState.inventory || []).includes(dropped)) return;
+            const g = getGear(dropped);
+            window.playerState.inventory.push(dropped);
+            if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
+            const slotName = gearSlotLabel(g && g.slot);
+            await window.customAlert(
+                `🎉 [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n같은 칸을 탭하면 장착합니다. 무기 획득 시 경험치 버프는 없습니다.`
+            );
         }
 
         window.attemptQuest = async function(qId, xp, bong) {
@@ -16561,9 +16684,12 @@ ${subjectLine}
             let finalBong = catalogPay.bong;
             let isEarlyBirdJackpot = false;
             let buffAmount = 0;
-            
-            if (window.playerState.equippedWeapon && WEAPON_QUEST_XP_BUFF_RATE > 0) {
-                buffAmount = Math.max(1, Math.floor(finalXp * WEAPON_QUEST_XP_BUFF_RATE));
+            let weaponProc = null;
+
+            // 장착 무기가 확률로 데미지만큼 추가 XP를 줍니다. 획득 시 버프는 없습니다.
+            weaponProc = resolveQuestWeaponProc(window.playerState);
+            if (weaponProc && weaponProc.hit) {
+                buffAmount = Math.max(0, Math.floor(Number(weaponProc.extraXp) || 0));
                 finalXp += buffAmount;
             }
             
@@ -16611,7 +16737,7 @@ ${subjectLine}
             let alertMsg = `✅ [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongAmount(finalBong)}`;
             if (dailyAllClearMsg) alertMsg = dailyAllClearMsg.trim() + '\n\n' + alertMsg;
             if (isEarlyBirdJackpot) alertMsg += `\n\n🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`;
-            if (buffAmount > 0) alertMsg += `\n\n🗡️ [무기 버프] 추가 경험치 +${buffAmount} XP 획득!`;
+            if (buffAmount > 0 && weaponProc && weaponProc.weapon) alertMsg += `\n\n🗡️ [${weaponProc.weapon.name}] 발동! 추가 경험치 +${buffAmount} XP`;
 
             if (newLv > oldLv) {
                 const bonus = newLv * 3;
@@ -18421,10 +18547,12 @@ ${subjectLine}
                 return `<button type="button" ${click} class="char-dress-slot ${on ? 'is-on' : ''} ${have ? '' : 'opacity-60'}" title="${s.name}">
                     <span class="char-dress-slot-art">${s.img ? `<img src="${s.img}" alt="">` : s.emoji}</span>
                     <span class="char-dress-slot-name">${s.name}</span>
-                    <span class="char-dress-slot-own">${on ? '사용 중' : have ? (owned[s.id] ? '보유' : '살펴보기') : `${s.price}`}</span>
+                    <span class="char-dress-slot-own">${on ? '사용 중' : have ? (owned[s.id] ? '보유' : '살펴보기') : `${s.price}`}${skinStatLabel(s.id) ? ` · ${skinStatLabel(s.id)}` : ''}</span>
                 </button>`;
             }).join('');
             const wp = WEAPON_DATA.find((w) => w.id === window.playerState.equippedWeapon);
+            const shEq = getGear(window.playerState.equippedShield);
+            const shoeEq = getGear(window.playerState.equippedShoes);
             const studentBases = window.playerState.isAdmin ? listAllCharacterBases() : listCharacterBases(gender);
             const baseOn = (b) => b.id === current.id && !faces.some((s) => equipped[s.id]) && (!window.playerState.isAdmin || window.playerState.homeLookMode === 'student');
             const studentBaseHtml = `
@@ -18444,7 +18572,7 @@ ${subjectLine}
                     <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터 (광장 카드)</p>
                     <div class="grid grid-cols-5 gap-1.5">${looks.map((b) => {
                         const on = b.id === staffCurrent.id && window.playerState.homeLookMode !== 'student';
-                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}">
+                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}${staffLookStatLabel(b.id) ? ` · ${staffLookStatLabel(b.id)}` : ''}">
                             <img src="${b.img}" alt="${b.name}">
                             <span>${b.name}${b.masterOnly ? ' · 전용' : ''}</span>
                         </button>`;
@@ -18466,10 +18594,20 @@ ${subjectLine}
                 </div>
                 <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">상점 캐릭터</p>
                 <div class="char-dress-grid">${faceHtml}</div>
-                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">무기</p>
-                <div class="char-dress-slot ${wp ? 'is-on' : ''}" style="max-width:7rem">
-                    <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
-                    <span class="char-dress-slot-name">${wp ? wp.name : '미장착'}</span>
+                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">장비</p>
+                <div class="flex flex-wrap gap-1.5 justify-center">
+                    <div class="char-dress-slot ${wp ? 'is-on' : ''}" style="max-width:7rem">
+                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-name">${wp ? wp.name : '무기 미장착'}</span>
+                    </div>
+                    <div class="char-dress-slot ${shEq ? 'is-on' : ''}" style="max-width:7rem">
+                        <span class="char-dress-slot-art">${shEq ? shEq.emoji : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-name">${shEq ? shEq.name : '방패 미장착'}</span>
+                    </div>
+                    <div class="char-dress-slot ${shoeEq ? 'is-on' : ''}" style="max-width:7rem">
+                        <span class="char-dress-slot-art">${shoeEq ? shoeEq.emoji : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-name">${shoeEq ? shoeEq.name : '신발 미장착'}</span>
+                    </div>
                 </div>
                 <button type="button" onclick="window.openSkinShop()" class="char-dress-shop-btn">캐릭터 상점으로</button>`;
         }
@@ -18499,6 +18637,7 @@ ${subjectLine}
                     <div class="w-full aspect-square rounded-lg overflow-hidden bg-amber-50 mb-1">${art}</div>
                     <div class="text-[10px] font-black text-white truncate">${s.name}</div>
                     <div class="text-[9px] font-bold ${on ? 'text-yellow-200' : 'text-cyan-200'}">${sub}</div>
+                    ${skinStatLabel(s.id) ? `<div class="text-[8px] text-emerald-300 font-bold truncate">${skinStatLabel(s.id)}</div>` : ''}
                 </button>`;
             }).join('');
         }
@@ -18625,7 +18764,7 @@ ${subjectLine}
         const STUDENT_GAME_FIELD_KEYS = [
             'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
-            'inventory', 'equippedWeapon', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
+            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
@@ -18831,7 +18970,7 @@ ${subjectLine}
                     ids.forEach((sid) => {
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { inventory: [], equippedWeapon: null },
+                            { inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null },
                             { merge: true }
                         );
                     });
@@ -18842,6 +18981,8 @@ ${subjectLine}
                 if (window.playerState && !window.playerState.isAdmin) {
                     window.playerState.inventory = [];
                     window.playerState.equippedWeapon = null;
+                    window.playerState.equippedShield = null;
+                    window.playerState.equippedShoes = null;
                 }
             } catch (e) {
                 console.error('ensureSeason2WeaponReset', e);
@@ -19117,6 +19258,8 @@ ${subjectLine}
                 earlyBirdCount: 0,
                 inventory: [],
                 equippedWeapon: null,
+                equippedShield: null,
+                equippedShoes: null,
                 lunchBid: { date: '', amount: 0 },
                 lastLunchDeductDate: '',
                 questHistory: [],
@@ -19489,7 +19632,7 @@ ${subjectLine}
                     let dAmt = Math.abs(amount);
                     // 절대 방패는 경험치 차감만 막습니다. 봉 차감은 방패와 무관합니다.
                     if (type === 'xp') {
-                        const shielded = applyShieldToXpDeduct(stu, dAmt);
+                        const shielded = applyXpDeductWithGear(stu, dAmt, applyShieldToXpDeduct);
                         Object.assign(updates, shielded.updates);
                         dAmt = shielded.remainingDeduct;
                     }
@@ -19583,7 +19726,7 @@ ${subjectLine}
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const ok = await window.customConfirm(
                 type === 'xp'
-                    ? `모든 학생의 XP를 ${amount} 차감합니까?\n⚠️ 절대 방패 보유자는 경험치 대신 방패가 깎입니다.`
+                    ? `모든 학생의 XP를 ${amount} 차감합니까?\n⚠️ 장착 방패가 확률로 막을 수 있고, 절대 방패 보유자는 경험치 대신 방패가 깎입니다.`
                     : `모든 학생의 B를 ${amount} 차감합니까?\n절대 방패는 봉 차감과 무관합니다.`
             );
             if(!ok) return;
@@ -19616,10 +19759,10 @@ ${subjectLine}
                     let dAmt = amount;
                     // 절대 방패는 경험치 차감만 막습니다. 봉 차감은 방패와 무관합니다.
                     if (type === 'xp') {
-                        const shielded = applyShieldToXpDeduct(stu, dAmt);
+                        const shielded = applyXpDeductWithGear(stu, dAmt, applyShieldToXpDeduct);
                         Object.assign(updates, shielded.updates);
                         dAmt = shielded.remainingDeduct;
-                        if (shielded.absorbed > 0) pCount++;
+                        if (shielded.absorbed > 0 || shielded.blockedByGear) pCount++;
                     }
                     if (dAmt > 0) {
                         const cur = type === 'bong' ? bong : xp;
@@ -21409,7 +21552,8 @@ ${subjectLine}
                 const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
                 if(wp) {
                     weaponBonus = wp.bonus || 0;
-                    weaponMul = 1 + (weaponBonus / 200);
+                    // raidBonus 1~5를 2%~10% 배율로만 씁니다.
+                    weaponMul = 1 + (weaponBonus * 0.02);
                 }
             }
 

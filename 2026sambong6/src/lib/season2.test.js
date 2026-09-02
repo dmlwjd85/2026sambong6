@@ -95,6 +95,8 @@ describe('시즌 1 정산', () => {
         assert.equal(Object.prototype.hasOwnProperty.call(r.patch, 'ownedSkins'), false);
         assert.deepEqual(r.patch.inventory, []);
         assert.equal(r.patch.equippedWeapon, null);
+        assert.equal(r.patch.equippedShield, null);
+        assert.equal(r.patch.equippedShoes, null);
         assert.deepEqual(r.patch.itemRefundLedger, []);
         assert.deepEqual(r.patch.questHistory, []);
         assert.equal(r.patch.seasonNumberApplied, 2);

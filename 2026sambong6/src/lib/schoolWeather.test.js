@@ -2,10 +2,14 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     SCHOOL_WEATHER_NAVER_ID,
+    extractWeatherJson,
+    isSharedWeatherFresh,
     parseOpenMeteoWeather,
     parseGeocodeResults,
     sanitizeWeatherRegion,
+    sharedWeatherMatchesRegion,
     wmoToScene,
+    weatherRegionKey,
     weatherSceneMeta,
     weatherSourceUrl,
 } from './schoolWeather.js';
@@ -42,6 +46,25 @@ describe('학교 날씨', () => {
         assert.equal(seoul.label, '서울 종로구');
         assert.match(decodeURIComponent(weatherSourceUrl(seoul)), /종로구/);
         assert.equal(SCHOOL_WEATHER_NAVER_ID, '15270320');
+    });
+
+    it('공유 캐시와 프록시 JSON을 같은 지역에만 쓴다', () => {
+        const region = sanitizeWeatherRegion({ label: '당진시 석문면', lat: 36.981918, lon: 126.590825 });
+        const shared = {
+            ok: true,
+            temp: 18,
+            text: '맑음',
+            scene: 'sunny',
+            regionLabel: region.label,
+            regionKey: weatherRegionKey(region),
+            fetchedAt: 1000,
+        };
+        assert.equal(sharedWeatherMatchesRegion(shared, region), true);
+        assert.equal(sharedWeatherMatchesRegion(shared, { label: '서울 종로구', lat: 37.57, lon: 126.98 }), false);
+        assert.equal(isSharedWeatherFresh(shared, 1000 + 10 * 60 * 1000), true);
+        assert.equal(isSharedWeatherFresh(shared, 1000 + 60 * 60 * 1000), false);
+        const wrapped = extractWeatherJson('Title\n\n{"current":{"temperature_2m":20,"weather_code":0,"is_day":1,"time":"2026-09-02T10:00"},"daily":{"temperature_2m_max":[22],"temperature_2m_min":[14]}}');
+        assert.equal(wrapped.current.temperature_2m, 20);
     });
 });
 

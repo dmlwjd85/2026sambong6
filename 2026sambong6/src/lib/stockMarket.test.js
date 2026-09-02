@@ -10,8 +10,11 @@ import {
     extractYahooChartJson,
     formatChangePct,
     formatIndexPrice,
+    isKoreanStockSession,
     parseYahooChart,
+    sanitizeStockInvestments,
     settleStockPosition,
+    shouldFetchLiveMarketQuotes,
 } from './stockMarket.js';
 
 describe('지수 파싱', () => {
@@ -66,5 +69,29 @@ describe('은행 지수 투자', () => {
         assert.equal(sold.payout, 101);
         assert.equal(sold.daily.profit, STOCK_DAILY_PROFIT_CAP);
         assert.equal(sold.investments.kospi, null);
+    });
+
+    it('코스닥 포지션을 지키고 한국 장중에만 시세를 다시 읽는다', () => {
+        const bag = sanitizeStockInvestments({
+            kospi: { principal: 20, buyIndex: 2500, openedAt: 1 },
+            kosdaq: { principal: 30, buyIndex: 800, openedAt: 1 },
+            nasdaq: { principal: 40, buyIndex: 17000, openedAt: 1 },
+        });
+        assert.equal(bag.kosdaq.principal, 30);
+        const bought = applyBuyStock({}, 'kosdaq', 20, 850, 1000, '2026-09-02');
+        assert.equal(bought.ok, true);
+        assert.equal(bought.investments.kosdaq.principal, 20);
+        // 2026-09-02 수요일 10:00 KST = 01:00 UTC
+        assert.equal(isKoreanStockSession(Date.parse('2026-09-02T01:00:00.000Z')), true);
+        // 08:00 KST
+        assert.equal(isKoreanStockSession(Date.parse('2026-09-01T23:00:00.000Z')), false);
+        // 15:30 KST 장마감
+        assert.equal(isKoreanStockSession(Date.parse('2026-09-02T06:30:00.000Z')), false);
+        // 토요일
+        assert.equal(isKoreanStockSession(Date.parse('2026-09-05T01:00:00.000Z')), false);
+        assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T01:00:00.000Z'), { hasAnyQuote: true, cacheAgeMs: 60 * 60 * 1000 }), true);
+        assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T07:00:00.000Z'), { hasAnyQuote: true, cacheAgeMs: 60 * 60 * 1000 }), false);
+        assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T07:00:00.000Z'), { hasAnyQuote: false }), true);
+        assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T01:00:00.000Z'), { hasAnyQuote: true, cacheAgeMs: 10 * 60 * 1000, force: false }), false);
     });
 });

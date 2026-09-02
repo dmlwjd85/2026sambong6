@@ -173,3 +173,59 @@ export function openMeteoSchoolUrl(region) {
     });
     return `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
 }
+
+/** 학급 날씨는 1시간마다 다시 읽습니다. */
+export const WEATHER_REFRESH_MS = 60 * 60 * 1000;
+/** 공유·로컬 캐시가 이 시간보다 짧으면 네트워크를 다시 치지 않습니다. */
+export const WEATHER_CACHE_TTL_MS = 50 * 60 * 1000;
+
+/** 학교망에서 Open-Meteo가 막힐 때를 위한 읽기 전용 프록시 */
+export function openMeteoSchoolProxyUrl(region) {
+    return `https://r.jina.ai/${openMeteoSchoolUrl(region).replace('https://', 'http://')}`;
+}
+
+/** 프록시 응답에서 JSON 본문만 잘라 냅니다. */
+export function extractWeatherJson(text) {
+    const raw = String(text || '');
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch (e) {
+        const start = raw.indexOf('{"current"') >= 0 ? raw.indexOf('{"current"') : raw.indexOf('{');
+        if (start < 0) return null;
+        const sliced = raw.slice(start);
+        try {
+            return JSON.parse(sliced);
+        } catch (e2) {
+            const end = sliced.lastIndexOf('}');
+            if (end < 1) return null;
+            try {
+                return JSON.parse(sliced.slice(0, end + 1));
+            } catch (e3) {
+                return null;
+            }
+        }
+    }
+}
+
+export function weatherRegionKey(region) {
+    const r = sanitizeWeatherRegion(region);
+    return `${r.label}|${r.lat}|${r.lon}`;
+}
+
+/** 공유 캐시가 지금 보고 있는 지역과 같은지 */
+export function sharedWeatherMatchesRegion(shared, region) {
+    const src = shared && typeof shared === 'object' ? shared : null;
+    if (!src) return false;
+    const weather = sanitizeSchoolWeather(src);
+    if (!weather.ok || weather.temp == null) return false;
+    const r = sanitizeWeatherRegion(region);
+    const key = String(src.regionKey || '');
+    if (key) return key === weatherRegionKey(r);
+    return weather.regionLabel === r.label;
+}
+
+export function isSharedWeatherFresh(shared, nowMs, ttlMs = WEATHER_CACHE_TTL_MS) {
+    const fetchedAt = Number(shared && shared.fetchedAt) || 0;
+    return fetchedAt > 0 && (Number(nowMs) || 0) - fetchedAt < (Number(ttlMs) || WEATHER_CACHE_TTL_MS);
+}

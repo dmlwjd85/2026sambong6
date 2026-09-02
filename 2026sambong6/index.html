@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
+    <input type="file" id="quizBankExcelInput" accept=".xlsx,.xls,.csv" class="sr-only" tabindex="-1" aria-hidden="true" onchange="window.onQuizBankExcelPicked(event)">
     <div id="appVersionCorner" data-app-version class="fixed bottom-28 right-3 z-[380] md:top-[8.65rem] md:bottom-auto text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.4</div>
     <!-- 네트워크·로딩 UX -->
     <div id="offlineBanner" class="hidden fixed top-0 inset-x-0 z-[400] bg-amber-600 text-white text-center text-[11px] sm:text-xs font-bold py-2.5 px-3 shadow-lg">
@@ -505,7 +506,7 @@
                             <span id="schoolWeatherTemp" class="font-display text-2xl sm:text-3xl text-white tracking-wide">--°</span>
                             <span id="schoolWeatherText" class="text-xs sm:text-sm font-bold text-sky-100 truncate">날씨를 불러오는 중…</span>
                         </div>
-                        <p id="schoolWeatherMeta" class="text-[10px] sm:text-[11px] text-slate-300 mt-1 leading-snug">당진시 석문면</p>
+                        <p id="schoolWeatherMeta" class="text-[10px] sm:text-[11px] text-slate-300 mt-1 leading-snug">당진시 석문면 · 1시간마다 갱신</p>
                         <a id="schoolWeatherLink" href="https://weather.naver.com/today/15270320" target="_blank" rel="noopener noreferrer" class="mt-1 text-[10px] font-black text-cyan-300 hover:text-cyan-200">네이버 날씨 자세히 보기</a>
                         <div id="schoolWeatherSearchWrap" class="hidden mt-2 space-y-1">
                             <div class="flex gap-1">
@@ -526,12 +527,12 @@
                         <div id="kospiChange" class="text-[10px] font-black text-slate-400">—</div>
                     </div>
                     <div class="rounded-xl bg-slate-950/70 border border-sky-500/25 px-2 py-2">
-                        <div class="text-[10px] text-slate-400 font-bold">나스닥</div>
-                        <div id="nasdaqPrice" class="font-display text-lg text-white leading-tight">—</div>
-                        <div id="nasdaqChange" class="text-[10px] font-black text-slate-400">—</div>
+                        <div class="text-[10px] text-slate-400 font-bold">코스닥</div>
+                        <div id="kosdaqPrice" class="font-display text-lg text-white leading-tight">—</div>
+                        <div id="kosdaqChange" class="text-[10px] font-black text-slate-400">—</div>
                     </div>
                 </div>
-                <p id="marketTickerMeta" class="text-[9px] text-slate-400 mt-2 leading-snug">지수를 불러오는 중…</p>
+                <p id="marketTickerMeta" class="text-[9px] text-slate-400 mt-2 leading-snug">장중 1시간마다 갱신합니다.</p>
             </div>
             </div>
 
@@ -637,11 +638,6 @@
                 <div onclick="window.visitBank()" class="island-hover worldmap-pin absolute top-[91%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
                     <span class="worldmap-crest worldmap-crest-bank pointer-events-none" aria-hidden="true"><i class="fa-solid fa-landmark"></i></span>
                     <div id="mapBankLabel" class="worldmap-label worldmap-label-arcane mt-1.5">삼봉 은행</div>
-                </div>
-
-                <div onclick="window.switchTab('challenge','catbattle')" class="island-hover worldmap-pin absolute top-[58%] left-[12%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
-                    <span class="worldmap-crest worldmap-crest-portal pointer-events-none" aria-hidden="true"><i class="fa-solid fa-cat"></i></span>
-                    <div class="worldmap-label worldmap-label-arcane mt-1.5">냥코 원정</div>
                 </div>
 
                 <!-- 11. 명예의 전당 (시즌 1 기록 도서관) -->
@@ -1579,13 +1575,12 @@
 
         <!-- ★ 6. 도전 탭 (골든벨 · 스피드퀴즈 · 퀴즈레이드) ★ -->
         <section id="challengeSection" class="hidden">
-            <input type="file" id="quizBankExcelInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="window.onQuizBankExcelPicked(event)">
             <div class="max-w-7xl mx-auto space-y-4">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-yellow-300"><i class="fa-solid fa-trophy"></i> 도전</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드 · 냥코 원정에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
                 </div>
-                <div id="challengeSubtabs" class="app-sub-dock cols-4">
+                <div id="challengeSubtabs" class="app-sub-dock cols-3">
                     <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="app-sub-item is-active">
                         <span class="app-sub-icon"><img src="nav/nav-goldenbell.webp" alt="" width="192" height="192"></span>
                         <span>골든벨</span>
@@ -1598,10 +1593,6 @@
                         <span class="app-sub-icon"><img src="nav/nav-raid.webp" alt="" width="192" height="192"></span>
                         <span>퀴즈레이드</span>
                     </button>
-                    <button type="button" id="challengeSub-catbattle" onclick="window.switchChallengeSub('catbattle')" class="app-sub-item">
-                        <span class="app-sub-fa text-orange-300"><i class="fa-solid fa-cat"></i></span>
-                        <span>냥코원정</span>
-                    </button>
                 </div>
 
                 <div id="challengePane-goldenbell" class="space-y-3">
@@ -1609,20 +1600,20 @@
                         <h3 class="text-base font-bold text-sb-gold"><i class="fa-solid fa-bell"></i> 삼봉 골든벨</h3>
                         <p class="text-[10px] text-slate-400 mt-0.5">문제를 푼 뒤 <strong class="text-yellow-200/90">최종 제출 및 채점</strong> 한 번으로 채점·보상이 적용됩니다.</p>
                     </div>
-                    <div id="gbStudentContainer" class="space-y-3 pb-4">
-                        <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
-                    </div>
                     <div id="gbMasterPanel" class="hidden glass-panel p-4 rounded-xl mb-4 border border-yellow-500 bg-slate-900/80">
                         <div class="flex justify-between mb-3">
                             <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨 출제 관리</h3>
                             <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
                         </div>
-                        <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
-                        <div class="flex gap-2 flex-wrap mb-2">
-                            <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-lime-200 text-[10px] py-2 rounded font-bold border border-lime-700/60"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
-                            <button type="button" onclick="window.pickQuizBankExcel('goldenbell')" class="flex-1 bg-lime-800 hover:bg-lime-700 text-white text-[10px] py-2 rounded font-bold border border-lime-600"><i class="fa-solid fa-upload"></i> 엑셀로 한 번에 넣기</button>
+                        <div id="gbExcelCard" class="mb-3 p-3 rounded-xl border-2 border-lime-500/70 bg-lime-950/50">
+                            <p class="text-[11px] font-black text-lime-200 mb-2"><i class="fa-solid fa-file-excel mr-1"></i>엑셀로 문제 넣기</p>
+                            <div class="flex gap-2 flex-wrap mb-2">
+                                <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-lime-100 text-[12px] py-2.5 rounded-lg font-black border border-lime-500/80"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
+                                <button type="button" onclick="window.pickQuizBankExcel('goldenbell')" class="flex-1 min-h-[44px] bg-lime-700 hover:bg-lime-600 text-white text-[12px] py-2.5 rounded-lg font-black border border-lime-400"><i class="fa-solid fa-upload"></i> 엑셀로 한 번에 넣기</button>
+                            </div>
+                            <p class="text-[9px] text-lime-100/80">서식을 받아 문제·정답을 적고 올리면 아래 입력칸(최대 10문항)이 채워지고, 파일의 모든 문항은 퀴즈 레이드 문제 은행에도 저장됩니다.</p>
                         </div>
-                        <p class="text-[9px] text-slate-500 mb-2">엑셀로 올리면 위 입력칸(최대 10문항)이 채워지고, 파일의 모든 문항은 퀴즈 레이드 문제 은행에도 저장됩니다.</p>
+                        <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
                         <div class="flex gap-2 flex-wrap">
                             <button onclick="window.saveGoldenBellDraft()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
                             <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
@@ -1635,6 +1626,9 @@
                             <button onclick="window.toggleGoldenBellPreview()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">학생 화면 미리보기</button>
                         </div>
                         <div id="gbAdminDashboard" class="mt-4 border-t border-yellow-500/30 pt-4 hidden"></div>
+                    </div>
+                    <div id="gbStudentContainer" class="space-y-3 pb-4">
+                        <div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">데이터 로딩 중...</div>
                     </div>
                 </div>
 
@@ -1695,8 +1689,8 @@
                         <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-brain text-purple-400"></i> 퀴즈 레이드 · 문제 은행</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
                         <p class="text-[9px] text-slate-400 mb-3">일일이 입력하지 말고 엑셀 서식에 문제·정답·보기(객관식)를 적어 한 번에 올리세요. 골든벨·스피드퀴즈로 출제한 문제도 은행에 쌓이며, 레이드 시작 시 그중 무작위로 나옵니다. 5명이 모이면 퀴즈가 시작됩니다.</p>
                         <div class="flex gap-2 flex-wrap mb-3">
-                            <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-lime-200 text-[10px] py-2 rounded font-bold border border-lime-700/60"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
-                            <button type="button" onclick="window.pickQuizBankExcel('bank')" class="flex-1 bg-lime-800 hover:bg-lime-700 text-white text-[10px] py-2 rounded font-bold border border-lime-600"><i class="fa-solid fa-upload"></i> 엑셀 한 번에 올리기</button>
+                            <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-lime-100 text-[12px] py-2.5 rounded-lg font-black border border-lime-500/80"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
+                            <button type="button" onclick="window.pickQuizBankExcel('bank')" class="flex-1 min-h-[44px] bg-lime-700 hover:bg-lime-600 text-white text-[12px] py-2.5 rounded-lg font-black border border-lime-400"><i class="fa-solid fa-upload"></i> 엑셀 한 번에 올리기</button>
                             <button type="button" onclick="window.clearQuizBank()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 px-3 rounded font-bold border border-slate-600">은행 비우기</button>
                         </div>
                         <p id="quizBankSummary" class="text-[10px] text-purple-200 font-bold mb-2">문제 은행 0문항</p>
@@ -1720,24 +1714,6 @@
                         <div class="mt-2 flex gap-2">
                             <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 퀴즈)</button>
                         </div>
-                    </div>
-                </div>
-
-                <div id="challengePane-catbattle" class="hidden space-y-3">
-                    <div class="glass-panel p-4 rounded-2xl border border-orange-400/50 bg-slate-900/85">
-                        <h3 class="text-base font-bold text-orange-300 mb-1"><i class="fa-solid fa-cat mr-1"></i> 냥코 원정</h3>
-                        <p class="text-[10px] text-slate-400 leading-relaxed">자기 캐릭터가 자동으로 싸웁니다. 친구는 최대 2명까지 넣을 수 있고, 넣을수록 적도 강해집니다. 하루 승리 4회, 보상은 아주 작습니다.</p>
-                        <p id="catBattleHint" class="text-[10px] text-orange-200/90 font-bold mt-2">오늘 승리 0 / 4</p>
-                        <div id="catBattleFriends" class="mt-3 flex flex-wrap gap-1.5"></div>
-                        <div id="catBattleStages" class="mt-3 grid grid-cols-4 sm:grid-cols-6 gap-1.5"></div>
-                    </div>
-                    <div id="catBattleField" class="cat-battle-field hidden">
-                        <div class="cat-battle-hud">
-                            <div class="cat-castle-bar"><span id="catPlayerHpFill"></span><em id="catPlayerHpText">아군 성</em></div>
-                            <div class="cat-castle-bar is-enemy"><span id="catEnemyHpFill"></span><em id="catEnemyHpText">적 성</em></div>
-                        </div>
-                        <div id="catBattleLane" class="cat-battle-lane"></div>
-                        <p id="catBattleStatus" class="text-center text-[11px] font-black text-orange-100 mt-2">자동 전투 중…</p>
                     </div>
                 </div>
             </div>
@@ -1839,12 +1815,13 @@
                     <p id="bankTransferPreview" class="text-[10px] text-slate-400 leading-snug">1~5000봉까지 보낼 수 있습니다.</p>
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-400/45 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="invest">
-                    <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-chart-line"></i> 코스피 · 나스닥 투자</h3>
-                    <p class="text-[9px] text-slate-400 leading-relaxed">지갑에서 10~150봉을 넣고, 실제 지수 등락만큼 되찾습니다. 하루 수익은 최대 8봉이고 등락도 작게 묶여 있습니다. 시장마다 한 건만 보유할 수 있습니다.</p>
+                    <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-chart-line"></i> 코스피 · 코스닥 · 나스닥 투자</h3>
+                    <p class="text-[9px] text-slate-400 leading-relaxed">지갑에서 10~150봉을 넣고, 실제 지수 등락만큼 되찾습니다. 하루 수익은 최대 8봉이고 등락도 작게 묶여 있습니다. 시장마다 한 건만 보유할 수 있습니다. 코스피·코스닥은 장중 1시간마다 갱신됩니다.</p>
                     <div id="bankInvestQuoteLine" class="text-[10px] text-amber-100 font-bold">지수를 불러오는 중…</div>
                     <div class="flex gap-2 flex-wrap items-center">
                         <input type="number" id="bankInvestAmount" min="10" max="150" step="1" placeholder="투자 B" data-currency-placeholder="투자 {u}" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="void window.buyStockIndex('kospi')" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">코스피 매수</button>
+                        <button type="button" onclick="void window.buyStockIndex('kosdaq')" class="bg-lime-700 hover:bg-lime-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">코스닥 매수</button>
                         <button type="button" onclick="void window.buyStockIndex('nasdaq')" class="bg-sky-700 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">나스닥 매수</button>
                     </div>
                     <div id="bankInvestPositions" class="space-y-2"></div>

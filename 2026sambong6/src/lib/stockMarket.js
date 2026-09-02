@@ -1,12 +1,22 @@
 /**
- * 코스피·나스닥 시세와 학급 은행 투자.
- * 시세는 공개 차트 API를 쓰고, 수익은 인플레이션을 막기 위해 작게 묶습니다.
+ * 코스피·코스닥·나스닥 시세와 학급 은행 투자.
+ * 홈 티커는 코스피·코스닥을 보여주고, 시세는 공개 차트 API를 씁니다.
+ * 수익은 인플레이션을 막기 위해 작게 묶습니다.
  */
 
 export const STOCK_MARKETS = [
     { id: 'kospi', name: '코스피', symbol: '^KS11' },
+    { id: 'kosdaq', name: '코스닥', symbol: '^KQ11' },
     { id: 'nasdaq', name: '나스닥', symbol: '^IXIC' },
 ];
+
+/** 홈 실시간 지수 카드에 보여줄 시장 (한국 장중 1시간 갱신) */
+export const TICKER_MARKETS = STOCK_MARKETS.filter((m) => m.id === 'kospi' || m.id === 'kosdaq');
+
+/** 장중 1시간마다 네트워크 시세를 다시 읽습니다. */
+export const MARKET_REFRESH_MS = 60 * 60 * 1000;
+/** 공유·로컬 캐시가 이 시간보다 짧으면 다시 치지 않습니다. */
+export const MARKET_CACHE_TTL_MS = 50 * 60 * 1000;
 
 export const STOCK_INVEST_MIN = 10;
 export const STOCK_INVEST_MAX = 150;
@@ -16,6 +26,43 @@ export const STOCK_MAX_ABS_MOVE_TOTAL = 0.12;
 
 export function getStockMarket(id) {
     return STOCK_MARKETS.find((m) => m.id === String(id || '')) || null;
+}
+
+/**
+ * 한국 주식 정규장: 평일 09:00~15:30 (Asia/Seoul).
+ * 15:30부터는 장마감으로 보고 네트워크 갱신을 멈춥니다.
+ */
+export function isKoreanStockSession(nowMs = Date.now()) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul',
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(new Date(nowMs));
+    const map = {};
+    parts.forEach((p) => {
+        if (p.type !== 'literal') map[p.type] = p.value;
+    });
+    const weekday = String(map.weekday || '');
+    if (weekday === 'Sat' || weekday === 'Sun') return false;
+    const minutes = (Number(map.hour) || 0) * 60 + (Number(map.minute) || 0);
+    return minutes >= 9 * 60 && minutes < 15 * 60 + 30;
+}
+
+/**
+ * 장중에는 캐시가 오래되면 다시 읽고, 장 마감 뒤에는 마지막 시세를 유지합니다.
+ * 시세가 하나도 없으면 장 여부와 관계없이 한 번은 가져옵니다.
+ */
+export function shouldFetchLiveMarketQuotes(nowMs, opts) {
+    const o = opts && typeof opts === 'object' ? opts : {};
+    const force = !!o.force;
+    const cacheAgeMs = Number.isFinite(Number(o.cacheAgeMs)) ? Number(o.cacheAgeMs) : Infinity;
+    const hasAnyQuote = !!o.hasAnyQuote;
+    const fresh = hasAnyQuote && cacheAgeMs < MARKET_CACHE_TTL_MS;
+    if (fresh && !force) return false;
+    if (!hasAnyQuote) return true;
+    return isKoreanStockSession(nowMs);
 }
 
 export function yahooChartUrl(symbol) {
@@ -97,6 +144,7 @@ export function sanitizeStockInvestments(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     return {
         kospi: sanitizeStockPosition(src.kospi),
+        kosdaq: sanitizeStockPosition(src.kosdaq),
         nasdaq: sanitizeStockPosition(src.nasdaq),
     };
 }

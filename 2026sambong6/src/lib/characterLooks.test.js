@@ -39,10 +39,12 @@ describe('등급 안내', () => {
 });
 
 describe('마스터 수호 캐릭터', () => {
-    it('용·호랑이·현무·해태 4종이다', () => {
+    it('용·호랑이·현무·해태와 그리스 신화 10종이 있다', () => {
         const looks = listStaffLooks();
-        assert.equal(looks.length, 4);
-        assert.deepEqual(looks.map((l) => l.name), ['용', '호랑이', '현무', '해태']);
+        assert.equal(looks.length, 14);
+        assert.deepEqual(looks.slice(0, 4).map((l) => l.name), ['용', '호랑이', '현무', '해태']);
+        assert.equal(looks.filter((l) => l.masterOnly).length, 10);
+        assert.equal(resolveStaffLook('staff_zeus', 'gm').id, 'staff_zeus');
         assert.equal(resolveStaffLook('staff_haetae', 'gm').id, 'staff_haetae');
         assert.equal(resolveStaffLook('', 'gm_a').id, 'staff_tiger');
         assert.equal(resolveStaffLook('', 'gm').id, 'staff_dragon');

@@ -485,6 +485,21 @@
                 <div id="seasonTimerDisplay" class="font-display text-cyan-400 tracking-wider text-sm sm:text-base">계산중...</div>
             </div>
 
+            <!-- 학교 지역 날씨 — 네이버 당진시 석문면(15270320)을 기준으로 홈에 표시 -->
+            <div id="schoolWeatherCard" class="school-weather-card glass-panel p-3 rounded-2xl border border-sky-400/40 bg-slate-800/85 shadow-sm">
+                <div class="flex items-stretch gap-3">
+                    <img id="schoolWeatherArt" class="school-weather-art" src="weather/scene-cloudy.webp" alt="날씨">
+                    <div class="min-w-0 flex-1 flex flex-col justify-center">
+                        <div class="flex items-baseline gap-2">
+                            <span id="schoolWeatherTemp" class="font-display text-2xl sm:text-3xl text-white tracking-wide">--°</span>
+                            <span id="schoolWeatherText" class="text-xs sm:text-sm font-bold text-sky-100 truncate">날씨를 불러오는 중…</span>
+                        </div>
+                        <p id="schoolWeatherMeta" class="text-[10px] sm:text-[11px] text-slate-300 mt-1 leading-snug">당진시 석문면</p>
+                        <a id="schoolWeatherLink" href="https://weather.naver.com/today/15270320" target="_blank" rel="noopener noreferrer" class="mt-1 text-[10px] font-black text-cyan-300 hover:text-cyan-200">네이버 날씨 자세히 보기</a>
+                    </div>
+                </div>
+            </div>
+
             <div class="app-sub-dock cols-3 mb-3" data-pane-group="dashboard" role="tablist">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="dashboard" data-pane="map" onclick="window.switchInnerPane('dashboard','map')">
                     <span class="app-sub-fa"><i class="fa-solid fa-map"></i></span>
@@ -504,6 +519,7 @@
             <div class="inner-pane" data-pane-group="dashboard" data-pane="map">
             <div id="worldMapArea" class="night-sky worldmap-realm w-full h-[400px] sm:h-[480px] xl:h-[540px] rounded-3xl overflow-hidden relative mb-4">
                 <img class="worldmap-atlas" src="worldmap/season2-atlas.webp" alt="" aria-hidden="true">
+                <div id="worldmapWeatherLayer" class="worldmap-weather-layer" aria-hidden="true"></div>
                 <div class="worldmap-vignette" aria-hidden="true"></div>
                 <div class="worldmap-mist" aria-hidden="true"></div>
                 <div class="worldmap-season-seal" aria-hidden="true">시즌 2 · 환상의 대륙</div>
@@ -1218,6 +1234,12 @@
                         <canvas id="diaryCanvas" class="diary-canvas w-full" width="360" height="180" aria-label="일기 그림"></canvas>
                     </div>
                     <p id="diaryTeacherNote" class="hidden text-[11px] text-amber-100 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2 py-2"></p>
+                    <div id="diaryTeacherNoteAdmin" class="hidden space-y-1">
+                        <label class="block text-[10px] text-slate-400 font-bold">선생님 한마디
+                            <textarea id="diaryTeacherNoteInput" maxlength="120" rows="2" class="mt-1 w-full bg-slate-950 border border-amber-500/40 text-white px-2 py-2 rounded-lg text-xs" placeholder="확인 후에도 한마디를 남길 수 있어요."></textarea>
+                        </label>
+                        <button type="button" onclick="void window.saveDiaryTeacherNote()" class="w-full min-h-[40px] bg-amber-700 hover:bg-amber-600 text-white font-black rounded-xl text-xs">한마디 저장</button>
+                    </div>
                     <button type="button" id="diarySaveBtn" onclick="void window.saveDiaryEntry()" class="w-full min-h-[48px] bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl text-sm">일기 저장</button>
                     <div>
                         <h4 class="text-[11px] font-bold text-slate-300 mb-2">지난 일기</h4>
@@ -1229,7 +1251,7 @@
             <div class="inner-pane hidden" data-pane-group="literature" data-pane="review">
                 <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-emerald-400 space-y-3">
                     <h3 class="font-bold text-sm text-emerald-200"><i class="fa-solid fa-check"></i> 문학 확인</h3>
-                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 독서기록은 하루에 학생당 한 권, 일기는 확인 전까지 고칠 수 있습니다.</p>
+                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 독서기록은 하루에 학생당 한 권, 일기는 확인 후에도 고칠 수 있고 선생님 한마디도 나중에 달 수 있습니다.</p>
                     <h4 class="text-[11px] font-bold text-amber-200 mt-2">독서기록</h4>
                     <div id="readingReviewList" class="space-y-3"></div>
                     <h4 class="text-[11px] font-bold text-sky-200 mt-3">일기장</h4>
@@ -1677,6 +1699,10 @@
                             <span class="app-sub-fa"><i class="fa-solid fa-box-open"></i></span>
                             <span>적금</span>
                         </button>
+                        <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="bank" data-pane="transfer" onclick="window.switchInnerPane('bank','transfer')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-arrow-right-arrow-left"></i></span>
+                            <span>이체</span>
+                        </button>
                         <button type="button" class="app-sub-item inner-pane-btn inner-pane-admin hidden" data-pane-group="bank" data-pane="admin" onclick="window.switchInnerPane('bank','admin')">
                             <span class="app-sub-fa"><i class="fa-solid fa-percent"></i></span>
                             <span>관리</span>
@@ -1711,6 +1737,19 @@
                         <button type="button" onclick="window.openTermDeposit()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">적금 가입</button>
                     </div>
                 </div>
+                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-emerald-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="transfer">
+                    <h3 class="text-emerald-200 font-bold text-sm"><i class="fa-solid fa-arrow-right-arrow-left"></i> 계좌이체</h3>
+                    <p class="text-[9px] text-slate-500">지갑에서 다른 학생에게 봉을 보냅니다. 마스터도 자기 지갑에서 보낼 수 있습니다. 수수료는 보내는 사람이 냅니다.</p>
+                    <p id="bankTransferFeeHint" class="text-[10px] text-emerald-200/90 font-bold">이체 수수료 0봉</p>
+                    <label class="block text-[10px] text-slate-400 font-bold">받는 사람
+                        <select id="bankTransferTarget" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold"></select>
+                    </label>
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <input type="number" id="bankTransferAmount" min="1" max="5000" step="1" placeholder="보낼 B" data-currency-placeholder="보낼 {u}" class="flex-1 min-w-[120px] bg-slate-900 border border-emerald-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <button type="button" onclick="void window.transferBong()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">이체</button>
+                    </div>
+                    <p id="bankTransferPreview" class="text-[10px] text-slate-400 leading-snug">1~5000봉까지 보낼 수 있습니다.</p>
+                </div>
 
                 <!-- 은행 관리 (마스터 J) -->
                 <div class="inner-pane hidden lg:col-span-3 space-y-3" data-pane-group="bank" data-pane="admin">
@@ -1720,6 +1759,15 @@
                     <div class="flex flex-wrap gap-2 items-center">
                         <input type="number" id="gmBankInterestRate" min="0" max="100" step="0.1" placeholder="예: 3" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
                         <button type="button" onclick="window.saveBankInterestRate()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
+                    </div>
+                </div>
+
+                <div id="bankTransferFeeAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-emerald-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-arrow-right-arrow-left text-emerald-400"></i> 이체 수수료 (봉)</h3>
+                    <p class="text-[9px] text-slate-400 mb-2">학생·마스터가 계좌이체할 때 보내는 사람이 내는 수수료입니다. 0~50봉.</p>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <input type="number" id="gmBankTransferFee" min="0" max="50" step="1" placeholder="예: 1" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
+                        <button type="button" onclick="void window.saveBankTransferFee()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
                     </div>
                 </div>
 

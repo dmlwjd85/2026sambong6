@@ -1,7 +1,7 @@
 /**
  * 문학 탭: 독서기록장·일기장.
  * 보상은 교사가 미리 정한 XP·봉이며, 독서기록·일기 모두 확인과 동시에 지급됩니다.
- * 독서기록은 하루 1회만 제출할 수 있습니다. 일기는 확인 전까지 같은 날을 고쳐 저장할 수 있습니다.
+ * 일기는 확인 후에도 고쳐 저장할 수 있고, 교사는 보상을 다시 주지 않고 한마디만 고칠 수 있습니다.
  */
 
 export const LITERATURE_REWARD_XP_MAX = 80;
@@ -266,7 +266,7 @@ export function diariesVisibleTo(viewer, entries) {
 
 /**
  * 오늘 일기 저장 가능 여부.
- * 확인 완료면 막습니다. 대기 중이면 같은 날을 고쳐 저장할 수 있습니다.
+ * 확인 완료여도 같은 날을 고쳐 저장할 수 있습니다. 보상은 다시 지급하지 않습니다.
  */
 export function diarySubmitState(entries, studentId, dateStr) {
     const sid = String(studentId || '');
@@ -275,7 +275,8 @@ export function diarySubmitState(entries, studentId, dateStr) {
     const pending = mine.find((e) => e.status === 'pending');
     const approved = mine.find((e) => e.status === 'approved');
     const rejected = mine.find((e) => e.status === 'rejected');
-    if (approved) return { ok: false, reason: 'already', existing: approved };
+    // 확인 후에도 고쳐 쓸 수 있습니다. (교사가 한마디를 나중에 달 수 있게 열어 둡니다.)
+    if (approved) return { ok: true, reason: 'revise', existing: approved };
     if (pending) return { ok: true, reason: 'update', existing: pending };
     if (rejected) return { ok: true, reason: 'resubmit', existing: rejected };
     return { ok: true, reason: 'new', existing: null };
@@ -309,6 +310,20 @@ export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now(
         },
         grantXp: pay.diaryRewardXp,
         grantBong: pay.diaryRewardBong,
+    };
+}
+
+/** 이미 확인한 일기에 한마디만 고칩니다. 보상은 건드리지 않습니다. */
+export function applyDiaryTeacherNote(entry, note, nowMs = Date.now()) {
+    const cur = sanitizeDiaryEntry(entry, nowMs);
+    if (!cur.studentId || !cur.date) return { skip: true, entry: cur };
+    return {
+        skip: false,
+        entry: {
+            ...cur,
+            teacherNote: clipText(note, LITERATURE_TEACHER_NOTE_MAX),
+            teacherNoteAt: nowMs,
+        },
     };
 }
 

@@ -2288,6 +2288,92 @@
             #worldMapArea .worldmap-season-seal { font-size: 10px; top: 0.85rem; left: 0.95rem; }
         }
 
+        /* 학교 날씨 — 홈 카드 + 월드맵 장면 연동 */
+        .school-weather-card {
+            overflow: hidden;
+        }
+        .school-weather-art {
+            width: 7.2rem;
+            height: 5.4rem;
+            object-fit: cover;
+            border-radius: 0.9rem;
+            border: 2px solid rgba(125, 211, 252, 0.45);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+            flex-shrink: 0;
+            background: #0c4a6e;
+        }
+        @media (min-width: 640px) {
+            .school-weather-art { width: 9rem; height: 6.4rem; }
+        }
+        #worldMapArea .worldmap-weather-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            pointer-events: none;
+            background-size: cover;
+            background-position: center 40%;
+            opacity: 0;
+            transition: opacity 0.45s ease;
+        }
+        #worldMapArea.weather-sunny .worldmap-weather-layer,
+        #worldMapArea.weather-cloudy .worldmap-weather-layer,
+        #worldMapArea.weather-rain .worldmap-weather-layer,
+        #worldMapArea.weather-snow .worldmap-weather-layer,
+        #worldMapArea.weather-storm .worldmap-weather-layer,
+        #worldMapArea.weather-night .worldmap-weather-layer {
+            opacity: 0.32;
+            mix-blend-mode: soft-light;
+        }
+        #worldMapArea.weather-rain .worldmap-weather-layer,
+        #worldMapArea.weather-storm .worldmap-weather-layer {
+            opacity: 0.42;
+            mix-blend-mode: multiply;
+        }
+        #worldMapArea.weather-snow .worldmap-weather-layer {
+            opacity: 0.38;
+        }
+        #worldMapArea.weather-night .worldmap-weather-layer {
+            opacity: 0.5;
+            mix-blend-mode: multiply;
+        }
+        #worldMapArea.weather-rain::after,
+        #worldMapArea.weather-storm::after {
+            content: '';
+            position: absolute;
+            inset: -30% -10%;
+            z-index: 4;
+            pointer-events: none;
+            background-image: repeating-linear-gradient(118deg, transparent 0 10px, rgba(186, 230, 253, 0.28) 10px 12px);
+            animation: weather-rain-fall 0.7s linear infinite;
+        }
+        #worldMapArea.weather-storm::after {
+            background-image: repeating-linear-gradient(118deg, transparent 0 8px, rgba(253, 224, 71, 0.18) 8px 9px, transparent 9px 16px, rgba(186, 230, 253, 0.3) 16px 18px);
+        }
+        #worldMapArea.weather-snow::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 4;
+            pointer-events: none;
+            background-image:
+                radial-gradient(circle, rgba(255,255,255,0.9) 1px, transparent 1.4px),
+                radial-gradient(circle, rgba(255,255,255,0.7) 1px, transparent 1.5px);
+            background-size: 42px 42px, 28px 28px;
+            background-position: 0 0, 14px 18px;
+            animation: weather-snow-fall 3.4s linear infinite;
+            opacity: 0.55;
+        }
+        @keyframes weather-rain-fall {
+            from { transform: translateY(-8%); }
+            to { transform: translateY(8%); }
+        }
+        @keyframes weather-snow-fall {
+            from { background-position: 0 0, 14px 18px; }
+            to { background-position: 0 42px, 14px 60px; }
+        }
+        body.weather-rainy .school-weather-card { border-color: rgba(56, 189, 248, 0.7); }
+        body.weather-snowy .school-weather-card { border-color: rgba(226, 232, 240, 0.65); }
+
         /* 미스테리 주사위 굴림 애니메이션 */
         @keyframes dice-spin-shake { 0%, 100% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-18deg) scale(1.08); } 50% { transform: rotate(14deg) scale(1.05); } 75% { transform: rotate(-10deg) scale(1.1); } }
         .dice-roll-stage { animation: dice-spin-shake 0.12s ease-in-out infinite; }

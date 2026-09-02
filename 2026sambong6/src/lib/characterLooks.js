@@ -12,12 +12,22 @@ export const CHARACTER_BASES = [
     { id: 'base_f3', gender: 'F', name: '초원 백성', desc: '가죽옷을 입은 평범한 아이', img: 'chars/base-f3.webp' },
 ];
 
-/** 마스터 홈에서 고르는 수호 캐릭터 4종 */
+/** 마스터 홈에서 고르는 수호 캐릭터 — 사신 4종 + 그리스 신화(마스터 전용) */
 export const STAFF_LOOKS = [
     { id: 'staff_dragon', name: '용', desc: '세계수를 지키는 용왕', img: 'chars/staff-dragon.webp', emoji: '🐉' },
     { id: 'staff_tiger', name: '호랑이', desc: '산을 지키는 호랑이', img: 'chars/staff-tiger.webp', emoji: '🐯' },
     { id: 'staff_hyunmu', name: '현무', desc: '북쪽을 지키는 현무', img: 'chars/staff-hyunmu.webp', emoji: '🐢' },
     { id: 'staff_haetae', name: '해태', desc: '정의를 지키는 해태', img: 'chars/staff-haetae.webp', emoji: '🦁' },
+    { id: 'staff_zeus', name: '제우스', desc: '번개의 왕', img: 'chars/staff-zeus.webp', emoji: '⚡', masterOnly: true },
+    { id: 'staff_hera', name: '헤라', desc: '하늘의 여왕', img: 'chars/staff-hera.webp', emoji: '🦚', masterOnly: true },
+    { id: 'staff_poseidon', name: '포세이돈', desc: '바다의 왕', img: 'chars/staff-poseidon.webp', emoji: '🔱', masterOnly: true },
+    { id: 'staff_hades', name: '하데스', desc: '저승의 왕', img: 'chars/staff-hades.webp', emoji: '🌑', masterOnly: true },
+    { id: 'staff_athena', name: '아테나', desc: '지혜의 여신', img: 'chars/staff-athena.webp', emoji: '🦉', masterOnly: true },
+    { id: 'staff_apollo', name: '아폴론', desc: '태양의 신', img: 'chars/staff-apollo.webp', emoji: '☀️', masterOnly: true },
+    { id: 'staff_artemis', name: '아르테미스', desc: '달의 사냥꾼', img: 'chars/staff-artemis.webp', emoji: '🌙', masterOnly: true },
+    { id: 'staff_ares', name: '아레스', desc: '전쟁의 신', img: 'chars/staff-ares.webp', emoji: '🛡️', masterOnly: true },
+    { id: 'staff_hermes', name: '헤르메스', desc: '전령의 신', img: 'chars/staff-hermes.webp', emoji: '🪽', masterOnly: true },
+    { id: 'staff_aphrodite', name: '아프로디테', desc: '사랑의 여신', img: 'chars/staff-aphrodite.webp', emoji: '🌹', masterOnly: true },
 ];
 
 export const STAFF_PORTRAITS = {

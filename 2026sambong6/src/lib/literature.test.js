@@ -4,6 +4,7 @@ import {
     LITERATURE_DEFAULT_REWARD_XP,
     LITERATURE_THOUGHT_MIN,
     applyDiaryReview,
+    applyDiaryTeacherNote,
     applyReadingLogReview,
     canApproveDiary,
     canApproveReadingLog,
@@ -122,8 +123,13 @@ describe('일기장', () => {
         assert.equal(reviewed.grantXp, 15);
         assert.equal(reviewed.grantBong, 3);
         const locked = diarySubmitState([reviewed.entry], '12', '2026-09-02');
-        assert.equal(locked.ok, false);
-        assert.equal(locked.reason, 'already');
+        assert.equal(locked.ok, true);
+        assert.equal(locked.reason, 'revise');
+        const noted = applyDiaryTeacherNote(reviewed.entry, '나중에 한마디', 9);
+        assert.equal(noted.skip, false);
+        assert.equal(noted.entry.teacherNote, '나중에 한마디');
+        assert.equal(noted.entry.rewarded, true);
+        assert.equal(noted.entry.status, 'approved');
         const again = applyDiaryReview(reviewed.entry, 'approve', '', { diaryRewardXp: 15, diaryRewardBong: 3 }, 2);
         assert.equal(again.skip, true);
         const rejected = applyDiaryReview(pending, 'reject', '조금 더 써 보자', {}, 3);

@@ -29,13 +29,13 @@ service cloud.firestore {
             || request.resource.data.xp <= resource.data.xp + 650
           )
         ))
-        // 봉은 정상 구매/점심 차감만 허용하고, 오래 열린 창의 큰 마이너스 덮어쓰기는 차단합니다.
-        && (!changed.hasAny(['bong'])
-          || request.resource.data.bong >= resource.data.bong
-          || (
-            request.resource.data.bong >= -100
-            && request.resource.data.bong >= resource.data.bong - 600
-          ));
+          // 봉은 정상 구매/점심 차감·계좌이체(최대 5000+수수료)를 허용하고, 오래 열린 창의 큰 마이너스 덮어쓰기는 차단합니다.
+          && (!changed.hasAny(['bong'])
+            || request.resource.data.bong >= resource.data.bong
+            || (
+              request.resource.data.bong >= -100
+              && request.resource.data.bong >= resource.data.bong - 5050
+            ));
     }
 
     match /artifacts/{appId}/public/data/students/{studentId} {

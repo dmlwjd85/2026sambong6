@@ -108,7 +108,21 @@ import {
     worldSettingsForSeason2,
 } from './lib/season2.js';
 import {
+    applyBankTransfer,
+    canBankTransfer,
+    sanitizeBankTransferFee,
+    BANK_TRANSFER_AMOUNT_MAX,
+} from './lib/bankTransfer.js';
+import {
+    openMeteoSchoolUrl,
+    parseOpenMeteoWeather,
+    SCHOOL_WEATHER_NAVER_URL,
+    SCHOOL_WEATHER_REGION_LABEL,
+    weatherSceneMeta,
+} from './lib/schoolWeather.js';
+import {
     applyDiaryReview,
+    applyDiaryTeacherNote,
     applyReadingLogReview,
     canApproveDiary,
     canApproveReadingLog,
@@ -674,7 +688,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.28';
+        const APP_VERSION = 'v1.29';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -994,6 +1008,89 @@ function redrawPlazaGrantsUi() {
         setInterval(updateSeasonTimer, 60000);
         updateSeasonTimer();
 
+        let _schoolWeather = null;
+        let _schoolWeatherTimer = null;
+        const WEATHER_SCENES_CSS = ['sunny', 'cloudy', 'rain', 'snow', 'storm', 'night'];
+
+        function applySchoolWeatherScene(scene) {
+            const meta = weatherSceneMeta(scene);
+            const card = document.getElementById('schoolWeatherCard');
+            const img = document.getElementById('schoolWeatherArt');
+            const map = document.getElementById('worldMapArea');
+            if (card) {
+                WEATHER_SCENES_CSS.forEach((s) => card.classList.remove('is-' + s));
+                card.classList.add('is-' + meta.id);
+            }
+            if (img) {
+                img.src = meta.img;
+                img.alt = meta.label;
+            }
+            if (map) {
+                WEATHER_SCENES_CSS.forEach((s) => map.classList.remove('weather-' + s));
+                map.classList.add('weather-' + meta.id);
+                let layer = document.getElementById('worldmapWeatherLayer');
+                if (!layer) {
+                    layer = document.createElement('div');
+                    layer.id = 'worldmapWeatherLayer';
+                    layer.className = 'worldmap-weather-layer';
+                    layer.setAttribute('aria-hidden', 'true');
+                    map.appendChild(layer);
+                }
+                layer.style.backgroundImage = `url('${meta.img}')`;
+            }
+            document.body.classList.toggle('weather-rainy', meta.id === 'rain' || meta.id === 'storm');
+            document.body.classList.toggle('weather-snowy', meta.id === 'snow');
+        }
+
+        function renderSchoolWeatherCard(weather) {
+            const tempEl = document.getElementById('schoolWeatherTemp');
+            const textEl = document.getElementById('schoolWeatherText');
+            const metaEl = document.getElementById('schoolWeatherMeta');
+            const linkEl = document.getElementById('schoolWeatherLink');
+            if (!weather || !weather.ok) {
+                if (textEl) textEl.textContent = '날씨를 불러오는 중…';
+                return;
+            }
+            applySchoolWeatherScene(weather.scene);
+            if (tempEl && weather.temp != null) tempEl.textContent = `${weather.temp}°`;
+            if (textEl) textEl.textContent = `${weather.text} · ${weather.regionLabel}`;
+            const bits = [];
+            if (weather.tempMin != null && weather.tempMax != null) bits.push(`최저 ${weather.tempMin}° / 최고 ${weather.tempMax}°`);
+            if (weather.humidity != null) bits.push(`습도 ${weather.humidity}%`);
+            if (weather.wind != null) bits.push(`바람 ${weather.wind}m/s`);
+            if (weather.precip != null && weather.precip > 0) bits.push(`강수 ${weather.precip}mm`);
+            if (metaEl) metaEl.textContent = bits.join(' · ');
+            if (linkEl) {
+                linkEl.href = weather.sourceUrl || SCHOOL_WEATHER_NAVER_URL;
+                linkEl.classList.remove('hidden');
+            }
+        }
+
+        async function refreshSchoolWeather(force) {
+            const now = Date.now();
+            if (!force && _schoolWeather && now - (_schoolWeather.fetchedAt || 0) < 10 * 60 * 1000) {
+                renderSchoolWeatherCard(_schoolWeather);
+                return _schoolWeather;
+            }
+            try {
+                const res = await fetch(openMeteoSchoolUrl());
+                if (!res.ok) throw new Error('weather http ' + res.status);
+                const json = await res.json();
+                _schoolWeather = parseOpenMeteoWeather(json, now);
+                renderSchoolWeatherCard(_schoolWeather);
+            } catch (e) {
+                console.warn('school weather', e);
+                if (!_schoolWeather) {
+                    const textEl = document.getElementById('schoolWeatherText');
+                    if (textEl) textEl.textContent = `${SCHOOL_WEATHER_REGION_LABEL} 날씨를 잠시 후 다시 불러옵니다.`;
+                }
+            }
+            return _schoolWeather;
+        }
+        window.refreshSchoolWeather = refreshSchoolWeather;
+        void refreshSchoolWeather(true);
+        _schoolWeatherTimer = setInterval(() => { void refreshSchoolWeather(false); }, 10 * 60 * 1000);
+
         window.renderWorldSettingsPanel = function() {
             if (!window.playerState || !window.playerState.isAdmin) return;
             const ws = getWorldSettings();
@@ -1304,6 +1401,10 @@ function redrawPlazaGrantsUi() {
             { id: 'f_wolf', type: 'face', name: '늑대', desc: '달빛 수호대', price: 320, emoji: '🐺', img: 'chars/face-wolf.webp' },
             { id: 'f_phoenix', type: 'face', name: '봉황', desc: '불꽃의 날개', price: 380, emoji: '🔥', img: 'chars/face-phoenix.webp' },
             { id: 'f_scholar', type: 'face', name: '선비', desc: '지혜의 책', price: 260, emoji: '📜', img: 'chars/face-scholar.webp' },
+            { id: 'f_staff_dragon', type: 'face', name: '용', desc: '세계수의 용왕 · Lv.80', price: 2000, minLevel: 80, emoji: '🐉', img: 'chars/staff-dragon.webp' },
+            { id: 'f_staff_tiger', type: 'face', name: '호랑이', desc: '산을 지키는 호랑이 · Lv.80', price: 2000, minLevel: 80, emoji: '🐯', img: 'chars/staff-tiger.webp' },
+            { id: 'f_staff_hyunmu', type: 'face', name: '현무', desc: '북쪽을 지키는 현무 · Lv.80', price: 2000, minLevel: 80, emoji: '🐢', img: 'chars/staff-hyunmu.webp' },
+            { id: 'f_staff_haetae', type: 'face', name: '해태', desc: '정의를 지키는 해태 · Lv.80', price: 2000, minLevel: 80, emoji: '🦁', img: 'chars/staff-haetae.webp' },
             { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 100, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
             { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
             { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
@@ -7043,6 +7144,9 @@ ${subjectLine}
             if (g === 'literature' && typeof window.renderLiterature === 'function') {
                 window.renderLiterature();
             }
+            if (g === 'bank' && typeof window.updateBankPanel === 'function') {
+                window.updateBankPanel();
+            }
         };
 
         window.switchShopSub = function(sub) {
@@ -7472,10 +7576,7 @@ ${subjectLine}
             _diaryCanvasReady = true;
             const canEdit = () => {
                 if (!(window.playerState && !window.playerState.isAdmin && !window.playerState.isGuest)) return false;
-                const sid = literatureStudentId();
-                const today = getLocalDateStr();
-                const entry = _diaries.find((d) => String(d.studentId) === sid && String(d.date) === today);
-                return !(entry && entry.status === 'approved');
+                return true;
             };
             const start = (ev) => {
                 if (!canEdit()) return;
@@ -7512,10 +7613,6 @@ ${subjectLine}
 
         window.clearDiaryCanvas = function() {
             if (window.playerState && window.playerState.isAdmin) return;
-            const sid = literatureStudentId();
-            const today = getLocalDateStr();
-            const entry = _diaries.find((d) => String(d.studentId) === sid && String(d.date) === today);
-            if (entry && entry.status === 'approved') return;
             _diaryStrokes = [];
             paintDiaryStrokes(document.getElementById('diaryCanvas'), []);
         };
@@ -7630,11 +7727,12 @@ ${subjectLine}
             if (saveBtn) {
                 saveBtn.classList.toggle('hidden', admin);
                 saveBtn.disabled = locked || !!(window.playerState && window.playerState.isGuest);
-                saveBtn.textContent = state.reason === 'resubmit' ? '고쳐서 다시 저장' : '일기 저장';
+                saveBtn.textContent = state.reason === 'resubmit' || state.reason === 'revise' ? '고쳐서 저장' : '일기 저장';
             }
             if (bodyEl) bodyEl.disabled = locked;
             if (hint) {
-                if (admin) hint.textContent = '학생을 고르면 일기를 볼 수 있습니다. 확인·보상은 확인 탭에서 합니다.';
+                if (admin) hint.textContent = '학생을 고르면 일기를 볼 수 있습니다. 확인 뒤에도 한마디를 고칠 수 있어요.';
+                else if (state.reason === 'revise') hint.textContent = '이미 확인된 일기입니다. 고쳐서 다시 저장할 수 있고, 보상은 다시 지급되지 않습니다.';
                 else if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 일기입니다. 내일 다시 쓸 수 있어요.';
                 else if (state.reason === 'update') hint.textContent = '오늘 일기가 확인 대기 중입니다. 선생님이 보기 전에 고칠 수 있어요.';
                 else if (state.reason === 'resubmit') hint.textContent = '반려된 일기를 고쳐 다시 저장할 수 있습니다.';
@@ -7653,10 +7751,19 @@ ${subjectLine}
                 _diaryStrokes = [];
             }
             const note = document.getElementById('diaryTeacherNote');
+            const noteAdmin = document.getElementById('diaryTeacherNoteAdmin');
+            const noteInput = document.getElementById('diaryTeacherNoteInput');
+            if (noteAdmin) noteAdmin.classList.toggle('hidden', !(admin && todayEntry));
+            if (noteInput && admin && todayEntry && document.activeElement !== noteInput) {
+                noteInput.value = todayEntry.teacherNote || '';
+            }
             if (note) {
-                if (todayEntry && todayEntry.teacherNote) {
+                if (todayEntry && todayEntry.teacherNote && !admin) {
                     note.classList.remove('hidden');
                     note.textContent = '선생님 한마디: ' + todayEntry.teacherNote;
+                } else if (todayEntry && todayEntry.teacherNote && admin) {
+                    note.classList.remove('hidden');
+                    note.textContent = '지금 저장된 한마디: ' + todayEntry.teacherNote;
                 } else {
                     note.classList.add('hidden');
                     note.textContent = '';
@@ -7690,6 +7797,10 @@ ${subjectLine}
                             <p class="mt-1 whitespace-pre-wrap text-slate-200">${escapeHofText(d.body)}</p>
                             ${d.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(d.teacherNote)}</p>` : ''}
                             ${d.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${d.rewardXp} XP · +${d.rewardBong}봉</p>` : ''}
+                            ${admin ? `<label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디
+                                <input id="diaryPastNote_${escapeHofText(d.id)}" type="text" maxlength="120" value="${escapeHofText(d.teacherNote || '')}" class="mt-1 w-full bg-slate-950 border border-amber-500/40 text-white px-2 py-1.5 rounded-lg text-xs">
+                            </label>
+                            <button type="button" class="mt-1 min-h-[36px] px-3 bg-amber-700 hover:bg-amber-600 text-white font-black rounded-lg text-[10px]" onclick="void window.saveDiaryTeacherNoteById('${escapeHofText(d.id)}')">한마디 저장</button>` : ''}
                         </div>`;
                     }).join('');
                 }
@@ -7697,10 +7808,7 @@ ${subjectLine}
         };
 
         window.setDiaryWeather = function(id) {
-            const sid = literatureStudentId();
-            const today = getLocalDateStr();
-            const entry = _diaries.find((d) => String(d.studentId) === sid && String(d.date) === today);
-            if ((window.playerState && window.playerState.isAdmin) || (entry && entry.status === 'approved')) return;
+            if (window.playerState && window.playerState.isAdmin) return;
             _diaryWeather = String(id || 'sunny');
             const weatherWrap = document.getElementById('diaryWeather');
             if (!weatherWrap) return;
@@ -7711,10 +7819,7 @@ ${subjectLine}
             });
         };
         window.setDiaryMood = function(id) {
-            const sid = literatureStudentId();
-            const today = getLocalDateStr();
-            const entry = _diaries.find((d) => String(d.studentId) === sid && String(d.date) === today);
-            if ((window.playerState && window.playerState.isAdmin) || (entry && entry.status === 'approved')) return;
+            if (window.playerState && window.playerState.isAdmin) return;
             _diaryMood = String(id || 'calm');
             const moodWrap = document.getElementById('diaryMood');
             if (!moodWrap) return;
@@ -7963,6 +8068,7 @@ ${subjectLine}
             }
             const existing = state.existing;
             const now = Date.now();
+            const keepReview = !!(existing && existing.status === 'approved' && existing.rewarded);
             const draft = {
                 id: diaryDocId(sid, today),
                 studentId: sid,
@@ -7973,11 +8079,11 @@ ${subjectLine}
                 strokes: _diaryStrokes,
                 updatedAt: now,
                 submittedAt: (existing && existing.submittedAt) || now,
-                status: 'pending',
-                rewarded: false,
-                rewardXp: 0,
-                rewardBong: 0,
-                reviewedAt: 0,
+                status: keepReview ? 'approved' : 'pending',
+                rewarded: keepReview ? true : false,
+                rewardXp: keepReview ? (existing.rewardXp || 0) : 0,
+                rewardBong: keepReview ? (existing.rewardBong || 0) : 0,
+                reviewedAt: keepReview ? (existing.reviewedAt || 0) : 0,
                 teacherNote: existing && existing.teacherNote ? existing.teacherNote : '',
                 teacherNoteAt: existing && existing.teacherNoteAt ? existing.teacherNoteAt : 0,
             };
@@ -7989,10 +8095,56 @@ ${subjectLine}
                 await runWithNetworkRetry(async () => {
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', checked.entry.id || diaryDocId(sid, today)), checked.entry, { merge: true });
                 }, '일기 저장');
-                window.showToast && window.showToast('오늘의 일기를 저장했습니다. 선생님 확인을 기다려 주세요.');
+                window.showToast && window.showToast(keepReview ? '확인된 일기를 고쳐서 저장했습니다.' : '오늘의 일기를 저장했습니다. 선생님 확인을 기다려 주세요.');
             } catch (e) {
                 console.error('saveDiaryEntry', e);
                 await window.customAlert('일기 저장에 실패했습니다.');
+            }
+        };
+
+        window.saveDiaryTeacherNoteById = async function(entryId) {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 한마디를 남길 수 있습니다.');
+            }
+            const entry = _diaries.find((d) => d.id === String(entryId));
+            if (!entry) return window.customAlert('일기를 찾을 수 없습니다.');
+            const noteEl = document.getElementById('diaryPastNote_' + entry.id) || document.getElementById('diaryTeacherNoteInput');
+            const reviewed = applyDiaryTeacherNote(entry, noteEl ? noteEl.value : '');
+            if (reviewed.skip) return window.customAlert('일기를 찾을 수 없습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id), reviewed.entry, { merge: true });
+                }, '일기 한마디');
+                window.showToast && window.showToast('한마디를 저장했습니다.');
+            } catch (e) {
+                console.error('saveDiaryTeacherNoteById', e);
+                await window.customAlert('저장에 실패했습니다.');
+            }
+        };
+
+        window.saveDiaryTeacherNote = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 한마디를 남길 수 있습니다.');
+            }
+            const targetId = currentDiaryTargetId();
+            const today = getLocalDateStr();
+            const entry = _diaries.find((d) => String(d.studentId) === targetId && String(d.date) === today);
+            if (!entry) return window.customAlert('먼저 학생의 오늘 일기를 열어 주세요.');
+            const noteEl = document.getElementById('diaryTeacherNoteInput');
+            const reviewed = applyDiaryTeacherNote(entry, noteEl ? noteEl.value : '');
+            if (reviewed.skip) return window.customAlert('일기를 찾을 수 없습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id), reviewed.entry, { merge: true });
+                }, '일기 한마디');
+                window.showToast && window.showToast('한마디를 저장했습니다.');
+            } catch (e) {
+                console.error('saveDiaryTeacherNote', e);
+                await window.customAlert('저장에 실패했습니다.');
             }
         };
 
@@ -12476,7 +12628,7 @@ ${subjectLine}
                     <div class="bg-amber-50 w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden border border-white/70">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-sm sm:text-base truncate text-white">${skin.name}</div>
-                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}</div>
+                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
                         <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold">${formatBongAmount(skin.price)}</div>
@@ -12790,6 +12942,11 @@ ${subjectLine}
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);
                                 }
+                                const feeEl = document.getElementById('gmBankTransferFee');
+                                if (feeEl && document.activeElement !== feeEl) {
+                                    feeEl.value = String(sanitizeBankTransferFee(window.globalSettings.bankTransferFeeBong));
+                                }
+                                if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
                                 const raidRewardXpEl = document.getElementById('raidRewardXpInput');
                                 const raidRewardBongEl = document.getElementById('raidRewardBongInput');
                                 if (raidRewardXpEl && window.globalSettings.weekendRaidRewardXp != null) {
@@ -14347,6 +14504,28 @@ ${subjectLine}
             return true;
         }
 
+        function getBankTransferFeeNow() {
+            return sanitizeBankTransferFee(window.globalSettings && window.globalSettings.bankTransferFeeBong);
+        }
+
+        function getBankHolderRecord(sid) {
+            const id = String(sid || '');
+            if (id === 'gm') return window.gmData || null;
+            if (id === 'gm_a') return window.gmaData || null;
+            return (window.allStudentsData || []).find((s) => String(s.id) === id) || null;
+        }
+
+        function studentWalletRef(sid) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+        }
+
+        function bankHolderLabel(sid) {
+            const id = String(sid || '');
+            if (id === 'gm') return getMasterDisplayName();
+            if (id === 'gm_a') return getCoMasterDisplayName();
+            return STUDENT_NAMES[id] || getStudentDisplayLabel(id);
+        }
+
         window.updateBankPanel = function() {
             const w = document.getElementById('bankWalletDisplay');
             const s = document.getElementById('bankRegularDisplay');
@@ -14429,6 +14608,39 @@ ${subjectLine}
                         <div>학생</div><div class="text-right">지갑</div><div class="text-right">일반예금</div><div class="text-right">적금</div>
                     </div>${rows.join('')}`;
                 }
+            }
+            const bankDock = document.querySelector('#bankSection .app-sub-dock');
+            if (bankDock) {
+                const adminDock = !!(window.playerState && window.playerState.isAdmin);
+                bankDock.classList.toggle('cols-4', !adminDock);
+                bankDock.classList.toggle('cols-5', adminDock);
+            }
+            const feeNow = getBankTransferFeeNow();
+            const feeHint = document.getElementById('bankTransferFeeHint');
+            if (feeHint) {
+                feeHint.textContent = feeNow > 0
+                    ? `이체 수수료 ${formatBongAmount(feeNow)} (보내는 사람이 냄)`
+                    : '이체 수수료 없음';
+            }
+            const feeInput = document.getElementById('gmBankTransferFee');
+            if (feeInput && document.activeElement !== feeInput) feeInput.value = String(feeNow);
+            const feePanel = document.getElementById('bankTransferFeeAdminPanel');
+            if (feePanel) feePanel.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
+            const sel = document.getElementById('bankTransferTarget');
+            if (sel) {
+                const myId = String(localStorage.getItem('sambong_student_id') || '');
+                const prev = sel.value;
+                const ids = [];
+                getActiveStudentIds().forEach((id) => { if (id && !ids.includes(id)) ids.push(String(id)); });
+                ['gm', 'gm_a'].forEach((id) => { if (!ids.includes(id)) ids.push(id); });
+                const options = ids.filter((id) => id && id !== myId && id !== 'guest');
+                sel.innerHTML = options.map((id) => `<option value="${escapeHofText(id)}">${escapeHofText(bankHolderLabel(id))}</option>`).join('');
+                if (prev && options.includes(prev)) sel.value = prev;
+            }
+            const preview = document.getElementById('bankTransferPreview');
+            if (preview) {
+                preview.textContent = `1~${BANK_TRANSFER_AMOUNT_MAX}봉까지 보낼 수 있습니다.`
+                    + (feeNow ? ` 보낼 금액에 수수료 ${formatBongAmount(feeNow)}가 더해져 차감됩니다.` : '');
             }
         };
 
@@ -14553,6 +14765,144 @@ ${subjectLine}
                 await window.customAlert(`적금 만기 이자율을 ${v}% 로 저장했습니다.\n(적금이 30일 만기될 때 이 비율이 적용됩니다.)`);
             } catch (e) {
                 window.customAlert('저장 실패: ' + e.message);
+            }
+        };
+
+        window.saveBankTransferFee = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('교사만 이체 수수료를 정할 수 있습니다.');
+            }
+            const el = document.getElementById('gmBankTransferFee');
+            const raw = el ? Number(el.value) : NaN;
+            if (!Number.isFinite(raw) || raw < 0 || raw > 50) {
+                return window.customAlert('이체 수수료는 0~50봉입니다.');
+            }
+            const fee = sanitizeBankTransferFee(raw);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(getGlobalSettingsDocRef(), { bankTransferFeeBong: fee }, { merge: true });
+                if (window.globalSettings) window.globalSettings.bankTransferFeeBong = fee;
+                if (el) el.value = String(fee);
+                if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
+                await window.customAlert(`이체 수수료를 ${formatBongAmount(fee)}로 저장했습니다.`);
+            } catch (e) {
+                window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.transferBong = async function() {
+            if (window._bankTransferRunning) return;
+            if (!window.playerState || window.playerState.isGuest) {
+                return window.customAlert('로그인 후 사용할 수 있습니다.');
+            }
+            const fromId = String(localStorage.getItem('sambong_student_id') || '');
+            const toId = String((document.getElementById('bankTransferTarget') || {}).value || '');
+            const amtRaw = (document.getElementById('bankTransferAmount') || {}).value;
+            const fee = getBankTransferFeeNow();
+            const fromBong = Number(window.playerState.bong) || 0;
+            const checked = canBankTransfer({
+                fromId,
+                toId,
+                amount: amtRaw,
+                fee,
+                fromBong,
+                isGuest: !!window.playerState.isGuest,
+            });
+            if (!checked.ok) {
+                const msg = {
+                    guest: '게스트는 이체할 수 없습니다.',
+                    login: '받는 사람을 고르세요.',
+                    self: '자기 자신에게는 보낼 수 없습니다.',
+                    amount: `1~${BANK_TRANSFER_AMOUNT_MAX}봉만 보낼 수 있습니다.`,
+                    funds: `잔액이 부족합니다. (필요 ${formatBongAmount(checked.need || 0)}, 지갑 ${formatBongAmount(checked.wallet || fromBong)})`,
+                }[checked.reason] || '이체할 수 없습니다.';
+                return window.customAlert(msg);
+            }
+            if (!getBankHolderRecord(checked.to) && checked.to !== 'gm' && checked.to !== 'gm_a') {
+                return window.customAlert('받는 사람 계좌를 찾을 수 없습니다.');
+            }
+            const toName = bankHolderLabel(checked.to);
+            const ok = await window.customConfirm(
+                `${toName}에게 ${formatBongAmount(checked.amount)}를 보낼까요?`
+                + (checked.fee ? `\n수수료 ${formatBongAmount(checked.fee)} · 총 차감 ${formatBongAmount(checked.need)}` : '')
+            );
+            if (!ok) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            window._bankTransferRunning = true;
+            try {
+                await runWithNetworkRetry(async () => {
+                    await runTransaction(db, async (transaction) => {
+                        const fromRef = studentWalletRef(checked.from);
+                        const toRef = studentWalletRef(checked.to);
+                        const firstIsFrom = String(checked.from) < String(checked.to);
+                        const aRef = firstIsFrom ? fromRef : toRef;
+                        const bRef = firstIsFrom ? toRef : fromRef;
+                        const aSnap = await transaction.get(aRef);
+                        const bSnap = await transaction.get(bRef);
+                        const fromSnap = firstIsFrom ? aSnap : bSnap;
+                        const toSnap = firstIsFrom ? bSnap : aSnap;
+                        if (!fromSnap.exists() || !toSnap.exists()) throw new Error('missing_account');
+                        const fromData = fromSnap.data() || {};
+                        const toData = toSnap.data() || {};
+                        const live = canBankTransfer({
+                            fromId: checked.from,
+                            toId: checked.to,
+                            amount: checked.amount,
+                            fee: checked.fee,
+                            fromBong: Number(fromData.bong) || 0,
+                            isGuest: false,
+                        });
+                        if (!live.ok) throw new Error(live.reason);
+                        const applied = applyBankTransfer({
+                            fromBong: Number(fromData.bong) || 0,
+                            toBong: Number(toData.bong) || 0,
+                            amount: live.amount,
+                            fee: live.fee,
+                        });
+                        if (!applied.ok) throw new Error(applied.reason);
+                        const fromLogs = Array.isArray(fromData.bongChangeLog) ? fromData.bongChangeLog.slice() : [];
+                        fromLogs.push(buildBongChangeLogEntry(
+                            `${toName}에게 ${live.amount}봉 이체` + (live.fee ? ` (수수료 ${live.fee}봉)` : ''),
+                            Number(fromData.bong) || 0,
+                            applied.fromBong,
+                            { source: 'bankTransferOut', toId: live.to }
+                        ));
+                        const toLogs = Array.isArray(toData.bongChangeLog) ? toData.bongChangeLog.slice() : [];
+                        toLogs.push(buildBongChangeLogEntry(
+                            `${bankHolderLabel(live.from)}에게서 ${live.amount}봉 입금`,
+                            Number(toData.bong) || 0,
+                            applied.toBong,
+                            { source: 'bankTransferIn', fromId: live.from }
+                        ));
+                        transaction.update(fromRef, {
+                            bong: applied.fromBong,
+                            bongChangeLog: fromLogs.slice(-BONG_CHANGE_LOG_LIMIT),
+                        });
+                        transaction.update(toRef, {
+                            bong: applied.toBong,
+                            bongChangeLog: toLogs.slice(-BONG_CHANGE_LOG_LIMIT),
+                        });
+                    });
+                }, '계좌이체');
+                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - checked.need);
+                const amtEl = document.getElementById('bankTransferAmount');
+                if (amtEl) amtEl.value = '';
+                updateUI();
+                await window.customAlert(`${toName}에게 ${formatBongAmount(checked.amount)}를 보냈습니다.`);
+            } catch (e) {
+                const code = String(e && e.message ? e.message : e);
+                const msg = {
+                    missing_account: '받는 사람 계좌를 찾을 수 없습니다.',
+                    funds: '잔액이 부족합니다. 잠시 후 다시 확인해 주세요.',
+                    amount: '보낼 금액을 확인해 주세요.',
+                    self: '자기 자신에게는 보낼 수 없습니다.',
+                }[code] || ('이체에 실패했습니다. ' + code);
+                await window.customAlert(msg);
+            } finally {
+                window._bankTransferRunning = false;
             }
         };
 
@@ -15072,12 +15422,14 @@ ${subjectLine}
                             : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
                     } else {
                         item.classList.remove('border-pink-500');
-                        if (window.playerState.bong >= skin.price || window.playerState.isAdmin) { 
+                        const lv = calculateExactLevel(window.playerState.xp || 0);
+                        const levelOk = !skin.minLevel || window.playerState.isAdmin || lv >= skin.minLevel;
+                        if ((window.playerState.bong >= skin.price && levelOk) || window.playerState.isAdmin) { 
                             item.classList.replace('unaffordable', 'affordable'); 
                         } else { 
                             item.classList.replace('affordable', 'unaffordable'); 
                         }
-                        status.innerHTML = `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}</div>`;
+                        status.innerHTML = `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}${skin.minLevel ? `<div class="text-[8px] text-slate-400">Lv.${skin.minLevel}</div>` : ''}</div>`;
                     }
                 }
             });
@@ -15181,6 +15533,7 @@ ${subjectLine}
             if (typeof updateDragonBallUI === 'function') updateDragonBallUI();
             if (typeof updateRaidEntryUI === 'function') updateRaidEntryUI();
             if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
+            if (typeof refreshSchoolWeather === 'function') void refreshSchoolWeather(false);
             if (canRunBankSideEffects) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
@@ -17999,6 +18352,12 @@ ${subjectLine}
             if(!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
 
             const kindLabel = skin.type === 'aura' ? '오라' : '캐릭터';
+            if (skin.minLevel && !window.playerState.isAdmin && !window.playerState.ownedSkins[skinId]) {
+                const lv = calculateExactLevel(window.playerState.xp || 0);
+                if (lv < skin.minLevel) {
+                    return await window.customAlert(`이 캐릭터는 Lv.${skin.minLevel}부터 살 수 있습니다.\n(지금 Lv.${lv})`);
+                }
+            }
             if (window.playerState.isAdmin && !window.playerState.ownedSkins[skinId]) {
                 const wasOn = !!window.playerState.equippedSkins[skinId];
                 window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
@@ -18083,11 +18442,11 @@ ${subjectLine}
                 const looks = listStaffLooks();
                 staffHtml = `
                     <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터 (광장 카드)</p>
-                    <div class="grid grid-cols-4 gap-1.5">${looks.map((b) => {
+                    <div class="grid grid-cols-5 gap-1.5">${looks.map((b) => {
                         const on = b.id === staffCurrent.id && window.playerState.homeLookMode !== 'student';
-                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
+                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}">
                             <img src="${b.img}" alt="${b.name}">
-                            <span>${b.name}</span>
+                            <span>${b.name}${b.masterOnly ? ' · 전용' : ''}</span>
                         </button>`;
                     }).join('')}</div>
                     <p class="text-[9px] text-slate-400 mt-1.5 text-center">광장에서는 수호 캐릭터가 보이고, 아래 백성·상점 스킨은 홈에서 학생 화면처럼 살펴볼 수 있습니다.</p>`;

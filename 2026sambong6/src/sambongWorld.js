@@ -25,6 +25,23 @@ import {
     downloadAdminStudentJson as exportStudentJsonFile,
     downloadAdminStudentCsv as exportStudentCsvFile,
 } from './lib/adminDataExport.js';
+import {
+    QUIZ_RAID_DEFAULT_COUNT,
+    QUIZ_RAID_MAX_COUNT,
+    computeQuizRaidReward,
+    countQuizBankBySource,
+    downloadQuizBankTemplate as downloadQuizBankTemplateFile,
+    fillGoldenBellSlotsFromBank,
+    gradeQuizRaidAnswer,
+    mergeQuizBank,
+    parseQuizBankWorkbook,
+    pickRandomQuizQuestions,
+    questionFromGoldenBell,
+    questionFromLegacyRaid,
+    questionFromSpeedQuiz,
+    sanitizeQuizBank,
+    toRaidSessionQuestion,
+} from './lib/quizBank.js';
 import { withRetry, isLikelyNetworkError } from './lib/withRetry.js';
 import {
     computeResearchStats,
@@ -5109,6 +5126,7 @@ ${subjectLine}
         window.dragonBallState = null;
         window.goldenbellState = null;
         window.masterQuizState = null;
+        window.quizBankState = { questions: [] };
         let selectedEmotion = null; 
         let selectedBody = null;
 
@@ -7590,6 +7608,9 @@ ${subjectLine}
                         ? '진행 중 — 팝업에서 답을 제출하세요!'
                         : '대기 중 — 문제가 열리면 자동으로 팝업이 표시됩니다.';
                 }
+            }
+            if (challengeSub === 'raid' && typeof window.renderQuizBankAdmin === 'function') {
+                window.renderQuizBankAdmin();
             }
             if (challengeSub === 'catbattle' && typeof window.renderCatBattlePanel === 'function') {
                 window.renderCatBattlePanel();
@@ -13038,25 +13059,7 @@ ${subjectLine}
             renderQuestManagementAdminPanel();
             renderJobManagementAdminPanel();
 
-            let html = '';
-            for(let i=0; i<5; i++) {
-                html += `
-                <div class="bg-slate-800/80 p-2 rounded-lg border border-slate-600">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="text-sb-blue font-bold text-[10px] w-4 shrink-0">Q${i+1}</span>
-                        <input type="text" id="rq_${i}" placeholder="문제" class="flex-1 bg-slate-900 border border-slate-700 text-white px-2 py-1 rounded text-[10px]">
-                    </div>
-                    <div class="grid grid-cols-2 gap-1 pl-6">`;
-                for(let j=0; j<4; j++) {
-                    html += `
-                        <div class="flex items-center gap-1">
-                            <input type="radio" name="ra_${i}" value="${j}" ${j===0?'checked':''} class="w-3 h-3 text-sb-blue bg-slate-900">
-                            <input type="text" id="rop_${i}_${j}" placeholder="보기${j+1}" class="w-full bg-slate-900 border border-slate-700 text-white px-1.5 py-0.5 rounded text-[9px]">
-                        </div>`;
-                }
-                html += `</div></div>`;
-            }
-            document.getElementById('raidQuestionInputs').innerHTML = html;
+            if (typeof window.renderQuizBankAdmin === 'function') window.renderQuizBankAdmin();
         }
 
         window.selectEmotion = async function(id, autoSave = true) {
@@ -13407,30 +13410,37 @@ ${subjectLine}
                             }
                         });
 
+                        if (window._unsubQuizBank) window._unsubQuizBank();
+                        window._unsubQuizBank = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'quizbank', 'bank'), (snap) => {
+                            const d = snap.exists() ? snap.data() : { questions: [] };
+                            window.quizBankState = {
+                                questions: sanitizeQuizBank(d.questions),
+                                updatedAt: d.updatedAt || 0,
+                            };
+                            if (typeof window.renderQuizBankAdmin === 'function') window.renderQuizBankAdmin();
+                        });
+
                         // 관리자(마스터 J)용: 레이드/골든벨 Draft 불러오기(새로고침 유지)
                         if(window._unsubRaidDraft) window._unsubRaidDraft();
                         window._unsubRaidDraft = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'draft'), snap => {
                             if(!window.playerState || !window.playerState.isGM) return;
                             if(!snap.exists()) return;
                             const d = snap.data();
-                            const qs = Array.isArray(d.questions) ? d.questions : [];
-                            for(let i=0; i<5; i++) {
-                                const qi = qs[i] || {};
-                                const qEl = document.getElementById(`rq_${i}`);
-                                if(qEl && (qEl.value || '') === '') qEl.value = qi.q || '';
-                                for(let j=0; j<4; j++) {
-                                    const oEl = document.getElementById(`rop_${i}_${j}`);
-                                    if(oEl && (oEl.value || '') === '') oEl.value = (qi.options && qi.options[j]) ? qi.options[j] : '';
-                                }
-                                if(qi.a !== undefined && qi.a !== null) {
-                                    const r = document.querySelector(`input[name="ra_${i}"][value="${qi.a}"]`);
-                                    if(r) r.checked = true;
-                                }
+                            const raidCountEl = document.getElementById('raidQuestionCountInput');
+                            if (raidCountEl && d.questionCount != null && document.activeElement !== raidCountEl) {
+                                raidCountEl.value = String(d.questionCount);
                             }
                             const raidRewardXpEl = document.getElementById('raidRewardXpInput');
                             const raidRewardBongEl = document.getElementById('raidRewardBongInput');
                             if (raidRewardXpEl && d.rewardMaxXp != null) raidRewardXpEl.value = String(d.rewardMaxXp);
                             if (raidRewardBongEl && d.rewardMaxBong != null) raidRewardBongEl.value = String(d.rewardMaxBong);
+                            // 예전 협동 레이드 객관식 초안이 있으면 문제 은행으로 한 번 옮긴다
+                            const legacyQs = Array.isArray(d.questions) ? d.questions : [];
+                            if (legacyQs.length && getQuizBankQuestions().length === 0 && !window._raidDraftMigratedToBank) {
+                                window._raidDraftMigratedToBank = true;
+                                const converted = legacyQs.map((row, i) => questionFromLegacyRaid(row, i)).filter(Boolean);
+                                if (converted.length) void archiveQuestionsToBank(converted);
+                            }
                         });
 
                         if(window._unsubGbDraft) window._unsubGbDraft();
@@ -20721,8 +20731,10 @@ ${subjectLine}
                     },
                     { merge: true }
                 );
+                const bankItem = questionFromSpeedQuiz({ question: q, answer: a, rewardXp: xp, rewardBong: bong });
+                if (bankItem) void archiveQuestionsToBank([bankItem]);
                 sessionStorage.removeItem('mq_dismissedSession');
-                await window.customAlert('학생 화면에 스피드 퀴즈 팝업이 열렸습니다.');
+                await window.customAlert('학생 화면에 스피드 퀴즈 팝업이 열렸습니다.\n이 문제는 퀴즈 레이드 은행에도 저장됩니다.');
             } catch (e) {
                 console.error('publishMasterQuiz', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -20986,6 +20998,7 @@ ${subjectLine}
         window.saveAndOpenGoldenBell = async function() {
             if(!window.playerState.isAdmin) return;
             const qs = [];
+            const bankItems = [];
             for(let i=0; i<10; i++) {
                 const qText = document.getElementById(`gb_admin_q_${i}`).value.trim();
                 const aText = document.getElementById(`gb_admin_a_${i}`).value.trim();
@@ -20999,6 +21012,8 @@ ${subjectLine}
                 const salt = `gb_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 10)}`;
                 const answerHash = await hashGoldenBellAnswer(aText, salt);
                 qs.push({ q: qText, originalIndex: i, rewardXp, rewardBong, answerHash, answerSalt: salt });
+                const bankItem = questionFromGoldenBell({ q: qText, a: aText, rewardXp, rewardBong }, i);
+                if (bankItem) bankItems.push(bankItem);
             }
             if (qs.length === 0) return window.customAlert("문제를 1개 이상 입력해주세요.");
             const openedAt = Date.now();
@@ -21012,13 +21027,15 @@ ${subjectLine}
                 expiresAt: openedAt + 60 * 60 * 1000,
                 questions: qs, 
                 submissions: {} 
-            }); 
-            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.`);
+            });
+            void archiveQuestionsToBank(bankItems);
+            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.\n퀴즈 레이드 문제 은행에도 보관했습니다.`);
         };
 
         window.saveGoldenBellDraft = async function() {
             if(!window.playerState.isAdmin) return;
             const qs = [];
+            const bankItems = [];
             for(let i=0; i<10; i++) {
                 const qText = document.getElementById(`gb_admin_q_${i}`).value.trim();
                 const aText = document.getElementById(`gb_admin_a_${i}`).value.trim();
@@ -21030,13 +21047,16 @@ ${subjectLine}
                 let rewardBong = bongEl ? parseFloat(bongEl.value) : 1;
                 if (isNaN(rewardBong) || rewardBong < 0) rewardBong = 1;
                 qs.push({ q: qText, a: aText, originalIndex: i, rewardXp, rewardBong });
+                const bankItem = questionFromGoldenBell({ q: qText, a: aText, rewardXp, rewardBong }, i);
+                if (bankItem) bankItems.push(bankItem);
             }
 
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'goldenbell', 'draft'), {
                 questions: qs,
                 updatedAt: Date.now()
             }, { merge: true });
-            window.customAlert('✅ 골든벨 문제가 저장되었습니다. (새로고침해도 유지)');
+            void archiveQuestionsToBank(bankItems);
+            window.customAlert('✅ 골든벨 문제가 저장되었습니다. (새로고침해도 유지)\n퀴즈 레이드 문제 은행에도 보관했습니다.');
         };
 
         window.clearGoldenBellInputs = async function() {
@@ -21065,7 +21085,7 @@ ${subjectLine}
             window.customAlert(window._gbPreviewStudent ? '👀 학생 화면 미리보기 ON' : '📊 학생 화면 미리보기 OFF');
         };
 
-        // 선생님 테스트용: 인원 부족해도 즉시 전투 시작
+        // 선생님 테스트용: 인원 부족해도 즉시 퀴즈 시작
         window.forceStartRaidTest = async function() {
             if(!window.playerState || !window.playerState.isGM) return;
             const st = window.currentRaidState;
@@ -21082,7 +21102,7 @@ ${subjectLine}
                 [`turnSubmissions.${st.currentTurn || 0}`]: (st.turnSubmissions && st.turnSubmissions[st.currentTurn || 0]) ? st.turnSubmissions[st.currentTurn || 0] : {}
             }, { merge: true });
 
-            window.customAlert('✅ 테스트 전투 시작! (인원 부족 무시)');
+            window.customAlert('✅ 테스트 퀴즈 시작! (인원 부족 무시)');
         };
 
         window.closeGoldenBell = async function() {
@@ -21645,8 +21665,37 @@ ${subjectLine}
             // 드래곤볼 '보관함'은 주중에도 항상 보이게 하고(수집 현황), 주말 여부는 이벤트 스폰 등 다른 로직에서만 사용합니다.
         }
 
-        // --- 레이드 관련 함수들 ---
+        // --- 레이드 관련 함수들 (퀴즈 레이드) ---
         function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+        function getQuizBankQuestions() {
+            return sanitizeQuizBank(window.quizBankState && window.quizBankState.questions);
+        }
+
+        async function persistQuizBankQuestions(questions) {
+            const next = sanitizeQuizBank(questions);
+            window.quizBankState = { questions: next, updatedAt: Date.now() };
+            if (!db) return next;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'quizbank', 'bank'), {
+                questions: next,
+                updatedAt: Date.now(),
+            });
+            if (typeof window.renderQuizBankAdmin === 'function') window.renderQuizBankAdmin();
+            return next;
+        }
+
+        async function archiveQuestionsToBank(incoming) {
+            const list = Array.isArray(incoming) ? incoming.filter(Boolean) : [];
+            if (!list.length) return 0;
+            try {
+                const merged = mergeQuizBank(getQuizBankQuestions(), list);
+                await persistQuizBankQuestions(merged);
+                return list.length;
+            } catch (e) {
+                console.error('archiveQuestionsToBank', e);
+                return 0;
+            }
+        }
 
         function getRaidTurnStartTime(st) {
             return st.turnStartTime || st.startTime || Date.now();
@@ -21669,40 +21718,131 @@ ${subjectLine}
             return { label: '늦게', mul: 0.5 };
         }
 
-        function renderRaidTimerUI() {
-            const modal = document.getElementById('raidBattleModal');
-            if(!modal || modal.classList.contains('hidden')) return;
-            const st = window.currentRaidState;
-            if(!st || st.status !== 'playing') return;
-
-            const container = document.getElementById('raidTimerBarContainer');
-            const bar = document.getElementById('raidTimerBar');
-            const bossImg = document.getElementById('raidBossImage');
-            const turnText = document.getElementById('raidTurnText');
-            if(!container || !bar) return;
-
-            container.classList.remove('hidden');
-            const elapsed = Math.max(0, Date.now() - getRaidTurnStartTime(st));
-            const remaining = Math.max(0, RAID_TURN_MS - elapsed);
-            const pct = (remaining / RAID_TURN_MS) * 100;
-            bar.style.width = `${pct}%`;
-
-            // 타이머 숫자가 줄어들수록 보스가 점점 커지게
-            if(bossImg) {
-                const elapsedRatio = clamp(elapsed / RAID_TURN_MS, 0, 1);
-                const scale = 1 + elapsedRatio * 0.9; // 최대 1.9배
-                bossImg.style.transform = `scale(${scale})`;
-            }
-
-            if(turnText) {
-                const sec = Math.max(0, Math.ceil(remaining / 1000));
-                // 숫자 타이머 UI (레이드 턴 진행 중에는 여기서 갱신)
-                const turn = st.currentTurn || 0;
-                const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
-                const shown = questionsLen > 0 ? `${turn + 1}/${questionsLen}` : `${turn + 1}`;
-                turnText.innerText = `${shown} | ${sec}s`;
-            }
+        function sumRaidScores(st) {
+            const scoreBy = (st && st.scoreBy && typeof st.scoreBy === 'object') ? st.scoreBy : {};
+            return Object.keys(scoreBy).reduce((s, k) => s + (Number(scoreBy[k]) || 0), 0);
         }
+
+        function raidQuestionCountMax(st) {
+            const p = (st && Array.isArray(st.participants)) ? st.participants.length : 0;
+            const q = (st && st.questions && st.questions.length) ? st.questions.length : 0;
+            return Math.max(1, p * q);
+        }
+
+        function raidAllSubmittedForTurn(st, turn) {
+            const participants = (st && Array.isArray(st.participants)) ? st.participants : [];
+            if (!participants.length) return false;
+            const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? st.turnSubmissions[turn] : {};
+            return participants.every((p) => p && turnSubs[String(p.id)] !== undefined);
+        }
+
+        function renderRaidTimerUI() {
+            const container = document.getElementById('raidTimerBarContainer');
+            if (container) container.classList.add('hidden');
+        }
+
+        window.renderQuizBankAdmin = function() {
+            const summary = document.getElementById('quizBankSummary');
+            const list = document.getElementById('raidQuestionInputs');
+            const bank = getQuizBankQuestions();
+            const c = countQuizBankBySource(bank);
+            if (summary) {
+                summary.textContent = `문제 은행 ${c.total}문항 · 골든벨 ${c.goldenbell} · 스피드퀴즈 ${c.speedquiz} · 엑셀 ${c.excel} (객관식 ${c.mc} · 주관식 ${c.short})`;
+            }
+            if (!list) return;
+            if (!window.playerState || (!window.playerState.isGM && !window.playerState.isAdmin)) {
+                list.innerHTML = '';
+                return;
+            }
+            if (c.total === 0) {
+                list.innerHTML = '<p class="text-[10px] text-slate-500">아직 문제가 없습니다. 엑셀 서식을 받아 올리거나, 골든벨·스피드퀴즈를 출제하면 은행에 쌓입니다.</p>';
+                return;
+            }
+            const sourceLabel = { goldenbell: '골든벨', speedquiz: '스피드퀴즈', excel: '엑셀', manual: '직접' };
+            const shown = bank.slice(0, 40);
+            list.innerHTML = shown.map((item, idx) => {
+                const src = sourceLabel[item.source] || item.source;
+                const kind = item.type === 'mc' ? '객관식' : '주관식';
+                return `<div class="text-[10px] text-slate-300 bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1.5 flex gap-2">
+                    <span class="text-purple-300 font-bold shrink-0">${idx + 1}</span>
+                    <span class="min-w-0 truncate">${escapeHtmlGb(item.q)}</span>
+                    <span class="text-slate-500 shrink-0">${kind}·${src}</span>
+                </div>`;
+            }).join('') + (bank.length > 40 ? `<p class="text-[9px] text-slate-500 mt-1">외 ${bank.length - 40}문항</p>` : '');
+        };
+
+        window.downloadQuizBankTemplate = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            try {
+                const result = downloadQuizBankTemplateFile();
+                window.customAlert(`엑셀 서식을 내려받았습니다.\n파일: ${result.fileName}\n「문제은행」 시트에 작성한 뒤 올려 주세요.`);
+            } catch (e) {
+                console.error('downloadQuizBankTemplate', e);
+                window.customAlert('서식 다운로드에 실패했습니다.');
+            }
+        };
+
+        window.pickQuizBankExcel = function(mode) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            window._quizBankExcelMode = mode === 'goldenbell' ? 'goldenbell' : 'bank';
+            const input = document.getElementById('quizBankExcelInput');
+            if (!input) return window.customAlert('엑셀 업로드 버튼을 퀴즈 레이드 화면에서 사용해 주세요.');
+            input.value = '';
+            input.click();
+        };
+
+        window.onQuizBankExcelPicked = async function(ev) {
+            const file = ev && ev.target && ev.target.files && ev.target.files[0];
+            if (!file) return;
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const mode = window._quizBankExcelMode === 'goldenbell' ? 'goldenbell' : 'bank';
+            try {
+                const name = String(file.name || '');
+                let parsed;
+                if (/\.csv$/i.test(name)) {
+                    parsed = parseQuizBankWorkbook(await file.text(), { name });
+                } else {
+                    parsed = parseQuizBankWorkbook(await file.arrayBuffer(), { name });
+                }
+                if (!parsed.questions.length) {
+                    const msg = (parsed.errors && parsed.errors.length) ? parsed.errors.slice(0, 5).join('\n') : '유효한 문항이 없습니다.';
+                    return window.customAlert('엑셀에서 문제를 읽지 못했습니다.\n' + msg);
+                }
+                await archiveQuestionsToBank(parsed.questions);
+                let extra = '';
+                if (mode === 'goldenbell') {
+                    const slots = fillGoldenBellSlotsFromBank(parsed.questions, 10);
+                    slots.forEach((s) => {
+                        const qEl = document.getElementById(`gb_admin_q_${s.originalIndex}`);
+                        const aEl = document.getElementById(`gb_admin_a_${s.originalIndex}`);
+                        const xpEl = document.getElementById(`gb_admin_xp_${s.originalIndex}`);
+                        const bongEl = document.getElementById(`gb_admin_bong_${s.originalIndex}`);
+                        if (qEl) qEl.value = s.q;
+                        if (aEl) aEl.value = s.a;
+                        if (xpEl) xpEl.value = String(s.rewardXp);
+                        if (bongEl) bongEl.value = String(s.rewardBong);
+                    });
+                    extra = `\n골든벨 입력칸 ${slots.length}개를 채웠습니다. [저장 및 오픈]을 눌러 주세요.`;
+                }
+                const warn = (parsed.errors && parsed.errors.length)
+                    ? `\n\n건너뛴 행:\n${parsed.errors.slice(0, 6).join('\n')}`
+                    : '';
+                await window.customAlert(`✅ ${parsed.questions.length}문항을 문제 은행에 올렸습니다.${extra}${warn}`);
+            } catch (e) {
+                console.error('onQuizBankExcelPicked', e);
+                await window.customAlert('엑셀 업로드에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            } finally {
+                if (ev && ev.target) ev.target.value = '';
+            }
+        };
+
+        window.clearQuizBank = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('문제 은행의 모든 문항을 지울까요?\n(골든벨·스피드퀴즈를 다시 출제하거나 엑셀을 다시 올리면 채워집니다)');
+            if (!ok) return;
+            await persistQuizBankQuestions([]);
+            await window.customAlert('문제 은행을 비웠습니다.');
+        };
 
         async function tryAdvanceRaidTurn() {
             if(window._raidResolving) return;
@@ -21711,44 +21851,26 @@ ${subjectLine}
 
             const turn = st.currentTurn || 0;
             if(st.turnResolvedFor === turn) return;
-
-            const participants = st.participants || [];
-            const turnSubsAll = st.turnSubmissions || {};
-            const turnSubs = turnSubsAll[turn] || {};
-
-            const elapsed = Date.now() - getRaidTurnStartTime(st);
-            const timeUp = elapsed >= RAID_TURN_MS;
-            const actorIndex = typeof st.currentActorIndex === 'number' ? st.currentActorIndex : 0;
-            const actor = participants[actorIndex] || null;
-            const actorId = actor ? String(actor.id) : null;
-            const actorDone = actorId ? turnSubs[actorId] !== undefined : false;
-
-            // 한 명씩 턴제로: 현재 배우(actor)가 답을 했거나 시간이 다 되었을 때만 턴 진행
-            const shouldAdvance = timeUp || actorDone;
-
-            if(!shouldAdvance) return;
+            if(!raidAllSubmittedForTurn(st, turn)) return;
 
             window._raidResolving = true;
             try {
                 const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
                 const nextTurn = turn + 1;
-                // 다음 턴의 배우 인덱스 (순환)
-                const nextActorIndex = participants.length > 0 ? ((actorIndex + 1) % participants.length) : 0;
                 const isLast = questionsLen > 0 ? nextTurn >= questionsLen : true;
 
                 const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
-                if(timeUp && !actorDone) newLogs.push(`⏱️ ${turn + 1}턴 시간초과 (차례: ${actor ? actor.name : '알 수 없음'})`);
-                if(isLast) newLogs.push('✅ 레이드 완료!');
+                newLogs.push(`✅ ${turn + 1}번 문제 제출 완료`);
+                if(isLast) newLogs.push('✅ 퀴즈 레이드 완료!');
 
                 if(isLast) {
-                    const raidResult = (st.bossHP || 0) <= 0 ? 'success' : 'fail';
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                         status: 'waiting',
                         currentTurn: 0,
                         turnStartTime: 0,
                         turnResolvedFor: turn,
                         turnSubmissions: {},
-                        raidResult: raidResult,
+                        raidResult: 'success',
                         completedAt: Date.now(),
                         completionSessionId: st.startTime || null,
                         rewardsGivenFor: null,
@@ -21760,7 +21882,6 @@ ${subjectLine}
                         turnStartTime: Date.now(),
                         turnResolvedFor: turn,
                         logs: newLogs,
-                        currentActorIndex: nextActorIndex,
                         [`turnSubmissions.${nextTurn}`]: {}
                     }, { merge: true });
                 }
@@ -21791,8 +21912,8 @@ ${subjectLine}
                     if(cur.rewardsGivenFor === curSessionId || String(curSessionId) !== String(sessionId)) return;
 
                     const participants = Array.isArray(cur.participants) ? cur.participants : [];
-                    const dmgBy = (cur && cur.damageBy && typeof cur.damageBy === 'object') ? cur.damageBy : {};
-                    const maxHp = cur.maxBossHP || BASE_BOSS_HP;
+                    const scoreBy = (cur && cur.scoreBy && typeof cur.scoreBy === 'object') ? cur.scoreBy : {};
+                    const totalQ = (cur.questions && cur.questions.length) ? cur.questions.length : 1;
                     const defaults = getWeekendRaidRewardSettings();
                     const rewardMaxXp = Math.max(0, Math.floor(Number(cur.rewardMaxXp != null ? cur.rewardMaxXp : defaults.xp) || 0));
                     const rewardMaxBong = normalizeBongValue(Math.max(0, Number(cur.rewardMaxBong != null ? cur.rewardMaxBong : defaults.bong) || 0));
@@ -21802,14 +21923,19 @@ ${subjectLine}
                     participants.forEach(p => {
                         const id = p && p.id !== undefined ? String(p.id) : null;
                         if(!id) return;
-                        const dmg = Number(dmgBy[id]) || 0;
-                        const ratio = maxHp > 0 ? (dmg / maxHp) : 0;
-                        const rewardXp = Math.max(0, Math.min(rewardMaxXp, Math.floor(ratio * rewardMaxXp)));
-                        const rewardBong = Math.max(0, Math.min(rewardMaxBong, Math.round(ratio * rewardMaxBong * 10) / 10));
-                        if(rewardXp <= 0 && rewardBong <= 0) return;
+                        const correct = Number(scoreBy[id]) || 0;
+                        const weaponBonus = Number(p.weaponBonus) || 0;
+                        const reward = computeQuizRaidReward({
+                            correct,
+                            total: totalQ,
+                            rewardMaxXp,
+                            rewardMaxBong,
+                            weaponBonus,
+                        });
+                        if(reward.xp <= 0 && reward.bong <= 0) return;
                         transaction.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + id), {
-                            xp: increment(rewardXp),
-                            bong: increment(rewardBong)
+                            xp: increment(reward.xp),
+                            bong: increment(reward.bong)
                         }, { merge: true });
                     });
 
@@ -21821,7 +21947,7 @@ ${subjectLine}
                 });
 
                 if (paid && window.playerState && window.playerState.isGM) {
-                    window.customAlert(`✅ 보스 격파 보상 지급 완료!\n(개인 데미지 비례 / 최대 ${paidRewardMaxXp}XP, ${formatBongAmount(paidRewardMaxBong)})`);
+                    window.customAlert(`✅ 퀴즈 레이드 보상 지급 완료!\n(개인 정답 수 비례 / 최대 ${paidRewardMaxXp}XP, ${formatBongAmount(paidRewardMaxBong)})`);
                 }
             } catch(e) {
                 console.error('raid reward distribution failed', e);
@@ -21841,68 +21967,61 @@ ${subjectLine}
             return { xp, bong };
         }
 
+        function readRaidQuizSettings() {
+            const reward = readRaidRewardInputs();
+            const el = document.getElementById('raidQuestionCountInput');
+            let n = el && el.value !== '' ? parseInt(el.value, 10) : QUIZ_RAID_DEFAULT_COUNT;
+            if (!Number.isFinite(n) || n < 1) n = QUIZ_RAID_DEFAULT_COUNT;
+            n = Math.min(QUIZ_RAID_MAX_COUNT, Math.max(1, n));
+            return { xp: reward.xp, bong: reward.bong, questionCount: n };
+        }
+
         function readRaidQuestionInputs() {
-            const qs = [];
-            for(let i=0; i<5; i++) {
-                const qText = (document.getElementById(`rq_${i}`).value || '').trim();
-                const options = [];
-                for(let j=0; j<4; j++) {
-                    options.push((document.getElementById(`rop_${i}_${j}`).value || '').trim());
-                }
-                const answerEl = document.querySelector(`input[name="ra_${i}"]:checked`);
-                const answer = answerEl ? parseInt(answerEl.value, 10) : 0;
-                if(qText) {
-                    if(options.some((o) => !o)) {
-                        return { error: `Q${i + 1}의 보기 4개를 모두 입력해 주세요.` };
-                    }
-                    qs.push({ q: qText, options, a: answer });
-                }
-            }
-            return { questions: qs };
+            return { questions: pickRandomQuizQuestions(getQuizBankQuestions(), readRaidQuizSettings().questionCount) };
         }
 
         window.openRaidLobby = async function() {
             if(!window.playerState.isGM) return;
-            const read = readRaidQuestionInputs();
-            if(read.error) return window.customAlert(read.error);
-            const qs = read.questions || [];
-            if(qs.length === 0) return window.customAlert('문제를 1개 이상 입력하세요.');
-            const reward = readRaidRewardInputs();
+            const settings = readRaidQuizSettings();
+            const bank = getQuizBankQuestions();
+            if(bank.length === 0) return window.customAlert('문제 은행이 비어 있습니다.\n엑셀 서식으로 문제를 올리거나, 골든벨·스피드퀴즈를 먼저 출제해 주세요.');
+            const picked = pickRandomQuizQuestions(bank, settings.questionCount);
+            const qs = picked.map((item) => toRaidSessionQuestion(item)).filter(Boolean);
+            if(qs.length === 0) return window.customAlert('출제할 유효한 문제가 없습니다. 문제 은행을 확인해 주세요.');
             
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
-                weekendRaidRewardXp: reward.xp,
-                weekendRaidRewardBong: reward.bong
+                weekendRaidRewardXp: settings.xp,
+                weekendRaidRewardBong: settings.bong
             }, { merge: true });
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                 status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP,
                 currentTurn: 0, currentActorIndex: 0,
-                startTime: Date.now(), combo: 0, logs: [], questions: qs,
-                rewardMaxXp: reward.xp, rewardMaxBong: reward.bong,
+                startTime: Date.now(), combo: 0, logs: [`📚 ${qs.length}문항 무작위 출제 (골든벨·스피드퀴즈·엑셀 은행)`], questions: qs,
+                mode: 'quiz',
+                rewardMaxXp: settings.xp, rewardMaxBong: settings.bong,
                 turnStartTime: 0, turnResolvedFor: null, turnSubmissions: {},
                 raidResult: null, completedAt: 0, completionSessionId: null, rewardsGivenFor: null,
                 lastLogAnnouncedFor: null,
-                damageBy: {}
+                damageBy: {},
+                scoreBy: {}
             });
-            window.customAlert(`레이드 모집 시작!\n보상 최대치: ${reward.xp}XP / ${formatBongAmount(reward.bong)}`);
+            window.customAlert(`퀴즈 레이드 모집 시작!\n출제 ${qs.length}문항 · 보상 최대치: ${settings.xp}XP / ${formatBongAmount(settings.bong)}`);
         };
         
         window.saveRaidQuestions = async function() {
             if(!window.playerState.isGM) return;
-            const read = readRaidQuestionInputs();
-            if(read.error) return window.customAlert(read.error);
-            const qs = read.questions || [];
-            const reward = readRaidRewardInputs();
+            const settings = readRaidQuizSettings();
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'draft'), {
-                questions: qs,
-                rewardMaxXp: reward.xp,
-                rewardMaxBong: reward.bong,
+                questionCount: settings.questionCount,
+                rewardMaxXp: settings.xp,
+                rewardMaxBong: settings.bong,
                 updatedAt: Date.now()
             }, { merge: true });
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
-                weekendRaidRewardXp: reward.xp,
-                weekendRaidRewardBong: reward.bong
+                weekendRaidRewardXp: settings.xp,
+                weekendRaidRewardBong: settings.bong
             }, { merge: true });
-            window.customAlert('✅ 레이드 문제와 보상이 저장되었습니다. (새로고침해도 유지)');
+            window.customAlert('✅ 퀴즈 레이드 출제 수와 보상이 저장되었습니다. (새로고침해도 유지)');
         };
 
         window.resetRaidForce = async function() {
@@ -21926,7 +22045,14 @@ ${subjectLine}
             if((st.participants || []).some(p => p.id === window.playerState.id)) return window.customAlert('이미 참여했습니다.');
             if((st.participants || []).length >= 5) return window.customAlert('최대 인원(5명)이 꽉 찼습니다!');
             
-            const p = [...(st.participants || []), { id: window.playerState.id, name: STUDENT_NAMES[window.playerState.id] }];
+            const wp = window.playerState.equippedWeapon
+                ? WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon)
+                : null;
+            const p = [...(st.participants || []), {
+                id: window.playerState.id,
+                name: STUDENT_NAMES[window.playerState.id],
+                weaponBonus: wp ? (wp.bonus || 0) : 0,
+            }];
             let newStatus = st.status || 'recruiting';
             let playingInit = null;
             if(newStatus === 'recruiting' && p.length === 5) {
@@ -22006,7 +22132,7 @@ ${subjectLine}
         window.spectateRaid = function() {
             if(window.playerState.isGuest) return;
             const st = window.currentRaidState;
-            if(!st || st.status !== 'playing') return window.customAlert('전투 중일 때만 관전할 수 있어요.');
+            if(!st || st.status !== 'playing') return window.customAlert('퀴즈가 진행 중일 때만 관전할 수 있어요.');
             if(raidIsMyParticipant(st)) return window.customAlert('이미 참여자입니다.');
 
             window._raidSpectateActive = true;
@@ -22026,99 +22152,77 @@ ${subjectLine}
             const turn = st.currentTurn || 0;
             const q = st.questions[turn];
             if(!q) return;
+            if(q.type === 'short') return window.submitRaidShortAnswer();
 
             const myId = String(window.playerState.id);
             const turnSubsAll = st.turnSubmissions || {};
             const turnSubs = turnSubsAll[turn] || {};
-            if(turnSubs[myId] !== undefined) return; // 이미 제출한 경우 무시
+            if(turnSubs[myId] !== undefined) return;
 
-            const ansNumber = parseInt(ansIdx);
-            const correctIdx = q.a;
-            const isCorrect = ansNumber === correctIdx;
-
-            const elapsed = Math.max(0, Date.now() - getRaidTurnStartTime(st));
-            const tier = getRaidSpeedTier(elapsed);
-
-            const base = getRaidBaseDamage(st);
-            const combo = st.combo || 0;
-
-            let bossHP = st.bossHP || 0;
-            // 장착 무기 등급에 따른 보너스 데미지(정답 시에만 적용)
-            let weaponBonus = 0;
-            let weaponMul = 1;
-            if(window.playerState.equippedWeapon) {
-                const wp = WEAPON_DATA.find(w => w.id === window.playerState.equippedWeapon);
-                if(wp) {
-                    weaponBonus = wp.bonus || 0;
-                    // raidBonus 1~5를 2%~10% 배율로만 씁니다.
-                    weaponMul = 1 + (weaponBonus * 0.02);
-                }
-            }
-
-            if(isCorrect) {
-                const newCombo = combo + 1;
-                // 빠를수록 크리티컬이 터질 확률이 올라감
-                const criticalChance = elapsed <= RAID_CRITICAL_MS ? 0.65
-                    : (elapsed <= RAID_TURN_MS ? 0.35 : 0.15);
-                const isCritical = Math.random() < criticalChance;
-
-                // 조합이 쌓이면 안정적으로 데미지 증가
-                const comboMul = 1 + Math.min(0.6, combo * 0.07);
-                const normalTierMul = tier.label === '그레이트' ? 1.05 : 1.0;
-                const criticalMul = 2.2;
-
-                const damage = Math.round(base * comboMul * weaponMul * normalTierMul * (isCritical ? criticalMul : 1));
-                bossHP = clamp(bossHP - damage, 0, st.maxBossHP || BASE_BOSS_HP);
-
-                const pName = (st.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
-                const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
-                newLogs.push(`${pName}: 정답${isCritical ? ' (크리티컬!)' : ''} -${damage}${weaponBonus ? ` (무기 +${weaponBonus})` : ''}`);
-
-                // 여러 참가자가 동시에 제출해도 turnSubmissions가 덮어써지지 않게
-                // dot-notation으로 해당 턴/해당 학생만 업데이트
-                const updatePayload = {
-                    bossHP: bossHP,
-                    combo: newCombo,
-                    logs: newLogs,
-                    [`damageBy.${myId}`]: increment(damage),
-                    [`turnSubmissions.${turn}.${myId}`]: ansNumber
-                };
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });
-
-                // 보스가 0이 되면 즉시 종료 처리
-                if(bossHP <= 0) {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
-                        status: 'waiting',
-                        currentTurn: 0,
-                        turnStartTime: 0,
-                        turnResolvedFor: turn,
-                        turnSubmissions: {},
-                        raidResult: 'success',
-                        completedAt: Date.now(),
-                        completionSessionId: st.startTime || null,
-                        rewardsGivenFor: null,
-                        logs: [...newLogs, '💥 보스 격파!']
-                    }, { merge: true });
-                }
-            } else {
-                const newCombo = 0;
-                // 오답은 보스 체력을 소량 회복
-                const heal = Math.round(base * 0.12);
-                bossHP = clamp(bossHP + heal, 0, st.maxBossHP || BASE_BOSS_HP);
-
-                const pName = (st.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
-                const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
-                newLogs.push(`${pName}: 오답 +${heal}`);
-
-                const updatePayload = {
-                    bossHP: bossHP,
-                    combo: newCombo,
-                    logs: newLogs,
-                    [`turnSubmissions.${turn}.${myId}`]: ansNumber
-                };
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });
-            }
+            const ansNumber = parseInt(ansIdx, 10);
+            await recordQuizRaidAnswer(st, q, ansNumber);
         };
+
+        window.submitRaidShortAnswer = async function() {
+            if(window.playerState.isGuest) return;
+            const st = window.currentRaidState;
+            if(!st || st.status !== 'playing') return;
+            if(!raidIsMyParticipant(st)) return window.customAlert('관전 중이라 제출할 수 없습니다.');
+            if(!Array.isArray(st.questions) || st.questions.length === 0) return;
+
+            const turn = st.currentTurn || 0;
+            const q = st.questions[turn];
+            if(!q) return;
+
+            const myId = String(window.playerState.id);
+            const turnSubsAll = st.turnSubmissions || {};
+            const turnSubs = turnSubsAll[turn] || {};
+            if(turnSubs[myId] !== undefined) return;
+
+            const input = document.getElementById('raidShortAnswerInput');
+            const raw = input ? input.value : '';
+            if(!String(raw).trim()) return window.customAlert('정답을 입력해 주세요.');
+            await recordQuizRaidAnswer(st, q, raw);
+        };
+
+        async function recordQuizRaidAnswer(st, q, answer) {
+            const turn = st.currentTurn || 0;
+            const myId = String(window.playerState.id);
+            const isCorrect = gradeQuizRaidAnswer(q, answer);
+            const pName = (st.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
+            const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
+            newLogs.push(`${pName}: ${isCorrect ? '정답' : '오답'}`);
+
+            const stored = (q && q.type === 'mc') ? parseInt(answer, 10) : String(answer);
+            const updatePayload = {
+                logs: newLogs,
+                [`turnSubmissions.${turn}.${myId}`]: stored
+            };
+            if(isCorrect) {
+                updatePayload[`scoreBy.${myId}`] = increment(1);
+            }
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });
+
+            // 스냅샷이 오기 전에 전원 제출 여부를 판단할 수 있게 로컬 상태를 먼저 맞춘다
+            const nextSubs = { ...((st.turnSubmissions && st.turnSubmissions[turn]) || {}), [myId]: stored };
+            const nextScore = { ...((st.scoreBy && typeof st.scoreBy === 'object') ? st.scoreBy : {}) };
+            if (isCorrect) nextScore[myId] = (Number(nextScore[myId]) || 0) + 1;
+            window.currentRaidState = {
+                ...st,
+                logs: newLogs,
+                turnSubmissions: { ...(st.turnSubmissions || {}), [turn]: nextSubs },
+                scoreBy: nextScore,
+            };
+
+            const feedback = document.getElementById('raidAnswerFeedback');
+            if(feedback) {
+                feedback.className = isCorrect
+                    ? 'text-[10px] font-bold min-h-[1.25rem] mt-1 text-emerald-300'
+                    : 'text-[10px] font-bold min-h-[1.25rem] mt-1 text-rose-300';
+                feedback.textContent = isCorrect ? '정답! 다른 친구를 기다립니다.' : '오답. 다른 친구를 기다립니다.';
+            }
+            void tryAdvanceRaidTurn();
+        }
 
         function updateRaidEntryUI() {
             const st = window.currentRaidState;
@@ -22129,6 +22233,20 @@ ${subjectLine}
             const spectateBtn = document.getElementById('btnSpectateRaid');
             
             if(!btn) return;
+
+            const raidAdminStatus = document.getElementById('raidAdminStatus');
+            if (raidAdminStatus) {
+                if (!st || !st.status || st.status === 'waiting') {
+                    raidAdminStatus.innerText = '대기중';
+                    raidAdminStatus.className = 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
+                } else if (st.status === 'recruiting') {
+                    raidAdminStatus.innerText = '모집중';
+                    raidAdminStatus.className = 'text-[10px] bg-purple-900/50 text-purple-100 px-2 py-0.5 rounded border border-purple-600';
+                } else if (st.status === 'playing') {
+                    raidAdminStatus.innerText = '퀴즈중';
+                    raidAdminStatus.className = 'text-[10px] bg-cyan-900/50 text-cyan-100 px-2 py-0.5 rounded border border-cyan-700';
+                }
+            }
 
             if (!st || !st.status) {
                 btn.disabled = true;
@@ -22149,17 +22267,17 @@ ${subjectLine}
                 if (cntDiv) cntDiv.classList.remove('hidden');
                 if (rCount) rCount.innerText = (st.participants && st.participants.length) ? st.participants.length : 0;
                 if (statusTxt) {
-                    statusTxt.innerText = "🔥 용사 모집 중! (마스터가 연 레이드)";
+                    statusTxt.innerText = "🔥 용사 모집 중! (마스터가 연 퀴즈 레이드)";
                     statusTxt.className = "text-[10px] text-emerald-400 font-bold animate-pulse";
                 }
             } else if (st.status === 'playing') {
                 btn.disabled = true;
-                btn.innerText = "전투 진행 중";
-                btn.className = "w-full bg-slate-800 text-red-400 font-bold py-2.5 px-4 rounded-xl border border-red-500/50 text-xs";
+                btn.innerText = "퀴즈 진행 중";
+                btn.className = "w-full bg-slate-800 text-purple-300 font-bold py-2.5 px-4 rounded-xl border border-purple-500/50 text-xs";
                 if (cntDiv) cntDiv.classList.add('hidden');
                 if (statusTxt) {
-                    statusTxt.innerText = "⚔️ 전투 중!";
-                    statusTxt.className = "text-[10px] text-red-400 font-bold animate-pulse";
+                    statusTxt.innerText = "🧠 퀴즈 레이드 진행 중!";
+                    statusTxt.className = "text-[10px] text-purple-300 font-bold animate-pulse";
                 }
             } else {
                 btn.disabled = true;
@@ -22167,12 +22285,12 @@ ${subjectLine}
                 btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
                 if (cntDiv) cntDiv.classList.add('hidden');
                 if (statusTxt) {
-                    statusTxt.innerText = "휴식 중 · 마스터가 레이드를 시작하면 참가할 수 있어요";
+                    statusTxt.innerText = "휴식 중 · 마스터가 퀴즈 레이드를 시작하면 참가할 수 있어요";
                     statusTxt.className = "text-[10px] text-slate-500 font-bold";
                 }
             }
 
-            // 관전 UI 제어 + 레이드 타이머 구동 (마스터가 연 전투면 평일·주말 모두)
+            // 관전 UI 제어 (마스터가 연 퀴즈면 평일·주말 모두)
             const canSpectate = st.status === 'playing' && window.playerState && !window.playerState.isGuest && !raidIsMyParticipant(st);
             if(spectateBtn) {
                 if(canSpectate) {
@@ -22195,42 +22313,17 @@ ${subjectLine}
                 window._raidSpectateActive = false;
             }
 
-            // 기존 문서에 turnStartTime이 없으면(이미 시작된 레이드) 1회 보정
-            if(st.status === 'playing' && !st.turnStartTime) {
-                const key = st.startTime || 0;
-                if(window._raidTurnStartInitKey !== key) {
-                    window._raidTurnStartInitKey = key;
-                    (async () => {
-                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
-                            turnStartTime: Date.now(),
-                            turnResolvedFor: null,
-                            turnSubmissions: st.turnSubmissions || {}
-                        }, { merge: true });
-                    })().catch(e => console.error('raid turn init failed', e));
-                }
-            }
-
-            // 턴 타이머(시간초과/모든 제출일 때 진행) 구동
-            if(st.status === 'playing') {
-                if(!window.raidTimerInterval) {
-                    window.raidTimerInterval = setInterval(() => {
-                        const st2 = window.currentRaidState;
-                        if(!st2 || st2.status !== 'playing') {
-                            if(window.raidTimerInterval) clearInterval(window.raidTimerInterval);
-                            window.raidTimerInterval = null;
-                            return;
-                        }
-                        renderRaidTimerUI();
-                        void tryAdvanceRaidTurn();
-                    }, 500);
-                }
-            } else {
-                if(window.raidTimerInterval) clearInterval(window.raidTimerInterval);
+            if(window.raidTimerInterval) {
+                clearInterval(window.raidTimerInterval);
                 window.raidTimerInterval = null;
-                window._raidTurnStartInitKey = null;
+            }
+            window._raidTurnStartInitKey = null;
+
+            if(st.status === 'playing') {
+                void tryAdvanceRaidTurn();
             }
 
-            // 보상 지급 + 전투로그 공지 (레이드 종료 시 1회)
+            // 보상 지급 + 풀이 기록 공지 (레이드 종료 시 1회)
             if(st.status === 'waiting') {
                 if(st.raidResult === 'success') {
                     void window.maybeDistributeRaidRewards(st);
@@ -22246,10 +22339,9 @@ ${subjectLine}
                     window._raidLastAnnouncedId = completionId;
                     if(lsKey) localStorage.setItem(lsKey, '1');
                     const lastLogs = st.logs.slice(-5).join('\n');
-                    const title = st.raidResult === 'success' ? '✅ 레이드 클리어!' : '⚔️ 레이드 종료';
+                    const title = st.raidResult === 'success' ? '✅ 퀴즈 레이드 완료!' : '📘 퀴즈 레이드 종료';
                     (async () => {
                         await window.customAlert(`${title}\n\n${lastLogs}`);
-                        // 팝업 확인 후 레이드 화면을 닫고 본 화면으로 복귀
                         const modal = document.getElementById('raidBattleModal');
                         if(modal) modal.classList.add('hidden');
                         window._raidSpectateActive = false;
@@ -22268,14 +22360,18 @@ ${subjectLine}
             const exitBtn = document.getElementById('btnExitRaid');
             const spectatorLabel = document.getElementById('raidSpectatorLabel');
             const optGroup = document.getElementById('raidMultipleChoiceGroup');
+            const shortGroup = document.getElementById('raidShortAnswerGroup');
             const timerContainer = document.getElementById('raidTimerBarContainer');
+            const feedback = document.getElementById('raidAnswerFeedback');
 
             const hpBar = document.getElementById('raidBossHPBar');
             const hpText = document.getElementById('raidBossHPText');
             if(hpBar && hpText) {
-                const pct = Math.max(0, (st.bossHP / st.maxBossHP) * 100);
+                const maxScore = raidQuestionCountMax(st);
+                const got = sumRaidScores(st);
+                const pct = Math.max(0, Math.min(100, (got / maxScore) * 100));
                 hpBar.style.width = `${pct}%`;
-                hpText.innerText = `${Math.ceil(st.bossHP)}/${st.maxBossHP}`;
+                hpText.innerText = `정답 ${got}/${maxScore}`;
             }
 
             const logDiv = document.getElementById('raidLogContainer');
@@ -22285,7 +22381,14 @@ ${subjectLine}
 
             const plist = document.getElementById('raidParticipantsList');
             if(plist && st.participants) {
-                plist.innerHTML = st.participants.map(p => `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name}</div>`).join('');
+                const turn = st.currentTurn || 0;
+                const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? st.turnSubmissions[turn] : {};
+                const scoreBy = (st.scoreBy && typeof st.scoreBy === 'object') ? st.scoreBy : {};
+                plist.innerHTML = st.participants.map(p => {
+                    const done = turnSubs[String(p.id)] !== undefined;
+                    const score = Number(scoreBy[String(p.id)]) || 0;
+                    return `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name} <span class="text-purple-300">${score}점</span>${done ? ' <span class="text-emerald-400">제출</span>' : ''}</div>`;
+                }).join('');
             }
 
             const isParticipant = raidIsMyParticipant(st);
@@ -22294,59 +22397,81 @@ ${subjectLine}
             if(giveUpBtn) giveUpBtn.classList.toggle('hidden', !isParticipant);
             if(exitBtn) exitBtn.classList.remove('hidden');
             if(spectatorLabel) spectatorLabel.classList.toggle('hidden', !isSpectator);
+            if(timerContainer) timerContainer.classList.add('hidden');
 
             const turnText = document.getElementById('raidTurnText');
             const qText = document.getElementById('raidQuestionText');
 
             if(st.status !== 'playing') {
                 if(optGroup) optGroup.classList.add('hidden');
-                if(timerContainer) timerContainer.classList.add('hidden');
+                if(shortGroup) shortGroup.classList.add('hidden');
                 if(turnText) {
                     if(st.status === 'recruiting') turnText.innerText = '용사 모집 중';
-                    else if(st.raidResult === 'success') turnText.innerText = '보스 격파!';
-                    else if(st.raidResult === 'fail') turnText.innerText = '도전 실패';
+                    else if(st.raidResult === 'success') turnText.innerText = '퀴즈 완료!';
+                    else if(st.raidResult === 'fail') turnText.innerText = '도전 종료';
                     else turnText.innerText = '휴식 중';
                 }
                 if(qText) {
-                    if(st.status === 'recruiting') qText.innerText = '레이드 대기중.';
-                    else if(st.raidResult === 'success') qText.innerText = '✅ 보스 격파! 보상이 지급되었습니다.';
-                    else if(st.raidResult === 'fail') qText.innerText = '☠️ 전투 종료! 보스가 쓰러지지 않았습니다.';
-                    else qText.innerText = '전투가 종료되었습니다.';
+                    if(st.status === 'recruiting') qText.innerText = '친구가 모이면 퀴즈가 시작됩니다.';
+                    else if(st.raidResult === 'success') qText.innerText = '✅ 퀴즈 레이드 완료! 정답 수에 비례해 보상이 지급됩니다.';
+                    else if(st.raidResult === 'fail') qText.innerText = '📘 퀴즈 레이드가 종료되었습니다.';
+                    else qText.innerText = '퀴즈가 종료되었습니다.';
                 }
+                if(feedback) feedback.textContent = '';
                 renderRaidTimerUI();
                 return;
             }
 
-            // playing: 현재 턴 문제/보기 렌더링 + 현재 배우(차례) 표시
             const turn = st.currentTurn || 0;
             const q = (st.questions && st.questions[turn]) ? st.questions[turn] : null;
             const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
-            const actorIndex = typeof st.currentActorIndex === 'number' ? st.currentActorIndex : 0;
-            const participants = Array.isArray(st.participants) ? st.participants : [];
-            const actor = participants[actorIndex] || null;
-            const actorName = actor ? actor.name : '대기중';
+            const sourceLabel = { goldenbell: '골든벨', speedquiz: '스피드퀴즈', excel: '엑셀', manual: '직접' };
+            const src = q && q.source ? (sourceLabel[q.source] || '') : '';
 
-            if(turnText) turnText.innerText = `${turn + 1}/${questionsLen}턴 · 차례: ${actorName}`;
+            if(turnText) turnText.innerText = `${turn + 1}/${questionsLen}번${src ? ` · ${src}` : ''}`;
             if(qText) qText.innerText = q ? q.q : '문제를 불러오는 중...';
 
-            if(optGroup) optGroup.classList.remove('hidden');
-            if(timerContainer) timerContainer.classList.remove('hidden');
-
-            // 내 제출 이력 있으면 버튼 비활성화(중복 제출 방지) + 내 차례가 아니면 선택 불가
             const myId = window.playerState.id;
             const turnSubsAll = st.turnSubmissions || {};
             const myAns = (turnSubsAll[turn] || {})[myId];
-            const isMyTurn = actor && String(actor.id) === String(myId);
-            const shouldDisableOptions = isSpectator || myAns !== undefined || !isMyTurn;
+            const already = myAns !== undefined;
+            const shouldDisable = isSpectator || already;
 
-            for(let j = 0; j < 4; j++) {
-                const b = document.getElementById(`raidOption_${j}`);
-                if(!b) continue;
-                const optionText = q && q.options ? (q.options[j] || (j + 1)) : (j + 1);
-                b.innerText = optionText;
-                b.disabled = shouldDisableOptions;
-                b.classList.toggle('opacity-50', b.disabled);
-                b.classList.toggle('cursor-not-allowed', b.disabled);
+            const isMc = !!(q && (q.type === 'mc' || (Array.isArray(q.options) && q.options.length >= 2)));
+            if(optGroup) optGroup.classList.toggle('hidden', !isMc);
+            if(shortGroup) shortGroup.classList.toggle('hidden', isMc);
+
+            if(isMc) {
+                for(let j = 0; j < 4; j++) {
+                    const b = document.getElementById(`raidOption_${j}`);
+                    if(!b) continue;
+                    const optionText = q && q.options ? q.options[j] : '';
+                    if(!optionText) {
+                        b.classList.add('hidden');
+                        continue;
+                    }
+                    b.classList.remove('hidden');
+                    b.innerText = optionText;
+                    b.disabled = shouldDisable;
+                    b.classList.toggle('opacity-50', b.disabled);
+                    b.classList.toggle('cursor-not-allowed', b.disabled);
+                }
+            } else {
+                const input = document.getElementById('raidShortAnswerInput');
+                const btn = document.getElementById('raidShortAnswerBtn');
+                if(input) {
+                    input.disabled = shouldDisable;
+                    if(!already && window._raidShortTurnShown !== turn) {
+                        input.value = '';
+                        window._raidShortTurnShown = turn;
+                    }
+                }
+                if(btn) btn.disabled = shouldDisable;
+            }
+
+            if(feedback && !already) {
+                feedback.className = 'text-[10px] font-bold min-h-[1.25rem] mt-1 text-slate-500';
+                feedback.textContent = isSpectator ? '관전 중입니다.' : '';
             }
 
             renderRaidTimerUI();

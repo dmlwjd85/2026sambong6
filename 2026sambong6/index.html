@@ -256,19 +256,18 @@
         </div>
     </nav>
 
-    <!-- ★ 레이드 전투 모달 (전체 화면) ★ -->
+    <!-- ★ 퀴즈 레이드 모달 (전체 화면) ★ -->
     <div id="raidBattleModal" class="hidden fixed inset-0 z-[200] bg-slate-900 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300">
-        <!-- 기존 레이드 UI 코드 생략 없이 100% 동일 -->
         <button id="btnGiveUpRaid" onclick="window.giveUpRaid()" class="absolute top-4 left-4 bg-slate-800/80 hover:bg-sb-red text-white border border-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold transition z-50 shadow-lg flex items-center gap-1">
-            <i class="fa-solid fa-person-running"></i> 도망가기
+            <i class="fa-solid fa-person-running"></i> 포기하기
         </button>
         <div class="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden" id="raidBossArea">
-            <h2 class="text-2xl sm:text-4xl font-display text-white mb-2 z-10 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]"><i class="fa-solid fa-skull"></i> 보스 몬스터</h2>
-            <div class="w-full max-w-lg bg-slate-800 rounded-full h-6 sm:h-8 border-2 border-slate-600 relative z-10 mb-6 overflow-hidden">
-                <div id="raidBossHPBar" class="bg-gradient-to-r from-red-600 to-red-400 h-full stat-fill w-full"></div>
-                <div class="absolute inset-0 flex items-center justify-center text-white font-black text-sm drop-shadow-md" id="raidBossHPText">1000/1000</div>
+            <h2 class="text-2xl sm:text-4xl font-display text-white mb-2 z-10 drop-shadow-[0_0_10px_rgba(168,85,247,0.8)]"><i class="fa-solid fa-brain"></i> 퀴즈 레이드</h2>
+            <div class="w-full max-w-lg bg-slate-800 rounded-full h-6 sm:h-8 border-2 border-slate-600 relative z-10 mb-4 overflow-hidden">
+                <div id="raidBossHPBar" class="bg-gradient-to-r from-purple-600 to-cyan-400 h-full stat-fill w-full"></div>
+                <div class="absolute inset-0 flex items-center justify-center text-white font-black text-sm drop-shadow-md" id="raidBossHPText">정답 0/0</div>
             </div>
-            <div id="raidBossImage" class="text-8xl sm:text-[150px] drop-shadow-[0_0_30px_rgba(239,68,68,0.5)] z-10 transition-transform duration-100 ease-linear">👹</div>
+            <p class="text-[10px] text-slate-400 text-center max-w-lg z-10" id="raidQuizHint">골든벨·스피드퀴즈·엑셀로 모은 문제가 무작위로 나옵니다. 모두 제출하면 다음 문제로 넘어갑니다.</p>
         </div>
         <div class="h-auto bg-slate-800 border-y-4 border-sb-blue p-4 z-20 flex flex-col justify-center items-center relative" id="raidInputArea">
             <div id="raidTimerBarContainer" class="absolute top-0 left-0 w-full h-1.5 bg-slate-900 overflow-hidden hidden">
@@ -283,7 +282,12 @@
                 <button onclick="window.submitRaidAnswer(2)" id="raidOption_2" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">3</button>
                 <button onclick="window.submitRaidAnswer(3)" id="raidOption_3" class="bg-slate-700 border border-slate-500 text-white rounded-xl py-3 px-4 font-bold text-sm shadow-md">4</button>
             </div>
-            <div class="text-[10px] text-slate-400 mt-2"><span class="text-sb-gold">10초 이내=크리티컬</span> | 20초 이내=그레이트 | 오답=보스회복</div>
+            <div id="raidShortAnswerGroup" class="hidden w-full max-w-2xl mb-2">
+                <input type="text" id="raidShortAnswerInput" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();window.submitRaidShortAnswer();}" class="w-full bg-slate-900 border border-purple-500/50 text-white px-3 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-500 mb-2" placeholder="정답 입력 후 제출" />
+                <button type="button" id="raidShortAnswerBtn" onclick="window.submitRaidShortAnswer()" class="w-full py-3 rounded-2xl font-black text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg">제출</button>
+            </div>
+            <p id="raidAnswerFeedback" class="text-[10px] font-bold min-h-[1.25rem] mt-1"></p>
+            <div class="text-[10px] text-slate-400 mt-2">실시간 전투가 아닙니다. 같은 문제를 모두 풀면 다음 문제로 넘어가고, 보상은 정답 수에 비례합니다.</div>
         </div>
         <div class="h-48 sm:h-64 bg-slate-900 p-4 flex gap-4 overflow-hidden z-10">
             <div class="w-1/3 sm:w-1/4 border-r border-slate-700 pr-2 overflow-y-auto">
@@ -291,7 +295,7 @@
                 <div id="raidParticipantsList" class="flex flex-col gap-2"></div>
             </div>
             <div class="flex-1 flex flex-col">
-                <h3 class="text-xs text-slate-400 font-bold mb-2 pb-1 border-b">전투 기록</h3>
+                <h3 class="text-xs text-slate-400 font-bold mb-2 pb-1 border-b">풀이 기록</h3>
                 <div id="raidLogContainer" class="flex-1 overflow-y-auto space-y-1 pr-2 font-mono text-[10px] text-slate-300 flex flex-col-reverse"></div>
             </div>
         </div>
@@ -1567,12 +1571,13 @@
             </div>
         </section>
 
-        <!-- ★ 6. 도전 탭 (골든벨 · 스피드퀴즈 · 보스레이드) ★ -->
+        <!-- ★ 6. 도전 탭 (골든벨 · 스피드퀴즈 · 퀴즈레이드) ★ -->
         <section id="challengeSection" class="hidden">
+            <input type="file" id="quizBankExcelInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="window.onQuizBankExcelPicked(event)">
             <div class="max-w-7xl mx-auto space-y-4">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-yellow-300"><i class="fa-solid fa-trophy"></i> 도전</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 협동 레이드 · 냥코 원정에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드 · 냥코 원정에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
                 </div>
                 <div id="challengeSubtabs" class="app-sub-dock cols-4">
                     <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="app-sub-item is-active">
@@ -1585,7 +1590,7 @@
                     </button>
                     <button type="button" id="challengeSub-raid" onclick="window.switchChallengeSub('raid')" class="app-sub-item">
                         <span class="app-sub-icon"><img src="nav/nav-raid.webp" alt="" width="192" height="192"></span>
-                        <span>보스레이드</span>
+                        <span>퀴즈레이드</span>
                     </button>
                     <button type="button" id="challengeSub-catbattle" onclick="window.switchChallengeSub('catbattle')" class="app-sub-item">
                         <span class="app-sub-fa text-orange-300"><i class="fa-solid fa-cat"></i></span>
@@ -1607,6 +1612,11 @@
                             <span id="gbAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
                         </div>
                         <div class="space-y-2 mb-4 max-h-64 overflow-y-auto scrollbar-hide p-1" id="gbAdminInputs"></div>
+                        <div class="flex gap-2 flex-wrap mb-2">
+                            <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-lime-200 text-[10px] py-2 rounded font-bold border border-lime-700/60"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
+                            <button type="button" onclick="window.pickQuizBankExcel('goldenbell')" class="flex-1 bg-lime-800 hover:bg-lime-700 text-white text-[10px] py-2 rounded font-bold border border-lime-600"><i class="fa-solid fa-upload"></i> 엑셀로 한 번에 넣기</button>
+                        </div>
+                        <p class="text-[9px] text-slate-500 mb-2">엑셀로 올리면 위 입력칸(최대 10문항)이 채워지고, 파일의 모든 문항은 퀴즈 레이드 문제 은행에도 저장됩니다.</p>
                         <div class="flex gap-2 flex-wrap">
                             <button onclick="window.saveGoldenBellDraft()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
                             <button onclick="window.saveAndOpenGoldenBell()" class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">저장 및 오픈</button>
@@ -1633,7 +1643,7 @@
                             <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-bolt text-cyan-400"></i> 스피드 퀴즈 출제 (선착순)</h3>
                             <span id="mqAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span>
                         </div>
-                        <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">문제를 내면 학생 화면에 팝업이 뜹니다. 정답을 제출한 학생 중 <strong class="text-cyan-200">선착순 N명</strong>에게 보상이 지급되며, <strong class="text-emerald-200">정원이 차면 자동 마감</strong>됩니다.</p>
+                        <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">문제를 내면 학생 화면에 팝업이 뜹니다. 정답을 제출한 학생 중 <strong class="text-cyan-200">선착순 N명</strong>에게 보상이 지급되며, <strong class="text-emerald-200">정원이 차면 자동 마감</strong>됩니다. 출제한 문제는 퀴즈 레이드 문제 은행에 자동 저장됩니다.</p>
                         <label class="block text-[10px] text-slate-300 mb-1">문제</label>
                         <textarea id="mq_adminQuestion" rows="2" class="w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs mb-2" placeholder="문제 내용"></textarea>
                         <div class="flex flex-col sm:flex-row gap-2 mb-2">
@@ -1663,9 +1673,9 @@
                     <div class="bg-gradient-to-r from-purple-900/60 to-slate-900 p-3 rounded-2xl border border-purple-500 shadow-lg">
                         <div class="flex flex-col sm:flex-row justify-between items-center gap-3">
                             <div class="flex-1">
-                                <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-skull-crossbones mr-1"></i> 협동 레이드</h3>
+                                <h3 class="text-base font-bold text-purple-400 mb-1"><i class="fa-solid fa-brain mr-1"></i> 퀴즈 레이드</h3>
                                 <div class="text-[10px] text-yellow-500 font-bold" id="raidTimeStatusText">상태 확인 중...</div>
-                                <p class="text-[9px] text-slate-400 mt-0.5">마스터가 레이드를 열면 평일·주말 모두 참가할 수 있어요.</p>
+                                <p class="text-[9px] text-slate-400 mt-0.5">마스터가 레이드를 열면 골든벨·스피드퀴즈·엑셀 문제 은행에서 무작위로 문제가 나와요.</p>
                             </div>
                             <div class="w-full sm:w-auto text-center shrink-0">
                                 <button id="btnJoinRaid" onclick="window.joinRaid()" class="w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed" disabled>모집 대기중</button>
@@ -1675,9 +1685,18 @@
                         </div>
                     </div>
                     <div id="raidAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-purple-500 bg-slate-900/80">
-                        <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-skull-crossbones text-purple-400"></i> 협동 레이드 출제</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
-                        <p class="text-[9px] text-slate-400 mb-3">평일·주말 모두 「레이드 시작」으로 모집할 수 있습니다. 학생이 5명 모이면 전투가 시작됩니다.</p>
-                        <div class="grid grid-cols-2 gap-2 mb-3">
+                        <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-brain text-purple-400"></i> 퀴즈 레이드 · 문제 은행</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
+                        <p class="text-[9px] text-slate-400 mb-3">일일이 입력하지 말고 엑셀 서식에 문제·정답·보기(객관식)를 적어 한 번에 올리세요. 골든벨·스피드퀴즈로 출제한 문제도 은행에 쌓이며, 레이드 시작 시 그중 무작위로 나옵니다. 5명이 모이면 퀴즈가 시작됩니다.</p>
+                        <div class="flex gap-2 flex-wrap mb-3">
+                            <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-lime-200 text-[10px] py-2 rounded font-bold border border-lime-700/60"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
+                            <button type="button" onclick="window.pickQuizBankExcel('bank')" class="flex-1 bg-lime-800 hover:bg-lime-700 text-white text-[10px] py-2 rounded font-bold border border-lime-600"><i class="fa-solid fa-upload"></i> 엑셀 한 번에 올리기</button>
+                            <button type="button" onclick="window.clearQuizBank()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 px-3 rounded font-bold border border-slate-600">은행 비우기</button>
+                        </div>
+                        <p id="quizBankSummary" class="text-[10px] text-purple-200 font-bold mb-2">문제 은행 0문항</p>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
+                            <label class="text-[10px] text-slate-300">출제 문항 수
+                                <input type="number" id="raidQuestionCountInput" min="1" max="20" step="1" value="5" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                            </label>
                             <label class="text-[10px] text-slate-300">최대 보상 XP
                                 <input type="number" id="raidRewardXpInput" min="0" step="1" value="100" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
                             </label>
@@ -1685,14 +1704,14 @@
                                 <input type="number" id="raidRewardBongInput" min="0" step="1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
                             </label>
                         </div>
-                        <div class="space-y-3 mb-4" id="raidQuestionInputs"></div>
+                        <div class="space-y-1 mb-4 max-h-48 overflow-y-auto scrollbar-hide" id="raidQuestionInputs"></div>
                         <div class="flex gap-2">
-                            <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">문제 저장</button>
+                            <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">설정 저장</button>
                             <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>
                             <button onclick="window.resetRaidForce()" class="bg-red-900/50 hover:bg-red-800 text-sb-red text-[10px] py-2 px-3 rounded font-bold border border-red-900">강제 종료</button>
                         </div>
                         <div class="mt-2 flex gap-2">
-                            <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 전투)</button>
+                            <button onclick="window.forceStartRaidTest()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 rounded font-bold border border-slate-600">테스트 시작(즉시 퀴즈)</button>
                         </div>
                     </div>
                 </div>
@@ -2652,10 +2671,10 @@
                     <label class="text-[10px] text-slate-300 font-bold">은행 이자율 (%)
                         <input id="wsBankInterest" type="number" min="0" max="100" step="0.1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
-                    <label class="text-[10px] text-slate-300 font-bold">협동 레이드 보상 XP
+                    <label class="text-[10px] text-slate-300 font-bold">퀴즈 레이드 보상 XP
                         <input id="wsRaidRewardXp" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
-                    <label class="text-[10px] text-slate-300 font-bold">협동 레이드 보상 <span data-currency-unit>B</span>
+                    <label class="text-[10px] text-slate-300 font-bold">퀴즈 레이드 보상 <span data-currency-unit>B</span>
                         <input id="wsRaidRewardBong" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
                     <label class="text-[10px] text-slate-300 font-bold">드래곤볼 1개 XP

@@ -125,6 +125,35 @@ import {
     BANK_TRANSFER_AMOUNT_MAX,
 } from './lib/bankTransfer.js';
 import {
+    STOCK_INVEST_MAX,
+    STOCK_INVEST_MIN,
+    STOCK_MARKETS,
+    applyBuyStock,
+    applySellStock,
+    canBuyStock,
+    extractYahooChartJson,
+    formatChangePct,
+    formatIndexPrice,
+    getStockMarket,
+    parseYahooChart,
+    sanitizeStockInvestDaily,
+    sanitizeStockInvestments,
+    settleStockPosition,
+    yahooChartProxyUrl,
+    yahooChartUrl,
+} from './lib/stockMarket.js';
+import {
+    CAT_DAILY_WIN_LIMIT,
+    CAT_STAGE_COUNT,
+    applyCatWin,
+    canStartCatStage,
+    catDailyWins,
+    sanitizeCatBattle,
+    sanitizeCatFriends,
+    simulateCatBattle,
+    stageRewards,
+} from './lib/catBattle.js';
+import {
     openMeteoGeocodeUrl,
     openMeteoSchoolUrl,
     parseGeocodeResults,
@@ -702,7 +731,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.30';
+        const APP_VERSION = 'v1.31';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -1123,6 +1152,117 @@ function redrawPlazaGrantsUi() {
         window.refreshSchoolWeather = refreshSchoolWeather;
         void refreshSchoolWeather(true);
         _schoolWeatherTimer = setInterval(() => { void refreshSchoolWeather(false); }, 10 * 60 * 1000);
+
+        let _marketQuotes = { kospi: null, nasdaq: null, fetchedAt: 0 };
+        let _marketQuoteTimer = null;
+
+        function applySharedMarketQuotes(raw) {
+            const src = raw && typeof raw === 'object' ? raw : {};
+            ['kospi', 'nasdaq'].forEach((id) => {
+                const row = src[id];
+                if (row && Number(row.price) > 0) {
+                    _marketQuotes[id] = {
+                        id,
+                        price: Number(row.price),
+                        prev: Number(row.prev) || Number(row.price),
+                        changePct: Number(row.changePct) || 0,
+                        fetchedAt: Number(row.fetchedAt) || Number(src.fetchedAt) || Date.now(),
+                    };
+                }
+            });
+            if (Number(src.fetchedAt) > 0) _marketQuotes.fetchedAt = Number(src.fetchedAt);
+        }
+
+        function renderMarketTicker() {
+            const meta = document.getElementById('marketTickerMeta');
+            STOCK_MARKETS.forEach((m) => {
+                const q = _marketQuotes[m.id];
+                const priceEl = document.getElementById(m.id + 'Price');
+                const chEl = document.getElementById(m.id + 'Change');
+                if (!priceEl || !chEl) return;
+                if (!q) {
+                    priceEl.textContent = '—';
+                    chEl.textContent = '—';
+                    chEl.className = 'text-[10px] font-black flat';
+                    return;
+                }
+                priceEl.textContent = formatIndexPrice(q.price);
+                const pct = Number(q.changePct) || 0;
+                chEl.textContent = formatChangePct(pct);
+                chEl.className = 'text-[10px] font-black ' + (pct > 0.0001 ? 'up' : pct < -0.0001 ? 'down' : 'flat');
+            });
+            if (meta) {
+                const ok = _marketQuotes.kospi || _marketQuotes.nasdaq;
+                meta.textContent = ok
+                    ? '15분 이내 시세 · 은행에서 투자할 수 있습니다.'
+                    : '지수를 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
+            }
+        }
+
+        async function fetchOneMarketQuote(market) {
+            const urls = [yahooChartUrl(market.symbol), yahooChartProxyUrl(market.symbol)];
+            for (const url of urls) {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) continue;
+                    const text = await res.text();
+                    let json = extractYahooChartJson(text);
+                    if (!json) {
+                        try { json = JSON.parse(text); } catch (e) { json = null; }
+                    }
+                    const q = parseYahooChart(json, market.id);
+                    if (q) return q;
+                } catch (e) {
+                    console.warn('market quote', market.id, e);
+                }
+            }
+            return null;
+        }
+
+        async function refreshMarketQuotes(force) {
+            const now = Date.now();
+            const shared = window.globalSettings && window.globalSettings.marketQuotes;
+            if (!force && shared && now - (Number(shared.fetchedAt) || 0) < 4 * 60 * 1000) {
+                applySharedMarketQuotes(shared);
+                renderMarketTicker();
+                return _marketQuotes;
+            }
+            if (!force && now - (_marketQuotes.fetchedAt || 0) < 4 * 60 * 1000 && (_marketQuotes.kospi || _marketQuotes.nasdaq)) {
+                renderMarketTicker();
+                return _marketQuotes;
+            }
+            const got = {};
+            for (const m of STOCK_MARKETS) {
+                const q = await fetchOneMarketQuote(m);
+                if (q) got[m.id] = q;
+            }
+            if (got.kospi || got.nasdaq) {
+                _marketQuotes = { ..._marketQuotes, ...got, fetchedAt: now };
+                renderMarketTicker();
+                if (db) {
+                    try {
+                        const authOk = await ensureAnonAuthReady();
+                        if (authOk) {
+                            await setDoc(getGlobalSettingsDocRef(), {
+                                marketQuotes: {
+                                    kospi: _marketQuotes.kospi || null,
+                                    nasdaq: _marketQuotes.nasdaq || null,
+                                    fetchedAt: now,
+                                },
+                            }, { merge: true });
+                        }
+                    } catch (e) {
+                        console.warn('marketQuotes save', e);
+                    }
+                }
+            } else {
+                renderMarketTicker();
+            }
+            return _marketQuotes;
+        }
+        window.refreshMarketQuotes = refreshMarketQuotes;
+        void refreshMarketQuotes(true);
+        _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(false); }, 5 * 60 * 1000);
 
         window.searchSchoolWeatherRegion = async function() {
             const inp = document.getElementById('schoolWeatherSearch');
@@ -2946,6 +3086,8 @@ function redrawPlazaGrantsUi() {
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
             condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
+            stockInvestments: { kospi: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
+            catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
             conveniencePurchases: [],
             lottoTickets: [],
@@ -7334,7 +7476,7 @@ ${subjectLine}
         let economySub = 'shop';
         /** 상점 하위: skin | item | convenience | class | lotto */
         let shopSub = 'skin';
-        /** 도전 서브: goldenbell | speedquiz | raid */
+        /** 도전 서브: goldenbell | speedquiz | raid | catbattle */
         let challengeSub = 'goldenbell';
         /** 수업도구 서브: timetable | thermo | chalk ... */
         let classtoolSub = 'timetable';
@@ -7369,6 +7511,7 @@ ${subjectLine}
             }
             if (g === 'bank' && typeof window.updateBankPanel === 'function') {
                 window.updateBankPanel();
+                if (id === 'invest' && typeof refreshMarketQuotes === 'function') void refreshMarketQuotes(false);
             }
         };
 
@@ -7423,7 +7566,7 @@ ${subjectLine}
 
         window.switchChallengeSub = function(sub) {
             challengeSub = sub || 'goldenbell';
-            ['goldenbell', 'speedquiz', 'raid'].forEach(s => {
+            ['goldenbell', 'speedquiz', 'raid', 'catbattle'].forEach(s => {
                 const btn = document.getElementById('challengeSub-' + s);
                 if (btn) btn.classList.toggle('is-active', s === challengeSub);
                 const pane = document.getElementById('challengePane-' + s);
@@ -7447,6 +7590,9 @@ ${subjectLine}
                         ? '진행 중 — 팝업에서 답을 제출하세요!'
                         : '대기 중 — 문제가 열리면 자동으로 팝업이 표시됩니다.';
                 }
+            }
+            if (challengeSub === 'catbattle' && typeof window.renderCatBattlePanel === 'function') {
+                window.renderCatBattlePanel();
             }
         };
 
@@ -13159,6 +13305,10 @@ ${subjectLine}
                                         void refreshSchoolWeather(true);
                                     }
                                 }
+                                if (settingsData.marketQuotes !== undefined) {
+                                    applySharedMarketQuotes(settingsData.marketQuotes);
+                                    renderMarketTicker();
+                                }
                                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
                                 if (pwDisplay) pwDisplay.innerText = window.globalSettings.raidPassword || '설정 필요';
                                 
@@ -14844,8 +14994,8 @@ ${subjectLine}
             const bankDock = document.querySelector('#bankSection .app-sub-dock');
             if (bankDock) {
                 const adminDock = !!(window.playerState && window.playerState.isAdmin);
-                bankDock.classList.toggle('cols-4', !adminDock);
-                bankDock.classList.toggle('cols-5', adminDock);
+                bankDock.classList.toggle('cols-5', !adminDock);
+                bankDock.classList.toggle('cols-6', adminDock);
             }
             const feeNow = getBankTransferFeeNow();
             const feeHint = document.getElementById('bankTransferFeeHint');
@@ -14873,6 +15023,273 @@ ${subjectLine}
             if (preview) {
                 preview.textContent = `1~${BANK_TRANSFER_AMOUNT_MAX}봉까지 보낼 수 있습니다.`
                     + (feeNow ? ` 보낼 금액에 수수료 ${formatBongAmount(feeNow)}가 더해져 차감됩니다.` : '');
+            }
+            renderBankInvestPanel();
+        };
+
+        function renderBankInvestPanel() {
+            const line = document.getElementById('bankInvestQuoteLine');
+            const box = document.getElementById('bankInvestPositions');
+            if (line) {
+                const bits = STOCK_MARKETS.map((m) => {
+                    const q = _marketQuotes[m.id];
+                    return q ? `${m.name} ${formatIndexPrice(q.price)} (${formatChangePct(q.changePct)})` : `${m.name} —`;
+                });
+                line.textContent = bits.join(' · ');
+            }
+            if (!box || !window.playerState) return;
+            const bag = sanitizeStockInvestments(window.playerState.stockInvestments);
+            const rows = STOCK_MARKETS.map((m) => {
+                const pos = bag[m.id];
+                const q = _marketQuotes[m.id];
+                if (!pos) {
+                    return `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/50 text-[10px] text-slate-400">${m.name} 보유 없음 · ${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 매수</div>`;
+                }
+                const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
+                const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
+                const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                return `<div class="border border-amber-500/35 rounded-xl p-3 bg-slate-900/70">
+                    <div class="flex justify-between gap-2 items-start">
+                        <div>
+                            <div class="text-amber-100 font-bold text-sm">${m.name}</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 매수 ${formatIndexPrice(pos.buyIndex)}</div>
+                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt})</div>
+                        </div>
+                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded">매도</button>
+                    </div>
+                </div>`;
+            });
+            box.innerHTML = rows.join('');
+        }
+
+        window.buyStockIndex = async function(marketId) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            await refreshMarketQuotes(false);
+            const market = getStockMarket(marketId);
+            const q = market && _marketQuotes[market.id];
+            if (!q) return window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            const inp = document.getElementById('bankInvestAmount');
+            const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
+            if (amt == null) return window.customAlert(`${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 사이 금액을 입력하세요.`);
+            window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+            const gate = canBuyStock({
+                wallet: Number(window.playerState.bong) || 0,
+                amount: amt,
+                existing: window.playerState.stockInvestments[market.id],
+            });
+            if (!gate.ok) {
+                const msg = gate.reason === 'held' ? '이미 이 시장에 투자 중입니다. 먼저 매도하세요.'
+                    : gate.reason === 'wallet' ? '지갑 잔액이 부족합니다.'
+                    : `${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉만 투자할 수 있습니다.`;
+                return window.customAlert(msg);
+            }
+            const ok = await window.customConfirm(`${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`);
+            if (!ok) return;
+            const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gate.amount, q.price, Date.now(), getLocalDateStr());
+            if (!bought.ok) return window.customAlert('매수에 실패했습니다.');
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - gate.amount);
+            window.playerState.stockInvestments = bought.investments;
+            if (inp) inp.value = '';
+            updateUI();
+            const saved = await saveDataToCloud({
+                allowBongDecrease: true,
+                maxBongDecrease: gate.amount,
+                requireServerBongBalance: true,
+                operationLabel: `${market.name} 매수`,
+            });
+            if (!saved) return;
+            await window.customAlert(`${market.name} ${formatBongAmount(gate.amount)} 매수했습니다.`);
+        };
+
+        window.sellStockIndex = async function(marketId) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            await refreshMarketQuotes(true);
+            const market = getStockMarket(marketId);
+            const q = market && _marketQuotes[market.id];
+            if (!q) return window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            const today = getLocalDateStr();
+            const sold = applySellStock(
+                window.playerState.stockInvestments,
+                market.id,
+                q.price,
+                window.playerState.stockInvestDaily,
+                today,
+                Date.now()
+            );
+            if (!sold.ok) return window.customAlert('매도할 투자가 없습니다.');
+            const ok = await window.customConfirm(
+                `${market.name}를 매도할까요?\n원금 ${formatBongAmount(sold.principal)} → ${formatBongAmount(sold.payout)}`
+                + (sold.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
+            );
+            if (!ok) return;
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sold.payout);
+            window.playerState.stockInvestments = sold.investments;
+            window.playerState.stockInvestDaily = sold.daily;
+            updateUI();
+            const saved = await saveDataToCloud({
+                maxBongIncrease: Math.max(1, sold.payout),
+                operationLabel: `${market.name} 매도`,
+            });
+            if (!saved) return;
+            await window.customAlert(`매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받았습니다.`);
+        };
+
+        function catStudentLevel(sid) {
+            const id = String(sid || '');
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            if (id === myId && window.playerState) return calculateExactLevel(window.playerState.xp || 0);
+            const row = (window.allStudentsData || []).find((s) => String(s.id) === id)
+                || (id === 'gm' ? window.gmData : null)
+                || (id === 'gm_a' ? window.gmaData : null);
+            return calculateExactLevel(row && row.xp);
+        }
+
+        window.renderCatBattlePanel = function() {
+            if (!window.playerState) return;
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            const st = sanitizeCatBattle(window.playerState.catBattle, myId);
+            window.playerState.catBattle = st;
+            const today = getLocalDateStr();
+            const wins = catDailyWins(st, today);
+            const hint = document.getElementById('catBattleHint');
+            if (hint) {
+                hint.textContent = window.playerState.isGuest
+                    ? '게스트는 원정에 참가할 수 없어요.'
+                    : `오늘 승리 ${wins} / ${CAT_DAILY_WIN_LIMIT} · 클리어 ${st.cleared} · 친구 ${st.friends.length}/2 (넣을수록 난이도 상승)`;
+            }
+            const friendBox = document.getElementById('catBattleFriends');
+            if (friendBox) {
+                const ids = getActiveStudentIds().filter((id) => id && id !== myId);
+                friendBox.innerHTML = '<span class="text-[10px] text-orange-100 font-bold w-full">함께할 친구 (최대 2명)</span>' + ids.map((id) => {
+                    const on = st.friends.includes(id);
+                    return `<button type="button" onclick="window.toggleCatFriend('${id}')" class="min-h-[34px] px-2 rounded-lg text-[10px] font-bold border ${on ? 'bg-orange-700 text-white border-orange-300' : 'bg-slate-900 text-slate-300 border-slate-600'}">${escapeHofText(STUDENT_NAMES[id] || id)} · Lv.${catStudentLevel(id)}</button>`;
+                }).join('');
+            }
+            const stageBox = document.getElementById('catBattleStages');
+            if (stageBox) {
+                let html = '';
+                for (let n = 1; n <= CAT_STAGE_COUNT; n++) {
+                    const pay = stageRewards(n);
+                    const locked = n > st.cleared + 1;
+                    const click = !locked && !window.playerState.isGuest ? `onclick="void window.startCatStage(${n})"` : '';
+                    html += `<button type="button" ${click} class="rounded-xl border px-1.5 py-2 text-center ${locked ? 'opacity-40 border-slate-700 bg-slate-950 text-slate-500' : 'border-orange-400/50 bg-orange-950/40 text-orange-50 hover:bg-orange-900'}">
+                        <div class="text-[11px] font-black">${n}</div>
+                        <div class="text-[8px] text-slate-300">+${pay.xp}XP${pay.bong ? ` · +${pay.bong}B` : ''}</div>
+                    </button>`;
+                }
+                stageBox.innerHTML = html;
+            }
+        };
+
+        window.toggleCatFriend = function(sid) {
+            if (!window.playerState || window.playerState.isGuest) return;
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            const st = sanitizeCatBattle(window.playerState.catBattle, myId);
+            const id = String(sid || '');
+            if (st.friends.includes(id)) st.friends = st.friends.filter((x) => x !== id);
+            else st.friends = sanitizeCatFriends(st.friends.concat([id]), myId);
+            window.playerState.catBattle = st;
+            window.renderCatBattlePanel();
+            saveDataToCloud();
+        };
+
+        let _catBattleRunning = false;
+
+        function playCatBattleAnim(result) {
+            const field = document.getElementById('catBattleField');
+            const lane = document.getElementById('catBattleLane');
+            const pFill = document.getElementById('catPlayerHpFill');
+            const eFill = document.getElementById('catEnemyHpFill');
+            const pText = document.getElementById('catPlayerHpText');
+            const eText = document.getElementById('catEnemyHpText');
+            const status = document.getElementById('catBattleStatus');
+            if (!field || !lane) return Promise.resolve();
+            field.classList.remove('hidden');
+            lane.innerHTML = '';
+            const ticks = Math.max(8, result.ticks || 12);
+            const units = [];
+            const spawn = (side) => {
+                const el = document.createElement('div');
+                el.className = 'cat-unit' + (side === 'enemy' ? ' is-enemy' : '');
+                el.textContent = side === 'enemy' ? '👾' : '🐱';
+                el.style.left = side === 'enemy' ? '88%' : '6%';
+                lane.appendChild(el);
+                units.push({ el, side, x: side === 'enemy' ? 88 : 6 });
+            };
+            spawn('ally');
+            spawn('enemy');
+            return new Promise((resolve) => {
+                let t = 0;
+                const timer = setInterval(() => {
+                    t += 1;
+                    if (t % 3 === 0) spawn('ally');
+                    if (t % 2 === 0) spawn('enemy');
+                    units.forEach((u) => {
+                        u.x += u.side === 'enemy' ? -3.2 : 3.2;
+                        u.el.style.left = `${Math.max(4, Math.min(90, u.x))}%`;
+                    });
+                    const pRatio = Math.max(0, 1 - t / ticks * (1 - Math.max(0, result.playerHp) / 100));
+                    const eRatio = Math.max(0, result.enemyHpLeft / Math.max(1, result.enemyHp));
+                    const showE = result.win ? Math.max(0, 1 - t / ticks) : Math.max(eRatio, 1 - t / (ticks + 4));
+                    const showP = result.win ? Math.max(pRatio, 0.15) : Math.max(0, 1 - t / ticks);
+                    if (pFill) pFill.style.width = `${Math.max(0, Math.min(100, showP * 100))}%`;
+                    if (eFill) eFill.style.width = `${Math.max(0, Math.min(100, showE * 100))}%`;
+                    if (pText) pText.textContent = '아군 성';
+                    if (eText) eText.textContent = '적 성';
+                    if (status) status.textContent = t < ticks ? '자동 전투 중…' : (result.win ? '승리!' : '패배…');
+                    if (t >= ticks) {
+                        clearInterval(timer);
+                        resolve();
+                    }
+                }, 180);
+            });
+        }
+
+        window.startCatStage = async function(stage) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            if (_catBattleRunning) return;
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            const st = sanitizeCatBattle(window.playerState.catBattle, myId);
+            const today = getLocalDateStr();
+            const gate = canStartCatStage(st, stage, today);
+            if (!gate.ok) {
+                const msg = gate.reason === 'daily' ? '오늘은 이미 4번 이겼어요. 내일 다시 도전하세요.'
+                    : gate.reason === 'locked' ? '앞 스테이지를 먼저 깨야 합니다.'
+                    : '이 스테이지를 시작할 수 없습니다.';
+                return window.customAlert(msg);
+            }
+            _catBattleRunning = true;
+            try {
+                const friendLevels = st.friends.map((id) => catStudentLevel(id));
+                const result = simulateCatBattle({
+                    stage,
+                    selfLevel: calculateExactLevel(window.playerState.xp || 0),
+                    friendLevels,
+                });
+                await playCatBattleAnim(result);
+                if (!result.win) {
+                    await window.customAlert(`😿 ${stage}스테이지 패배!\n친구를 빼면 적이 약해집니다. 다시 도전해 보세요.`);
+                    return;
+                }
+                const next = applyCatWin(st, stage, today);
+                window.playerState.catBattle = next;
+                window.playerState.xp = Math.max(0, Math.floor(Number(window.playerState.xp) || 0) + next.reward.xp);
+                if (next.reward.bong > 0) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + next.reward.bong);
+                }
+                updateUI();
+                window.renderCatBattlePanel();
+                const saved = await saveDataToCloud({
+                    maxBongIncrease: Math.max(1, next.reward.bong),
+                    operationLabel: `냥코 원정 ${stage}스테이지`,
+                });
+                if (!saved) return;
+                await window.customAlert(
+                    `🐱 ${stage}스테이지 클리어!\n경험치 +${next.reward.xp} XP`
+                    + (next.reward.bong ? ` · 삼봉 +${formatBongAmount(next.reward.bong)}` : '')
+                );
+            } finally {
+                _catBattleRunning = false;
             }
         };
 
@@ -15744,6 +16161,8 @@ ${subjectLine}
             if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
             if (typeof refreshSchoolWeather === 'function') void refreshSchoolWeather(false);
             if (typeof syncSchoolWeatherSearchUi === 'function') syncSchoolWeatherSearchUi();
+            if (typeof renderMarketTicker === 'function') renderMarketTicker();
+            if (challengeSub === 'catbattle' && typeof window.renderCatBattlePanel === 'function') window.renderCatBattlePanel();
             if (canRunBankSideEffects) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
@@ -15800,6 +16219,8 @@ ${subjectLine}
                 inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 dragonBalls: [], dragonBallWeekendKey: '',
                 bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
+                stockInvestments: { kospi: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
+                catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
             
@@ -15884,7 +16305,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -18839,6 +19260,7 @@ ${subjectLine}
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
+            'stockInvestments', 'stockInvestDaily', 'catBattle',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',
@@ -19341,6 +19763,9 @@ ${subjectLine}
                 bankTermDeposits: [],
                 bankDailyBonusLastDate: '',
                 dailyAllClearBonusDate: '',
+                stockInvestments: { kospi: null, nasdaq: null },
+                stockInvestDaily: { date: '', profit: 0, sells: 0 },
+                catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 classEventPurchases: [],
                 conveniencePurchases: [],
                 lottoTickets: [],

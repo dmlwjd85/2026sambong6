@@ -2057,7 +2057,7 @@
             gap: 0.45rem;
         }
         #challengeSubtabs.app-sub-dock {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
         }
         #shopSubtabs.app-sub-dock,
         .app-sub-dock.cols-5 {
@@ -2289,6 +2289,13 @@
         }
 
         /* 학교 날씨 — 홈 카드 + 월드맵 장면 연동 */
+        .home-brief-grid {
+            display: grid;
+            gap: 0.65rem;
+        }
+        @media (min-width: 640px) {
+            .home-brief-grid { grid-template-columns: 1.35fr 0.95fr; align-items: stretch; }
+        }
         .school-weather-card {
             overflow: hidden;
         }
@@ -2373,6 +2380,59 @@
         }
         body.weather-rainy .school-weather-card { border-color: rgba(56, 189, 248, 0.7); }
         body.weather-snowy .school-weather-card { border-color: rgba(226, 232, 240, 0.65); }
+
+        .market-ticker-card .up { color: #fb7185; }
+        .market-ticker-card .down { color: #38bdf8; }
+        .market-ticker-card .flat { color: #94a3b8; }
+
+        .cat-battle-field {
+            position: relative;
+            overflow: hidden;
+            border-radius: 1.25rem;
+            border: 2px solid rgba(251, 146, 60, 0.55);
+            background:
+                linear-gradient(180deg, #7dd3fc 0 38%, #86efac 38% 72%, #4d7c0f 72% 100%);
+            min-height: 14rem;
+            padding: 0.75rem;
+        }
+        .cat-battle-hud { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+        .cat-castle-bar {
+            position: relative;
+            height: 1.15rem;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.55);
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.35);
+        }
+        .cat-castle-bar > span {
+            display: block;
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(90deg, #22c55e, #a3e635);
+            transition: width 0.2s linear;
+        }
+        .cat-castle-bar.is-enemy > span { background: linear-gradient(90deg, #ef4444, #fb7185); }
+        .cat-castle-bar > em {
+            position: absolute; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-style: normal; font-weight: 800; color: #fff;
+            text-shadow: 0 1px 2px #000;
+        }
+        .cat-battle-lane {
+            position: relative;
+            height: 9.5rem;
+            margin-top: 0.5rem;
+        }
+        .cat-unit {
+            position: absolute;
+            bottom: 0.4rem;
+            font-size: 1.65rem;
+            line-height: 1;
+            transition: left 0.16s linear, right 0.16s linear;
+            filter: drop-shadow(0 2px 0 rgba(0,0,0,0.35));
+            z-index: 2;
+        }
+        .cat-unit.is-enemy { transform: scaleX(-1); }
 
         /* 미스테리 주사위 굴림 애니메이션 */
         @keyframes dice-spin-shake { 0%, 100% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(-18deg) scale(1.08); } 50% { transform: rotate(14deg) scale(1.05); } 75% { transform: rotate(-10deg) scale(1.1); } }

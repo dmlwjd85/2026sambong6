@@ -7564,9 +7564,10 @@ ${subjectLine}
             const state = readingLogSubmitState(mine, sid, today);
             const hint = document.getElementById('readingLogHint');
             const btn = document.getElementById('readingSubmitBtn');
-            const locked = !state.ok;
+            const locked = !state.ok || !_readingSnapReady;
             if (hint) {
-                if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 독서기록이 있습니다. 내일 다시 쓸 수 있어요.';
+                if (!_readingSnapReady) hint.textContent = '독서기록을 불러오는 중입니다.';
+                else if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 독서기록이 있습니다. 내일 다시 쓸 수 있어요.';
                 else if (state.reason === 'pending') hint.textContent = '오늘 기록이 확인 대기 중입니다. 선생님이 보면 보상이 들어옵니다.';
                 else if (state.reason === 'resubmit') hint.textContent = '반려된 기록을 고쳐 다시 제출할 수 있습니다.';
                 else hint.textContent = '제목·지은이·출판사와 읽고 난 생각(20자 이상)을 적으면 선생님이 확인합니다.';
@@ -7598,7 +7599,7 @@ ${subjectLine}
                 }
             }
             const approved = countApprovedReadingLogs(_readingLogs, sid);
-            if (hint && approved > 0 && state.ok) hint.textContent += ` 지금까지 ${approved}권을 확인받았습니다.`;
+            if (hint && _readingSnapReady && approved > 0 && state.ok) hint.textContent += ` 지금까지 ${approved}권을 확인받았습니다.`;
         };
 
         window.renderLiteratureDiaryPane = function() {
@@ -7626,7 +7627,7 @@ ${subjectLine}
             const visible = diariesVisibleTo(window.playerState, _diaries);
             const todayEntry = visible.find((d) => String(d.studentId) === targetId && String(d.date) === today);
             const state = diarySubmitState(_diaries, admin ? targetId : sid, today);
-            const locked = admin || !state.ok;
+            const locked = admin || !state.ok || !_diarySnapReady;
             if (saveBtn) {
                 saveBtn.classList.toggle('hidden', admin);
                 saveBtn.disabled = locked || !!(window.playerState && window.playerState.isGuest);
@@ -7635,6 +7636,7 @@ ${subjectLine}
             if (bodyEl) bodyEl.disabled = locked;
             if (hint) {
                 if (admin) hint.textContent = '학생을 고르면 일기를 볼 수 있습니다. 확인·보상은 확인 탭에서 합니다.';
+                else if (!_diarySnapReady) hint.textContent = '일기를 불러오는 중입니다.';
                 else if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 일기입니다. 내일 다시 쓸 수 있어요.';
                 else if (state.reason === 'update') hint.textContent = '오늘 일기가 확인 대기 중입니다. 선생님이 보기 전에 고칠 수 있어요.';
                 else if (state.reason === 'resubmit') hint.textContent = '반려된 일기를 고쳐 다시 저장할 수 있습니다.';
@@ -7810,12 +7812,16 @@ ${subjectLine}
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
                 return window.customAlert('학생 계정으로 독서기록을 제출해 주세요.');
             }
+            if (!_readingSnapReady) {
+                return window.customAlert('독서기록을 불러오는 중입니다. 잠시 후 다시 제출해 주세요.');
+            }
             const sid = literatureStudentId();
             const today = getLocalDateStr();
             const state = readingLogSubmitState(_readingLogs, sid, today);
             if (!state.ok) {
                 return window.customAlert(state.reason === 'pending' ? '오늘 기록이 이미 확인 대기 중입니다.' : '오늘은 이미 독서기록을 냈습니다.');
             }
+            const now = Date.now();
             const draft = {
                 id: readingLogDocId(sid, today),
                 studentId: sid,
@@ -7829,7 +7835,11 @@ ${subjectLine}
                 thought: (document.getElementById('readingThought') || {}).value,
                 status: 'pending',
                 rewarded: false,
-                submittedAt: Date.now(),
+                rewardXp: 0,
+                rewardBong: 0,
+                submittedAt: now,
+                reviewedAt: 0,
+                teacherNote: '',
             };
             const checked = validateReadingLogDraft(draft);
             if (!checked.ok) {
@@ -7843,43 +7853,93 @@ ${subjectLine}
             }
             const authOk = await ensureAnonAuthReady();
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            const logId = checked.log.id || readingLogDocId(sid, today);
             try {
                 await runWithNetworkRetry(async () => {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', checked.log.id || readingLogDocId(sid, today)), checked.log, { merge: true });
+                    await runTransaction(db, async (transaction) => {
+                        const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', logId);
+                        const snap = await transaction.get(logRef);
+                        const server = snap.exists()
+                            ? sanitizeReadingLog({ ...(snap.data() || {}), id: snap.id }, now)
+                            : null;
+                        if (server && String(server.studentId) && String(server.studentId) !== String(sid)) {
+                            throw new Error('not_owner');
+                        }
+                        const serverState = readingLogSubmitState(server ? [server] : [], sid, today);
+                        if (!serverState.ok) {
+                            throw new Error(serverState.reason === 'pending' ? 'already_pending' : 'already_approved');
+                        }
+                        transaction.set(logRef, {
+                            ...checked.log,
+                            id: logId,
+                            studentId: sid,
+                            date: today,
+                            status: 'pending',
+                            rewarded: false,
+                            rewardXp: 0,
+                            rewardBong: 0,
+                            submittedAt: now,
+                            reviewedAt: 0,
+                        }, { merge: true });
+                    });
                 }, '독서기록 제출');
                 window.showToast && window.showToast('독서기록을 제출했습니다. 선생님 확인을 기다려 주세요.');
             } catch (e) {
                 console.error('submitReadingLog', e);
+                const msg = String(e && e.message ? e.message : e);
+                if (msg.includes('already_pending')) return window.customAlert('오늘 기록이 이미 확인 대기 중입니다.');
+                if (msg.includes('already_approved')) return window.customAlert('오늘은 이미 독서기록을 냈습니다.');
+                if (msg.includes('not_owner')) return window.customAlert('다른 학생의 기록은 제출할 수 없습니다.');
                 await window.customAlert('제출에 실패했습니다. 잠시 후 다시 시도해 주세요.');
             }
         };
+
+        /** 문학 확인 보상은 트랜잭션 안에서만 increment 합니다. 재시도가 이중 지급하지 않게 합니다. */
+        function applyLiteratureGrantTx(transaction, studentId, grantXp, grantBong) {
+            const sid = String(studentId || '').trim();
+            if (!sid || (grantXp <= 0 && grantBong <= 0)) return;
+            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+            const payload = {};
+            if (grantXp > 0) payload.xp = increment(grantXp);
+            if (grantBong > 0) payload.bong = increment(grantBong);
+            transaction.set(stuRef, payload, { merge: true });
+        }
 
         window.reviewReadingLog = async function(logId, action) {
             if (!window.playerState || !window.playerState.isAdmin) {
                 return window.customAlert('선생님만 확인할 수 있습니다.');
             }
-            const log = _readingLogs.find((l) => l.id === String(logId));
-            if (action === 'approve' && !canApproveReadingLog(log)) {
+            const id = String(logId || '');
+            if (!id) return;
+            const cached = _readingLogs.find((l) => l.id === id);
+            if (action === 'approve' && !canApproveReadingLog(cached)) {
                 return window.customAlert('이미 처리된 기록입니다.');
             }
-            const noteEl = document.getElementById('reviewNote_' + logId);
-            const reviewed = applyReadingLogReview(log, action, noteEl ? noteEl.value : '', literatureRewards());
-            if (reviewed.skip) return window.customAlert('이미 처리된 기록입니다.');
+            const noteEl = document.getElementById('reviewNote_' + id);
+            const note = noteEl ? noteEl.value : '';
+            const rewards = literatureRewards();
             const authOk = await ensureAnonAuthReady();
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
             try {
-                await runWithNetworkRetry(async () => {
-                    const batch = writeBatch(db);
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', log.id), reviewed.log, { merge: true });
-                        if (reviewed.grantXp > 0 || reviewed.grantBong > 0) {
-                        const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + log.studentId);
-                        const payload = {};
-                        if (reviewed.grantXp > 0) payload.xp = increment(reviewed.grantXp);
-                        if (reviewed.grantBong > 0) payload.bong = increment(reviewed.grantBong);
-                        batch.set(stuRef, payload, { merge: true });
-                    }
-                    await batch.commit();
+                const outcome = await runWithNetworkRetry(async () => {
+                    return await runTransaction(db, async (transaction) => {
+                        const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', id);
+                        const snap = await transaction.get(logRef);
+                        if (!snap.exists()) return { skip: true, missing: true };
+                        const serverLog = sanitizeReadingLog({ ...(snap.data() || {}), id: snap.id });
+                        const reviewed = applyReadingLogReview(serverLog, action, note, rewards);
+                        if (reviewed.skip) return { skip: true, status: serverLog.status };
+                        transaction.set(logRef, reviewed.log, { merge: true });
+                        applyLiteratureGrantTx(transaction, serverLog.studentId, reviewed.grantXp, reviewed.grantBong);
+                        return { skip: false };
+                    });
                 }, '독서기록 확인');
+                if (outcome && outcome.missing) return window.customAlert('기록을 찾지 못했습니다.');
+                if (outcome && outcome.skip) {
+                    const alreadyDone = (action === 'approve' && outcome.status === 'approved')
+                        || (action === 'reject' && outcome.status === 'rejected');
+                    if (!alreadyDone) return window.customAlert('이미 처리된 기록입니다.');
+                }
                 window.showToast && window.showToast(action === 'approve' ? '확인했고 보상을 지급했습니다.' : '다시 쓰도록 돌려보냈습니다.');
             } catch (e) {
                 console.error('reviewReadingLog', e);
@@ -7887,35 +7947,41 @@ ${subjectLine}
             }
         };
 
-        function applyLiteratureGrant(batch, studentId, grantXp, grantBong) {
-            if (grantXp <= 0 && grantBong <= 0) return;
-            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
-            const payload = {};
-            if (grantXp > 0) payload.xp = increment(grantXp);
-            if (grantBong > 0) payload.bong = increment(grantBong);
-            batch.set(stuRef, payload, { merge: true });
-        }
-
         window.reviewDiaryEntry = async function(entryId, action) {
             if (!window.playerState || !window.playerState.isAdmin) {
                 return window.customAlert('선생님만 확인할 수 있습니다.');
             }
-            const entry = _diaries.find((d) => d.id === String(entryId));
-            if (action === 'approve' && !canApproveDiary(entry)) {
+            const id = String(entryId || '');
+            if (!id) return;
+            const cached = _diaries.find((d) => d.id === id);
+            if (action === 'approve' && !canApproveDiary(cached)) {
                 return window.customAlert('이미 처리된 일기입니다.');
             }
-            const noteEl = document.getElementById('diaryReviewNote_' + entryId);
-            const reviewed = applyDiaryReview(entry, action, noteEl ? noteEl.value : '', literatureRewards());
-            if (reviewed.skip) return window.customAlert('이미 처리된 일기입니다.');
+            const noteEl = document.getElementById('diaryReviewNote_' + id);
+            const note = noteEl ? noteEl.value : '';
+            const rewards = literatureRewards();
             const authOk = await ensureAnonAuthReady();
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
             try {
-                await runWithNetworkRetry(async () => {
-                    const batch = writeBatch(db);
-                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id), reviewed.entry, { merge: true });
-                    applyLiteratureGrant(batch, entry.studentId, reviewed.grantXp, reviewed.grantBong);
-                    await batch.commit();
+                const outcome = await runWithNetworkRetry(async () => {
+                    return await runTransaction(db, async (transaction) => {
+                        const litRef = doc(db, 'artifacts', appId, 'public', 'data', 'diaries', id);
+                        const snap = await transaction.get(litRef);
+                        if (!snap.exists()) return { skip: true, missing: true };
+                        const serverEntry = sanitizeDiaryEntry({ ...(snap.data() || {}), id: snap.id });
+                        const reviewed = applyDiaryReview(serverEntry, action, note, rewards);
+                        if (reviewed.skip) return { skip: true, status: serverEntry.status };
+                        transaction.set(litRef, reviewed.entry, { merge: true });
+                        applyLiteratureGrantTx(transaction, serverEntry.studentId, reviewed.grantXp, reviewed.grantBong);
+                        return { skip: false };
+                    });
                 }, '일기 확인');
+                if (outcome && outcome.missing) return window.customAlert('일기를 찾지 못했습니다.');
+                if (outcome && outcome.skip) {
+                    const alreadyDone = (action === 'approve' && outcome.status === 'approved')
+                        || (action === 'reject' && outcome.status === 'rejected');
+                    if (!alreadyDone) return window.customAlert('이미 처리된 일기입니다.');
+                }
                 window.showToast && window.showToast(action === 'approve' ? '일기를 확인했고 보상을 지급했습니다.' : '일기를 다시 쓰도록 돌려보냈습니다.');
             } catch (e) {
                 console.error('reviewDiaryEntry', e);
@@ -7955,6 +8021,9 @@ ${subjectLine}
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
                 return window.customAlert('학생 계정으로 일기를 저장해 주세요.');
             }
+            if (!_diarySnapReady) {
+                return window.customAlert('일기를 불러오는 중입니다. 잠시 후 다시 저장해 주세요.');
+            }
             const sid = literatureStudentId();
             const today = getLocalDateStr();
             const state = diarySubmitState(_diaries, sid, today);
@@ -7985,13 +8054,43 @@ ${subjectLine}
             if (!checked.ok) return window.customAlert('글이나 그림을 조금 남긴 뒤 저장해 주세요.');
             const authOk = await ensureAnonAuthReady();
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            const entryId = checked.entry.id || diaryDocId(sid, today);
             try {
                 await runWithNetworkRetry(async () => {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', checked.entry.id || diaryDocId(sid, today)), checked.entry, { merge: true });
+                    await runTransaction(db, async (transaction) => {
+                        const litRef = doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entryId);
+                        const snap = await transaction.get(litRef);
+                        const server = snap.exists()
+                            ? sanitizeDiaryEntry({ ...(snap.data() || {}), id: snap.id }, now)
+                            : null;
+                        if (server && String(server.studentId) && String(server.studentId) !== String(sid)) {
+                            throw new Error('not_owner');
+                        }
+                        const serverState = diarySubmitState(server ? [server] : [], sid, today);
+                        if (!serverState.ok) throw new Error('already_approved');
+                        transaction.set(litRef, {
+                            ...checked.entry,
+                            id: entryId,
+                            studentId: sid,
+                            date: today,
+                            status: 'pending',
+                            rewarded: false,
+                            rewardXp: 0,
+                            rewardBong: 0,
+                            reviewedAt: 0,
+                            submittedAt: (server && server.submittedAt) || checked.entry.submittedAt || now,
+                            teacherNote: (server && server.teacherNote) || checked.entry.teacherNote || '',
+                            teacherNoteAt: (server && server.teacherNoteAt) || checked.entry.teacherNoteAt || 0,
+                            updatedAt: now,
+                        }, { merge: true });
+                    });
                 }, '일기 저장');
                 window.showToast && window.showToast('오늘의 일기를 저장했습니다. 선생님 확인을 기다려 주세요.');
             } catch (e) {
                 console.error('saveDiaryEntry', e);
+                const msg = String(e && e.message ? e.message : e);
+                if (msg.includes('already_approved')) return window.customAlert('오늘은 이미 확인된 일기입니다.');
+                if (msg.includes('not_owner')) return window.customAlert('다른 학생의 일기는 저장할 수 없습니다.');
                 await window.customAlert('일기 저장에 실패했습니다.');
             }
         };

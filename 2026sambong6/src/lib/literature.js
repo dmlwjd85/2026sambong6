@@ -158,7 +158,8 @@ export function canApproveReadingLog(log) {
 
 export function applyReadingLogReview(log, action, note, rewards, nowMs = Date.now()) {
     const cur = sanitizeReadingLog(log, nowMs);
-    if (cur.status !== 'pending') return { skip: true, log: cur, grantXp: 0, grantBong: 0 };
+    // 이미 지급됐거나 대기 상태가 아니면 재시도·동시 확인에서 보상을 다시 주지 않습니다.
+    if (cur.status !== 'pending' || cur.rewarded) return { skip: true, log: cur, grantXp: 0, grantBong: 0 };
     const pay = sanitizeLiteratureRewards(rewards);
     const next = { ...cur, teacherNote: clipText(note, LITERATURE_TEACHER_NOTE_MAX), reviewedAt: nowMs };
     if (action === 'reject') {
@@ -287,7 +288,8 @@ export function canApproveDiary(entry) {
 
 export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now()) {
     const cur = sanitizeDiaryEntry(entry, nowMs);
-    if (cur.status !== 'pending') return { skip: true, entry: cur, grantXp: 0, grantBong: 0 };
+    // 이미 지급됐거나 대기 상태가 아니면 재시도·동시 확인에서 보상을 다시 주지 않습니다.
+    if (cur.status !== 'pending' || cur.rewarded) return { skip: true, entry: cur, grantXp: 0, grantBong: 0 };
     const pay = sanitizeLiteratureRewards(rewards);
     const next = {
         ...cur,

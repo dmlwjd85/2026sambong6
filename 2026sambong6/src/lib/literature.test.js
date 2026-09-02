@@ -78,6 +78,17 @@ describe('독서기록장', () => {
         assert.equal(reviewed.grantBong, 4);
         const again = applyReadingLogReview(reviewed.log, 'approve', '', { readingRewardXp: 30, readingRewardBong: 4 }, 2);
         assert.equal(again.skip, true);
+        const paidButPending = sanitizeReadingLog({
+            studentId: '12',
+            date: '2026-09-02',
+            status: 'pending',
+            rewarded: true,
+            thought: 'x'.repeat(20),
+        });
+        const retryGrant = applyReadingLogReview(paidButPending, 'approve', '', { readingRewardXp: 30, readingRewardBong: 4 }, 3);
+        assert.equal(retryGrant.skip, true);
+        assert.equal(retryGrant.grantXp, 0);
+        assert.equal(retryGrant.grantBong, 0);
         assert.equal(sanitizeLiteratureRewards({}).readingRewardXp, LITERATURE_DEFAULT_REWARD_XP);
         assert.equal(countApprovedReadingLogs([reviewed.log], '12'), 1);
         assert.equal(pendingReadingLogs([log]).length, 1);
@@ -126,6 +137,17 @@ describe('일기장', () => {
         assert.equal(locked.reason, 'already');
         const again = applyDiaryReview(reviewed.entry, 'approve', '', { diaryRewardXp: 15, diaryRewardBong: 3 }, 2);
         assert.equal(again.skip, true);
+        const paidButPending = sanitizeDiaryEntry({
+            studentId: '12',
+            date: '2026-09-02',
+            body: '오늘 하루',
+            status: 'pending',
+            rewarded: true,
+        });
+        const retryGrant = applyDiaryReview(paidButPending, 'approve', '', { diaryRewardXp: 15, diaryRewardBong: 3 }, 4);
+        assert.equal(retryGrant.skip, true);
+        assert.equal(retryGrant.grantXp, 0);
+        assert.equal(retryGrant.grantBong, 0);
         const rejected = applyDiaryReview(pending, 'reject', '조금 더 써 보자', {}, 3);
         assert.equal(rejected.entry.status, 'rejected');
         assert.equal(rejected.grantXp, 0);

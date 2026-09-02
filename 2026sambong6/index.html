@@ -208,6 +208,10 @@
                 <span class="app-nav-icon"><img src="nav/nav-quests.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">퀘스트</span>
             </button>
+            <button type="button" id="tab-literature" onclick="window.switchTab('literature')" class="app-nav-item" aria-label="문학">
+                <span class="app-nav-icon lit-nav-icon" aria-hidden="true"><i class="fa-solid fa-book-open"></i></span>
+                <span class="app-nav-label">문학</span>
+            </button>
             <button type="button" id="tab-jobs" onclick="window.switchTab('jobs')" class="app-nav-item" aria-label="직업">
                 <span class="app-nav-icon"><img src="nav/nav-jobs.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">직업</span>
@@ -522,6 +526,12 @@
                 <div onclick="window.switchTab('quests')" class="island-hover worldmap-pin absolute top-[22%] left-[18%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <span class="worldmap-crest worldmap-crest-quest pointer-events-none" aria-hidden="true"><i class="fa-solid fa-scroll"></i></span>
                     <div class="worldmap-label mt-1.5">퀘스트</div>
+                </div>
+
+                <!-- 2-0. 문학 (서재) -->
+                <div onclick="window.switchTab('literature')" class="island-hover worldmap-pin absolute top-[33%] left-[8%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
+                    <span class="worldmap-crest worldmap-crest-literature pointer-events-none" aria-hidden="true"><i class="fa-solid fa-book-open"></i></span>
+                    <div class="worldmap-label mt-1.5">문학</div>
                 </div>
 
                 <!-- 2-1. 상점 (시장) -->
@@ -1096,6 +1106,146 @@
             </div>
             </div>
 
+        </section>
+
+        <!-- ★ 문학 탭: 독서기록장 · 일기장 ★ -->
+        <section id="literatureSection" class="hidden space-y-4">
+            <div class="mb-1">
+                <h2 class="text-xl sm:text-2xl font-display text-amber-200"><i class="fa-solid fa-book-open"></i> 문학</h2>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">독서기록장은 하루에 한 권, 선생님이 확인하면 정해 둔 보상을 받습니다. 일기장은 선생님만 볼 수 있습니다.</p>
+            </div>
+            <div id="literatureSubDock" class="app-sub-dock cols-2 mb-2" data-pane-group="literature" role="tablist">
+                <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="literature" data-pane="reading" onclick="window.switchInnerPane('literature','reading')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-book"></i></span>
+                    <span>독서기록장</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="literature" data-pane="diary" onclick="window.switchInnerPane('literature','diary')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-pen-nib"></i></span>
+                    <span>일기장</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-admin hidden" data-pane-group="literature" data-pane="review" onclick="window.switchInnerPane('literature','review')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-check"></i></span>
+                    <span>확인 <span id="literaturePendingBadge" class="hidden lit-pending-badge">0</span></span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn inner-pane-admin hidden" data-pane-group="literature" data-pane="reward" onclick="window.switchInnerPane('literature','reward')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-gift"></i></span>
+                    <span>보상 설정</span>
+                </button>
+            </div>
+
+            <div class="inner-pane" data-pane-group="literature" data-pane="reading">
+                <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-amber-400 space-y-3">
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                            <h3 class="font-bold text-sm text-amber-200"><i class="fa-solid fa-book"></i> 오늘의 독서기록</h3>
+                            <p id="readingLogHint" class="text-[10px] text-slate-400 mt-1">제목·지은이·출판사와 읽고 난 생각을 적으면 선생님이 확인합니다.</p>
+                        </div>
+                        <div id="readingRewardChip" class="text-[10px] font-bold text-amber-100 bg-amber-900/50 border border-amber-500/40 rounded-full px-2.5 py-1">보상 —</div>
+                    </div>
+                    <div class="grid sm:grid-cols-2 gap-2">
+                        <label class="block text-[10px] text-slate-400 font-bold">제목
+                            <input id="readingTitle" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs font-bold" placeholder="책 제목">
+                        </label>
+                        <label class="block text-[10px] text-slate-400 font-bold">지은이
+                            <input id="readingAuthor" type="text" maxlength="30" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs font-bold" placeholder="글쓴이">
+                        </label>
+                        <label class="block text-[10px] text-slate-400 font-bold">출판사
+                            <input id="readingPublisher" type="text" maxlength="30" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs font-bold" placeholder="출판사">
+                        </label>
+                        <label class="block text-[10px] text-slate-400 font-bold">갈래
+                            <select id="readingGenre" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs font-bold">
+                                <option>동화</option><option>소설</option><option>시</option><option>그림책</option><option>지식</option><option>만화</option><option>위인전</option><option>기타</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-slate-400 font-bold mb-1">별점</p>
+                        <div id="readingStars" class="flex gap-1" role="radiogroup" aria-label="별점"></div>
+                    </div>
+                    <label class="block text-[10px] text-slate-400 font-bold">마음에 남은 문장 (선택)
+                        <input id="readingQuote" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs" placeholder="기억하고 싶은 한 줄">
+                    </label>
+                    <label class="block text-[10px] text-slate-400 font-bold">읽고 난 생각 (20자 이상)
+                        <textarea id="readingThought" maxlength="800" rows="5" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="이 책을 읽고 느낀 점을 자세히 적어 주세요."></textarea>
+                    </label>
+                    <button type="button" id="readingSubmitBtn" onclick="void window.submitReadingLog()" class="w-full min-h-[48px] bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-sm">독서기록 제출</button>
+                    <div>
+                        <h4 class="text-[11px] font-bold text-slate-300 mb-2">내 독서 기록</h4>
+                        <div id="readingLogMine" class="space-y-2 text-[11px] text-slate-300"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="inner-pane hidden" data-pane-group="literature" data-pane="diary">
+                <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-sky-400 space-y-3">
+                    <div>
+                        <h3 class="font-bold text-sm text-sky-200"><i class="fa-solid fa-pen-nib"></i> 오늘의 일기</h3>
+                        <p class="text-[10px] text-slate-400 mt-1">친구는 볼 수 없고, 선생님만 읽습니다. 날씨·기분과 간단한 그림을 남길 수 있습니다.</p>
+                    </div>
+                    <div id="diaryAdminPicker" class="hidden">
+                        <label class="block text-[10px] text-slate-400 font-bold">학생 일기 보기
+                            <select id="diaryStudentSelect" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs font-bold" onchange="window.renderLiteratureDiaryPane()"></select>
+                        </label>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <p class="text-[10px] text-slate-400 font-bold mb-1">날씨</p>
+                            <div id="diaryWeather" class="flex flex-wrap gap-1"></div>
+                        </div>
+                        <div>
+                            <p class="text-[10px] text-slate-400 font-bold mb-1">기분</p>
+                            <div id="diaryMood" class="flex flex-wrap gap-1"></div>
+                        </div>
+                    </div>
+                    <label class="block text-[10px] text-slate-400 font-bold">오늘 있었던 일
+                        <textarea id="diaryBody" maxlength="800" rows="5" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="오늘 하루를 적어 보세요."></textarea>
+                    </label>
+                    <div>
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <p class="text-[10px] text-slate-400 font-bold">그림</p>
+                            <div class="flex flex-wrap gap-1">
+                                <button type="button" class="diary-ink" data-color="#1e293b" onclick="window.setDiaryInk('#1e293b')" aria-label="검정"></button>
+                                <button type="button" class="diary-ink" data-color="#dc2626" onclick="window.setDiaryInk('#dc2626')" aria-label="빨강"></button>
+                                <button type="button" class="diary-ink" data-color="#2563eb" onclick="window.setDiaryInk('#2563eb')" aria-label="파랑"></button>
+                                <button type="button" class="diary-ink" data-color="#16a34a" onclick="window.setDiaryInk('#16a34a')" aria-label="초록"></button>
+                                <button type="button" class="diary-ink" data-color="#f59e0b" onclick="window.setDiaryInk('#f59e0b')" aria-label="노랑"></button>
+                                <button type="button" onclick="window.clearDiaryCanvas()" class="text-[10px] font-bold text-slate-300 bg-slate-800 px-2 py-1 rounded-lg min-h-[32px]">지우기</button>
+                            </div>
+                        </div>
+                        <canvas id="diaryCanvas" class="diary-canvas w-full" width="360" height="180" aria-label="일기 그림"></canvas>
+                    </div>
+                    <p id="diaryTeacherNote" class="hidden text-[11px] text-amber-100 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2 py-2"></p>
+                    <button type="button" id="diarySaveBtn" onclick="void window.saveDiaryEntry()" class="w-full min-h-[48px] bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl text-sm">일기 저장</button>
+                    <div>
+                        <h4 class="text-[11px] font-bold text-slate-300 mb-2">지난 일기</h4>
+                        <div id="diaryPastList" class="space-y-2 text-[11px] text-slate-300"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="inner-pane hidden" data-pane-group="literature" data-pane="review">
+                <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-emerald-400 space-y-3">
+                    <h3 class="font-bold text-sm text-emerald-200"><i class="fa-solid fa-check"></i> 독서기록 확인</h3>
+                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 하루에 학생당 한 권입니다.</p>
+                    <div id="readingReviewList" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <div class="inner-pane hidden" data-pane-group="literature" data-pane="reward">
+                <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-yellow-400 space-y-3">
+                    <h3 class="font-bold text-sm text-yellow-200"><i class="fa-solid fa-gift"></i> 독서기록 보상</h3>
+                    <p class="text-[10px] text-slate-400">학생이 기록을 내고 선생님이 확인하면 이 값이 지급됩니다. XP 0~80, 봉 0~50.</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="block text-[10px] text-slate-400 font-bold">확인 시 XP
+                            <input id="literatureRewardXp" type="number" min="0" max="80" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-sm font-black">
+                        </label>
+                        <label class="block text-[10px] text-slate-400 font-bold">확인 시 봉
+                            <input id="literatureRewardBong" type="number" min="0" max="50" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-sm font-black">
+                        </label>
+                    </div>
+                    <button type="button" onclick="void window.saveLiteratureRewards()" class="w-full min-h-[48px] bg-yellow-600 hover:bg-yellow-500 text-slate-900 font-black rounded-xl text-sm">보상 저장</button>
+                </div>
+            </div>
         </section>
 
         <!-- ★ 4. 경제 탭 크롬 (서브: 상점|은행|부동산|공동구매) — 실제 본문은 shop/bank/estate 섹션 ★ -->
@@ -2462,7 +2612,7 @@
                     <li>로그인 화면에서 「학생」 선택</li>
                     <li>선생님이 알려준 <strong class="text-cyan-200">초대 코드</strong> 입력 → 학급 열기<br><span class="text-slate-500">또는 공유 링크 <code class="text-sky-300">?c=코드</code> 로 바로 입장</span></li>
                     <li>내 이름 선택 후 PIN 4자리로 접속 (처음 입력이 비밀번호)</li>
-                    <li>퀘스트·경제(상점·은행·부동산)·직업·도전 등 탭에서 활동</li>
+                    <li>퀘스트·문학(독서기록장·일기장)·경제(상점·은행·부동산)·직업·도전 등 탭에서 활동</li>
                 </ol>
             </div>
             </div>

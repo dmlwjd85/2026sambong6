@@ -20,6 +20,7 @@
         .bg-theme-classtools { background-color: #4d7c0f; background-image: radial-gradient(ellipse 90% 68% at 50% 0%, #65a30d 0%, #4d7c0f 48%, #365314 100%); }
         .bg-theme-settings { background-color: #6d28d9; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #7c3aed 0%, #6d28d9 48%, #4c1d95 100%); }
         .bg-theme-help { background-color: #0e7490; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #06b6d4 0%, #0e7490 48%, #164e63 100%); }
+        .bg-theme-literature { background-color: #92400e; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #d97706 0%, #b45309 48%, #78350f 100%); }
 
         /* 수업도구 — 밀리터리 UI */
         .military-panel {
@@ -2021,6 +2022,14 @@
             object-fit: cover;
             display: block;
         }
+        .lit-nav-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fde68a;
+            font-size: 1.05rem;
+            background: linear-gradient(165deg, #b45309 0%, #78350f 60%, #451a03 100%);
+        }
         .app-nav-label {
             font-size: 9px;
             font-weight: 800;
@@ -2063,6 +2072,7 @@
             grid-template-columns: repeat(5, minmax(0, 1fr));
         }
         .app-sub-dock.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .app-sub-dock.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .app-sub-dock.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
         .app-sub-dock.cols-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .app-sub-dock.cols-7 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -2343,6 +2353,7 @@
             animation: worldmap-portal-spin 10s linear infinite;
         }
         #worldMapArea .worldmap-crest-bank { color: #7dd3fc; border-color: rgba(56, 189, 248, 0.7); }
+        #worldMapArea .worldmap-crest-literature { color: #fde68a; border-color: rgba(251, 191, 36, 0.8); }
         @keyframes worldmap-portal-spin { to { transform: rotate(360deg); } }
         @keyframes worldtree-breathe {
             0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.85; }
@@ -2620,6 +2631,52 @@
             font-size: 0.8rem;
             margin-top: 0.2rem;
         }
+
+        /* 문학 탭: 독서기록장 · 일기 그림 */
+        .lit-pending-badge {
+            display: inline-flex;
+            min-width: 1.1rem;
+            height: 1.1rem;
+            margin-left: 0.15rem;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: #dc2626;
+            color: #fff;
+            font-size: 9px;
+            font-weight: 900;
+        }
+        .diary-canvas {
+            display: block;
+            height: 10.5rem;
+            border-radius: 0.85rem;
+            background: #fffbeb;
+            border: 1px solid #fbbf24;
+            touch-action: none;
+            cursor: crosshair;
+        }
+        .diary-ink {
+            width: 1.35rem;
+            height: 1.35rem;
+            border-radius: 999px;
+            border: 2px solid #cbd5e1;
+            background: var(--ink, #1e293b);
+        }
+        .diary-ink[data-color="#1e293b"] { --ink: #1e293b; }
+        .diary-ink[data-color="#dc2626"] { --ink: #dc2626; }
+        .diary-ink[data-color="#2563eb"] { --ink: #2563eb; }
+        .diary-ink[data-color="#16a34a"] { --ink: #16a34a; }
+        .diary-ink[data-color="#f59e0b"] { --ink: #f59e0b; }
+        .diary-ink.is-on { border-color: #fde68a; box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.45); }
+        .lit-log-card {
+            border: 1px solid rgba(251, 191, 36, 0.28);
+            background: rgba(15, 23, 42, 0.55);
+            border-radius: 0.85rem;
+            padding: 0.65rem 0.75rem;
+        }
+        .lit-log-card.is-pending { border-color: rgba(250, 204, 21, 0.55); }
+        .lit-log-card.is-approved { border-color: rgba(52, 211, 153, 0.45); }
+        .lit-log-card.is-rejected { border-color: rgba(248, 113, 113, 0.5); }
         .hof-library-rank {
             width: 1.7rem;
             text-align: center;

@@ -107,6 +107,27 @@ import {
     weaponDropMultiplier,
     worldSettingsForSeason2,
 } from './lib/season2.js';
+import {
+    applyReadingLogReview,
+    canApproveReadingLog,
+    countApprovedReadingLogs,
+    diariesVisibleTo,
+    diaryDocId,
+    DIARY_MOODS,
+    DIARY_WEATHER,
+    moodMeta,
+    pendingReadingLogs,
+    readingLogDocId,
+    readingLogStatusLabel,
+    readingLogSubmitState,
+    READING_GENRES,
+    sanitizeDiaryEntry,
+    sanitizeLiteratureRewards,
+    sanitizeReadingLog,
+    validateDiaryDraft,
+    validateReadingLogDraft,
+    weatherMeta,
+} from './lib/literature.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
     listAllCharacterBases,
@@ -646,7 +667,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.25';
+        const APP_VERSION = 'v1.26';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -6975,7 +6996,7 @@ ${subjectLine}
         // ★ 탭 이동 및 월드맵 기능 ★
         // ==========================================
         /** 하단 앱 독 + 경제 하위 섹션(shop/bank/estate) — 스와이프는 보이는 탭만 */
-        const TABS = ['dashboard', 'plaza', 'quests', 'jobs', 'economy', 'lunch', 'challenge', 'constitution', 'classtools', 'admin', 'settings', 'help', 'shop', 'bank', 'estate', 'goldenbell'];
+        const TABS = ['dashboard', 'plaza', 'quests', 'literature', 'jobs', 'economy', 'lunch', 'challenge', 'constitution', 'classtools', 'admin', 'settings', 'help', 'shop', 'bank', 'estate', 'goldenbell'];
         /** 기본 탭: 홈(dashboard) */
         let currentTabIndex = 1; // plaza
         /** 경제 서브: shop | bank | estate | groupbuy */
@@ -7011,6 +7032,9 @@ ${subjectLine}
             }
             if (g === 'dashboard' && id === 'map' && typeof window.renderSeason1HallOfFame === 'function') {
                 window.renderSeason1HallOfFame();
+            }
+            if (g === 'literature' && typeof window.renderLiterature === 'function') {
+                window.renderLiterature();
             }
         };
 
@@ -7192,6 +7216,7 @@ ${subjectLine}
             }
             if (tabId === 'lunch') window.switchInnerPane('lunch', innerPaneState.lunch || 'invest');
             if (tabId === 'help') window.switchInnerPane('help', innerPaneState.help || 'guide');
+            if (tabId === 'literature') window.switchInnerPane('literature', innerPaneState.literature || 'reading');
             if (tabId === 'economy' && economySub === 'bank') {
                 window.switchInnerPane('bank', innerPaneState.bank || 'summary');
             }
@@ -7294,6 +7319,514 @@ ${subjectLine}
             if (modal) modal.classList.add('hidden');
         };
 
+        // ==========================================
+        // ★ 문학: 독서기록장 · 일기장 ★
+        // ==========================================
+        let _readingLogs = [];
+        let _diaries = [];
+        let _unsubReadingLogs = null;
+        let _unsubDiaries = null;
+        let _literatureBindKey = '';
+        let _readingStars = 3;
+        let _diaryWeather = 'sunny';
+        let _diaryMood = 'calm';
+        let _diaryInk = '#1e293b';
+        let _diaryStrokes = [];
+        let _diaryStroke = null;
+        let _diaryCanvasReady = false;
+
+        function literatureRewards() {
+            return sanitizeLiteratureRewards(window.globalSettings || {});
+        }
+
+        function literatureStudentId() {
+            return String(localStorage.getItem('sambong_student_id') || (window.playerState && window.playerState.id) || '');
+        }
+
+        function bindLiteratureListeners() {
+            if (!db || !window.playerState || window.playerState.isGuest) return;
+            const sid = literatureStudentId();
+            const key = (window.playerState.isAdmin ? 'admin' : 'stu') + ':' + sid;
+            if (_literatureBindKey === key) return;
+            _literatureBindKey = key;
+            if (_unsubReadingLogs) { _unsubReadingLogs(); _unsubReadingLogs = null; }
+            if (_unsubDiaries) { _unsubDiaries(); _unsubDiaries = null; }
+            const readCol = collection(db, 'artifacts', appId, 'public', 'data', 'readingLogs');
+            _unsubReadingLogs = onSnapshot(readCol, (snap) => {
+                const rows = [];
+                snap.forEach((d) => rows.push(sanitizeReadingLog({ ...(d.data() || {}), id: d.id })));
+                _readingLogs = rows;
+                if (typeof window.renderLiterature === 'function') window.renderLiterature();
+            }, (err) => console.warn('readingLogs snapshot', err));
+            const diaryCol = collection(db, 'artifacts', appId, 'public', 'data', 'diaries');
+            const diaryQuery = window.playerState.isAdmin
+                ? diaryCol
+                : query(diaryCol, where('studentId', '==', sid || '__none__'));
+            _unsubDiaries = onSnapshot(diaryQuery, (snap) => {
+                const rows = [];
+                snap.forEach((d) => rows.push(sanitizeDiaryEntry({ ...(d.data() || {}), id: d.id })));
+                _diaries = rows;
+                if (typeof window.renderLiterature === 'function') window.renderLiterature();
+            }, (err) => console.warn('diaries snapshot', err));
+        }
+
+        function syncLiteratureDock() {
+            const dock = document.getElementById('literatureSubDock');
+            if (!dock) return;
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            dock.classList.toggle('cols-2', !admin);
+            dock.classList.toggle('cols-4', admin);
+        }
+
+        function currentDiaryTargetId() {
+            if (window.playerState && window.playerState.isAdmin) {
+                const sel = document.getElementById('diaryStudentSelect');
+                return String((sel && sel.value) || '');
+            }
+            return literatureStudentId();
+        }
+
+        function diaryCanvasPoint(ev, canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const x = (ev.clientX - rect.left) / Math.max(1, rect.width);
+            const y = (ev.clientY - rect.top) / Math.max(1, rect.height);
+            return {
+                x: Math.max(0, Math.min(1, x)),
+                y: Math.max(0, Math.min(1, y)),
+            };
+        }
+
+        function paintDiaryStrokes(canvas, strokes) {
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            ctx.fillStyle = '#fffbeb';
+            ctx.fillRect(0, 0, w, h);
+            (strokes || []).forEach((s) => {
+                const pts = s.pts || [];
+                if (pts.length < 4) return;
+                ctx.strokeStyle = s.color || '#1e293b';
+                ctx.lineWidth = Math.max(1, Number(s.width) || 3);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.beginPath();
+                ctx.moveTo(pts[0] * w, pts[1] * h);
+                for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i] * w, pts[i + 1] * h);
+                ctx.stroke();
+            });
+        }
+
+        function bindDiaryCanvas() {
+            const canvas = document.getElementById('diaryCanvas');
+            if (!canvas || _diaryCanvasReady) return;
+            _diaryCanvasReady = true;
+            const canEdit = () => !!(window.playerState && !window.playerState.isAdmin && !window.playerState.isGuest);
+            const start = (ev) => {
+                if (!canEdit()) return;
+                ev.preventDefault();
+                canvas.setPointerCapture(ev.pointerId);
+                const p = diaryCanvasPoint(ev, canvas);
+                _diaryStroke = { color: _diaryInk, width: 3, pts: [p.x, p.y] };
+            };
+            const move = (ev) => {
+                if (!_diaryStroke) return;
+                ev.preventDefault();
+                const p = diaryCanvasPoint(ev, canvas);
+                _diaryStroke.pts.push(p.x, p.y);
+                paintDiaryStrokes(canvas, _diaryStrokes.concat([_diaryStroke]));
+            };
+            const end = () => {
+                if (!_diaryStroke) return;
+                if (_diaryStroke.pts.length >= 4) _diaryStrokes.push(_diaryStroke);
+                _diaryStroke = null;
+                paintDiaryStrokes(canvas, _diaryStrokes);
+            };
+            canvas.addEventListener('pointerdown', start);
+            canvas.addEventListener('pointermove', move);
+            canvas.addEventListener('pointerup', end);
+            canvas.addEventListener('pointercancel', end);
+        }
+
+        window.setDiaryInk = function(color) {
+            _diaryInk = String(color || '#1e293b');
+            document.querySelectorAll('.diary-ink').forEach((btn) => {
+                btn.classList.toggle('is-on', btn.getAttribute('data-color') === _diaryInk);
+            });
+        };
+
+        window.clearDiaryCanvas = function() {
+            if (window.playerState && window.playerState.isAdmin) return;
+            _diaryStrokes = [];
+            paintDiaryStrokes(document.getElementById('diaryCanvas'), []);
+        };
+
+        window.setReadingStars = function(n) {
+            _readingStars = Math.max(1, Math.min(5, Math.floor(Number(n) || 3)));
+            const wrap = document.getElementById('readingStars');
+            if (!wrap) return;
+            wrap.innerHTML = [1, 2, 3, 4, 5].map((i) => (
+                `<button type="button" class="min-h-[36px] px-1 text-lg ${i <= _readingStars ? 'text-amber-300' : 'text-slate-600'}" onclick="window.setReadingStars(${i})" aria-label="${i}점">★</button>`
+            )).join('');
+        };
+
+        function renderReadingChips() {
+            const genreEl = document.getElementById('readingGenre');
+            if (genreEl && genreEl.options.length !== READING_GENRES.length) {
+                genreEl.innerHTML = READING_GENRES.map((g) => `<option value="${g}">${g}</option>`).join('');
+            }
+            window.setReadingStars(_readingStars);
+            const pay = literatureRewards();
+            const chip = document.getElementById('readingRewardChip');
+            if (chip) chip.textContent = `확인 시 ${pay.readingRewardXp} XP · ${pay.readingRewardBong}봉`;
+        }
+
+        function fillReadingForm(log) {
+            const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+            setVal('readingTitle', log && log.title);
+            setVal('readingAuthor', log && log.author);
+            setVal('readingPublisher', log && log.publisher);
+            setVal('readingQuote', log && log.quote);
+            setVal('readingThought', log && log.thought);
+            const genreEl = document.getElementById('readingGenre');
+            if (genreEl) genreEl.value = (log && log.genre) || '동화';
+            _readingStars = (log && log.stars) || 3;
+            window.setReadingStars(_readingStars);
+        }
+
+        window.renderLiteratureReadingPane = function() {
+            renderReadingChips();
+            const sid = literatureStudentId();
+            const today = getLocalDateStr();
+            const mine = _readingLogs.filter((l) => String(l.studentId) === sid)
+                .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+            const state = readingLogSubmitState(mine, sid, today);
+            const hint = document.getElementById('readingLogHint');
+            const btn = document.getElementById('readingSubmitBtn');
+            const locked = !state.ok;
+            if (hint) {
+                if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 독서기록이 있습니다. 내일 다시 쓸 수 있어요.';
+                else if (state.reason === 'pending') hint.textContent = '오늘 기록이 확인 대기 중입니다. 선생님이 보면 보상이 들어옵니다.';
+                else if (state.reason === 'resubmit') hint.textContent = '반려된 기록을 고쳐 다시 제출할 수 있습니다.';
+                else hint.textContent = '제목·지은이·출판사와 읽고 난 생각(20자 이상)을 적으면 선생님이 확인합니다.';
+            }
+            if (btn) {
+                btn.disabled = locked || !!(window.playerState && (window.playerState.isGuest || window.playerState.isAdmin));
+                btn.textContent = state.reason === 'resubmit' ? '고쳐서 다시 제출' : '독서기록 제출';
+            }
+            ['readingTitle', 'readingAuthor', 'readingPublisher', 'readingQuote', 'readingThought', 'readingGenre'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = locked || !!(window.playerState && window.playerState.isAdmin);
+            });
+            if (state.existing && (state.reason === 'pending' || state.reason === 'already' || state.reason === 'resubmit')) {
+                fillReadingForm(state.existing);
+            }
+            const list = document.getElementById('readingLogMine');
+            if (list) {
+                if (!mine.length) list.innerHTML = '<p class="text-slate-500">아직 제출한 기록이 없습니다.</p>';
+                else {
+                    list.innerHTML = mine.slice(0, 12).map((l) => (
+                        `<div class="lit-log-card is-${escapeHofText(l.status)}">
+                            <div class="flex justify-between gap-2"><strong>${escapeHofText(l.title)}</strong><span>${escapeHofText(readingLogStatusLabel(l.status))}</span></div>
+                            <div class="text-[10px] text-slate-400">${escapeHofText(l.date)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)} · ★${l.stars}</div>
+                            <p class="mt-1 text-slate-200 whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
+                            ${l.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(l.teacherNote)}</p>` : ''}
+                            ${l.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${l.rewardXp} XP · +${l.rewardBong}봉</p>` : ''}
+                        </div>`
+                    )).join('');
+                }
+            }
+            const approved = countApprovedReadingLogs(_readingLogs, sid);
+            if (hint && approved > 0 && state.ok) hint.textContent += ` 지금까지 ${approved}권을 확인받았습니다.`;
+        };
+
+        window.renderLiteratureDiaryPane = function() {
+            bindDiaryCanvas();
+            window.setDiaryInk(_diaryInk);
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            const picker = document.getElementById('diaryAdminPicker');
+            if (picker) picker.classList.toggle('hidden', !admin);
+            const saveBtn = document.getElementById('diarySaveBtn');
+            const bodyEl = document.getElementById('diaryBody');
+            if (saveBtn) saveBtn.classList.toggle('hidden', admin);
+            if (bodyEl) bodyEl.disabled = admin;
+            const sel = document.getElementById('diaryStudentSelect');
+            if (admin && sel) {
+                const ids = (window.allStudentsData || []).map((s) => String(s.id)).filter((id) => id && id !== 'gm' && id !== 'gm_a' && id !== 'guest');
+                const cur = sel.value;
+                sel.innerHTML = ids.map((id) => `<option value="${escapeHofText(id)}">${escapeHofText(STUDENT_NAMES[id] || id)}</option>`).join('');
+                if (cur && ids.includes(cur)) sel.value = cur;
+            }
+            const weatherWrap = document.getElementById('diaryWeather');
+            const moodWrap = document.getElementById('diaryMood');
+            const targetId = currentDiaryTargetId();
+            const today = getLocalDateStr();
+            const visible = diariesVisibleTo(window.playerState, _diaries);
+            const todayEntry = visible.find((d) => String(d.studentId) === targetId && String(d.date) === today);
+            const hydrateKey = `${targetId}:${today}`;
+            if (todayEntry && window._diaryHydrateKey !== hydrateKey && !_diaryStroke) {
+                window._diaryHydrateKey = hydrateKey;
+                if (bodyEl && document.activeElement !== bodyEl) bodyEl.value = todayEntry.body || '';
+                _diaryWeather = todayEntry.weather || 'sunny';
+                _diaryMood = todayEntry.mood || 'calm';
+                _diaryStrokes = Array.isArray(todayEntry.strokes) ? todayEntry.strokes.slice() : [];
+            } else if (!todayEntry && window._diaryHydrateKey !== hydrateKey && !_diaryStroke) {
+                window._diaryHydrateKey = hydrateKey;
+                if (bodyEl && document.activeElement !== bodyEl) bodyEl.value = '';
+                _diaryStrokes = [];
+            }
+            const note = document.getElementById('diaryTeacherNote');
+            if (note) {
+                if (todayEntry && todayEntry.teacherNote) {
+                    note.classList.remove('hidden');
+                    note.textContent = '선생님 한마디: ' + todayEntry.teacherNote;
+                } else {
+                    note.classList.add('hidden');
+                    note.textContent = '';
+                }
+            }
+            if (weatherWrap) {
+                weatherWrap.innerHTML = DIARY_WEATHER.map((w) => (
+                    `<button type="button" class="min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryWeather === w.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }" onclick="window.setDiaryWeather('${w.id}')">${w.emoji} ${w.label}</button>`
+                )).join('');
+            }
+            if (moodWrap) {
+                moodWrap.innerHTML = DIARY_MOODS.map((m) => (
+                    `<button type="button" class="min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryMood === m.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }" onclick="window.setDiaryMood('${m.id}')">${m.emoji} ${m.label}</button>`
+                )).join('');
+            }
+            paintDiaryStrokes(document.getElementById('diaryCanvas'), _diaryStrokes);
+            const past = document.getElementById('diaryPastList');
+            if (past) {
+                const rows = visible
+                    .filter((d) => String(d.studentId) === targetId)
+                    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+                if (!rows.length) past.innerHTML = '<p class="text-slate-500">아직 일기가 없습니다.</p>';
+                else {
+                    past.innerHTML = rows.map((d) => {
+                        const w = weatherMeta(d.weather);
+                        const m = moodMeta(d.mood);
+                        return `<div class="lit-log-card">
+                            <div class="font-bold">${escapeHofText(d.date)} · ${w.emoji} ${w.label} · ${m.emoji} ${m.label}</div>
+                            <p class="mt-1 whitespace-pre-wrap text-slate-200">${escapeHofText(d.body)}</p>
+                            ${d.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(d.teacherNote)}</p>` : ''}
+                        </div>`;
+                    }).join('');
+                }
+            }
+        };
+
+        window.setDiaryWeather = function(id) {
+            _diaryWeather = String(id || 'sunny');
+            const weatherWrap = document.getElementById('diaryWeather');
+            if (!weatherWrap) return;
+            weatherWrap.querySelectorAll('button').forEach((btn, i) => {
+                const w = DIARY_WEATHER[i];
+                if (!w) return;
+                btn.className = `min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryWeather === w.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }`;
+            });
+        };
+        window.setDiaryMood = function(id) {
+            _diaryMood = String(id || 'calm');
+            const moodWrap = document.getElementById('diaryMood');
+            if (!moodWrap) return;
+            moodWrap.querySelectorAll('button').forEach((btn, i) => {
+                const m = DIARY_MOODS[i];
+                if (!m) return;
+                btn.className = `min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryMood === m.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }`;
+            });
+        };
+
+        window.renderLiteratureReviewPane = function() {
+            const box = document.getElementById('readingReviewList');
+            if (!box) return;
+            const pending = pendingReadingLogs(_readingLogs);
+            const badge = document.getElementById('literaturePendingBadge');
+            if (badge) {
+                badge.textContent = String(pending.length);
+                badge.classList.toggle('hidden', pending.length === 0);
+            }
+            if (!pending.length) {
+                box.innerHTML = '<p class="text-slate-400 text-[11px]">확인할 독서기록이 없습니다.</p>';
+                return;
+            }
+            box.innerHTML = pending.map((l) => (
+                `<div class="lit-log-card is-pending">
+                    <div class="flex justify-between gap-2"><strong>${escapeHofText(STUDENT_NAMES[l.studentId] || l.studentId)}</strong><span>${escapeHofText(l.date)}</span></div>
+                    <div class="text-[10px] text-slate-400">${escapeHofText(l.title)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)} · ${escapeHofText(l.genre)} · ★${l.stars}</div>
+                    ${l.quote ? `<p class="mt-1 text-amber-100">“${escapeHofText(l.quote)}”</p>` : ''}
+                    <p class="mt-1 whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
+                    <label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디 (선택)
+                        <input id="reviewNote_${escapeHofText(l.id)}" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-1.5 rounded-lg text-xs">
+                    </label>
+                    <div class="flex gap-2 mt-2">
+                        <button type="button" class="flex-1 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs" onclick="void window.reviewReadingLog('${escapeHofText(l.id)}','approve')">확인 · 보상</button>
+                        <button type="button" class="flex-1 min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs" onclick="void window.reviewReadingLog('${escapeHofText(l.id)}','reject')">다시 쓰기</button>
+                    </div>
+                </div>`
+            )).join('');
+        };
+
+        window.renderLiteratureRewardPane = function() {
+            const pay = literatureRewards();
+            const xpEl = document.getElementById('literatureRewardXp');
+            const bongEl = document.getElementById('literatureRewardBong');
+            if (xpEl && document.activeElement !== xpEl) xpEl.value = String(pay.readingRewardXp);
+            if (bongEl && document.activeElement !== bongEl) bongEl.value = String(pay.readingRewardBong);
+        };
+
+        window.renderLiterature = function() {
+            bindLiteratureListeners();
+            syncLiteratureDock();
+            const pane = innerPaneState.literature || 'reading';
+            if (pane === 'reading') window.renderLiteratureReadingPane();
+            if (pane === 'diary') window.renderLiteratureDiaryPane();
+            if (pane === 'review') window.renderLiteratureReviewPane();
+            if (pane === 'reward') window.renderLiteratureRewardPane();
+            const pending = pendingReadingLogs(_readingLogs);
+            const badge = document.getElementById('literaturePendingBadge');
+            if (badge) {
+                badge.textContent = String(pending.length);
+                badge.classList.toggle('hidden', !window.playerState || !window.playerState.isAdmin || pending.length === 0);
+            }
+        };
+
+        window.submitReadingLog = async function() {
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+                return window.customAlert('학생 계정으로 독서기록을 제출해 주세요.');
+            }
+            const sid = literatureStudentId();
+            const today = getLocalDateStr();
+            const state = readingLogSubmitState(_readingLogs, sid, today);
+            if (!state.ok) {
+                return window.customAlert(state.reason === 'pending' ? '오늘 기록이 이미 확인 대기 중입니다.' : '오늘은 이미 독서기록을 냈습니다.');
+            }
+            const draft = {
+                id: readingLogDocId(sid, today),
+                studentId: sid,
+                date: today,
+                title: (document.getElementById('readingTitle') || {}).value,
+                author: (document.getElementById('readingAuthor') || {}).value,
+                publisher: (document.getElementById('readingPublisher') || {}).value,
+                genre: (document.getElementById('readingGenre') || {}).value,
+                stars: _readingStars,
+                quote: (document.getElementById('readingQuote') || {}).value,
+                thought: (document.getElementById('readingThought') || {}).value,
+                status: 'pending',
+                rewarded: false,
+                submittedAt: Date.now(),
+            };
+            const checked = validateReadingLogDraft(draft);
+            if (!checked.ok) {
+                const msg = {
+                    title: '책 제목을 적어 주세요.',
+                    author: '지은이를 적어 주세요.',
+                    publisher: '출판사를 적어 주세요.',
+                    thought: '읽고 난 생각을 20자 이상 적어 주세요.',
+                }[checked.reason] || '내용을 확인해 주세요.';
+                return window.customAlert(msg);
+            }
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', checked.log.id || readingLogDocId(sid, today)), checked.log, { merge: true });
+                }, '독서기록 제출');
+                window.showToast && window.showToast('독서기록을 제출했습니다. 선생님 확인을 기다려 주세요.');
+            } catch (e) {
+                console.error('submitReadingLog', e);
+                await window.customAlert('제출에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+            }
+        };
+
+        window.reviewReadingLog = async function(logId, action) {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 확인할 수 있습니다.');
+            }
+            const log = _readingLogs.find((l) => l.id === String(logId));
+            if (action === 'approve' && !canApproveReadingLog(log)) {
+                return window.customAlert('이미 처리된 기록입니다.');
+            }
+            const noteEl = document.getElementById('reviewNote_' + logId);
+            const reviewed = applyReadingLogReview(log, action, noteEl ? noteEl.value : '', literatureRewards());
+            if (reviewed.skip) return window.customAlert('이미 처리된 기록입니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    const batch = writeBatch(db);
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', log.id), reviewed.log, { merge: true });
+                        if (reviewed.grantXp > 0 || reviewed.grantBong > 0) {
+                        const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + log.studentId);
+                        const payload = {};
+                        if (reviewed.grantXp > 0) payload.xp = increment(reviewed.grantXp);
+                        if (reviewed.grantBong > 0) payload.bong = increment(reviewed.grantBong);
+                        batch.set(stuRef, payload, { merge: true });
+                    }
+                    await batch.commit();
+                }, '독서기록 확인');
+                window.showToast && window.showToast(action === 'approve' ? '확인했고 보상을 지급했습니다.' : '다시 쓰도록 돌려보냈습니다.');
+            } catch (e) {
+                console.error('reviewReadingLog', e);
+                await window.customAlert('확인에 실패했습니다.');
+            }
+        };
+
+        window.saveLiteratureRewards = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const pay = sanitizeLiteratureRewards({
+                readingRewardXp: (document.getElementById('literatureRewardXp') || {}).value,
+                readingRewardBong: (document.getElementById('literatureRewardBong') || {}).value,
+            });
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    await setDoc(getGlobalSettingsDocRef(), pay, { merge: true });
+                }, '독서 보상 저장');
+                if (window.globalSettings) {
+                    window.globalSettings.readingRewardXp = pay.readingRewardXp;
+                    window.globalSettings.readingRewardBong = pay.readingRewardBong;
+                }
+                window.showToast && window.showToast(`보상을 ${pay.readingRewardXp} XP · ${pay.readingRewardBong}봉으로 저장했습니다.`);
+                window.renderLiteratureRewardPane();
+            } catch (e) {
+                console.error('saveLiteratureRewards', e);
+                await window.customAlert('저장에 실패했습니다.');
+            }
+        };
+
+        window.saveDiaryEntry = async function() {
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+                return window.customAlert('학생 계정으로 일기를 저장해 주세요.');
+            }
+            const sid = literatureStudentId();
+            const today = getLocalDateStr();
+            const draft = {
+                id: diaryDocId(sid, today),
+                studentId: sid,
+                date: today,
+                weather: _diaryWeather,
+                mood: _diaryMood,
+                body: (document.getElementById('diaryBody') || {}).value,
+                strokes: _diaryStrokes,
+                updatedAt: Date.now(),
+            };
+            const checked = validateDiaryDraft(draft);
+            if (!checked.ok) return window.customAlert('글이나 그림을 조금 남긴 뒤 저장해 주세요.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', checked.entry.id || diaryDocId(sid, today)), checked.entry, { merge: true });
+                }, '일기 저장');
+                window.showToast && window.showToast('오늘의 일기를 저장했습니다. 선생님만 볼 수 있어요.');
+            } catch (e) {
+                console.error('saveDiaryEntry', e);
+                await window.customAlert('일기 저장에 실패했습니다.');
+            }
+        };
+
         window.openExternalPortal = function() {
             const modal = document.getElementById('externalPortalModal');
             if (modal) modal.classList.remove('hidden');
@@ -7363,7 +7896,7 @@ ${subjectLine}
                 }
             
                 if (Math.abs(diffX) > 80 && Math.abs(diffY) < 60) {
-                    if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs') || e.target.closest('.learning-thermometer-stage')) return;
+                    if (e.target.closest('.overflow-x-auto') || e.target.closest('table') || e.target.closest('#dragonballContainer') || e.target.closest('#gbAdminInputs') || e.target.closest('.learning-thermometer-stage') || e.target.closest('#diaryCanvas')) return;
                 
                     let visibleTabs = TABS.filter(t => {
                         const btn = document.getElementById('tab-' + t);
@@ -14105,6 +14638,7 @@ ${subjectLine}
             
             checkTimeEvents();
             applyClassWatchUI();
+            if (typeof window.renderLiterature === 'function') window.renderLiterature();
             renderConvenienceManagerUi();
             maybeShowConvenienceOrderPopup();
             maybeShowMusicTimeRequestPopup({ fromCache: false });

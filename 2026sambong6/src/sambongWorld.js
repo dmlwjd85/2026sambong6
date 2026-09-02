@@ -5817,8 +5817,9 @@ ${subjectLine}
         // ==========================================
         const WORLD_CUP_MATCH = {
             id: 'kr_r32_2026',
-            title: '대한민국 32강 진출 예측',
+            title: '삼봉FC 모의 월드컵 (한국 vs 상대)',
         };
+        const SAMBONG_FC_URL = 'https://dmlwjd85.github.io/sambong-FC/';
 
         /** 분석 확률 (표시용) · 배당은 북메이커 마진 적용 */
         const WORLD_CUP_HOUSE_MARGIN = 0.15;
@@ -5831,8 +5832,8 @@ ${subjectLine}
 
         const WORLD_CUP_ODDS = {
             r32: {
-                advance: { label: '32강 진출', prob: 0.38, odds: computeWorldCupOdds(0.38) },
-                eliminate: { label: '탈락', prob: 0.62, odds: computeWorldCupOdds(0.62) },
+                advance: { label: '한국(레드) 승 · 32강 진출', prob: 0.38, odds: computeWorldCupOdds(0.38) },
+                eliminate: { label: '상대(블루) 승 · 탈락', prob: 0.62, odds: computeWorldCupOdds(0.62) },
             },
         };
 
@@ -5949,19 +5950,22 @@ ${subjectLine}
         }
 
         function getSanitizedWorldCupBetState(raw) {
+            const simLinked = !raw || raw.simLinked !== false;
             const base = {
                 matchId: WORLD_CUP_MATCH.id,
-                bettingOpen: !isWorldCupBettingPastDeadline(),
+                bettingOpen: true,
                 settled: false,
                 result: null,
                 settledAt: null,
+                simLinked: true,
+                lastSim: null,
                 bettingDeadlineMs: WORLD_CUP_BETTING_CLOSE_AT_MS,
             };
             if (!raw || typeof raw !== 'object') return base;
             if (raw.matchId && String(raw.matchId) !== WORLD_CUP_MATCH.id) return base;
             const result = raw.result && typeof raw.result === 'object' ? raw.result : null;
             const adminOpen = raw.bettingOpen !== false;
-            const timeOpen = !isWorldCupBettingPastDeadline();
+            const timeOpen = simLinked ? true : !isWorldCupBettingPastDeadline();
             return {
                 matchId: WORLD_CUP_MATCH.id,
                 bettingOpen: raw.settled ? false : (adminOpen && timeOpen),
@@ -5970,6 +5974,8 @@ ${subjectLine}
                     r32: result.r32 ? String(result.r32) : null,
                 } : null,
                 settledAt: raw.settledAt || null,
+                simLinked,
+                lastSim: raw.lastSim && typeof raw.lastSim === 'object' ? raw.lastSim : null,
                 bettingDeadlineMs: WORLD_CUP_BETTING_CLOSE_AT_MS,
             };
         }
@@ -6079,12 +6085,14 @@ ${subjectLine}
                 ? `<div class="mt-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-2 py-1.5 text-[10px] text-emerald-100">
                     <div class="font-bold mb-1">경기 결과</div>
                     <div>32강 진출: ${getWorldCupPickLabel('r32', state.result.r32)}</div>
+                    ${state.lastSim ? `<div class="text-slate-300 mt-0.5">삼봉FC 모의 ${escapeConvenienceHtml(state.lastSim.teamAName || '레드')} ${Number(state.lastSim.sa)||0} : ${Number(state.lastSim.sb)||0} ${escapeConvenienceHtml(state.lastSim.teamBName || '블루')}</div>` : ''}
                 </div>`
-                : '';
+                : (state.lastSim ? `<div class="mt-2 rounded-lg bg-slate-950/50 border border-slate-600 px-2 py-1.5 text-[10px] text-slate-300">최근 모의경기 ${escapeConvenienceHtml(state.lastSim.teamAName || '레드')} ${Number(state.lastSim.sa)||0} : ${Number(state.lastSim.sb)||0} ${escapeConvenienceHtml(state.lastSim.teamBName || '블루')}</div>` : '');
             const adminR32Options = buildWorldCupAdminResultOptionsHtml('r32', state);
             const adminHtml = window.playerState.isGM ? `
                 <div class="mt-3 pt-3 border-t border-red-500/30 rounded-xl bg-red-950/20 p-2">
                     <div class="text-[10px] text-red-200 font-bold mb-2"><i class="fa-solid fa-flag-checkered"></i> 마스터 · 승부예측 관리</div>
+                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">정산은 <a href="${SAMBONG_FC_URL}" target="_blank" rel="noopener" class="text-amber-300 underline">삼봉FC 모의경기</a>가 끝나면 자동으로 이뤄집니다. 아래는 수동 백업입니다.</p>
                     <div class="mb-2">
                         <label class="text-[9px] text-slate-400">32강 진출 결과
                             <select id="wcAdminR32" onchange="window.updateWorldCupAdminResultDraft('r32', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
@@ -6096,20 +6104,21 @@ ${subjectLine}
                         <button type="button" onclick="window.toggleWorldCupBettingAdmin(false)" class="flex-1 min-w-[7rem] bg-amber-800 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 마감</button>
                         <button type="button" onclick="window.toggleWorldCupBettingAdmin(true)" class="flex-1 min-w-[7rem] bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 재개</button>
                         <button type="button" onclick="window.cancelAllWorldCupBetsAdmin()" class="flex-1 min-w-[7rem] bg-rose-900 hover:bg-rose-800 text-white font-bold py-2 px-3 rounded-xl text-[10px]">전체 취소·환불</button>
-                        <button type="button" onclick="window.settleWorldCupBetAdmin()" class="flex-1 min-w-[7rem] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">결과 확정·배당 지급</button>
+                        <button type="button" onclick="window.settleWorldCupBetAdmin()" class="flex-1 min-w-[7rem] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">수동 정산·지급</button>
+                        ${state.settled ? `<button type="button" onclick="window.openNextSimWorldCupRoundAdmin()" class="flex-1 min-w-[7rem] bg-sky-800 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded-xl text-[10px]">다음 모의경기 베팅 열기</button>` : ''}
                     </div>
                 </div>` : '';
             el.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
                         <h4 class="text-red-300 font-black text-xs"><i class="fa-solid fa-futbol"></i> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">${getCurrencyUnit()}으로 32강 진출·탈락 중 1건만 베팅 (최대 ${formatBongAmount(WORLD_CUP_MAX_STAKE)}). <span class="text-amber-300/90">베팅 마감: ${formatWorldCupBettingDeadlineLabel()} (자동)</span>. 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 실제 불법 도박도 이렇게 돈을 뺏깁니다. <span class="text-sb-gold">재미로만!</span></p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">${getCurrencyUnit()}으로 한국(레드) 승·상대(블루) 승 중 1건만 베팅 (최대 ${formatBongAmount(WORLD_CUP_MAX_STAKE)}). 베팅은 여기서, 경기는 <a href="${SAMBONG_FC_URL}" target="_blank" rel="noopener" class="text-amber-300 underline">삼봉FC 모의경기</a>로 돌리면 점수대로 자동 지급됩니다. 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 재미로만!</p>
                     </div>
                     <div class="text-right text-[10px] shrink-0 ${statusClass} font-bold">${statusText}</div>
                 </div>
                 ${resultHtml}
                 <div class="mt-3">
-                    <div class="text-[10px] text-red-200 font-bold mb-1">32강 진출 예측 <span class="text-slate-500 font-normal">(진출 38% · 탈락 62%)</span></div>
+                    <div class="text-[10px] text-red-200 font-bold mb-1">모의 월드컵 승패 <span class="text-slate-500 font-normal">(한국 38% · 상대 62%)</span></div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         ${buildWorldCupBetButton('r32', 'advance', !canBet || hasPendingWorldCupBetOnMarket('r32'))}
                         ${buildWorldCupBetButton('r32', 'eliminate', !canBet || hasPendingWorldCupBetOnMarket('r32'))}
@@ -6175,9 +6184,6 @@ ${subjectLine}
             if (!entry) return await window.customAlert('선택한 베팅 항목을 찾을 수 없습니다.');
             const wcState = getWorldCupBetState();
             if (!wcState.bettingOpen || wcState.settled) {
-                if (isWorldCupBettingPastDeadline() && !wcState.settled) {
-                    return await window.customAlert(`베팅 접수가 ${formatWorldCupBettingDeadlineLabel()}에 자동 마감되었습니다.`);
-                }
                 return await window.customAlert('지금은 승부예측 베팅 접수 시간이 아닙니다.');
             }
             const hasPendingOnMarket = getMyWorldCupBets().some((b) => b && b.market === market && b.status === 'pending');
@@ -6293,14 +6299,12 @@ ${subjectLine}
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const wc = getWorldCupBetState();
             if (wc.settled) return await window.customAlert('이미 정산이 끝난 경기입니다.');
-            if (open && isWorldCupBettingPastDeadline()) {
-                return await window.customAlert(`베팅 마감 시한(${formatWorldCupBettingDeadlineLabel()})이 지나 재개할 수 없습니다.`);
-            }
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다.');
                 const next = {
                     ...wc,
+                    simLinked: true,
                     bettingOpen: !!open,
                 };
                 await setDoc(getGlobalSettingsDocRef(), { worldCupBet: next }, { merge: true });
@@ -6335,8 +6339,10 @@ ${subjectLine}
                     matchId: WORLD_CUP_MATCH.id,
                     bettingOpen: false,
                     settled: true,
+                    simLinked: true,
                     result,
                     settledAt,
+                    lastSim: wc.lastSim || null,
                 };
                 let winnerCount = 0;
                 let totalPayout = 0;
@@ -6383,6 +6389,37 @@ ${subjectLine}
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.openNextSimWorldCupRoundAdmin = async function() {
+            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 변경할 수 있습니다.`);
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const wc = getWorldCupBetState();
+            if (!wc.settled) return await window.customAlert('아직 정산 전입니다. 먼저 모의경기를 돌리거나 수동 정산하세요.');
+            const pending = getAllClassWorldCupBets().filter((b) => b && b.status === 'pending').length;
+            if (pending > 0) return await window.customAlert(`아직 대기 베팅이 ${pending}건 있습니다. 정산 또는 환불 후 열어 주세요.`);
+            if (!await window.customConfirm('다음 삼봉FC 모의경기용 베팅을 새로 열까요?\n이전 적중/미적중 내역은 그대로 남습니다.')) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다.');
+                const next = {
+                    matchId: WORLD_CUP_MATCH.id,
+                    bettingOpen: true,
+                    settled: false,
+                    result: null,
+                    settledAt: null,
+                    simLinked: true,
+                    lastSim: wc.lastSim || null,
+                    previousSettledAt: wc.settledAt || null,
+                };
+                await setDoc(getGlobalSettingsDocRef(), { worldCupBet: next }, { merge: true });
+                window.globalSettings.worldCupBet = next;
+                renderWorldCupBetPanel();
+                await window.customAlert('✅ 다음 모의경기 베팅을 열었습니다. 학생들이 메이트에서 걸고, 삼봉FC에서 경기를 돌리면 됩니다.');
+            } catch (e) {
+                console.error('openNextSimWorldCupRoundAdmin', e);
+                await window.customAlert('설정 저장 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 
@@ -6450,9 +6487,11 @@ ${subjectLine}
 
         /** 마감 시각 이후 누군가 앱을 켜면 Firestore에 베팅 마감 상태를 1회 반영 */
         async function maybeAutoCloseWorldCupBetting(now = new Date()) {
-            if (!db || _worldCupAutoCloseRunning || !isWorldCupBettingPastDeadline(now)) return;
+            if (!db || _worldCupAutoCloseRunning) return;
             const raw = window.globalSettings && window.globalSettings.worldCupBet;
             if (!raw || typeof raw !== 'object') return;
+            if (raw.simLinked !== false) return;
+            if (!isWorldCupBettingPastDeadline(now)) return;
             if (raw.settled) return;
             if (raw.matchId && String(raw.matchId) !== WORLD_CUP_MATCH.id) return;
             if (raw.bettingOpen === false) return;
@@ -6524,6 +6563,39 @@ ${subjectLine}
                 }
             } catch (e) {
                 console.warn('applyWorldCupBetR32Migration', e);
+            }
+        }
+
+        /** 배포 직후 1회 — 삼봉FC 모의경기 연동: 마감된 베팅을 다시 열고 시뮬 정산을 켭니다 */
+        async function applyWorldCupSimLinkMigration() {
+            if (!db) return;
+            const markerId = 'worldcup_sfc_sim_link_20260902_v1';
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                const settingsRef = getGlobalSettingsDocRef();
+                const settingsSnap = await getDoc(settingsRef);
+                const wc = settingsSnap.exists() ? settingsSnap.data().worldCupBet : null;
+                const next = {
+                    ...getSanitizedWorldCupBetState(wc),
+                    simLinked: true,
+                    bettingOpen: wc && wc.settled ? false : true,
+                };
+                await setDoc(settingsRef, { worldCupBet: next }, { merge: true });
+                if (window.globalSettings) window.globalSettings.worldCupBet = next;
+                await setDoc(markerRef, {
+                    done: true,
+                    note: '삼봉FC 모의경기 연동 — 시즌 마감 무시하고 베팅 재개',
+                    sanitizedAt: new Date().toISOString(),
+                }, { merge: true });
+                if (window.playerState && !window.playerState.isGuest) {
+                    renderWorldCupBetPanel();
+                }
+            } catch (e) {
+                console.warn('applyWorldCupSimLinkMigration', e);
             }
         }
 
@@ -12933,6 +13005,7 @@ ${subjectLine}
                 void applyDuplicateQuestBongHotfix();
                 void applyWorldCupBetCancelMigration();
                 void applyWorldCupBetR32Migration();
+                void applyWorldCupSimLinkMigration();
                 void applyLearningThermometerRahiMaxHotfix();
                 void applyLegendaryTimeGroupBuyPoolWipeMigration();
 

@@ -1112,7 +1112,7 @@
         <section id="literatureSection" class="hidden space-y-4">
             <div class="mb-1">
                 <h2 class="text-xl sm:text-2xl font-display text-amber-200"><i class="fa-solid fa-book-open"></i> 문학</h2>
-                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">독서기록장은 하루에 한 권, 선생님이 확인하면 정해 둔 보상을 받습니다. 일기장은 선생님만 볼 수 있습니다.</p>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">독서기록장과 일기장은 선생님이 확인하면 정해 둔 보상을 받습니다. 일기장은 선생님만 볼 수 있습니다.</p>
             </div>
             <div id="literatureSubDock" class="app-sub-dock cols-2 mb-2" data-pane-group="literature" role="tablist">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="literature" data-pane="reading" onclick="window.switchInnerPane('literature','reading')">
@@ -1178,9 +1178,12 @@
 
             <div class="inner-pane hidden" data-pane-group="literature" data-pane="diary">
                 <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-sky-400 space-y-3">
-                    <div>
-                        <h3 class="font-bold text-sm text-sky-200"><i class="fa-solid fa-pen-nib"></i> 오늘의 일기</h3>
-                        <p class="text-[10px] text-slate-400 mt-1">친구는 볼 수 없고, 선생님만 읽습니다. 날씨·기분과 간단한 그림을 남길 수 있습니다.</p>
+                    <div class="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                            <h3 class="font-bold text-sm text-sky-200"><i class="fa-solid fa-pen-nib"></i> 오늘의 일기</h3>
+                            <p id="diaryHint" class="text-[10px] text-slate-400 mt-1">친구는 볼 수 없고, 선생님만 읽습니다. 선생님이 확인하면 보상을 받습니다.</p>
+                        </div>
+                        <div id="diaryRewardChip" class="text-[10px] font-bold text-sky-100 bg-sky-900/50 border border-sky-500/40 rounded-full px-2.5 py-1">보상 —</div>
                     </div>
                     <div id="diaryAdminPicker" class="hidden">
                         <label class="block text-[10px] text-slate-400 font-bold">학생 일기 보기
@@ -1225,22 +1228,35 @@
 
             <div class="inner-pane hidden" data-pane-group="literature" data-pane="review">
                 <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-emerald-400 space-y-3">
-                    <h3 class="font-bold text-sm text-emerald-200"><i class="fa-solid fa-check"></i> 독서기록 확인</h3>
-                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 하루에 학생당 한 권입니다.</p>
+                    <h3 class="font-bold text-sm text-emerald-200"><i class="fa-solid fa-check"></i> 문학 확인</h3>
+                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 독서기록은 하루에 학생당 한 권, 일기는 확인 전까지 고칠 수 있습니다.</p>
+                    <h4 class="text-[11px] font-bold text-amber-200 mt-2">독서기록</h4>
                     <div id="readingReviewList" class="space-y-3"></div>
+                    <h4 class="text-[11px] font-bold text-sky-200 mt-3">일기장</h4>
+                    <div id="diaryReviewList" class="space-y-3"></div>
                 </div>
             </div>
 
             <div class="inner-pane hidden" data-pane-group="literature" data-pane="reward">
                 <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-yellow-400 space-y-3">
-                    <h3 class="font-bold text-sm text-yellow-200"><i class="fa-solid fa-gift"></i> 독서기록 보상</h3>
-                    <p class="text-[10px] text-slate-400">학생이 기록을 내고 선생님이 확인하면 이 값이 지급됩니다. XP 0~80, 봉 0~50.</p>
+                    <h3 class="font-bold text-sm text-yellow-200"><i class="fa-solid fa-gift"></i> 문학 보상</h3>
+                    <p class="text-[10px] text-slate-400">학생이 글을 내고 선생님이 확인하면 이 값이 지급됩니다. XP 0~80, 봉 0~50.</p>
+                    <p class="text-[11px] font-bold text-amber-200">독서기록 확인 시</p>
                     <div class="grid grid-cols-2 gap-2">
-                        <label class="block text-[10px] text-slate-400 font-bold">확인 시 XP
+                        <label class="block text-[10px] text-slate-400 font-bold">XP
                             <input id="literatureRewardXp" type="number" min="0" max="80" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-sm font-black">
                         </label>
-                        <label class="block text-[10px] text-slate-400 font-bold">확인 시 봉
+                        <label class="block text-[10px] text-slate-400 font-bold">봉
                             <input id="literatureRewardBong" type="number" min="0" max="50" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-sm font-black">
+                        </label>
+                    </div>
+                    <p class="text-[11px] font-bold text-sky-200">일기 확인 시</p>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="block text-[10px] text-slate-400 font-bold">XP
+                            <input id="literatureDiaryRewardXp" type="number" min="0" max="80" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-sm font-black">
+                        </label>
+                        <label class="block text-[10px] text-slate-400 font-bold">봉
+                            <input id="literatureDiaryRewardBong" type="number" min="0" max="50" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-sm font-black">
                         </label>
                     </div>
                     <button type="button" onclick="void window.saveLiteratureRewards()" class="w-full min-h-[48px] bg-yellow-600 hover:bg-yellow-500 text-slate-900 font-black rounded-xl text-sm">보상 저장</button>

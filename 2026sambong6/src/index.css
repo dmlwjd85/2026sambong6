@@ -2647,6 +2647,14 @@
             touch-action: none;
             cursor: crosshair;
         }
+        .diary-review-canvas {
+            display: block;
+            height: 7.5rem;
+            border-radius: 0.75rem;
+            background: #fffbeb;
+            border: 1px solid #fbbf24;
+            pointer-events: none;
+        }
         .diary-ink {
             width: 1.35rem;
             height: 1.35rem;

@@ -3,12 +3,18 @@ import assert from 'node:assert/strict';
 import {
     LITERATURE_DEFAULT_REWARD_XP,
     LITERATURE_THOUGHT_MIN,
+    applyDiaryReview,
     applyReadingLogReview,
+    canApproveDiary,
     canApproveReadingLog,
     canViewDiary,
     countApprovedReadingLogs,
     diariesVisibleTo,
     diaryDocId,
+    diarySubmitState,
+    literatureArrivalMessage,
+    literaturePendingCounts,
+    pendingDiaries,
     pendingReadingLogs,
     readingLogDocId,
     readingLogSubmitState,
@@ -100,5 +106,45 @@ describe('일기장', () => {
         assert.equal(empty.ok, false);
         const ok = validateDiaryDraft({ studentId: '12', date: '2026-09-02', body: '오늘 하루' });
         assert.equal(ok.ok, true);
+        assert.equal(ok.entry.status, 'pending');
+    });
+
+    it('확인 전까지는 같은 날을 고쳐 저장하고, 확인하면 보상을 준다', () => {
+        const pending = sanitizeDiaryEntry({ studentId: '12', date: '2026-09-02', body: '오늘 하루', status: 'pending' });
+        const updating = diarySubmitState([pending], '12', '2026-09-02');
+        assert.equal(updating.ok, true);
+        assert.equal(updating.reason, 'update');
+        assert.equal(canApproveDiary(pending), true);
+        const reviewed = applyDiaryReview(pending, 'approve', '잘 썼어요', { diaryRewardXp: 15, diaryRewardBong: 3 }, 1);
+        assert.equal(reviewed.skip, false);
+        assert.equal(reviewed.entry.status, 'approved');
+        assert.equal(reviewed.entry.rewarded, true);
+        assert.equal(reviewed.grantXp, 15);
+        assert.equal(reviewed.grantBong, 3);
+        const locked = diarySubmitState([reviewed.entry], '12', '2026-09-02');
+        assert.equal(locked.ok, false);
+        assert.equal(locked.reason, 'already');
+        const again = applyDiaryReview(reviewed.entry, 'approve', '', { diaryRewardXp: 15, diaryRewardBong: 3 }, 2);
+        assert.equal(again.skip, true);
+        const rejected = applyDiaryReview(pending, 'reject', '조금 더 써 보자', {}, 3);
+        assert.equal(rejected.entry.status, 'rejected');
+        assert.equal(rejected.grantXp, 0);
+        const resubmit = diarySubmitState([rejected.entry], '12', '2026-09-02');
+        assert.equal(resubmit.ok, true);
+        assert.equal(resubmit.reason, 'resubmit');
+        assert.equal(pendingDiaries([pending]).length, 1);
+        const pay = sanitizeLiteratureRewards({ readingRewardXp: 22, readingRewardBong: 6 });
+        assert.equal(pay.diaryRewardXp, 22);
+        assert.equal(pay.diaryRewardBong, 6);
+        const counts = literaturePendingCounts(
+            [sanitizeReadingLog({ studentId: '1', date: '2026-09-02', status: 'pending' })],
+            [pending],
+        );
+        assert.equal(counts.reading, 1);
+        assert.equal(counts.diary, 1);
+        assert.equal(counts.total, 2);
+        assert.match(literatureArrivalMessage(counts), /독서기록 1건/);
+        assert.match(literatureArrivalMessage(counts), /일기 1건/);
+        assert.equal(literatureArrivalMessage({ reading: 0, diary: 0 }), '');
     });
 });

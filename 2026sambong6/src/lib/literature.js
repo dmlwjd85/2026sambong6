@@ -1,6 +1,7 @@
 /**
  * 문학 탭: 독서기록장·일기장.
- * 보상은 교사가 미리 정한 XP·봉이며, 독서기록은 하루 1회만 제출할 수 있습니다.
+ * 보상은 교사가 미리 정한 XP·봉이며, 독서기록·일기 모두 확인과 동시에 지급됩니다.
+ * 독서기록은 하루 1회만 제출할 수 있습니다. 일기는 확인 전까지 같은 날을 고쳐 저장할 수 있습니다.
  */
 
 export const LITERATURE_REWARD_XP_MAX = 80;
@@ -66,18 +67,33 @@ export function diaryDocId(studentId, dateStr) {
 
 export function sanitizeLiteratureRewards(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
+    const readingRewardXp = clampInt(
+        src.readingRewardXp != null ? src.readingRewardXp : src.literatureRewardXp,
+        0,
+        LITERATURE_REWARD_XP_MAX,
+        LITERATURE_DEFAULT_REWARD_XP,
+    );
+    const readingRewardBong = clampInt(
+        src.readingRewardBong != null ? src.readingRewardBong : src.literatureRewardBong,
+        0,
+        LITERATURE_REWARD_BONG_MAX,
+        LITERATURE_DEFAULT_REWARD_BONG,
+    );
     return {
-        readingRewardXp: clampInt(
-            src.readingRewardXp != null ? src.readingRewardXp : src.literatureRewardXp,
+        readingRewardXp,
+        readingRewardBong,
+        // 일기 보상을 아직 안 정했으면 독서기록과 같은 값을 씁니다.
+        diaryRewardXp: clampInt(
+            src.diaryRewardXp,
             0,
             LITERATURE_REWARD_XP_MAX,
-            LITERATURE_DEFAULT_REWARD_XP,
+            readingRewardXp,
         ),
-        readingRewardBong: clampInt(
-            src.readingRewardBong != null ? src.readingRewardBong : src.literatureRewardBong,
+        diaryRewardBong: clampInt(
+            src.diaryRewardBong,
             0,
             LITERATURE_REWARD_BONG_MAX,
-            LITERATURE_DEFAULT_REWARD_BONG,
+            readingRewardBong,
         ),
     };
 }
@@ -206,6 +222,8 @@ export function sanitizeDiaryEntry(raw, nowMs = Date.now()) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const weather = DIARY_WEATHER.some((w) => w.id === src.weather) ? src.weather : 'sunny';
     const mood = DIARY_MOODS.some((m) => m.id === src.mood) ? src.mood : 'calm';
+    const status = ['pending', 'approved', 'rejected'].includes(src.status) ? src.status : 'pending';
+    const updatedAt = Number.isFinite(Number(src.updatedAt)) ? Number(src.updatedAt) : nowMs;
     return {
         id: String(src.id || ''),
         studentId: String(src.studentId || '').trim(),
@@ -214,9 +232,15 @@ export function sanitizeDiaryEntry(raw, nowMs = Date.now()) {
         mood,
         body: clipMultiline(src.body, LITERATURE_DIARY_MAX),
         strokes: sanitizeDiaryStrokes(src.strokes),
-        updatedAt: Number.isFinite(Number(src.updatedAt)) ? Number(src.updatedAt) : nowMs,
+        updatedAt,
+        submittedAt: Number.isFinite(Number(src.submittedAt)) ? Number(src.submittedAt) : updatedAt,
         teacherNote: clipText(src.teacherNote, LITERATURE_TEACHER_NOTE_MAX),
         teacherNoteAt: Number.isFinite(Number(src.teacherNoteAt)) ? Number(src.teacherNoteAt) : 0,
+        status,
+        rewardXp: clampInt(src.rewardXp, 0, LITERATURE_REWARD_XP_MAX, 0),
+        rewardBong: clampInt(src.rewardBong, 0, LITERATURE_REWARD_BONG_MAX, 0),
+        rewarded: src.rewarded === true,
+        reviewedAt: Number.isFinite(Number(src.reviewedAt)) ? Number(src.reviewedAt) : 0,
     };
 }
 
@@ -240,8 +264,85 @@ export function diariesVisibleTo(viewer, entries) {
     return (Array.isArray(entries) ? entries : []).filter((e) => canViewDiary(viewer, e));
 }
 
+/**
+ * 오늘 일기 저장 가능 여부.
+ * 확인 완료면 막습니다. 대기 중이면 같은 날을 고쳐 저장할 수 있습니다.
+ */
+export function diarySubmitState(entries, studentId, dateStr) {
+    const sid = String(studentId || '');
+    const date = String(dateStr || '');
+    const mine = (Array.isArray(entries) ? entries : []).filter((e) => String(e.studentId) === sid && String(e.date) === date);
+    const pending = mine.find((e) => e.status === 'pending');
+    const approved = mine.find((e) => e.status === 'approved');
+    const rejected = mine.find((e) => e.status === 'rejected');
+    if (approved) return { ok: false, reason: 'already', existing: approved };
+    if (pending) return { ok: true, reason: 'update', existing: pending };
+    if (rejected) return { ok: true, reason: 'resubmit', existing: rejected };
+    return { ok: true, reason: 'new', existing: null };
+}
+
+export function canApproveDiary(entry) {
+    return !!(entry && entry.status === 'pending' && !entry.rewarded);
+}
+
+export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now()) {
+    const cur = sanitizeDiaryEntry(entry, nowMs);
+    if (cur.status !== 'pending') return { skip: true, entry: cur, grantXp: 0, grantBong: 0 };
+    const pay = sanitizeLiteratureRewards(rewards);
+    const next = {
+        ...cur,
+        teacherNote: clipText(note, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNoteAt: nowMs,
+        reviewedAt: nowMs,
+    };
+    if (action === 'reject') {
+        return { skip: false, entry: { ...next, status: 'rejected' }, grantXp: 0, grantBong: 0 };
+    }
+    return {
+        skip: false,
+        entry: {
+            ...next,
+            status: 'approved',
+            rewarded: true,
+            rewardXp: pay.diaryRewardXp,
+            rewardBong: pay.diaryRewardBong,
+        },
+        grantXp: pay.diaryRewardXp,
+        grantBong: pay.diaryRewardBong,
+    };
+}
+
+export function pendingDiaries(entries) {
+    return (Array.isArray(entries) ? entries : [])
+        .filter((e) => e && e.status === 'pending')
+        .sort((a, b) => (Number(a.submittedAt) || Number(a.updatedAt) || 0) - (Number(b.submittedAt) || Number(b.updatedAt) || 0));
+}
+
+export function literaturePendingCounts(logs, diaries) {
+    const reading = pendingReadingLogs(logs).length;
+    const diary = pendingDiaries(diaries).length;
+    return { reading, diary, total: reading + diary };
+}
+
+/** 문학 탭에 들어왔을 때 교사에게 보여줄 알림 문구. 대기 글이 없으면 빈 문자열. */
+export function literatureArrivalMessage(counts) {
+    const src = counts && typeof counts === 'object' ? counts : {};
+    const reading = Math.max(0, Math.floor(Number(src.reading) || 0));
+    const diary = Math.max(0, Math.floor(Number(src.diary) || 0));
+    const total = reading + diary;
+    if (total <= 0) return '';
+    const parts = [];
+    if (reading > 0) parts.push(`독서기록 ${reading}건`);
+    if (diary > 0) parts.push(`일기 ${diary}건`);
+    return `새로 올라온 글이 있습니다.\n${parts.join(', ')}.\n확인 탭에서 읽고 보상을 줄 수 있습니다.`;
+}
+
 export function readingLogStatusLabel(status) {
     if (status === 'approved') return '확인 완료';
     if (status === 'rejected') return '다시 쓰기';
     return '확인 대기';
+}
+
+export function diaryStatusLabel(status) {
+    return readingLogStatusLabel(status);
 }

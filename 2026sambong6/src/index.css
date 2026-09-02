@@ -2022,14 +2022,6 @@
             object-fit: cover;
             display: block;
         }
-        .lit-nav-icon {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #fde68a;
-            font-size: 1.05rem;
-            background: linear-gradient(165deg, #b45309 0%, #78350f 60%, #451a03 100%);
-        }
         .app-nav-label {
             font-size: 9px;
             font-weight: 800;

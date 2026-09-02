@@ -9,6 +9,10 @@ export const QUIZ_BANK_MAX = 400;
 export const QUIZ_RAID_DEFAULT_COUNT = 5;
 /** 퀴즈 레이드 한 회차 최대 출제 수 */
 export const QUIZ_RAID_MAX_COUNT = 20;
+/** 한 문항 제한 시간(ms). 모두 제출하면 더 일찍 넘어갑니다. */
+export const QUIZ_RAID_TURN_MS = 40000;
+/** 시간 초과·선생님 넘기기로 미제출 처리한 값 */
+export const QUIZ_RAID_SKIP_SENTINEL = '__skip__';
 /** 객관식으로 인정할 최소 보기 수 */
 export const QUIZ_MC_MIN_OPTIONS = 2;
 export const QUIZ_MC_MAX_OPTIONS = 4;
@@ -311,12 +315,74 @@ export function toRaidSessionQuestion(item, rng = Math.random) {
 }
 
 /**
- * @param {object} question 세션 문항
- * @param {number|string} answer 객관식 인덱스 또는 주관식 문자열
+ * 미제출(시간 초과·넘기기) 답안인지 봅니다.
+ * @param {*} answer
  * @returns {boolean}
  */
+export function isQuizRaidSkipAnswer(answer) {
+    return answer === QUIZ_RAID_SKIP_SENTINEL;
+}
+
+/**
+ * 문항 시작 시각 기준 남은 시간(ms). 시작 전이면 제한 시간 전체를 돌려줍니다.
+ * @param {number} turnStartTime
+ * @param {number} [nowMs]
+ * @param {number} [limitMs]
+ */
+export function quizRaidTurnRemainingMs(turnStartTime, nowMs = Date.now(), limitMs = QUIZ_RAID_TURN_MS) {
+    const start = Number(turnStartTime) || 0;
+    if (start <= 0) return Math.max(0, Number(limitMs) || 0);
+    return Math.max(0, (Number(limitMs) || 0) - (Number(nowMs) - start));
+}
+
+export function quizRaidTurnTimedOut(turnStartTime, nowMs = Date.now(), limitMs = QUIZ_RAID_TURN_MS) {
+    const start = Number(turnStartTime) || 0;
+    if (start <= 0) return false;
+    return quizRaidTurnRemainingMs(start, nowMs, limitMs) <= 0;
+}
+
+/**
+ * @param {Array<{id?: string|number}|null|undefined>} participants
+ * @param {Record<string, unknown>} [turnSubs]
+ * @returns {string[]}
+ */
+export function quizRaidUnansweredIds(participants, turnSubs) {
+    const subs = turnSubs && typeof turnSubs === 'object' ? turnSubs : {};
+    return (Array.isArray(participants) ? participants : [])
+        .map((p) => (p && p.id != null ? String(p.id) : ''))
+        .filter((id) => id && subs[id] === undefined);
+}
+
+/**
+ * Firestore merge용 미제출 표시 필드
+ * @param {number} turn
+ * @param {string[]} unansweredIds
+ */
+export function buildQuizRaidSkipFields(turn, unansweredIds) {
+    const payload = {};
+    const t = Math.max(0, Math.floor(Number(turn) || 0));
+    (unansweredIds || []).forEach((id) => {
+        const key = String(id || '');
+        if (!key) return;
+        payload[`turnSubmissions.${t}.${key}`] = QUIZ_RAID_SKIP_SENTINEL;
+    });
+    return payload;
+}
+
+/**
+ * 전원 제출·시간 초과·선생님 넘기기 중 하나면 다음 문항으로 갑니다.
+ * @param {{ unansweredCount: number, timedOut?: boolean, force?: boolean }} args
+ */
+export function shouldAdvanceQuizRaidTurn(args) {
+    const src = args && typeof args === 'object' ? args : {};
+    if (src.force) return true;
+    if (Number(src.unansweredCount) <= 0) return true;
+    return !!src.timedOut;
+}
+
 export function gradeQuizRaidAnswer(question, answer) {
     if (!question) return false;
+    if (isQuizRaidSkipAnswer(answer)) return false;
     if (question.type === 'mc') {
         return Number(answer) === Number(question.a);
     }

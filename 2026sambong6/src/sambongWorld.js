@@ -28,18 +28,26 @@ import {
 import {
     QUIZ_RAID_DEFAULT_COUNT,
     QUIZ_RAID_MAX_COUNT,
+    QUIZ_RAID_SKIP_SENTINEL,
+    QUIZ_RAID_TURN_MS,
+    buildQuizRaidSkipFields,
     computeQuizRaidReward,
     countQuizBankBySource,
     downloadQuizBankTemplate as downloadQuizBankTemplateFile,
     fillGoldenBellSlotsFromBank,
     gradeQuizRaidAnswer,
+    isQuizRaidSkipAnswer,
     mergeQuizBank,
     parseQuizBankWorkbook,
     pickRandomQuizQuestions,
     questionFromGoldenBell,
     questionFromLegacyRaid,
     questionFromSpeedQuiz,
+    quizRaidTurnRemainingMs,
+    quizRaidTurnTimedOut,
+    quizRaidUnansweredIds,
     sanitizeQuizBank,
+    shouldAdvanceQuizRaidTurn,
     toRaidSessionQuestion,
 } from './lib/quizBank.js';
 import { withRetry, isLikelyNetworkError } from './lib/withRetry.js';
@@ -7601,13 +7609,7 @@ ${subjectLine}
                 }
             }
             if (challengeSub === 'speedquiz') {
-                const st = document.getElementById('challengeSpeedQuizStatus');
-                const mq = window.masterQuizState;
-                if (st) {
-                    st.textContent = (mq && mq.isOpen)
-                        ? '진행 중 — 팝업에서 답을 제출하세요!'
-                        : '대기 중 — 문제가 열리면 자동으로 팝업이 표시됩니다.';
-                }
+                if (typeof window.syncMasterQuizModal === 'function') window.syncMasterQuizModal();
             }
             if (challengeSub === 'raid' && typeof window.renderQuizBankAdmin === 'function') {
                 window.renderQuizBankAdmin();
@@ -20604,6 +20606,25 @@ ${subjectLine}
             }
         };
 
+        function hideMasterQuizReopenUi() {
+            const bar = document.getElementById('masterQuizReopenBar');
+            const paneBtn = document.getElementById('btnReopenMasterQuiz');
+            if (bar) bar.classList.add('hidden');
+            if (paneBtn) paneBtn.classList.add('hidden');
+        }
+
+        function showMasterQuizReopenUi() {
+            const bar = document.getElementById('masterQuizReopenBar');
+            const paneBtn = document.getElementById('btnReopenMasterQuiz');
+            if (bar) bar.classList.remove('hidden');
+            if (paneBtn) paneBtn.classList.remove('hidden');
+        }
+
+        function setSpeedQuizStudentStatus(text) {
+            const stEl = document.getElementById('challengeSpeedQuizStatus');
+            if (stEl) stEl.textContent = text;
+        }
+
         window.syncMasterQuizModal = function () {
             const modal = document.getElementById('masterQuizModal');
             const qBlock = document.getElementById('masterQuizQuestionBlock');
@@ -20615,6 +20636,7 @@ ${subjectLine}
 
             if (window.playerState.isGuest || window.playerState.isAdmin) {
                 modal.classList.add('hidden');
+                hideMasterQuizReopenUi();
                 return;
             }
 
@@ -20623,17 +20645,21 @@ ${subjectLine}
             const loginOverlay = document.getElementById('loginOverlay');
             if (loginOverlay && !loginOverlay.classList.contains('hidden')) {
                 modal.classList.add('hidden');
+                hideMasterQuizReopenUi();
                 return;
             }
 
             if (isMartialLawLockingStudent()) {
                 modal.classList.add('hidden');
+                hideMasterQuizReopenUi();
                 return;
             }
 
             const st = window.masterQuizState;
             if (!st || !st.isOpen) {
                 modal.classList.add('hidden');
+                hideMasterQuizReopenUi();
+                setSpeedQuizStudentStatus('대기 중 — 문제가 열리면 자동으로 팝업이 표시됩니다.');
                 return;
             }
 
@@ -20644,20 +20670,29 @@ ${subjectLine}
             const count = Number.isFinite(Number(st.winnersCount)) ? Number(st.winnersCount) : winnerIds.length;
             const isFull = count >= maxW;
 
-            if (sid && sessionStorage.getItem('mq_dismissedSession') === sid && !isFull) {
-                modal.classList.add('hidden');
-                return;
-            }
-
             const myId = localStorage.getItem('sambong_student_id');
             const iWon = !!(myId && winners[String(myId)]);
             // 정답·보상 처리된 학생은 팝업을 다시 띄우지 않음(선착순 N명일 때 마감 스냅샷 후 재오픈 방지)
             if (iWon) {
                 modal.classList.add('hidden');
+                hideMasterQuizReopenUi();
+                setSpeedQuizStudentStatus('이미 정답을 맞춰 보상을 받았어요.');
                 return;
             }
 
+            const dismissed = !!(sid && sessionStorage.getItem('mq_dismissedSession') === sid);
+            if (dismissed && !isFull) {
+                modal.classList.add('hidden');
+                showMasterQuizReopenUi();
+                setSpeedQuizStudentStatus('팝업을 숨겼어요. 「스피드 퀴즈 다시 열기」로 돌아올 수 있어요.');
+                return;
+            }
+
+            hideMasterQuizReopenUi();
             modal.classList.remove('hidden');
+            setSpeedQuizStudentStatus(isFull
+                ? '이미 정원이 차서 마감되었어요.'
+                : '진행 중 — 팝업에서 답을 제출하세요!');
 
             if (qBlock) qBlock.textContent = st.question || '';
             if (hint) {
@@ -20690,6 +20725,12 @@ ${subjectLine}
             }
             const modal = document.getElementById('masterQuizModal');
             if (modal) modal.classList.add('hidden');
+            window.syncMasterQuizModal();
+        };
+
+        window.reopenMasterQuizModal = function () {
+            sessionStorage.removeItem('mq_dismissedSession');
+            window.syncMasterQuizModal();
         };
 
         window.publishMasterQuiz = async function () {
@@ -20847,7 +20888,17 @@ ${subjectLine}
                     }
                 });
 
-                // 보상은 트랜잭션에서 1회만 반영됨. 이 세션 팝업은 닫아 두고, syncMasterQuizModal이 다시 열지 않도록 dismiss와 동일하게 session에 기록
+                // 보상은 트랜잭션에서 1회만 반영됨. 로컬 우승 표시를 먼저 넣어 다시 열기 막대가 뜨지 않게 함
+                const prevMq = window.masterQuizState || st;
+                const prevWinners = (prevMq.winners && typeof prevMq.winners === 'object') ? prevMq.winners : {};
+                window.masterQuizState = {
+                    ...prevMq,
+                    winners: {
+                        ...prevWinners,
+                        [String(myId)]: { name: STUDENT_NAMES[String(myId)] || String(myId), at: Date.now() },
+                    },
+                    winnersCount: (Number.isFinite(Number(prevMq.winnersCount)) ? Number(prevMq.winnersCount) : Object.keys(prevWinners).length) + 1,
+                };
                 window.dismissMasterQuizModal();
                 await window.customAlert('🎉 선착순 정답! 보상이 반영되었습니다.');
             } catch (e) {
@@ -21733,12 +21784,34 @@ ${subjectLine}
             const participants = (st && Array.isArray(st.participants)) ? st.participants : [];
             if (!participants.length) return false;
             const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? st.turnSubmissions[turn] : {};
-            return participants.every((p) => p && turnSubs[String(p.id)] !== undefined);
+            return quizRaidUnansweredIds(participants, turnSubs).length === 0;
         }
 
         function renderRaidTimerUI() {
+            const modal = document.getElementById('raidBattleModal');
+            if (!modal || modal.classList.contains('hidden')) return;
+            const st = window.currentRaidState;
             const container = document.getElementById('raidTimerBarContainer');
-            if (container) container.classList.add('hidden');
+            const bar = document.getElementById('raidTimerBar');
+            const turnText = document.getElementById('raidTurnText');
+            if (!st || st.status !== 'playing') {
+                if (container) container.classList.add('hidden');
+                return;
+            }
+            if (container) container.classList.remove('hidden');
+            const remaining = quizRaidTurnRemainingMs(st.turnStartTime);
+            const pct = QUIZ_RAID_TURN_MS > 0 ? (remaining / QUIZ_RAID_TURN_MS) * 100 : 0;
+            if (bar) bar.style.width = `${pct}%`;
+            const turn = st.currentTurn || 0;
+            const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
+            const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? st.turnSubmissions[turn] : {};
+            const unanswered = quizRaidUnansweredIds(st.participants, turnSubs);
+            const done = Math.max(0, (st.participants || []).length - unanswered.length);
+            const total = (st.participants || []).length;
+            const sec = Math.max(0, Math.ceil(remaining / 1000));
+            if (turnText) {
+                turnText.innerText = `${turn + 1}/${questionsLen}번 · 제출 ${done}/${total} · ${sec}초`;
+            }
         }
 
         window.renderQuizBankAdmin = function() {
@@ -21844,23 +21917,37 @@ ${subjectLine}
             await window.customAlert('문제 은행을 비웠습니다.');
         };
 
-        async function tryAdvanceRaidTurn() {
+        async function tryAdvanceRaidTurn(opts = {}) {
             if(window._raidResolving) return;
             const st = window.currentRaidState;
             if(!st || st.status !== 'playing') return;
 
             const turn = st.currentTurn || 0;
             if(st.turnResolvedFor === turn) return;
-            if(!raidAllSubmittedForTurn(st, turn)) return;
+            const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? st.turnSubmissions[turn] : {};
+            const unanswered = quizRaidUnansweredIds(st.participants, turnSubs);
+            const timedOut = quizRaidTurnTimedOut(st.turnStartTime);
+            const force = !!(opts && opts.force);
+            if (!shouldAdvanceQuizRaidTurn({ unansweredCount: unanswered.length, timedOut, force })) return;
 
             window._raidResolving = true;
             try {
                 const questionsLen = (st.questions && st.questions.length) ? st.questions.length : 0;
                 const nextTurn = turn + 1;
                 const isLast = questionsLen > 0 ? nextTurn >= questionsLen : true;
+                const skipFields = buildQuizRaidSkipFields(turn, unanswered);
+                const skipNames = unanswered.map((id) => {
+                    const p = (st.participants || []).find((x) => String(x.id) === String(id));
+                    return (p && p.name) || id;
+                });
 
                 const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
-                newLogs.push(`✅ ${turn + 1}번 문제 제출 완료`);
+                if (unanswered.length) {
+                    const why = force ? '선생님이 넘김' : (timedOut ? '시간 초과' : '미제출');
+                    newLogs.push(`⏭️ ${turn + 1}번 ${why}: ${skipNames.join(', ')}`);
+                } else {
+                    newLogs.push(`✅ ${turn + 1}번 문제 제출 완료`);
+                }
                 if(isLast) newLogs.push('✅ 퀴즈 레이드 완료!');
 
                 if(isLast) {
@@ -21874,7 +21961,8 @@ ${subjectLine}
                         completedAt: Date.now(),
                         completionSessionId: st.startTime || null,
                         rewardsGivenFor: null,
-                        logs: newLogs
+                        logs: newLogs,
+                        ...skipFields
                     }, { merge: true });
                 } else {
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
@@ -21882,13 +21970,25 @@ ${subjectLine}
                         turnStartTime: Date.now(),
                         turnResolvedFor: turn,
                         logs: newLogs,
-                        [`turnSubmissions.${nextTurn}`]: {}
+                        [`turnSubmissions.${nextTurn}`]: {},
+                        ...skipFields
                     }, { merge: true });
                 }
             } finally {
                 window._raidResolving = false;
             }
         }
+
+        window.skipQuizRaidTurn = async function() {
+            if (!window.playerState || (!window.playerState.isGM && !window.playerState.isAdmin)) {
+                return window.customAlert('선생님만 문제를 넘길 수 있어요.');
+            }
+            const st = window.currentRaidState;
+            if (!st || st.status !== 'playing') return window.customAlert('진행 중인 퀴즈가 없어요.');
+            const ok = await window.customConfirm('아직 안 낸 학생은 오답 처리하고 다음 문제로 갈까요?');
+            if (!ok) return;
+            await tryAdvanceRaidTurn({ force: true });
+        };
 
         window.maybeDistributeRaidRewards = async function(st) {
             if(!st || st.status !== 'waiting' || st.raidResult !== 'success') return;
@@ -22186,11 +22286,19 @@ ${subjectLine}
         };
 
         async function recordQuizRaidAnswer(st, q, answer) {
-            const turn = st.currentTurn || 0;
+            if (isQuizRaidSkipAnswer(answer)) return;
+            const live = window.currentRaidState || st;
+            if (!live || live.status !== 'playing') return;
+            const turn = live.currentTurn || 0;
+            if ((st.currentTurn || 0) !== turn) return;
+            if (live.turnResolvedFor === turn) return;
             const myId = String(window.playerState.id);
+            const turnSubsAll = live.turnSubmissions || {};
+            const turnSubs = turnSubsAll[turn] || {};
+            if (turnSubs[myId] !== undefined) return;
             const isCorrect = gradeQuizRaidAnswer(q, answer);
-            const pName = (st.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
-            const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
+            const pName = (live.participants || []).find(p => String(p.id) === myId)?.name || STUDENT_NAMES[myId] || myId;
+            const newLogs = Array.isArray(live.logs) ? [...live.logs] : [];
             newLogs.push(`${pName}: ${isCorrect ? '정답' : '오답'}`);
 
             const stored = (q && q.type === 'mc') ? parseInt(answer, 10) : String(answer);
@@ -22201,16 +22309,32 @@ ${subjectLine}
             if(isCorrect) {
                 updatePayload[`scoreBy.${myId}`] = increment(1);
             }
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), updatePayload, { merge: true });
+            const raidRef = doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state');
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(raidRef);
+                    const cur = snap.exists() ? snap.data() : null;
+                    if (!cur || cur.status !== 'playing') throw new Error('raid_closed');
+                    if ((cur.currentTurn || 0) !== turn) throw new Error('raid_moved');
+                    if (cur.turnResolvedFor === turn) throw new Error('raid_moved');
+                    const already = ((cur.turnSubmissions && cur.turnSubmissions[turn]) || {})[myId];
+                    if (already !== undefined) throw new Error('already');
+                    transaction.set(raidRef, updatePayload, { merge: true });
+                });
+            } catch (e) {
+                const msg = e && e.message ? String(e.message) : '';
+                if (msg === 'raid_moved' || msg === 'already' || msg === 'raid_closed') return;
+                throw e;
+            }
 
             // 스냅샷이 오기 전에 전원 제출 여부를 판단할 수 있게 로컬 상태를 먼저 맞춘다
-            const nextSubs = { ...((st.turnSubmissions && st.turnSubmissions[turn]) || {}), [myId]: stored };
-            const nextScore = { ...((st.scoreBy && typeof st.scoreBy === 'object') ? st.scoreBy : {}) };
+            const nextSubs = { ...((live.turnSubmissions && live.turnSubmissions[turn]) || {}), [myId]: stored };
+            const nextScore = { ...((live.scoreBy && typeof live.scoreBy === 'object') ? live.scoreBy : {}) };
             if (isCorrect) nextScore[myId] = (Number(nextScore[myId]) || 0) + 1;
             window.currentRaidState = {
-                ...st,
+                ...live,
                 logs: newLogs,
-                turnSubmissions: { ...(st.turnSubmissions || {}), [turn]: nextSubs },
+                turnSubmissions: { ...(live.turnSubmissions || {}), [turn]: nextSubs },
                 scoreBy: nextScore,
             };
 
@@ -22313,14 +22437,38 @@ ${subjectLine}
                 window._raidSpectateActive = false;
             }
 
-            if(window.raidTimerInterval) {
-                clearInterval(window.raidTimerInterval);
-                window.raidTimerInterval = null;
-            }
-            window._raidTurnStartInitKey = null;
-
             if(st.status === 'playing') {
+                if(st.turnStartTime == null || Number(st.turnStartTime) <= 0) {
+                    const key = `${st.startTime || 0}_${st.currentTurn || 0}`;
+                    if(window._raidTurnStartInitKey !== key) {
+                        window._raidTurnStartInitKey = key;
+                        (async () => {
+                            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
+                                turnStartTime: Date.now(),
+                            }, { merge: true });
+                        })().catch((e) => console.error('raid turn start init', e));
+                    }
+                }
+                if(!window.raidTimerInterval) {
+                    window.raidTimerInterval = setInterval(() => {
+                        const st2 = window.currentRaidState;
+                        if(!st2 || st2.status !== 'playing') {
+                            if(window.raidTimerInterval) clearInterval(window.raidTimerInterval);
+                            window.raidTimerInterval = null;
+                            return;
+                        }
+                        renderRaidTimerUI();
+                        void tryAdvanceRaidTurn();
+                    }, 500);
+                }
+                renderRaidTimerUI();
                 void tryAdvanceRaidTurn();
+            } else {
+                if(window.raidTimerInterval) {
+                    clearInterval(window.raidTimerInterval);
+                    window.raidTimerInterval = null;
+                }
+                window._raidTurnStartInitKey = null;
             }
 
             // 보상 지급 + 풀이 기록 공지 (레이드 종료 시 1회)
@@ -22361,7 +22509,6 @@ ${subjectLine}
             const spectatorLabel = document.getElementById('raidSpectatorLabel');
             const optGroup = document.getElementById('raidMultipleChoiceGroup');
             const shortGroup = document.getElementById('raidShortAnswerGroup');
-            const timerContainer = document.getElementById('raidTimerBarContainer');
             const feedback = document.getElementById('raidAnswerFeedback');
 
             const hpBar = document.getElementById('raidBossHPBar');
@@ -22385,9 +22532,12 @@ ${subjectLine}
                 const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? st.turnSubmissions[turn] : {};
                 const scoreBy = (st.scoreBy && typeof st.scoreBy === 'object') ? st.scoreBy : {};
                 plist.innerHTML = st.participants.map(p => {
-                    const done = turnSubs[String(p.id)] !== undefined;
+                    const rawAns = turnSubs[String(p.id)];
+                    const skipped = isQuizRaidSkipAnswer(rawAns);
+                    const done = rawAns !== undefined;
                     const score = Number(scoreBy[String(p.id)]) || 0;
-                    return `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name} <span class="text-purple-300">${score}점</span>${done ? ' <span class="text-emerald-400">제출</span>' : ''}</div>`;
+                    const mark = skipped ? ' <span class="text-amber-300">미제출</span>' : (done ? ' <span class="text-emerald-400">제출</span>' : '');
+                    return `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name} <span class="text-purple-300">${score}점</span>${mark}</div>`;
                 }).join('');
             }
 
@@ -22397,7 +22547,9 @@ ${subjectLine}
             if(giveUpBtn) giveUpBtn.classList.toggle('hidden', !isParticipant);
             if(exitBtn) exitBtn.classList.remove('hidden');
             if(spectatorLabel) spectatorLabel.classList.toggle('hidden', !isSpectator);
-            if(timerContainer) timerContainer.classList.add('hidden');
+            const skipBtn = document.getElementById('btnSkipQuizRaidTurn');
+            const canSkip = st.status === 'playing' && window.playerState && (window.playerState.isGM || window.playerState.isAdmin);
+            if (skipBtn) skipBtn.classList.toggle('hidden', !canSkip);
 
             const turnText = document.getElementById('raidTurnText');
             const qText = document.getElementById('raidQuestionText');
@@ -22405,6 +22557,8 @@ ${subjectLine}
             if(st.status !== 'playing') {
                 if(optGroup) optGroup.classList.add('hidden');
                 if(shortGroup) shortGroup.classList.add('hidden');
+                const skipBtnWait = document.getElementById('btnSkipQuizRaidTurn');
+                if (skipBtnWait) skipBtnWait.classList.add('hidden');
                 if(turnText) {
                     if(st.status === 'recruiting') turnText.innerText = '용사 모집 중';
                     else if(st.raidResult === 'success') turnText.innerText = '퀴즈 완료!';

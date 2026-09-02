@@ -6,11 +6,14 @@ import {
     QUIZ_BANK_MAX,
     QUIZ_RAID_DEFAULT_COUNT,
     QUIZ_RAID_MAX_COUNT,
+    QUIZ_RAID_SKIP_SENTINEL,
+    QUIZ_RAID_TURN_MS,
     buildQuizBankTemplateWorkbook,
     computeQuizRaidReward,
     countQuizBankBySource,
     fillGoldenBellSlotsFromBank,
     gradeQuizRaidAnswer,
+    isQuizRaidSkipAnswer,
     mergeQuizBank,
     normalizeQuizAnswer,
     parseQuizBankAoa,
@@ -20,7 +23,11 @@ import {
     questionFromLegacyRaid,
     questionFromSpeedQuiz,
     quizBankTemplateExampleRows,
+    quizRaidTurnRemainingMs,
+    quizRaidTurnTimedOut,
+    quizRaidUnansweredIds,
     sanitizeQuizBank,
+    shouldAdvanceQuizRaidTurn,
     toRaidSessionQuestion,
 } from './quizBank.js';
 
@@ -159,6 +166,24 @@ describe('퀴즈 레이드 출제·채점', () => {
         });
         assert.equal(armed.xp, 100);
         assert.equal(armed.bong, 16);
+    });
+
+    it('미제출은 오답이고, 전원 제출·시간 초과·넘기기면 다음으로 간다', () => {
+        assert.equal(isQuizRaidSkipAnswer(QUIZ_RAID_SKIP_SENTINEL), true);
+        assert.equal(gradeQuizRaidAnswer({ type: 'short', a: '서울' }, QUIZ_RAID_SKIP_SENTINEL), false);
+        assert.equal(quizRaidTurnTimedOut(0, 99999, QUIZ_RAID_TURN_MS), false);
+        assert.equal(quizRaidTurnRemainingMs(1000, 1000 + 10000, 40000), 30000);
+        assert.equal(quizRaidTurnTimedOut(1000, 1000 + 40000, 40000), true);
+        const unanswered = quizRaidUnansweredIds(
+            [{ id: '1' }, { id: '2' }, { id: 3 }],
+            { 1: 0, 3: QUIZ_RAID_SKIP_SENTINEL },
+        );
+        assert.deepEqual(unanswered, ['2']);
+        assert.equal(shouldAdvanceQuizRaidTurn({ unansweredCount: 1, timedOut: false, force: false }), false);
+        assert.equal(shouldAdvanceQuizRaidTurn({ unansweredCount: 1, timedOut: true }), true);
+        assert.equal(shouldAdvanceQuizRaidTurn({ unansweredCount: 1, force: true }), true);
+        assert.equal(shouldAdvanceQuizRaidTurn({ unansweredCount: 0 }), true);
+        assert.equal(QUIZ_RAID_TURN_MS, 40000);
     });
 
     it('골든벨 입력칸은 앞에서 10문항만 채운다', () => {

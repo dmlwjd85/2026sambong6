@@ -115,7 +115,7 @@ export function sanitizeReadingLog(raw, nowMs = Date.now()) {
         quote: clipText(src.quote, LITERATURE_QUOTE_MAX),
         thought: clipMultiline(src.thought, LITERATURE_THOUGHT_MAX),
         status,
-        teacherNote: clipText(src.teacherNote, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNote: clipMultiline(src.teacherNote, LITERATURE_TEACHER_NOTE_MAX),
         rewardXp: clampInt(src.rewardXp, 0, LITERATURE_REWARD_XP_MAX, 0),
         rewardBong: clampInt(src.rewardBong, 0, LITERATURE_REWARD_BONG_MAX, 0),
         rewarded: src.rewarded === true,
@@ -160,7 +160,7 @@ export function applyReadingLogReview(log, action, note, rewards, nowMs = Date.n
     const cur = sanitizeReadingLog(log, nowMs);
     if (cur.status !== 'pending') return { skip: true, log: cur, grantXp: 0, grantBong: 0 };
     const pay = sanitizeLiteratureRewards(rewards);
-    const next = { ...cur, teacherNote: clipText(note, LITERATURE_TEACHER_NOTE_MAX), reviewedAt: nowMs };
+    const next = { ...cur, teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX), reviewedAt: nowMs };
     if (action === 'reject') {
         return { skip: false, log: { ...next, status: 'rejected' }, grantXp: 0, grantBong: 0 };
     }
@@ -234,7 +234,7 @@ export function sanitizeDiaryEntry(raw, nowMs = Date.now()) {
         strokes: sanitizeDiaryStrokes(src.strokes),
         updatedAt,
         submittedAt: Number.isFinite(Number(src.submittedAt)) ? Number(src.submittedAt) : updatedAt,
-        teacherNote: clipText(src.teacherNote, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNote: clipMultiline(src.teacherNote, LITERATURE_TEACHER_NOTE_MAX),
         teacherNoteAt: Number.isFinite(Number(src.teacherNoteAt)) ? Number(src.teacherNoteAt) : 0,
         status,
         rewardXp: clampInt(src.rewardXp, 0, LITERATURE_REWARD_XP_MAX, 0),
@@ -292,7 +292,7 @@ export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now(
     const pay = sanitizeLiteratureRewards(rewards);
     const next = {
         ...cur,
-        teacherNote: clipText(note, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX),
         teacherNoteAt: nowMs,
         reviewedAt: nowMs,
     };
@@ -313,6 +313,22 @@ export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now(
     };
 }
 
+/** 학생 저장본에서 선생님 한마디 필드를 빼, 덮어쓰지 않게 합니다. */
+export function stripTeacherNoteForStudentWrite(raw) {
+    const src = raw && typeof raw === 'object' ? { ...raw } : {};
+    delete src.teacherNote;
+    delete src.teacherNoteAt;
+    return src;
+}
+
+/** 선생님 한마디만 고친 패치. 본문·상태는 건드리지 않습니다. */
+export function teacherNoteOnlyPatch(note, nowMs = Date.now()) {
+    return {
+        teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNoteAt: nowMs,
+    };
+}
+
 /** 이미 확인한 일기에 한마디만 고칩니다. 보상은 건드리지 않습니다. */
 export function applyDiaryTeacherNote(entry, note, nowMs = Date.now()) {
     const cur = sanitizeDiaryEntry(entry, nowMs);
@@ -321,7 +337,7 @@ export function applyDiaryTeacherNote(entry, note, nowMs = Date.now()) {
         skip: false,
         entry: {
             ...cur,
-            teacherNote: clipText(note, LITERATURE_TEACHER_NOTE_MAX),
+            teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX),
             teacherNoteAt: nowMs,
         },
     };
@@ -360,4 +376,54 @@ export function readingLogStatusLabel(status) {
 
 export function diaryStatusLabel(status) {
     return readingLogStatusLabel(status);
+}
+
+/** 문학 한마디 입력칸. 다시 그려도 초안을 되살리기 위해 씁니다. */
+export const LITERATURE_NOTE_INPUT_SELECTOR = [
+    '#diaryTeacherNoteInput',
+    'input[id^="reviewNote_"]',
+    'input[id^="diaryReviewNote_"]',
+    'input[id^="diaryPastNote_"]',
+    'textarea[id^="reviewNote_"]',
+    'textarea[id^="diaryReviewNote_"]',
+    'textarea[id^="diaryPastNote_"]',
+].join(',');
+
+export function captureLiteratureNoteDrafts(root, activeEl) {
+    const drafts = {};
+    let focus = null;
+    if (!root || typeof root.querySelectorAll !== 'function') return { drafts, focus };
+    root.querySelectorAll(LITERATURE_NOTE_INPUT_SELECTOR).forEach((el) => {
+        if (!el || !el.id) return;
+        drafts[el.id] = String(el.value == null ? '' : el.value);
+        if (activeEl === el) {
+            focus = {
+                id: el.id,
+                start: el.selectionStart,
+                end: el.selectionEnd,
+            };
+        }
+    });
+    return { drafts, focus };
+}
+
+export function restoreLiteratureNoteDrafts(root, captured) {
+    const cap = captured && typeof captured === 'object' ? captured : {};
+    const drafts = cap.drafts && typeof cap.drafts === 'object' ? cap.drafts : {};
+    if (!root || typeof root.getElementById !== 'function') return;
+    Object.keys(drafts).forEach((id) => {
+        const el = root.getElementById(id);
+        if (!el) return;
+        el.value = drafts[id];
+    });
+    if (cap.focus && cap.focus.id) {
+        const el = root.getElementById(cap.focus.id);
+        if (!el || typeof el.focus !== 'function') return;
+        el.focus();
+        try {
+            if (typeof el.setSelectionRange === 'function' && cap.focus.start != null) {
+                el.setSelectionRange(cap.focus.start, cap.focus.end);
+            }
+        } catch (e) { /* 입력칸이 아니면 무시 */ }
+    }
 }

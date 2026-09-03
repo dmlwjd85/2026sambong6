@@ -6,6 +6,10 @@ import {
     applyDiaryReview,
     applyDiaryTeacherNote,
     applyReadingLogReview,
+    captureLiteratureNoteDrafts,
+    restoreLiteratureNoteDrafts,
+    stripTeacherNoteForStudentWrite,
+    teacherNoteOnlyPatch,
     canApproveDiary,
     canApproveReadingLog,
     canViewDiary,
@@ -152,5 +156,46 @@ describe('일기장', () => {
         assert.match(literatureArrivalMessage(counts), /독서기록 1건/);
         assert.match(literatureArrivalMessage(counts), /일기 1건/);
         assert.equal(literatureArrivalMessage({ reading: 0, diary: 0 }), '');
+    });
+
+    it('학생 저장은 선생님 한마디를 덮지 않고, 다시 그려도 입력 중인 한마디를 되살린다', () => {
+        const entry = sanitizeDiaryEntry({
+            studentId: '12',
+            date: '2026-09-02',
+            body: '오늘 하루',
+            teacherNote: '잘 썼어요',
+            teacherNoteAt: 5,
+        });
+        const stripped = stripTeacherNoteForStudentWrite({ ...entry, body: '고친 일기' });
+        assert.equal('teacherNote' in stripped, false);
+        assert.equal('teacherNoteAt' in stripped, false);
+        assert.equal(stripped.body, '고친 일기');
+        const patch = teacherNoteOnlyPatch('나중에 고침', 9);
+        assert.equal(patch.teacherNote, '나중에 고침');
+        assert.equal(patch.teacherNoteAt, 9);
+        assert.deepEqual(Object.keys(patch).sort(), ['teacherNote', 'teacherNoteAt']);
+        const inputs = {
+            diaryTeacherNoteInput: {
+                id: 'diaryTeacherNoteInput',
+                value: '잘 썼어요',
+                selectionStart: 2,
+                selectionEnd: 2,
+                focused: false,
+                focus() { this.focused = true; },
+                setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; },
+            },
+            reviewNote_r1: { id: 'reviewNote_r1', value: '확인 한마디' },
+        };
+        const root = {
+            querySelectorAll() { return [inputs.diaryTeacherNoteInput, inputs.reviewNote_r1]; },
+            getElementById(id) { return inputs[id] || null; },
+        };
+        const cap = captureLiteratureNoteDrafts(root, inputs.diaryTeacherNoteInput);
+        inputs.diaryTeacherNoteInput.value = '';
+        inputs.reviewNote_r1.value = '';
+        restoreLiteratureNoteDrafts(root, cap);
+        assert.equal(inputs.diaryTeacherNoteInput.value, '잘 썼어요');
+        assert.equal(inputs.reviewNote_r1.value, '확인 한마디');
+        assert.equal(inputs.diaryTeacherNoteInput.focused, true);
     });
 });

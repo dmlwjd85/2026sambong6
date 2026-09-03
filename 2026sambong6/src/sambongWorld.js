@@ -195,6 +195,7 @@ import {
     applyReadingLogReview,
     canApproveDiary,
     canApproveReadingLog,
+    captureLiteratureNoteDrafts,
     countApprovedReadingLogs,
     diariesVisibleTo,
     diaryDocId,
@@ -211,9 +212,12 @@ import {
     readingLogStatusLabel,
     readingLogSubmitState,
     READING_GENRES,
+    restoreLiteratureNoteDrafts,
     sanitizeDiaryEntry,
     sanitizeLiteratureRewards,
     sanitizeReadingLog,
+    stripTeacherNoteForStudentWrite,
+    teacherNoteOnlyPatch,
     validateDiaryDraft,
     validateReadingLogDraft,
     weatherMeta,
@@ -8159,6 +8163,7 @@ ${subjectLine}
         };
 
         window.renderLiteratureDiaryPane = function() {
+            const noteDrafts = captureLiteratureNoteDrafts(document, document.activeElement);
             bindDiaryCanvas();
             window.setDiaryInk(_diaryInk);
             renderReadingChips();
@@ -8265,6 +8270,7 @@ ${subjectLine}
                     }).join('');
                 }
             }
+            restoreLiteratureNoteDrafts(document, noteDrafts);
         };
 
         window.setDiaryWeather = function(id) {
@@ -8291,6 +8297,7 @@ ${subjectLine}
         };
 
         window.renderLiteratureReviewPane = function() {
+            const noteDrafts = captureLiteratureNoteDrafts(document, document.activeElement);
             const box = document.getElementById('readingReviewList');
             const diaryBox = document.getElementById('diaryReviewList');
             const pending = pendingReadingLogs(_readingLogs);
@@ -8346,6 +8353,7 @@ ${subjectLine}
                     });
                 }
             }
+            restoreLiteratureNoteDrafts(document, noteDrafts);
         };
 
         window.renderLiteratureRewardPane = function() {
@@ -8363,12 +8371,16 @@ ${subjectLine}
         window.renderLiterature = function() {
             bindLiteratureListeners();
             syncLiteratureDock();
+            syncLiteraturePendingBadge();
+            const sec = document.getElementById('literatureSection');
+            if (sec && sec.classList.contains('hidden')) return;
+            const noteDrafts = captureLiteratureNoteDrafts(document, document.activeElement);
             const pane = innerPaneState.literature || 'reading';
             if (pane === 'reading') window.renderLiteratureReadingPane();
             if (pane === 'diary') window.renderLiteratureDiaryPane();
             if (pane === 'review') window.renderLiteratureReviewPane();
             if (pane === 'reward') window.renderLiteratureRewardPane();
-            syncLiteraturePendingBadge();
+            restoreLiteratureNoteDrafts(document, noteDrafts);
         };
 
         window.submitReadingLog = async function() {
@@ -8410,7 +8422,11 @@ ${subjectLine}
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
             try {
                 await runWithNetworkRetry(async () => {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', checked.log.id || readingLogDocId(sid, today)), checked.log, { merge: true });
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', checked.log.id || readingLogDocId(sid, today)),
+                        stripTeacherNoteForStudentWrite(checked.log),
+                        { merge: true },
+                    );
                 }, '독서기록 제출');
                 window.showToast && window.showToast('독서기록을 제출했습니다. 선생님 확인을 기다려 주세요.');
             } catch (e) {
@@ -8553,7 +8569,11 @@ ${subjectLine}
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
             try {
                 await runWithNetworkRetry(async () => {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', checked.entry.id || diaryDocId(sid, today)), checked.entry, { merge: true });
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'diaries', checked.entry.id || diaryDocId(sid, today)),
+                        stripTeacherNoteForStudentWrite(checked.entry),
+                        { merge: true },
+                    );
                 }, '일기 저장');
                 window.showToast && window.showToast(keepReview ? '확인된 일기를 고쳐서 저장했습니다.' : '오늘의 일기를 저장했습니다. 선생님 확인을 기다려 주세요.');
             } catch (e) {
@@ -8575,7 +8595,11 @@ ${subjectLine}
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
             try {
                 await runWithNetworkRetry(async () => {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id), reviewed.entry, { merge: true });
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id),
+                        teacherNoteOnlyPatch(reviewed.entry.teacherNote, reviewed.entry.teacherNoteAt),
+                        { merge: true },
+                    );
                 }, '일기 한마디');
                 window.showToast && window.showToast('한마디를 저장했습니다.');
             } catch (e) {
@@ -8599,7 +8623,11 @@ ${subjectLine}
             if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
             try {
                 await runWithNetworkRetry(async () => {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id), reviewed.entry, { merge: true });
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'diaries', entry.id),
+                        teacherNoteOnlyPatch(reviewed.entry.teacherNote, reviewed.entry.teacherNoteAt),
+                        { merge: true },
+                    );
                 }, '일기 한마디');
                 window.showToast && window.showToast('한마디를 저장했습니다.');
             } catch (e) {

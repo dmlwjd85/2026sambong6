@@ -3055,3 +3055,60 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             background: #082f49;
             border-color: #38bdf8;
         }
+
+        /* 직업 GM 관리 — 아이콘·색을 눈으로 고르기 */
+        .gm-job-icon-grid,
+        .gm-job-color-grid {
+            display: grid;
+            gap: 0.35rem;
+            max-height: 11.5rem;
+            overflow-y: auto;
+            padding: 0.4rem;
+            border-radius: 0.75rem;
+            border: 1px solid #334155;
+            background: rgba(2, 6, 23, 0.65);
+        }
+        .gm-job-icon-grid {
+            grid-template-columns: repeat(auto-fill, minmax(2.35rem, 1fr));
+        }
+        .gm-job-color-grid {
+            grid-template-columns: repeat(auto-fill, minmax(2.15rem, 1fr));
+        }
+        .gm-job-icon-btn,
+        .gm-job-color-btn {
+            width: 100%;
+            aspect-ratio: 1;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.65rem;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: #e2e8f0;
+            cursor: pointer;
+            transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+        }
+        .gm-job-icon-btn:hover:not(:disabled),
+        .gm-job-color-btn:hover:not(:disabled) {
+            transform: scale(1.06);
+            border-color: #93c5fd;
+        }
+        .gm-job-icon-btn.is-selected,
+        .gm-job-color-btn.is-selected {
+            border-color: #facc15;
+            box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.45);
+            background: #1e293b;
+        }
+        .gm-job-icon-btn:disabled,
+        .gm-job-color-btn:disabled {
+            opacity: 0.32;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .gm-job-color-btn .gm-job-color-swatch {
+            width: 1.15rem;
+            height: 1.15rem;
+            border-radius: 999px;
+            background: currentColor;
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
+        }

@@ -1517,25 +1517,28 @@
             <div class="inner-pane hidden" data-pane-group="jobs" data-pane="gm">
             <div id="gmJobManagePanel" class="hidden glass-panel p-4 rounded-xl mt-4 border border-blue-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-briefcase text-blue-300"></i> 직업 항목 관리</h3>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 직업은 숨김/복구 또는 수정할 수 있고, 추가 직업은 삭제할 수 있습니다. 이미 선택한 학생의 직업 기록은 그대로 유지됩니다.</p>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">기본 직업은 숨김/복구 또는 수정할 수 있고, 추가 직업은 삭제할 수 있습니다. 이미 선택한 학생의 직업 기록은 그대로 유지됩니다. 아이콘 모양과 색은 다른 직업과 겹치지 않게 고르세요.</p>
                 <div id="gmJobManageList" class="max-h-52 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 p-2 mb-3 text-[10px] space-y-1"></div>
                 <input type="hidden" id="gmJobEditId" value="" />
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                     <input type="text" id="gmJobName" placeholder="직업 이름" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                     <input type="text" id="gmJobSub" placeholder="부제 (예: 학급회장)" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
                     <input type="text" id="gmJobDesc" placeholder="설명" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
-                    <input type="number" id="gmJobPay" min="0" step="1" placeholder="주급 B" data-currency-placeholder="주급 {u}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <input type="text" id="gmJobIcon" placeholder="아이콘 예: fa-star" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                    <select id="gmJobColor" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
-                        <option value="text-blue-400">파랑</option>
-                        <option value="text-emerald-400">초록</option>
-                        <option value="text-yellow-300">노랑</option>
-                        <option value="text-purple-400">보라</option>
-                        <option value="text-pink-400">분홍</option>
-                        <option value="text-orange-400">주황</option>
-                        <option value="text-slate-400">회색</option>
-                    </select>
+                    <input type="number" id="gmJobPay" min="0" step="1" placeholder="주급 B" data-currency-placeholder="주급 {u}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold sm:col-span-2" />
                 </div>
+                <div class="gm-job-look-preview mb-2 flex items-center gap-3 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2">
+                    <i id="gmJobLookPreviewIcon" class="fa-solid fa-star text-2xl text-blue-500 w-8 text-center"></i>
+                    <div class="min-w-0">
+                        <div class="text-[10px] text-slate-200 font-bold">선택한 모습</div>
+                        <div id="gmJobLookPreviewLabel" class="text-[9px] text-slate-400 truncate">아래에서 아이콘과 색을 고르세요</div>
+                    </div>
+                </div>
+                <input type="hidden" id="gmJobIcon" value="" />
+                <input type="hidden" id="gmJobColor" value="" />
+                <p class="text-[9px] text-slate-400 mb-1">아이콘 · 흐린 칸은 다른 직업이 쓰는 모양입니다</p>
+                <div id="gmJobIconGrid" class="gm-job-icon-grid mb-2" role="listbox" aria-label="직업 아이콘"></div>
+                <p class="text-[9px] text-slate-400 mb-1">색 · 흐린 칸은 다른 직업이 쓰는 색입니다</p>
+                <div id="gmJobColorGrid" class="gm-job-color-grid mb-3" role="listbox" aria-label="직업 색"></div>
                 <div class="flex flex-col sm:flex-row gap-2">
                     <button type="button" onclick="window.saveJobAdmin()" class="flex-1 bg-blue-700 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]">직업 추가/수정 저장</button>
                     <button type="button" onclick="window.clearJobAdminForm()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-4 rounded-xl text-[10px]">입력칸 비우기</button>

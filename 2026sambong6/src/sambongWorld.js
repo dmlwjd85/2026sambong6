@@ -257,6 +257,19 @@ import {
     sanitizeStatusMessage,
     sanitizeUnlockedFeatures,
 } from './lib/featureUnlock.js';
+import {
+    jobColorChoicesForPicker,
+    jobColorLabel,
+    jobIconChoicesForPicker,
+    jobIconLabel,
+    jobLookConflict,
+    jobLookConflictMessage,
+    jobLooksInUse,
+    lookForDefaultJob,
+    normalizeJobColor,
+    normalizeJobIcon,
+    pickUnusedJobLook,
+} from './lib/jobs.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -1740,23 +1753,23 @@ function redrawPlazaGrantsUi() {
         }
 
         const JOB_DATA = [
-            { id: 'job_sp', name: '학생회 연합대장', sub: '(전교회장)', icon: 'fa-crown', color: 'text-amber-400', pay: 15, desc: '학교의 평화 리더', tags: ['#민주시민', '#협력'] },
-            { id: 'job_svp', name: '학생회 부대장', sub: '(전교부회장)', icon: 'fa-shield-cat', color: 'text-amber-200', pay: 12, desc: '학교의 든든한 방패', tags: ['#민주시민', '#협력'] },
-            { id: 'job1', name: '길드 마스터', sub: '(학급회장)', icon: 'fa-flag', color: 'text-yellow-300', pay: 12, desc: '길드 통솔, 회의 진행', tags: ['#민주시민', '#협력'] },
-            { id: 'job2', name: '길드 매니저', sub: '(학급부회장)', icon: 'fa-star-half-stroke', color: 'text-yellow-100', pay: 10, desc: '규칙 수호 및 보조', tags: ['#민주시민'] },
-            { id: 'job_vac', name: '블랙홀 마스터', sub: '(청소기)', icon: 'fa-wind', color: 'text-teal-400', pay: 8, desc: '강력한 흡입 마법', tags: ['#자기관리'] },
-            { id: 'job3', name: '심연의 청소부', sub: '(일반쓰레기)', icon: 'fa-trash-can', color: 'text-stone-400', pay: 7, desc: '일반 쓰레기 정화', tags: ['#자기관리'] },
-            { id: 'job4', name: '체력물약 보급관', sub: '(우유 배식)', icon: 'fa-glass-water', color: 'text-blue-400', pay: 6, desc: '매일 아침 우유 보급', tags: ['#협력'] },
-            { id: 'job5', name: '역사 기록관', sub: '(칠판 관리)', icon: 'fa-chalkboard', color: 'text-slate-400', pay: 5, desc: '칠판 지우기 및 정돈', tags: ['#자기관리'] },
-            { id: 'job6', name: '시스템 매니저', sub: '(기기 관리)', icon: 'fa-desktop', color: 'text-cyan-400', pay: 6, desc: '메인 서버/스크린 관리', tags: ['#디지털문해력'] },
-            { id: 'job7', name: '자원 연금술사', sub: '(분리수거)', icon: 'fa-recycle', color: 'text-sb-green', pay: 7, desc: '철저한 분리수거', tags: ['#자기관리'] },
-            { id: 'job8', name: '마나 충전소', sub: '(스마트패드)', icon: 'fa-tablet-screen-button', color: 'text-purple-400', pay: 6, desc: '패드 충전 및 정리', tags: ['#디지털문해력'] },
-            { id: 'job9', name: '빛의 파수꾼', sub: '(소등 관리)', icon: 'fa-lightbulb', color: 'text-yellow-400', pay: 5, desc: '교실 불 끄기 및 절전', tags: ['#자기관리'] },
-            { id: 'job10', name: '삼봉은행', sub: '(금융 관리)', icon: 'fa-piggy-bank', color: 'text-pink-400', pay: 6, desc: '화폐 관리 및 세금', tags: ['#경제교육'] },
-            { id: 'job11', name: '생명의 수호자', sub: '(식물/환기)', icon: 'fa-leaf', color: 'text-emerald-500', pay: 5, desc: '화분 물주기, 환기', tags: ['#자기관리'] },
-            { id: 'job12', name: '편의점 매니저', sub: '(비품 관리)', icon: 'fa-store', color: 'text-orange-400', pay: 6, desc: '상점 및 비품 정리', tags: ['#경제교육'] }
-            ,{ id: 'job_book', name: '마법서 관리관', sub: '(교과서 세팅)', icon: 'fa-book-skull', color: 'text-purple-300', pay: 6, desc: '선생님 교과서/자료 세팅 도우미', tags: ['#협력'] }
-            ,{ id: 'job_newbie', name: '뉴비 매니저', sub: '(전담 마크)', icon: 'fa-hand-holding-heart', color: 'text-pink-300', pay: 6, desc: '도움이 필요한 친구 전담 도우미', tags: ['#협력'] }
+            { id: 'job_sp', name: '학생회 연합대장', sub: '(전교회장)', pay: 15, desc: '학교의 평화 리더', tags: ['#민주시민', '#협력'], ...lookForDefaultJob('job_sp') },
+            { id: 'job_svp', name: '학생회 부대장', sub: '(전교부회장)', pay: 12, desc: '학교의 든든한 방패', tags: ['#민주시민', '#협력'], ...lookForDefaultJob('job_svp') },
+            { id: 'job1', name: '길드 마스터', sub: '(학급회장)', pay: 12, desc: '길드 통솔, 회의 진행', tags: ['#민주시민', '#협력'], ...lookForDefaultJob('job1') },
+            { id: 'job2', name: '길드 매니저', sub: '(학급부회장)', pay: 10, desc: '규칙 수호 및 보조', tags: ['#민주시민'], ...lookForDefaultJob('job2') },
+            { id: 'job_vac', name: '블랙홀 마스터', sub: '(청소기)', pay: 8, desc: '강력한 흡입 마법', tags: ['#자기관리'], ...lookForDefaultJob('job_vac') },
+            { id: 'job3', name: '심연의 청소부', sub: '(일반쓰레기)', pay: 7, desc: '일반 쓰레기 정화', tags: ['#자기관리'], ...lookForDefaultJob('job3') },
+            { id: 'job4', name: '체력물약 보급관', sub: '(우유 배식)', pay: 6, desc: '매일 아침 우유 보급', tags: ['#협력'], ...lookForDefaultJob('job4') },
+            { id: 'job5', name: '역사 기록관', sub: '(칠판 관리)', pay: 5, desc: '칠판 지우기 및 정돈', tags: ['#자기관리'], ...lookForDefaultJob('job5') },
+            { id: 'job6', name: '시스템 매니저', sub: '(기기 관리)', pay: 6, desc: '메인 서버/스크린 관리', tags: ['#디지털문해력'], ...lookForDefaultJob('job6') },
+            { id: 'job7', name: '자원 연금술사', sub: '(분리수거)', pay: 7, desc: '철저한 분리수거', tags: ['#자기관리'], ...lookForDefaultJob('job7') },
+            { id: 'job8', name: '마나 충전소', sub: '(스마트패드)', pay: 6, desc: '패드 충전 및 정리', tags: ['#디지털문해력'], ...lookForDefaultJob('job8') },
+            { id: 'job9', name: '빛의 파수꾼', sub: '(소등 관리)', pay: 5, desc: '교실 불 끄기 및 절전', tags: ['#자기관리'], ...lookForDefaultJob('job9') },
+            { id: 'job10', name: '삼봉은행', sub: '(금융 관리)', pay: 6, desc: '화폐 관리 및 세금', tags: ['#경제교육'], ...lookForDefaultJob('job10') },
+            { id: 'job11', name: '생명의 수호자', sub: '(식물/환기)', pay: 5, desc: '화분 물주기, 환기', tags: ['#자기관리'], ...lookForDefaultJob('job11') },
+            { id: 'job12', name: '편의점 매니저', sub: '(비품 관리)', pay: 6, desc: '상점 및 비품 정리', tags: ['#경제교육'], ...lookForDefaultJob('job12') },
+            { id: 'job_book', name: '마법서 관리관', sub: '(교과서 세팅)', pay: 6, desc: '선생님 교과서/자료 세팅 도우미', tags: ['#협력'], ...lookForDefaultJob('job_book') },
+            { id: 'job_newbie', name: '뉴비 매니저', sub: '(전담 마크)', pay: 6, desc: '도움이 필요한 친구 전담 도우미', tags: ['#협력'], ...lookForDefaultJob('job_newbie') },
         ];
 
         const DEFAULT_CURRICULUM_TAGS = ['#자기관리', '#협력', '#경제교육', '#디지털문해력', '#교과연계', '#민주시민'];
@@ -3599,8 +3612,8 @@ function redrawPlazaGrantsUi() {
                 id,
                 name,
                 sub: String(job && job.sub ? job.sub : '').trim(),
-                icon: String(job && job.icon ? job.icon : 'fa-star'),
-                color: String(job && job.color ? job.color : 'text-blue-400'),
+                icon: normalizeJobIcon(job && job.icon),
+                color: normalizeJobColor(job && job.color),
                 pay: Math.max(0, Math.floor(Number(job && job.pay) || 0)),
                 desc: String(job && job.desc ? job.desc : '').trim(),
                 custom: !!(job && job.custom),
@@ -13287,6 +13300,7 @@ ${subjectLine}
                     </div>
                 </div>`;
             }).join('') || '<div class="text-slate-500 text-center py-3">직업이 없습니다.</div>';
+            renderJobLookPicker();
         }
 
         function initDynamicContent() {
@@ -18414,13 +18428,80 @@ ${subjectLine}
             }
         };
 
+        function currentGmJobEditId() {
+            return String((document.getElementById('gmJobEditId') || {}).value || '').trim();
+        }
+
+        function setGmJobLookFormValues(icon, color) {
+            const iconEl = document.getElementById('gmJobIcon');
+            const colorEl = document.getElementById('gmJobColor');
+            if (iconEl) iconEl.value = normalizeJobIcon(icon);
+            if (colorEl) colorEl.value = normalizeJobColor(color);
+        }
+
+        /** 직업 추가/수정 화면에서 아이콘·색을 눈으로 고를 수 있게 그립니다. */
+        function renderJobLookPicker() {
+            const iconGrid = document.getElementById('gmJobIconGrid');
+            const colorGrid = document.getElementById('gmJobColorGrid');
+            if (!iconGrid || !colorGrid) return;
+            const exceptId = currentGmJobEditId();
+            const catalog = getJobCatalog();
+            const used = jobLooksInUse(catalog, exceptId);
+            let icon = String((document.getElementById('gmJobIcon') || {}).value || '').trim();
+            let color = String((document.getElementById('gmJobColor') || {}).value || '').trim();
+            if (!icon || !color) {
+                const pick = pickUnusedJobLook(catalog, exceptId);
+                if (!icon) icon = pick.icon;
+                if (!color) color = pick.color;
+            }
+            icon = normalizeJobIcon(icon);
+            color = normalizeJobColor(color);
+            setGmJobLookFormValues(icon, color);
+            const previewIcon = document.getElementById('gmJobLookPreviewIcon');
+            const previewLabel = document.getElementById('gmJobLookPreviewLabel');
+            if (previewIcon) previewIcon.className = `fa-solid ${icon} text-2xl ${color} w-8 text-center`;
+            if (previewLabel) previewLabel.textContent = `${jobIconLabel(icon)} · ${jobColorLabel(color)}`;
+            const attr = (value) => String(value).replace(/'/g, '');
+            iconGrid.innerHTML = jobIconChoicesForPicker(icon).map((item) => {
+                const taken = used.icons.has(item.class) && item.class !== icon;
+                const selected = item.class === icon;
+                const title = taken ? `${item.label} (다른 직업이 사용 중)` : item.label;
+                return `<button type="button" class="gm-job-icon-btn${selected ? ' is-selected' : ''}" ${taken ? 'disabled' : ''} title="${title}" aria-label="${title}" onclick="window.selectGmJobIcon('${attr(item.class)}')"><i class="fa-solid ${item.class}"></i></button>`;
+            }).join('');
+            colorGrid.innerHTML = jobColorChoicesForPicker(color).map((item) => {
+                const taken = used.colors.has(item.class) && item.class !== color;
+                const selected = item.class === color;
+                const title = taken ? `${item.label} (다른 직업이 사용 중)` : item.label;
+                return `<button type="button" class="gm-job-color-btn ${item.class}${selected ? ' is-selected' : ''}" ${taken ? 'disabled' : ''} title="${title}" aria-label="${title}" onclick="window.selectGmJobColor('${attr(item.class)}')"><span class="gm-job-color-swatch"></span></button>`;
+            }).join('');
+        }
+
+        window.selectGmJobIcon = function (icon) {
+            const exceptId = currentGmJobEditId();
+            const used = jobLooksInUse(getJobCatalog(), exceptId);
+            const next = normalizeJobIcon(icon);
+            const current = String((document.getElementById('gmJobIcon') || {}).value || '');
+            if (used.icons.has(next) && next !== current) return;
+            setGmJobLookFormValues(next, (document.getElementById('gmJobColor') || {}).value);
+            renderJobLookPicker();
+        };
+
+        window.selectGmJobColor = function (color) {
+            const exceptId = currentGmJobEditId();
+            const used = jobLooksInUse(getJobCatalog(), exceptId);
+            const next = normalizeJobColor(color);
+            const current = String((document.getElementById('gmJobColor') || {}).value || '');
+            if (used.colors.has(next) && next !== current) return;
+            setGmJobLookFormValues((document.getElementById('gmJobIcon') || {}).value, next);
+            renderJobLookPicker();
+        };
+
         window.clearJobAdminForm = function () {
-            ['gmJobEditId', 'gmJobName', 'gmJobSub', 'gmJobDesc', 'gmJobPay', 'gmJobIcon'].forEach((id) => {
+            ['gmJobEditId', 'gmJobName', 'gmJobSub', 'gmJobDesc', 'gmJobPay', 'gmJobIcon', 'gmJobColor'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) el.value = '';
             });
-            const colorEl = document.getElementById('gmJobColor');
-            if (colorEl) colorEl.value = 'text-blue-400';
+            renderJobLookPicker();
         };
 
         window.editJobAdmin = function (jobId) {
@@ -18442,6 +18523,7 @@ ${subjectLine}
             set('gmJobPay', job.pay);
             set('gmJobIcon', job.icon);
             set('gmJobColor', job.color);
+            renderJobLookPicker();
         };
 
         window.saveJobAdmin = async function () {
@@ -18452,9 +18534,11 @@ ${subjectLine}
             const subRaw = String((document.getElementById('gmJobSub') || {}).value || '').trim();
             const desc = String((document.getElementById('gmJobDesc') || {}).value || '').trim();
             const pay = Math.max(0, Math.floor(Number((document.getElementById('gmJobPay') || {}).value) || 0));
-            const icon = String((document.getElementById('gmJobIcon') || {}).value || 'fa-star').trim() || 'fa-star';
-            const color = String((document.getElementById('gmJobColor') || {}).value || 'text-blue-400');
+            const icon = normalizeJobIcon((document.getElementById('gmJobIcon') || {}).value);
+            const color = normalizeJobColor((document.getElementById('gmJobColor') || {}).value);
             if (!name) return await window.customAlert('직업 이름을 입력해 주세요.');
+            const lookConflict = jobLookConflict(getJobCatalog(), { icon, color, exceptId: editId });
+            if (lookConflict) return await window.customAlert(jobLookConflictMessage(lookConflict));
             const sub = subRaw ? (subRaw.startsWith('(') ? subRaw : `(${subRaw})`) : '';
             const base = editId ? JOB_DATA.find((j) => j.id === editId) : null;
             const custom = editId ? getCustomJobs().find((j) => j.id === editId) : null;

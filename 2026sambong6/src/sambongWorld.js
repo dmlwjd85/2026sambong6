@@ -270,6 +270,14 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
 } from './lib/jobs.js';
+import {
+    buildScreenNotice,
+    closeScreenNotice,
+    readDismissedScreenNoticeId,
+    sanitizeScreenNotice,
+    screenNoticeShouldShow,
+    writeDismissedScreenNoticeId,
+} from './lib/screenNotice.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -2644,7 +2652,7 @@ function redrawPlazaGrantsUi() {
                 const globalSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'));
                 if (globalSnap.exists()) {
                     const src = globalSnap.data();
-                    const { announcement, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
+                    const { announcement, screenNotice, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
                     await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
                         ...copySettings,
                         worldSettings: {
@@ -3225,7 +3233,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -8990,7 +8998,7 @@ ${subjectLine}
             vote: '학급투표',
             wheel: '돌림판',
             martial: '비상계엄',
-            morning: '아침안내',
+            morning: '아침·공지',
         };
 
         window.switchClassTool = function(toolId) {
@@ -13625,6 +13633,7 @@ ${subjectLine}
                                 if (morningNoticeEl && document.activeElement !== morningNoticeEl) {
                                     morningNoticeEl.value = window.globalSettings.morningActivityNotice || DEFAULT_MORNING_ACTIVITY_NOTICE;
                                 }
+                                applyRemoteScreenNotice(settingsData.screenNotice);
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);
@@ -14027,6 +14036,102 @@ ${subjectLine}
                 ? window.globalSettings.morningActivityNotice.trim()
                 : '';
             return raw || DEFAULT_MORNING_ACTIVITY_NOTICE;
+        }
+
+        function syncScreenNoticeInputs(notice) {
+            const text = notice && notice.text ? notice.text : '';
+            ['gmScreenNoticeInput', 'gmAdminScreenNoticeInput'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el && document.activeElement !== el && text) el.value = text;
+            });
+        }
+
+        function hideScreenNoticePopup() {
+            const el = document.getElementById('screenNoticePopup');
+            if (el) el.remove();
+        }
+
+        function showScreenNoticePopup(notice, options = {}) {
+            const n = sanitizeScreenNotice(notice);
+            if (!n.text) return;
+            const preview = !!options.preview;
+            const existing = document.getElementById('screenNoticePopup');
+            if (existing && existing.dataset.noticeId === n.id && !preview) return;
+            hideScreenNoticePopup();
+            const d = document.createElement('div');
+            d.id = 'screenNoticePopup';
+            d.dataset.noticeId = n.id || (preview ? 'preview' : '');
+            d.className = 'sambong-custom-modal fixed inset-0 flex items-center justify-center bg-black/80 px-4';
+            const bodyHtml = escapeConstitutionHtml(n.text).replace(/\n/g, '<br>');
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const remoteClear = (!preview && isAdmin)
+                ? '<button type="button" class="js-screen-notice-clear bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-500 font-bold py-2 px-6 rounded-full w-full">모든 화면에서 내리기</button>'
+                : '';
+            d.innerHTML = `
+                <div class="screen-notice-card p-6 sm:p-8 rounded-3xl max-w-3xl w-full text-center space-y-4">
+                    <p class="text-4xl sm:text-5xl leading-none">${n.source === 'morning' ? '📚' : '📢'}</p>
+                    <p class="text-[10px] sm:text-xs font-black tracking-[0.35em] text-sky-200">${preview ? 'PREVIEW' : 'NOTICE'}</p>
+                    <h3 class="text-2xl sm:text-4xl font-display text-white">${escapeHofText(n.title || '공지')}</h3>
+                    <p class="screen-notice-body text-left text-base sm:text-2xl font-black text-sky-50 leading-snug">${bodyHtml}</p>
+                    <p class="text-[10px] text-slate-400">${preview ? '이 기기에만 보이는 미리보기입니다' : '확인을 누르면 이 화면의 팝업만 닫힙니다'}</p>
+                    <button type="button" class="js-screen-notice-ok bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 px-8 rounded-full w-full">확인</button>
+                    ${remoteClear}
+                </div>`;
+            document.body.appendChild(d);
+            const ok = d.querySelector('.js-screen-notice-ok');
+            if (ok) {
+                ok.onclick = () => {
+                    if (!preview && n.id) writeDismissedScreenNoticeId(n.id);
+                    hideScreenNoticePopup();
+                };
+            }
+            const clearBtn = d.querySelector('.js-screen-notice-clear');
+            if (clearBtn) clearBtn.onclick = () => { void window.clearScreenNoticeRemote(); };
+            d.addEventListener('click', (ev) => {
+                if (ev.target !== d) return;
+                if (!preview && n.id) writeDismissedScreenNoticeId(n.id);
+                hideScreenNoticePopup();
+            });
+        }
+
+        /** Firestore 설정이 바뀌면 모든 화면에 공지 팝업을 맞춥니다. */
+        function applyRemoteScreenNotice(raw) {
+            const notice = sanitizeScreenNotice(raw);
+            if (window.globalSettings) window.globalSettings.screenNotice = notice;
+            syncScreenNoticeInputs(notice);
+            const showing = document.getElementById('screenNoticePopup');
+            if (!notice.active) {
+                if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
+                return;
+            }
+            const dismissed = readDismissedScreenNoticeId();
+            if (screenNoticeShouldShow(notice, dismissed)) {
+                showScreenNoticePopup(notice);
+            } else if (showing && showing.dataset.noticeId === notice.id) {
+                /* 이미 이 공지를 보고 있음 */
+            } else if (showing && showing.dataset.noticeId !== 'preview' && showing.dataset.noticeId !== notice.id) {
+                hideScreenNoticePopup();
+            }
+        }
+
+        async function publishScreenNoticePayload(payload) {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert(`${getMasterDisplayName()}만 공지를 띄울 수 있습니다.`);
+            }
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            if (!payload) return window.customAlert('공지 내용을 입력해 주세요.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { screenNotice: payload }, { merge: true });
+                window.globalSettings.screenNotice = payload;
+                writeDismissedScreenNoticeId('');
+                showScreenNoticePopup(payload);
+                await window.customAlert('모든 화면에 공지를 띄웠습니다.');
+            } catch (e) {
+                console.error('publishScreenNoticePayload', e);
+                await window.customAlert('공지 띄우기 실패: ' + (e && e.message ? e.message : String(e)));
+            }
         }
 
         function isMorningActivityTime(now = new Date()) {
@@ -20786,6 +20891,65 @@ ${subjectLine}
             window._morningActivityPreviewActive = false;
             window._morningActivityDismissed = true;
             window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+        };
+
+        window.postScreenNoticeFromInput = async function() {
+            const el = document.getElementById('gmScreenNoticeInput');
+            const payload = buildScreenNotice({ text: el ? el.value : '', source: 'notice', title: '공지' });
+            await publishScreenNoticePayload(payload);
+        };
+
+        window.postScreenNoticeFromAdmin = async function() {
+            const el = document.getElementById('gmAdminScreenNoticeInput');
+            const fallback = document.getElementById('gmAnnouncementInput');
+            const text = (el && el.value.trim()) || (fallback && fallback.value.trim()) || '';
+            const payload = buildScreenNotice({ text, source: 'notice', title: '공지' });
+            await publishScreenNoticePayload(payload);
+        };
+
+        window.postScreenNoticeFromMorning = async function() {
+            const el = document.getElementById('gmMorningActivityNoticeInput');
+            const payload = buildScreenNotice({
+                text: el && el.value.trim() ? el.value : getMorningActivityNoticeText(),
+                source: 'morning',
+                title: '아침안내',
+            });
+            await publishScreenNoticePayload(payload);
+        };
+
+        window.previewScreenNoticeFromInput = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const el = document.getElementById('gmScreenNoticeInput');
+            const payload = buildScreenNotice({ text: el ? el.value : '', source: 'notice', title: '공지' });
+            if (!payload) return window.customAlert('공지 내용을 입력해 주세요.');
+            showScreenNoticePopup(payload, { preview: true });
+        };
+
+        window.previewScreenNoticeFromAdmin = function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const el = document.getElementById('gmAdminScreenNoticeInput');
+            const fallback = document.getElementById('gmAnnouncementInput');
+            const text = (el && el.value.trim()) || (fallback && fallback.value.trim()) || '';
+            const payload = buildScreenNotice({ text, source: 'notice', title: '공지' });
+            if (!payload) return window.customAlert('공지 내용을 입력해 주세요.');
+            showScreenNoticePopup(payload, { preview: true });
+        };
+
+        window.clearScreenNoticeRemote = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const closed = closeScreenNotice(window.globalSettings && window.globalSettings.screenNotice);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { screenNotice: closed }, { merge: true });
+                window.globalSettings.screenNotice = closed;
+                hideScreenNoticePopup();
+                await window.customAlert('모든 화면에서 공지를 내렸습니다.');
+            } catch (e) {
+                console.error('clearScreenNoticeRemote', e);
+                await window.customAlert('공지 내리기 실패: ' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         // ==========================================

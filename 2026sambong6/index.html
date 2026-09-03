@@ -1918,7 +1918,7 @@
                 </button>
                 <button type="button" class="app-tool-item" data-tool="morning" onclick="window.switchClassTool('morning')">
                     <span class="app-tool-icon"><img src="nav/tool-morning.webp" alt="" width="192" height="192"></span>
-                    <span>아침안내</span>
+                    <span>아침·공지</span>
                 </button>
             </div>
 
@@ -2155,14 +2155,27 @@
                     </div>
                 </div>
 
-                <!-- 아침활동시간 안내 — 마스터 탭에서 이동 -->
-                <div class="classtool-pane hidden glass-panel p-4 rounded-xl border border-amber-500/50 bg-slate-900/80" data-tool="morning">
-                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-mug-hot text-amber-300"></i> 아침활동시간 안내</h3>
-                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">평일 오전 8시 40분이 되면 TV에 띄워 둔 광장 화면이 아침활동 안내 화면으로 자동 전환됩니다.</p>
-                    <textarea id="gmMorningActivityNoticeInput" rows="3" placeholder="예: 아침활동 시간입니다. 오늘의 책을 꺼내고 조용히 독서/과제를 시작하세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <button type="button" onclick="window.saveMorningActivityNotice()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded text-[10px]">안내 저장</button>
-                        <button type="button" onclick="window.previewMorningActivityNotice()" class="bg-slate-800 hover:bg-slate-700 text-amber-100 border border-amber-700/50 font-bold py-2 px-4 rounded text-[10px]">미리보기</button>
+                <!-- 아침활동시간 안내 + 원격 화면 공지 팝업 -->
+                <div class="classtool-pane hidden glass-panel p-4 rounded-xl border border-amber-500/50 bg-slate-900/80 space-y-4" data-tool="morning">
+                    <div>
+                        <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-mug-hot text-amber-300"></i> 아침활동시간 안내</h3>
+                        <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">평일 오전 8시 40분이 되면 TV에 띄워 둔 광장 화면이 아침활동 안내 화면으로 자동 전환됩니다. 「지금 팝업」을 누르면 8시 40분이 아니어도 모든 화면에 같은 안내가 팝업으로 뜹니다.</p>
+                        <textarea id="gmMorningActivityNoticeInput" rows="3" placeholder="예: 아침활동 시간입니다. 오늘의 책을 꺼내고 조용히 독서/과제를 시작하세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <button type="button" onclick="window.saveMorningActivityNotice()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded text-[10px]">안내 저장</button>
+                            <button type="button" onclick="window.previewMorningActivityNotice()" class="bg-slate-800 hover:bg-slate-700 text-amber-100 border border-amber-700/50 font-bold py-2 px-4 rounded text-[10px]">광장 미리보기</button>
+                            <button type="button" onclick="void window.postScreenNoticeFromMorning()" class="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded text-[10px]">지금 팝업</button>
+                        </div>
+                    </div>
+                    <div class="pt-3 border-t border-sky-500/30">
+                        <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sky-300"></i> 화면 공지 팝업</h3>
+                        <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">아침활동과 별도로, 지금 접속 중인 학생·TV 화면에 공지 팝업을 띄웁니다. 각 화면에서 확인을 누르면 그 기기만 닫히고, 「공지 내리기」는 모든 화면에서 내립니다.</p>
+                        <textarea id="gmScreenNoticeInput" rows="3" maxlength="400" placeholder="예: 조회 후 체육복으로 갈아입고 운동장으로 모이세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <button type="button" onclick="void window.postScreenNoticeFromInput()" class="bg-sky-700 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded text-[10px]">화면에 띄우기</button>
+                            <button type="button" onclick="window.previewScreenNoticeFromInput()" class="bg-slate-800 hover:bg-slate-700 text-sky-100 border border-sky-700/50 font-bold py-2 px-4 rounded text-[10px]">미리보기</button>
+                            <button type="button" onclick="void window.clearScreenNoticeRemote()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-4 rounded text-[10px]">공지 내리기</button>
+                        </div>
                     </div>
                 </div>
 
@@ -2348,9 +2361,22 @@
             </div>
 
             <div class="inner-pane hidden" data-pane-group="admin" data-pane="notice">
-            <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> 전체 공지사항</h3>
-                <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-sb-blue/50 space-y-4">
+                <div>
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-bullhorn text-sb-blue"></i> 광장 NPC 공지</h3>
+                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">광장 요정 말풍선에 남는 짧은 공지입니다. 팝업은 뜨지 않습니다.</p>
+                    <div class="flex gap-2"><input type="text" id="gmAnnouncementInput" placeholder="메시지 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-1.5 rounded text-[10px]"><button onclick="window.setAnnouncement()" class="bg-sb-blue text-white font-bold py-1.5 px-4 rounded text-[10px]">등록</button></div>
+                </div>
+                <div class="pt-3 border-t border-sky-500/30">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-tv text-sky-300"></i> 화면 공지 팝업</h3>
+                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">접속 중인 모든 학생·TV 화면에 큰 팝업을 띄웁니다. 수업도구 「아침·공지」와 같은 공지입니다.</p>
+                    <textarea id="gmAdminScreenNoticeInput" rows="3" maxlength="400" placeholder="예: 5분 뒤 운동장으로 모이세요." class="w-full bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded text-xs mb-2 leading-relaxed"></textarea>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" onclick="void window.postScreenNoticeFromAdmin()" class="bg-sky-700 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded text-[10px]">화면에 띄우기</button>
+                        <button type="button" onclick="window.previewScreenNoticeFromAdmin()" class="bg-slate-800 hover:bg-slate-700 text-sky-100 border border-sky-700/50 font-bold py-2 px-4 rounded text-[10px]">미리보기</button>
+                        <button type="button" onclick="void window.clearScreenNoticeRemote()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-4 rounded text-[10px]">공지 내리기</button>
+                    </div>
+                </div>
             </div>
             </div>
 

@@ -30,7 +30,7 @@ describe('기능 잠금해제 카탈로그', () => {
         assert.equal(featureIdForClassTool('thermo'), '');
     });
 
-    it('온도계·비상계엄·학급투표·아침안내는 마스터 전용이다', () => {
+    it('온도계·비상계엄·학급투표·아침·공지는 마스터 전용이다', () => {
         assert.deepEqual(MASTER_ONLY_CLASS_TOOLS, ['thermo', 'martial', 'vote', 'morning']);
         assert.equal(isMasterOnlyClassTool('vote'), true);
         assert.equal(isMasterOnlyClassTool('timer'), false);

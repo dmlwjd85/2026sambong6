@@ -3112,3 +3112,20 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             background: currentColor;
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
         }
+
+        /* 원격 화면 공지 팝업 — TV·학생 화면 공통 */
+        #screenNoticePopup {
+            z-index: 690;
+        }
+        #screenNoticePopup .screen-notice-card {
+            width: min(52rem, 100%);
+            max-height: min(86vh, 44rem);
+            overflow-y: auto;
+            background: linear-gradient(165deg, #0c4a6e 0%, #082f49 48%, #0f172a 100%);
+            border: 3px solid rgba(56, 189, 248, 0.55);
+            box-shadow: 0 0 48px rgba(14, 165, 233, 0.28);
+        }
+        #screenNoticePopup .screen-notice-body {
+            white-space: pre-wrap;
+            word-break: break-word;
+        }

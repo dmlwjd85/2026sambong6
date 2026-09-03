@@ -2980,18 +2980,24 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #fee2e2;
             box-shadow: 0 0 16px rgba(248, 113, 113, 0.45);
         }
-        /* 공지 팝업(z 690)·확인창(z 700) 위에서도 눈이 보이게 둡니다. 클릭은 통과합니다. */
+        /* 공지 팝업(z 690) 위에서도 눈이 보이게 둡니다. 클릭은 반드시 통과해야 합니다. */
+        .class-watch-overlay,
+        .class-watch-eyes,
+        .class-watch-eye,
+        .class-watch-laser,
+        .class-watch-caption {
+            pointer-events: none !important;
+        }
         .class-watch-overlay {
             position: fixed;
             inset: 0;
             z-index: 730;
-            pointer-events: none;
         }
-        /* 양쪽 눈을 한 덩어리로 깜빡여 시차가 나지 않게 합니다. */
+        /* 래퍼에는 필터를 걸지 않습니다. 전체 화면 필터 레이어가 확인·이체 버튼을 가로챕니다. */
         .class-watch-eyes {
             position: absolute;
             inset: 0;
-            animation: class-watch-blink 5.2s ease-in-out infinite;
+            pointer-events: none;
         }
         .class-watch-eye {
             position: absolute;
@@ -2999,6 +3005,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             height: min(42vw, 15rem);
             object-fit: contain;
             filter: drop-shadow(0 0 10px #fde047) drop-shadow(0 0 22px rgba(251, 191, 36, 0.9));
+            animation: class-watch-blink 5.2s ease-in-out infinite;
+            animation-delay: 0s;
         }
         @media (min-width: 768px) {
             .class-watch-eye {
@@ -3148,6 +3156,11 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             border-radius: 999px;
             background: currentColor;
             box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
+        }
+
+        /* 확인·이체·구매 창은 용의 눈보다 위에 두어 버튼이 눌리게 합니다 */
+        .sambong-custom-modal {
+            z-index: 800;
         }
 
         /* 원격 화면 공지 팝업 — TV·학생 화면 공통 */

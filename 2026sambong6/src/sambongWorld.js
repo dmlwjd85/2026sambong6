@@ -4430,7 +4430,7 @@ function redrawPlazaGrantsUi() {
             hideClassBellPopup();
             const d = document.createElement('div');
             d.id = 'classBellPopup';
-            d.className = 'sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4';
+            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
             const isEnd = event.kind === 'end';
             const title = event.headline || classBellAnnounceText(event) || (isEnd ? '수업 종료' : '수업 시작');
             const subject = classBellSubjectLine(now, event.periodId);
@@ -7454,24 +7454,33 @@ ${subjectLine}
                     }
                 }
             }
+            const serverBase = {
+                bankRegularSavings: normalizeBongValue(Number(serverData.bankRegularSavings) || 0),
+                bankTermDeposits: sanitizeBankTermDeposits(serverData.bankTermDeposits),
+                bong: normalizeBongValue(Number(serverData.bong) || 0),
+                bankDailyBonusLastDate: String(serverData.bankDailyBonusLastDate || ''),
+            };
             const target = {
                 bankRegularSavings: normalizeBongValue(Number(clientData.bankRegularSavings) || 0),
                 bankTermDeposits: sanitizeBankTermDeposits(clientData.bankTermDeposits),
                 bong: normalizeBongValue(Number(clientData.bong) || 0),
                 bankDailyBonusLastDate: String(clientData.bankDailyBonusLastDate || ''),
             };
-            const validation = validateManualBankTransition(accrued, target);
+            // 만기·주기 보너스가 붙은 잔액과 비교하면 정상 입출금도 거절됩니다. 서버 원본 기준으로 조작만 검증합니다.
+            const validation = validateManualBankTransition(serverBase, target);
             if (!validation.ok) {
                 return { ...accrued, rejected: true };
             }
+            const bongDelta = normalizeBongValue(target.bong - serverBase.bong);
+            const regDelta = normalizeBongValue(target.bankRegularSavings - serverBase.bankRegularSavings);
             let bonusDate = accrued.bankDailyBonusLastDate;
             if (target.bankDailyBonusLastDate === accrued.bankDailyBonusLastDate || accrued.bonusGranted > 0) {
                 bonusDate = accrued.bankDailyBonusLastDate;
             }
             return {
-                bankRegularSavings: target.bankRegularSavings,
+                bankRegularSavings: normalizeBongValue(accrued.bankRegularSavings + regDelta),
                 bankTermDeposits: target.bankTermDeposits,
-                bong: target.bong,
+                bong: normalizeBongValue(accrued.bong + bongDelta),
                 bankDailyBonusLastDate: bonusDate,
                 maturityMsgs: accrued.maturityMsgs,
                 maturityCredit: accrued.maturityCredit,
@@ -12560,8 +12569,8 @@ ${subjectLine}
         // ==========================================
         window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            // 전역 로딩(z-390)·오프라인 배너(z-400)·수업도구 오버레이(z-560대)보다 위 — 팝업이 가려져 먹통처럼 보이는 문제 방지
-            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
+            // 전역 로딩(z-390)·오프라인 배너(z-400)·수업도구(z-560)·용의 눈(z-730)보다 위 — 확인창이 가려져 이체·구매가 먹통처럼 보이는 문제 방지
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">알림</h3>
@@ -12575,7 +12584,7 @@ ${subjectLine}
 
         window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-white">확인</h3>
@@ -12594,7 +12603,7 @@ ${subjectLine}
 
         window.customPrompt = (m, type="password") => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-sb-gold">입력</h3>
@@ -12617,7 +12626,7 @@ ${subjectLine}
         // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
         window.customPick1to6 = (m) => new Promise(r => {
             const d = document.createElement('div');
-            d.className = "sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
                 <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
                     <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>
@@ -16817,6 +16826,9 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
                     console.warn('saveDataToCloud: 익명 인증 실패');
+                    if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                        await window.customAlert('저장에 실패했습니다. 인증을 다시 받은 뒤 새로고침해 주세요.');
+                    }
                     return false;
                 }
                 await runTransaction(db, async (transaction) => {
@@ -16970,7 +16982,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -17011,6 +17023,10 @@ ${subjectLine}
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
+                if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                    const detail = (e && e.message) ? e.message : String(e);
+                    await window.customAlert(`${opts.operationLabel}에 실패했습니다.\n${detail}`);
+                }
                 return false;
             } finally {
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1000);

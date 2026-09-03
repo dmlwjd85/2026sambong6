@@ -14248,6 +14248,8 @@ ${subjectLine}
                     ${remoteClear}
                 </div>`;
             document.body.appendChild(d);
+            const watch = document.getElementById('classWatchOverlay');
+            if (watch && !watch.classList.contains('hidden')) document.body.appendChild(watch);
             const ok = d.querySelector('.js-screen-notice-ok');
             if (ok) {
                 ok.onclick = () => {
@@ -19704,6 +19706,8 @@ ${subjectLine}
             if (overlay) {
                 overlay.classList.toggle('hidden', !on);
                 overlay.setAttribute('aria-hidden', on ? 'false' : 'true');
+                // 공지 팝업이 나중에 붙어도 같은 화면에서 눈이 보이도록 맨 앞으로 올립니다.
+                if (on && overlay.parentElement === document.body) document.body.appendChild(overlay);
                 // GitHub Pages 하위 경로에서도 이미지가 열리도록 배포 base를 붙입니다.
                 const base = (import.meta.env && import.meta.env.BASE_URL) || '/';
                 const src = `${base}chars/dragon-eye.webp`.replace(/([^:]\/)\/+/g, '$1');

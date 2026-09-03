@@ -2980,22 +2980,34 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #fee2e2;
             box-shadow: 0 0 16px rgba(248, 113, 113, 0.45);
         }
+        /* 공지 팝업(z 690)·확인창(z 700) 위에서도 눈이 보이게 둡니다. 클릭은 통과합니다. */
         .class-watch-overlay {
             position: fixed;
             inset: 0;
-            z-index: 355;
+            z-index: 730;
             pointer-events: none;
+        }
+        /* 양쪽 눈을 한 덩어리로 깜빡여 시차가 나지 않게 합니다. */
+        .class-watch-eyes {
+            position: absolute;
+            inset: 0;
+            animation: class-watch-blink 5.2s ease-in-out infinite;
         }
         .class-watch-eye {
             position: absolute;
-            width: min(38vw, 14rem);
-            height: min(38vw, 14rem);
+            width: min(42vw, 15rem);
+            height: min(42vw, 15rem);
             object-fit: contain;
             filter: drop-shadow(0 0 10px #fde047) drop-shadow(0 0 22px rgba(251, 191, 36, 0.9));
-            animation: class-watch-blink 5.2s ease-in-out infinite;
+        }
+        @media (min-width: 768px) {
+            .class-watch-eye {
+                width: min(28vw, 22rem);
+                height: min(28vw, 22rem);
+            }
         }
         .class-watch-eye-l { top: 0.6%; left: 0.6%; transform: rotate(-8deg); }
-        .class-watch-eye-r { top: 0.6%; right: 0.6%; transform: scaleX(-1) rotate(-8deg); animation-delay: 0.45s; }
+        .class-watch-eye-r { top: 0.6%; right: 0.6%; transform: scaleX(-1) rotate(-8deg); }
         .class-watch-laser {
             position: absolute;
             left: 8%;

@@ -4403,7 +4403,7 @@ function redrawPlazaGrantsUi() {
             d.id = 'classBellPopup';
             d.className = 'sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4';
             const isEnd = event.kind === 'end';
-            const title = classBellAnnounceText(event) || (isEnd ? '수업 종료' : '수업 시작');
+            const title = event.headline || classBellAnnounceText(event) || (isEnd ? '수업 종료' : '수업 시작');
             const subject = classBellSubjectLine(now, event.periodId);
             const icon = isEnd ? '🔔' : '🎵';
             d.innerHTML = `
@@ -4470,8 +4470,9 @@ function redrawPlazaGrantsUi() {
             playClassBellMelody(isEnd ? 'end' : 'start');
             showClassBellPopup({
                 kind: isEnd ? 'end' : 'start',
+                headline: isEnd ? '종료 멜로디 미리듣기' : '시작 멜로디 미리듣기',
                 label: isEnd ? '수업 종료' : '수업 시작',
-                time: isEnd ? '종료 미리듣기' : '시작 미리듣기',
+                time: isEnd ? '종료' : '시작',
                 periodId: 1,
             }, new Date());
         };

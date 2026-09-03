@@ -110,6 +110,8 @@ import {
     CUSTOM_SHOP_XP_DAILY_LIMIT,
     CUSTOM_QUEST_XP_MAX,
     applyShieldToXpDeduct,
+    reconcileShieldFieldsForSave,
+    shieldHpOf,
     buildSeason1HallOfFame,
     buildSeason1ItemRefundPatch,
     buildSeason1XpCorrectionPatch,
@@ -134,7 +136,7 @@ import {
     SHIELD_GEAR,
     SHOE_GEAR,
     WEAPON_GEAR,
-    applyXpDeductWithGear,
+    applyFullXpDeduct,
     getGear,
     gearSlotLabel,
     grantMasterGear,
@@ -5850,6 +5852,12 @@ ${subjectLine}
                 : { xp: Math.max(0, Math.floor(Number(val) || 0)) };
             if (type === 'xp') {
                 const beforeXp = Math.max(0, Math.floor(Number(stu && stu.xp) || 0));
+                // 직접 수정도 경험치 차감이므로 절대 방패·장착 방패를 태웁니다.
+                if (payload.xp < beforeXp) {
+                    const shielded = applyFullXpDeduct(stu || {}, beforeXp - payload.xp, applyShieldToXpDeduct);
+                    Object.assign(payload, shielded.updates);
+                    payload.xp = shielded.xp;
+                }
                 payload.xpChangeLog = arrayUnion(buildXpChangeLogEntry('마스터 직접 XP 수정', beforeXp, payload.xp, { actor: window.playerState?.isGM ? 'gm' : 'admin' }));
             }
             await setDoc(ref, payload, { merge: true });
@@ -5859,7 +5867,11 @@ ${subjectLine}
                 const row = window.allStudentsData.find((s) => String(s.id) === sid);
                 if (row) {
                     if (type === 'bong') row.bong = payload.bong;
-                    else row.xp = payload.xp;
+                    else {
+                        row.xp = payload.xp;
+                        if (Object.prototype.hasOwnProperty.call(payload, 'shieldHP')) row.shieldHP = payload.shieldHP;
+                        if (Object.prototype.hasOwnProperty.call(payload, 'hasShield')) row.hasShield = payload.hasShield;
+                    }
                 }
             }
             if (window.renderAdminTable && window.allStudentsData) window.renderAdminTable(window.allStudentsData);
@@ -9467,18 +9479,24 @@ ${subjectLine}
                         if (!delta) return;
                         const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
                         const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
-                        const afterXp = Math.max(0, beforeXp + delta);
+                        // 온도계 마이너스는 경험치 차감이므로 절대 방패·장착 방패를 태웁니다.
+                        const shielded = delta < 0
+                            ? applyFullXpDeduct(stu, -delta, applyShieldToXpDeduct)
+                            : { xp: Math.max(0, beforeXp + delta), updates: {}, absorbed: 0 };
+                        const afterXp = Math.max(0, Math.floor(Number(shielded.xp) || 0));
                         const actualDelta = afterXp - beforeXp;
-                        if (!actualDelta) return;
+                        const shieldUpdates = (delta < 0 && shielded.updates) ? shielded.updates : {};
+                        if (!actualDelta && !Object.keys(shieldUpdates).length) return;
                         const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
                         logs.push(buildXpChangeLogEntry('학습 온도계 15시 정산', beforeXp, afterXp, {
                             source: 'learningThermometer',
                             rawDelta: delta,
                             settledDate: today,
+                            absorbed: shielded.absorbed || 0,
                         }));
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { xp: afterXp, xpChangeLog: logs },
+                            { ...shieldUpdates, xp: afterXp, xpChangeLog: logs },
                             { merge: true }
                         );
                         appliedCount++;
@@ -9532,6 +9550,7 @@ ${subjectLine}
                 `학습 온도계를 지금 실제 XP에 반영하고 0으로 초기화할까요?\n\n` +
                 `- 적용 학생: ${Object.keys(state.values || {}).length}명\n` +
                 `- 합계: ${total >= 0 ? '+' : ''}${total} XP\n\n` +
+                '마이너스 값은 절대 방패가 경험치 대신 깎입니다.\n' +
                 '15시 자동 정산과 같은 방식으로 하루 정산 완료 처리됩니다.'
             );
             if (!ok) return;
@@ -14053,7 +14072,7 @@ ${subjectLine}
                 });
                 const overlays = '';
                 
-                const hp = (displayData.shieldHP || 0) + (displayData.hasShield ? 100 : 0);
+                const hp = shieldHpOf(displayData);
                 const shieldHtml = hp > 0 ? `<div class="plaza-card-extra absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
                 let jobHtml = '';
@@ -15882,7 +15901,7 @@ ${subjectLine}
                 dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
             }
 
-            const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+            const hp = shieldHpOf(window.playerState);
             const dashShieldEl = document.getElementById('dashShield');
             if (dashShieldEl) {
                 dashShieldEl.innerHTML = (!window.playerState.isAdmin && hp > 0)
@@ -16385,6 +16404,8 @@ ${subjectLine}
                 requireServerBongBalance: false,
                 allowBankFieldChanges: false,
                 allowLunchBidChanges: false,
+                allowShieldPurchase: false,
+                allowShieldHpDecrease: false,
                 operationLabel: '저장',
                 ...options,
             };
@@ -16550,6 +16571,12 @@ ${subjectLine}
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
                         }
+                        // 낡은 클라이언트가 깎인 절대 방패를 되돌리거나, 산 적 없는 방패를 지우는 것을 막습니다.
+                        const shieldFix = reconcileShieldFieldsForSave(serverData, dataToSave, opts);
+                        if (shieldFix) {
+                            dataToSave.shieldHP = shieldFix.shieldHP;
+                            dataToSave.hasShield = shieldFix.hasShield;
+                        }
                         const finalXp = Number(dataToSave.xp);
                         if (Number.isFinite(serverXp) && Number.isFinite(finalXp) && Math.floor(finalXp) !== Math.floor(serverXp)) {
                             const logs = Array.isArray(serverData.xpChangeLog) ? serverData.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
@@ -16591,6 +16618,8 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'shieldHP')) window.playerState.shieldHP = dataToSave.shieldHP;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'hasShield')) window.playerState.hasShield = dataToSave.hasShield;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankRegularSavings')) {
                     window.playerState.bankRegularSavings = dataToSave.bankRegularSavings;
                 }
@@ -17330,13 +17359,16 @@ ${subjectLine}
                 }
 
                 const deductBong = rewardBong + 1;
-                window.playerState.xp = Math.max(0, window.playerState.xp - deductXp);
+                // 퀘스트 취소의 XP 회수도 경험치 차감이므로 절대 방패가 막습니다.
+                const shielded = applyFullXpDeduct(window.playerState, deductXp, applyShieldToXpDeduct);
+                Object.assign(window.playerState, shielded.updates);
+                window.playerState.xp = shielded.xp;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - deductBong);
                 if (!window.playerState.quests) window.playerState.quests = {};
                 /** delete는 Firestore merge 시 서버 true가 되살아나므로 명시적으로 false를 남깁니다. */
                 window.playerState.quests[qId] = false;
                 updateUI(); 
-                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: deductXp, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
+                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: deductXp, allowShieldHpDecrease: true, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();
@@ -18046,13 +18078,13 @@ ${subjectLine}
                 if (groupEx && id === 'item_shield') {
                     const currentStock = getShieldStockNow();
                     if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
-                    const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+                    const hp = shieldHpOf(window.playerState);
                     window.playerState.shieldHP = hp + 100;
                     window.playerState.hasShield = false;
                     const stNow = getShieldStockNow();
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, stNow - 1) }, { merge: true });
                     updateUI();
-                    const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, operationLabel: '방패 구매' });
+                    const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, allowShieldPurchase: true, operationLabel: '방패 구매' });
                     if (!saved) return;
                     return await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                 }
@@ -18062,7 +18094,7 @@ ${subjectLine}
                     if (id === 'item_shield') {
                         const currentStock = getShieldStockNow();
                         if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
-                        const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+                        const hp = shieldHpOf(window.playerState);
                         cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?\n경험치 차감만 막습니다(봉과 무관).\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
                     }
 
@@ -18072,13 +18104,13 @@ ${subjectLine}
                             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - price);
                         }
                         if (id === 'item_shield') {
-                            const hp = (window.playerState.shieldHP || 0) + (window.playerState.hasShield ? 100 : 0);
+                            const hp = shieldHpOf(window.playerState);
                             window.playerState.shieldHP = hp + 100;
                             window.playerState.hasShield = false;
                             const currentStock = getShieldStockNow();
                             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: Math.max(0, currentStock - 1) }, { merge: true });
                             updateUI();
-                            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '방패 구매' });
+                            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, allowShieldPurchase: true, operationLabel: '방패 구매' });
                             if (!saved) return;
                             await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                         } else {
@@ -20163,9 +20195,15 @@ ${subjectLine}
                     let dAmt = Math.abs(amount);
                     // 절대 방패는 경험치 차감만 막습니다. 봉 차감은 방패와 무관합니다.
                     if (type === 'xp') {
-                        const shielded = applyXpDeductWithGear(stu, dAmt, applyShieldToXpDeduct);
+                        const shielded = applyFullXpDeduct(stu, dAmt, applyShieldToXpDeduct);
                         Object.assign(updates, shielded.updates);
                         dAmt = shielded.remainingDeduct;
+                        if (shielded.blockedByGear) {
+                            window.showToast && window.showToast('장착 방패가 경험치 차감을 막았습니다.');
+                        } else if (shielded.absorbed > 0) {
+                            const left = shieldHpOf({ ...stu, ...shielded.updates });
+                            window.showToast && window.showToast(`🛡️ 절대 방패가 ${shielded.absorbed} XP를 막았습니다 (남은 내구 ${left})`);
+                        }
                     }
 
                     if (dAmt > 0) {
@@ -20290,7 +20328,7 @@ ${subjectLine}
                     let dAmt = amount;
                     // 절대 방패는 경험치 차감만 막습니다. 봉 차감은 방패와 무관합니다.
                     if (type === 'xp') {
-                        const shielded = applyXpDeductWithGear(stu, dAmt, applyShieldToXpDeduct);
+                        const shielded = applyFullXpDeduct(stu, dAmt, applyShieldToXpDeduct);
                         Object.assign(updates, shielded.updates);
                         dAmt = shielded.remainingDeduct;
                         if (shielded.absorbed > 0 || shielded.blockedByGear) pCount++;
@@ -20349,7 +20387,7 @@ ${subjectLine}
                 } catch (e) {
                     console.warn('editStudentStat quest floor', e);
                 }
-                let msg = `[${stuName}] 경험치를 ${curNum} → ${val}(으)로 낮춥니다.\n비정상 상승·오류 수정용입니다.`;
+                let msg = `[${stuName}] 경험치를 ${curNum} → ${val}(으)로 낮춥니다.\n비정상 상승·오류 수정용입니다.\n절대 방패가 있으면 경험치 대신 방패가 깎입니다.`;
                 if (questFloor > 0 && val < questFloor) {
                     msg += `\n\n⚠ 퀘스트 기록 합계(${questFloor} XP)보다 낮습니다. 기록과 숫자가 어긋날 수 있어요.`;
                 }

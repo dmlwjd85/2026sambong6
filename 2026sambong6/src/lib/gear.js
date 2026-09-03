@@ -202,6 +202,29 @@ export function applyXpDeductWithGear(stu, deductAmt, applyDurability, rng = Mat
     return { ...durable, blockedByGear: false, chance: gear.chance };
 }
 
+/**
+ * 차감 결과에 실제 XP를 붙입니다. 방패가 다 막으면 xp 필드는 넣지 않습니다.
+ */
+export function attachXpDeductResult(stu, deductResult) {
+    const beforeXp = Math.max(0, Math.floor(Number(stu && stu.xp) || 0));
+    const remaining = Math.max(0, Math.floor(Number(deductResult && deductResult.remainingDeduct) || 0));
+    const xp = Math.max(0, beforeXp - remaining);
+    const updates = { ...((deductResult && deductResult.updates) || {}) };
+    if (xp !== beforeXp) updates.xp = xp;
+    return {
+        ...(deductResult || {}),
+        beforeXp,
+        xp,
+        remainingDeduct: remaining,
+        updates,
+    };
+}
+
+/** 장착 방패(확률) → 절대 방패(내구) → 남은 XP 차감까지 한 번에 계산합니다. */
+export function applyFullXpDeduct(stu, deductAmt, applyDurability, rng = Math.random) {
+    return attachXpDeductResult(stu, applyXpDeductWithGear(stu, deductAmt, applyDurability, rng));
+}
+
 export function pickQuestDropId(xp, inventory, rng = Math.random) {
     const n = Math.floor(Number(xp) || 0);
     const pool = n >= 80

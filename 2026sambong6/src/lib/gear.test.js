@@ -6,7 +6,9 @@ import {
     SHIELD_GEAR,
     SHOE_GEAR,
     WEAPON_GEAR,
+    applyFullXpDeduct,
     applyXpDeductWithGear,
+    attachXpDeductResult,
     collectCosmeticBonuses,
     countGearOfSlot,
     getGear,
@@ -17,6 +19,7 @@ import {
     skinStatLabel,
     staffLookStatLabel,
 } from './gear.js';
+import { applyShieldToXpDeduct } from './season2.js';
 
 describe('장비 목록', () => {
     it('무기·방패·신발이 각 5종이다', () => {
@@ -78,6 +81,31 @@ describe('방패 방어', () => {
         const r = applyXpDeductWithGear(stu, 5, () => ({ updates: { shieldHP: 1 }, remainingDeduct: 0, absorbed: 5 }), () => 0.99);
         assert.equal(r.blockedByGear, false);
         assert.equal(r.updates.shieldHP, 1);
+    });
+
+    it('절대 방패가 차감을 막으면 XP는 그대로 두고 내구만 깎는다', () => {
+        const stu = { xp: 40, shieldHP: 100, hasShield: false };
+        const r = applyFullXpDeduct(stu, 5, applyShieldToXpDeduct, () => 0.99);
+        assert.equal(r.xp, 40);
+        assert.equal(r.beforeXp, 40);
+        assert.equal(Object.prototype.hasOwnProperty.call(r.updates, 'xp'), false);
+        assert.equal(r.updates.shieldHP, 95);
+        assert.equal(r.remainingDeduct, 0);
+        assert.equal(r.absorbed, 5);
+    });
+
+    it('방패가 모자라면 남은 양만 XP에서 뺀다', () => {
+        const stu = { xp: 40, shieldHP: 3 };
+        const attached = attachXpDeductResult(stu, { updates: { shieldHP: 0 }, remainingDeduct: 7, absorbed: 3 });
+        assert.equal(attached.xp, 33);
+        assert.equal(attached.updates.xp, 33);
+        assert.equal(attached.updates.shieldHP, 0);
+
+        const overflow = applyFullXpDeduct(stu, 10, applyShieldToXpDeduct, () => 0.99);
+        assert.equal(overflow.xp, 33);
+        assert.equal(overflow.updates.xp, 33);
+        assert.equal(overflow.updates.shieldHP, 0);
+        assert.equal(overflow.absorbed, 3);
     });
 });
 

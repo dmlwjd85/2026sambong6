@@ -33,6 +33,8 @@ import {
     worldSettingsForSeason2,
     applyShieldToXpDeduct,
     readShieldStock,
+    reconcileShieldFieldsForSave,
+    shieldHpOf,
     SHIELD_STOCK_DEFAULT,
 } from './season2.js';
 
@@ -253,6 +255,33 @@ describe('절대 방패', () => {
         assert.equal(r.remainingDeduct, 5);
         assert.equal(r.absorbed, 0);
         assert.equal(Object.prototype.hasOwnProperty.call(r.updates, 'shieldHP'), false);
+    });
+
+    it('일반 저장은 서버 방패를 지키고 구매·차감 저장만 로컬을 살린다', () => {
+        assert.equal(shieldHpOf({ hasShield: true, shieldHP: 20 }), 120);
+
+        const staleRestore = reconcileShieldFieldsForSave(
+            { shieldHP: 95, hasShield: false },
+            { shieldHP: 100, hasShield: false },
+            {},
+        );
+        assert.deepEqual(staleRestore, { shieldHP: 95, hasShield: false });
+
+        const wipeProtect = reconcileShieldFieldsForSave(
+            { shieldHP: 80, hasShield: false },
+            { shieldHP: 0, hasShield: false },
+            {},
+        );
+        assert.deepEqual(wipeProtect, { shieldHP: 80, hasShield: false });
+
+        const buyKeep = reconcileShieldFieldsForSave({ shieldHP: 80 }, { shieldHP: 180 }, { allowShieldPurchase: true });
+        assert.equal(buyKeep, null);
+
+        const wearKeep = reconcileShieldFieldsForSave({ shieldHP: 80 }, { shieldHP: 75 }, { allowShieldHpDecrease: true });
+        assert.equal(wearKeep, null);
+
+        const same = reconcileShieldFieldsForSave({ hasShield: true }, { shieldHP: 100 }, {});
+        assert.equal(same, null);
     });
 });
 

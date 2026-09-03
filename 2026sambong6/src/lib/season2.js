@@ -482,6 +482,24 @@ export function applyShieldToXpDeduct(stu, deductAmt) {
     return { updates, remainingDeduct, absorbed };
 }
 
+/**
+ * 학생 저장이 서버의 절대 방패를 낡은 값으로 덮지 않게 맞춥니다.
+ * 구매(증가)나 차감(감소)을 명시한 저장만 로컬 방패를 살립니다.
+ */
+export function reconcileShieldFieldsForSave(serverData, localData, opts = {}) {
+    const serverHp = shieldHpOf(serverData);
+    const localHp = shieldHpOf(localData);
+    const allowBuy = !!(opts && opts.allowShieldPurchase);
+    const allowWear = !!(opts && opts.allowShieldHpDecrease);
+    if (localHp === serverHp) return null;
+    if (localHp > serverHp && allowBuy) return null;
+    if (localHp < serverHp && allowWear) return null;
+    return {
+        shieldHP: Math.max(0, Math.floor(Number(serverData && serverData.shieldHP) || 0)),
+        hasShield: !!(serverData && serverData.hasShield),
+    };
+}
+
 export function sanitizeDragonBallRewards(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const clamp = (v, fallback) => {

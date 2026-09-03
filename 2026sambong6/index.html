@@ -2914,13 +2914,19 @@
     <!-- 수업도구 전체화면 실행 -->
     <div id="classtoolFullscreen" class="hidden fixed inset-0 z-[260] classtool-fs flex flex-col">
         <div class="classtool-fs-bar">
-            <button type="button" onclick="window.closeClassToolFullscreen()" class="min-h-[44px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-black border border-slate-600">
-                <i class="fa-solid fa-chevron-left mr-1"></i>뒤로
-            </button>
             <span id="classtoolFullscreenTitle" class="text-sm font-black text-lime-200">수업도구</span>
-            <button type="button" class="js-class-watch-toggle class-watch-toggle min-h-[44px] px-3 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-100 text-xs font-black border border-amber-500/60" onclick="window.toggleClassWatch()" aria-pressed="false">
-                <i class="fa-solid fa-eye-slash"></i> 용의 눈
-            </button>
+            <span id="classtoolShareHint" class="hidden text-[10px] font-black text-sky-200">학생 화면에 띄우는 중</span>
+            <div class="classtool-fs-bar-actions">
+                <button type="button" class="js-class-watch-toggle class-watch-toggle min-h-[44px] px-3 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-100 text-xs font-black border border-amber-500/60" onclick="window.toggleClassWatch()" aria-pressed="false">
+                    <i class="fa-solid fa-eye-slash"></i> 용의 눈
+                </button>
+                <button type="button" class="js-classtool-share-btn min-h-[44px] px-3 rounded-xl bg-sky-800 hover:bg-sky-700 text-white text-xs font-black border border-sky-400/50" onclick="void window.shareClassToolFullscreen()">
+                    <i class="fa-solid fa-up-right-from-square"></i> 학생 화면에 띄우기
+                </button>
+                <button type="button" id="classtoolFsCloseBtn" onclick="window.closeClassToolFullscreen()" class="min-h-[44px] px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-black border border-slate-600">
+                    닫기 <i class="fa-solid fa-xmark ml-1"></i>
+                </button>
+            </div>
         </div>
         <div id="classtoolFullscreenBody" class="classtool-fs-body"></div>
     </div>
@@ -2929,7 +2935,7 @@
          주의: swipeWrapper(relative z-[2]) 안에 두면 스태킹 컨텍스트에 갇혀
          상단 고정 내비게이션(z-50)에 도구 패널이 가려지므로 반드시 body 직속에 둘 것 -->
     <div id="chalkboardOverlay" class="hidden fixed inset-0 z-[280] flex flex-col bg-[#0b0f0a]">
-        <div class="flex flex-wrap items-center gap-1.5 px-2 sm:px-3 py-2 bg-slate-900/95 border-b border-slate-700 shrink-0">
+        <div id="chalkboardToolbar" class="flex flex-wrap items-center gap-1.5 px-2 sm:px-3 py-2 bg-slate-900/95 border-b border-slate-700 shrink-0">
             <div class="flex gap-1 mr-1">
                 <button type="button" id="chalkModeText" onclick="window.setChalkboardMode('text')" class="chalk-tool-btn chalk-active">⌨️ 글쓰기</button>
                 <button type="button" id="chalkModePen" onclick="window.setChalkboardMode('pen')" class="chalk-tool-btn">🖍️ 분필펜</button>
@@ -2981,6 +2987,7 @@
             <button type="button" onclick="window.undoChalkboardStroke()" class="chalk-tool-btn" title="그리기 되돌리기">↩️ 되돌리기</button>
             <button type="button" onclick="window.toggleChalkboardBoardColor()" class="chalk-tool-btn" title="초록 칠판 ↔ 블랙보드">🟩 칠판색</button>
             <button type="button" onclick="window.clearChalkboard()" class="chalk-tool-btn" title="글씨·그림 모두 지우기">🗑️ 모두 지우기</button>
+            <button type="button" class="js-classtool-share-btn chalk-tool-btn" onclick="void window.shareClassToolFullscreen()" title="이 칠판을 모든 학생 화면에 띄웁니다">📺 띄우기</button>
             <button type="button" onclick="window.toggleChalkboardFullscreen()" class="chalk-tool-btn" title="전체화면">⛶ 전체화면</button>
             <button type="button" onclick="window.closeChalkboard()" class="chalk-tool-btn chalk-tool-danger">✕ 닫기</button>
         </div>

@@ -2183,6 +2183,31 @@
             border-bottom: 1px solid rgba(51, 65, 85, 0.8);
             background: rgba(15, 23, 42, 0.95);
         }
+        .classtool-fs-bar-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .js-classtool-share-btn.is-sharing {
+            background: #0369a1;
+            border-color: #7dd3fc;
+        }
+        body.class-tool-share-view .classtool-fs-body button,
+        body.class-tool-share-view .classtool-fs-body input,
+        body.class-tool-share-view .classtool-fs-body textarea,
+        body.class-tool-share-view .classtool-fs-body select,
+        body.class-tool-share-view #chalkboardOverlay .chalk-tool-btn,
+        body.class-tool-share-view #chalkboardOverlay select,
+        body.class-tool-share-view #chalkboardOverlay input,
+        body.class-tool-share-view #chalkboardText {
+            pointer-events: none;
+        }
+        body.class-tool-share-view #chalkboardToolbar {
+            display: none;
+        }
         .classtool-fs-body {
             flex: 1;
             overflow: auto;

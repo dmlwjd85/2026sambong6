@@ -278,6 +278,14 @@ import {
     screenNoticeShouldShow,
     writeDismissedScreenNoticeId,
 } from './lib/screenNotice.js';
+import {
+    classToolShareShouldClose,
+    classToolShareShouldOpen,
+    closeClassToolShare,
+    isClassToolShareId,
+    openClassToolShare,
+    sanitizeClassToolShare,
+} from './lib/classToolShare.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -2652,7 +2660,7 @@ function redrawPlazaGrantsUi() {
                 const globalSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'));
                 if (globalSnap.exists()) {
                     const src = globalSnap.data();
-                    const { announcement, screenNotice, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
+                    const { announcement, screenNotice, classToolShare, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
                     await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
                         ...copySettings,
                         worldSettings: {
@@ -3233,7 +3241,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -7678,6 +7686,7 @@ ${subjectLine}
             if (isVisible('electionOverlay')) return true;
             if (isVisible('studentElectionOverlay')) return true;
             if (isVisible('classtoolsSection')) return true;
+            if (typeof isClassToolFullscreenOpen === 'function' && isClassToolFullscreenOpen()) return true;
             if (_lotteryRunning || _classWheelSpinning || _electionCounting) return true;
             if (_classTimerEndAt || _classTimerAlarmId) return true;
             if (isLearningThermometerLocallyBusy() || _learningThermometerSettlementRunning) return true;
@@ -7747,6 +7756,9 @@ ${subjectLine}
         /** 탭 내부 아이콘 패널 현재 선택값 */
         const innerPaneState = {};
         let _classtoolFsPane = null;
+        let _classToolShareFollower = false;
+        let _followedClassToolShareSession = '';
+        let _classToolShareApplying = false;
 
         /** 탭 안 세부 화면을 아이콘으로 전환합니다. */
         window.switchInnerPane = function(group, paneId) {
@@ -7883,7 +7895,9 @@ ${subjectLine}
             }
             // 칠판(판서 모드)이 열린 채 탭을 누르면 칠판을 닫고 이동 (내용은 유지되어 다시 열면 그대로)
             const chalkOverlay = document.getElementById('chalkboardOverlay');
-            if (chalkOverlay && !chalkOverlay.classList.contains('hidden')) window.closeChalkboard();
+            if (chalkOverlay && !chalkOverlay.classList.contains('hidden') && !_classToolShareFollower) {
+                window.closeChalkboard({ skipWindow: true });
+            }
             TABS.forEach(t => {
                 const sec = document.getElementById(t + 'Section');
                 if(sec) sec.classList.add('hidden');
@@ -7922,7 +7936,7 @@ ${subjectLine}
                 window.switchEconomySub(economySub);
             }
             if (tabId === 'classtools') {
-                if (typeof window.closeClassToolFullscreen === 'function') window.closeClassToolFullscreen();
+                if (typeof window.closeClassToolFullscreen === 'function' && !_classToolShareFollower) window.closeClassToolFullscreen();
                 if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
                 if (typeof applyClassWatchUI === 'function') applyClassWatchUI();
                 renderLearningThermometerPanel();
@@ -7936,7 +7950,7 @@ ${subjectLine}
                         window.renderBirthdayCelebrationAdminPanel();
                     }
                 }
-            } else if (typeof window.closeClassToolFullscreen === 'function') {
+            } else if (typeof window.closeClassToolFullscreen === 'function' && !_classToolShareFollower) {
                 window.closeClassToolFullscreen();
             }
             if (tabId === 'dashboard') window.switchInnerPane('dashboard', innerPaneState.dashboard || 'map');
@@ -8975,15 +8989,134 @@ ${subjectLine}
             _classtoolFsPane = null;
         }
 
-        window.closeClassToolFullscreen = function() {
+        function currentClassToolShare() {
+            return sanitizeClassToolShare(window.globalSettings && window.globalSettings.classToolShare);
+        }
+
+        function updateClassToolShareBar() {
+            const share = currentClassToolShare();
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const hint = document.getElementById('classtoolShareHint');
+            const closeBtn = document.getElementById('classtoolFsCloseBtn');
+            if (hint) {
+                hint.classList.toggle('hidden', !share.active);
+                hint.textContent = isAdmin ? '학생 화면에 띄우는 중' : '선생님이 띄운 화면입니다';
+            }
+            document.querySelectorAll('.js-classtool-share-btn').forEach((btn) => {
+                btn.classList.toggle('hidden', !isAdmin);
+                btn.classList.toggle('is-sharing', !!share.active);
+                const chalkBtn = btn.classList.contains('chalk-tool-btn');
+                if (share.active) {
+                    btn.innerHTML = chalkBtn
+                        ? '📺 같이 보기'
+                        : '<i class="fa-solid fa-tower-broadcast"></i> 같이 보기 중';
+                } else {
+                    btn.innerHTML = chalkBtn
+                        ? '📺 띄우기'
+                        : '<i class="fa-solid fa-up-right-from-square"></i> 학생 화면에 띄우기';
+                }
+            });
+            document.querySelectorAll('#classtoolFullscreen .js-class-watch-toggle').forEach((btn) => {
+                btn.classList.toggle('hidden', !isAdmin);
+            });
+            if (closeBtn) closeBtn.classList.toggle('hidden', !!_classToolShareFollower);
+            const chalkClose = document.querySelector('#chalkboardOverlay .chalk-tool-danger');
+            if (chalkClose) chalkClose.classList.toggle('hidden', !!_classToolShareFollower);
+            document.body.classList.toggle('class-tool-share-view', !!_classToolShareFollower);
+        }
+
+        async function publishClassToolShare(payload) {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            if (!db || !payload) return false;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) {
+                    await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                    return false;
+                }
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { classToolShare: payload }, { merge: true });
+                window.globalSettings.classToolShare = payload;
+                updateClassToolShareBar();
+                return true;
+            } catch (e) {
+                console.error('publishClassToolShare', e);
+                await window.customAlert('수업도구 창 공유 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
+            }
+        }
+
+        function openClassToolWindow(toolId, options = {}) {
+            const remote = !!options.remote;
+            const next = String(toolId || classtoolSub || 'timetable');
+            if (!isClassToolShareId(next) && remote) return false;
+            if (!remote) {
+                if (isMasterOnlyClassTool(next) && !(window.playerState && window.playerState.isAdmin)) return false;
+                if (!canOpenClassTool(window.playerState, next)) {
+                    const fid = featureIdForClassTool(next);
+                    if (fid) void window.unlockFeature(fid, { openTool: next });
+                    return false;
+                }
+            }
+            classtoolSub = next;
+            updateClassToolsPanelVisibility();
+            restoreClassToolPane();
+            const pane = document.querySelector(`.classtool-pane[data-tool="${classtoolSub}"]`);
+            const overlay = document.getElementById('classtoolFullscreen');
+            const body = document.getElementById('classtoolFullscreenBody');
+            const titleEl = document.getElementById('classtoolFullscreenTitle');
+            if (!pane || !overlay || !body) return false;
+            body.appendChild(pane);
+            pane.classList.remove('hidden');
+            _classtoolFsPane = pane;
+            if (titleEl) titleEl.textContent = CLASSTOOL_TITLES[classtoolSub] || '수업도구';
+            overlay.classList.remove('hidden');
+            document.body.classList.add('classtool-fs-open');
+            if (classtoolSub === 'chalk' && typeof window.openChalkboard === 'function') {
+                window.openChalkboard({ remote });
+            } else if (typeof window.closeChalkboard === 'function') {
+                window.closeChalkboard({ skipWindow: true, fromShare: true });
+            }
+            if (classtoolSub === 'thermo') renderLearningThermometerPanel();
+            if (classtoolSub === 'lottery') {
+                renderLotteryParticipantList();
+                renderLotteryResultsPanel();
+            }
+            if (classtoolSub === 'wheel') renderClassWheelPanel();
+            if (classtoolSub === 'vote') renderClassElectionPanel();
+            if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
+                window.renderClassTimetableAdminPanel();
+            }
+            updateClassToolShareBar();
+            return true;
+        }
+
+        /** 마스터가 연 수업도구 창을 학생·TV에도 같이 띄우거나 내립니다. */
+        window.closeClassToolFullscreen = function (opts = {}) {
+            const fromShare = !!opts.fromShare;
+            if (_classToolShareFollower && !fromShare) return;
+            const share = currentClassToolShare();
+            const shouldPublish = !fromShare
+                && !_classToolShareApplying
+                && !!(window.playerState && window.playerState.isAdmin)
+                && share.active
+                && !_classToolShareFollower;
+            _classToolShareFollower = false;
+            _followedClassToolShareSession = '';
+            if (typeof window.closeChalkboard === 'function') {
+                window.closeChalkboard({ skipWindow: true, fromShare: true });
+            }
             restoreClassToolPane();
             const overlay = document.getElementById('classtoolFullscreen');
             if (overlay) overlay.classList.add('hidden');
             document.body.classList.remove('classtool-fs-open');
+            document.body.classList.remove('class-tool-share-view');
+            updateClassToolShareBar();
+            if (shouldPublish) void publishClassToolShare(closeClassToolShare(share));
         };
 
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape' || !isClassToolFullscreenOpen()) return;
+            if (_classToolShareFollower) return;
             const chalk = document.getElementById('chalkboardOverlay');
             if (chalk && !chalk.classList.contains('hidden')) return;
             window.closeClassToolFullscreen();
@@ -9002,45 +9135,73 @@ ${subjectLine}
         };
 
         window.switchClassTool = function(toolId) {
-            const next = String(toolId || classtoolSub || 'timetable');
-            if (isMasterOnlyClassTool(next) && !(window.playerState && window.playerState.isAdmin)) {
-                return;
-            }
-            if (!canOpenClassTool(window.playerState, next)) {
-                const fid = featureIdForClassTool(next);
-                if (fid) void window.unlockFeature(fid, { openTool: next });
-                return;
-            }
-            classtoolSub = next;
-            updateClassToolsPanelVisibility();
-
-            restoreClassToolPane();
-            const pane = document.querySelector(`.classtool-pane[data-tool="${classtoolSub}"]`);
-            const overlay = document.getElementById('classtoolFullscreen');
-            const body = document.getElementById('classtoolFullscreenBody');
-            const titleEl = document.getElementById('classtoolFullscreenTitle');
-            if (!pane || !overlay || !body) return;
-
-            body.appendChild(pane);
-            pane.classList.remove('hidden');
-            _classtoolFsPane = pane;
-            if (titleEl) titleEl.textContent = CLASSTOOL_TITLES[classtoolSub] || '수업도구';
-            overlay.classList.remove('hidden');
-            document.body.classList.add('classtool-fs-open');
-            if (classtoolSub === 'chalk' && typeof window.openChalkboard === 'function') {
-                window.openChalkboard();
-            }
-            if (classtoolSub === 'thermo') renderLearningThermometerPanel();
-            if (classtoolSub === 'lottery') {
-                renderLotteryParticipantList();
-                renderLotteryResultsPanel();
-            }
-            if (classtoolSub === 'wheel') renderClassWheelPanel();
-            if (classtoolSub === 'vote') renderClassElectionPanel();
-            if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
-                window.renderClassTimetableAdminPanel();
+            const opened = openClassToolWindow(toolId, { remote: false });
+            if (!opened) return;
+            const share = currentClassToolShare();
+            if (window.playerState && window.playerState.isAdmin && share.active && isClassToolShareId(classtoolSub)) {
+                void publishClassToolShare(openClassToolShare(classtoolSub));
             }
         };
+
+        window.shareClassToolFullscreen = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!isClassToolFullscreenOpen()) {
+                return window.customAlert('먼저 수업도구 창을 열어 주세요.');
+            }
+            const current = currentClassToolShare();
+            if (current.active && current.toolId === classtoolSub) {
+                return window.customAlert('이미 학생 화면에 띄우는 중입니다.');
+            }
+            const payload = openClassToolShare(classtoolSub);
+            if (!payload) return window.customAlert('이 도구는 학생 화면에 띄울 수 없습니다.');
+            const ok = await publishClassToolShare(payload);
+            if (ok) {
+                _followedClassToolShareSession = payload.sessionId;
+                _classToolShareFollower = false;
+                updateClassToolShareBar();
+                await window.customAlert('모든 학생 화면에 이 창을 띄웠습니다.');
+            }
+        };
+
+        /** Firestore 설정이 바뀌면 학생·TV 창을 같이 열거나 닫습니다. */
+        function applyRemoteClassToolShare(raw) {
+            const share = sanitizeClassToolShare(raw);
+            if (window.globalSettings) window.globalSettings.classToolShare = share;
+            if (_classToolShareApplying) {
+                updateClassToolShareBar();
+                return;
+            }
+            _classToolShareApplying = true;
+            try {
+                const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+                if (share.active) {
+                    const already = _followedClassToolShareSession === share.sessionId && isClassToolFullscreenOpen();
+                    if (already) {
+                        if (classtoolSub !== share.toolId) openClassToolWindow(share.toolId, { remote: true });
+                        updateClassToolShareBar();
+                        return;
+                    }
+                    const hostShowing = isAdmin && isClassToolFullscreenOpen() && classtoolSub === share.toolId;
+                    if (hostShowing) {
+                        _followedClassToolShareSession = share.sessionId;
+                        _classToolShareFollower = false;
+                        updateClassToolShareBar();
+                        return;
+                    }
+                    if (classToolShareShouldOpen(share, _followedClassToolShareSession) || !isClassToolFullscreenOpen()) {
+                        _classToolShareFollower = !isAdmin;
+                        _followedClassToolShareSession = share.sessionId;
+                        openClassToolWindow(share.toolId, { remote: true });
+                    }
+                } else if (classToolShareShouldClose(share, _followedClassToolShareSession) || (_classToolShareFollower && isClassToolFullscreenOpen())) {
+                    window.closeClassToolFullscreen({ fromShare: true });
+                } else {
+                    updateClassToolShareBar();
+                }
+            } finally {
+                _classToolShareApplying = false;
+            }
+        }
 
         function updateClassToolsPanelVisibility() {
             const grid = document.getElementById('classtoolsAppGrid');
@@ -12108,8 +12269,11 @@ ${subjectLine}
             overlay.style.top = nav ? nav.offsetHeight + 'px' : '0px';
         }
 
-        window.openChalkboard = function() {
-            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('판서 모드는 마스터만 사용할 수 있습니다.');
+        window.openChalkboard = function(opts = {}) {
+            const remote = !!opts.remote;
+            if (!remote && (!window.playerState || !window.playerState.isAdmin)) {
+                return window.customAlert('판서 모드는 마스터만 사용할 수 있습니다.');
+            }
             const overlay = document.getElementById('chalkboardOverlay');
             if (!overlay) return;
             overlay.classList.remove('hidden');
@@ -12123,11 +12287,16 @@ ${subjectLine}
             });
         };
 
-        window.closeChalkboard = function() {
+        window.closeChalkboard = function(opts = {}) {
+            if (_classToolShareFollower && !opts.fromShare) return;
             const overlay = document.getElementById('chalkboardOverlay');
             if (overlay) overlay.classList.add('hidden');
             document.body.classList.remove('overflow-hidden');
             if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+            if (opts.skipWindow) return;
+            if (isClassToolFullscreenOpen() && classtoolSub === 'chalk') {
+                window.closeClassToolFullscreen();
+            }
         };
 
         // ----- 판서 페이지(여러 장) 관리 -----
@@ -13634,6 +13803,7 @@ ${subjectLine}
                                     morningNoticeEl.value = window.globalSettings.morningActivityNotice || DEFAULT_MORNING_ACTIVITY_NOTICE;
                                 }
                                 applyRemoteScreenNotice(settingsData.screenNotice);
+                                applyRemoteClassToolShare(settingsData.classToolShare);
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);

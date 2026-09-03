@@ -2291,26 +2291,26 @@
         /* 학교 날씨 — 홈 카드 + 월드맵 장면 연동 */
         .home-brief-grid {
             display: grid;
-            gap: 0.65rem;
+            gap: 0.5rem;
         }
         @media (min-width: 640px) {
-            .home-brief-grid { grid-template-columns: 1.35fr 0.95fr; align-items: stretch; }
+            .home-brief-grid { grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr); align-items: stretch; }
         }
         .school-weather-card {
             overflow: hidden;
         }
         .school-weather-art {
-            width: 7.2rem;
-            height: 5.4rem;
+            width: 4.6rem;
+            height: 4.6rem;
             object-fit: cover;
-            border-radius: 0.9rem;
+            border-radius: 0.75rem;
             border: 2px solid rgba(125, 211, 252, 0.45);
             box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
             flex-shrink: 0;
             background: #0c4a6e;
         }
         @media (min-width: 640px) {
-            .school-weather-art { width: 9rem; height: 6.4rem; }
+            .school-weather-art { width: 5.4rem; height: 5.4rem; }
         }
         #worldMapArea .worldmap-weather-layer {
             position: absolute;

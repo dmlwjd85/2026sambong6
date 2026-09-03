@@ -10,8 +10,8 @@ export const STOCK_MARKETS = [
     { id: 'nasdaq', name: '나스닥', symbol: '^IXIC' },
 ];
 
-/** 홈 실시간 지수 카드에 보여줄 시장 (한국 장중 1시간 갱신) */
-export const TICKER_MARKETS = STOCK_MARKETS.filter((m) => m.id === 'kospi' || m.id === 'kosdaq');
+/** 홈 실시간 지수 카드에 한 번에 보여줄 시장 */
+export const TICKER_MARKETS = STOCK_MARKETS;
 
 /** 장중 1시간마다 네트워크 시세를 다시 읽습니다. */
 export const MARKET_REFRESH_MS = 60 * 60 * 1000;

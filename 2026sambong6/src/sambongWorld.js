@@ -222,6 +222,15 @@ import {
     validateReadingLogDraft,
     weatherMeta,
 } from './lib/literature.js';
+import {
+    CLASS_BELL_CHECK_MS,
+    CLASS_BELL_STORAGE_KEY,
+    classBellAnnounceText,
+    classBellFiredKey,
+    isClassBellEnabled,
+    matchClassBell,
+    melodyForClassBell,
+} from './lib/classBell.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
     listAllCharacterBases,
@@ -1274,11 +1283,11 @@ function redrawPlazaGrantsUi() {
                 chEl.className = 'text-[10px] font-black ' + (pct > 0.0001 ? 'up' : pct < -0.0001 ? 'down' : 'flat');
             });
             if (meta) {
-                const ok = _marketQuotes.kospi || _marketQuotes.kosdaq;
+                const ok = _marketQuotes.kospi || _marketQuotes.kosdaq || _marketQuotes.nasdaq;
                 if (!ok) {
                     meta.textContent = '지수를 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
                 } else if (isKoreanStockSession()) {
-                    meta.textContent = '장중 1시간마다 갱신 · 은행에서 투자할 수 있습니다.';
+                    meta.textContent = '코스피·코스닥은 장중 1시간마다 갱신 · 은행에서 투자할 수 있습니다.';
                 } else {
                     meta.textContent = '장마감 · 마지막 시세를 보여 줍니다.';
                 }
@@ -1484,6 +1493,7 @@ function redrawPlazaGrantsUi() {
             setVal('wsDragonBallCompleteBong', dbReward.completeBong);
             setVal('wsAnnouncement', (window.globalSettings && window.globalSettings.announcement) || '');
             setVal('wsMorningNotice', (window.globalSettings && window.globalSettings.morningActivityNotice) || DEFAULT_MORNING_ACTIVITY_NOTICE);
+            if (typeof syncClassBellToggleUi === 'function') syncClassBellToggleUi();
 
             const classPanel = document.getElementById('settingsClassPanel');
             if (classPanel) {
@@ -4248,6 +4258,7 @@ function redrawPlazaGrantsUi() {
             if (saveBtn) saveBtn.classList.toggle('hidden', !canEdit);
             const bdayWrap = document.getElementById('birthdayCelebrationAdminWrap');
             if (bdayWrap) bdayWrap.classList.toggle('hidden', !canEdit);
+            syncClassBellToggleUi();
             const tt = getClassTimetable();
             const headerCells = CLASS_TIMETABLE_DAYS.map((d) =>
                 `<th class="p-1.5 text-center text-violet-200 min-w-[72px]">${d.label}</th>`
@@ -4343,6 +4354,72 @@ function redrawPlazaGrantsUi() {
                 );
             }
         }
+
+        function getClassBellEnabled() {
+            try {
+                return isClassBellEnabled(localStorage.getItem(CLASS_BELL_STORAGE_KEY));
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function syncClassBellToggleUi() {
+            const on = getClassBellEnabled();
+            ['classBellEnabledCheck', 'classBellEnabledCheckTt'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el && document.activeElement !== el) el.checked = on;
+            });
+        }
+
+        function playClassBellMelody(kind) {
+            if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const notes = melodyForClassBell(kind);
+            const t0 = audioCtx.currentTime + 0.04;
+            notes.forEach(([freq, start, dur]) => {
+                scheduleChord({ root: freq, start: t0 + start, duration: dur, gain: kind === 'end' ? 0.26 : 0.30 });
+            });
+        }
+
+        function checkClassBells(now = new Date()) {
+            if (!getClassBellEnabled()) return;
+            if (typeof isWorldVacationDay === 'function' && isWorldVacationDay(now)) return;
+            const event = matchClassBell(now);
+            if (!event) return;
+            const firedKey = classBellFiredKey(now, event);
+            try {
+                if (localStorage.getItem(firedKey) === '1') return;
+                localStorage.setItem(firedKey, '1');
+            } catch (e) {
+                return;
+            }
+            playClassBellMelody(event.kind);
+            const line = classBellAnnounceText(event);
+            if (line && window.showToast) window.showToast((event.kind === 'end' ? '🔔 ' : '🎵 ') + line);
+        }
+
+        window.setClassBellEnabled = function(on) {
+            const next = !!on;
+            try {
+                localStorage.setItem(CLASS_BELL_STORAGE_KEY, next ? '1' : '0');
+            } catch (e) { /* 저장 실패해도 이번 세션 UI는 맞춤 */ }
+            syncClassBellToggleUi();
+            if (next && audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            if (window.showToast) {
+                window.showToast(next
+                    ? '이 컴퓨터에서 수업 시작·종료 종을 켭니다.'
+                    : '이 컴퓨터의 수업 종을 껐습니다.');
+            }
+            if (next) checkClassBells(new Date());
+        };
+
+        window.previewClassBell = function(kind) {
+            if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            playClassBellMelody(kind === 'end' ? 'end' : 'start');
+            if (window.showToast) {
+                window.showToast(kind === 'end' ? '종료 멜로디를 들려줍니다.' : '시작 멜로디를 들려줍니다.');
+            }
+        };
 
         // ==========================================
         // ★ 생일 축하 파티 (이름·날짜 설정 가능) ★
@@ -13260,6 +13337,9 @@ ${subjectLine}
                     if (user) {
                         checkTimeEvents();
                         setInterval(checkTimeEvents, 60000);
+                        checkClassBells(new Date());
+                        setInterval(() => { checkClassBells(new Date()); }, CLASS_BELL_CHECK_MS);
+                        syncClassBellToggleUi();
                         setInterval(() => { void tryDragonBallSpawnTick(); }, 45000);
                         void tryDragonBallSpawnTick();
                         
@@ -13674,6 +13754,7 @@ ${subjectLine}
 
             const now = new Date();
             checkClassStartReminders(now);
+            checkClassBells(now);
             const h = now.getHours();
             const m = now.getMinutes();
             const isPast1210 = (h > 12) || (h === 12 && m >= 10);

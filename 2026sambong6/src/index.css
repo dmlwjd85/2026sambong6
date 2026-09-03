@@ -2752,6 +2752,16 @@
             border: 1px solid #fbbf24;
             pointer-events: none;
         }
+        .diary-past-canvas {
+            display: block;
+            width: 9rem;
+            max-width: 100%;
+            height: 4.5rem;
+            border-radius: 0.65rem;
+            background: #fffbeb;
+            border: 1px solid #fbbf24;
+            pointer-events: none;
+        }
         .diary-ink {
             width: 1.35rem;
             height: 1.35rem;

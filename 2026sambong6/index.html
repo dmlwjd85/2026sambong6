@@ -1232,8 +1232,13 @@
                         <textarea id="readingThought" maxlength="800" rows="5" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="이 책을 읽고 느낀 점을 자세히 적어 주세요."></textarea>
                     </label>
                     <button type="button" id="readingSubmitBtn" onclick="void window.submitReadingLog()" class="w-full min-h-[48px] bg-amber-600 hover:bg-amber-500 text-white font-black rounded-xl text-sm">독서기록 제출</button>
+                    <div id="readingAdminPicker" class="hidden">
+                        <label class="block text-[10px] text-slate-400 font-bold">학생 독서기록 보기
+                            <select id="readingStudentSelect" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs font-bold" onchange="window.renderLiteratureReadingPane()"></select>
+                        </label>
+                    </div>
                     <div>
-                        <h4 class="text-[11px] font-bold text-slate-300 mb-2">내 독서 기록</h4>
+                        <h4 class="text-[11px] font-bold text-slate-300 mb-2">지난 독서기록</h4>
                         <div id="readingLogMine" class="space-y-2 text-[11px] text-slate-300"></div>
                     </div>
                 </div>
@@ -1921,7 +1926,7 @@
                     <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-calendar-days text-violet-400"></i> 주간 시간표</h3>
                     <button type="button" id="classTimetableSaveBtn" onclick="window.saveClassTimetableFromAdmin()" class="bg-violet-600 hover:bg-violet-500 text-white text-[10px] py-1.5 px-3 rounded font-bold">저장</button>
                 </div>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">월~금요일 · 1~6교시. 각 칸에 과목명을 입력하세요. 교시 시작 시점에 <strong class="text-violet-200">수업 준비 알림</strong>이 표시됩니다. 수업 종은 이 컴퓨터 시계 기준으로 시작·종료 멜로디를 울립니다.</p>
+                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">월~금요일 · 1~6교시. 각 칸에 과목명을 입력하세요. 수업 종을 켠 컴퓨터에서는 시작·종료 때 멜로디와 팝업이 나오고, 팝업은 10초 뒤 사라집니다.</p>
                 <div class="mb-3 p-2.5 rounded-xl border border-amber-500/40 bg-amber-950/30 space-y-2">
                     <label class="flex items-center gap-2 text-[11px] text-amber-100 font-black">
                         <input id="classBellEnabledCheckTt" type="checkbox" class="rounded border-slate-600" onchange="window.setClassBellEnabled(this.checked)">
@@ -2699,7 +2704,7 @@
                             <input id="classBellEnabledCheck" type="checkbox" class="rounded border-slate-600" onchange="window.setClassBellEnabled(this.checked)">
                             <span>이 컴퓨터에서 수업 시작·종료 종 울리기</span>
                         </label>
-                        <p class="text-[9px] text-slate-400 leading-relaxed">평일 1~6교시 시작·종료 시각에 학교종 멜로디가 납니다. 이 컴퓨터 시계를 쓰며, 학급 전체가 아니라 이 기기에만 적용됩니다.</p>
+                        <p class="text-[9px] text-slate-400 leading-relaxed">평일 1~6교시 시작·종료 시각에 학교종 멜로디와 팝업이 나옵니다. 팝업은 10초 뒤 사라집니다. 이 컴퓨터 시계를 쓰며, 학급 전체가 아니라 이 기기에만 적용됩니다.</p>
                         <div class="flex flex-wrap gap-2">
                             <button type="button" onclick="void window.previewClassBell('start')" class="min-h-[36px] px-3 bg-amber-700 hover:bg-amber-600 text-white text-[10px] font-black rounded-lg">시작 멜로디 미리듣기</button>
                             <button type="button" onclick="void window.previewClassBell('end')" class="min-h-[36px] px-3 bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black rounded-lg">종료 멜로디 미리듣기</button>

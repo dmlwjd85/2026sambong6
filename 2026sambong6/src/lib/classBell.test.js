@@ -1,9 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CLASS_BELL_MELODY_TIME_SCALE,
     CLASS_BELL_PERIODS,
+    CLASS_BELL_POPUP_MS,
+    CLASS_BELL_START_MELODY,
+    CLASS_BELL_END_MELODY,
     classBellAnnounceText,
     classBellFiredKey,
+    classBellMelodyDurationSec,
     isClassBellEnabled,
     isClassBellWeekday,
     matchClassBell,
@@ -40,5 +45,11 @@ describe('수업 종', () => {
         assert.ok(melodyForClassBell('start').length >= 4);
         assert.ok(melodyForClassBell('end').length >= 4);
         assert.notEqual(melodyForClassBell('start')[0][0], melodyForClassBell('end')[0][0]);
+        assert.equal(CLASS_BELL_MELODY_TIME_SCALE, 2);
+        assert.equal(CLASS_BELL_POPUP_MS, 10000);
+        assert.ok(classBellMelodyDurationSec(CLASS_BELL_START_MELODY) >= 5);
+        assert.ok(classBellMelodyDurationSec(CLASS_BELL_END_MELODY) >= 5);
+        assert.equal(CLASS_BELL_START_MELODY[0][1], 0);
+        assert.equal(CLASS_BELL_START_MELODY[1][1], 0.64);
     });
 });

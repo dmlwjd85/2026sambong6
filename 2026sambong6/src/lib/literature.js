@@ -264,6 +264,32 @@ export function diariesVisibleTo(viewer, entries) {
     return (Array.isArray(entries) ? entries : []).filter((e) => canViewDiary(viewer, e));
 }
 
+/** 학생은 자기 독서기록만, 교사는 전부 볼 수 있습니다. */
+export function canViewReadingLog(viewer, log) {
+    if (!log) return false;
+    if (viewer && viewer.isAdmin) return true;
+    const vid = String((viewer && (viewer.id || viewer.studentId)) || '');
+    return vid && vid === String(log.studentId);
+}
+
+export function readingLogsVisibleTo(viewer, logs) {
+    return (Array.isArray(logs) ? logs : []).filter((e) => canViewReadingLog(viewer, e));
+}
+
+/** 한 학생의 독서기록을 날짜 최신순으로 모읍니다. */
+export function readingLogsForStudent(logs, studentId) {
+    const sid = String(studentId || '');
+    return (Array.isArray(logs) ? logs : [])
+        .filter((l) => l && String(l.studentId) === sid)
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+
+/** 그림 획이 있으면 지난 일기 미리보기를 그릴 수 있습니다. */
+export function diaryHasDrawing(entry) {
+    const strokes = entry && Array.isArray(entry.strokes) ? entry.strokes : [];
+    return strokes.some((s) => s && Array.isArray(s.pts) && s.pts.length >= 4);
+}
+
 /**
  * 오늘 일기 저장 가능 여부.
  * 확인 완료여도 같은 날을 고쳐 저장할 수 있습니다. 보상은 다시 지급하지 않습니다.

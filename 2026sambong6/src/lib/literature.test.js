@@ -16,6 +16,7 @@ import {
     countApprovedReadingLogs,
     diariesVisibleTo,
     diaryDocId,
+    diaryHasDrawing,
     diarySubmitState,
     literatureArrivalMessage,
     literaturePendingCounts,
@@ -23,6 +24,8 @@ import {
     pendingReadingLogs,
     readingLogDocId,
     readingLogSubmitState,
+    readingLogsForStudent,
+    readingLogsVisibleTo,
     sanitizeDiaryEntry,
     sanitizeLiteratureRewards,
     sanitizeReadingLog,
@@ -87,6 +90,12 @@ describe('독서기록장', () => {
         assert.equal(countApprovedReadingLogs([reviewed.log], '12'), 1);
         assert.equal(pendingReadingLogs([log]).length, 1);
         assert.equal(readingLogDocId('12', '2026-09-02'), 'rlog_12_2026-09-02');
+        const older = sanitizeReadingLog({ studentId: '12', date: '2026-09-01', status: 'approved', title: '어제' });
+        const stacked = readingLogsForStudent([reviewed.log, older, sanitizeReadingLog({ studentId: '1', date: '2026-09-02', title: '다른 학생' })], '12');
+        assert.equal(stacked.length, 2);
+        assert.equal(stacked[0].date, '2026-09-02');
+        assert.equal(readingLogsVisibleTo({ id: '1' }, stacked).length, 0);
+        assert.equal(readingLogsVisibleTo({ isAdmin: true }, stacked).length, 2);
     });
 });
 
@@ -104,6 +113,8 @@ describe('일기장', () => {
         assert.equal(canViewDiary({ id: '12' }, entry), true);
         assert.equal(canViewDiary({ id: '1' }, entry), false);
         assert.equal(canViewDiary({ isAdmin: true, id: 'gm' }, entry), true);
+        assert.equal(diaryHasDrawing(entry), true);
+        assert.equal(diaryHasDrawing({ strokes: [] }), false);
         const visible = diariesVisibleTo({ id: '1' }, [entry]);
         assert.equal(visible.length, 0);
         assert.equal(diaryDocId('12', '2026-09-02'), 'diary_12_2026-09-02');

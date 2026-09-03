@@ -15,6 +15,10 @@ export const CLASS_BELL_PERIODS = Object.freeze([
 export const CLASS_BELL_STORAGE_KEY = 'sambong_class_bell_on';
 export const CLASS_BELL_FIRED_PREFIX = 'sambong_class_bell_';
 export const CLASS_BELL_CHECK_MS = 15 * 1000;
+/** 시작·종료 팝업이 종소리와 함께 떠 있는 시간 */
+export const CLASS_BELL_POPUP_MS = 10 * 1000;
+/** 원래 멜로디 길이를 이 배율로 늘립니다. */
+export const CLASS_BELL_MELODY_TIME_SCALE = 2;
 
 const NOTE = Object.freeze({
     C4: 261.63,
@@ -28,8 +32,19 @@ const NOTE = Object.freeze({
     G5: 783.99,
 });
 
-/** 수업 시작 — 학교종 앞소절(올라가며 여는 소리) */
-export const CLASS_BELL_START_MELODY = Object.freeze([
+function scaleMelodyTimes(notes, scale = CLASS_BELL_MELODY_TIME_SCALE) {
+    const mul = Number(scale);
+    const s = Number.isFinite(mul) && mul > 0 ? mul : 1;
+    return (Array.isArray(notes) ? notes : []).map((row) => {
+        const freq = Number(row && row[0]) || 0;
+        const start = Number(row && row[1]) || 0;
+        const dur = Number(row && row[2]) || 0;
+        return [freq, start * s, dur * s];
+    });
+}
+
+/** 수업 시작 — 학교종 앞소절(올라가며 여는 소리). 시간은 2배로 늘린 값입니다. */
+export const CLASS_BELL_START_MELODY = Object.freeze(scaleMelodyTimes([
     [NOTE.C5, 0.00, 0.28],
     [NOTE.C5, 0.32, 0.28],
     [NOTE.G4, 0.64, 0.28],
@@ -37,10 +52,10 @@ export const CLASS_BELL_START_MELODY = Object.freeze([
     [NOTE.A4, 1.28, 0.28],
     [NOTE.A4, 1.60, 0.28],
     [NOTE.G4, 1.92, 0.70],
-]);
+]));
 
-/** 수업 종료 — 학교종 뒷소절(내려가며 닫는 소리) */
-export const CLASS_BELL_END_MELODY = Object.freeze([
+/** 수업 종료 — 학교종 뒷소절(내려가며 닫는 소리). 시간은 2배로 늘린 값입니다. */
+export const CLASS_BELL_END_MELODY = Object.freeze(scaleMelodyTimes([
     [NOTE.F4, 0.00, 0.28],
     [NOTE.F4, 0.32, 0.28],
     [NOTE.E4, 0.64, 0.28],
@@ -48,7 +63,17 @@ export const CLASS_BELL_END_MELODY = Object.freeze([
     [NOTE.D4, 1.28, 0.28],
     [NOTE.D4, 1.60, 0.28],
     [NOTE.C4, 1.92, 0.80],
-]);
+]));
+
+export function classBellMelodyDurationSec(notes) {
+    let end = 0;
+    (Array.isArray(notes) ? notes : []).forEach((row) => {
+        const start = Number(row && row[1]) || 0;
+        const dur = Number(row && row[2]) || 0;
+        end = Math.max(end, start + dur);
+    });
+    return end;
+}
 
 export function parseHhmmToMinutes(hhmm) {
     const parts = String(hhmm || '').split(':');

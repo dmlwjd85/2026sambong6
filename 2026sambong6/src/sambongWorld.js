@@ -201,6 +201,7 @@ import {
     countApprovedReadingLogs,
     diariesVisibleTo,
     diaryDocId,
+    diaryHasDrawing,
     diaryStatusLabel,
     diarySubmitState,
     DIARY_MOODS,
@@ -213,6 +214,8 @@ import {
     readingLogDocId,
     readingLogStatusLabel,
     readingLogSubmitState,
+    readingLogsForStudent,
+    readingLogsVisibleTo,
     READING_GENRES,
     restoreLiteratureNoteDrafts,
     sanitizeDiaryEntry,
@@ -226,6 +229,7 @@ import {
 } from './lib/literature.js';
 import {
     CLASS_BELL_CHECK_MS,
+    CLASS_BELL_POPUP_MS,
     CLASS_BELL_STORAGE_KEY,
     classBellAnnounceText,
     classBellFiredKey,
@@ -4348,6 +4352,8 @@ function redrawPlazaGrantsUi() {
                     void showBirthdayClassStartAlert({ period, subjectLine, celebration: bdayHit });
                     continue;
                 }
+                // 수업 종을 켠 기기는 시작·종료 팝업이 이 알림을 대신합니다.
+                if (getClassBellEnabled()) continue;
                 void window.customAlert(
                     `🔔 수업 준비 알림\n\n` +
                     `${period.label} (${period.start}~${period.end})\n` +
@@ -4373,6 +4379,50 @@ function redrawPlazaGrantsUi() {
             });
         }
 
+        function classBellSubjectLine(now, periodId) {
+            const dayKey = getClassTimetableDayKeyFromDate(now);
+            const tt = getClassTimetable();
+            const today = (tt && tt.days && tt.days[dayKey]) || {};
+            const subject = String(today[periodId] || '').trim();
+            return subject ? `과목: ${subject}` : '과목: (시간표 미입력)';
+        }
+
+        function hideClassBellPopup() {
+            const el = document.getElementById('classBellPopup');
+            if (el) el.remove();
+            if (window._classBellPopupTimer) {
+                clearTimeout(window._classBellPopupTimer);
+                window._classBellPopupTimer = null;
+            }
+        }
+
+        function showClassBellPopup(event, now = new Date()) {
+            if (!event) return;
+            hideClassBellPopup();
+            const d = document.createElement('div');
+            d.id = 'classBellPopup';
+            d.className = 'sambong-custom-modal fixed inset-0 z-[700] flex items-center justify-center bg-black/80 px-4';
+            const isEnd = event.kind === 'end';
+            const title = classBellAnnounceText(event) || (isEnd ? '수업 종료' : '수업 시작');
+            const subject = classBellSubjectLine(now, event.periodId);
+            const icon = isEnd ? '🔔' : '🎵';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-6 rounded-3xl border border-amber-400/50 max-w-sm w-full text-center space-y-3 shadow-2xl">
+                    <p class="text-3xl leading-none">${icon}</p>
+                    <h3 class="text-xl font-display text-amber-100">${escapeHofText(title)}</h3>
+                    <p class="text-xs text-slate-300">${escapeHofText(subject)}</p>
+                    <p class="text-[10px] text-slate-500">종소리와 함께 10초 뒤 사라집니다</p>
+                    <button type="button" class="js-class-bell-ok bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
+                </div>`;
+            document.body.appendChild(d);
+            const ok = d.querySelector('.js-class-bell-ok');
+            if (ok) ok.onclick = () => hideClassBellPopup();
+            d.addEventListener('click', (ev) => {
+                if (ev.target === d) hideClassBellPopup();
+            });
+            window._classBellPopupTimer = setTimeout(() => hideClassBellPopup(), CLASS_BELL_POPUP_MS);
+        }
+
         function playClassBellMelody(kind) {
             if (!audioCtx) return;
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -4396,8 +4446,7 @@ function redrawPlazaGrantsUi() {
                 return;
             }
             playClassBellMelody(event.kind);
-            const line = classBellAnnounceText(event);
-            if (line && window.showToast) window.showToast((event.kind === 'end' ? '🔔 ' : '🎵 ') + line);
+            showClassBellPopup(event, now);
         }
 
         window.setClassBellEnabled = function(on) {
@@ -4417,10 +4466,14 @@ function redrawPlazaGrantsUi() {
 
         window.previewClassBell = function(kind) {
             if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-            playClassBellMelody(kind === 'end' ? 'end' : 'start');
-            if (window.showToast) {
-                window.showToast(kind === 'end' ? '종료 멜로디를 들려줍니다.' : '시작 멜로디를 들려줍니다.');
-            }
+            const isEnd = kind === 'end';
+            playClassBellMelody(isEnd ? 'end' : 'start');
+            showClassBellPopup({
+                kind: isEnd ? 'end' : 'start',
+                label: isEnd ? '수업 종료' : '수업 시작',
+                time: isEnd ? '종료 미리듣기' : '시작 미리듣기',
+                periodId: 1,
+            }, new Date());
         };
 
         // ==========================================
@@ -8092,6 +8145,22 @@ ${subjectLine}
             return literatureStudentId();
         }
 
+        function currentReadingTargetId() {
+            if (window.playerState && window.playerState.isAdmin) {
+                const sel = document.getElementById('readingStudentSelect');
+                return String((sel && sel.value) || '');
+            }
+            return literatureStudentId();
+        }
+
+        function fillLiteratureStudentSelect(sel) {
+            if (!sel) return;
+            const ids = (window.allStudentsData || []).map((s) => String(s.id)).filter((id) => id && id !== 'gm' && id !== 'gm_a' && id !== 'guest');
+            const cur = sel.value;
+            sel.innerHTML = ids.map((id) => `<option value="${escapeHofText(id)}">${escapeHofText(STUDENT_NAMES[id] || id)}</option>`).join('');
+            if (cur && ids.includes(cur)) sel.value = cur;
+        }
+
         function diaryCanvasPoint(ev, canvas) {
             const rect = canvas.getBoundingClientRect();
             const x = (ev.clientX - rect.left) / Math.max(1, rect.width);
@@ -8207,21 +8276,30 @@ ${subjectLine}
 
         window.renderLiteratureReadingPane = function() {
             renderReadingChips();
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            const picker = document.getElementById('readingAdminPicker');
+            if (picker) picker.classList.toggle('hidden', !admin);
             const sid = literatureStudentId();
+            const sel = document.getElementById('readingStudentSelect');
+            if (admin) fillLiteratureStudentSelect(sel);
+            const targetId = currentReadingTargetId();
             const today = getLocalDateStr();
-            const mine = _readingLogs.filter((l) => String(l.studentId) === sid)
-                .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-            const state = readingLogSubmitState(mine, sid, today);
+            const viewer = { ...(window.playerState || {}), id: sid, isAdmin: admin };
+            const visible = readingLogsVisibleTo(viewer, _readingLogs);
+            const mine = readingLogsForStudent(visible, admin ? targetId : sid);
+            const state = readingLogSubmitState(_readingLogs, admin ? targetId : sid, today);
             const hint = document.getElementById('readingLogHint');
             const btn = document.getElementById('readingSubmitBtn');
-            const locked = !state.ok;
+            const locked = admin || !state.ok;
             if (hint) {
-                if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 독서기록이 있습니다. 내일 다시 쓸 수 있어요.';
+                if (admin) hint.textContent = '학생을 고르면 그동안 낸 독서기록을 모두 볼 수 있습니다.';
+                else if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 독서기록이 있습니다. 내일 다시 쓸 수 있어요.';
                 else if (state.reason === 'pending') hint.textContent = '오늘 기록이 확인 대기 중입니다. 선생님이 보면 보상이 들어옵니다.';
                 else if (state.reason === 'resubmit') hint.textContent = '반려된 기록을 고쳐 다시 제출할 수 있습니다.';
                 else hint.textContent = '제목·지은이·출판사와 읽고 난 생각(20자 이상)을 적으면 선생님이 확인합니다.';
             }
             if (btn) {
+                btn.classList.toggle('hidden', admin);
                 btn.disabled = locked || !!(window.playerState && (window.playerState.isGuest || window.playerState.isAdmin));
                 btn.textContent = state.reason === 'resubmit' ? '고쳐서 다시 제출' : '독서기록 제출';
             }
@@ -8229,17 +8307,23 @@ ${subjectLine}
                 const el = document.getElementById(id);
                 if (el) el.disabled = locked || !!(window.playerState && window.playerState.isAdmin);
             });
-            if (state.existing && (state.reason === 'pending' || state.reason === 'already' || state.reason === 'resubmit')) {
-                fillReadingForm(state.existing);
+            const todayLog = mine.find((l) => String(l.date) === today) || state.existing || null;
+            const hydrateKey = `${admin ? targetId : sid}:${today}`;
+            if (window._readingHydrateKey !== hydrateKey) {
+                window._readingHydrateKey = hydrateKey;
+                if (todayLog) fillReadingForm(todayLog);
+                else if (admin) fillReadingForm(null);
             }
             const list = document.getElementById('readingLogMine');
             if (list) {
-                if (!mine.length) list.innerHTML = '<p class="text-slate-500">아직 제출한 기록이 없습니다.</p>';
+                if (!targetId && admin) list.innerHTML = '<p class="text-slate-500">학생을 고르면 누적 기록이 나타납니다.</p>';
+                else if (!mine.length) list.innerHTML = '<p class="text-slate-500">아직 제출한 기록이 없습니다.</p>';
                 else {
-                    list.innerHTML = mine.slice(0, 12).map((l) => (
+                    list.innerHTML = mine.map((l) => (
                         `<div class="lit-log-card is-${escapeHofText(l.status)}">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(l.title)}</strong><span>${escapeHofText(readingLogStatusLabel(l.status))}</span></div>
-                            <div class="text-[10px] text-slate-400">${escapeHofText(l.date)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)} · ★${l.stars}</div>
+                            <div class="text-[10px] text-slate-400">${escapeHofText(l.date)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)}${l.genre ? ` · ${escapeHofText(l.genre)}` : ''} · ★${l.stars}</div>
+                            ${l.quote ? `<p class="mt-1 text-amber-100">“${escapeHofText(l.quote)}”</p>` : ''}
                             <p class="mt-1 text-slate-200 whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
                             ${l.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(l.teacherNote)}</p>` : ''}
                             ${l.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${l.rewardXp} XP · +${l.rewardBong}봉</p>` : ''}
@@ -8247,8 +8331,9 @@ ${subjectLine}
                     )).join('');
                 }
             }
-            const approved = countApprovedReadingLogs(_readingLogs, sid);
-            if (hint && approved > 0 && state.ok) hint.textContent += ` 지금까지 ${approved}권을 확인받았습니다.`;
+            const approved = countApprovedReadingLogs(_readingLogs, admin ? targetId : sid);
+            if (hint && !admin && approved > 0 && state.ok) hint.textContent += ` 지금까지 ${approved}권을 확인받았습니다.`;
+            else if (hint && admin && approved > 0) hint.textContent += ` 확인받은 책 ${approved}권.`;
         };
 
         window.renderLiteratureDiaryPane = function() {
@@ -8264,12 +8349,7 @@ ${subjectLine}
             const hint = document.getElementById('diaryHint');
             const sid = literatureStudentId();
             const sel = document.getElementById('diaryStudentSelect');
-            if (admin && sel) {
-                const ids = (window.allStudentsData || []).map((s) => String(s.id)).filter((id) => id && id !== 'gm' && id !== 'gm_a' && id !== 'guest');
-                const cur = sel.value;
-                sel.innerHTML = ids.map((id) => `<option value="${escapeHofText(id)}">${escapeHofText(STUDENT_NAMES[id] || id)}</option>`).join('');
-                if (cur && ids.includes(cur)) sel.value = cur;
-            }
+            if (admin) fillLiteratureStudentSelect(sel);
             const weatherWrap = document.getElementById('diaryWeather');
             const moodWrap = document.getElementById('diaryMood');
             const targetId = currentDiaryTargetId();
@@ -8346,9 +8426,11 @@ ${subjectLine}
                     past.innerHTML = rows.map((d) => {
                         const w = weatherMeta(d.weather);
                         const m = moodMeta(d.mood);
+                        const hasDraw = diaryHasDrawing(d);
                         return `<div class="lit-log-card is-${escapeHofText(d.status || 'pending')}">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(d.date)} · ${w.emoji} ${w.label} · ${m.emoji} ${m.label}</strong><span>${escapeHofText(diaryStatusLabel(d.status))}</span></div>
                             <p class="mt-1 whitespace-pre-wrap text-slate-200">${escapeHofText(d.body)}</p>
+                            ${hasDraw ? `<canvas class="diary-past-canvas mt-2" width="360" height="180" data-diary-past-preview="${escapeHofText(d.id)}" aria-label="일기 그림 미리보기"></canvas>` : ''}
                             ${d.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(d.teacherNote)}</p>` : ''}
                             ${d.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${d.rewardXp} XP · +${d.rewardBong}봉</p>` : ''}
                             ${admin ? `<label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디
@@ -8357,6 +8439,11 @@ ${subjectLine}
                             <button type="button" class="mt-1 min-h-[36px] px-3 bg-amber-700 hover:bg-amber-600 text-white font-black rounded-lg text-[10px]" onclick="void window.saveDiaryTeacherNoteById('${escapeHofText(d.id)}')">한마디 저장</button>` : ''}
                         </div>`;
                     }).join('');
+                    past.querySelectorAll('[data-diary-past-preview]').forEach((canvas) => {
+                        const id = canvas.getAttribute('data-diary-past-preview');
+                        const entry = rows.find((d) => d.id === id);
+                        if (entry) paintDiaryStrokes(canvas, entry.strokes);
+                    });
                 }
             }
             restoreLiteratureNoteDrafts(document, noteDrafts);
@@ -8420,7 +8507,7 @@ ${subjectLine}
                     diaryBox.innerHTML = pendingDiary.map((d) => {
                         const w = weatherMeta(d.weather);
                         const m = moodMeta(d.mood);
-                        const hasDraw = Array.isArray(d.strokes) && d.strokes.length > 0;
+                        const hasDraw = diaryHasDrawing(d);
                         return `<div class="lit-log-card is-pending">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(STUDENT_NAMES[d.studentId] || d.studentId)}</strong><span>${escapeHofText(d.date)}</span></div>
                             <div class="text-[10px] text-slate-400">${w.emoji} ${w.label} · ${m.emoji} ${m.label}${hasDraw ? ' · 그림 있음' : ''}</div>

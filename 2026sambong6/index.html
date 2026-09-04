@@ -118,7 +118,9 @@
                 </div>
 
                 <div id="teacherCreatePanel" class="hidden space-y-3">
-                    <p class="text-[10px] text-slate-400">새 교실을 만들면 전용 데이터와 초대 코드가 발급됩니다.</p>
+                    <p id="teacherCreateIntro" class="text-[10px] text-slate-400">새 교실은 원래 마스터 허락 뒤에 만들어집니다.</p>
+                    <div id="classCreateRequestBox" class="hidden p-3 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
+                    <div id="teacherCreateFormFields" class="space-y-3">
                     <label class="block text-[10px] text-slate-300 font-bold">학급명 <span class="text-rose-400">(필수)</span>
                         <input id="createClassDisplayName" type="text" maxlength="40" placeholder="예: 해오름초 6학년 2반" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2.5 text-xs font-bold min-h-[44px]">
                     </label>
@@ -158,8 +160,9 @@
                         <span>기본 템플릿 적용 (퀘스트·직업·헌법 기본값)</span>
                     </label>
                     <button type="button" onclick="void window.createClassFromLogin()" class="w-full bg-gradient-to-r from-sky-600 to-emerald-500 hover:from-sky-500 text-white font-black py-3.5 rounded-xl shadow-lg text-sm min-h-[48px]">
-                        <i class="fa-solid fa-school"></i> 학급 만들고 시작하기
+                        <i class="fa-solid fa-school"></i> 학급 개설 요청하기
                     </button>
+                    </div>
                 </div>
             </div>
 
@@ -1175,7 +1178,7 @@
         <section id="literatureSection" class="hidden space-y-4">
             <div class="mb-1">
                 <h2 class="text-xl sm:text-2xl font-display text-amber-200"><i class="fa-solid fa-book-open"></i> 문학</h2>
-                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">독서기록장과 일기장은 선생님이 확인하면 정해 둔 보상을 받습니다. 일기장은 선생님만 볼 수 있습니다.</p>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">독서기록장과 일기장은 선생님만 확인하고, 확인하면 정해 둔 보상을 받습니다. 친구는 다른 학생의 글을 볼 수 없습니다.</p>
             </div>
             <div id="literatureSubDock" class="app-sub-dock cols-2 mb-2" data-pane-group="literature" role="tablist">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="literature" data-pane="reading" onclick="window.switchInnerPane('literature','reading')">
@@ -1201,7 +1204,7 @@
                     <div class="flex flex-wrap items-start justify-between gap-2">
                         <div>
                             <h3 class="font-bold text-sm text-amber-200"><i class="fa-solid fa-book"></i> 오늘의 독서기록</h3>
-                            <p id="readingLogHint" class="text-[10px] text-slate-400 mt-1">제목·지은이·출판사와 읽고 난 생각을 적으면 선생님이 확인합니다.</p>
+                            <p id="readingLogHint" class="text-[10px] text-slate-400 mt-1">친구는 볼 수 없고, 선생님만 확인합니다. 제목·지은이·출판사와 읽고 난 생각을 적으면 선생님이 확인합니다.</p>
                         </div>
                         <div id="readingRewardChip" class="text-[10px] font-bold text-amber-100 bg-amber-900/50 border border-amber-500/40 rounded-full px-2.5 py-1">보상 —</div>
                     </div>
@@ -1303,7 +1306,7 @@
             <div class="inner-pane hidden" data-pane-group="literature" data-pane="review">
                 <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-emerald-400 space-y-3">
                     <h3 class="font-bold text-sm text-emerald-200"><i class="fa-solid fa-check"></i> 문학 확인</h3>
-                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 독서기록은 하루에 학생당 한 권, 일기는 확인 후에도 고칠 수 있고 선생님 한마디도 나중에 달 수 있습니다.</p>
+                    <p class="text-[10px] text-slate-400">확인하면 설정한 XP·봉이 바로 지급됩니다. 독서기록·일기 모두 선생님만 열람합니다. 독서기록은 하루에 학생당 한 권, 확인 뒤에도 한마디를 달 수 있습니다. 일기는 확인 후에도 고칠 수 있고 선생님 한마디도 나중에 달 수 있습니다.</p>
                     <h4 class="text-[11px] font-bold text-amber-200 mt-2">독서기록</h4>
                     <div id="readingReviewList" class="space-y-3"></div>
                     <h4 class="text-[11px] font-bold text-sky-200 mt-3">일기장</h4>

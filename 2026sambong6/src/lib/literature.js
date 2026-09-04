@@ -1,7 +1,9 @@
 /**
  * 문학 탭: 독서기록장·일기장.
  * 보상은 교사가 미리 정한 XP·봉이며, 독서기록·일기 모두 확인과 동시에 지급됩니다.
+ * 독서기록·일기 모두 학생은 자기 글만 보고, 확인·열람은 교사만 합니다.
  * 일기는 확인 후에도 고쳐 저장할 수 있고, 교사는 보상을 다시 주지 않고 한마디만 고칠 수 있습니다.
+ * 독서기록도 확인 뒤에 교사 한마디만 고칠 수 있습니다.
  */
 
 export const LITERATURE_REWARD_XP_MAX = 80;
@@ -116,6 +118,7 @@ export function sanitizeReadingLog(raw, nowMs = Date.now()) {
         thought: clipMultiline(src.thought, LITERATURE_THOUGHT_MAX),
         status,
         teacherNote: clipMultiline(src.teacherNote, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNoteAt: Number.isFinite(Number(src.teacherNoteAt)) ? Number(src.teacherNoteAt) : 0,
         rewardXp: clampInt(src.rewardXp, 0, LITERATURE_REWARD_XP_MAX, 0),
         rewardBong: clampInt(src.rewardBong, 0, LITERATURE_REWARD_BONG_MAX, 0),
         rewarded: src.rewarded === true,
@@ -160,7 +163,12 @@ export function applyReadingLogReview(log, action, note, rewards, nowMs = Date.n
     const cur = sanitizeReadingLog(log, nowMs);
     if (cur.status !== 'pending') return { skip: true, log: cur, grantXp: 0, grantBong: 0 };
     const pay = sanitizeLiteratureRewards(rewards);
-    const next = { ...cur, teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX), reviewedAt: nowMs };
+    const next = {
+        ...cur,
+        teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX),
+        teacherNoteAt: nowMs,
+        reviewedAt: nowMs,
+    };
     if (action === 'reject') {
         return { skip: false, log: { ...next, status: 'rejected' }, grantXp: 0, grantBong: 0 };
     }
@@ -355,6 +363,20 @@ export function teacherNoteOnlyPatch(note, nowMs = Date.now()) {
     };
 }
 
+/** 이미 확인한 독서기록에 한마디만 고칩니다. 보상은 건드리지 않습니다. */
+export function applyReadingTeacherNote(log, note, nowMs = Date.now()) {
+    const cur = sanitizeReadingLog(log, nowMs);
+    if (!cur.studentId || !cur.date) return { skip: true, log: cur };
+    return {
+        skip: false,
+        log: {
+            ...cur,
+            teacherNote: clipMultiline(note, LITERATURE_TEACHER_NOTE_MAX),
+            teacherNoteAt: nowMs,
+        },
+    };
+}
+
 /** 이미 확인한 일기에 한마디만 고칩니다. 보상은 건드리지 않습니다. */
 export function applyDiaryTeacherNote(entry, note, nowMs = Date.now()) {
     const cur = sanitizeDiaryEntry(entry, nowMs);
@@ -410,9 +432,11 @@ export const LITERATURE_NOTE_INPUT_SELECTOR = [
     'input[id^="reviewNote_"]',
     'input[id^="diaryReviewNote_"]',
     'input[id^="diaryPastNote_"]',
+    'input[id^="readingPastNote_"]',
     'textarea[id^="reviewNote_"]',
     'textarea[id^="diaryReviewNote_"]',
     'textarea[id^="diaryPastNote_"]',
+    'textarea[id^="readingPastNote_"]',
 ].join(',');
 
 export function captureLiteratureNoteDrafts(root, activeEl) {

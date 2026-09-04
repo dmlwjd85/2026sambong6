@@ -6,6 +6,7 @@ import {
     applyDiaryReview,
     applyDiaryTeacherNote,
     applyReadingLogReview,
+    applyReadingTeacherNote,
     captureLiteratureNoteDrafts,
     restoreLiteratureNoteDrafts,
     stripTeacherNoteForStudentWrite,
@@ -96,6 +97,12 @@ describe('독서기록장', () => {
         assert.equal(stacked[0].date, '2026-09-02');
         assert.equal(readingLogsVisibleTo({ id: '1' }, stacked).length, 0);
         assert.equal(readingLogsVisibleTo({ isAdmin: true }, stacked).length, 2);
+        const noted = applyReadingTeacherNote(reviewed.log, '잘 읽었어요', 9);
+        assert.equal(noted.skip, false);
+        assert.equal(noted.log.teacherNote, '잘 읽었어요');
+        assert.equal(noted.log.teacherNoteAt, 9);
+        assert.equal(noted.log.rewarded, true);
+        assert.equal(noted.log.status, 'approved');
     });
 });
 

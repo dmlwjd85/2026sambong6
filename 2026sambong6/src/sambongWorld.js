@@ -195,6 +195,7 @@ import {
     applyDiaryReview,
     applyDiaryTeacherNote,
     applyReadingLogReview,
+    applyReadingTeacherNote,
     canApproveDiary,
     canApproveReadingLog,
     captureLiteratureNoteDrafts,
@@ -227,6 +228,21 @@ import {
     validateReadingLogDraft,
     weatherMeta,
 } from './lib/literature.js';
+import {
+    CLASS_CREATE_REQUEST_COLLECTION,
+    SEED_MASTER_CLASS_ID,
+    applyClassCreateApproval,
+    applyClassCreateRejection,
+    buildClassCreateRequest,
+    canCreateClassImmediately,
+    classCreateRequestStatusLabel,
+    classCreateWorkspacePayload,
+    isSeedMasterViewer,
+    pendingClassCreateRequests,
+    readStoredClassCreateRequestId,
+    sanitizeClassCreateRequest,
+    writeStoredClassCreateRequestId,
+} from './lib/classCreateRequest.js';
 import {
     CLASS_BELL_CHECK_MS,
     CLASS_BELL_POPUP_MS,
@@ -1951,8 +1967,13 @@ function redrawPlazaGrantsUi() {
             { id: 'gm_a', name: '마스터 A', gender: 'F', role: 'co_teacher', label: '보조 마스터', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
         ];
 
-        const SEED_CLASS_ID = 'sambong-class-2026';
+        const SEED_CLASS_ID = SEED_MASTER_CLASS_ID;
         const RECENT_CLASSES_KEY = 'sambong_recent_classes';
+        let _classCreateRequests = [];
+        let _myClassCreateRequest = null;
+        let _unsubClassCreateRequests = null;
+        let _unsubMyClassCreateRequest = null;
+        let _classCreateRequestNotified = false;
 
         /** 시드(데모) 학급인지 — 부동산 자동복구 등은 여기에만 적용 */
         function isSeedDemoClass() {
@@ -2600,10 +2621,13 @@ function redrawPlazaGrantsUi() {
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '학급을 만들거나 초대 코드로 기존 학급에 들어가세요.'
+                    ? '학급 개설을 요청하거나 초대 코드로 기존 학급에 들어가세요.'
                     : '초대 코드로 학급을 연 뒤 이름을 선택하세요.';
             }
             if (isTeacher) window.setTeacherSubMode('create');
+            if (typeof window.renderClassCreateRequestStatus === 'function') {
+                window.renderClassCreateRequestStatus();
+            }
         };
 
         window.setTeacherSubMode = function(sub) {
@@ -2624,10 +2648,13 @@ function redrawPlazaGrantsUi() {
                     ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
                     : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap';
             }
+            if (typeof window.renderClassCreateRequestStatus === 'function') {
+                window.renderClassCreateRequestStatus();
+            }
         };
 
         /** 공통: 새 학급 Firestore 워크스페이스 생성 */
-        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword }) {
+        async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword, copyFromClassId }) {
             if (!db) throw new Error('no_db');
             const inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
             let newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
@@ -2655,9 +2682,10 @@ function redrawPlazaGrantsUi() {
             }, { merge: true });
             await registerInviteCode(inviteCode, newClassId, { displayName });
 
-            // 기본 운영 설정 (현재 학급 복사 또는 최소 기본값)
-            if (copySettingsFromCurrent) {
-                const globalSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'));
+            // 기본 운영 설정 (지정 학급·현재 학급 복사 또는 최소 기본값)
+            const settingsCopySrc = String(copyFromClassId || '').trim() || (copySettingsFromCurrent ? appId : '');
+            if (settingsCopySrc) {
+                const globalSnap = await getDoc(doc(db, 'artifacts', settingsCopySrc, 'public', 'data', 'settings', 'global'));
                 if (globalSnap.exists()) {
                     const src = globalSnap.data();
                     const { announcement, screenNotice, classToolShare, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
@@ -2716,6 +2744,213 @@ function redrawPlazaGrantsUi() {
             return { newClassId, inviteCode, newMeta };
         }
 
+        function classCreateRequestDocRef(requestId) {
+            return doc(db, CLASS_CREATE_REQUEST_COLLECTION, String(requestId || ''));
+        }
+
+        function renderClassCreateRequestHtml(req) {
+            if (!req) {
+                return '<p class="text-[10px] text-slate-400">원래 마스터가 허락하면 반이 만들어집니다.</p>';
+            }
+            const label = classCreateRequestStatusLabel(req.status);
+            const title = escapeHofText(req.displayName || '새 학급');
+            if (req.status === 'approved' && req.newClassId) {
+                const code = escapeHofText(req.inviteCode || '—');
+                return `<div class="space-y-2">
+                    <p class="text-[11px] font-black text-emerald-200">허락되었습니다. ${title}</p>
+                    <p class="text-[10px] text-slate-300">초대 코드: <span class="font-black tracking-widest text-emerald-200">${code}</span></p>
+                    <button type="button" onclick="void window.enterApprovedClass()" class="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs">이 반으로 이동</button>
+                </div>`;
+            }
+            if (req.status === 'rejected') {
+                const reason = escapeHofText(req.rejectReason || '이유가 적혀 있지 않습니다.');
+                return `<div class="space-y-2">
+                    <p class="text-[11px] font-black text-rose-200">거절되었습니다. ${title}</p>
+                    <p class="text-[10px] text-slate-300">${reason}</p>
+                    <button type="button" onclick="window.resetClassCreateRequest()" class="w-full min-h-[40px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-[10px]">다시 요청하기</button>
+                </div>`;
+            }
+            return `<div class="space-y-1">
+                <p class="text-[11px] font-black text-amber-200">${label} · ${title}</p>
+                <p class="text-[10px] text-slate-400">삼봉초 원래 마스터가 허락하면 반이 만들어집니다. 이 화면을 닫아도 요청은 유지됩니다.</p>
+            </div>`;
+        }
+
+        window.renderClassCreateRequestStatus = function() {
+            const mine = _myClassCreateRequest;
+            const waiting = !!(mine && (mine.status === 'pending' || mine.status === 'approved' || mine.status === 'rejected'));
+            const hideForm = waiting && mine.status !== 'rejected';
+            const form = document.getElementById('teacherCreateFormFields');
+            const settingsForm = document.getElementById('newClassCreateFormFields');
+            const box = document.getElementById('classCreateRequestBox');
+            const hint = document.getElementById('teacherCreateIntro');
+            if (form) form.classList.toggle('hidden', hideForm);
+            if (settingsForm) settingsForm.classList.toggle('hidden', hideForm);
+            if (box) {
+                box.classList.toggle('hidden', !waiting);
+                if (waiting) box.innerHTML = renderClassCreateRequestHtml(mine);
+            }
+            if (hint) {
+                hint.textContent = waiting && mine.status === 'pending'
+                    ? '원래 마스터에게 인증 요청을 보냈습니다. 허락되면 반이 생성됩니다.'
+                    : '새 교실은 원래 마스터 허락 뒤에 만들어집니다.';
+            }
+            const adminBox = document.getElementById('myClassCreateRequestBox');
+            if (adminBox) {
+                adminBox.classList.toggle('hidden', !waiting);
+                if (waiting) adminBox.innerHTML = renderClassCreateRequestHtml(mine);
+            }
+        };
+
+        function bindMyClassCreateRequestWatch() {
+            if (!db) return;
+            const id = readStoredClassCreateRequestId();
+            if (_unsubMyClassCreateRequest && _myClassCreateRequest && _myClassCreateRequest.id === id) {
+                window.renderClassCreateRequestStatus();
+                return;
+            }
+            if (_unsubMyClassCreateRequest) {
+                _unsubMyClassCreateRequest();
+                _unsubMyClassCreateRequest = null;
+            }
+            if (!id) {
+                _myClassCreateRequest = null;
+                window.renderClassCreateRequestStatus();
+                return;
+            }
+            _unsubMyClassCreateRequest = onSnapshot(classCreateRequestDocRef(id), (snap) => {
+                if (!snap.exists()) {
+                    _myClassCreateRequest = null;
+                    window.renderClassCreateRequestStatus();
+                    return;
+                }
+                _myClassCreateRequest = sanitizeClassCreateRequest({ ...(snap.data() || {}), id: snap.id });
+                window.renderClassCreateRequestStatus();
+            }, (err) => console.warn('classCreateRequest mine', err));
+        }
+
+        function bindSeedMasterClassCreateWatch() {
+            const seedMaster = isSeedMasterViewer(window.playerState, appId);
+            if (!seedMaster || !db) {
+                if (_unsubClassCreateRequests) {
+                    _unsubClassCreateRequests();
+                    _unsubClassCreateRequests = null;
+                }
+                _classCreateRequests = [];
+                return;
+            }
+            if (_unsubClassCreateRequests) return;
+            const col = collection(db, CLASS_CREATE_REQUEST_COLLECTION);
+            _unsubClassCreateRequests = onSnapshot(col, (snap) => {
+                const rows = [];
+                snap.forEach((d) => rows.push(sanitizeClassCreateRequest({ ...(d.data() || {}), id: d.id })));
+                _classCreateRequests = rows;
+                if (typeof window.renderClassAdminPanel === 'function' && window.playerState?.isGM) {
+                    window.renderClassAdminPanel();
+                }
+                const pending = pendingClassCreateRequests(rows);
+                if (!_classCreateRequestNotified && pending.length > 0 && typeof window.customAlert === 'function') {
+                    _classCreateRequestNotified = true;
+                    void window.customAlert(`다른 학급 개설 요청이 ${pending.length}건 있습니다.\n설정 → 학급 관리에서 허락할 수 있습니다.`);
+                }
+            }, (err) => console.warn('classCreateRequests', err));
+        }
+
+        async function submitClassCreateRequest(draft) {
+            const built = buildClassCreateRequest(draft);
+            if (!built.ok) return built;
+            await setDoc(classCreateRequestDocRef(built.request.id), built.request);
+            writeStoredClassCreateRequestId(built.request.id);
+            _myClassCreateRequest = built.request;
+            bindMyClassCreateRequestWatch();
+            window.renderClassCreateRequestStatus();
+            return built;
+        }
+
+        window.resetClassCreateRequest = function() {
+            writeStoredClassCreateRequestId('');
+            _myClassCreateRequest = null;
+            if (_unsubMyClassCreateRequest) {
+                _unsubMyClassCreateRequest();
+                _unsubMyClassCreateRequest = null;
+            }
+            window.renderClassCreateRequestStatus();
+        };
+
+        window.enterApprovedClass = function() {
+            const req = _myClassCreateRequest;
+            if (!req || req.status !== 'approved' || !req.newClassId) {
+                return window.customAlert('아직 허락된 학급이 없습니다.');
+            }
+            if (req.teacherPin) {
+                localStorage.setItem('sambong_student_id', 'gm');
+                localStorage.setItem('sambong_student_pin', req.teacherPin);
+                localStorage.setItem('sambong_show_onboarding', '1');
+                localStorage.setItem('sambong_onboarding_invite', req.inviteCode || '');
+            }
+            writeStoredClassCreateRequestId('');
+            window.switchClass(req.newClassId);
+        };
+
+        window.startClassCreateRequestWatch = function() {
+            bindMyClassCreateRequestWatch();
+            bindSeedMasterClassCreateWatch();
+        };
+
+        window.approveClassCreateRequest = async function(requestId) {
+            if (!isSeedMasterViewer(window.playerState, appId)) {
+                return window.customAlert('원래 마스터만 허락할 수 있습니다.');
+            }
+            const req = _classCreateRequests.find((r) => r.id === String(requestId))
+                || sanitizeClassCreateRequest({ id: requestId, status: 'pending' });
+            const live = (await getDoc(classCreateRequestDocRef(requestId))).data();
+            const current = sanitizeClassCreateRequest({ ...(live || req), id: requestId });
+            if (current.status !== 'pending') return window.customAlert('이미 처리된 요청입니다.');
+            const ok = await window.customConfirm(
+                `이 학급 개설을 허락합니다.\n\n${current.displayName}\n${current.schoolYear}학년도 ${current.grade}학년 ${current.homeroom}반\n마스터: ${current.teacherName}`
+            );
+            if (!ok) return;
+            try {
+                window.showGlobalLoading('학급을 만드는 중…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const created = await createClassWorkspace(classCreateWorkspacePayload(current));
+                const reviewed = applyClassCreateApproval(current, created, appId);
+                if (reviewed.skip) throw new Error('이미 처리된 요청입니다.');
+                await setDoc(classCreateRequestDocRef(current.id), reviewed.request, { merge: true });
+                window.hideGlobalLoading();
+                await window.customAlert(`허락했고 반이 만들어졌습니다.\n초대 코드: ${created.inviteCode}`);
+            } catch (e) {
+                console.error('approveClassCreateRequest', e);
+                window.hideGlobalLoading();
+                await window.customAlert('허락에 실패했습니다: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.rejectClassCreateRequest = async function(requestId) {
+            if (!isSeedMasterViewer(window.playerState, appId)) {
+                return window.customAlert('원래 마스터만 거절할 수 있습니다.');
+            }
+            const live = (await getDoc(classCreateRequestDocRef(requestId))).data();
+            const current = sanitizeClassCreateRequest({ ...(live || {}), id: requestId });
+            if (current.status !== 'pending') return window.customAlert('이미 처리된 요청입니다.');
+            const ok = await window.customConfirm(`이 학급 개설 요청을 거절할까요?\n\n${current.displayName}\n${current.schoolYear}학년도 ${current.grade}학년 ${current.homeroom}반`);
+            if (!ok) return;
+            const reviewed = applyClassCreateRejection(current, '거절되었습니다.', appId);
+            if (reviewed.skip) return window.customAlert('이미 처리된 요청입니다.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(classCreateRequestDocRef(current.id), reviewed.request, { merge: true });
+                window.showToast && window.showToast('요청을 거절했습니다.');
+            } catch (e) {
+                console.error('rejectClassCreateRequest', e);
+                await window.customAlert('거절에 실패했습니다.');
+            }
+        };
+
         window.createClassFromLogin = async function() {
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
             const displayName = String(document.getElementById('createClassDisplayName')?.value || '').trim();
@@ -2737,21 +2972,21 @@ function redrawPlazaGrantsUi() {
                 return window.customAlert('마스터 PIN은 숫자 4자리로 설정해 주세요.');
             }
             const ok = await window.customConfirm(
-                `새 학급을 만듭니다.\n\n` +
+                `새 학급 개설을 원래 마스터에게 요청합니다.\n\n` +
                 `학급명: ${displayName}\n` +
                 (schoolName ? `학교: ${schoolName}\n` : '') +
                 `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
                 `시즌: ${seasonLabel} / ${seasonTheme}\n` +
                 `마스터: ${teacherName}\n` +
                 `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n\n` +
-                `생성 후 이 학급으로 이동하며, 초대 코드가 발급됩니다.`
+                `허락되면 반이 생성되고 초대 코드가 발급됩니다.`
             );
             if (!ok) return;
             try {
-                window.showGlobalLoading('잠시만 기다려 주세요…');
+                window.showGlobalLoading('인증 요청을 보내는 중…');
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
-                const { newClassId, inviteCode } = await createClassWorkspace({
+                const sent = await submitClassCreateRequest({
                     displayName,
                     schoolName,
                     schoolYear,
@@ -2763,25 +2998,18 @@ function redrawPlazaGrantsUi() {
                     seasonLabel,
                     seasonTheme,
                     applyDefaultTemplate,
-                    copySettingsFromCurrent: false,
+                    requesterHint: 'login',
+                    sourceClassId: appId,
                 });
-                localStorage.setItem('sambong_student_id', 'gm');
-                localStorage.setItem('sambong_student_pin', teacherPin);
-                localStorage.setItem('sambong_show_onboarding', '1');
-                localStorage.setItem('sambong_onboarding_invite', inviteCode);
+                if (!sent.ok) {
+                    throw new Error(sent.reason === 'teacherPin' ? '마스터 PIN은 숫자 4자리로 설정해 주세요.' : '학급명은 필수입니다.');
+                }
                 window.hideGlobalLoading();
-                const share = getClassShareUrl(newClassId, inviteCode);
-                await window.customAlert(
-                    `✅ 학급이 준비되었습니다!\n\n` +
-                    `초대 코드: ${inviteCode}\n` +
-                    `접속 링크:\n${share}\n\n` +
-                    `학생에게 코드 또는 링크를 공유하세요.`
-                );
-                window.switchClass(newClassId);
+                await window.customAlert('학급 개설 요청을 삼봉초 원래 마스터에게 보냈습니다. 허락되면 이 화면에 초대 코드가 나타납니다.');
             } catch (e) {
                 console.error('createClassFromLogin', e);
                 window.hideGlobalLoading();
-                await window.customAlert('학급 생성 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('요청 실패: ' + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -2842,15 +3070,36 @@ function redrawPlazaGrantsUi() {
                 </div>
                 <div class="border-t border-slate-700 pt-3 mt-1">
                     <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-plus-circle text-sky-400"></i> 새 학급 만들기 (내년·다른 반)</h4>
+                    <div id="newClassCreateFormFields">
                     <div class="grid sm:grid-cols-2 gap-2 mb-2">
                         <input id="newClassDisplayName" type="text" placeholder="예: 2027학년도 6학년 1반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassSchoolYear" type="number" placeholder="학년도 (2027)" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">새 학급 생성 후 이동</button>
-                    <p class="text-[9px] text-slate-500 mt-2">새 학급은 별도 데이터 공간(artifacts)을 사용합니다. 작년 반 데이터는 그대로 보존됩니다.</p>
-                </div>`;
+                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 생성 후 이동' : '원래 마스터에게 인증 요청'}</button>
+                    <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
+                    </div>
+                    <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
+                </div>
+                ${isSeedMasterViewer(window.playerState, appId) ? `
+                <div class="border-t border-slate-700 pt-3 mt-3">
+                    <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-envelope-open-text text-amber-300"></i> 학급 개설 인증 요청 ${pendingClassCreateRequests(_classCreateRequests).length ? `<span class="ml-1 text-amber-200">(${pendingClassCreateRequests(_classCreateRequests).length})</span>` : ''}</h4>
+                    <p class="text-[9px] text-slate-500 mb-2">다른 선생님이 보낸 요청입니다. 허락하면 그때 반이 생성됩니다.</p>
+                    <div class="space-y-2">${pendingClassCreateRequests(_classCreateRequests).length
+                        ? pendingClassCreateRequests(_classCreateRequests).map((r) => `
+                            <div class="rounded-xl border border-amber-500/30 bg-slate-950/70 p-2 space-y-1">
+                                <p class="text-[11px] font-black text-amber-100">${escapeHofText(r.displayName)}</p>
+                                <p class="text-[10px] text-slate-400">${escapeHofText(r.schoolName || '')} ${r.schoolYear}학년도 ${r.grade}학년 ${r.homeroom}반 · ${escapeHofText(r.teacherName)}</p>
+                                <div class="flex gap-2 pt-1">
+                                    <button type="button" onclick="void window.approveClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px]">허락</button>
+                                    <button type="button" onclick="void window.rejectClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg text-[10px]">거절</button>
+                                </div>
+                            </div>`).join('')
+                        : '<p class="text-[10px] text-slate-500">대기 중인 요청이 없습니다.</p>'}</div>
+                </div>` : ''}`;
+            bindSeedMasterClassCreateWatch();
+            window.renderClassCreateRequestStatus();
         };
 
         window.addClassRosterRow = function() {
@@ -2937,14 +3186,35 @@ function redrawPlazaGrantsUi() {
             if (!displayName || !schoolYear || !grade || !homeroom) {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
-            const ok = await window.customConfirm(`새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`);
+            const teacherName = getStaffMember('gm')?.name || '담임 선생님';
+            const immediate = canCreateClassImmediately(window.playerState, appId);
+            const ok = await window.customConfirm(
+                immediate
+                    ? `새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`
+                    : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n허락되면 반이 만들어지고 초대 코드가 발급됩니다.`
+            );
             if (!ok) return;
             try {
-                window.showGlobalLoading('학급 생성 중…');
-                const teacherName = getStaffMember('gm')?.name || '담임 선생님';
+                window.showGlobalLoading(immediate ? '학급 생성 중…' : '인증 요청을 보내는 중…');
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
-                const { newClassId, inviteCode } = await createClassWorkspace({
+                if (immediate) {
+                    const { newClassId, inviteCode } = await createClassWorkspace({
+                        displayName,
+                        schoolYear,
+                        grade,
+                        homeroom,
+                        teacherName,
+                        studentCount: 25,
+                        teacherPin: '',
+                        copySettingsFromCurrent: true,
+                    });
+                    window.hideGlobalLoading();
+                    await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
+                    window.switchClass(newClassId);
+                    return;
+                }
+                const sent = await submitClassCreateRequest({
                     displayName,
                     schoolYear,
                     grade,
@@ -2952,15 +3222,18 @@ function redrawPlazaGrantsUi() {
                     teacherName,
                     studentCount: 25,
                     teacherPin: '',
-                    copySettingsFromCurrent: true,
+                    requesterHint: 'settings',
+                    sourceClassId: appId,
+                    copyFromClassId: appId,
+                    applyDefaultTemplate: false,
                 });
+                if (!sent.ok) throw new Error('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
                 window.hideGlobalLoading();
-                await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
-                window.switchClass(newClassId);
+                await window.customAlert('학급 개설 요청을 삼봉초 원래 마스터에게 보냈습니다. 허락되면 이 화면에 초대 코드가 나타납니다.');
             } catch (e) {
                 console.error('createNewClass', e);
                 window.hideGlobalLoading();
-                await window.customAlert('생성 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert((immediate ? '생성 실패: ' : '요청 실패: ') + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -8152,7 +8425,10 @@ ${subjectLine}
             if (_unsubReadingLogs) { _unsubReadingLogs(); _unsubReadingLogs = null; }
             if (_unsubDiaries) { _unsubDiaries(); _unsubDiaries = null; }
             const readCol = collection(db, 'artifacts', appId, 'public', 'data', 'readingLogs');
-            _unsubReadingLogs = onSnapshot(readCol, (snap) => {
+            const readQuery = window.playerState.isAdmin
+                ? readCol
+                : query(readCol, where('studentId', '==', sid || '__none__'));
+            _unsubReadingLogs = onSnapshot(readQuery, (snap) => {
                 const rows = [];
                 snap.forEach((d) => rows.push(sanitizeReadingLog({ ...(d.data() || {}), id: d.id })));
                 _readingLogs = rows;
@@ -8320,6 +8596,7 @@ ${subjectLine}
         }
 
         window.renderLiteratureReadingPane = function() {
+            const noteDrafts = captureLiteratureNoteDrafts(document, document.activeElement);
             renderReadingChips();
             const admin = !!(window.playerState && window.playerState.isAdmin);
             const picker = document.getElementById('readingAdminPicker');
@@ -8337,11 +8614,11 @@ ${subjectLine}
             const btn = document.getElementById('readingSubmitBtn');
             const locked = admin || !state.ok;
             if (hint) {
-                if (admin) hint.textContent = '학생을 고르면 그동안 낸 독서기록을 모두 볼 수 있습니다.';
+                if (admin) hint.textContent = '학생을 고르면 그동안 낸 독서기록을 모두 볼 수 있습니다. 확인 뒤에도 한마디를 고칠 수 있어요.';
                 else if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 독서기록이 있습니다. 내일 다시 쓸 수 있어요.';
                 else if (state.reason === 'pending') hint.textContent = '오늘 기록이 확인 대기 중입니다. 선생님이 보면 보상이 들어옵니다.';
                 else if (state.reason === 'resubmit') hint.textContent = '반려된 기록을 고쳐 다시 제출할 수 있습니다.';
-                else hint.textContent = '제목·지은이·출판사와 읽고 난 생각(20자 이상)을 적으면 선생님이 확인합니다.';
+                else hint.textContent = '친구는 볼 수 없고, 선생님만 확인합니다. 제목·지은이·출판사와 읽고 난 생각(20자 이상)을 적으면 선생님이 확인합니다.';
             }
             if (btn) {
                 btn.classList.toggle('hidden', admin);
@@ -8372,6 +8649,10 @@ ${subjectLine}
                             <p class="mt-1 text-slate-200 whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
                             ${l.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(l.teacherNote)}</p>` : ''}
                             ${l.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${l.rewardXp} XP · +${l.rewardBong}봉</p>` : ''}
+                            ${admin ? `<label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디
+                                <input id="readingPastNote_${escapeHofText(l.id)}" type="text" maxlength="120" value="${escapeHofText(l.teacherNote || '')}" class="mt-1 w-full bg-slate-950 border border-amber-500/40 text-white px-2 py-1.5 rounded-lg text-xs">
+                            </label>
+                            <button type="button" class="mt-1 min-h-[36px] px-3 bg-amber-700 hover:bg-amber-600 text-white font-black rounded-lg text-[10px]" onclick="void window.saveReadingTeacherNoteById('${escapeHofText(l.id)}')">한마디 저장</button>` : ''}
                         </div>`
                     )).join('');
                 }
@@ -8379,6 +8660,7 @@ ${subjectLine}
             const approved = countApprovedReadingLogs(_readingLogs, admin ? targetId : sid);
             if (hint && !admin && approved > 0 && state.ok) hint.textContent += ` 지금까지 ${approved}권을 확인받았습니다.`;
             else if (hint && admin && approved > 0) hint.textContent += ` 확인받은 책 ${approved}권.`;
+            restoreLiteratureNoteDrafts(document, noteDrafts);
         };
 
         window.renderLiteratureDiaryPane = function() {
@@ -8800,6 +9082,32 @@ ${subjectLine}
             } catch (e) {
                 console.error('saveDiaryEntry', e);
                 await window.customAlert('일기 저장에 실패했습니다.');
+            }
+        };
+
+        window.saveReadingTeacherNoteById = async function(logId) {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 한마디를 남길 수 있습니다.');
+            }
+            const log = _readingLogs.find((l) => l.id === String(logId));
+            if (!log) return window.customAlert('독서기록을 찾을 수 없습니다.');
+            const noteEl = document.getElementById('readingPastNote_' + log.id) || document.getElementById('reviewNote_' + log.id);
+            const reviewed = applyReadingTeacherNote(log, noteEl ? noteEl.value : '');
+            if (reviewed.skip) return window.customAlert('독서기록을 찾을 수 없습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            try {
+                await runWithNetworkRetry(async () => {
+                    await setDoc(
+                        doc(db, 'artifacts', appId, 'public', 'data', 'readingLogs', log.id),
+                        teacherNoteOnlyPatch(reviewed.log.teacherNote, reviewed.log.teacherNoteAt),
+                        { merge: true },
+                    );
+                }, '독서기록 한마디');
+                window.showToast && window.showToast('한마디를 저장했습니다.');
+            } catch (e) {
+                console.error('saveReadingTeacherNoteById', e);
+                await window.customAlert('저장에 실패했습니다.');
             }
         };
 
@@ -13621,6 +13929,9 @@ ${subjectLine}
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app); 
                 db = getFirestore(app);
+                if (typeof window.startClassCreateRequestWatch === 'function') {
+                    window.startClassCreateRequestWatch();
+                }
                 
                 await auth.authStateReady();
                 await signInAnonymously(auth);
@@ -13703,6 +14014,9 @@ ${subjectLine}
                                         }
                                     } else {
                                         updateUI();
+                                    }
+                                    if (typeof window.startClassCreateRequestWatch === 'function') {
+                                        window.startClassCreateRequestWatch();
                                     }
                                 }
                             }

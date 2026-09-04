@@ -180,11 +180,15 @@
                 <i class="fa-solid fa-gamepad text-xl text-sb-gold drop-shadow-md shrink-0"></i>
                 <span class="font-display text-lg text-white tracking-widest shrink-0"><span id="navWorldBrand">MATE</span> <span id="navSeasonBadge" class="text-cyan-400">S1</span> <span id="navVersionBadge" data-app-version class="text-[9px] text-slate-500 font-bold">v1.2</span></span>
                 <div class="relative min-w-0" id="navClassSwitcherWrap">
-                    <button type="button" id="navClassLabelBtn" onclick="event.stopPropagation(); window.toggleNavClassMenu()" class="flex items-center gap-1 max-w-[10rem] text-[10px] text-emerald-300/90 font-bold truncate px-2 py-1 rounded-lg border border-emerald-500/30 bg-slate-800/50 hover:bg-slate-700/80" title="학급 전환">
-                        <span id="navClassLabel">우리 반</span>
-                        <i class="fa-solid fa-caret-down text-[8px] opacity-70"></i>
+                    <!-- 학급 고르기: 이름·안내를 함께 보여 탭 독과 겹치지 않는 패널을 연다 -->
+                    <button type="button" id="navClassLabelBtn" onclick="event.stopPropagation(); window.toggleNavClassMenu()" class="inline-flex items-center gap-1.5 max-w-[11.5rem] sm:max-w-[16rem] min-h-[36px] px-2 py-1 rounded-xl border border-emerald-300/50 bg-emerald-900/40 hover:bg-emerald-800/70" title="학급 고르기" aria-haspopup="dialog" aria-expanded="false" aria-controls="navClassMenu">
+                        <i class="fa-solid fa-school text-emerald-200 shrink-0 text-[12px]" aria-hidden="true"></i>
+                        <span class="flex min-w-0 flex-col items-start leading-tight">
+                            <span class="text-[9px] font-black text-emerald-100">학급 바꾸기</span>
+                            <span id="navClassLabel" class="max-w-full truncate text-[11px] font-black text-white">우리 반</span>
+                        </span>
+                        <i class="fa-solid fa-chevron-down text-[10px] text-white/85 shrink-0" aria-hidden="true"></i>
                     </button>
-                    <div id="navClassMenu" class="hidden absolute left-0 top-full mt-1 z-[60] w-64 max-h-64 overflow-y-auto rounded-xl border border-slate-600 bg-slate-900 shadow-xl p-2 text-[10px]"></div>
                 </div>
             </div>
             <div class="flex items-center space-x-2">
@@ -259,6 +263,10 @@
             <button type="button" id="tab-goldenbell" onclick="window.switchTab('goldenbell')" class="hidden" aria-hidden="true" tabindex="-1">골든벨</button>
         </div>
     </nav>
+
+    <!-- 학급 고르기: 헤더 밖에 두어 상단 탭 아이콘에 가리지 않음 -->
+    <div id="navClassMenuOverlay" class="hidden" role="presentation" aria-hidden="true"></div>
+    <div id="navClassMenu" class="hidden" role="dialog" aria-labelledby="navClassMenuTitle" aria-modal="true"></div>
 
     <!-- ★ 퀴즈 레이드 모달 (전체 화면) ★ -->
     <div id="raidBattleModal" class="hidden fixed inset-0 z-[200] bg-slate-900 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300">

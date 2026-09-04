@@ -1953,6 +1953,33 @@
         .rank-badge-plaza { width: 1.15rem; height: 1.15rem; }
         .rank-badge-emoji { display: inline-flex; align-items: center; justify-content: center; font-size: 1.1em; }
 
+        /* 학급 고르기 패널: 헤더/탭 독과 별도 쌓임 맥락으로 탭 아이콘 위에 그림 */
+        #navClassMenuOverlay {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            /* 헤더는 남겨 학급 바꾸기 버튼을 다시 눌러 닫을 수 있게 함 */
+            top: 3.5rem;
+            z-index: 420;
+            background: rgba(8, 28, 48, 0.38);
+        }
+        #navClassMenu {
+            position: fixed;
+            z-index: 425;
+            left: 0.75rem;
+            top: calc(3.5rem + 0.5rem);
+            width: min(22rem, calc(100vw - 1.5rem));
+            max-height: min(70vh, 32rem);
+            overflow-y: auto;
+            border-radius: 1rem;
+            border: 1px solid rgba(125, 211, 252, 0.55);
+            background: #0f3f66;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+            padding: 0.75rem;
+            color: #f8fafc;
+        }
+
         /* 앱 아이콘 독: 모바일 하단, 웹(768px+) 상단 */
         .app-nav-dock {
             display: grid;
@@ -1984,6 +2011,10 @@
             #swipeWrapper {
                 padding-top: 9.25rem !important;
                 padding-bottom: 2.25rem !important;
+            }
+            /* 웹: 헤더(3.5rem) + 상단 탭 아이콘 독 아래로 내려 탭에 가리지 않음 */
+            #navClassMenu {
+                top: 9.5rem;
             }
             #appVersionCorner {
                 bottom: auto;

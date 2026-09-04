@@ -3287,6 +3287,32 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        /** 학급 고르기 패널에 넣을 이름·코드 이스케이프 */
+        function escapeNavClassText(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function setNavClassMenuOpen(open) {
+            const menu = document.getElementById('navClassMenu');
+            const overlay = document.getElementById('navClassMenuOverlay');
+            const trigger = document.getElementById('navClassLabelBtn');
+            if (!menu) return;
+            menu.classList.toggle('hidden', !open);
+            if (overlay) {
+                overlay.classList.toggle('hidden', !open);
+                overlay.setAttribute('aria-hidden', open ? 'false' : 'true');
+            }
+            if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+
+        window.closeNavClassMenu = function() {
+            setNavClassMenuOpen(false);
+        };
+
         window.toggleNavClassMenu = function(forceOpen) {
             const menu = document.getElementById('navClassMenu');
             if (!menu) return;
@@ -3294,30 +3320,47 @@ function redrawPlazaGrantsUi() {
             // forceOpen=true면 무조건 열기, 아니면 토글
             const shouldOpen = forceOpen === true ? true : (forceOpen === false ? false : currentlyHidden);
             if (!shouldOpen) {
-                menu.classList.add('hidden');
+                setNavClassMenuOpen(false);
                 return;
             }
+            const currentName = (window.classMeta && window.classMeta.displayName) || appId;
+            const currentInvite = (window.classMeta && window.classMeta.inviteCode) || appId;
             const recent = getRecentClasses();
             const rows = recent.length
                 ? recent.map((r) => {
-                    const cur = r.classId === appId ? ' · 현재' : '';
+                    const isCur = r.classId === appId;
+                    const cur = isCur ? ' · 지금 이 반' : '';
                     const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    return `<button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-slate-200" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
-                        <div class="font-bold truncate">${r.displayName || r.classId}${cur}</div>
-                        <div class="text-slate-500 truncate">${r.inviteCode || r.classId}</div>
+                    const btnClass = isCur
+                        ? 'w-full text-left px-3 py-2.5 rounded-xl border border-emerald-400/70 bg-emerald-800/50 text-white'
+                        : 'w-full text-left px-3 py-2.5 rounded-xl border border-sky-400/35 bg-slate-900/45 hover:bg-sky-800/75 text-slate-100';
+                    return `<button type="button" class="${btnClass}" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
+                        <div class="font-black truncate text-[13px]">${escapeNavClassText(r.displayName || r.classId)}${cur}</div>
+                        <div class="text-sky-100/90 truncate text-[11px]">초대 ${escapeNavClassText(r.inviteCode || r.classId)}</div>
                     </button>`;
                 }).join('')
-                : '<div class="text-slate-500 px-2 py-2">최근 학급이 없습니다. 아래에서 코드로 이동하세요.</div>';
+                : '<div class="text-sky-100 px-2 py-3 text-[12px] font-bold">최근 학급이 없습니다. 아래에서 코드로 들어가 주세요.</div>';
             menu.innerHTML = `
-                <div class="text-[9px] text-slate-500 font-bold px-1 mb-1">학급 전환</div>
-                ${rows}
-                <div class="border-t border-slate-700 mt-1 pt-2 space-y-1.5">
-                    <input id="navSwitchClassCode" type="text" placeholder="초대 코드 또는 학급 ID" class="w-full bg-slate-950 border border-slate-600 rounded-lg px-2 py-1.5 text-[10px] text-white font-bold" onclick="event.stopPropagation()">
-                    <button type="button" class="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 rounded-lg" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 이동</button>
-                    <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-amber-200 font-bold" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
-                    <button type="button" class="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-800 text-sky-300 font-bold" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
+                <div class="flex items-start justify-between gap-2 mb-2">
+                    <div class="min-w-0">
+                        <div id="navClassMenuTitle" class="text-[15px] font-black text-white">학급 고르기</div>
+                        <div class="text-[12px] text-emerald-200 font-black mt-0.5 truncate">지금: ${escapeNavClassText(currentName)}</div>
+                        <div class="text-[11px] text-sky-100 truncate">초대 ${escapeNavClassText(currentInvite)}</div>
+                    </div>
+                    <button type="button" class="shrink-0 w-8 h-8 rounded-lg bg-slate-800/80 text-white hover:bg-slate-700" onclick="event.stopPropagation(); window.closeNavClassMenu()" aria-label="닫기">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="text-[11px] text-sky-100 font-black mb-1.5">최근 학급을 눌러 바꾸기</div>
+                <div class="space-y-1.5 mb-2">${rows}</div>
+                <div class="border-t border-sky-300/35 mt-2 pt-2 space-y-1.5">
+                    <label for="navSwitchClassCode" class="text-[11px] text-sky-100 font-black">초대 코드 또는 학급 ID</label>
+                    <input id="navSwitchClassCode" type="text" placeholder="예: ABC123" class="w-full bg-slate-950 border border-sky-400/45 rounded-lg px-3 py-2 text-[13px] text-white font-bold" onclick="event.stopPropagation()">
+                    <button type="button" class="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2 rounded-xl" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 들어가기</button>
+                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 text-amber-200 font-bold text-[12px]" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
+                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 text-sky-200 font-bold text-[12px]" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
                 </div>`;
-            menu.classList.remove('hidden');
+            setNavClassMenuOpen(true);
             // 같은 클릭 이벤트로 바로 닫히지 않도록 한 틱 무시
             window._navClassMenuIgnoreUntil = Date.now() + 300;
         };
@@ -3345,16 +3388,21 @@ function redrawPlazaGrantsUi() {
             }
         };
 
-        /** 허브 버튼용: 드롭다운이 클릭과 동시에 닫히는 문제 없이 전환 패널 표시 */
+        /** 허브·설정 버튼용: 학급 고르기 패널을 연다(탭 아이콘 아래에 고정) */
         window.openClassSwitchPanel = function() {
             window.toggleNavClassMenu(true);
-            // 모바일에서도 보이도록 메뉴를 화면 중앙 모달처럼 보정
-            const menu = document.getElementById('navClassMenu');
-            if (menu) {
-                menu.classList.add('fixed', 'left-1/2', 'top-20', '-translate-x-1/2', 'z-[430]');
-                menu.classList.remove('absolute', 'left-0', 'top-full', 'mt-1');
-            }
         };
+
+        document.getElementById('navClassMenuOverlay')?.addEventListener('click', () => {
+            window.closeNavClassMenu();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            const menu = document.getElementById('navClassMenu');
+            if (!menu || menu.classList.contains('hidden')) return;
+            window.closeNavClassMenu();
+        });
 
         document.addEventListener('click', (e) => {
             if (Date.now() < (window._navClassMenuIgnoreUntil || 0)) return;
@@ -3364,9 +3412,7 @@ function redrawPlazaGrantsUi() {
             // 메뉴 자체 클릭은 유지
             if (menu.contains(e.target)) return;
             if (wrap && wrap.contains(e.target)) return;
-            menu.classList.add('hidden');
-            menu.classList.remove('fixed', 'left-1/2', 'top-20', '-translate-x-1/2', 'z-[430]');
-            menu.classList.add('absolute', 'left-0', 'top-full', 'mt-1');
+            window.closeNavClassMenu();
         });
 
         /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */

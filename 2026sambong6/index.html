@@ -2295,6 +2295,11 @@
             <div id="classAdminSection" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-users text-emerald-400"></i> 학급·명단 관리</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">학생 명단은 Firestore에 저장됩니다. 내년에는 <strong class="text-emerald-200">새 학급 만들기</strong>로 데이터를 분리하고, 다른 선생님은 초대 코드로 접속할 수 있습니다.</p>
+                <div class="mb-4 rounded-xl border-2 border-cyan-300 bg-slate-950 p-3 space-y-2">
+                    <h4 class="text-white font-black text-xs"><i class="fa-solid fa-school text-cyan-300"></i> 다른 학급 열람 · 삭제 · 추가</h4>
+                    <p class="text-[10px] text-slate-200 leading-relaxed">시드 마스터는 서버에 있는 학급을 모두 봅니다. 시험 삼아 만든 반은 <strong class="text-white">초기화</strong>로 마스터 PIN을 바꾸고, 쓰지 않으면 <strong class="text-white">삭제(보관)</strong>하세요.</p>
+                    <div id="managedClassDirectory" class="js-managed-class-directory space-y-2 text-[10px] text-slate-200">목록을 불러오는 중…</div>
+                </div>
                 <div id="classAdminPanel" class="text-[10px] text-slate-400">마스터로 로그인하면 편집할 수 있습니다.</div>
             </div>
             </div>
@@ -2685,9 +2690,16 @@
                     </label>
                 </div>
                 <div class="pt-2 border-t border-slate-800">
-                    <h4 class="text-[11px] text-amber-200 font-bold mb-2">내 학급 목록</h4>
-                    <div id="myClassesList" class="space-y-1.5"></div>
-                    <button type="button" onclick="window.openClassSwitchPanel()" class="mt-2 w-full min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-bold rounded-xl border border-slate-600">다른 학급으로 전환</button>
+                    <h4 class="text-[11px] text-amber-200 font-bold mb-2">학급 목록 (열람·삭제·추가)</h4>
+                    <div id="myClassesList" class="js-managed-class-directory space-y-1.5 text-[10px] text-slate-200">목록을 불러오는 중…</div>
+                    <div class="mt-3 grid sm:grid-cols-2 gap-2">
+                        <input id="settingsNewClassDisplayName" type="text" placeholder="새 학급 이름" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
+                        <input id="settingsNewClassSchoolYear" type="number" placeholder="학년도" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
+                        <input id="settingsNewClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
+                        <input id="settingsNewClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
+                    </div>
+                    <button type="button" onclick="void window.createNewClass()" class="mt-2 w-full min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black rounded-xl">새 학급 추가</button>
+                    <button type="button" onclick="window.openClassSwitchPanel()" class="mt-2 w-full min-h-[44px] bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-xl border-2 border-slate-400">초대 코드로 열기</button>
                 </div>
                 <div class="pt-2 border-t border-slate-800">
                     <button type="button" onclick="void window.applyDefaultClassTemplates()" class="w-full min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold rounded-xl">기본 템플릿 적용</button>

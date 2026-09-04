@@ -245,6 +245,16 @@ import {
     writeStoredClassCreateRequestId,
 } from './lib/classCreateRequest.js';
 import {
+    canArchiveManagedClass,
+    canResetManagedClass,
+    classDirectoryStatusLabel,
+    mergeClassDirectory,
+    safeManagedClassId,
+    sanitizeClassDirectoryEntry,
+    shouldRotateMasterPinOnReset,
+    sortClassDirectory,
+} from './lib/classDirectory.js';
+import {
     CLASS_BELL_CHECK_MS,
     CLASS_BELL_POPUP_MS,
     CLASS_BELL_STORAGE_KEY,
@@ -2568,6 +2578,215 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        function createRandomMasterPin() {
+            return String(1000 + Math.floor(Math.random() * 9000));
+        }
+
+        function studentDocRefForClass(classId, studentKey) {
+            return doc(db, 'artifacts', classId, 'public', 'data', 'students', String(studentKey));
+        }
+
+        function studentBackupRefForClass(classId, stuId) {
+            return doc(db, 'artifacts', classId, 'public', 'data', 'studentBackups', 'backup_' + stuId);
+        }
+
+        /** 지정 학급 학생·마스터 문서를 초기화. 시드가 아닌 반은 마스터 PIN을 새로 뽑음 */
+        async function resetClassWorkspaceById(classId, { rotateMasterPin = false } = {}) {
+            const id = safeManagedClassId(classId);
+            if (!id || !db) throw new Error('no_class');
+            const classSnap = await getDoc(doc(db, 'classes', id));
+            const classData = classSnap.exists() ? (classSnap.data() || {}) : {};
+            const rosterIds = Array.isArray(classData.roster)
+                ? classData.roster.filter((r) => r && r.active !== false).map((r) => String(r.id))
+                : [];
+            const stuSnap = await getDocs(collection(db, 'artifacts', id, 'public', 'data', 'students'));
+            const byKey = new Map();
+            stuSnap.forEach((d) => byKey.set(d.id, d.data() || {}));
+            rosterIds.forEach((sid) => {
+                const key = 'student_' + sid;
+                if (!byKey.has(key)) byKey.set(key, {});
+            });
+            if (!byKey.has('student_gm')) byKey.set('student_gm', {});
+            if (!byKey.has('student_gm_a')) byKey.set('student_gm_a', {});
+            const newPin = rotateMasterPin ? createRandomMasterPin() : '';
+            const batch = writeBatch(db);
+            byKey.forEach((data, key) => {
+                const sid = key === 'student_gm' ? 'gm' : (key === 'student_gm_a' ? 'gm_a' : key.replace(/^student_/, ''));
+                const payload = buildStudentResetPayload(data);
+                if (key === 'student_gm' && rotateMasterPin) payload.pin = newPin;
+                batch.set(studentBackupRefForClass(id, sid), {
+                    studentId: String(sid),
+                    savedAt: new Date().toISOString(),
+                    data: extractStudentGameData(data),
+                });
+                batch.set(studentDocRefForClass(id, key), payload);
+            });
+            await batch.commit();
+            return { newPin, displayName: classData.displayName || id, inviteCode: classData.inviteCode || '' };
+        }
+
+        window.openManagedClass = function(classId) {
+            const id = safeManagedClassId(classId);
+            if (!id) return;
+            if (id === appId) return window.showToast?.('지금 들어와 있는 반입니다.');
+            window.switchClass(id);
+        };
+
+        window.resetManagedClass = async function(classId) {
+            const id = safeManagedClassId(classId);
+            if (!id) return;
+            if (!canResetManagedClass(window.playerState, appId, id)) {
+                return window.customAlert('이 학급을 초기화할 권한이 없습니다. 시드 마스터이거나 그 반의 마스터여야 합니다.');
+            }
+            const rotatePin = shouldRotateMasterPinOnReset(id);
+            const ok0 = await window.customConfirm(
+                '⚠️ 이 학급을 초기화합니다.\n\n' +
+                `학급 ID: ${id}\n\n` +
+                '학생 XP·봉·아이템이 비워집니다.\n' +
+                (rotatePin
+                    ? '학생이 마스터로 들어온 PIN은 새 번호로 바뀌어 더 이상 그 PIN으로 못 들어옵니다.\n'
+                    : '시드 반 마스터 PIN은 그대로 둡니다.\n') +
+                '다른 학급 데이터는 건드리지 않습니다.'
+            );
+            if (!ok0) return;
+            const typed = await window.customPrompt('계속하려면 아래 문구를 정확히 입력하세요:\n초기화확인', 'text');
+            if (typed !== '초기화확인') return window.customAlert('입력이 일치하지 않아 취소되었습니다.');
+            try {
+                window.showGlobalLoading('학급 초기화 중…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
+                const result = await runWithNetworkRetry(
+                    () => resetClassWorkspaceById(id, { rotateMasterPin: rotatePin }),
+                    '학급 초기화',
+                );
+                window.hideGlobalLoading();
+                const pinLine = rotatePin && result.newPin
+                    ? `\n새 마스터 PIN: ${result.newPin}\n(학생은 예전 PIN으로 마스터 로그인을 할 수 없습니다.)`
+                    : '';
+                await window.customAlert(`✅ 「${result.displayName}」 학급을 초기화했습니다.${pinLine}`);
+                void window.refreshManagedClassDirectory();
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.archiveManagedClass = async function(classId) {
+            const id = safeManagedClassId(classId);
+            if (!id) return;
+            if (!canArchiveManagedClass(window.playerState, appId, id)) {
+                return window.customAlert('이 학급을 삭제(보관)할 수 없습니다. 시드 반은 보관하지 않습니다.');
+            }
+            let inviteCode = '';
+            let displayName = id;
+            try {
+                const snap = await getDoc(doc(db, 'classes', id));
+                if (snap.exists()) {
+                    const data = snap.data() || {};
+                    inviteCode = String(data.inviteCode || '').trim();
+                    displayName = data.displayName || id;
+                }
+            } catch (_) { /* ignore */ }
+            const ok = await window.customConfirm(
+                `⚠️ 이 학급을 삭제(보관)합니다.\n\n` +
+                `학급: ${displayName}\n` +
+                `학급 ID: ${id}\n\n` +
+                '초대 코드로는 더 이상 들어올 수 없습니다.\n' +
+                '학생 데이터는 서버에 남지만, 시험 반이면 이어서 초기화도 하세요.'
+            );
+            if (!ok) return;
+            const typed = await window.customPrompt('계속하려면 학급 ID를 입력하세요.', 'text');
+            if (String(typed || '').trim() !== id) {
+                return window.customAlert('학급 ID가 일치하지 않아 취소되었습니다.');
+            }
+            try {
+                window.showGlobalLoading('학급 보관 중…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
+                await setDoc(doc(db, 'classes', id), {
+                    isActive: false,
+                    archivedAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+                if (inviteCode) {
+                    await setDoc(doc(db, 'inviteCodes', String(inviteCode).toUpperCase()), {
+                        classId: id,
+                        isActive: false,
+                        archivedAt: serverTimestamp(),
+                        updatedAt: serverTimestamp(),
+                    }, { merge: true });
+                }
+                window.hideGlobalLoading();
+                await window.customAlert(`✅ 「${displayName}」 학급을 보관했습니다.\n학생이 마스터로 남아 있으면 이어서 「초기화」를 눌러 주세요.`);
+                if (id === appId) {
+                    await window.leaveCurrentClass({ skipConfirm: true });
+                    return;
+                }
+                void window.refreshManagedClassDirectory();
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('보관 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.renderManagedClassDirectoryHtml = function(entries) {
+            const list = Array.isArray(entries) ? entries : [];
+            if (!list.length) {
+                return '<p class="text-[10px] text-white">아직 목록이 없습니다. 아래에서 새 학급을 추가하거나 초대 코드로 여세요.</p>';
+            }
+            return list.map((row) => {
+                const id = safeManagedClassId(row.classId);
+                if (!id) return '';
+                const cur = id === appId;
+                const status = classDirectoryStatusLabel(row);
+                const canReset = canResetManagedClass(window.playerState, appId, id);
+                const canArchive = canArchiveManagedClass(window.playerState, appId, id);
+                const name = escapeNavClassText(row.displayName || id);
+                const code = escapeNavClassText(row.inviteCode || '—');
+                return `<div class="rounded-xl border-2 ${cur ? 'border-emerald-300 bg-emerald-900' : 'border-cyan-300 bg-slate-950'} p-2.5 space-y-1.5">
+                    <div class="text-xs font-black text-white truncate">${name}${cur ? ' · 지금 이 반' : ''}</div>
+                    <div class="text-[10px] text-cyan-100 font-bold">초대 ${code} · ${escapeNavClassText(status)} · ${escapeNavClassText(id)}</div>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); window.openManagedClass('${id}')">열람</button>
+                        ${canReset ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.resetManagedClass('${id}')">초기화</button>` : ''}
+                        ${canArchive ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-red-700 hover:bg-red-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.archiveManagedClass('${id}')">삭제</button>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
+        window.refreshManagedClassDirectory = async function() {
+            const boxes = document.querySelectorAll('.js-managed-class-directory');
+            if (!boxes.length) return;
+            if (!window.playerState?.isGM) {
+                boxes.forEach((el) => { el.innerHTML = '<p class="text-[10px] text-white">마스터로 로그인하면 학급 목록이 나타납니다.</p>'; });
+                return;
+            }
+            boxes.forEach((el) => { el.innerHTML = '<p class="text-[10px] text-cyan-100">학급 목록을 불러오는 중…</p>'; });
+            let serverEntries = [];
+            if (isSeedMasterViewer(window.playerState, appId) && db) {
+                try {
+                    const snap = await getDocs(collection(db, 'classes'));
+                    snap.forEach((d) => serverEntries.push(sanitizeClassDirectoryEntry(d.data(), d.id)));
+                } catch (e) {
+                    console.warn('refreshManagedClassDirectory', e);
+                }
+            }
+            const current = window.classMeta
+                ? sanitizeClassDirectoryEntry(window.classMeta, appId)
+                : sanitizeClassDirectoryEntry({ displayName: appId }, appId);
+            const merged = sortClassDirectory(
+                mergeClassDirectory(serverEntries, getRecentClasses(), current),
+                appId,
+            );
+            const html = window.renderManagedClassDirectoryHtml(merged);
+            boxes.forEach((el) => { el.innerHTML = html; });
+        };
+
         window.applyLoginClassCode = async function() {
             const input = document.getElementById('loginClassCode');
             const raw = input ? String(input.value || '').trim() : '';
@@ -3082,7 +3301,7 @@ function redrawPlazaGrantsUi() {
                         <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 생성 후 이동' : '원래 마스터에게 인증 요청'}</button>
+                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
                     <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
                     <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
@@ -3105,6 +3324,7 @@ function redrawPlazaGrantsUi() {
                 </div>` : ''}`;
             bindSeedMasterClassCreateWatch();
             window.renderClassCreateRequestStatus();
+            void window.refreshManagedClassDirectory();
         };
 
         window.addClassRosterRow = function() {
@@ -3184,10 +3404,14 @@ function redrawPlazaGrantsUi() {
 
         window.createNewClass = async function() {
             if (!window.playerState?.isGM || !db) return;
-            const displayName = document.getElementById('newClassDisplayName')?.value?.trim();
-            const schoolYear = Number(document.getElementById('newClassSchoolYear')?.value);
-            const grade = Number(document.getElementById('newClassGrade')?.value);
-            const homeroom = Number(document.getElementById('newClassHomeroom')?.value);
+            const displayName = document.getElementById('newClassDisplayName')?.value?.trim()
+                || document.getElementById('settingsNewClassDisplayName')?.value?.trim();
+            const schoolYear = Number(document.getElementById('newClassSchoolYear')?.value)
+                || Number(document.getElementById('settingsNewClassSchoolYear')?.value);
+            const grade = Number(document.getElementById('newClassGrade')?.value)
+                || Number(document.getElementById('settingsNewClassGrade')?.value);
+            const homeroom = Number(document.getElementById('newClassHomeroom')?.value)
+                || Number(document.getElementById('settingsNewClassHomeroom')?.value);
             if (!displayName || !schoolYear || !grade || !homeroom) {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
@@ -3332,33 +3556,33 @@ function redrawPlazaGrantsUi() {
                     const cur = isCur ? ' · 지금 이 반' : '';
                     const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                     const btnClass = isCur
-                        ? 'w-full text-left px-3 py-2.5 rounded-xl border border-emerald-400/70 bg-emerald-800/50 text-white'
-                        : 'w-full text-left px-3 py-2.5 rounded-xl border border-sky-400/35 bg-slate-900/45 hover:bg-sky-800/75 text-slate-100';
+                        ? 'nav-class-box is-current w-full text-left px-3 py-2.5 rounded-xl'
+                        : 'nav-class-box w-full text-left px-3 py-2.5 rounded-xl hover:brightness-125';
                     return `<button type="button" class="${btnClass}" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
-                        <div class="font-black truncate text-[13px]">${escapeNavClassText(r.displayName || r.classId)}${cur}</div>
-                        <div class="text-sky-100/90 truncate text-[11px]">초대 ${escapeNavClassText(r.inviteCode || r.classId)}</div>
+                        <div class="font-black truncate text-[13px] text-white">${escapeNavClassText(r.displayName || r.classId)}${cur}</div>
+                        <div class="text-cyan-100 truncate text-[11px] font-bold">초대 ${escapeNavClassText(r.inviteCode || r.classId)}</div>
                     </button>`;
                 }).join('')
-                : '<div class="text-sky-100 px-2 py-3 text-[12px] font-bold">최근 학급이 없습니다. 아래에서 코드로 들어가 주세요.</div>';
+                : '<div class="text-white px-2 py-3 text-[12px] font-bold">최근 학급이 없습니다. 아래에서 코드로 들어가 주세요.</div>';
             menu.innerHTML = `
                 <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="min-w-0">
                         <div id="navClassMenuTitle" class="text-[15px] font-black text-white">학급 고르기</div>
                         <div class="text-[12px] text-emerald-200 font-black mt-0.5 truncate">지금: ${escapeNavClassText(currentName)}</div>
-                        <div class="text-[11px] text-sky-100 truncate">초대 ${escapeNavClassText(currentInvite)}</div>
+                        <div class="text-[11px] text-cyan-100 font-bold truncate">초대 ${escapeNavClassText(currentInvite)}</div>
                     </div>
-                    <button type="button" class="shrink-0 w-8 h-8 rounded-lg bg-slate-800/80 text-white hover:bg-slate-700" onclick="event.stopPropagation(); window.closeNavClassMenu()" aria-label="닫기">
+                    <button type="button" class="shrink-0 w-8 h-8 rounded-lg bg-slate-950 text-white border-2 border-cyan-300 hover:bg-slate-800" onclick="event.stopPropagation(); window.closeNavClassMenu()" aria-label="닫기">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
-                <div class="text-[11px] text-sky-100 font-black mb-1.5">최근 학급을 눌러 바꾸기</div>
+                <div class="text-[11px] text-white font-black mb-1.5">최근 학급을 눌러 바꾸기</div>
                 <div class="space-y-1.5 mb-2">${rows}</div>
-                <div class="border-t border-sky-300/35 mt-2 pt-2 space-y-1.5">
-                    <label for="navSwitchClassCode" class="text-[11px] text-sky-100 font-black">초대 코드 또는 학급 ID</label>
-                    <input id="navSwitchClassCode" type="text" placeholder="예: ABC123" class="w-full bg-slate-950 border border-sky-400/45 rounded-lg px-3 py-2 text-[13px] text-white font-bold" onclick="event.stopPropagation()">
-                    <button type="button" class="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2 rounded-xl" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 들어가기</button>
-                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 text-amber-200 font-bold text-[12px]" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
-                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-800 text-sky-200 font-bold text-[12px]" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
+                <div class="border-t-2 border-cyan-300 mt-2 pt-2 space-y-1.5">
+                    <label for="navSwitchClassCode" class="text-[11px] text-white font-black">초대 코드 또는 학급 ID</label>
+                    <input id="navSwitchClassCode" type="text" placeholder="예: ABC123" class="w-full rounded-lg px-3 py-2 text-[13px] font-bold" onclick="event.stopPropagation()">
+                    <button type="button" class="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2 rounded-xl border-2 border-emerald-200" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 들어가기</button>
+                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl bg-slate-950 border-2 border-amber-300 text-amber-200 font-bold text-[12px]" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
+                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl bg-slate-950 border-2 border-cyan-300 text-cyan-100 font-bold text-[12px]" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
                 </div>`;
             setNavClassMenuOpen(true);
             // 같은 클릭 이벤트로 바로 닫히지 않도록 한 틱 무시
@@ -8121,6 +8345,9 @@ ${subjectLine}
             if (g === 'bank' && typeof window.updateBankPanel === 'function') {
                 window.updateBankPanel();
                 if (id === 'invest' && typeof refreshMarketQuotes === 'function') void refreshMarketQuotes(false);
+            }
+            if ((g === 'admin' && id === 'roster') || (g === 'settings' && id === 'class')) {
+                void window.refreshManagedClassDirectory?.();
             }
         };
 
@@ -15470,21 +15697,7 @@ ${subjectLine}
         };
 
         window.renderMyClassesList = function() {
-            const el = document.getElementById('myClassesList');
-            if (!el) return;
-            const recent = getRecentClasses();
-            if (!recent.length) {
-                el.innerHTML = '<p class="text-[10px] text-slate-500">최근 학급이 없습니다. 새 학급을 만들거나 초대 코드로 입장하세요.</p>';
-                return;
-            }
-            el.innerHTML = recent.map((r) => {
-                const cur = r.classId === appId;
-                const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                return `<button type="button" class="w-full text-left px-3 py-2.5 rounded-xl border ${cur ? 'border-emerald-500/60 bg-emerald-950/40' : 'border-slate-700 bg-slate-950/60 hover:bg-slate-800'} min-h-[44px]" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
-                    <div class="text-xs font-bold text-white truncate">${r.displayName || r.classId}${cur ? ' · 현재' : ''}</div>
-                    <div class="text-[9px] text-slate-500 truncate">${r.inviteCode || r.classId}</div>
-                </button>`;
-            }).join('');
+            void window.refreshManagedClassDirectory();
         };
 
         window.renderCurriculumMappingPanel = function() {

@@ -9,6 +9,7 @@ import {
     weekRangeMondaySunday,
     didPointerMoveEnough,
     ACCIDENTAL_POINTER_MOVE_PX,
+    patchStudentQuestBoardRow,
 } from './questCompletionGuard.js';
 
 describe('일일 퀘스트 완료 판정', () => {
@@ -104,5 +105,22 @@ describe('오터치 이동 판정', () => {
     it('스크롤·스와이프 정도는 오터치로 본다', () => {
         assert.equal(didPointerMoveEnough(100, 100, 100, 100 + ACCIDENTAL_POINTER_MOVE_PX + 1), true);
         assert.equal(didPointerMoveEnough(100, 100, 100 + ACCIDENTAL_POINTER_MOVE_PX + 1, 100), true);
+    });
+});
+
+describe('퀘스트 현황판 즉시 반영', () => {
+    it('취소하면 해당 학생의 오늘 기록이 빠진다', () => {
+        const rows = [
+            { id: '12', questHistory: [{ id: 'q1', date: '2026-09-04' }, { id: 'q8', date: '2026-09-04' }], quests: { q1: true, q8: true } },
+            { id: '1', questHistory: [{ id: 'q1', date: '2026-09-04' }], quests: { q1: true } },
+        ];
+        const next = patchStudentQuestBoardRow(rows, '12', {
+            questHistory: [{ id: 'q8', date: '2026-09-04' }],
+            quests: { q1: false, q8: true },
+        });
+        assert.equal(isDailyQuestCompletedToday(next[0], 'q1', '2026-09-04'), false);
+        assert.equal(isDailyQuestCompletedToday(next[0], 'q8', '2026-09-04'), true);
+        assert.equal(isDailyQuestCompletedToday(next[1], 'q1', '2026-09-04'), true);
+        assert.equal(rows[0].questHistory.length, 2);
     });
 });

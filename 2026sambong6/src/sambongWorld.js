@@ -62,6 +62,7 @@ import {
     isDailyQuestCompletedToday,
     isQuestCompletedForUi,
     isWeeklyQuestCompletedThisWeek,
+    patchStudentQuestBoardRow,
     sanitizeDailyQuestFlags,
     sanitizeWeeklyQuestFlags,
     weekRangeMondaySunday,
@@ -15512,7 +15513,22 @@ ${subjectLine}
             const boards = Array.from(document.querySelectorAll('.js-quest-live-board'));
             const summaryEls = Array.from(document.querySelectorAll('.js-quest-live-summary'));
             if (!boards.length) return;
-            const rows = Array.isArray(studentsData) ? studentsData : [];
+            let rows = Array.isArray(studentsData) ? studentsData : [];
+            // 지금 접속한 학생의 취소·완료는 서버 스냅샷보다 로컬 기록을 우선합니다.
+            const sid = String(localStorage.getItem('sambong_student_id') || (window.playerState && window.playerState.id) || '');
+            if (
+                window.playerState
+                && !window.playerState.isGuest
+                && !window.playerState.isAdmin
+                && sid
+                && sid !== 'gm'
+                && sid !== 'gm_a'
+            ) {
+                rows = patchStudentQuestBoardRow(rows, sid, {
+                    questHistory: window.playerState.questHistory,
+                    quests: window.playerState.quests,
+                });
+            }
             
             const dailyQuests = getQuestCatalog().filter(q => q.type === 'daily');
             const total = dailyQuests.length;
@@ -18022,6 +18038,9 @@ ${subjectLine}
             await handleQuestDrop(catalogPay.xp, { allDailyDone });
 
             updateUI();
+            if (typeof window.renderAdminQuestBoard === 'function') {
+                window.renderAdminQuestBoard(window.allStudentsData || []);
+            }
 
             if (!db || !currentStudentDocRef) return;
 
@@ -18061,8 +18080,7 @@ ${subjectLine}
 
                 let deductXp = catalogQuestRewards(getQuestCatalog().find((q) => q.id === qId), xp, bong).xp;
                 if (window.playerState.questHistory) {
-                    const now = new Date();
-                    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const dateStr = getLocalDateStr();
                     const idx = window.playerState.questHistory.map(q => q.id === qId && q.date === dateStr).lastIndexOf(true);
                     if (idx !== -1) {
                         const histXp = Math.floor(Number(window.playerState.questHistory[idx].xp) || 0);
@@ -18080,8 +18098,14 @@ ${subjectLine}
                 if (!window.playerState.quests) window.playerState.quests = {};
                 /** delete는 Firestore merge 시 서버 true가 되살아나므로 명시적으로 false를 남깁니다. */
                 window.playerState.quests[qId] = false;
-                updateUI(); 
-                saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: deductXp, allowShieldHpDecrease: true, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
+                updateUI();
+                if (typeof window.renderAdminQuestBoard === 'function') {
+                    window.renderAdminQuestBoard(window.allStudentsData || []);
+                }
+                await saveDataToCloud({ allowXpDecrease: true, maxXpDecrease: deductXp, allowShieldHpDecrease: true, allowBongDecrease: true, maxBongDecrease: deductBong, operationLabel: `퀘스트 취소: ${qId}` });
+                if (typeof window.renderAdminQuestBoard === 'function') {
+                    window.renderAdminQuestBoard(window.allStudentsData || []);
+                }
             } else {
                 // 취소 다이얼로그에서 '아니오'를 눌렀을 때 DOM 요소가 해제되는 현상을 막고 재렌더링하여 원상복구합니다.
                 updateUI();

@@ -8,8 +8,8 @@ export default {
                 display: ['Black Han Sans', 'sans-serif'],
             },
             colors: {
-                'sb-bg': '#0b2744',
-                'sb-panel': '#082f49',
+                'sb-bg': '#1d6a96',
+                'sb-panel': '#0369a1',
                 'sb-gold': '#facc15',
                 'sb-blue': '#38bdf8',
                 'sb-green': '#22c55e',
@@ -17,7 +17,7 @@ export default {
             },
             backgroundImage: {
                 'card-grad':
-                    'linear-gradient(145deg, #0b2744 0%, #082f49 48%, #0c4a6e 100%)',
+                    'linear-gradient(145deg, #38bdf8 0%, #0ea5e9 48%, #0284c7 100%)',
             },
         },
     },

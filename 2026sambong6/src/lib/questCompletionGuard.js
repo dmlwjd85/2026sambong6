@@ -133,3 +133,27 @@ export const ACCIDENTAL_POINTER_SUPPRESS_MS = 450;
 export function didPointerMoveEnough(startX, startY, endX, endY, threshold = ACCIDENTAL_POINTER_MOVE_PX) {
     return Math.abs(endX - startX) > threshold || Math.abs(endY - startY) > threshold;
 }
+
+/**
+ * 현황판용 학생 명단에 지금 플레이어의 퀘스트 기록을 바로 반영합니다.
+ * 서버 스냅샷이 오기 전에 취소·완료가 ✓에 나타나게 합니다.
+ */
+export function patchStudentQuestBoardRow(students, studentId, patch) {
+    const sid = String(studentId || '').trim();
+    const rows = Array.isArray(students) ? students.slice() : [];
+    if (!sid || !patch || typeof patch !== 'object') return rows;
+    const idx = rows.findIndex((s) => String(s && s.id) === sid);
+    const prev = idx >= 0 && rows[idx] && typeof rows[idx] === 'object' ? rows[idx] : {};
+    const next = {
+        ...prev,
+        ...patch,
+        id: sid,
+        questHistory: Array.isArray(patch.questHistory)
+            ? patch.questHistory.slice()
+            : (Array.isArray(prev.questHistory) ? prev.questHistory.slice() : []),
+        quests: { ...(prev.quests || {}), ...(patch.quests || {}) },
+    };
+    if (idx >= 0) rows[idx] = next;
+    else rows.push(next);
+    return rows;
+}

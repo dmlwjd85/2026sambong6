@@ -5,22 +5,22 @@
         body { color: #f8fafc; overflow-x: hidden; transition: background 0.5s ease-in-out; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
-        /* ★ 탭별 배경 — 파스텔 오버레이를 빼고 채도 높은 원색으로 구분합니다 ★ */
-        .bg-theme-dashboard { background-color: #075985; background-image: radial-gradient(ellipse 110% 70% at 50% -12%, #0284c7 0%, #0369a1 46%, #0c4a6e 100%); }
-        .bg-theme-constitution { background-color: #9a3412; background-image: radial-gradient(circle at 50% -8%, #ea580c 0%, #c2410c 48%, #7c2d12 100%); }
-        .bg-theme-plaza { background-color: #0e7490; background-image: radial-gradient(circle at 82% 8%, #0891b2 0%, #0e7490 52%, #155e75 100%); }
-        .bg-theme-quests { background-color: #15803d; background-image: radial-gradient(circle at 18% 0%, #22c55e 0%, #16a34a 46%, #14532d 100%); }
-        .bg-theme-shop, .bg-theme-economy { background-color: #c2410c; background-image: radial-gradient(circle at 70% 0%, #f97316 0%, #ea580c 48%, #9a3412 100%); }
-        .bg-theme-jobs { background-color: #a16207; background-image: radial-gradient(circle at 50% 0%, #eab308 0%, #ca8a04 55%, #713f12 100%); }
-        .bg-theme-lunch { background-color: #4f46e5; background-image: radial-gradient(circle at 72% 16%, #6366f1 0%, #4f46e5 50%, #312e81 100%); }
-        .bg-theme-goldenbell, .bg-theme-challenge { background-color: #ca8a04; background-image: radial-gradient(circle at 50% 0%, #eab308 0%, #ca8a04 52%, #854d0e 100%); }
-        .bg-theme-admin { background-color: #1d4ed8; background-image: radial-gradient(circle at 28% 0%, #2563eb 0%, #1d4ed8 52%, #1e3a8a 100%); }
-        .bg-theme-estate { background-color: #0d9488; background-image: radial-gradient(circle at 40% 8%, #14b8a6 0%, #0d9488 52%, #115e59 100%); }
-        .bg-theme-bank { background-color: #1d4ed8; background-image: radial-gradient(ellipse 100% 58% at 50% -12%, #3b82f6 0%, #1d4ed8 50%, #1e3a8a 100%); }
-        .bg-theme-classtools { background-color: #4d7c0f; background-image: radial-gradient(ellipse 90% 68% at 50% 0%, #65a30d 0%, #4d7c0f 48%, #365314 100%); }
-        .bg-theme-settings { background-color: #6d28d9; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #7c3aed 0%, #6d28d9 48%, #4c1d95 100%); }
-        .bg-theme-help { background-color: #0e7490; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #06b6d4 0%, #0e7490 48%, #164e63 100%); }
-        .bg-theme-literature { background-color: #92400e; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #d97706 0%, #b45309 48%, #78350f 100%); }
+        /* ★ 탭별 배경 — 채도는 유지하고 끝을 밝혀 화면이 덜 어둡게 합니다 ★ */
+        .bg-theme-dashboard { background-color: #0284c7; background-image: radial-gradient(ellipse 110% 70% at 50% -12%, #38bdf8 0%, #0ea5e9 46%, #0369a1 100%); }
+        .bg-theme-constitution { background-color: #ea580c; background-image: radial-gradient(circle at 50% -8%, #fb923c 0%, #f97316 48%, #c2410c 100%); }
+        .bg-theme-plaza { background-color: #0891b2; background-image: radial-gradient(circle at 82% 8%, #22d3ee 0%, #06b6d4 52%, #0e7490 100%); }
+        .bg-theme-quests { background-color: #22c55e; background-image: radial-gradient(circle at 18% 0%, #4ade80 0%, #22c55e 46%, #15803d 100%); }
+        .bg-theme-shop, .bg-theme-economy { background-color: #f97316; background-image: radial-gradient(circle at 70% 0%, #fb923c 0%, #f97316 48%, #c2410c 100%); }
+        .bg-theme-jobs { background-color: #eab308; background-image: radial-gradient(circle at 50% 0%, #facc15 0%, #eab308 55%, #a16207 100%); }
+        .bg-theme-lunch { background-color: #6366f1; background-image: radial-gradient(circle at 72% 16%, #818cf8 0%, #6366f1 50%, #4338ca 100%); }
+        .bg-theme-goldenbell, .bg-theme-challenge { background-color: #eab308; background-image: radial-gradient(circle at 50% 0%, #fde047 0%, #eab308 52%, #ca8a04 100%); }
+        .bg-theme-admin { background-color: #3b82f6; background-image: radial-gradient(circle at 28% 0%, #60a5fa 0%, #3b82f6 52%, #1d4ed8 100%); }
+        .bg-theme-estate { background-color: #14b8a6; background-image: radial-gradient(circle at 40% 8%, #2dd4bf 0%, #14b8a6 52%, #0f766e 100%); }
+        .bg-theme-bank { background-color: #3b82f6; background-image: radial-gradient(ellipse 100% 58% at 50% -12%, #60a5fa 0%, #3b82f6 50%, #1d4ed8 100%); }
+        .bg-theme-classtools { background-color: #65a30d; background-image: radial-gradient(ellipse 90% 68% at 50% 0%, #84cc16 0%, #65a30d 48%, #4d7c0f 100%); }
+        .bg-theme-settings { background-color: #8b5cf6; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #a78bfa 0%, #8b5cf6 48%, #6d28d9 100%); }
+        .bg-theme-help { background-color: #06b6d4; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #22d3ee 0%, #06b6d4 48%, #0e7490 100%); }
+        .bg-theme-literature { background-color: #d97706; background-image: radial-gradient(ellipse 100% 68% at 50% -8%, #fbbf24 0%, #f59e0b 48%, #b45309 100%); }
 
         /* 수업도구 — 밀리터리 UI */
         .military-panel {
@@ -768,14 +768,14 @@
         .plaza-classroom-board {
             width: 100%;
             text-align: center;
-            background: #0b2744;
+            background: #1d6a96;
             color: #ffffff;
             font-weight: 800;
             letter-spacing: 0.28em;
             font-size: 10px;
             padding: 0.45rem 0.5rem;
             border-radius: 0.8rem;
-            border: 2px solid #38bdf8;
+            border: 2px solid #7dd3fc;
         }
         .plaza-classroom.is-morning .plaza-classroom-board {
             display: none;
@@ -1912,16 +1912,16 @@
         .summer-sun-glow {
             pointer-events: none; position: fixed; top: -20%; left: 50%; transform: translateX(-50%);
             width: 140%; height: 18vh; z-index: 0;
-            opacity: 0.12;
-            background: radial-gradient(ellipse 50% 80% at 50% 100%, rgba(14, 165, 233, 0.22) 0%, transparent 70%);
+            opacity: 0.28;
+            background: radial-gradient(ellipse 50% 80% at 50% 100%, rgba(125, 211, 252, 0.55) 0%, transparent 70%);
         }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
 
-        /* 패널은 진한 남색으로 두고 테두리를 밝혀 글자가 묻히지 않게 합니다 */
-        .glass-panel { background: #0b2744; backdrop-filter: none; border: 2px solid #38bdf8; }
+        /* 패널은 밝은 청록 남색으로 두어 글자가 묻히지 않게 합니다 */
+        .glass-panel { background: #1d6a96; backdrop-filter: none; border: 2px solid #7dd3fc; }
 
         /* 비상계엄: 학생 화면 전면 잠금(교사 연출 화면만 조작 가능) */
         body.class-timer-active { overflow: hidden !important; }
@@ -1965,8 +1965,8 @@
                 top: 3.5rem;
                 bottom: auto;
                 border-top: 0;
-                border-bottom: 2px solid #38bdf8;
-                background: #082f49;
+                border-bottom: 2px solid #7dd3fc;
+                background: #0369a1;
             }
             .app-nav-dock {
                 grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr));
@@ -1978,8 +1978,8 @@
             }
             .summer-sun-glow {
                 height: 16vh;
-                opacity: 0.1;
-                background: radial-gradient(ellipse 55% 85% at 50% 100%, rgba(14, 165, 233, 0.18) 0%, transparent 72%);
+                opacity: 0.22;
+                background: radial-gradient(ellipse 55% 85% at 50% 100%, rgba(125, 211, 252, 0.42) 0%, transparent 72%);
             }
             #swipeWrapper {
                 padding-top: 9.25rem !important;
@@ -2012,8 +2012,8 @@
             height: 2.35rem;
             border-radius: 0.8rem;
             overflow: hidden;
-            background: #082f49;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+            background: #0284c7;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
             transition: transform 0.18s ease, box-shadow 0.18s ease;
         }
         .app-nav-icon img {
@@ -2084,8 +2084,8 @@
             align-items: center;
             justify-content: center;
             font-size: 1.1rem;
-            background: #082f49;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+            background: #0284c7;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.28);
         }
         .inner-pane.hidden { display: none !important; }
         .app-sub-item {
@@ -2095,8 +2095,8 @@
             gap: 0.25rem;
             padding: 0.45rem 0.25rem;
             border-radius: 1rem;
-            border: 2px solid #38bdf8;
-            background: #0b2744;
+            border: 2px solid #7dd3fc;
+            background: #1d6a96;
             color: #ffffff;
             font-size: 10px;
             font-weight: 800;
@@ -3070,18 +3070,18 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .plaza-card-name:not(.plaza-staff-name) {
             color: #ffffff;
         }
-        .summer-bubbles { opacity: 0.1; }
+        .summer-bubbles { opacity: 0.22; }
         #appNavDock {
             backdrop-filter: none;
-            background: #082f49;
-            border-color: #38bdf8;
+            background: #0284c7;
+            border-color: #7dd3fc;
         }
         nav.fixed.top-0 {
-            background: #082f49 !important;
-            border-bottom: 2px solid #38bdf8;
+            background: #0284c7 !important;
+            border-bottom: 2px solid #7dd3fc;
         }
         #loginOverlay {
-            background-image: linear-gradient(180deg, #075985 0%, #0c4a6e 55%, #082f49 100%) !important;
+            background-image: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 55%, #0284c7 100%) !important;
         }
         /* 반투명 파스텔 유틸이 글자를 흐리게 만들지 않도록 대비를 고정합니다 */
         #swipeWrapper .text-slate-300,
@@ -3096,9 +3096,9 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #22d3ee !important;
         }
         .plaza-seat-empty {
-            color: #cbd5e1;
-            background: #082f49;
-            border-color: #38bdf8;
+            color: #e0f2fe;
+            background: #0369a1;
+            border-color: #7dd3fc;
         }
 
         /* 직업 GM 관리 — 아이콘·색을 눈으로 고르기 */
@@ -3171,7 +3171,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             width: min(52rem, 100%);
             max-height: min(86vh, 44rem);
             overflow-y: auto;
-            background: linear-gradient(165deg, #0c4a6e 0%, #082f49 48%, #0f172a 100%);
+            background: linear-gradient(165deg, #38bdf8 0%, #0ea5e9 48%, #0284c7 100%);
             border: 3px solid rgba(56, 189, 248, 0.55);
             box-shadow: 0 0 48px rgba(14, 165, 233, 0.28);
         }

@@ -1,8 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CLASS_CREATE_REQUEST_COLLECTION,
     CLASS_CREATE_REQUEST_STORAGE_KEY,
     SEED_MASTER_CLASS_ID,
+    classCreateRequestPath,
     applyClassCreateApproval,
     applyClassCreateRejection,
     buildClassCreateRequest,
@@ -20,6 +22,8 @@ import {
 describe('학급 개설 인증 요청', () => {
     it('시드 마스터만 바로 만들고, 나머지는 요청한다', () => {
         assert.equal(SEED_MASTER_CLASS_ID, 'sambong-class-2026');
+        assert.deepEqual(classCreateRequestPath(), ['artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', CLASS_CREATE_REQUEST_COLLECTION]);
+        assert.deepEqual(classCreateRequestPath('ccr_1'), ['artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', CLASS_CREATE_REQUEST_COLLECTION, 'ccr_1']);
         assert.equal(isSeedMasterViewer({ isGM: true }, SEED_MASTER_CLASS_ID), true);
         assert.equal(canCreateClassImmediately({ isGM: true }, SEED_MASTER_CLASS_ID), true);
         assert.equal(canCreateClassImmediately({ isGM: true, isAdmin: true }, 'other-class'), false);

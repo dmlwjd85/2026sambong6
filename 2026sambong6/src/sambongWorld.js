@@ -2744,8 +2744,12 @@ function redrawPlazaGrantsUi() {
             return { newClassId, inviteCode, newMeta };
         }
 
+        function classCreateRequestColRef() {
+            return collection(db, 'artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', CLASS_CREATE_REQUEST_COLLECTION);
+        }
+
         function classCreateRequestDocRef(requestId) {
-            return doc(db, CLASS_CREATE_REQUEST_COLLECTION, String(requestId || ''));
+            return doc(db, 'artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', CLASS_CREATE_REQUEST_COLLECTION, String(requestId || ''));
         }
 
         function renderClassCreateRequestHtml(req) {
@@ -2840,7 +2844,7 @@ function redrawPlazaGrantsUi() {
                 return;
             }
             if (_unsubClassCreateRequests) return;
-            const col = collection(db, CLASS_CREATE_REQUEST_COLLECTION);
+            const col = classCreateRequestColRef();
             _unsubClassCreateRequests = onSnapshot(col, (snap) => {
                 const rows = [];
                 snap.forEach((d) => rows.push(sanitizeClassCreateRequest({ ...(d.data() || {}), id: d.id })));

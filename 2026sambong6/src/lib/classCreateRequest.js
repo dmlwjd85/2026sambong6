@@ -4,7 +4,14 @@
  */
 
 export const SEED_MASTER_CLASS_ID = 'sambong-class-2026';
+/** 시드 학급 artifacts 아래. 기존 규칙으로 익명 인증 쓰기가 됩니다. */
 export const CLASS_CREATE_REQUEST_COLLECTION = 'classCreateRequests';
+
+export function classCreateRequestPath(requestId) {
+    const base = ['artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', CLASS_CREATE_REQUEST_COLLECTION];
+    const id = String(requestId || '').trim();
+    return id ? [...base, id] : base;
+}
 export const CLASS_CREATE_REQUEST_STORAGE_KEY = 'sambong_class_create_request_id';
 export const CLASS_CREATE_REQUEST_STATUSES = Object.freeze(['pending', 'approved', 'rejected']);
 

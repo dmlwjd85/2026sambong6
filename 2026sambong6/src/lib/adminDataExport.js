@@ -260,9 +260,17 @@ function buildInventoryRows(ctx) {
         const sid = String(stu.id);
         const name = studentName(ctx, sid);
         const inv = Array.isArray(stu.inventory) ? stu.inventory : [];
+        const counts = {};
         inv.forEach((itemId) => {
+            const id = String(itemId || '');
+            if (!id) return;
+            counts[id] = (counts[id] || 0) + 1;
+        });
+        Object.keys(counts).forEach((itemId) => {
             const equippedNote = stu.equippedWeapon === itemId || stu.equippedShield === itemId || stu.equippedShoes === itemId ? '장착중' : '';
-            rows.push([sid, name, '장비/인벤토리', itemId, resolveItemName(ctx, itemId), equippedNote]);
+            const lv = stu.gearEnhance && stu.gearEnhance[itemId] != null ? stu.gearEnhance[itemId] : 1;
+            const note = [equippedNote, `×${counts[itemId]}`, `${lv}단계`].filter(Boolean).join(' ');
+            rows.push([sid, name, '장비/인벤토리', itemId, resolveItemName(ctx, itemId), note]);
         });
         ['equippedWeapon', 'equippedShield', 'equippedShoes'].forEach((key) => {
             const id = stu[key];

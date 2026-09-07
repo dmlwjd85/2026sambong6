@@ -134,19 +134,28 @@ import {
     season2SchoolDaysTotal,
     SHIELD_STOCK_DEFAULT,
     season2SupervisionSinceMs,
-    uniqueInventory,
     worldSettingsForSeason2,
 } from './lib/season2.js';
 import {
+    GEAR_ENHANCE_MAX,
+    GEAR_ENHANCE_MIN,
+    SHIELD_BLOCK_CAP,
     SHIELD_GEAR,
     SHOE_GEAR,
     WEAPON_GEAR,
     applyFullXpDeduct,
-    getGear,
+    attemptGearEnhance,
+    countOwnedGear,
+    enhanceSuccessChance,
+    gearEnhanceOf,
     gearSlotLabel,
+    gearWithEnhance,
+    getGear,
     grantMasterGear,
     pickQuestDropId,
     resolveQuestWeaponProc,
+    sanitizeGearEnhance,
+    sanitizeGearInventory,
     skinStatLabel,
     staffLookStatLabel,
 } from './lib/gear.js';
@@ -297,6 +306,7 @@ import {
     jobColorLabel,
     jobIconChoicesForPicker,
     jobIconLabel,
+    getJobEntryName,
     jobLookConflict,
     jobLookConflictMessage,
     jobLooksInUse,
@@ -304,6 +314,8 @@ import {
     normalizeJobColor,
     normalizeJobIcon,
     pickUnusedJobLook,
+    studentHasJobName,
+    toggleJobAssignment,
 } from './lib/jobs.js';
 import {
     buildScreenNotice,
@@ -388,6 +400,7 @@ async function refreshStudentsCacheFromServer() {
     window.renderPlaza(students, gmD, gmaD);
     window.renderHallOfFame(students);
     window.renderLunchQueue(students);
+    if (typeof window.renderJobGrid === 'function') window.renderJobGrid();
 }
 
 /** quickReward 직후 단일 학생 문서를 캐시에 반영해 광장 카드 수치가 즉시 바뀌게 함 */
@@ -1748,35 +1761,37 @@ function redrawPlazaGrantsUi() {
         /** 마스터는 무기·방패·신발을 모두 보유한 것으로 맞춥니다. */
         function ensureMasterAllGear() {
             if (!window.playerState || !window.playerState.isAdmin) return false;
-            window.playerState.inventory = uniqueInventory(window.playerState.inventory);
+            window.playerState.inventory = sanitizeGearInventory(window.playerState.inventory);
             const next = grantMasterGear(window.playerState.inventory);
             const changed = next.length !== window.playerState.inventory.length
                 || next.some((id) => !(window.playerState.inventory || []).includes(id));
             if (changed) window.playerState.inventory = next;
+            window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
             return changed;
         }
 
         function gearStatLine(g) {
             if (!g) return '';
-            if (g.slot === 'weapon') return `${g.dmgMin}~${g.dmgMax} · ${Math.round((g.proc || 0) * 100)}%`;
-            if (g.slot === 'shield') return `방어 ${Math.round((g.block || 0) * 100)}%`;
-            if (g.slot === 'shoes') return `+${((g.procBonus || 0) * 100).toFixed(1)}%p`;
-            return g.desc || '';
+            const lv = gearEnhanceOf(window.playerState, g.id);
+            const boosted = gearWithEnhance(g, lv) || g;
+            if (boosted.slot === 'weapon') return `${boosted.dmgMin}~${boosted.dmgMax} · ${Math.round((boosted.proc || 0) * 1000) / 10}%`;
+            if (boosted.slot === 'shield') return `방어 ${Math.round(Math.min(SHIELD_BLOCK_CAP, boosted.block || 0) * 1000) / 10}%`;
+            if (boosted.slot === 'shoes') return `+${((boosted.procBonus || 0) * 100).toFixed(1)}%p`;
+            return boosted.desc || '';
         }
 
         function renderGearSlotRow(panelId, list, equippedId) {
             const invPanel = document.getElementById(panelId);
             if (!invPanel) return;
-            const inv = window.playerState.inventory || [];
-            const counts = {};
-            inv.forEach((id) => {
-                counts[id] = (counts[id] || 0) + 1;
-            });
+            const inv = sanitizeGearInventory(window.playerState.inventory || []);
             const isMaster = !!(window.playerState && window.playerState.isAdmin);
             invPanel.innerHTML = list.map((g) => {
-                const n = counts[g.id] || 0;
+                const n = countOwnedGear(inv, g.id);
                 const have = isMaster || n > 0;
                 const isEquipped = have && equippedId === g.id;
+                const lv = have ? gearEnhanceOf(window.playerState, g.id) : GEAR_ENHANCE_MIN;
+                const canEnhance = have && n >= 2 && lv < GEAR_ENHANCE_MAX;
+                const rate = Math.round(enhanceSuccessChance(lv) * 100);
                 const borderCls =
                     !have
                         ? 'opacity-40 border-slate-700 bg-slate-900/50'
@@ -1788,9 +1803,13 @@ function redrawPlazaGrantsUi() {
                 const art = g.img
                     ? `<img src="${g.img}" alt="${g.name}">`
                     : `<span>${g.emoji || ''}</span>`;
+                const enhanceBtn = canEnhance
+                    ? `<button type="button" onclick="event.stopPropagation(); void window.enhanceGear('${g.id}')" class="mt-0.5 w-full bg-violet-800/80 hover:bg-violet-700 text-violet-50 text-[7px] font-black py-0.5 rounded border border-violet-400/50">강화 ${rate}%</button>`
+                    : '';
                 return `
                     <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
                         ${isEquipped ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
+                        ${have ? `<div class="absolute -top-1 left-0 bg-slate-950 text-violet-200 text-[7px] font-black px-0.5 rounded z-10 border border-violet-500/40">${lv}단계</div>` : ''}
                         <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art">${art}</div>
                         <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${g.name}</div>
                         <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">${have ? `×${isMaster ? Math.max(n, 1) : n}` : '미보유'}</div>
@@ -1799,6 +1818,7 @@ function redrawPlazaGrantsUi() {
                                 ? `<div class="text-[7px] text-emerald-400 font-bold text-center leading-tight">${gearStatLine(g)}</div>`
                                 : '<div class="text-[7px] text-slate-600">미보유</div>'
                         }
+                        ${enhanceBtn}
                     </div>`;
             }).join('');
         }
@@ -3784,7 +3804,7 @@ function redrawPlazaGrantsUi() {
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
-            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
             stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
             catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
@@ -4094,10 +4114,7 @@ function redrawPlazaGrantsUi() {
 
         /** 학생 jobs 배열 항목에서 직업 이름 추출 (문자열/객체 모두 지원) */
         function getStudentJobName(job) {
-            if (!job) return '';
-            if (typeof job === 'string') return job.trim();
-            if (typeof job === 'object' && job.name != null) return String(job.name).trim();
-            return String(job).trim();
+            return getJobEntryName(job);
         }
 
         /** 편의점 매니저 뱃지(직업)를 표시 중인지 확인 */
@@ -14052,20 +14069,86 @@ ${subjectLine}
             listEl.innerHTML = rows.join('') || '<div class="text-slate-500 text-center py-3">퀘스트가 없습니다.</div>';
         }
 
+        function listJobWearers(jobName) {
+            const rows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
+            return rows
+                .filter((stu) => {
+                    const sid = String(stu && stu.id || '');
+                    if (!sid || sid === 'gm' || sid === 'gm_a') return false;
+                    return studentHasJobName(stu.jobs, jobName);
+                })
+                .map((stu) => ({
+                    id: String(stu.id),
+                    name: STUDENT_NAMES[String(stu.id)] || stu.name || String(stu.id),
+                }));
+        }
+
+        function renderJobMasterAssignBar() {
+            const bar = document.getElementById('jobMasterAssignBar');
+            if (!bar) return;
+            const isMaster = !!(window.playerState && window.playerState.isAdmin);
+            bar.classList.toggle('hidden', !isMaster);
+            if (!isMaster) return;
+            const chips = document.getElementById('jobMasterStudentChips');
+            if (!chips) return;
+            const selected = String(window._jobAssignStudentId || '');
+            const ids = getActiveStudentIds().filter((id) => id && id !== 'gm' && id !== 'gm_a');
+            chips.innerHTML = ids.map((sid) => {
+                const on = selected === String(sid);
+                const name = STUDENT_NAMES[String(sid)] || sid;
+                const canEdit = canEditStudentAsAdmin(sid);
+                const cls = on
+                    ? 'bg-sb-blue text-white border-sky-300'
+                    : canEdit
+                        ? 'bg-slate-900 text-slate-100 border-slate-600 hover:border-sky-400'
+                        : 'bg-slate-950 text-slate-500 border-slate-800';
+                return `<button type="button" onclick="window.selectJobAssignStudent('${sid}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold ${cls}">${sid}. ${escapeHtmlAttr(name)}</button>`;
+            }).join('');
+        }
+
         function renderJobGrid() {
             const jg = document.getElementById('jobGrid');
             if (!jg) return;
-            jg.innerHTML = getJobCatalog().map(job => `
-                <div id="job-card-${job.id}" onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}')" class="relative cursor-pointer glass-panel p-2 sm:p-3 rounded-xl border-l-4 border-l-${job.color.replace('text-', '')} hover:bg-slate-800 transition flex items-center gap-2 sm:gap-3 group">
+            renderJobMasterAssignBar();
+            const isMaster = !!(window.playerState && window.playerState.isAdmin);
+            const selectedId = isMaster ? String(window._jobAssignStudentId || '') : '';
+            const selectedStu = selectedId
+                ? (window.allStudentsData || []).find((s) => String(s.id) === selectedId)
+                : null;
+            const targetJobs = isMaster
+                ? ((selectedStu && selectedStu.jobs) || [])
+                : ((window.playerState && window.playerState.jobs) || []);
+            jg.innerHTML = getJobCatalog().map((job) => {
+                const isEquipped = studentHasJobName(targetJobs, job.name);
+                const wearers = isMaster ? listJobWearers(job.name) : [];
+                const wearerHtml = wearers.map((w) => {
+                    const canEdit = canEditStudentAsAdmin(w.id);
+                    const btn = canEdit
+                        ? `onclick="event.stopPropagation(); void window.toggleStudentJob('${w.id}', '${job.id}')"`
+                        : 'onclick="event.stopPropagation();"';
+                    return `<button type="button" ${btn} class="text-[8px] px-1 py-0.5 rounded bg-slate-950 border border-sky-500/40 text-sky-100 font-bold" title="눌러서 해제">${escapeHtmlAttr(w.name)}${canEdit ? ' ×' : ''}</button>`;
+                }).join('');
+                const click = isMaster
+                    ? (selectedId
+                        ? `onclick="void window.toggleStudentJob('${selectedId}', '${job.id}')"`
+                        : `onclick="void window.customAlert('먼저 아래 명단에서 학생을 골라 주세요.')"`)
+                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}')"`;
+                const ring = isEquipped ? 'ring-1 ring-sb-blue bg-slate-800' : '';
+                const border = isEquipped ? 'border-l-sb-blue' : `border-l-${job.color.replace('text-', '')}`;
+                return `
+                <div id="job-card-${job.id}" ${click} class="relative cursor-pointer glass-panel p-2 sm:p-3 rounded-xl border-l-4 ${border} hover:bg-slate-800 transition flex items-center gap-2 sm:gap-3 group ${ring}">
                     <i class="fa-solid ${job.icon} text-xl sm:text-2xl ${job.color} group-hover:scale-110 w-8 text-center shrink-0"></i>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-xs sm:text-sm truncate">${job.name} <span class="font-normal text-[9px] sm:text-[10px] text-slate-400">${job.sub}</span></div>
                         <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${job.desc}</div>
+                        ${isMaster ? `<div class="flex flex-wrap gap-1 mt-1" onclick="event.stopPropagation()">${wearerHtml || '<span class="text-[8px] text-slate-500">아직 아무도 안 달았어요</span>'}</div>` : ''}
                     </div>
                     <div class="bg-slate-900 text-sb-gold px-2 py-1 rounded font-bold text-[9px] sm:text-[10px] shrink-0 border border-slate-700 whitespace-nowrap">${formatBongAmount(job.pay)}</div>
-                </div>
-            `).join('');
+                    ${isEquipped ? '<div class="job-check-icon absolute top-2 right-2 text-sb-blue"><i class="fa-solid fa-circle-check"></i></div>' : ''}
+                </div>`;
+            }).join('');
         }
+        window.renderJobGrid = renderJobGrid;
 
         function renderJobManagementAdminPanel() {
             const listEl = document.getElementById('gmJobManageList');
@@ -17037,8 +17120,9 @@ ${subjectLine}
             document.getElementById('expBar').style.width = window.playerState.isAdmin ? '100%' : `${Math.min(100, Math.max(0, progress))}%`;
             document.getElementById('expText').innerText = window.playerState.isAdmin ? 'MAX' : (exactLv >= 100 ? 'MAX' : `${Math.floor(progress)}%`);
 
-            const inv = uniqueInventory(window.playerState.inventory || []);
+            const inv = sanitizeGearInventory(window.playerState.inventory || []);
             window.playerState.inventory = inv;
+            window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, inv);
             if (ensureMasterAllGear() && !window.playerState.isGuest && currentStudentDocRef && !_masterGearSaving) {
                 _masterGearSaving = true;
                 void saveDataToCloud().finally(() => { _masterGearSaving = false; });
@@ -17167,23 +17251,7 @@ ${subjectLine}
             renderQuests(getQuestCatalog().filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
             renderQuests(getQuestCatalog().filter(q => q.type === 'locked'), 'specialQuestContainer');
 
-            getJobCatalog().forEach(job => {
-                const card = document.getElementById(`job-card-${job.id}`);
-                if (card) {
-                    const isEquipped = window.playerState.jobs && window.playerState.jobs.some(j => j.name === job.name);
-                    const existCheck = card.querySelector('.job-check-icon'); 
-                    if(existCheck) existCheck.remove();
-                    
-                    if (isEquipped) { 
-                        card.classList.add('ring-1', 'ring-sb-blue', 'bg-slate-800'); 
-                        card.classList.replace(`border-l-${job.color.replace('text-', '')}`, 'border-l-sb-blue'); 
-                        card.innerHTML += `<div class="job-check-icon absolute top-2 right-2 text-sb-blue"><i class="fa-solid fa-circle-check"></i></div>`; 
-                    } else { 
-                        card.classList.remove('ring-1', 'ring-sb-blue', 'bg-slate-800'); 
-                        card.classList.replace('border-l-sb-blue', `border-l-${job.color.replace('text-', '')}`); 
-                    }
-                }
-            });
+            if (typeof renderJobGrid === 'function') renderJobGrid();
 
             SKIN_DATA.forEach(skin => {
                 const item = document.getElementById(`skin-btn-${skin.id}`); 
@@ -17379,7 +17447,7 @@ ${subjectLine}
                 xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
-                inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
+                inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, gearEnhance: { wp1: 1 }, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 dragonBalls: [], dragonBallWeekendKey: '',
                 bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '',
                 stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
@@ -17468,7 +17536,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_mystery_dice: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -18302,7 +18370,8 @@ ${subjectLine}
         window.equipGear = async function(gearId) {
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
-            window.playerState.inventory = uniqueInventory(window.playerState.inventory);
+            window.playerState.inventory = sanitizeGearInventory(window.playerState.inventory);
+            window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
             const g = getGear(gearId);
             if (!g) return;
             if (!window.playerState.isAdmin && !window.playerState.inventory.includes(gearId)) return;
@@ -18315,16 +18384,19 @@ ${subjectLine}
 
         async function handleQuestDrop(xp, opts = {}) {
             if (!window.playerState.inventory) window.playerState.inventory = [];
-            window.playerState.inventory = uniqueInventory(window.playerState.inventory);
+            window.playerState.inventory = sanitizeGearInventory(window.playerState.inventory);
+            window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
             const dropped = pickQuestDropId(xp, window.playerState.inventory);
             if (!dropped) return;
-            if ((window.playerState.inventory || []).includes(dropped)) return;
             const g = getGear(dropped);
             window.playerState.inventory.push(dropped);
+            window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
             if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
             const slotName = gearSlotLabel(g && g.slot);
+            const n = countOwnedGear(window.playerState.inventory, dropped);
+            const lv = gearEnhanceOf(window.playerState, dropped);
             await window.customAlert(
-                `🎉 [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n같은 칸을 탭하면 장착합니다. 무기 획득 시 경험치 버프는 없습니다.`
+                `🎉 [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요. 같은 칸을 탭하면 장착합니다.`
             );
         }
 
@@ -20147,12 +20219,97 @@ ${subjectLine}
         window.toggleJob = async function(jobName, iconClass, colorClass) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
+            if (window.playerState.isAdmin) {
+                return await window.customAlert('마스터는 직업 카드로 학생 직업을 달거나 벗깁니다.\n먼저 학생을 고른 뒤 카드를 눌러 주세요.');
+            }
             if (!window.playerState.jobs) window.playerState.jobs = [];
             const existingIndex = window.playerState.jobs.findIndex(j => j.name === jobName);
             if (existingIndex > -1) window.playerState.jobs.splice(existingIndex, 1);
             else window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
             
             updateUI(); saveDataToCloud(); window.switchTab('plaza');
+        };
+
+        window.selectJobAssignStudent = function(studentId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            window._jobAssignStudentId = String(studentId || '');
+            if (typeof renderJobGrid === 'function') renderJobGrid();
+        };
+
+        window.toggleStudentJob = async function(studentId, jobId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (shouldIgnoreAccidentalPointer()) return;
+            const sid = String(studentId || '');
+            if (!sid || sid === 'gm' || sid === 'gm_a') return;
+            if (!canEditStudentAsAdmin(sid)) {
+                return window.customAlert('이 학생의 직업을 바꿀 권한이 없습니다.');
+            }
+            const job = getJobCatalog().find((j) => j.id === jobId);
+            if (!job) return window.customAlert('직업을 찾지 못했습니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                let stu = {};
+                try {
+                    const snap = await readStudentDocPreferServer(ref);
+                    if (snap.exists()) stu = snap.data() || {};
+                } catch (eRead) {
+                    console.warn('toggleStudentJob read', eRead);
+                    const row = (window.allStudentsData || []).find((s) => String(s.id) === sid);
+                    if (row) stu = { ...row };
+                }
+                const nextJobs = toggleJobAssignment(stu.jobs, job);
+                await setDoc(ref, { jobs: nextJobs }, { merge: true });
+                mergeStudentDocIntoPlazaCache(sid, { ...stu, id: sid, jobs: nextJobs });
+                if (typeof renderJobGrid === 'function') renderJobGrid();
+                if (typeof window.renderPlaza === 'function') {
+                    window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
+                }
+                const on = studentHasJobName(nextJobs, job.name);
+                const who = STUDENT_NAMES[sid] || sid;
+                if (typeof window.showToast === 'function') {
+                    window.showToast(on ? `${who} → ${job.name} 장착` : `${who} → ${job.name} 해제`);
+                }
+            } catch (e) {
+                console.error('toggleStudentJob', e);
+                await window.customAlert('직업 저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.enhanceGear = async function(gearId) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (shouldIgnoreAccidentalPointer()) return;
+            const g = getGear(gearId);
+            if (!g) return;
+            window.playerState.inventory = sanitizeGearInventory(window.playerState.inventory);
+            window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
+            const count = countOwnedGear(window.playerState.inventory, gearId);
+            const lv = gearEnhanceOf(window.playerState, gearId);
+            if (count < 2) return window.customAlert('같은 아이템이 2개 있어야 강화할 수 있어요.');
+            if (lv >= GEAR_ENHANCE_MAX) return window.customAlert('이미 5단계입니다.');
+            const chance = enhanceSuccessChance(lv);
+            const ok = await window.customConfirm(
+                `[${g.name}] ${lv}단계 → ${lv + 1}단계 강화\n성공률 ${Math.round(chance * 100)}%\n실패하면 1단계가 됩니다.\n재료 1개를 쓸까요?`
+            );
+            if (!ok) return;
+            const result = attemptGearEnhance(window.playerState, gearId);
+            if (!result.ok) {
+                if (result.reason === 'need_fodder') return window.customAlert('같은 아이템이 2개 있어야 강화할 수 있어요.');
+                if (result.reason === 'max') return window.customAlert('이미 5단계입니다.');
+                return window.customAlert('강화할 수 없는 아이템입니다.');
+            }
+            window.playerState.inventory = result.inventory;
+            window.playerState.gearEnhance = result.gearEnhance;
+            updateUI();
+            if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
+            playSfx(result.success ? 'bong' : 'xp', result.success);
+            await window.customAlert(
+                result.success
+                    ? `✨ 강화 성공!\n[${g.name}] ${result.after}단계가 되었습니다.`
+                    : `💨 강화 실패…\n[${g.name}]이(가) 1단계로 돌아갔습니다.`
+            );
         };
 
         window.refundEquippedSkin = async function(skinId) {
@@ -20521,7 +20678,7 @@ ${subjectLine}
         const STUDENT_GAME_FIELD_KEYS = [
             'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
-            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
+            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'stockInvestments', 'stockInvestDaily', 'catBattle',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
@@ -20728,7 +20885,7 @@ ${subjectLine}
                     ids.forEach((sid) => {
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null },
+                            { inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {} },
                             { merge: true }
                         );
                     });
@@ -21018,6 +21175,7 @@ ${subjectLine}
                 equippedWeapon: null,
                 equippedShield: null,
                 equippedShoes: null,
+                gearEnhance: {},
                 lunchBid: { date: '', amount: 0 },
                 lastLunchDeductDate: '',
                 questHistory: [],

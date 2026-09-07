@@ -16,8 +16,27 @@ export const SHIELD_GEAR = [
     { id: 'sh2', slot: 'shield', name: '가죽 방패', emoji: '🟤', block: 0.12, desc: '경험치 차감 방어 12%' },
     { id: 'sh3', slot: 'shield', name: '철 방패', emoji: '🛡️', block: 0.16, desc: '경험치 차감 방어 16%' },
     { id: 'sh4', slot: 'shield', name: '기사 방패', emoji: '🏰', block: 0.20, desc: '경험치 차감 방어 20%' },
-    { id: 'sh5', slot: 'shield', name: '용린 방패', emoji: '🐉', block: 0.24, desc: '경험치 차감 방어 24%' },
+    { id: 'sh5', slot: 'shield', name: '용린 방패', emoji: '🐉', block: 0.20, desc: '경험치 차감 방어 20%' },
 ];
+
+/** 광장·학급온도계 경험치 차감에서 드롭 방패가 막을 확률 상한 */
+export const SHIELD_BLOCK_CAP = 0.20;
+export const GEAR_ENHANCE_MIN = 1;
+export const GEAR_ENHANCE_MAX = 5;
+/**
+ * 현재 단계에서 다음 단계로 올릴 때 성공률.
+ * 1→2 100%, 2→3 50%, 3→4 30%, 4→5 15%. 5단계는 최대라 시도하지 않으며 목록의 10%는 5단계 표시용입니다.
+ */
+export const GEAR_ENHANCE_SUCCESS_FROM = Object.freeze({
+    1: 1.00,
+    2: 0.50,
+    3: 0.30,
+    4: 0.15,
+    5: 0.10,
+});
+
+/** 강화 성공률 안내 문구 (1→2부터 5단계 최대까지) */
+export const GEAR_ENHANCE_RATE_LABEL = '100% · 50% · 30% · 15% · 10%';
 
 export const SHOE_GEAR = [
     { id: 'shoe1', slot: 'shoes', name: '짚신', emoji: '🌾', procBonus: 0.010, desc: '무기·방패 발동 +1%p' },
@@ -81,6 +100,119 @@ function clamp01(n) {
     return Math.max(0, Math.min(0.45, x));
 }
 
+function clampShieldChance(n) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return 0;
+    return Math.max(0, Math.min(SHIELD_BLOCK_CAP, x));
+}
+
+export function clampGearEnhance(level) {
+    const n = Math.floor(Number(level) || 0);
+    if (!Number.isFinite(n) || n < GEAR_ENHANCE_MIN) return GEAR_ENHANCE_MIN;
+    return Math.min(GEAR_ENHANCE_MAX, n);
+}
+
+export function enhanceSuccessChance(currentLevel) {
+    const lv = clampGearEnhance(currentLevel);
+    if (lv >= GEAR_ENHANCE_MAX) return 0;
+    const rate = GEAR_ENHANCE_SUCCESS_FROM[lv];
+    return Number.isFinite(rate) ? rate : 0;
+}
+
+/** 유효한 장비 id만 남깁니다. 같은 아이템은 갯수로 쌓입니다. */
+export function sanitizeGearInventory(ids) {
+    const out = [];
+    (Array.isArray(ids) ? ids : []).forEach((id) => {
+        const k = String(id || '');
+        if (!k || !getGear(k)) return;
+        out.push(k);
+    });
+    return out;
+}
+
+export function countOwnedGear(inventory, gearId) {
+    const id = String(gearId || '');
+    if (!id) return 0;
+    return sanitizeGearInventory(inventory).filter((x) => x === id).length;
+}
+
+export function consumeOwnedGear(inventory, gearId) {
+    const id = String(gearId || '');
+    const next = sanitizeGearInventory(inventory);
+    const idx = next.lastIndexOf(id);
+    if (idx < 0) return next;
+    next.splice(idx, 1);
+    return next;
+}
+
+export function sanitizeGearEnhance(raw, inventory) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    const owned = new Set(sanitizeGearInventory(inventory));
+    const out = {};
+    owned.forEach((id) => {
+        out[id] = src[id] != null ? clampGearEnhance(src[id]) : GEAR_ENHANCE_MIN;
+    });
+    return out;
+}
+
+export function gearEnhanceOf(stu, gearId) {
+    const id = String(gearId || '');
+    if (!id) return GEAR_ENHANCE_MIN;
+    const map = stu && stu.gearEnhance && typeof stu.gearEnhance === 'object' ? stu.gearEnhance : {};
+    if (map[id] == null) return GEAR_ENHANCE_MIN;
+    return clampGearEnhance(map[id]);
+}
+
+/** 강화 단계에 따른 소량 보너스. 1단계는 기본값입니다. */
+export function gearWithEnhance(gear, level) {
+    if (!gear) return null;
+    const lv = clampGearEnhance(level);
+    const steps = Math.max(0, lv - GEAR_ENHANCE_MIN);
+    const copy = { ...gear, enhance: lv };
+    if (gear.slot === 'weapon') {
+        copy.proc = (Number(gear.proc) || 0) + steps * 0.004;
+        copy.dmgMin = Number(gear.dmgMin) || 0;
+        copy.dmgMax = (Number(gear.dmgMax) || 0) + (steps >= 4 ? 1 : 0);
+        copy.desc = `데미지 ${copy.dmgMin}~${copy.dmgMax} · 발동 ${Math.round((copy.proc || 0) * 1000) / 10}%`;
+    } else if (gear.slot === 'shield') {
+        copy.block = (Number(gear.block) || 0) + steps * 0.004;
+        copy.desc = `경험치 차감 방어 ${Math.round(Math.min(SHIELD_BLOCK_CAP, copy.block) * 1000) / 10}%`;
+    } else if (gear.slot === 'shoes') {
+        copy.procBonus = (Number(gear.procBonus) || 0) + steps * 0.002;
+        copy.desc = `무기·방패 발동 +${((copy.procBonus || 0) * 100).toFixed(1)}%p`;
+    }
+    return copy;
+}
+
+export function attemptGearEnhance(stu, gearId, rng = Math.random) {
+    const id = String(gearId || '');
+    const gear = getGear(id);
+    if (!gear) return { ok: false, reason: 'unknown' };
+    const inventory = sanitizeGearInventory(stu && stu.inventory);
+    const count = countOwnedGear(inventory, id);
+    if (count < 2) return { ok: false, reason: 'need_fodder', count };
+    const enhance = sanitizeGearEnhance(stu && stu.gearEnhance, inventory);
+    const current = enhance[id] != null ? clampGearEnhance(enhance[id]) : GEAR_ENHANCE_MIN;
+    if (current >= GEAR_ENHANCE_MAX) return { ok: false, reason: 'max', level: current, count };
+    const chance = enhanceSuccessChance(current);
+    const roll = typeof rng === 'function' ? rng() : Math.random();
+    const nextInv = consumeOwnedGear(inventory, id);
+    const nextEnhance = { ...enhance };
+    const success = roll < chance;
+    nextEnhance[id] = success ? current + 1 : GEAR_ENHANCE_MIN;
+    if (!nextInv.includes(id)) delete nextEnhance[id];
+    return {
+        ok: true,
+        success,
+        chance,
+        before: current,
+        after: nextEnhance[id] != null ? nextEnhance[id] : GEAR_ENHANCE_MIN,
+        inventory: nextInv,
+        gearEnhance: nextEnhance,
+        gear,
+    };
+}
+
 function randInt(min, max, rng) {
     const a = Math.floor(Number(min) || 0);
     const b = Math.floor(Number(max) || 0);
@@ -100,15 +232,24 @@ export function listGearBySlot(slot) {
 }
 
 export function countGearOfSlot(inventory, slot) {
-    const ids = Array.isArray(inventory) ? inventory : [];
-    return ids.filter((id) => {
+    return sanitizeGearInventory(inventory).filter((id) => {
         const g = getGear(id);
         return g && g.slot === slot;
     }).length;
 }
 
+/** 드롭 배율용 — 같은 아이템 여러 개는 종류 1개로 칩니다. */
+export function countUniqueGearOfSlot(inventory, slot) {
+    const seen = new Set();
+    sanitizeGearInventory(inventory).forEach((id) => {
+        const g = getGear(id);
+        if (g && g.slot === slot) seen.add(id);
+    });
+    return seen.size;
+}
+
 export function grantMasterGear(inventory) {
-    const next = Array.isArray(inventory) ? inventory.slice() : [];
+    const next = sanitizeGearInventory(inventory);
     MASTER_GEAR_IDS.forEach((id) => {
         if (!next.includes(id)) next.push(id);
     });
@@ -158,10 +299,9 @@ export function equippedGearOf(stu, slot) {
             : (stu && stu.equippedShoes);
     const gear = getGear(id);
     if (!gear || gear.slot !== slot) return null;
-    const inv = Array.isArray(stu && stu.inventory) ? stu.inventory : [];
-    if (stu && stu.isAdmin) return gear;
-    if (!inv.includes(gear.id)) return null;
-    return gear;
+    const inv = sanitizeGearInventory(stu && stu.inventory);
+    if (!(stu && stu.isAdmin) && !inv.includes(gear.id)) return null;
+    return gearWithEnhance(gear, gearEnhanceOf(stu, gear.id));
 }
 
 export function resolveQuestWeaponProc(stu, rng = Math.random) {
@@ -181,7 +321,7 @@ export function resolveShieldBlock(stu, rng = Math.random) {
     if (!shield) return { blocked: false, chance: 0 };
     const shoes = equippedGearOf(stu, 'shoes');
     const cosm = collectCosmeticBonuses(stu);
-    const chance = clamp01((Number(shield.block) || 0) + (shoes ? Number(shoes.procBonus) || 0 : 0) + cosm.shieldBlock);
+    const chance = clampShieldChance((Number(shield.block) || 0) + (shoes ? Number(shoes.procBonus) || 0 : 0) + cosm.shieldBlock);
     const roll = typeof rng === 'function' ? rng() : Math.random();
     return { blocked: roll < chance, chance, shield };
 }
@@ -234,13 +374,14 @@ export function pickQuestDropId(xp, inventory, rng = Math.random) {
             : n >= 16
                 ? ['wp2', 'sh2', 'shoe2', 'wp1', 'sh1', 'shoe1']
                 : ['wp1', 'sh1', 'shoe1'];
-    const owned = Array.isArray(inventory) ? inventory : [];
-    const available = pool.filter((id) => !owned.includes(id));
+    const owned = sanitizeGearInventory(inventory);
+    // 이미 가진 아이템도 갯수·강화 재료로 다시 나옵니다.
+    const available = pool.slice();
     if (!available.length) return null;
     const ownedMin = Math.min(
-        countGearOfSlot(owned, 'weapon'),
-        countGearOfSlot(owned, 'shield'),
-        countGearOfSlot(owned, 'shoes'),
+        countUniqueGearOfSlot(owned, 'weapon'),
+        countUniqueGearOfSlot(owned, 'shield'),
+        countUniqueGearOfSlot(owned, 'shoes'),
     );
     const mul = ownedMin <= 0 ? 2 : ownedMin === 1 ? 1 : 0.25;
     const base = n >= 80 ? 6 : n >= 30 ? 3.5 : n >= 16 ? 2.5 : 0.8;

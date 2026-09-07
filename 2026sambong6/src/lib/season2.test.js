@@ -99,6 +99,7 @@ describe('시즌 1 정산', () => {
         assert.equal(r.patch.equippedWeapon, null);
         assert.equal(r.patch.equippedShield, null);
         assert.equal(r.patch.equippedShoes, null);
+        assert.deepEqual(r.patch.gearEnhance, {});
         assert.deepEqual(r.patch.itemRefundLedger, []);
         assert.deepEqual(r.patch.questHistory, []);
         assert.equal(r.patch.seasonNumberApplied, 2);
@@ -138,7 +139,7 @@ describe('시즌 1 정산', () => {
 });
 
 describe('시즌 2 악용 가드', () => {
-    it('무기는 종류당 1개만 남긴다', () => {
+    it('빈 값은 버리고 같은 아이템 id는 한 줄만 남긴다', () => {
         assert.deepEqual(uniqueInventory(['wp5', 'wp5', 'wp2', '']), ['wp5', 'wp2']);
     });
 

@@ -3,19 +3,28 @@ import assert from 'node:assert/strict';
 import {
     ALL_GEAR,
     MASTER_GEAR_IDS,
+    SHIELD_BLOCK_CAP,
     SHIELD_GEAR,
     SHOE_GEAR,
     WEAPON_GEAR,
     applyFullXpDeduct,
     applyXpDeductWithGear,
     attachXpDeductResult,
+    attemptGearEnhance,
     collectCosmeticBonuses,
     countGearOfSlot,
+    countOwnedGear,
+    countUniqueGearOfSlot,
+    enhanceSuccessChance,
+    GEAR_ENHANCE_SUCCESS_FROM,
+    gearEnhanceOf,
+    gearWithEnhance,
     getGear,
     grantMasterGear,
     pickQuestDropId,
     resolveQuestWeaponProc,
     resolveShieldBlock,
+    sanitizeGearInventory,
     skinStatLabel,
     staffLookStatLabel,
 } from './gear.js';
@@ -31,7 +40,7 @@ describe('장비 목록', () => {
         assert.equal(getGear('wp1').dmgMin, 1);
         assert.equal(getGear('wp1').dmgMax, 2);
         assert.equal(getGear('wp1').proc, 0.10);
-        assert.equal(getGear('sh5').block, 0.24);
+        assert.equal(getGear('sh5').block, 0.20);
         assert.equal(getGear('shoe1').procBonus, 0.01);
     });
 
@@ -74,6 +83,18 @@ describe('방패 방어', () => {
         assert.equal(blocked.blockedByGear, true);
         assert.equal(blocked.remainingDeduct, 0);
         assert.equal(blocked.absorbed, 12);
+        const capStu = {
+            inventory: ['sh5', 'shoe5'],
+            equippedShield: 'sh5',
+            equippedShoes: 'shoe5',
+            isAdmin: true,
+            homeLookMode: 'staff',
+            staffLookId: 'staff_hera',
+        };
+        const capped = resolveShieldBlock(capStu, () => 0.199);
+        assert.equal(capped.chance, SHIELD_BLOCK_CAP);
+        assert.equal(capped.blocked, true);
+        assert.equal(resolveShieldBlock(capStu, () => 0.20).blocked, false);
     });
 
     it('막지 못하면 내구 방패 함수를 쓴다', () => {
@@ -122,6 +143,52 @@ describe('퀘스트 드롭', () => {
     it('낮은 XP는 1단계 후보만 고른다', () => {
         const id = pickQuestDropId(8, [], () => 0);
         assert.ok(['wp1', 'sh1', 'shoe1'].includes(id));
-        assert.equal(pickQuestDropId(8, ['wp1', 'sh1', 'shoe1'], () => 0), null);
+        const stacked = pickQuestDropId(8, ['wp1', 'sh1', 'shoe1'], () => 0);
+        assert.ok(['wp1', 'sh1', 'shoe1'].includes(stacked));
+    });
+});
+
+describe('장비 갯수·강화', () => {
+    it('같은 아이템은 갯수로 쌓인다', () => {
+        assert.deepEqual(sanitizeGearInventory(['wp1', 'wp1', 'nope', 'sh1']), ['wp1', 'wp1', 'sh1']);
+        assert.equal(countOwnedGear(['wp1', 'wp1', 'sh1'], 'wp1'), 2);
+        assert.equal(countUniqueGearOfSlot(['wp1', 'wp1', 'wp2'], 'weapon'), 2);
+        assert.equal(countGearOfSlot(['wp1', 'wp1', 'sh1'], 'weapon'), 2);
+    });
+
+    it('강화 성공률은 1→2 100% · 2→3 50% · 3→4 30% · 4→5 15%이고 5단계는 최대다', () => {
+        assert.equal(enhanceSuccessChance(1), 1);
+        assert.equal(enhanceSuccessChance(2), 0.5);
+        assert.equal(enhanceSuccessChance(3), 0.3);
+        assert.equal(enhanceSuccessChance(4), 0.15);
+        assert.equal(enhanceSuccessChance(5), 0);
+        assert.equal(GEAR_ENHANCE_SUCCESS_FROM[5], 0.10);
+    });
+
+    it('1→2 강화는 항상 성공하고 재료 1개를 쓴다', () => {
+        const r = attemptGearEnhance({ inventory: ['wp1', 'wp1'] }, 'wp1', () => 0.99);
+        assert.equal(r.ok, true);
+        assert.equal(r.success, true);
+        assert.equal(r.after, 2);
+        assert.deepEqual(r.inventory, ['wp1']);
+        assert.equal(r.gearEnhance.wp1, 2);
+    });
+
+    it('강화 실패면 1단계가 되고 재료는 사라진다', () => {
+        const r = attemptGearEnhance({ inventory: ['sh2', 'sh2'], gearEnhance: { sh2: 3 } }, 'sh2', () => 0.99);
+        assert.equal(r.ok, true);
+        assert.equal(r.success, false);
+        assert.equal(r.after, 1);
+        assert.deepEqual(r.inventory, ['sh2']);
+        assert.equal(r.gearEnhance.sh2, 1);
+    });
+
+    it('강화 단계는 소량 보너스를 준다', () => {
+        const base = getGear('wp1');
+        const boosted = gearWithEnhance(base, 5);
+        assert.ok(boosted.proc > base.proc);
+        assert.equal(gearEnhanceOf({ gearEnhance: { wp1: 4 } }, 'wp1'), 4);
+        const sh = gearWithEnhance(getGear('sh4'), 5);
+        assert.ok(sh.block > getGear('sh4').block);
     });
 });

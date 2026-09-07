@@ -14,6 +14,8 @@ import {
     normalizeJobColor,
     normalizeJobIcon,
     pickUnusedJobLook,
+    studentHasJobName,
+    toggleJobAssignment,
 } from './jobs.js';
 
 describe('직업 아이콘·색', () => {
@@ -95,5 +97,15 @@ describe('직업 아이콘·색', () => {
         const same = jobIconChoicesForPicker('fa-crown');
         assert.equal(same[0].class, 'fa-crown');
         assert.equal(same.filter((item) => item.class === 'fa-crown').length, 1);
+    });
+
+    it('학생 직업을 같은 카드로 장착·해제한다', () => {
+        const job = { name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const on = toggleJobAssignment([], job);
+        assert.equal(studentHasJobName(on, '길드 마스터'), true);
+        assert.equal(on[0].icon, 'fa-flag');
+        const off = toggleJobAssignment(on, job);
+        assert.equal(off.length, 0);
+        assert.equal(studentHasJobName([{ name: '길드 마스터' }], '길드 마스터'), true);
     });
 });

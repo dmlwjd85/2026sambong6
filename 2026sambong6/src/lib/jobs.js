@@ -235,3 +235,35 @@ export function jobLooksAreUnique(jobs) {
     }
     return true;
 }
+
+/** 학생 jobs 배열 항목에서 직업 이름 추출 (문자열/객체 모두 지원) */
+export function getJobEntryName(job) {
+    if (!job) return '';
+    if (typeof job === 'string') return job.trim();
+    if (typeof job === 'object' && job.name != null) return String(job.name).trim();
+    return String(job).trim();
+}
+
+export function studentHasJobName(jobs, jobName) {
+    const name = String(jobName || '').trim();
+    if (!name) return false;
+    return (Array.isArray(jobs) ? jobs : []).some((job) => getJobEntryName(job) === name);
+}
+
+/** 같은 직업을 이미 쓰면 빼고, 없으면 장착합니다. */
+export function toggleJobAssignment(jobs, jobSpec) {
+    const name = String(jobSpec && jobSpec.name || '').trim();
+    const list = Array.isArray(jobs) ? jobs.slice() : [];
+    if (!name) return list;
+    const idx = list.findIndex((job) => getJobEntryName(job) === name);
+    if (idx > -1) {
+        list.splice(idx, 1);
+        return list;
+    }
+    list.push({
+        name,
+        icon: String((jobSpec && jobSpec.icon) || 'fa-star'),
+        color: String((jobSpec && jobSpec.color) || 'text-blue-500'),
+    });
+    return list;
+}

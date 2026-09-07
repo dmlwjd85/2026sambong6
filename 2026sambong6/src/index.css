@@ -2209,24 +2209,217 @@
             color: #fff7ed;
             font-size: 1.45rem;
         }
-        .padlet-panel {
+        .think-board-panel {
             display: flex;
             flex-direction: column;
             min-height: min(70vh, 36rem);
+            padding: 0.85rem 0.9rem 1rem;
+            border-radius: 1.15rem;
+            border: 2px solid rgba(251, 191, 36, 0.45);
+            background:
+                radial-gradient(circle at 12% 0%, rgba(251, 191, 36, 0.16), transparent 34%),
+                linear-gradient(165deg, #422006 0%, #1c1917 48%, #0c0a09 100%);
+            box-shadow: 0 0 45px rgba(245, 158, 11, 0.18);
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"] {
             max-width: none;
             height: 100%;
             min-height: 0;
         }
-        .padlet-frame {
-            flex: 1 1 auto;
-            width: 100%;
-            min-height: 22rem;
-            border: 0;
-            border-radius: 0.85rem;
-            background: #0f172a;
+        .think-board-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.7rem;
+            margin-bottom: 0.65rem;
+            padding-bottom: 0.65rem;
+            border-bottom: 1px solid rgba(251, 191, 36, 0.28);
         }
+        .think-board-q {
+            max-width: 100%;
+            font-size: 12px;
+            font-weight: 900;
+            color: #fffbeb;
+            background: rgba(120, 53, 15, 0.7);
+            border: 1px solid rgba(252, 211, 77, 0.45);
+            border-radius: 999px;
+            padding: 0.28rem 0.75rem;
+            line-height: 1.35;
+        }
+        .think-board-admin {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.65rem;
+        }
+        .think-admin-btn {
+            min-height: 40px;
+            padding: 0.4rem 0.75rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(253, 230, 138, 0.45);
+            background: rgba(15, 23, 42, 0.72);
+            color: #fef3c7;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .think-admin-btn-on { background: #b45309; border-color: #fbbf24; color: #fffbeb; }
+        .think-admin-btn-warn { border-color: rgba(248, 113, 113, 0.5); color: #fecaca; }
+        .think-q-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            width: 100%;
+        }
+        .think-q-input {
+            flex: 1 1 12rem;
+            min-height: 40px;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(251, 191, 36, 0.4);
+            background: #1c1917;
+            color: #fffbeb;
+            padding: 0.4rem 0.7rem;
+            font-weight: 800;
+            font-size: 12px;
+        }
+        .think-composer {
+            border: 1px dashed rgba(252, 211, 77, 0.45);
+            border-radius: 1rem;
+            padding: 0.7rem;
+            margin-bottom: 0.7rem;
+            background: rgba(28, 25, 23, 0.72);
+        }
+        .think-text {
+            width: 100%;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(251, 191, 36, 0.35);
+            background: #0c0a09;
+            color: #fffbeb;
+            padding: 0.55rem 0.7rem;
+            font-size: 13px;
+            font-weight: 700;
+            resize: vertical;
+        }
+        .think-draw-wrap { margin-top: 0.45rem; }
+        #thinkDrawCanvas {
+            display: block;
+            width: min(100%, 240px);
+            height: auto;
+            background: #fffbeb;
+            border-radius: 0.7rem;
+            border: 2px solid #f59e0b;
+            touch-action: none;
+            cursor: crosshair;
+        }
+        .think-draw-tools { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; }
+        .think-mini-btn {
+            min-height: 32px;
+            padding: 0.2rem 0.55rem;
+            border-radius: 0.55rem;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            background: #1e293b;
+            color: #e2e8f0;
+            font-size: 10px;
+            font-weight: 800;
+        }
+        .think-color-dot {
+            width: 1.35rem;
+            height: 1.35rem;
+            border-radius: 999px;
+            border: 2px solid rgba(15, 23, 42, 0.8);
+        }
+        .think-color-dot.is-on { box-shadow: 0 0 0 2px #fde68a; }
+        .think-closed-hint {
+            font-size: 11px;
+            font-weight: 800;
+            color: #cbd5e1;
+            background: rgba(15, 23, 42, 0.55);
+            border-radius: 0.8rem;
+            padding: 0.55rem 0.7rem;
+            margin-bottom: 0.55rem;
+        }
+        .think-board-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(7.6rem, 1fr));
+            gap: 0.55rem;
+            flex: 1 1 auto;
+            overflow: auto;
+            min-height: 8rem;
+            padding: 0.15rem;
+        }
+        .think-note {
+            position: relative;
+            min-height: 7.2rem;
+            border-radius: 0.2rem 0.85rem 0.7rem 0.7rem;
+            padding: 0.55rem 0.5rem 0.45rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.28);
+            transform: rotate(-1.2deg);
+            cursor: pointer;
+            overflow: hidden;
+        }
+        .think-note:nth-child(2n) { transform: rotate(1.1deg); }
+        .think-note:nth-child(3n) { transform: rotate(-0.4deg); }
+        .think-note-yellow { background: #fde68a; color: #422006; }
+        .think-note-pink { background: #fecdd3; color: #881337; }
+        .think-note-mint { background: #bbf7d0; color: #14532d; }
+        .think-note-sky { background: #bae6fd; color: #0c4a6e; }
+        .think-note-peach { background: #fed7aa; color: #7c2d12; }
+        .think-note-author { font-size: 9px; font-weight: 900; opacity: 0.78; }
+        .think-note-excerpt {
+            font-size: 12px;
+            font-weight: 800;
+            line-height: 1.35;
+            margin-top: 0.25rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .think-note-thumb {
+            display: block;
+            width: 100%;
+            height: 3.2rem;
+            object-fit: cover;
+            border-radius: 0.4rem;
+            margin-top: 0.3rem;
+        }
+        .think-note-glow {
+            animation: think-glow 1.4s ease-in-out infinite alternate;
+            box-shadow: 0 0 0 3px #fde68a, 0 0 28px 8px rgba(250, 204, 21, 0.75);
+            z-index: 2;
+        }
+        @keyframes think-glow {
+            from { filter: brightness(1); box-shadow: 0 0 0 3px #facc15, 0 0 18px 4px rgba(250, 204, 21, 0.55); }
+            to { filter: brightness(1.12); box-shadow: 0 0 0 4px #fffbeb, 0 0 36px 10px rgba(253, 224, 71, 0.95); }
+        }
+        .think-board-focus {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+        .think-focus-card {
+            flex: 1 1 auto;
+            border-radius: 1.1rem;
+            padding: 1rem 1.1rem;
+            overflow: auto;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+        }
+        .think-focus-text { font-size: 1.35rem; font-weight: 800; line-height: 1.5; white-space: pre-wrap; }
+        .think-focus-draw { max-width: min(100%, 28rem); width: 100%; border-radius: 0.8rem; background: #fffbeb; margin-top: 0.7rem; }
+        .think-empathy-btn {
+            min-height: 40px;
+            padding: 0.35rem 0.8rem;
+            border-radius: 999px;
+            border: 1px solid rgba(244, 63, 94, 0.45);
+            background: rgba(15, 23, 42, 0.8);
+            color: #fecdd3;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .think-empathy-btn.is-on { background: #9f1239; color: #fff1f2; }
+        .think-empathy-count { font-size: 11px; font-weight: 900; color: #fde68a; }
         .app-tool-item.is-active {
             border-color: #84cc16;
             color: #ecfccb;
@@ -2282,6 +2475,10 @@
         body.class-tool-share-view #chalkboardOverlay input,
         body.class-tool-share-view #chalkboardText {
             pointer-events: none;
+        }
+        body.class-tool-share-view .think-keep-input,
+        body.class-tool-share-view .think-keep-input * {
+            pointer-events: auto;
         }
         body.class-tool-share-view #chalkboardToolbar {
             display: none;

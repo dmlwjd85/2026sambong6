@@ -1927,7 +1927,7 @@
             </div>
         </section>
 
-        <!-- ★ 수업도구 탭 (타이머 · 제비뽑기 · 패들렛) ★ -->
+        <!-- ★ 수업도구 탭 (타이머 · 제비뽑기 · 생각게시판) ★ -->
         <section id="classtoolsSection" class="hidden">
             <div class="max-w-7xl mx-auto px-1 pb-10 space-y-6">
 
@@ -1942,6 +1942,7 @@
             </div>
 
             <div id="classtoolsAppGrid" class="app-tool-grid hidden">
+                <!-- 수업도구 아이콘: 둥근 금테 3D 실사 톤. 새로 만들 아이콘도 이 톤을 유지합니다. -->
                 <button type="button" class="app-tool-item is-active" data-tool="timetable" data-student="1" onclick="window.switchClassTool('timetable')">
                     <span class="app-tool-icon"><img src="nav/tool-timetable.webp" alt="" width="192" height="192"></span>
                     <span>시간표</span>
@@ -1979,8 +1980,8 @@
                     <span>아침·공지</span>
                 </button>
                 <button type="button" class="app-tool-item" data-tool="padlet" onclick="window.switchClassTool('padlet')">
-                    <span class="app-tool-icon app-tool-icon-fa" aria-hidden="true"><i class="fa-solid fa-table-cells-large"></i></span>
-                    <span>패들렛</span>
+                    <span class="app-tool-icon"><img src="nav/tool-ideas.webp" alt="" width="192" height="192"></span>
+                    <span>생각게시판</span>
                 </button>
             </div>
 
@@ -2241,35 +2242,49 @@
                     </div>
                 </div>
 
-                <!-- 패들렛 -->
-                <div class="classtool-pane hidden padlet-panel rounded-2xl p-4 sm:p-6 border-2 border-rose-500/50 shadow-[0_0_45px_rgba(244,63,94,0.18)]" data-tool="padlet">
-                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 mb-3 border-b border-rose-500/30 pb-3">
-                        <div class="flex items-center gap-3">
-                            <div class="w-12 h-12 rounded-lg bg-rose-950 border-2 border-rose-400/70 flex items-center justify-center text-2xl shadow-inner">📌</div>
-                            <div>
-                                <p class="text-[10px] font-black tracking-[0.35em] text-rose-300/90">PADLET</p>
-                                <h2 class="text-xl sm:text-2xl font-display text-rose-50 tracking-wide">패들렛</h2>
+                <!-- 생각게시판 -->
+                <div class="classtool-pane hidden think-board-panel" data-tool="padlet">
+                    <div class="think-board-head">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-12 h-12 rounded-lg overflow-hidden border-2 border-amber-300/70 shadow-inner shrink-0">
+                                <img src="nav/tool-ideas.webp" alt="" width="48" height="48" class="w-full h-full object-cover">
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-[10px] font-black tracking-[0.28em] text-amber-200/90">THINK BOARD</p>
+                                <h2 class="text-xl sm:text-2xl font-display text-amber-50 tracking-wide">생각게시판</h2>
                             </div>
                         </div>
-                        <p class="text-[9px] sm:text-[10px] text-rose-100/70 leading-relaxed lg:text-right">
-                            선생님이 저장한 학급 패들렛 보드입니다.<br>
-                            「띄우기」를 누르면 학생·TV 화면에도 같이 열립니다.
-                        </p>
+                        <p id="thinkBoardQuestionBanner" class="think-board-q hidden"></p>
                     </div>
-                    <div id="padletAdminForm" class="hidden mb-3 rounded-xl border border-rose-700/40 bg-rose-950/30 p-3 space-y-2">
-                        <label class="block text-[10px] text-rose-100/80 font-bold">패들렛 주소 또는 삽입 코드
-                            <input type="text" id="padletUrlInput" maxlength="400" placeholder="예: https://padlet.com/선생님/학급보드" class="mt-1 w-full bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-xs font-bold" autocomplete="off" />
-                        </label>
-                        <div class="flex flex-wrap gap-2">
-                            <button type="button" onclick="void window.savePadletUrl()" class="min-h-[40px] bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-black px-3 py-1.5 rounded-lg">주소 저장</button>
+                    <div id="thinkBoardAdminBar" class="hidden think-board-admin">
+                        <button type="button" id="thinkOpenBtn" onclick="void window.toggleThinkPosting()" class="think-admin-btn think-admin-btn-on">생각 열기</button>
+                        <button type="button" onclick="void window.shareClassToolFullscreen()" class="think-admin-btn">전체 화면으로 뿌리기</button>
+                        <button type="button" id="thinkEmpathyBtn" onclick="void window.toggleThinkEmpathyPublic()" class="think-admin-btn">공감 공개</button>
+                        <button type="button" onclick="void window.clearThinkBoard()" class="think-admin-btn think-admin-btn-warn">게시 비우기</button>
+                        <div class="think-q-row">
+                            <input type="text" id="thinkQuestionInput" maxlength="80" placeholder="질문카드 내용" class="think-q-input" autocomplete="off">
+                            <button type="button" onclick="void window.publishThinkQuestion()" class="think-admin-btn">질문 배포</button>
+                            <button type="button" onclick="void window.clearThinkQuestion()" class="think-admin-btn">질문 내리기</button>
                         </div>
-                        <p class="text-[9px] text-slate-400 leading-relaxed">padlet.com / padlet.org 주소만 저장됩니다. 공유 → 삽입하기의 iframe 코드를 그대로 붙여도 됩니다.</p>
                     </div>
-                    <div id="padletOpenRow" class="hidden mb-2">
-                        <a id="padletOpenTabLink" href="#" target="_blank" rel="noopener noreferrer" class="min-h-[40px] inline-flex items-center bg-slate-800 hover:bg-slate-700 text-rose-100 border border-rose-700/50 text-[10px] font-black px-3 py-1.5 rounded-lg">새 탭에서 열기</a>
+                    <div id="thinkComposer" class="hidden think-composer">
+                        <p class="text-[10px] font-black text-amber-100 mb-1">내 생각 붙이기</p>
+                        <textarea id="thinkTextInput" maxlength="280" rows="3" placeholder="생각을 적어 주세요" class="think-text"></textarea>
+                        <div class="think-draw-wrap">
+                            <canvas id="thinkDrawCanvas" width="240" height="160" aria-label="간단한 그림"></canvas>
+                            <div class="think-draw-tools">
+                                <button type="button" onclick="window.clearThinkDrawing()" class="think-mini-btn">그림 지우기</button>
+                                <span class="text-[9px] text-slate-400 font-bold">손가락·마우스로 그려요</span>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                            <div id="thinkColorRow" class="flex gap-1"></div>
+                            <button type="button" onclick="void window.submitThinkPost()" class="ml-auto min-h-[44px] px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 text-xs font-black">포스트잇 붙이기</button>
+                        </div>
                     </div>
-                    <div id="padletEmptyHint" class="rounded-xl border border-slate-700 bg-slate-950/50 p-4 text-[11px] text-slate-400 leading-relaxed">선생님이 패들렛 주소를 저장하면 여기에 보드가 열립니다.</div>
-                    <iframe id="padletFrame" class="padlet-frame hidden" title="학급 패들렛" referrerpolicy="no-referrer-when-downgrade" allow="camera; microphone; clipboard-write; fullscreen"></iframe>
+                    <div id="thinkBoardClosedHint" class="hidden think-closed-hint">선생님이 생각 열기를 누르면 여기에 생각을 붙일 수 있습니다.</div>
+                    <div id="thinkBoardGrid" class="think-board-grid"></div>
+                    <div id="thinkBoardFocus" class="hidden think-board-focus"></div>
                 </div>
 
                 <!-- 원형 돌림판 -->

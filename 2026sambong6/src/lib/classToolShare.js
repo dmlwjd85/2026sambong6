@@ -13,7 +13,7 @@ export const CLASS_TOOL_SHARE_IDS = Object.freeze([
     'wheel',
     'martial',
     'morning',
-    'padlet',
+    'padlet', // 생각게시판
 ]);
 
 export function isClassToolShareId(toolId) {

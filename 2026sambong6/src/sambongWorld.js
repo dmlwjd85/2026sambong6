@@ -307,9 +307,24 @@ import {
     sanitizeUnlockedFeatures,
 } from './lib/featureUnlock.js';
 import {
-    extractPadletUrlFromInput,
-    padletEmbedUrl,
-} from './lib/padlet.js';
+    THINK_NOTE_COLORS,
+    activeThoughtQuestion,
+    addThoughtPost,
+    addThoughtQuestion,
+    clearThoughtBoardPosts,
+    clearThoughtFocus,
+    emptyThoughtBoard,
+    empathyCounts,
+    glowingThoughtPostIds,
+    sanitizeDrawingDataUrl,
+    sanitizeThoughtBoard,
+    setActiveThoughtQuestion,
+    setThoughtEmpathyPublic,
+    setThoughtFocus,
+    setThoughtPostingOpen,
+    thoughtPostExcerpt,
+    toggleThoughtEmpathy,
+} from './lib/thoughtBoard.js';
 import {
     jobColorChoicesForPicker,
     jobColorLabel,
@@ -3860,7 +3875,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, padletUrl: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -9791,7 +9806,7 @@ ${subjectLine}
             if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
             }
-            if (classtoolSub === 'padlet') renderPadletPanel();
+            if (classtoolSub === 'padlet') renderThinkBoardPanel();
             updateClassToolShareBar();
             return true;
         }
@@ -9838,7 +9853,7 @@ ${subjectLine}
             wheel: '돌림판',
             martial: '비상계엄',
             morning: '아침·공지',
-            padlet: '패들렛',
+            padlet: '생각게시판',
         };
 
         window.switchClassTool = function(toolId) {
@@ -9940,57 +9955,301 @@ ${subjectLine}
             });
         }
 
-        function currentPadletUrl() {
-            return padletEmbedUrl(window.globalSettings && window.globalSettings.padletUrl);
+        let _thinkLocalFocusId = '';
+        let _thinkNoteColor = 'yellow';
+        let _thinkDrawBound = false;
+        let _thinkDrawing = false;
+
+        function currentThoughtBoard() {
+            return sanitizeThoughtBoard(window.globalSettings && window.globalSettings.thoughtBoard);
         }
 
-        function renderPadletPanel() {
-            const url = currentPadletUrl();
-            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
-            const form = document.getElementById('padletAdminForm');
-            const input = document.getElementById('padletUrlInput');
-            const frame = document.getElementById('padletFrame');
-            const empty = document.getElementById('padletEmptyHint');
-            const openRow = document.getElementById('padletOpenRow');
-            const openLink = document.getElementById('padletOpenTabLink');
-            if (form) form.classList.toggle('hidden', !isAdmin);
-            if (input && document.activeElement !== input) input.value = url || String((window.globalSettings && window.globalSettings.padletUrl) || '');
-            if (openLink) {
-                openLink.href = url || '#';
+        function thinkStudentId() {
+            return String(localStorage.getItem('sambong_student_id') || (window.playerState && window.playerState.id) || '').trim();
+        }
+
+        function thinkFollowTeacherView() {
+            const share = currentClassToolShare();
+            return !!_classToolShareFollower && share.active && share.toolId === 'padlet';
+        }
+
+        function initThinkDrawCanvas() {
+            const canvas = document.getElementById('thinkDrawCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (!_thinkDrawBound) {
+                ctx.fillStyle = '#fffbeb';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.strokeStyle = '#1c1917';
+                ctx.lineWidth = 3.2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                const pos = (ev) => {
+                    const r = canvas.getBoundingClientRect();
+                    const src = ev.touches ? ev.touches[0] : ev;
+                    return {
+                        x: (src.clientX - r.left) * (canvas.width / r.width),
+                        y: (src.clientY - r.top) * (canvas.height / r.height),
+                    };
+                };
+                const start = (ev) => {
+                    ev.preventDefault();
+                    _thinkDrawing = true;
+                    const p = pos(ev);
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y);
+                };
+                const move = (ev) => {
+                    if (!_thinkDrawing) return;
+                    ev.preventDefault();
+                    const p = pos(ev);
+                    ctx.lineTo(p.x, p.y);
+                    ctx.stroke();
+                };
+                const end = () => { _thinkDrawing = false; };
+                canvas.addEventListener('pointerdown', start);
+                canvas.addEventListener('pointermove', move);
+                canvas.addEventListener('pointerup', end);
+                canvas.addEventListener('pointerleave', end);
+                canvas.addEventListener('pointercancel', end);
+                _thinkDrawBound = true;
             }
-            if (openRow) openRow.classList.toggle('hidden', !url);
-            if (frame) {
-                if (url) {
-                    if (frame.getAttribute('src') !== url) frame.src = url;
-                    frame.classList.remove('hidden');
+        }
+
+        function thinkCanvasHasInk(canvas) {
+            if (!canvas) return false;
+            const ctx = canvas.getContext('2d');
+            const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < data.length; i += 24) {
+                if (data[i] < 248 || data[i + 1] < 244 || data[i + 2] < 220) return true;
+            }
+            return false;
+        }
+
+        window.clearThinkDrawing = function () {
+            const canvas = document.getElementById('thinkDrawCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fffbeb';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        };
+
+        async function saveThoughtBoard(mutator) {
+            if (!db) return false;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                return false;
+            }
+            const ref = getGlobalSettingsDocRef();
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const cur = sanitizeThoughtBoard(snap.exists() ? snap.data().thoughtBoard : currentThoughtBoard());
+                    const next = sanitizeThoughtBoard(mutator(cur));
+                    tx.set(ref, { thoughtBoard: next }, { merge: true });
+                    if (window.globalSettings) window.globalSettings.thoughtBoard = next;
+                });
+                renderThinkBoardPanel();
+                return true;
+            } catch (e) {
+                console.error('saveThoughtBoard', e);
+                await window.customAlert('생각게시판 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
+            }
+        }
+
+        function renderThinkBoardPanel() {
+            const board = currentThoughtBoard();
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const follower = thinkFollowTeacherView();
+            const myId = thinkStudentId();
+            const q = activeThoughtQuestion(board);
+            const glowIds = new Set(glowingThoughtPostIds(board));
+            const counts = empathyCounts(board);
+            const adminBar = document.getElementById('thinkBoardAdminBar');
+            if (adminBar) adminBar.classList.toggle('hidden', !isAdmin || follower);
+            const openBtn = document.getElementById('thinkOpenBtn');
+            if (openBtn) {
+                openBtn.textContent = board.postingOpen ? '생각 닫기' : '생각 열기';
+                openBtn.classList.toggle('think-admin-btn-on', !!board.postingOpen);
+            }
+            const empBtn = document.getElementById('thinkEmpathyBtn');
+            if (empBtn) empBtn.textContent = board.empathyPublic ? '공감 숨기기' : '공감 공개';
+            const qBanner = document.getElementById('thinkBoardQuestionBanner');
+            if (qBanner) {
+                qBanner.textContent = q ? `질문 · ${q.text}` : '';
+                qBanner.classList.toggle('hidden', !q);
+            }
+            const canCompose = !follower && (isAdmin || board.postingOpen) && !!(window.playerState && !window.playerState.isGuest);
+            const composer = document.getElementById('thinkComposer');
+            if (composer) {
+                composer.classList.toggle('hidden', !canCompose);
+                if (canCompose) composer.classList.add('think-keep-input');
+            }
+            const closedHint = document.getElementById('thinkBoardClosedHint');
+            if (closedHint) closedHint.classList.toggle('hidden', !!(isAdmin || board.postingOpen || follower));
+            const colorRow = document.getElementById('thinkColorRow');
+            if (colorRow && canCompose) {
+                colorRow.innerHTML = THINK_NOTE_COLORS.map((c) => (
+                    `<button type="button" class="think-color-dot think-note-${c} ${_thinkNoteColor === c ? 'is-on' : ''}" onclick="window.setThinkNoteColor('${c}')" title="${c}"></button>`
+                )).join('');
+            }
+            if (canCompose) initThinkDrawCanvas();
+
+            const focusId = follower
+                ? board.focusPostId
+                : (_thinkLocalFocusId || (isAdmin ? board.focusPostId : _thinkLocalFocusId));
+            const focusPost = board.posts.find((p) => p.id === focusId) || null;
+            const grid = document.getElementById('thinkBoardGrid');
+            const focusEl = document.getElementById('thinkBoardFocus');
+            const showFocus = !!(focusPost && (follower ? board.viewMode === 'post' : true) && focusId);
+            if (grid) grid.classList.toggle('hidden', !!showFocus);
+            if (focusEl) {
+                focusEl.classList.toggle('hidden', !showFocus);
+                if (showFocus && focusPost) {
+                    const countLabel = board.empathyPublic ? `공감 ${counts[focusPost.id] || 0}` : '공감(비공개)';
+                    const mine = board.empathy[myId] === focusPost.id;
+                    const qLine = board.questions.find((row) => row.id === focusPost.questionId);
+                    focusEl.innerHTML = `
+                        ${follower ? '' : `<button type="button" onclick="window.closeThinkFocus()" class="think-admin-btn mb-1 self-start">목록으로</button>`}
+                        <div class="think-focus-card think-note-${focusPost.color} ${glowIds.has(focusPost.id) ? 'think-note-glow' : ''}">
+                            <p class="think-note-author">${escapeHtmlAttr(focusPost.name || getStudentDisplayLabel(focusPost.studentId))}</p>
+                            ${qLine ? `<p class="text-[11px] font-black opacity-70 mt-1">Q. ${escapeHtmlAttr(qLine.text)}</p>` : ''}
+                            ${focusPost.text ? `<p class="think-focus-text mt-2">${escapeHtmlAttr(focusPost.text)}</p>` : ''}
+                            ${focusPost.drawing ? `<img src="${focusPost.drawing}" alt="" class="think-focus-draw">` : ''}
+                        </div>
+                        <div class="flex items-center gap-2 think-keep-input">
+                            <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="void window.toggleThinkPostEmpathy('${focusPost.id}')">공감하기</button>
+                            <span class="think-empathy-count">${countLabel}</span>
+                        </div>`;
                 } else {
-                    frame.removeAttribute('src');
-                    frame.classList.add('hidden');
+                    focusEl.innerHTML = '';
                 }
             }
-            if (empty) empty.classList.toggle('hidden', !!url);
+            if (grid && !showFocus) {
+                if (board.posts.length === 0) {
+                    grid.innerHTML = `<p class="col-span-full text-[11px] text-amber-100/70 font-bold p-3">아직 붙여진 생각이 없습니다.</p>`;
+                } else {
+                    grid.innerHTML = board.posts.map((p) => {
+                        const glow = glowIds.has(p.id) ? 'think-note-glow' : '';
+                        const click = follower ? '' : `onclick="window.openThinkFocus('${p.id}')"`;
+                        const mine = board.empathy[myId] === p.id;
+                        const countLabel = board.empathyPublic ? String(counts[p.id] || 0) : '';
+                        return `<article class="think-note think-note-${p.color} ${glow}" ${click}>
+                            <p class="think-note-author">${escapeHtmlAttr(p.name || getStudentDisplayLabel(p.studentId))}</p>
+                            <p class="think-note-excerpt">${escapeHtmlAttr(thoughtPostExcerpt(p, 36))}</p>
+                            ${p.drawing ? `<img src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
+                            <div class="mt-1 flex items-center justify-between think-keep-input" onclick="event.stopPropagation();">
+                                <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="event.stopPropagation(); void window.toggleThinkPostEmpathy('${p.id}')">공감</button>
+                                ${board.empathyPublic ? `<span class="think-empathy-count">${countLabel}</span>` : ''}
+                            </div>
+                        </article>`;
+                    }).join('');
+                }
+            }
         }
 
-        window.savePadletUrl = async function () {
-            if (!window.playerState || !window.playerState.isAdmin) {
-                return window.customAlert('선생님만 패들렛 주소를 저장할 수 있습니다.');
+        window.setThinkNoteColor = function (color) {
+            if (!THINK_NOTE_COLORS.includes(color)) return;
+            _thinkNoteColor = color;
+            renderThinkBoardPanel();
+        };
+
+        window.openThinkFocus = async function (postId) {
+            if (thinkFollowTeacherView()) return;
+            _thinkLocalFocusId = String(postId || '');
+            if (window.playerState && window.playerState.isAdmin) {
+                await saveThoughtBoard((s) => setThoughtFocus(s, postId));
+                return;
             }
-            const input = document.getElementById('padletUrlInput');
-            const raw = input ? input.value : '';
-            const url = extractPadletUrlFromInput(raw);
-            if (String(raw || '').trim() && !url) {
-                return window.customAlert('padlet.com 또는 padlet.org 주소를 넣어 주세요.');
+            renderThinkBoardPanel();
+        };
+
+        window.closeThinkFocus = async function () {
+            if (thinkFollowTeacherView()) return;
+            _thinkLocalFocusId = '';
+            if (window.playerState && window.playerState.isAdmin) {
+                await saveThoughtBoard((s) => clearThoughtFocus(s));
+                return;
             }
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { padletUrl: url }, { merge: true });
-                if (window.globalSettings) window.globalSettings.padletUrl = url;
-                renderPadletPanel();
-                await window.customAlert(url ? '패들렛 주소를 저장했습니다.' : '패들렛 주소를 지웠습니다.');
-            } catch (e) {
-                console.error('savePadletUrl', e);
-                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            renderThinkBoardPanel();
+        };
+
+        window.toggleThinkPosting = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const nextOpen = !currentThoughtBoard().postingOpen;
+            await saveThoughtBoard((s) => setThoughtPostingOpen(s, nextOpen));
+        };
+
+        window.toggleThinkEmpathyPublic = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const next = !currentThoughtBoard().empathyPublic;
+            await saveThoughtBoard((s) => setThoughtEmpathyPublic(s, next));
+        };
+
+        window.publishThinkQuestion = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const input = document.getElementById('thinkQuestionInput');
+            const text = input ? input.value : '';
+            if (!String(text || '').trim()) return window.customAlert('질문 내용을 적어 주세요.');
+            const ok = await saveThoughtBoard((s) => addThoughtQuestion(s, text));
+            if (ok && input) input.value = '';
+        };
+
+        window.clearThinkQuestion = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            await saveThoughtBoard((s) => setActiveThoughtQuestion(s, ''));
+        };
+
+        window.clearThinkBoard = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('붙여 둔 생각을 모두 지울까요?');
+            if (!ok) return;
+            _thinkLocalFocusId = '';
+            await saveThoughtBoard((s) => clearThoughtBoardPosts(s));
+        };
+
+        window.toggleThinkPostEmpathy = async function (postId) {
+            if (!window.playerState || window.playerState.isGuest) {
+                return window.customAlert('로그인한 학생만 공감할 수 있습니다.');
+            }
+            const sid = thinkStudentId();
+            if (!sid) return;
+            await saveThoughtBoard((s) => toggleThoughtEmpathy(s, sid, postId));
+        };
+
+        window.submitThinkPost = async function () {
+            if (!window.playerState || window.playerState.isGuest) {
+                return window.customAlert('로그인한 학생만 게시할 수 있습니다.');
+            }
+            const board = currentThoughtBoard();
+            const isAdmin = !!window.playerState.isAdmin;
+            if (!isAdmin && !board.postingOpen) {
+                return window.customAlert('선생님이 생각 열기를 누른 뒤에 붙일 수 있습니다.');
+            }
+            const ta = document.getElementById('thinkTextInput');
+            const text = ta ? ta.value : '';
+            const canvas = document.getElementById('thinkDrawCanvas');
+            let drawing = '';
+            if (canvas && thinkCanvasHasInk(canvas)) {
+                drawing = sanitizeDrawingDataUrl(canvas.toDataURL('image/jpeg', 0.48));
+            }
+            if (!String(text || '').trim() && !drawing) {
+                return window.customAlert('글이나 그림을 남겨 주세요.');
+            }
+            const sid = thinkStudentId() || (isAdmin ? 'gm' : '');
+            const ok = await saveThoughtBoard((s) => addThoughtPost(s, {
+                studentId: sid,
+                name: getStudentDisplayLabel(sid),
+                text,
+                drawing,
+                color: _thinkNoteColor,
+                questionId: s.activeQuestionId,
+            }));
+            if (ok) {
+                if (ta) ta.value = '';
+                window.clearThinkDrawing();
             }
         };
 
@@ -14638,9 +14897,9 @@ ${subjectLine}
                                 }
                                 applyRemoteScreenNotice(settingsData.screenNotice);
                                 applyRemoteClassToolShare(settingsData.classToolShare);
-                                if (settingsData.padletUrl !== undefined) {
-                                    window.globalSettings.padletUrl = padletEmbedUrl(settingsData.padletUrl);
-                                    if (classtoolSub === 'padlet') renderPadletPanel();
+                                if (settingsData.thoughtBoard !== undefined) {
+                                    window.globalSettings.thoughtBoard = sanitizeThoughtBoard(settingsData.thoughtBoard);
+                                    if (classtoolSub === 'padlet') renderThinkBoardPanel();
                                 }
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {

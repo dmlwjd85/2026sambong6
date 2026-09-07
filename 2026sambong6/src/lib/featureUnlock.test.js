@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CLASS_WIDE_CLASS_TOOLS,
     FEATURE_UNLOCK_CATALOG,
     FEATURE_UNLOCK_PRICE,
     MASTER_ONLY_CLASS_TOOLS,
@@ -8,6 +9,7 @@ import {
     featureIdForClassTool,
     getFeatureUnlockItem,
     hasUnlockedFeature,
+    isClassWideClassTool,
     isMasterOnlyClassTool,
     sanitizeStatusMessage,
     sanitizeUnlockedFeatures,
@@ -34,6 +36,9 @@ describe('기능 잠금해제 카탈로그', () => {
         assert.deepEqual(MASTER_ONLY_CLASS_TOOLS, ['thermo', 'martial', 'vote', 'morning']);
         assert.equal(isMasterOnlyClassTool('vote'), true);
         assert.equal(isMasterOnlyClassTool('timer'), false);
+        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet']);
+        assert.equal(isClassWideClassTool('padlet'), true);
+        assert.equal(isClassWideClassTool('timer'), false);
     });
 });
 
@@ -51,6 +56,8 @@ describe('잠금해제 판정', () => {
         assert.equal(canOpenClassTool(stu, 'timer'), true);
         assert.equal(canOpenClassTool(stu, 'chalk'), false);
         assert.equal(canOpenClassTool(stu, 'thermo'), false);
+        assert.equal(canOpenClassTool(stu, 'padlet'), true);
+        assert.equal(canOpenClassTool({ isGuest: true }, 'padlet'), false);
         assert.deepEqual(sanitizeUnlockedFeatures(stu.unlockedFeatures), { tool_timer: true });
     });
 });

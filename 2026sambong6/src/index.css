@@ -2199,6 +2199,32 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.4);
         }
         .app-tool-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .app-tool-icon-fa {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(160deg, #fb7185, #be185d);
+            color: #fff7ed;
+            font-size: 1.45rem;
+        }
+        .padlet-panel {
+            display: flex;
+            flex-direction: column;
+            min-height: min(70vh, 36rem);
+        }
+        .classtool-fs-body > .classtool-pane[data-tool="padlet"] {
+            max-width: none;
+            height: 100%;
+            min-height: 0;
+        }
+        .padlet-frame {
+            flex: 1 1 auto;
+            width: 100%;
+            min-height: 22rem;
+            border: 0;
+            border-radius: 0.85rem;
+            background: #0f172a;
+        }
         .app-tool-item.is-active {
             border-color: #84cc16;
             color: #ecfccb;

@@ -14,6 +14,7 @@ describe('수업도구 창 공유', () => {
     it('허용된 도구만 띄운다', () => {
         assert.ok(CLASS_TOOL_SHARE_IDS.includes('timer'));
         assert.equal(isClassToolShareId('timer'), true);
+        assert.equal(isClassToolShareId('padlet'), true);
         assert.equal(isClassToolShareId('unknown'), false);
         assert.equal(openClassToolShare('nope'), null);
         const opened = openClassToolShare('wheel');

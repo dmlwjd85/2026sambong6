@@ -307,6 +307,10 @@ import {
     sanitizeUnlockedFeatures,
 } from './lib/featureUnlock.js';
 import {
+    extractPadletUrlFromInput,
+    padletEmbedUrl,
+} from './lib/padlet.js';
+import {
     jobColorChoicesForPicker,
     jobColorLabel,
     jobIconChoicesForPicker,
@@ -3823,7 +3827,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, padletUrl: '', customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -9754,6 +9758,7 @@ ${subjectLine}
             if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
             }
+            if (classtoolSub === 'padlet') renderPadletPanel();
             updateClassToolShareBar();
             return true;
         }
@@ -9800,6 +9805,7 @@ ${subjectLine}
             wheel: '돌림판',
             martial: '비상계엄',
             morning: '아침·공지',
+            padlet: '패들렛',
         };
 
         window.switchClassTool = function(toolId) {
@@ -9900,6 +9906,60 @@ ${subjectLine}
                 if (pane !== _classtoolFsPane) pane.classList.add('hidden');
             });
         }
+
+        function currentPadletUrl() {
+            return padletEmbedUrl(window.globalSettings && window.globalSettings.padletUrl);
+        }
+
+        function renderPadletPanel() {
+            const url = currentPadletUrl();
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const form = document.getElementById('padletAdminForm');
+            const input = document.getElementById('padletUrlInput');
+            const frame = document.getElementById('padletFrame');
+            const empty = document.getElementById('padletEmptyHint');
+            const openRow = document.getElementById('padletOpenRow');
+            const openLink = document.getElementById('padletOpenTabLink');
+            if (form) form.classList.toggle('hidden', !isAdmin);
+            if (input && document.activeElement !== input) input.value = url || String((window.globalSettings && window.globalSettings.padletUrl) || '');
+            if (openLink) {
+                openLink.href = url || '#';
+            }
+            if (openRow) openRow.classList.toggle('hidden', !url);
+            if (frame) {
+                if (url) {
+                    if (frame.getAttribute('src') !== url) frame.src = url;
+                    frame.classList.remove('hidden');
+                } else {
+                    frame.removeAttribute('src');
+                    frame.classList.add('hidden');
+                }
+            }
+            if (empty) empty.classList.toggle('hidden', !!url);
+        }
+
+        window.savePadletUrl = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 패들렛 주소를 저장할 수 있습니다.');
+            }
+            const input = document.getElementById('padletUrlInput');
+            const raw = input ? input.value : '';
+            const url = extractPadletUrlFromInput(raw);
+            if (String(raw || '').trim() && !url) {
+                return window.customAlert('padlet.com 또는 padlet.org 주소를 넣어 주세요.');
+            }
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { padletUrl: url }, { merge: true });
+                if (window.globalSettings) window.globalSettings.padletUrl = url;
+                renderPadletPanel();
+                await window.customAlert(url ? '패들렛 주소를 저장했습니다.' : '패들렛 주소를 지웠습니다.');
+            } catch (e) {
+                console.error('savePadletUrl', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
 
         function renderQuestStatsLockGate() {
             const gate = document.getElementById('questStatsLockPanel');
@@ -14545,6 +14605,10 @@ ${subjectLine}
                                 }
                                 applyRemoteScreenNotice(settingsData.screenNotice);
                                 applyRemoteClassToolShare(settingsData.classToolShare);
+                                if (settingsData.padletUrl !== undefined) {
+                                    window.globalSettings.padletUrl = padletEmbedUrl(settingsData.padletUrl);
+                                    if (classtoolSub === 'padlet') renderPadletPanel();
+                                }
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {
                                     rateEl.value = String(window.globalSettings.bankInterestPercent);

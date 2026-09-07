@@ -584,6 +584,7 @@
         }
 
         .plaza-card { min-width: 0; overflow: visible; }
+        .plaza-card-face { overflow: visible; }
         /* 파랑=경험치, 금색=봉. 단위 글자는 생략하고 색으로만 구분합니다. */
         .plaza-stat-xp { color: #38bdf8; font-variant-numeric: tabular-nums; font-weight: 900; text-shadow: 0 1px 2px #082f49; }
         .plaza-stat-bong { color: #facc15; font-variant-numeric: tabular-nums; font-weight: 900; text-shadow: 0 1px 2px #422006; }
@@ -718,8 +719,9 @@
             }
             .plaza-cards-seating .plaza-card {
                 min-height: 0;
-                padding: 0.42rem 0.18rem 0.4rem !important;
+                padding: 0.42rem 0.18rem 0.55rem !important;
                 border-radius: 0.7rem !important;
+                overflow: visible;
             }
             .plaza-cards-seating .plaza-card-face {
                 font-size: 1.45rem !important;
@@ -2941,7 +2943,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             pointer-events: none;
             overflow: hidden;
             border-radius: inherit;
-            opacity: 0.28;
+            opacity: 0.4;
         }
         .plaza-card-rank-bg img {
             width: 100%;
@@ -2953,7 +2955,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             padding: 0.1rem 0.9rem 0.85rem;
         }
         .plaza-cards-seating .plaza-card-face .char-avatar-stack {
-            padding: 0.05rem 0.55rem 0.6rem;
+            padding: 0.08rem 0.62rem 0.85rem;
         }
         .plaza-card-lv,
         .plaza-card-name,
@@ -3027,31 +3029,46 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55));
         }
         .char-shield img { width: 100%; height: 100%; object-fit: contain; }
-        .char-shield-emoji { font-size: 0.72em; line-height: 1; }
+        .char-shield-emoji {
+            font-size: 0.78em;
+            line-height: 1;
+            background: rgba(15, 23, 42, 0.82);
+            border-radius: 999px;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+            padding: 0.08em;
+        }
         .char-shoes {
             position: absolute;
             left: 50%;
-            bottom: -30%;
+            bottom: -38%;
             transform: translateX(-50%);
-            width: 48%;
-            height: 36%;
+            width: 58%;
+            height: 42%;
             display: flex;
             align-items: center;
             justify-content: center;
             pointer-events: none;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55));
+            z-index: 30;
         }
         .char-shoes img { width: 100%; height: 100%; object-fit: contain; }
-        .char-shoes-emoji { font-size: 0.62em; line-height: 1; }
+        .char-shoes-emoji {
+            font-size: 0.8em;
+            line-height: 1;
+            background: rgba(15, 23, 42, 0.82);
+            border-radius: 999px;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+            padding: 0.08em;
+        }
         .char-rank-bg {
             position: absolute;
-            inset: -18%;
+            inset: -22%;
             z-index: 0;
             pointer-events: none;
             display: flex;
             align-items: center;
             justify-content: center;
-            opacity: 0.58;
+            opacity: 0.72;
         }
         .char-rank-bg img {
             width: 100%;

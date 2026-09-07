@@ -150,6 +150,42 @@ export function sanitizeStockInvestments(raw) {
     };
 }
 
+/**
+ * 관리 화면용 학생 1명 지수투자 요약.
+ * 시세가 없으면 평가는 원금과 같게 둡니다.
+ */
+export function summarizeStudentStockInvest(stu, quotes = {}, nowMs = Date.now()) {
+    const bag = sanitizeStockInvestments(stu && stu.stockInvestments);
+    const markets = STOCK_MARKETS.map((m) => {
+        const pos = bag[m.id];
+        if (!pos) {
+            return { id: m.id, name: m.name, held: false, principal: 0, payout: 0, delta: 0, buyIndex: 0 };
+        }
+        const price = Number(quotes && quotes[m.id] && quotes[m.id].price);
+        const settled = Number.isFinite(price) && price > 0
+            ? settleStockPosition(pos, price, nowMs)
+            : { principal: pos.principal, payout: pos.principal, delta: 0 };
+        return {
+            id: m.id,
+            name: m.name,
+            held: true,
+            principal: pos.principal,
+            payout: Number.isFinite(Number(settled.payout)) ? Number(settled.payout) : pos.principal,
+            delta: Number.isFinite(Number(settled.delta)) ? Number(settled.delta) : 0,
+            buyIndex: pos.buyIndex,
+        };
+    });
+    const principal = markets.reduce((sum, row) => sum + row.principal, 0);
+    const payout = markets.reduce((sum, row) => sum + row.payout, 0);
+    return {
+        markets,
+        principal,
+        payout,
+        delta: payout - principal,
+        held: markets.some((row) => row.held),
+    };
+}
+
 export function sanitizeStockInvestDaily(raw, today) {
     const src = raw && typeof raw === 'object' ? raw : {};
     const date = String(src.date || '');

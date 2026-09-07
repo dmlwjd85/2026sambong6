@@ -187,6 +187,7 @@ import {
     settleStockPosition,
     shouldFetchLiveMarketQuotes,
     stockInvestRoom,
+    summarizeStudentStockInvest,
     TICKER_MARKETS,
     yahooChartProxyUrl,
     yahooChartUrl,
@@ -1375,6 +1376,7 @@ function redrawPlazaGrantsUi() {
                     meta.textContent = '장마감 · 마지막 시세를 보여 줍니다.';
                 }
             }
+            if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
         }
 
         async function fetchOneMarketQuote(market) {
@@ -8382,7 +8384,7 @@ ${subjectLine}
             }
             if (g === 'bank' && typeof window.updateBankPanel === 'function') {
                 window.updateBankPanel();
-                if (id === 'invest' && typeof refreshMarketQuotes === 'function') void refreshMarketQuotes(false);
+                if ((id === 'invest' || id === 'admin') && typeof refreshMarketQuotes === 'function') void refreshMarketQuotes(false);
             }
             if ((g === 'admin' && id === 'roster') || (g === 'settings' && id === 'class')) {
                 void window.refreshManagedClassDirectory?.();
@@ -16317,6 +16319,7 @@ ${subjectLine}
                     </div>${rows.join('')}`;
                 }
             }
+            renderBankAdminInvestPanel();
             const bankDock = document.querySelector('#bankSection .app-sub-dock');
             if (bankDock) {
                 const adminDock = !!(window.playerState && window.playerState.isAdmin);
@@ -16352,6 +16355,58 @@ ${subjectLine}
             }
             renderBankInvestPanel();
         };
+
+        function formatBankAdminInvestCell(row) {
+            if (!row || !row.held) return '<span class="text-slate-600">—</span>';
+            const delta = Number(row.delta) || 0;
+            const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
+            const deltaTxt = delta > 0 ? `+${formatBongAmount(delta)}` : formatBongAmount(delta);
+            return `<div class="text-right leading-tight">
+                <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
+                <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
+            </div>`;
+        }
+
+        function renderBankAdminInvestPanel() {
+            const list = document.getElementById('bankAdminInvestList');
+            const quoteLine = document.getElementById('bankAdminInvestQuoteLine');
+            if (quoteLine) {
+                const bits = STOCK_MARKETS.map((m) => {
+                    const q = _marketQuotes[m.id];
+                    return q ? `${m.name} ${formatIndexPrice(q.price)} (${formatChangePct(q.changePct)})` : `${m.name} —`;
+                });
+                quoteLine.textContent = bits.join(' · ');
+            }
+            if (!list) return;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                list.innerHTML = '';
+                return;
+            }
+            const rows = [];
+            getActiveStudentIds().forEach((sid) => {
+                const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(sid)) || {};
+                const sum = summarizeStudentStockInvest(stu, _marketQuotes);
+                const name = STUDENT_NAMES[String(sid)] || sid;
+                const totalCls = sum.delta > 0 ? 'text-rose-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const totalDelta = sum.delta > 0 ? `+${formatBongAmount(sum.delta)}` : formatBongAmount(sum.delta);
+                const kospi = sum.markets.find((m) => m.id === 'kospi');
+                const kosdaq = sum.markets.find((m) => m.id === 'kosdaq');
+                const nasdaq = sum.markets.find((m) => m.id === 'nasdaq');
+                rows.push(`<div class="grid grid-cols-5 gap-1 px-2 py-1.5 border-b border-slate-800 items-center min-w-[28rem]">
+                    <div class="font-bold text-slate-200 truncate" title="${escapeHtmlAttr(name)}">${escapeHtmlAttr(name)}</div>
+                    ${formatBankAdminInvestCell(kospi)}
+                    ${formatBankAdminInvestCell(kosdaq)}
+                    ${formatBankAdminInvestCell(nasdaq)}
+                    <div class="text-right leading-tight">
+                        <div class="text-white font-bold tabular-nums">${sum.held ? formatBongAmount(sum.principal) : '—'}</div>
+                        ${sum.held ? `<div class="${totalCls} text-[9px] tabular-nums">${formatBongAmount(sum.payout)} (${totalDelta})</div>` : '<div class="text-slate-600 text-[9px]">미보유</div>'}
+                    </div>
+                </div>`);
+            });
+            list.innerHTML = `<div class="grid grid-cols-5 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700 min-w-[28rem]">
+                <div>학생</div><div class="text-right">코스피</div><div class="text-right">코스닥</div><div class="text-right">나스닥</div><div class="text-right">합계</div>
+            </div>${rows.join('')}`;
+        }
 
         function renderBankInvestPanel() {
             const line = document.getElementById('bankInvestQuoteLine');
@@ -16973,6 +17028,8 @@ ${subjectLine}
                     if (jobPanel) jobPanel.classList.remove('hidden');
                     const bankBalancesPanel = document.getElementById('bankAdminBalancesPanel');
                     if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
+                    const bankInvestAdminPanel = document.getElementById('bankAdminInvestPanel');
+                    if (bankInvestAdminPanel) bankInvestAdminPanel.classList.remove('hidden');
                     const raidAdminPanel = document.getElementById('raidAdminPanel');
                     if (raidAdminPanel) raidAdminPanel.classList.remove('hidden');
                     const masterSpeedQuizPanel = document.getElementById('masterSpeedQuizPanel');
@@ -16995,6 +17052,8 @@ ${subjectLine}
                     if (jobPanel) jobPanel.classList.add('hidden');
                     const bankBalancesPanel = document.getElementById('bankAdminBalancesPanel');
                     if (bankBalancesPanel) bankBalancesPanel.classList.remove('hidden');
+                    const bankInvestAdminPanel = document.getElementById('bankAdminInvestPanel');
+                    if (bankInvestAdminPanel) bankInvestAdminPanel.classList.remove('hidden');
                     const raidAdminPanel = document.getElementById('raidAdminPanel');
                     if (raidAdminPanel) raidAdminPanel.classList.add('hidden');
                     const classAdminSectionHide = document.getElementById('classAdminSection');
@@ -17032,6 +17091,8 @@ ${subjectLine}
                 if (jobPanel) jobPanel.classList.add('hidden');
                 const bankBalancesPanel = document.getElementById('bankAdminBalancesPanel');
                 if (bankBalancesPanel) bankBalancesPanel.classList.add('hidden');
+                const bankInvestAdminPanel = document.getElementById('bankAdminInvestPanel');
+                if (bankInvestAdminPanel) bankInvestAdminPanel.classList.add('hidden');
                 const gbMasterPanel = document.getElementById('gbMasterPanel');
                 if (gbMasterPanel) gbMasterPanel.classList.add('hidden');
                 const raidAdminPanel = document.getElementById('raidAdminPanel');

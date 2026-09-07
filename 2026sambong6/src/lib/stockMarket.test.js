@@ -17,6 +17,7 @@ import {
     sanitizeStockInvestments,
     settleStockPosition,
     shouldFetchLiveMarketQuotes,
+    summarizeStudentStockInvest,
 } from './stockMarket.js';
 
 describe('지수 파싱', () => {
@@ -143,5 +144,25 @@ describe('은행 지수 투자', () => {
         assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T07:00:00.000Z'), { hasAnyQuote: true, cacheAgeMs: 60 * 60 * 1000 }), false);
         assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T07:00:00.000Z'), { hasAnyQuote: false }), true);
         assert.equal(shouldFetchLiveMarketQuotes(Date.parse('2026-09-02T01:00:00.000Z'), { hasAnyQuote: true, cacheAgeMs: 10 * 60 * 1000, force: false }), false);
+    });
+
+    it('관리용 요약은 시장별 원금·평가를 모은다', () => {
+        const stu = {
+            stockInvestments: {
+                kospi: { principal: 20, buyIndex: 1000, openedAt: 0 },
+                nasdaq: { principal: 40, buyIndex: 17000, openedAt: 0 },
+            },
+        };
+        const empty = summarizeStudentStockInvest({}, {}, 1000);
+        assert.equal(empty.held, false);
+        assert.equal(empty.principal, 0);
+        const sum = summarizeStudentStockInvest(stu, { kospi: { price: 1000 } }, 1000);
+        assert.equal(sum.held, true);
+        assert.equal(sum.principal, 60);
+        assert.equal(sum.markets.find((m) => m.id === 'kospi').held, true);
+        assert.equal(sum.markets.find((m) => m.id === 'kospi').payout, 20);
+        assert.equal(sum.markets.find((m) => m.id === 'kosdaq').held, false);
+        assert.equal(sum.markets.find((m) => m.id === 'nasdaq').held, true);
+        assert.equal(sum.markets.find((m) => m.id === 'nasdaq').payout, 40);
     });
 });

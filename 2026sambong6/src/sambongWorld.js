@@ -15694,10 +15694,12 @@ ${subjectLine}
                         <span class="plaza-staff-spark" style="top:22%;right:10%;animation-delay:.35s"></span>
                         <span class="plaza-staff-spark" style="bottom:18%;left:18%;animation-delay:.8s"></span>
                         <span class="plaza-staff-spark" style="bottom:28%;right:16%;animation-delay:1.15s"></span>
-                        <div class="plaza-staff-face-wrap">
-                            <div class="plaza-staff-ring" aria-hidden="true"></div>
-                            <div class="plaza-card-face plaza-staff-face">
-                                ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: true, portraitClass: 'char-portrait-staff' })}
+                        <div class="plaza-staff-avatar">
+                            <div class="plaza-staff-face-wrap">
+                                <div class="plaza-staff-ring" aria-hidden="true"></div>
+                                <div class="plaza-card-face plaza-staff-face">
+                                    ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: true, portraitClass: 'char-portrait-staff' })}
+                                </div>
                             </div>
                         </div>
                         <div class="plaza-staff-copy">

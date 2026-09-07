@@ -19,7 +19,8 @@ export const MARKET_REFRESH_MS = 60 * 60 * 1000;
 export const MARKET_CACHE_TTL_MS = 50 * 60 * 1000;
 
 export const STOCK_INVEST_MIN = 10;
-export const STOCK_INVEST_MAX = 150;
+/** 시장별 원금 합계 한도. 추가 매수해도 이 값을 넘지 못합니다. */
+export const STOCK_INVEST_MAX = 1000;
 export const STOCK_DAILY_PROFIT_CAP = 8;
 export const STOCK_MAX_ABS_MOVE_PER_DAY = 0.035;
 export const STOCK_MAX_ABS_MOVE_TOTAL = 0.12;
@@ -183,30 +184,71 @@ export function settleStockPosition(pos, currentIndex, nowMs = Date.now()) {
     return { ok: true, principal: row.principal, payout, delta, ratio };
 }
 
+/** 이미 넣은 원금을 빼고 더 넣을 수 있는 봉 */
+export function stockInvestRoom(existing) {
+    const held = sanitizeStockPosition(existing);
+    if (!held) return STOCK_INVEST_MAX;
+    return Math.max(0, STOCK_INVEST_MAX - held.principal);
+}
+
+/** 기존 원금과 추가 원금의 가중평균 매수가 */
+export function blendStockBuyIndex(oldPrincipal, oldIndex, addPrincipal, addIndex) {
+    const p1 = Math.floor(Number(oldPrincipal) || 0);
+    const p2 = Math.floor(Number(addPrincipal) || 0);
+    const i1 = Number(oldIndex);
+    const i2 = Number(addIndex);
+    if (p1 <= 0 && p2 <= 0) return 0;
+    if (!Number.isFinite(i1) || i1 <= 0) return Number.isFinite(i2) && i2 > 0 ? i2 : 0;
+    if (!Number.isFinite(i2) || i2 <= 0 || p2 <= 0) return i1;
+    if (p1 <= 0) return i2;
+    return ((p1 * i1) + (p2 * i2)) / (p1 + p2);
+}
+
 export function canBuyStock({ wallet, amount, existing }) {
     const amt = Math.floor(Number(amount) || 0);
     if (amt < STOCK_INVEST_MIN || amt > STOCK_INVEST_MAX) return { ok: false, reason: 'amount' };
-    if (sanitizeStockPosition(existing)) return { ok: false, reason: 'held' };
+    const held = sanitizeStockPosition(existing);
+    const room = held ? stockInvestRoom(held) : STOCK_INVEST_MAX;
+    if (held && room < STOCK_INVEST_MIN) return { ok: false, reason: 'held_full', room: 0 };
+    if (held && amt > room) return { ok: false, reason: 'over_max', room };
     const w = Number(wallet) || 0;
     if (w + 0.0001 < amt) return { ok: false, reason: 'wallet' };
-    return { ok: true, amount: amt };
+    return {
+        ok: true,
+        amount: amt,
+        adding: !!held,
+        room,
+        nextPrincipal: (held ? held.principal : 0) + amt,
+    };
 }
 
 export function applyBuyStock(investments, marketId, amount, buyIndex, nowMs, today) {
     const market = getStockMarket(marketId);
     if (!market) return { ok: false, reason: 'market' };
     const bag = sanitizeStockInvestments(investments);
-    if (bag[market.id]) return { ok: false, reason: 'held' };
     const idx = Number(buyIndex);
     if (!Number.isFinite(idx) || idx <= 0) return { ok: false, reason: 'quote' };
     const amt = Math.floor(Number(amount) || 0);
+    if (amt < STOCK_INVEST_MIN || amt > STOCK_INVEST_MAX) return { ok: false, reason: 'amount' };
+    const held = bag[market.id];
+    if (held) {
+        const nextPrincipal = held.principal + amt;
+        if (nextPrincipal > STOCK_INVEST_MAX) return { ok: false, reason: 'over_max' };
+        bag[market.id] = {
+            principal: nextPrincipal,
+            buyIndex: blendStockBuyIndex(held.principal, held.buyIndex, amt, idx),
+            openedAt: held.openedAt,
+            openedDate: held.openedDate,
+        };
+        return { ok: true, investments: bag, added: true, amount: amt };
+    }
     bag[market.id] = {
         principal: amt,
         buyIndex: idx,
         openedAt: Math.floor(Number(nowMs) || Date.now()),
         openedDate: String(today || ''),
     };
-    return { ok: true, investments: bag };
+    return { ok: true, investments: bag, added: false, amount: amt };
 }
 
 export function applySellStock(investments, marketId, currentIndex, daily, today, nowMs) {

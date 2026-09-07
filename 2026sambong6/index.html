@@ -1840,10 +1840,10 @@
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-400/45 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="invest">
                     <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-chart-line"></i> 코스피 · 코스닥 · 나스닥 투자</h3>
-                    <p class="text-[9px] text-slate-400 leading-relaxed">지갑에서 10~150봉을 넣고, 실제 지수 등락만큼 되찾습니다. 하루 수익은 최대 8봉이고 등락도 작게 묶여 있습니다. 시장마다 한 건만 보유할 수 있습니다. 코스피·코스닥은 장중 1시간마다 갱신됩니다.</p>
+                    <p class="text-[9px] text-slate-400 leading-relaxed">지갑에서 10~1000봉을 넣고, 실제 지수 등락만큼 되찾습니다. 이미 투자한 시장에도 원금 합계 1000봉까지 추가 매수할 수 있고, 매수가와 수익률은 합산됩니다. 하루 수익은 최대 8봉이고 등락도 작게 묶여 있습니다. 코스피·코스닥은 장중 1시간마다 갱신됩니다.</p>
                     <div id="bankInvestQuoteLine" class="text-[10px] text-amber-100 font-bold">지수를 불러오는 중…</div>
                     <div class="flex gap-2 flex-wrap items-center">
-                        <input type="number" id="bankInvestAmount" min="10" max="150" step="1" placeholder="투자 B" data-currency-placeholder="투자 {u}" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
+                        <input type="number" id="bankInvestAmount" min="10" max="1000" step="1" placeholder="투자 B" data-currency-placeholder="투자 {u}" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="void window.buyStockIndex('kospi')" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">코스피 매수</button>
                         <button type="button" onclick="void window.buyStockIndex('kosdaq')" class="bg-lime-700 hover:bg-lime-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">코스닥 매수</button>
                         <button type="button" onclick="void window.buyStockIndex('nasdaq')" class="bg-sky-700 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">나스닥 매수</button>

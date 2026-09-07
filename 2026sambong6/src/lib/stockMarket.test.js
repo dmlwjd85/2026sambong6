@@ -5,6 +5,7 @@ import {
     STOCK_INVEST_MAX,
     applyBuyStock,
     applySellStock,
+    blendStockBuyIndex,
     canBuyStock,
     clampedIndexRatio,
     extractYahooChartJson,
@@ -43,16 +44,41 @@ describe('지수 파싱', () => {
 });
 
 describe('은행 지수 투자', () => {
-    it('한 시장에 한 건만 넣고 금액 한도를 지킨다', () => {
+    it('원금 1000봉까지 추가 매수하고 매수가·수익률을 합산한다', () => {
         assert.equal(canBuyStock({ wallet: 9, amount: 10 }).ok, false);
         assert.equal(canBuyStock({ wallet: 20, amount: 10 }).ok, true);
-        assert.equal(canBuyStock({ wallet: 200, amount: STOCK_INVEST_MAX + 1 }).ok, false);
+        assert.equal(canBuyStock({ wallet: 2000, amount: STOCK_INVEST_MAX + 1 }).ok, false);
         const held = canBuyStock({ wallet: 100, amount: 20, existing: { principal: 20, buyIndex: 2500, openedAt: 1 } });
-        assert.equal(held.ok, false);
+        assert.equal(held.ok, true);
+        assert.equal(held.adding, true);
+        assert.equal(held.nextPrincipal, 40);
         const bought = applyBuyStock({}, 'kospi', 20, 2500, 1000, '2026-09-02');
         assert.equal(bought.ok, true);
         assert.equal(bought.investments.kospi.principal, 20);
-        assert.equal(applyBuyStock(bought.investments, 'kospi', 20, 2500, 1000, '2026-09-02').ok, false);
+        const added = applyBuyStock(bought.investments, 'kospi', 30, 2800, 2000, '2026-09-03');
+        assert.equal(added.ok, true);
+        assert.equal(added.added, true);
+        assert.equal(added.investments.kospi.principal, 50);
+        assert.equal(added.investments.kospi.openedAt, 1000);
+        assert.equal(added.investments.kospi.buyIndex, blendStockBuyIndex(20, 2500, 30, 2800));
+        const settled = settleStockPosition(added.investments.kospi, 2800, 2000);
+        assert.equal(settled.ok, true);
+        assert.equal(settled.principal, 50);
+        const full = canBuyStock({
+            wallet: 2000,
+            amount: 10,
+            existing: { principal: STOCK_INVEST_MAX, buyIndex: 2500, openedAt: 1 },
+        });
+        assert.equal(full.ok, false);
+        assert.equal(full.reason, 'held_full');
+        const over = canBuyStock({
+            wallet: 2000,
+            amount: 20,
+            existing: { principal: STOCK_INVEST_MAX - 10, buyIndex: 2500, openedAt: 1 },
+        });
+        assert.equal(over.ok, false);
+        assert.equal(over.reason, 'over_max');
+        assert.equal(applyBuyStock({ kospi: { principal: 995, buyIndex: 2500, openedAt: 1 } }, 'kospi', 10, 2500, 1000, '2026-09-02').ok, false);
     });
 
     it('등락을 하루 3.5%·전체 12%로 묶고 일일 수익 상한을 둔다', () => {

@@ -60,3 +60,44 @@ export function applyBankTransfer({ fromBong, toBong, amount, fee } = {}) {
         need: checked.need,
     };
 }
+
+/**
+ * 이체 지갑 문서에 쓸 필드.
+ * 문서가 없으면 생성 규칙(xp·bong 필수)에 맞게 씨앗을 넣습니다.
+ */
+export function bankTransferWalletFields({
+    exists,
+    studentId,
+    name,
+    number,
+    job,
+    xp,
+    nextBong,
+    bongChangeLog,
+} = {}) {
+    const payload = {
+        bong: Math.floor(Number(nextBong) || 0),
+        bongChangeLog: Array.isArray(bongChangeLog) ? bongChangeLog : [],
+    };
+    if (!exists) {
+        payload.studentId = String(studentId || '');
+        payload.name = String(name || '');
+        payload.number = number == null || number === '' ? String(studentId || '') : number;
+        payload.job = String(job || '');
+        payload.xp = Number.isFinite(Number(xp)) ? Number(xp) : 0;
+    }
+    return payload;
+}
+
+/**
+ * 은행 저장 때 지갑 증감.
+ * 이체·주기 보너스로 로컬 지갑만 어긋난 경우 서버 지갑을 유지하고,
+ * 입출금·적금은 서버 지갑에서 그 금액만 반영합니다.
+ */
+export function resolveBankSaveBongDelta(validation, targetBong, serverBong) {
+    if (validation && validation.keepServerBong) return 0;
+    if (validation && Number.isFinite(Number(validation.bongDelta))) {
+        return Math.floor(Number(validation.bongDelta));
+    }
+    return Math.floor(Number(targetBong) || 0) - Math.floor(Number(serverBong) || 0);
+}

@@ -148,7 +148,9 @@ import {
 } from './lib/gear.js';
 import {
     applyBankTransfer,
+    bankTransferWalletFields,
     canBankTransfer,
+    resolveBankSaveBongDelta,
     sanitizeBankTransferFee,
     BANK_TRANSFER_AMOUNT_MAX,
 } from './lib/bankTransfer.js';
@@ -170,6 +172,7 @@ import {
     sanitizeStockInvestments,
     settleStockPosition,
     shouldFetchLiveMarketQuotes,
+    stockInvestRoom,
     TICKER_MARKETS,
     yahooChartProxyUrl,
     yahooChartUrl,
@@ -7948,23 +7951,36 @@ ${subjectLine}
             const termSumD = normalizeBongValue(tTermSum - bTermSum);
             const totalB = normalizeBongValue(bBong + bReg + bTermSum);
             const totalC = normalizeBongValue(tBong + tReg + tTermSum);
+            const conserved = totalC === totalB;
+            const exactWalletOp = bongD === -regD && conserved;
 
-            if (regD === 0 && bongD === 0 && termDepositMapsEqual(bTerms, tTerms)) {
-                return { ok: true, kind: 'none' };
+            // 예금·적금이 같으면 지갑 차이는 이체·주기 보너스로 보고 서버 지갑을 유지합니다.
+            if (regD === 0 && termDepositMapsEqual(bTerms, tTerms)) {
+                return { ok: true, kind: bongD === 0 ? 'none' : 'wallet_only', keepServerBong: true };
             }
-            if (termDepositMapsEqual(bTerms, tTerms) && regD !== 0 && bongD === -regD && totalC === totalB) {
-                return { ok: true, kind: regD > 0 ? 'deposit' : 'withdraw' };
+            if (termDepositMapsEqual(bTerms, tTerms) && regD !== 0) {
+                if (regD > 0 && bBong + 0.0001 < regD) return { ok: false, kind: 'invalid' };
+                if (regD < 0 && bReg + 0.0001 < -regD) return { ok: false, kind: 'invalid' };
+                // exactWalletOp·conserved가 맞으면 그대로, 이체로 지갑만 어긋나도 서버 지갑에서 입출금만 반영합니다.
+                return {
+                    ok: true,
+                    kind: regD > 0 ? 'deposit' : 'withdraw',
+                    bongDelta: -regD,
+                    exact: exactWalletOp,
+                    conserved,
+                };
             }
             if (regD === 0 && tTerms.length === bTerms.length + 1) {
                 const added = findNewTermDeposits(bTerms, tTerms);
-                if (added.length === 1 && bongD < 0 && termSumD === -bongD && totalC === totalB) {
-                    return { ok: true, kind: 'term_open' };
+                if (added.length === 1 && termSumD === added[0].amount) {
+                    if (bBong + 0.0001 < added[0].amount) return { ok: false, kind: 'invalid' };
+                    return { ok: true, kind: 'term_open', bongDelta: -added[0].amount };
                 }
             }
             if (regD === 0 && tTerms.length === bTerms.length - 1) {
                 const removed = findRemovedTermDeposits(bTerms, tTerms);
-                if (removed.length === 1 && bongD > 0 && bongD === removed[0].amount && termSumD === -bongD && totalC === totalB) {
-                    return { ok: true, kind: 'term_early' };
+                if (removed.length === 1 && termSumD === -removed[0].amount) {
+                    return { ok: true, kind: 'term_early', bongDelta: removed[0].amount };
                 }
             }
             return { ok: false, kind: 'invalid' };
@@ -8019,7 +8035,7 @@ ${subjectLine}
             if (!validation.ok) {
                 return { ...accrued, rejected: true };
             }
-            const bongDelta = normalizeBongValue(target.bong - serverBase.bong);
+            const bongDelta = normalizeBongValue(resolveBankSaveBongDelta(validation, target.bong, serverBase.bong));
             const regDelta = normalizeBongValue(target.bankRegularSavings - serverBase.bankRegularSavings);
             let bonusDate = accrued.bankDailyBonusLastDate;
             if (target.bankDailyBonusLastDate === accrued.bankDailyBonusLastDate || accrued.bonusGranted > 0) {
@@ -16089,6 +16105,36 @@ ${subjectLine}
             return (window.allStudentsData || []).find((s) => String(s.id) === id) || null;
         }
 
+        /** 명부에 있으면 서버 문서가 아직 없어도 이체 대상으로 받습니다. */
+        function canSelectBankTransferTo(sid) {
+            const id = String(sid || '');
+            if (!id || id === 'guest') return false;
+            if (id === 'gm' || id === 'gm_a') return true;
+            if (getBankHolderRecord(id)) return true;
+            return (getActiveStudentIds() || []).map(String).includes(id);
+        }
+
+        function bankHolderSeedFields(sid) {
+            const id = String(sid || '');
+            const rec = getBankHolderRecord(id);
+            if (rec) {
+                return {
+                    studentId: id,
+                    name: rec.name || bankHolderLabel(id),
+                    number: rec.number == null || rec.number === '' ? id : rec.number,
+                    job: rec.job || '',
+                    xp: Number.isFinite(Number(rec.xp)) ? Number(rec.xp) : 0,
+                };
+            }
+            return {
+                studentId: id,
+                name: bankHolderLabel(id),
+                number: id,
+                job: '',
+                xp: 0,
+            };
+        }
+
         function studentWalletRef(sid) {
             return doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
         }
@@ -16240,12 +16286,19 @@ ${subjectLine}
                 const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
                 const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
                 const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
+                const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
+                const room = stockInvestRoom(pos);
+                const roomTxt = room >= STOCK_INVEST_MIN
+                    ? `추가 매수 가능 ${formatBongAmount(room)}`
+                    : '추가 매수 한도 가득';
                 return `<div class="border border-amber-500/35 rounded-xl p-3 bg-slate-900/70">
                     <div class="flex justify-between gap-2 items-start">
                         <div>
                             <div class="text-amber-100 font-bold text-sm">${m.name}</div>
-                            <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 매수 ${formatIndexPrice(pos.buyIndex)}</div>
-                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt})</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
+                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
+                            <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
                         <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded">매도</button>
                     </div>
@@ -16270,12 +16323,17 @@ ${subjectLine}
                 existing: window.playerState.stockInvestments[market.id],
             });
             if (!gate.ok) {
-                const msg = gate.reason === 'held' ? '이미 이 시장에 투자 중입니다. 먼저 매도하세요.'
+                const msg = gate.reason === 'held_full' ? `이 시장 원금이 이미 ${formatBongAmount(STOCK_INVEST_MAX)}입니다.`
+                    : gate.reason === 'over_max' ? `원금 합계 ${formatBongAmount(STOCK_INVEST_MAX)}까지입니다. 지금은 ${formatBongAmount(gate.room || 0)}만 더 넣을 수 있습니다.`
                     : gate.reason === 'wallet' ? '지갑 잔액이 부족합니다.'
                     : `${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉만 투자할 수 있습니다.`;
                 return window.customAlert(msg);
             }
-            const ok = await window.customConfirm(`${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`);
+            const ok = await window.customConfirm(
+                gate.adding
+                    ? `${market.name}에 ${formatBongAmount(gate.amount)}를 추가 매수할까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)} → ${formatBongAmount(gate.nextPrincipal)}\n현재 지수 ${formatIndexPrice(q.price)}로 평균 매수가에 합산됩니다.`
+                    : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`
+            );
             if (!ok) return;
             const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gate.amount, q.price, Date.now(), getLocalDateStr());
             if (!bought.ok) return window.customAlert('매수에 실패했습니다.');
@@ -16287,10 +16345,14 @@ ${subjectLine}
                 allowBongDecrease: true,
                 maxBongDecrease: gate.amount,
                 requireServerBongBalance: true,
-                operationLabel: `${market.name} 매수`,
+                operationLabel: gate.adding ? `${market.name} 추가 매수` : `${market.name} 매수`,
             });
             if (!saved) return;
-            await window.customAlert(`${market.name} ${formatBongAmount(gate.amount)} 매수했습니다.`);
+            await window.customAlert(
+                gate.adding
+                    ? `${market.name} ${formatBongAmount(gate.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(gate.nextPrincipal)}.`
+                    : `${market.name} ${formatBongAmount(gate.amount)} 매수했습니다.`
+            );
         };
 
         window.sellStockIndex = async function(marketId) {
@@ -16502,7 +16564,7 @@ ${subjectLine}
                 }[checked.reason] || '이체할 수 없습니다.';
                 return window.customAlert(msg);
             }
-            if (!getBankHolderRecord(checked.to) && checked.to !== 'gm' && checked.to !== 'gm_a') {
+            if (!canSelectBankTransferTo(checked.to)) {
                 return window.customAlert('받는 사람 계좌를 찾을 수 없습니다.');
             }
             const toName = bankHolderLabel(checked.to);
@@ -16516,6 +16578,7 @@ ${subjectLine}
             if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
             window._bankTransferRunning = true;
             try {
+                let appliedFromBong = null;
                 await runWithNetworkRetry(async () => {
                     await runTransaction(db, async (transaction) => {
                         const fromRef = studentWalletRef(checked.from);
@@ -16527,21 +16590,26 @@ ${subjectLine}
                         const bSnap = await transaction.get(bRef);
                         const fromSnap = firstIsFrom ? aSnap : bSnap;
                         const toSnap = firstIsFrom ? bSnap : aSnap;
-                        if (!fromSnap.exists() || !toSnap.exists()) throw new Error('missing_account');
-                        const fromData = fromSnap.data() || {};
-                        const toData = toSnap.data() || {};
+                        const fromExists = fromSnap.exists();
+                        const toExists = toSnap.exists();
+                        const fromData = fromExists ? (fromSnap.data() || {}) : {};
+                        const toData = toExists ? (toSnap.data() || {}) : {};
+                        const fromLiveBong = fromExists
+                            ? (Number(fromData.bong) || 0)
+                            : (Number(window.playerState.bong) || 0);
+                        const toLiveBong = toExists ? (Number(toData.bong) || 0) : 0;
                         const live = canBankTransfer({
                             fromId: checked.from,
                             toId: checked.to,
                             amount: checked.amount,
                             fee: checked.fee,
-                            fromBong: Number(fromData.bong) || 0,
+                            fromBong: fromLiveBong,
                             isGuest: false,
                         });
                         if (!live.ok) throw new Error(live.reason);
                         const applied = applyBankTransfer({
-                            fromBong: Number(fromData.bong) || 0,
-                            toBong: Number(toData.bong) || 0,
+                            fromBong: fromLiveBong,
+                            toBong: toLiveBong,
                             amount: live.amount,
                             fee: live.fee,
                         });
@@ -16549,28 +16617,61 @@ ${subjectLine}
                         const fromLogs = Array.isArray(fromData.bongChangeLog) ? fromData.bongChangeLog.slice() : [];
                         fromLogs.push(buildBongChangeLogEntry(
                             `${toName}에게 ${live.amount}봉 이체` + (live.fee ? ` (수수료 ${live.fee}봉)` : ''),
-                            Number(fromData.bong) || 0,
+                            fromLiveBong,
                             applied.fromBong,
                             { source: 'bankTransferOut', toId: live.to }
                         ));
                         const toLogs = Array.isArray(toData.bongChangeLog) ? toData.bongChangeLog.slice() : [];
                         toLogs.push(buildBongChangeLogEntry(
                             `${bankHolderLabel(live.from)}에게서 ${live.amount}봉 입금`,
-                            Number(toData.bong) || 0,
+                            toLiveBong,
                             applied.toBong,
                             { source: 'bankTransferIn', fromId: live.from }
                         ));
-                        transaction.update(fromRef, {
-                            bong: applied.fromBong,
+                        const fromSeed = fromExists
+                            ? {
+                                studentId: checked.from,
+                                name: fromData.name || bankHolderLabel(checked.from),
+                                number: fromData.number,
+                                job: fromData.job || '',
+                                xp: fromData.xp,
+                            }
+                            : bankHolderSeedFields(checked.from);
+                        const toSeed = toExists
+                            ? {
+                                studentId: checked.to,
+                                name: toData.name || bankHolderLabel(checked.to),
+                                number: toData.number,
+                                job: toData.job || '',
+                                xp: toData.xp,
+                            }
+                            : bankHolderSeedFields(checked.to);
+                        transaction.set(fromRef, bankTransferWalletFields({
+                            exists: fromExists,
+                            studentId: fromSeed.studentId,
+                            name: fromSeed.name,
+                            number: fromSeed.number,
+                            job: fromSeed.job,
+                            xp: fromSeed.xp,
+                            nextBong: applied.fromBong,
                             bongChangeLog: fromLogs.slice(-BONG_CHANGE_LOG_LIMIT),
-                        });
-                        transaction.update(toRef, {
-                            bong: applied.toBong,
+                        }), { merge: true });
+                        transaction.set(toRef, bankTransferWalletFields({
+                            exists: toExists,
+                            studentId: toSeed.studentId,
+                            name: toSeed.name,
+                            number: toSeed.number,
+                            job: toSeed.job,
+                            xp: toSeed.xp,
+                            nextBong: applied.toBong,
                             bongChangeLog: toLogs.slice(-BONG_CHANGE_LOG_LIMIT),
-                        });
+                        }), { merge: true });
+                        appliedFromBong = applied.fromBong;
                     });
                 }, '계좌이체');
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - checked.need);
+                window.playerState.bong = Number.isFinite(Number(appliedFromBong))
+                    ? normalizeBongValue(appliedFromBong)
+                    : normalizeBongValue((Number(window.playerState.bong) || 0) - checked.need);
                 const amtEl = document.getElementById('bankTransferAmount');
                 if (amtEl) amtEl.value = '';
                 updateUI();

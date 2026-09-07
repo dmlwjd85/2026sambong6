@@ -13,7 +13,13 @@ import {
     weatherSceneMeta,
     weatherSourceUrl,
 } from './schoolWeather.js';
-import { applyBankTransfer, canBankTransfer, sanitizeBankTransferFee } from './bankTransfer.js';
+import {
+    applyBankTransfer,
+    bankTransferWalletFields,
+    canBankTransfer,
+    resolveBankSaveBongDelta,
+    sanitizeBankTransferFee,
+} from './bankTransfer.js';
 
 describe('학교 날씨', () => {
     it('네이버 지역 코드와 맑음·비 장면을 맞춘다', () => {
@@ -81,5 +87,29 @@ describe('계좌이체', () => {
         assert.equal(ok.fromBong, 88);
         assert.equal(ok.toBong, 15);
         assert.equal(ok.fee, 2);
+    });
+
+    it('없는 받는 계좌는 xp·bong을 넣어 만들고, 이체 후 지갑 어긋남은 서버 기준으로 맞춘다', () => {
+        const created = bankTransferWalletFields({
+            exists: false,
+            studentId: '7',
+            name: '새 학생',
+            nextBong: 40,
+            bongChangeLog: [{ label: '입금' }],
+        });
+        assert.equal(created.xp, 0);
+        assert.equal(created.bong, 40);
+        assert.equal(created.studentId, '7');
+        const updated = bankTransferWalletFields({
+            exists: true,
+            studentId: '7',
+            nextBong: 10,
+            bongChangeLog: [],
+        });
+        assert.equal(updated.bong, 10);
+        assert.equal(Object.prototype.hasOwnProperty.call(updated, 'xp'), false);
+        assert.equal(resolveBankSaveBongDelta({ keepServerBong: true }, 50, 80), 0);
+        assert.equal(resolveBankSaveBongDelta({ bongDelta: -20 }, 30, 80), -20);
+        assert.equal(resolveBankSaveBongDelta({ ok: true, kind: 'none' }, 90, 80), 10);
     });
 });

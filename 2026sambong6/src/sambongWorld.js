@@ -165,6 +165,7 @@ import {
     applyBuyStock,
     applySellStock,
     canBuyStock,
+    canSellStock,
     extractYahooChartJson,
     formatChangePct,
     formatIndexPrice,
@@ -16298,12 +16299,15 @@ ${subjectLine}
                     : '추가 매수 한도 가득';
                 return `<div class="border border-amber-500/35 rounded-xl p-3 bg-slate-900/70">
                     <div class="flex justify-between gap-2 items-start">
-                        <div>
+                        <div class="min-w-0">
                             <div class="text-amber-100 font-bold text-sm">${m.name}</div>
                             <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
                             <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
                             <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
+                    </div>
+                    <div class="flex gap-2 flex-wrap items-center mt-2">
+                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
                         <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded">매도</button>
                     </div>
                 </div>`;
@@ -16365,6 +16369,17 @@ ${subjectLine}
             const market = getStockMarket(marketId);
             const q = market && _marketQuotes[market.id];
             if (!q) return window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+            const held = window.playerState.stockInvestments[market.id];
+            const sellInp = document.getElementById(`bankInvestSell_${market.id}`);
+            const sellRaw = sellInp && String(sellInp.value || '').trim() !== '' ? sellInp.value : '';
+            const gate = canSellStock({ existing: held, amount: sellRaw === '' ? null : sellRaw });
+            if (!gate.ok) {
+                const msg = gate.reason === 'none' ? '매도할 투자가 없습니다.'
+                    : gate.reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 합니다. 전액을 팔거나 원금을 더 남겨 주세요.`
+                    : `팔 원금은 1~${formatBongAmount(gate.max || 0)}만 입력할 수 있습니다. 칸을 비우면 전액 매도입니다.`;
+                return window.customAlert(msg);
+            }
             const today = getLocalDateStr();
             const sold = applySellStock(
                 window.playerState.stockInvestments,
@@ -16372,24 +16387,34 @@ ${subjectLine}
                 q.price,
                 window.playerState.stockInvestDaily,
                 today,
-                Date.now()
+                Date.now(),
+                gate.amount
             );
             if (!sold.ok) return window.customAlert('매도할 투자가 없습니다.');
+            const remainTxt = sold.full
+                ? '전액 매도합니다.'
+                : `남은 원금 ${formatBongAmount(sold.remaining)}.`;
             const ok = await window.customConfirm(
-                `${market.name}를 매도할까요?\n원금 ${formatBongAmount(sold.principal)} → ${formatBongAmount(sold.payout)}`
+                `${market.name} 원금 ${formatBongAmount(sold.principal)}를 매도할까요?\n정산 ${formatBongAmount(sold.payout)}`
+                + `\n${remainTxt}`
                 + (sold.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
             );
             if (!ok) return;
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sold.payout);
             window.playerState.stockInvestments = sold.investments;
             window.playerState.stockInvestDaily = sold.daily;
+            if (sellInp) sellInp.value = '';
             updateUI();
             const saved = await saveDataToCloud({
                 maxBongIncrease: Math.max(1, sold.payout),
-                operationLabel: `${market.name} 매도`,
+                operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
             });
             if (!saved) return;
-            await window.customAlert(`매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받았습니다.`);
+            await window.customAlert(
+                sold.full
+                    ? `매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받았습니다.`
+                    : `일부 매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받고, 원금 ${formatBongAmount(sold.remaining)}가 남았습니다.`
+            );
         };
 
 

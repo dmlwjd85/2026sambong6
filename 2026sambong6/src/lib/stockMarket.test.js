@@ -7,6 +7,7 @@ import {
     applySellStock,
     blendStockBuyIndex,
     canBuyStock,
+    canSellStock,
     clampedIndexRatio,
     extractYahooChartJson,
     formatChangePct,
@@ -95,6 +96,29 @@ describe('은행 지수 투자', () => {
         assert.equal(sold.payout, 101);
         assert.equal(sold.daily.profit, STOCK_DAILY_PROFIT_CAP);
         assert.equal(sold.investments.kospi, null);
+        assert.equal(sold.full, true);
+    });
+
+    it('원금 일부를 매도하고 남은 원금·매수가를 지킨다', () => {
+        const pos = { principal: 100, buyIndex: 1000, openedAt: 0, openedDate: '2026-09-02' };
+        assert.equal(canSellStock({ existing: pos, amount: 40 }).ok, true);
+        assert.equal(canSellStock({ existing: pos, amount: 40 }).remaining, 60);
+        assert.equal(canSellStock({ existing: pos, amount: 95 }).ok, false);
+        assert.equal(canSellStock({ existing: pos, amount: 95 }).reason, 'remainder');
+        assert.equal(canSellStock({ existing: pos, amount: 101 }).ok, false);
+        const part = applySellStock({ kospi: pos }, 'kospi', 2000, { date: '2026-09-02', profit: 0, sells: 0 }, '2026-09-02', 1000, 40);
+        assert.equal(part.ok, true);
+        assert.equal(part.principal, 40);
+        assert.equal(part.remaining, 60);
+        assert.equal(part.full, false);
+        assert.equal(part.investments.kospi.principal, 60);
+        assert.equal(part.investments.kospi.buyIndex, 1000);
+        assert.equal(part.investments.kospi.openedAt, 0);
+        assert.ok(part.payout >= 40);
+        const rest = applySellStock(part.investments, 'kospi', 2000, part.daily, '2026-09-02', 1000);
+        assert.equal(rest.ok, true);
+        assert.equal(rest.full, true);
+        assert.equal(rest.investments.kospi, null);
     });
 
     it('코스닥 포지션을 지키고 한국 장중에만 시세를 다시 읽는다', () => {

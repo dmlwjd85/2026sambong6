@@ -251,30 +251,63 @@ export function applyBuyStock(investments, marketId, amount, buyIndex, nowMs, to
     return { ok: true, investments: bag, added: false, amount: amt };
 }
 
-export function applySellStock(investments, marketId, currentIndex, daily, today, nowMs) {
+/**
+ * 원금 중 팔 금액. 비우면 전액. 남기려면 최소 매수 단위 이상이어야 합니다.
+ */
+export function canSellStock({ existing, amount } = {}) {
+    const held = sanitizeStockPosition(existing);
+    if (!held) return { ok: false, reason: 'none' };
+    const blank = amount == null || amount === '';
+    const raw = blank ? held.principal : Math.floor(Number(amount) || 0);
+    if (!Number.isFinite(raw) || raw < 1 || raw > held.principal) {
+        return { ok: false, reason: 'amount', max: held.principal };
+    }
+    const remaining = held.principal - raw;
+    if (remaining > 0 && remaining < STOCK_INVEST_MIN) {
+        return { ok: false, reason: 'remainder', remaining, min: STOCK_INVEST_MIN, max: held.principal };
+    }
+    return { ok: true, amount: raw, remaining, full: remaining === 0 };
+}
+
+export function applySellStock(investments, marketId, currentIndex, daily, today, nowMs, amount) {
     const market = getStockMarket(marketId);
     if (!market) return { ok: false, reason: 'market' };
     const bag = sanitizeStockInvestments(investments);
-    const settled = settleStockPosition(bag[market.id], currentIndex, nowMs);
-    if (!settled.ok) return { ok: false, reason: 'none' };
+    const held = bag[market.id];
+    const gate = canSellStock({ existing: held, amount });
+    if (!gate.ok) return { ok: false, reason: gate.reason };
+    const ratio = clampedIndexRatio(held.buyIndex, currentIndex, held.openedAt, nowMs);
+    const sellPrincipal = gate.amount;
+    let payout = Math.max(0, Math.round(sellPrincipal * ratio));
+    let delta = payout - sellPrincipal;
+    const uncappedDelta = delta;
     const day = sanitizeStockInvestDaily(daily, today);
-    let payout = settled.payout;
-    let delta = settled.delta;
     if (delta > 0) {
         const room = Math.max(0, STOCK_DAILY_PROFIT_CAP - day.profit);
         if (delta > room) {
-            payout = settled.principal + room;
+            payout = sellPrincipal + room;
             delta = room;
         }
     }
-    bag[market.id] = null;
+    if (gate.remaining === 0) {
+        bag[market.id] = null;
+    } else {
+        bag[market.id] = {
+            principal: gate.remaining,
+            buyIndex: held.buyIndex,
+            openedAt: held.openedAt,
+            openedDate: held.openedDate,
+        };
+    }
     return {
         ok: true,
         investments: bag,
         daily: { date: String(today || ''), profit: day.profit + Math.max(0, delta), sells: day.sells + 1 },
         payout,
         delta,
-        principal: settled.principal,
-        capped: settled.delta > delta,
+        principal: sellPrincipal,
+        remaining: gate.remaining,
+        full: gate.full,
+        capped: uncappedDelta > delta,
     };
 }

@@ -1,0 +1,15 @@
+{
+  "name": "2026sambong6 + All-in-One-Home (Vite/React)",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "2026sambong6 dev",
+      "command": "cd 2026sambong6 && npm run dev -- --host --port 5173"
+    },
+    {
+      "name": "All-in-One-Home dev",
+      "command": "cd All-in-One-Home && npm run dev -- --host --port 5174"
+    }
+  ],
+  "ports": [5173, 5174]
+}

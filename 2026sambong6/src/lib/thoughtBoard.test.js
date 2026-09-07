@@ -78,4 +78,17 @@ describe('생각게시판 정리', () => {
         assert.ok(st.posts.some((p) => p.id === `p${THINK_POST_MAX + 4}`));
         assert.equal(st.posts.some((p) => p.id === 'p0'), false);
     });
+
+    it('새로 붙인 글은 공개 요청이 있어도 비공개다', () => {
+        const st = addThoughtPost(emptyThoughtBoard(), {
+            id: 'p-force',
+            studentId: '3',
+            name: '김민지',
+            text: '몰래 공개 시도',
+            isPublic: true,
+        });
+        assert.equal(st.posts.find((p) => p.id === 'p-force').isPublic, false);
+        assert.equal(visibleThoughtPosts(st, { viewerId: '9', isAdmin: false }).length, 0);
+        assert.equal(visibleThoughtPosts(st, { isAdmin: true }).length, 1);
+    });
 });

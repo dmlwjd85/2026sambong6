@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     CLASS_TOOL_SHARE_IDS,
+    classToolShareIsViewOnly,
     classToolShareShouldClose,
     classToolShareShouldOpen,
     closeClassToolShare,
@@ -35,5 +36,14 @@ describe('수업도구 창 공유', () => {
         const next = openClassToolShare('lottery');
         assert.equal(classToolShareShouldOpen(next, opened.sessionId), true);
         assert.equal(classToolShareShouldClose(next, opened.sessionId), true);
+    });
+
+    it('생각게시판 공유는 로그인 학생을 보기 전용으로 잠그지 않는다', () => {
+        const opened = openClassToolShare('padlet');
+        assert.equal(classToolShareIsViewOnly(opened, { isAdmin: true, isGuest: false }), false);
+        assert.equal(classToolShareIsViewOnly(opened, { isAdmin: false, isGuest: false }), false);
+        assert.equal(classToolShareIsViewOnly(opened, { isAdmin: false, isGuest: true }), true);
+        const timer = openClassToolShare('timer');
+        assert.equal(classToolShareIsViewOnly(timer, { isAdmin: false, isGuest: false }), true);
     });
 });

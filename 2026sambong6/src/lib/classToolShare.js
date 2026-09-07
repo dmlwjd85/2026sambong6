@@ -71,3 +71,15 @@ export function classToolShareShouldClose(share, followedSessionId) {
     if (!n.active) return true;
     return n.sessionId !== String(followedSessionId || '');
 }
+
+/**
+ * 생각게시판 공유는 로그인 학생이 글을 붙일 수 있게 두고,
+ * 손님·TV·다른 도구만 보기 전용으로 잠급니다.
+ */
+export function classToolShareIsViewOnly(share, { isAdmin, isGuest } = {}) {
+    const n = sanitizeClassToolShare(share);
+    if (!n.active) return false;
+    if (isAdmin) return false;
+    if (n.toolId === 'padlet' && !isGuest) return false;
+    return true;
+}

@@ -203,7 +203,8 @@ export function addThoughtPost(state, raw) {
         ...raw,
         id: raw && raw.id ? raw.id : newId('p'),
         createdAt: raw && raw.createdAt ? raw.createdAt : Date.now(),
-        isPublic: raw && raw.isPublic === true,
+        // 새로 붙인 글은 항상 비공개. 선생님이 개별·전체 공개합니다.
+        isPublic: false,
     });
     if (!post) return next;
     next.posts = [...next.posts.filter((p) => p.id !== post.id), post].slice(-THINK_POST_MAX);

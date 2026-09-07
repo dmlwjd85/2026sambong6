@@ -353,6 +353,7 @@ import {
     writeDismissedScreenNoticeId,
 } from './lib/screenNotice.js';
 import {
+    classToolShareIsViewOnly,
     classToolShareShouldClose,
     classToolShareShouldOpen,
     closeClassToolShare,
@@ -9709,6 +9710,44 @@ ${subjectLine}
             return !!(el && !el.classList.contains('hidden'));
         }
 
+        /** 생각게시판은 브라우저 전체화면으로 실행합니다. 제스처 밖이면 조용히 넘어갑니다. */
+        function requestClassToolBrowserFullscreen() {
+            const overlay = document.getElementById('classtoolFullscreen');
+            if (!overlay || document.fullscreenElement === overlay) return;
+            const req = overlay.requestFullscreen || overlay.webkitRequestFullscreen;
+            if (typeof req === 'function') req.call(overlay).catch(() => {});
+        }
+
+        function exitClassToolBrowserFullscreen() {
+            const overlay = document.getElementById('classtoolFullscreen');
+            const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+            if (!overlay || fsEl !== overlay) return;
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (typeof exit === 'function') exit.call(document).catch(() => {});
+        }
+
+        async function shareThinkBoardToClass() {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            if (!isClassToolFullscreenOpen() || classtoolSub !== 'padlet') {
+                openClassToolWindow('padlet', { remote: false });
+            }
+            const current = currentClassToolShare();
+            if (current.active && current.toolId === 'padlet') {
+                requestClassToolBrowserFullscreen();
+                return true;
+            }
+            const payload = openClassToolShare('padlet');
+            if (!payload) return false;
+            const ok = await publishClassToolShare(payload);
+            if (ok) {
+                _followedClassToolShareSession = payload.sessionId;
+                _classToolShareFollower = false;
+                updateClassToolShareBar();
+                requestClassToolBrowserFullscreen();
+            }
+            return ok;
+        }
+
         function restoreClassToolPane() {
             const home = document.getElementById('classtoolPanesHome');
             if (_classtoolFsPane && home) {
@@ -9748,7 +9787,10 @@ ${subjectLine}
             document.querySelectorAll('#classtoolFullscreen .js-class-watch-toggle').forEach((btn) => {
                 btn.classList.toggle('hidden', !isAdmin);
             });
-            if (closeBtn) closeBtn.classList.toggle('hidden', !!_classToolShareFollower);
+            if (closeBtn) {
+                const padletLocked = share.active && share.toolId === 'padlet' && !isAdmin;
+                closeBtn.classList.toggle('hidden', !!_classToolShareFollower || padletLocked);
+            }
             const chalkClose = document.querySelector('#chalkboardOverlay .chalk-tool-danger');
             if (chalkClose) chalkClose.classList.toggle('hidden', !!_classToolShareFollower);
             document.body.classList.toggle('class-tool-share-view', !!_classToolShareFollower);
@@ -9815,7 +9857,10 @@ ${subjectLine}
             if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
             }
-            if (classtoolSub === 'padlet') renderThinkBoardPanel();
+            if (classtoolSub === 'padlet') {
+                renderThinkBoardPanel();
+                requestClassToolBrowserFullscreen();
+            }
             updateClassToolShareBar();
             return true;
         }
@@ -9838,6 +9883,7 @@ ${subjectLine}
             restoreClassToolPane();
             const overlay = document.getElementById('classtoolFullscreen');
             if (overlay) overlay.classList.add('hidden');
+            exitClassToolBrowserFullscreen();
             document.body.classList.remove('classtool-fs-open');
             document.body.classList.remove('class-tool-share-view');
             updateClassToolShareBar();
@@ -9847,6 +9893,8 @@ ${subjectLine}
         document.addEventListener('keydown', (e) => {
             if (e.key !== 'Escape' || !isClassToolFullscreenOpen()) return;
             if (_classToolShareFollower) return;
+            const liveShare = currentClassToolShare();
+            if (liveShare.active && liveShare.toolId === 'padlet' && !(window.playerState && window.playerState.isAdmin)) return;
             const chalk = document.getElementById('chalkboardOverlay');
             if (chalk && !chalk.classList.contains('hidden')) return;
             window.closeClassToolFullscreen();
@@ -9920,7 +9968,10 @@ ${subjectLine}
                         return;
                     }
                     if (classToolShareShouldOpen(share, _followedClassToolShareSession) || !isClassToolFullscreenOpen()) {
-                        _classToolShareFollower = !isAdmin;
+                        _classToolShareFollower = classToolShareIsViewOnly(share, {
+                            isAdmin,
+                            isGuest: !!(window.playerState && window.playerState.isGuest),
+                        });
                         _followedClassToolShareSession = share.sessionId;
                         openClassToolWindow(share.toolId, { remote: true });
                     }
@@ -10210,7 +10261,11 @@ ${subjectLine}
         window.toggleThinkPosting = async function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
             const nextOpen = !currentThoughtBoard().postingOpen;
-            await saveThoughtBoard((s) => setThoughtPostingOpen(s, nextOpen));
+            const ok = await saveThoughtBoard((s) => setThoughtPostingOpen(s, nextOpen));
+            if (!ok) return;
+            if (nextOpen) {
+                await shareThinkBoardToClass();
+            }
         };
 
         window.toggleThinkEmpathyPublic = async function () {
@@ -10291,7 +10346,6 @@ ${subjectLine}
                 drawing,
                 color: _thinkNoteColor,
                 questionId: s.activeQuestionId,
-                isPublic: false,
             }));
             if (ok) {
                 if (ta) ta.value = '';

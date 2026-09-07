@@ -15457,12 +15457,12 @@ ${subjectLine}
         // ==========================================
         // ★ 광장 및 관리자 테이블 렌더링 ★
         // ==========================================
-        /** 광장 학생 카드는 크게 고정. 열 수는 부동산 자리표를 따릅니다. */
+        /** 광장 학생 카드는 중간 크기로 고정. 열 수는 부동산 자리표를 따릅니다. */
         function applyPlazaCardSizeUI() {
             const container = document.getElementById('plazaContainer');
             if (!container) return;
-            container.classList.remove('plaza-cards-md', 'plaza-cards-sm');
-            container.classList.add('plaza-cards', 'plaza-cards-lg', 'plaza-cards-seating');
+            container.classList.remove('plaza-cards-lg', 'plaza-cards-sm');
+            container.classList.add('plaza-cards', 'plaza-cards-md', 'plaza-cards-seating');
         }
 
         function buildPlazaStatusMessageHtml(data) {
@@ -15584,13 +15584,10 @@ ${subjectLine}
                 }
 
                 const walletBong = getStudentWalletBong(displayData);
-                const rankBgHtml = lv.info.img
-                    ? `<div class="plaza-card-rank-bg" aria-hidden="true"><img src="${lv.info.img}" alt=""></div>`
-                    : '';
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
-                    ${rankBgHtml}${shieldHtml}${jobHtml}${condHtml}
+                    ${shieldHtml}${jobHtml}${condHtml}
                     <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
                         <div class="relative inline-block leading-none">${face}</div>
                     </div>
@@ -15649,7 +15646,7 @@ ${subjectLine}
             const studentRows = Array.isArray(studentsData) ? studentsData : [];
             const estateReady = window.estateState && Array.isArray(window.estateState.seats) && window.estateState.seats.length > 0;
             const layout = estateReady ? getEstateLayout(window.estateState) : null;
-            const sizeCols = 4;
+            const sizeCols = 5;
             const plan = estateReady
                 ? buildPlazaSeatingPlan({
                     seats: window.estateState.seats,
@@ -17505,13 +17502,9 @@ ${subjectLine}
             if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             const dashRankBg = document.getElementById('dashRankBg');
             if (dashRankBg) {
-                if (useStudentLook && lvInfo.info && lvInfo.info.img) {
-                    dashRankBg.innerHTML = `<img src="${lvInfo.info.img}" alt="">`;
-                    dashRankBg.classList.add('is-on');
-                } else {
-                    dashRankBg.innerHTML = '';
-                    dashRankBg.classList.remove('is-on');
-                }
+                // 등급 그림은 원형 캐릭터 뒤에만 두고, 카드 배경은 원래 그라데이션을 유지합니다.
+                dashRankBg.innerHTML = '';
+                dashRankBg.classList.remove('is-on');
             }
             
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>`;
@@ -21039,11 +21032,11 @@ ${subjectLine}
                         <span class="char-dress-slot-name">${wp ? wp.name : '무기 미장착'}</span>
                     </div>
                     <div class="char-dress-slot ${shEq ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${shEq ? shEq.emoji : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${shEq ? (shEq.img ? `<img src="${shEq.img}" alt="">` : shEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${shEq ? shEq.name : '방패 미장착'}</span>
                     </div>
                     <div class="char-dress-slot ${shoeEq ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${shoeEq ? shoeEq.emoji : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${shoeEq ? (shoeEq.img ? `<img src="${shoeEq.img}" alt="">` : shoeEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${shoeEq ? shoeEq.name : '신발 미장착'}</span>
                     </div>
                 </div>

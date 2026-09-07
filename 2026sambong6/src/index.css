@@ -3134,21 +3134,6 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             object-fit: cover;
             object-position: center top;
         }
-        .plaza-card-rank-bg {
-            position: absolute;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            overflow: hidden;
-            border-radius: inherit;
-            opacity: 0.4;
-        }
-        .plaza-card-rank-bg img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            object-position: center;
-        }
         .plaza-card-face .char-avatar-stack {
             padding: 0.1rem 0.9rem 0.85rem;
         }
@@ -3177,9 +3162,10 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .char-portrait-sm { width: 2.35rem; height: 2.35rem; border-radius: 0.5rem; }
         .char-portrait-xs { width: 1.65rem; height: 1.65rem; border-radius: 0.4rem; }
         .char-portrait-staff { width: 4.25rem; height: 4.25rem; border-radius: 0.9rem; }
+        /* 광장 중간 크기: 한 웹페이지에 학급 격자가 들어오도록 초상을 줄입니다. */
         .plaza-cards-seating .char-portrait {
-            width: 4.35rem;
-            height: 4.35rem;
+            width: 3.15rem;
+            height: 3.15rem;
             max-width: calc(100% - 0.15rem);
             max-height: none;
             aspect-ratio: 1;
@@ -3187,9 +3173,9 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         @media (max-width: 639px) {
             .plaza-cards-seating .char-portrait {
-                width: 2.85rem;
-                height: 2.85rem;
-                border-radius: 0.55rem;
+                width: 2.35rem;
+                height: 2.35rem;
+                border-radius: 0.5rem;
             }
         }
         .char-sticker-layer {

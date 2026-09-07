@@ -12,11 +12,11 @@ export const WEAPON_GEAR = [
 ];
 
 export const SHIELD_GEAR = [
-    { id: 'sh1', slot: 'shield', name: '나무 방패', emoji: '🪵', block: 0.08, desc: '경험치 차감 방어 8%' },
-    { id: 'sh2', slot: 'shield', name: '가죽 방패', emoji: '🟤', block: 0.12, desc: '경험치 차감 방어 12%' },
-    { id: 'sh3', slot: 'shield', name: '철 방패', emoji: '🛡️', block: 0.16, desc: '경험치 차감 방어 16%' },
-    { id: 'sh4', slot: 'shield', name: '기사 방패', emoji: '🏰', block: 0.20, desc: '경험치 차감 방어 20%' },
-    { id: 'sh5', slot: 'shield', name: '용린 방패', emoji: '🐉', block: 0.20, desc: '경험치 차감 방어 20%' },
+    { id: 'sh1', slot: 'shield', name: '나무 방패', emoji: '🪵', img: 'chars/sh1.webp', block: 0.08, desc: '경험치 차감 방어 8%' },
+    { id: 'sh2', slot: 'shield', name: '가죽 방패', emoji: '🟤', img: 'chars/sh2.webp', block: 0.12, desc: '경험치 차감 방어 12%' },
+    { id: 'sh3', slot: 'shield', name: '철 방패', emoji: '🛡️', img: 'chars/sh3.webp', block: 0.16, desc: '경험치 차감 방어 16%' },
+    { id: 'sh4', slot: 'shield', name: '기사 방패', emoji: '🏰', img: 'chars/sh4.webp', block: 0.20, desc: '경험치 차감 방어 20%' },
+    { id: 'sh5', slot: 'shield', name: '용린 방패', emoji: '🐉', img: 'chars/sh5.webp', block: 0.20, desc: '경험치 차감 방어 20%' },
 ];
 
 /** 광장·학급온도계 경험치 차감에서 드롭 방패가 막을 확률 상한 */
@@ -39,11 +39,11 @@ export const GEAR_ENHANCE_SUCCESS_FROM = Object.freeze({
 export const GEAR_ENHANCE_RATE_LABEL = '100% · 50% · 30% · 15% · 10%';
 
 export const SHOE_GEAR = [
-    { id: 'shoe1', slot: 'shoes', name: '짚신', emoji: '🌾', procBonus: 0.010, desc: '무기·방패 발동 +1%p' },
-    { id: 'shoe2', slot: 'shoes', name: '가죽 장화', emoji: '🥾', procBonus: 0.015, desc: '무기·방패 발동 +1.5%p' },
-    { id: 'shoe3', slot: 'shoes', name: '여행 신발', emoji: '👟', procBonus: 0.020, desc: '무기·방패 발동 +2%p' },
-    { id: 'shoe4', slot: 'shoes', name: '바람 장화', emoji: '🎐', procBonus: 0.025, desc: '무기·방패 발동 +2.5%p' },
-    { id: 'shoe5', slot: 'shoes', name: '헤르메스 신발', emoji: '🪽', procBonus: 0.030, desc: '무기·방패 발동 +3%p' },
+    { id: 'shoe1', slot: 'shoes', name: '짚신', emoji: '🌾', img: 'chars/shoe1.webp', procBonus: 0.010, desc: '무기·방패 발동 +1%p' },
+    { id: 'shoe2', slot: 'shoes', name: '가죽 장화', emoji: '🥾', img: 'chars/shoe2.webp', procBonus: 0.015, desc: '무기·방패 발동 +1.5%p' },
+    { id: 'shoe3', slot: 'shoes', name: '여행 신발', emoji: '👟', img: 'chars/shoe3.webp', procBonus: 0.020, desc: '무기·방패 발동 +2%p' },
+    { id: 'shoe4', slot: 'shoes', name: '바람 장화', emoji: '🎐', img: 'chars/shoe4.webp', procBonus: 0.025, desc: '무기·방패 발동 +2.5%p' },
+    { id: 'shoe5', slot: 'shoes', name: '헤르메스 신발', emoji: '🪽', img: 'chars/shoe5.webp', procBonus: 0.030, desc: '무기·방패 발동 +3%p' },
 ];
 
 export const ALL_GEAR = [...WEAPON_GEAR, ...SHIELD_GEAR, ...SHOE_GEAR];

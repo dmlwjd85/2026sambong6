@@ -42,6 +42,9 @@ describe('장비 목록', () => {
         assert.equal(getGear('wp1').proc, 0.10);
         assert.equal(getGear('sh5').block, 0.20);
         assert.equal(getGear('shoe1').procBonus, 0.01);
+        assert.ok(WEAPON_GEAR.every((g) => g.img && g.img.startsWith('chars/')));
+        assert.ok(SHIELD_GEAR.every((g) => g.img && g.img.startsWith('chars/')));
+        assert.ok(SHOE_GEAR.every((g) => g.img && g.img.startsWith('chars/')));
     });
 
     it('마스터는 전 장비를 받는다', () => {

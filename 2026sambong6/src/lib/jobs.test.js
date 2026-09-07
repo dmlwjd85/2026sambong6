@@ -14,6 +14,8 @@ import {
     normalizeJobColor,
     normalizeJobIcon,
     pickUnusedJobLook,
+    resolveStudentJobsFromCatalog,
+    studentHasJob,
     studentHasJobName,
     toggleJobAssignment,
 } from './jobs.js';
@@ -107,5 +109,34 @@ describe('직업 아이콘·색', () => {
         const off = toggleJobAssignment(on, job);
         assert.equal(off.length, 0);
         assert.equal(studentHasJobName([{ name: '길드 마스터' }], '길드 마스터'), true);
+    });
+
+    it('직업 id를 저장하고 이름·아이콘이 바뀌어도 카탈로그와 맞춘다', () => {
+        const job = { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const on = toggleJobAssignment([], job);
+        assert.equal(on[0].id, 'job1');
+        assert.equal(studentHasJob(on, job), true);
+        const catalog = [{ id: 'job1', name: '학급 깃발', icon: 'fa-crown', color: 'text-amber-400' }];
+        const live = resolveStudentJobsFromCatalog(on, catalog);
+        assert.equal(live[0].name, '학급 깃발');
+        assert.equal(live[0].icon, 'fa-crown');
+        assert.equal(live[0].color, 'text-amber-400');
+        assert.equal(studentHasJob(on, catalog[0], catalog), true);
+        const off = toggleJobAssignment(on, catalog[0], catalog);
+        assert.equal(off.length, 0);
+    });
+
+    it('예전에 id 없이 저장된 직업도 이름이나 모양으로 카탈로그에 맞춘다', () => {
+        const snapshot = [{ name: '편의점 매니저', icon: 'fa-store', color: 'text-rose-400' }];
+        const byName = resolveStudentJobsFromCatalog(snapshot, [{
+            id: 'job12', name: '편의점 매니저', icon: 'fa-gem', color: 'text-pink-500',
+        }]);
+        assert.equal(byName[0].id, 'job12');
+        assert.equal(byName[0].icon, 'fa-gem');
+        const byLook = resolveStudentJobsFromCatalog(snapshot, [{
+            id: 'job12', name: '가게 지킴이', icon: 'fa-store', color: 'text-rose-400',
+        }]);
+        assert.equal(byLook[0].id, 'job12');
+        assert.equal(byLook[0].name, '가게 지킴이');
     });
 });

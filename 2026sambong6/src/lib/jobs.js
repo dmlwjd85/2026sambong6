@@ -250,20 +250,115 @@ export function studentHasJobName(jobs, jobName) {
     return (Array.isArray(jobs) ? jobs : []).some((job) => getJobEntryName(job) === name);
 }
 
-/** 같은 직업을 이미 쓰면 빼고, 없으면 장착합니다. */
-export function toggleJobAssignment(jobs, jobSpec) {
-    const name = String(jobSpec && jobSpec.name || '').trim();
+/** 학생 스냅샷 한 칸과 카탈로그(또는 직업 카드)가 같은 직업인지 봅니다. id → 이름 → 모양·색 순입니다. */
+export function ownedJobMatchesSpec(owned, jobSpec) {
+    if (!owned || !jobSpec) return false;
+    const ownedId = owned.id != null && owned.id !== '' ? String(owned.id) : '';
+    const specId = jobSpec.id != null && jobSpec.id !== '' ? String(jobSpec.id) : '';
+    if (ownedId && specId && ownedId === specId) return true;
+    const ownedName = getJobEntryName(owned);
+    const specName = String(jobSpec.name || '').trim();
+    if (ownedName && specName && ownedName === specName) return true;
+    if (owned.icon && jobSpec.icon) {
+        const sameIcon = normalizeJobIcon(owned.icon) === normalizeJobIcon(jobSpec.icon);
+        const sameColor = normalizeJobColor(owned.color) === normalizeJobColor(jobSpec.color);
+        if (sameIcon && sameColor) return true;
+    }
+    return false;
+}
+
+/** 카탈로그에서 학생 스냅샷과 같은 직업을 찾습니다. */
+export function findCatalogJobForOwned(owned, catalog) {
+    const cat = Array.isArray(catalog) ? catalog : [];
+    if (!owned) return null;
+    if (typeof owned === 'string') {
+        const name = owned.trim();
+        return name ? cat.find((job) => String(job.name || '').trim() === name) || null : null;
+    }
+    const ownedId = owned.id != null && owned.id !== '' ? String(owned.id) : '';
+    if (ownedId) {
+        const byId = cat.find((job) => String(job.id) === ownedId);
+        if (byId) return byId;
+    }
+    const name = getJobEntryName(owned);
+    if (name) {
+        const byName = cat.find((job) => String(job.name || '').trim() === name);
+        if (byName) return byName;
+    }
+    if (owned.icon) {
+        const icon = normalizeJobIcon(owned.icon);
+        const color = normalizeJobColor(owned.color);
+        const byLook = cat.find((job) =>
+            normalizeJobIcon(job.icon) === icon && normalizeJobColor(job.color) === color);
+        if (byLook) return byLook;
+    }
+    return null;
+}
+
+/**
+ * 학생에게 저장된 직업 스냅샷을 지금 카탈로그 이름·아이콘·색으로 바꿉니다.
+ * 직업 관리에서 모양이나 이름을 바꿔도 광장·홈 뱃지가 따라가게 합니다.
+ */
+export function resolveStudentJobsFromCatalog(jobs, catalog) {
+    const list = Array.isArray(jobs) ? jobs : [];
+    const cat = Array.isArray(catalog) ? catalog : [];
+    return list.map((owned) => {
+        const match = findCatalogJobForOwned(owned, cat);
+        if (match) {
+            return {
+                id: match.id,
+                name: match.name,
+                icon: match.icon,
+                color: match.color,
+            };
+        }
+        if (typeof owned === 'string') {
+            const name = owned.trim();
+            return name ? { name, icon: 'fa-star', color: 'text-blue-500' } : null;
+        }
+        const name = getJobEntryName(owned);
+        const ownedId = owned && owned.id != null && owned.id !== '' ? String(owned.id) : '';
+        if (!name && !ownedId) return null;
+        return {
+            ...(ownedId ? { id: ownedId } : {}),
+            name,
+            icon: String((owned && owned.icon) || 'fa-star'),
+            color: String((owned && owned.color) || 'text-blue-500'),
+        };
+    }).filter(Boolean);
+}
+
+/** id가 있으면 id로, 없으면 이름·모양으로 장착 여부를 봅니다. 카탈로그가 있으면 먼저 동기화합니다. */
+export function studentHasJob(jobs, jobSpec, catalog = []) {
+    if (!jobSpec) return false;
+    const source = Array.isArray(catalog) && catalog.length > 0
+        ? resolveStudentJobsFromCatalog(jobs, catalog)
+        : (Array.isArray(jobs) ? jobs : []);
+    return source.some((owned) => ownedJobMatchesSpec(owned, jobSpec));
+}
+
+/** 같은 직업을 이미 쓰면 빼고, 없으면 장착합니다. id를 함께 저장해 이름·아이콘이 바뀌어도 같은 직업으로 봅니다. */
+export function toggleJobAssignment(jobs, jobSpec, catalog = []) {
     const list = Array.isArray(jobs) ? jobs.slice() : [];
-    if (!name) return list;
-    const idx = list.findIndex((job) => getJobEntryName(job) === name);
+    if (!jobSpec || (!jobSpec.name && !jobSpec.id)) return list;
+    const idx = list.findIndex((job) => {
+        const resolved = Array.isArray(catalog) && catalog.length > 0
+            ? (resolveStudentJobsFromCatalog([job], catalog)[0] || job)
+            : job;
+        return ownedJobMatchesSpec(resolved, jobSpec);
+    });
     if (idx > -1) {
         list.splice(idx, 1);
         return list;
     }
-    list.push({
+    const name = String((jobSpec && jobSpec.name) || '').trim();
+    if (!name) return list;
+    const entry = {
         name,
         icon: String((jobSpec && jobSpec.icon) || 'fa-star'),
         color: String((jobSpec && jobSpec.color) || 'text-blue-500'),
-    });
+    };
+    if (jobSpec.id != null && jobSpec.id !== '') entry.id = String(jobSpec.id);
+    list.push(entry);
     return list;
 }

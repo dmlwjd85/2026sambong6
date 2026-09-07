@@ -341,7 +341,8 @@ import {
     normalizeJobColor,
     normalizeJobIcon,
     pickUnusedJobLook,
-    studentHasJobName,
+    resolveStudentJobsFromCatalog,
+    studentHasJob,
     toggleJobAssignment,
 } from './lib/jobs.js';
 import {
@@ -4185,10 +4186,16 @@ function redrawPlazaGrantsUi() {
             return getJobEntryName(job);
         }
 
-        /** 편의점 매니저 뱃지(직업)를 표시 중인지 확인 */
+        /** 편의점 매니저 뱃지(직업)를 표시 중인지 확인 — id(job12) 또는 이름으로 봅니다. */
         function hasConvenienceManagerJob(jobs) {
-            const list = Array.isArray(jobs) ? jobs : [];
-            return list.some((job) => getStudentJobName(job) === '편의점 매니저');
+            const catalog = getJobCatalog();
+            const resolved = resolveStudentJobsFromCatalog(jobs, catalog);
+            const live = catalog.find((job) => String(job.id) === 'job12');
+            return resolved.some((job) => {
+                if (String(job.id || '') === 'job12') return true;
+                if (live && studentHasJob([job], live, catalog)) return true;
+                return getStudentJobName(job) === '편의점 매니저';
+            });
         }
 
         /** 마스터 또는 직업에 '편의점 매니저'가 있는 학생은 주문을 확인·처리할 수 있음 */
@@ -4295,6 +4302,13 @@ function redrawPlazaGrantsUi() {
             const overrides = getJobOverrides();
             const baseJobs = JOB_DATA.map((job) => sanitizeJobItem({ ...job, ...(overrides[job.id] || {}) }, job.id));
             return [...baseJobs, ...getCustomJobs()].filter((job) => !deleted.has(String(job.id)));
+        }
+
+        /** 직업 관리에서 이름·아이콘이 바뀌면 광장 카드도 바로 다시 그립니다. */
+        function refreshPlazaJobLooks() {
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
         }
 
         /** 기본 상점 아이템 + 마스터 추가 아이템 */
@@ -14556,13 +14570,15 @@ ${subjectLine}
             listEl.innerHTML = rows.join('') || '<div class="text-slate-500 text-center py-3">퀘스트가 없습니다.</div>';
         }
 
-        function listJobWearers(jobName) {
+        function listJobWearers(job) {
+            const catalog = getJobCatalog();
+            const spec = job && typeof job === 'object' ? job : { name: job };
             const rows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
             return rows
                 .filter((stu) => {
                     const sid = String(stu && stu.id || '');
                     if (!sid || sid === 'gm' || sid === 'gm_a') return false;
-                    return studentHasJobName(stu.jobs, jobName);
+                    return studentHasJob(stu.jobs, spec, catalog);
                 })
                 .map((stu) => ({
                     id: String(stu.id),
@@ -14602,12 +14618,13 @@ ${subjectLine}
             const selectedStu = selectedId
                 ? (window.allStudentsData || []).find((s) => String(s.id) === selectedId)
                 : null;
+            const catalog = getJobCatalog();
             const targetJobs = isMaster
                 ? ((selectedStu && selectedStu.jobs) || [])
                 : ((window.playerState && window.playerState.jobs) || []);
-            jg.innerHTML = getJobCatalog().map((job) => {
-                const isEquipped = studentHasJobName(targetJobs, job.name);
-                const wearers = isMaster ? listJobWearers(job.name) : [];
+            jg.innerHTML = catalog.map((job) => {
+                const isEquipped = studentHasJob(targetJobs, job, catalog);
+                const wearers = isMaster ? listJobWearers(job) : [];
                 const wearerHtml = wearers.map((w) => {
                     const canEdit = canEditStudentAsAdmin(w.id);
                     const btn = canEdit
@@ -15623,9 +15640,10 @@ ${subjectLine}
                 const shieldHtml = hp > 0 ? `<div class="plaza-card-extra plaza-hp-badge absolute -top-2 -right-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
                 let jobHtml = '';
-                if (displayData.jobs && displayData.jobs.length > 0) {
-                    const jobIcons = displayData.jobs.map(j => `
-                        <div class="w-5 h-5 rounded-full bg-slate-900 border flex items-center justify-center ${j.color} border-slate-600 shadow-sm" title="${j.name}">
+                const plazaJobs = resolveStudentJobsFromCatalog(displayData.jobs, getJobCatalog());
+                if (plazaJobs.length > 0) {
+                    const jobIcons = plazaJobs.map(j => `
+                        <div class="w-5 h-5 rounded-full bg-slate-900 border flex items-center justify-center ${j.color} border-slate-600 shadow-sm" title="${escapeHtmlAttr(j.name)}">
                             <i class="fa-solid ${j.icon} text-[9px]"></i>
                         </div>
                     `).join('');
@@ -15643,20 +15661,19 @@ ${subjectLine}
                                 </div>`;
                 }
 
-                let gmControls = canEdit && !isGMCard ? `
-                    <div class="plaza-gm-controls w-full mt-1.5 pt-1.5 border-t border-slate-700/50 flex flex-col gap-0.5 z-20" onclick="event.stopPropagation();">
-                        <div class="flex gap-0.5">
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="flex-1 bg-sb-blue/10 text-sb-blue text-[9px] font-bold py-1 rounded">+1X</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="flex-1 bg-sb-blue/20 text-sb-blue text-[9px] font-bold py-1 rounded">+5X</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1X</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-5X</button>
-                        </div>
-                        <div class="flex gap-0.5">
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="flex-1 bg-sb-gold/10 text-sb-gold text-[9px] font-bold py-1 rounded">+1${getCurrencyUnit()}</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${targetId}', this)" class="flex-1 bg-sb-gold/20 text-sb-gold text-[9px] font-bold py-1 rounded">+2${getCurrencyUnit()}</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="flex-1 bg-slate-700/80 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-1${getCurrencyUnit()}</button>
-                            <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -2, '${targetId}', this)" class="flex-1 bg-slate-700 text-slate-300 text-[9px] font-bold py-1 rounded hover:bg-sb-red">-2${getCurrencyUnit()}</button>
-                        </div>
+                const gmXpSide = canEdit && !isGMCard ? `
+                    <div class="plaza-gm-side plaza-gm-xp plaza-gm-controls" onclick="event.stopPropagation();">
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+1X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5X</button>
+                    </div>` : '';
+                const gmBongSide = canEdit && !isGMCard ? `
+                    <div class="plaza-gm-side plaza-gm-bong plaza-gm-controls" onclick="event.stopPropagation();">
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+1${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+2${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -2, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-2${getCurrencyUnit()}</button>
                     </div>` : '';
 
                 if (isGMCard) {
@@ -15667,19 +15684,25 @@ ${subjectLine}
                         : (getStaffMember('gm')?.label || '마스터');
                     const badge = isA ? '해적두목' : '마스터';
                     return `
-                    <div class="plaza-card plaza-staff-card ${themeClass} w-full relative">
-                        <span class="plaza-staff-badge">${badge}</span>
+                    <div class="plaza-card plaza-staff-card plaza-staff-banner ${themeClass} w-full relative">
+                        <span class="plaza-staff-spark" style="top:14%;left:6%"></span>
+                        <span class="plaza-staff-spark" style="top:22%;right:10%;animation-delay:.35s"></span>
+                        <span class="plaza-staff-spark" style="bottom:18%;left:18%;animation-delay:.8s"></span>
+                        <span class="plaza-staff-spark" style="bottom:28%;right:16%;animation-delay:1.15s"></span>
                         <div class="plaza-staff-face-wrap">
                             <div class="plaza-staff-ring" aria-hidden="true"></div>
                             <div class="plaza-card-face plaza-staff-face">
                                 ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: false, portraitClass: 'char-portrait-staff' })}
                             </div>
                         </div>
-                        <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
-                        <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} w-full text-center truncate border-2 ${isA ? 'border-cyan-300' : 'border-amber-300'}">
-                            ${idLabel}
+                        <div class="plaza-staff-copy">
+                            <span class="plaza-staff-badge">${badge}</span>
+                            <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
+                            <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} truncate border-2 ${isA ? 'border-cyan-300' : 'border-amber-300'}">
+                                ${idLabel}
+                            </div>
+                            ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
-                        ${buildPlazaStatusMessageHtml(displayData)}
                     </div>`;
                 }
 
@@ -15687,13 +15710,19 @@ ${subjectLine}
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
-                    ${shieldHtml}${jobHtml}${condHtml}
-                    <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
-                        <div class="relative inline-block leading-none">${face}</div>
+                    <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
+                        ${gmXpSide}
+                        <div class="plaza-card-main">
+                            ${shieldHtml}${jobHtml}${condHtml}
+                            <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
+                                <div class="relative inline-block leading-none">${face}</div>
+                            </div>
+                            <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
+                            <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
+                            ${buildPlazaStatusMessageHtml(displayData)}
+                        </div>
+                        ${gmBongSide}
                     </div>
-                    <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
-                    <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
-                    ${buildPlazaStatusMessageHtml(displayData)}
                     
                     <!-- 파랑=경험치, 금색=봉. 단위는 생략하고 색으로 구분합니다. -->
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
@@ -15701,8 +15730,6 @@ ${subjectLine}
                         ${buildPlazaLearningThermometerHtml(targetId)}
                         <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
-
-                    ${gmControls}
                 </div>`;
             };
 
@@ -15732,7 +15759,7 @@ ${subjectLine}
                 return;
             }
 
-            // 마스터는 교실 앞(세로로 긴 카드), 해적섬 두목은 교실 뒤
+            // 마스터는 교실 앞(가로로 긴 배너 카드), 해적섬 두목은 교실 뒤
             if (staffRow) {
                 staffRow.innerHTML = createCard(gmData || { id: 'gm', xp: 0, bong: 0 }, true, getStaffCardLabel('gm'));
                 staffRow.classList.add('is-visible');
@@ -17634,10 +17661,11 @@ ${subjectLine}
             
             const dashJobEl = document.getElementById('dashJobBadge');
             if (dashJobEl) {
+                const liveJobs = resolveStudentJobsFromCatalog(window.playerState.jobs || [], getJobCatalog());
                 dashJobEl.innerHTML = window.playerState.isAdmin
                     ? ''
-                    : (window.playerState.jobs||[]).map(j => `
-                <div class="w-6 h-6 rounded-full bg-slate-900 border flex items-center justify-center ${j.color}">
+                    : liveJobs.map(j => `
+                <div class="w-6 h-6 rounded-full bg-slate-900 border flex items-center justify-center ${j.color}" title="${escapeHtmlAttr(j.name)}">
                     <i class="fa-solid ${j.icon} text-[10px]"></i>
                 </div>`).join('');
             }
@@ -20194,6 +20222,7 @@ ${subjectLine}
                 renderJobGrid();
                 renderJobManagementAdminPanel();
                 updateUI();
+                refreshPlazaJobLooks();
                 await window.customAlert('직업 항목이 저장되었습니다.');
             } catch (e) {
                 console.error('saveJobAdmin', e);
@@ -20219,6 +20248,7 @@ ${subjectLine}
                 renderJobGrid();
                 renderJobManagementAdminPanel();
                 updateUI();
+                refreshPlazaJobLooks();
                 await window.customAlert(custom ? '직업이 삭제되었습니다.' : '기본 직업이 숨김 처리되었습니다.');
             } catch (e) {
                 console.error('deleteJobAdmin', e);
@@ -20237,6 +20267,7 @@ ${subjectLine}
                 renderJobGrid();
                 renderJobManagementAdminPanel();
                 updateUI();
+                refreshPlazaJobLooks();
                 await window.customAlert('직업이 복구되었습니다.');
             } catch (e) {
                 console.error('restoreJobAdmin', e);
@@ -20842,9 +20873,10 @@ ${subjectLine}
                 return await window.customAlert('마스터는 직업 카드로 학생 직업을 달거나 벗깁니다.\n먼저 학생을 고른 뒤 카드를 눌러 주세요.');
             }
             if (!window.playerState.jobs) window.playerState.jobs = [];
-            const existingIndex = window.playerState.jobs.findIndex(j => j.name === jobName);
-            if (existingIndex > -1) window.playerState.jobs.splice(existingIndex, 1);
-            else window.playerState.jobs.push({ name: jobName, icon: iconClass, color: colorClass });
+            const catalog = getJobCatalog();
+            const job = catalog.find((j) => j.name === jobName)
+                || { name: jobName, icon: iconClass, color: colorClass };
+            window.playerState.jobs = toggleJobAssignment(window.playerState.jobs, job, catalog);
             
             updateUI(); saveDataToCloud(); window.switchTab('plaza');
         };
@@ -20879,14 +20911,15 @@ ${subjectLine}
                     const row = (window.allStudentsData || []).find((s) => String(s.id) === sid);
                     if (row) stu = { ...row };
                 }
-                const nextJobs = toggleJobAssignment(stu.jobs, job);
+                const catalog = getJobCatalog();
+                const nextJobs = toggleJobAssignment(stu.jobs, job, catalog);
                 await setDoc(ref, { jobs: nextJobs }, { merge: true });
                 mergeStudentDocIntoPlazaCache(sid, { ...stu, id: sid, jobs: nextJobs });
                 if (typeof renderJobGrid === 'function') renderJobGrid();
                 if (typeof window.renderPlaza === 'function') {
                     window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
                 }
-                const on = studentHasJobName(nextJobs, job.name);
+                const on = studentHasJob(nextJobs, job, catalog);
                 const who = STUDENT_NAMES[sid] || sid;
                 if (typeof window.showToast === 'function') {
                     window.showToast(on ? `${who} → ${job.name} 장착` : `${who} → ${job.name} 해제`);
@@ -22037,8 +22070,12 @@ ${subjectLine}
                     for (const stu of stuList) {
                         let pay = 0;
                         if (stu.jobs) {
-                            stu.jobs.forEach(j => {
-                                const ji = getJobCatalog().find(jd => jd.name === j.name || (jd.icon === j.icon && jd.color === j.color));
+                            const catalog = getJobCatalog();
+                            resolveStudentJobsFromCatalog(stu.jobs, catalog).forEach((j) => {
+                                const ji = catalog.find((jd) =>
+                                    (jd.id && j.id && String(jd.id) === String(j.id))
+                                    || jd.name === j.name
+                                    || (jd.icon === j.icon && jd.color === j.color));
                                 if (ji) pay += ji.pay;
                             });
                         }

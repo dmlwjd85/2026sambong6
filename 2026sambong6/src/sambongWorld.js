@@ -148,9 +148,12 @@ import {
 } from './lib/gear.js';
 import {
     applyBankTransfer,
+    bankMaturedTermIds,
     bankTransferWalletFields,
     canBankTransfer,
+    mergeBankTermsDroppingMatured,
     resolveBankSaveBongDelta,
+    resolveBankSaveBongDeltaAfterMaturity,
     sanitizeBankTransferFee,
     BANK_TRANSFER_AMOUNT_MAX,
 } from './lib/bankTransfer.js';
@@ -8035,7 +8038,16 @@ ${subjectLine}
             if (!validation.ok) {
                 return { ...accrued, rejected: true };
             }
-            const bongDelta = normalizeBongValue(resolveBankSaveBongDelta(validation, target.bong, serverBase.bong));
+            const maturedIds = bankMaturedTermIds(serverBase.bankTermDeposits, accrued.bankTermDeposits);
+            const removedIds = findRemovedTermDeposits(serverBase.bankTermDeposits, target.bankTermDeposits).map((t) => t.id);
+            let bongDelta = normalizeBongValue(resolveBankSaveBongDelta(validation, target.bong, serverBase.bong));
+            // 만기 원금+이자는 이미 accrued.bong에 있습니다. 같은 적금을 중도해지로 보면 원금이 한 번 더 붙습니다.
+            bongDelta = normalizeBongValue(resolveBankSaveBongDeltaAfterMaturity(validation, bongDelta, maturedIds, removedIds));
+            const nextTerms = mergeBankTermsDroppingMatured(
+                target.bankTermDeposits,
+                accrued.bankTermDeposits,
+                maturedIds,
+            );
             const regDelta = normalizeBongValue(target.bankRegularSavings - serverBase.bankRegularSavings);
             let bonusDate = accrued.bankDailyBonusLastDate;
             if (target.bankDailyBonusLastDate === accrued.bankDailyBonusLastDate || accrued.bonusGranted > 0) {
@@ -8043,7 +8055,7 @@ ${subjectLine}
             }
             return {
                 bankRegularSavings: normalizeBongValue(accrued.bankRegularSavings + regDelta),
-                bankTermDeposits: target.bankTermDeposits,
+                bankTermDeposits: nextTerms,
                 bong: normalizeBongValue(accrued.bong + bongDelta),
                 bankDailyBonusLastDate: bonusDate,
                 maturityMsgs: accrued.maturityMsgs,

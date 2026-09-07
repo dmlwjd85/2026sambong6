@@ -101,3 +101,49 @@ export function resolveBankSaveBongDelta(validation, targetBong, serverBong) {
     }
     return Math.floor(Number(targetBong) || 0) - Math.floor(Number(serverBong) || 0);
 }
+
+function termId(t) {
+    return String((t && t.id) || '');
+}
+
+/** 서버에서 만기 처리로 빠진 적금 ID */
+export function bankMaturedTermIds(serverTerms, accruedTerms) {
+    const left = new Set(
+        (Array.isArray(accruedTerms) ? accruedTerms : []).map(termId).filter(Boolean)
+    );
+    return (Array.isArray(serverTerms) ? serverTerms : [])
+        .map(termId)
+        .filter((id) => id && !left.has(id));
+}
+
+/**
+ * 만기 적금을 중도해지로 보면 원금이 accrued(원금+이자) 위에 한 번 더 붙습니다.
+ * 만기 저장은 로컬에서 그 적금을 지우고 원금+이자를 지갑에 넣은 뒤 오기 때문입니다.
+ */
+export function resolveBankSaveBongDeltaAfterMaturity(validation, bongDelta, maturedIds, removedIds) {
+    const delta = Math.floor(Number(bongDelta) || 0);
+    if (!validation || validation.kind !== 'term_early') return delta;
+    const matured = new Set((maturedIds || []).map((id) => String(id || '')).filter(Boolean));
+    const removed = (removedIds || []).map((id) => String(id || '')).filter(Boolean);
+    if (removed.length === 1 && matured.has(removed[0])) return 0;
+    return delta;
+}
+
+/**
+ * 클라이언트가 만기 적금을 아직 들고 있으면 만기된 목록을 쓰지 않습니다.
+ * 만기 지급은 이미 지갑에 반영했으니, 같은 적금이 남으면 다음 저장에서 또 만기됩니다.
+ */
+export function mergeBankTermsDroppingMatured(targetTerms, accruedTerms, maturedIds) {
+    const ids = new Set((maturedIds || []).map((id) => String(id || '')).filter(Boolean));
+    const target = Array.isArray(targetTerms) ? targetTerms : [];
+    const accrued = Array.isArray(accruedTerms) ? accruedTerms : [];
+    if (!ids.size) return target;
+    const clientStillHasMatured = target.some((t) => ids.has(termId(t)));
+    if (!clientStillHasMatured) return target;
+    const accruedIdSet = new Set(accrued.map(termId).filter(Boolean));
+    const extras = target.filter((t) => {
+        const id = termId(t);
+        return id && !ids.has(id) && !accruedIdSet.has(id);
+    });
+    return accrued.concat(extras);
+}

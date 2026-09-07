@@ -15,9 +15,12 @@ import {
 } from './schoolWeather.js';
 import {
     applyBankTransfer,
+    bankMaturedTermIds,
     bankTransferWalletFields,
     canBankTransfer,
+    mergeBankTermsDroppingMatured,
     resolveBankSaveBongDelta,
+    resolveBankSaveBongDeltaAfterMaturity,
     sanitizeBankTransferFee,
 } from './bankTransfer.js';
 
@@ -111,5 +114,37 @@ describe('계좌이체', () => {
         assert.equal(resolveBankSaveBongDelta({ keepServerBong: true }, 50, 80), 0);
         assert.equal(resolveBankSaveBongDelta({ bongDelta: -20 }, 30, 80), -20);
         assert.equal(resolveBankSaveBongDelta({ ok: true, kind: 'none' }, 90, 80), 10);
+    });
+
+    it('만기 적금을 중도해지로 오인해도 원금을 두 번 주지 않고, 만기된 적금은 목록에서 뺀다', () => {
+        const matured = { id: 'td_old', amount: 100, startDate: '2026-08-01' };
+        const kept = { id: 'td_live', amount: 40, startDate: '2026-09-01' };
+        const added = { id: 'td_new', amount: 20, startDate: '2026-09-07' };
+        const maturedIds = bankMaturedTermIds([matured, kept], [kept]);
+        assert.deepEqual(maturedIds, ['td_old']);
+        assert.equal(
+            resolveBankSaveBongDeltaAfterMaturity(
+                { kind: 'term_early', bongDelta: 100 },
+                100,
+                maturedIds,
+                ['td_old'],
+            ),
+            0,
+        );
+        assert.equal(
+            resolveBankSaveBongDeltaAfterMaturity(
+                { kind: 'term_early', bongDelta: 40 },
+                40,
+                maturedIds,
+                ['td_live'],
+            ),
+            40,
+        );
+        const dropped = mergeBankTermsDroppingMatured([matured, kept, added], [kept], maturedIds);
+        assert.equal(dropped.some((t) => t.id === 'td_old'), false);
+        assert.equal(dropped.some((t) => t.id === 'td_live'), true);
+        assert.equal(dropped.some((t) => t.id === 'td_new'), true);
+        const alreadyDropped = mergeBankTermsDroppingMatured([kept], [kept], maturedIds);
+        assert.deepEqual(alreadyDropped.map((t) => t.id), ['td_live']);
     });
 });

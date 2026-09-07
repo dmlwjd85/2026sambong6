@@ -1929,10 +1929,26 @@ function redrawPlazaGrantsUi() {
             return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none">${wp.emoji || ''}</span>`;
         }
 
-        /** 학생/스태프 초상 + 통짜 캐릭터·무기. */
-        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, portraitClass = '' } = {}) {
+        function shieldMarkHtml(sh) {
+            if (sh && sh.img) {
+                return `<span class="char-shield pointer-events-none z-30"><img src="${sh.img}" alt=""></span>`;
+            }
+            return `<span class="char-shield char-shield-emoji pointer-events-none z-30">${(sh && sh.emoji) || ''}</span>`;
+        }
+
+        function shoeMarkHtml(shoes) {
+            if (shoes && shoes.img) {
+                return `<span class="char-shoes pointer-events-none z-30"><img src="${shoes.img}" alt=""></span>`;
+            }
+            return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30">${(shoes && shoes.emoji) || ''}</span>`;
+        }
+
+        /** 학생/스태프 초상 + 통짜 캐릭터·무기·방패·신발. 방패는 오른쪽, 신발은 아래. */
+        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, showShield, showShoes, showRankBg = false, portraitClass = '' } = {}) {
             const row = data || {};
             const equipped = row.equippedSkins || {};
+            const drawShield = showShield !== undefined ? !!showShield : !!showWeapon;
+            const drawShoes = showShoes !== undefined ? !!showShoes : !!showWeapon;
             let inner = '';
             if (isStaff) {
                 const look = resolveStaffLook(row.staffLookId, studentId);
@@ -1947,12 +1963,29 @@ function redrawPlazaGrantsUi() {
                     inner = charImgTag(base.img, portraitClass);
                 }
             }
+            let rankLayer = '';
+            if (showRankBg && !isStaff) {
+                const lv = getLevelInfo(row.xp || 0);
+                if (lv.info && lv.info.img) {
+                    rankLayer = `<span class="char-rank-bg" aria-hidden="true"><img src="${lv.info.img}" alt=""></span>`;
+                } else if (lv.info && lv.info.prop) {
+                    rankLayer = `<span class="char-rank-bg char-rank-bg-emoji" aria-hidden="true">${lv.info.prop}</span>`;
+                }
+            }
             let overlays = '';
             if (showWeapon && row.equippedWeapon) {
                 const wp = WEAPON_DATA.find((w) => w.id === row.equippedWeapon);
                 if (wp) overlays += weaponMarkHtml(wp);
             }
-            return `<div class="char-avatar-stack relative inline-block leading-none">${inner}${overlays}</div>`;
+            if (drawShield && row.equippedShield) {
+                const sh = getGear(row.equippedShield) || SHIELD_DATA.find((g) => g.id === row.equippedShield);
+                if (sh) overlays += shieldMarkHtml(sh);
+            }
+            if (drawShoes && row.equippedShoes) {
+                const shoes = getGear(row.equippedShoes) || SHOE_DATA.find((g) => g.id === row.equippedShoes);
+                if (shoes) overlays += shoeMarkHtml(shoes);
+            }
+            return `<div class="char-avatar-stack relative inline-block leading-none">${rankLayer}${inner}${overlays}</div>`;
         }
 
         function applyEquippedAura(data, fallbackBorder, fallbackGlow) {
@@ -15165,43 +15198,13 @@ ${subjectLine}
         // ==========================================
         // ★ 광장 및 관리자 테이블 렌더링 ★
         // ==========================================
-        const PLAZA_CARD_SIZE_KEY = 'sambong_plaza_card_size';
-        /** @type {'lg'|'md'|'sm'} */
-        let plazaCardSize = 'sm';
-
-        function readPlazaCardSize() {
-            try {
-                const v = localStorage.getItem(PLAZA_CARD_SIZE_KEY);
-                if (v === 'lg' || v === 'md' || v === 'sm') return v;
-            } catch (_) { /* ignore */ }
-            return 'sm';
-        }
-
-        function applyPlazaCardSizeUI(size) {
-            plazaCardSize = size === 'lg' || size === 'md' || size === 'sm' ? size : 'sm';
+        /** 광장 학생 카드는 크게 고정. 열 수는 부동산 자리표를 따릅니다. */
+        function applyPlazaCardSizeUI() {
             const container = document.getElementById('plazaContainer');
-            if (container) {
-                container.classList.remove('plaza-cards-lg', 'plaza-cards-md', 'plaza-cards-sm');
-                container.classList.add('plaza-cards', `plaza-cards-${plazaCardSize}`, 'plaza-cards-seating');
-            }
-            ['lg', 'md', 'sm'].forEach((s) => {
-                const btn = document.getElementById('plazaSize-' + s);
-                if (!btn) return;
-                const on = s === plazaCardSize;
-                btn.className = on
-                    ? 'plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/60 bg-emerald-900/40 text-emerald-200'
-                    : 'plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300';
-            });
+            if (!container) return;
+            container.classList.remove('plaza-cards-md', 'plaza-cards-sm');
+            container.classList.add('plaza-cards', 'plaza-cards-lg', 'plaza-cards-seating');
         }
-
-        /** 광장 학생 카드 크기: lg(크게) / md(중간) / sm(작게). 열 수는 부동산 자리표를 따릅니다. */
-        window.setPlazaCardSize = function(size) {
-            applyPlazaCardSizeUI(size);
-            try { localStorage.setItem(PLAZA_CARD_SIZE_KEY, plazaCardSize); } catch (_) { /* ignore */ }
-            if (typeof window.renderPlaza === 'function') {
-                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
-            }
-        };
 
         function buildPlazaStatusMessageHtml(data) {
             const msg = sanitizeStatusMessage(data && data.statusMessage);
@@ -15212,7 +15215,7 @@ ${subjectLine}
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
-            applyPlazaCardSizeUI(readPlazaCardSize());
+            applyPlazaCardSizeUI();
 
             const createCard = (data, isGMCard, idLabel) => {
                 const emptyId = idLabel.split('.')[0].trim();
@@ -15253,11 +15256,12 @@ ${subjectLine}
                     studentId: targetId,
                     data: displayData,
                     isStaff: !!isGMCard,
+                    showRankBg: !isGMCard,
                 });
                 const overlays = '';
                 
                 const hp = shieldHpOf(displayData);
-                const shieldHtml = hp > 0 ? `<div class="plaza-card-extra absolute -top-2 -left-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
+                const shieldHtml = hp > 0 ? `<div class="plaza-card-extra plaza-hp-badge absolute -top-2 -right-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
                 let jobHtml = '';
                 if (displayData.jobs && displayData.jobs.length > 0) {
@@ -15266,8 +15270,7 @@ ${subjectLine}
                             <i class="fa-solid ${j.icon} text-[9px]"></i>
                         </div>
                     `).join('');
-                    const topMargin = hp > 0 ? 'top-4' : 'top-1'; 
-                    jobHtml = `<div class="plaza-card-extra absolute ${topMargin} left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
+                    jobHtml = `<div class="plaza-card-extra absolute top-1 left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
                 }
 
                 let condHtml = '';
@@ -15275,7 +15278,8 @@ ${subjectLine}
                     const emo = displayData.condition.emotion.icon;
                     const bColor = displayData.condition.body ? displayData.condition.body.color : 'text-slate-400';
                     const bIcon = displayData.condition.body ? displayData.condition.body.icon : 'fa-battery-half';
-                    condHtml = `<div class="plaza-card-extra absolute top-1 right-1 bg-slate-900/80 px-1.5 py-0.5 rounded-full border border-slate-600 flex items-center gap-1 shadow z-20">
+                    const condTop = hp > 0 ? 'top-7' : 'top-1';
+                    condHtml = `<div class="plaza-card-extra absolute ${condTop} right-1 bg-slate-900/80 px-1.5 py-0.5 rounded-full border border-slate-600 flex items-center gap-1 shadow z-20">
                                     <span class="text-[10px] leading-none">${emo}</span><i class="fa-solid ${bIcon} text-[10px] ${bColor} leading-none"></i>
                                 </div>`;
                 }
@@ -15321,13 +15325,15 @@ ${subjectLine}
                 }
 
                 const walletBong = getStudentWalletBong(displayData);
+                const rankBgHtml = lv.info.img
+                    ? `<div class="plaza-card-rank-bg" aria-hidden="true"><img src="${lv.info.img}" alt=""></div>`
+                    : '';
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative">
-                    ${shieldHtml}${jobHtml}${condHtml}
+                    ${rankBgHtml}${shieldHtml}${jobHtml}${condHtml}
                     <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
                         <div class="relative inline-block leading-none">${face}</div>
-                        <div class="text-[0.6em] leading-none">${rankBadgeHtml(lv.info, 'rank-badge-plaza')}</div>
                     </div>
                     <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                     <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
@@ -15384,7 +15390,7 @@ ${subjectLine}
             const studentRows = Array.isArray(studentsData) ? studentsData : [];
             const estateReady = window.estateState && Array.isArray(window.estateState.seats) && window.estateState.seats.length > 0;
             const layout = estateReady ? getEstateLayout(window.estateState) : null;
-            const sizeCols = plazaCardSize === 'lg' ? 4 : plazaCardSize === 'md' ? 5 : 6;
+            const sizeCols = 4;
             const plan = estateReady
                 ? buildPlazaSeatingPlan({
                     seats: window.estateState.seats,
@@ -15452,7 +15458,7 @@ ${subjectLine}
                 
                 if(stu) {
                     const exactLv = calculateExactLevel(stu.xp || 0);
-                    const faceEmoji = buildCharacterAvatarHtml({ studentId: sid, data: stu, portraitClass: 'char-portrait-xs' });
+                    const faceEmoji = buildCharacterAvatarHtml({ studentId: sid, data: stu, portraitClass: 'char-portrait-xs', showShield: false, showShoes: false });
                     
                     let condStr = '';
                     if(stu.condition && stu.condition.emotion) {
@@ -17231,14 +17237,25 @@ ${subjectLine}
                 studentId: mySid,
                 data: window.playerState,
                 isStaff: window.playerState.isAdmin && !useStudentLook,
+                showRankBg: useStudentLook,
                 portraitClass: (window.playerState.isAdmin && !useStudentLook) ? 'char-portrait-staff char-portrait-lg' : 'char-portrait-lg',
             });
             const overlays = '';
             
             const dashCard = document.getElementById('dashAvatarCard');
             if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
+            const dashRankBg = document.getElementById('dashRankBg');
+            if (dashRankBg) {
+                if (useStudentLook && lvInfo.info && lvInfo.info.img) {
+                    dashRankBg.innerHTML = `<img src="${lvInfo.info.img}" alt="">`;
+                    dashRankBg.classList.add('is-on');
+                } else {
+                    dashRankBg.innerHTML = '';
+                    dashRankBg.classList.remove('is-on');
+                }
+            }
             
-            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>${window.playerState.isAdmin ? '' : `<div class="absolute -bottom-1 -right-2 animate-pulse">${rankBadgeHtml(lvInfo.info, 'rank-badge-dash')}</div>`}`;
+            document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>`;
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();
             if (window.playerState && window.playerState.isAdmin) {

@@ -702,6 +702,7 @@
                 <div class="flex flex-col gap-4 sm:gap-6">
                     <!-- 아바타 카드 -->
                     <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
+                        <div id="dashRankBg" class="dash-rank-bg" aria-hidden="true"></div>
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
                         <div id="dashAvatar" class="text-6xl sm:text-7xl mb-4 relative z-10 drop-shadow-xl avatar-bounce mt-4">👦</div>
@@ -966,12 +967,6 @@
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">부동산 자리표와 같은 교실 배열입니다. 앞쪽은 마스터, 뒤쪽은 해적섬 두목입니다.</p>
                     <p class="text-[9px] text-slate-500 mt-0.5 sm:hidden">자리 배열·배치는 부동산에서 바꾸면 광장에도 바로 반영됩니다.</p>
                 </div>
-                <div id="plazaCardSizeBar" class="flex items-center gap-1 shrink-0" role="group" aria-label="학생 카드 크기">
-                    <span class="text-[9px] text-slate-500 font-bold mr-0.5 hidden sm:inline">카드</span>
-                    <button type="button" id="plazaSize-lg" onclick="window.setPlazaCardSize('lg')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300" title="크게">크게</button>
-                    <button type="button" id="plazaSize-md" onclick="window.setPlazaCardSize('md')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300" title="중간">중간</button>
-                    <button type="button" id="plazaSize-sm" onclick="window.setPlazaCardSize('sm')" class="plaza-size-btn min-h-[36px] px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-500/60 bg-emerald-900/40 text-emerald-200" title="작게">작게</button>
-                </div>
             </div>
                 <!-- 마스터 전용 광장 일괄 컨트롤 -->
                 <div id="plazaGMControls" class="hidden mb-3 bg-slate-800/80 p-3 sm:p-4 rounded-2xl border border-sb-gold shadow-lg">
@@ -1004,7 +999,7 @@
                 <div class="plaza-classroom-board" aria-hidden="true">칠판 (교실 앞)</div>
                 <!-- 마스터: 교실 앞쪽, 세로로 긴 카드 -->
                 <div id="plazaStaffRow" class="plaza-staff-row plaza-staff-front" aria-label="마스터 (교실 앞)"></div>
-                <div class="plaza-cards plaza-cards-sm plaza-cards-seating w-full" id="plazaContainer">
+                <div class="plaza-cards plaza-cards-lg plaza-cards-seating w-full" id="plazaContainer">
                     <div class="text-slate-500 text-xs p-4">데이터 로딩 중...</div>
                 </div>
                 <div id="plazaUnseated" class="plaza-unseated hidden" aria-label="자리 미지정"></div>

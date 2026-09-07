@@ -34,6 +34,11 @@ describe('등급 안내', () => {
         const names = RANK_LOOKS.map((r) => r.name);
         assert.deepEqual(names, ['새내기', '초보', '중수', '고수', '수호자', '전설']);
         assert.equal(resolveRankLook('고수').name, '고수');
+        RANK_LOOKS.forEach((r) => {
+            assert.match(r.hint, /원형 테두리/);
+        });
+        assert.match(resolveRankLook('고수').hint, /금색/);
+        assert.match(resolveRankLook('전설').hint, /붉은/);
         assert.equal(resolveRankLook('없는등급').name, '새내기');
     });
 });

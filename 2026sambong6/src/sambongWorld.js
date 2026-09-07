@@ -1929,7 +1929,8 @@ function redrawPlazaGrantsUi() {
         ];
 
         function charImgTag(src, extraClass = '') {
-            return `<img src="${src}" alt="" class="char-portrait ${extraClass}" draggable="false">`;
+            // 흰 네모 모서리를 원으로 자르고, 안쪽 흰 테두리는 클립 안에서 확대해 가립니다.
+            return `<span class="char-portrait-clip ${extraClass}"><img src="${src}" alt="" class="char-portrait" draggable="false"></span>`;
         }
 
         function cosmeticMarkHtml(skin) {
@@ -1982,12 +1983,16 @@ function redrawPlazaGrantsUi() {
                 }
             }
             let rankLayer = '';
+            let rankStackClass = '';
             if (showRankBg && !isStaff) {
                 const lv = getLevelInfo(row.xp || 0);
+                const ring = (lv.info && lv.info.ring) || '';
                 if (lv.info && lv.info.img) {
                     rankLayer = `<span class="char-rank-bg" aria-hidden="true"><img src="${lv.info.img}" alt=""></span>`;
+                    rankStackClass = ` char-avatar-has-rank${ring ? ` char-rank-${ring}` : ''}`;
                 } else if (lv.info && lv.info.prop) {
                     rankLayer = `<span class="char-rank-bg char-rank-bg-emoji" aria-hidden="true">${lv.info.prop}</span>`;
+                    rankStackClass = ` char-avatar-has-rank${ring ? ` char-rank-${ring}` : ''}`;
                 }
             }
             let overlays = '';
@@ -2003,7 +2008,7 @@ function redrawPlazaGrantsUi() {
                 const shoes = getGear(row.equippedShoes) || SHOE_DATA.find((g) => g.id === row.equippedShoes);
                 if (shoes) overlays += shoeMarkHtml(shoes);
             }
-            return `<div class="char-avatar-stack relative inline-block leading-none">${rankLayer}${inner}${overlays}</div>`;
+            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none">${rankLayer}${inner}${overlays}</div>`;
         }
 
         function applyEquippedAura(data, fallbackBorder, fallbackGlow) {
@@ -2033,21 +2038,22 @@ function redrawPlazaGrantsUi() {
         ];
 
         const LEVEL_DATA = [
-            { max: 1499, name: '새내기', prop: '🥚', img: 'ranks/rank-saenaegi.webp', borderColor: 'border-slate-300', bgColor: 'bg-slate-800', textColor: 'text-slate-100', anim: 'avatar-bounce' },
-            { max: 4499, name: '초보', prop: '🐣', img: 'ranks/rank-chobo.webp', borderColor: 'border-sb-green', bgColor: 'bg-green-800', textColor: 'text-sb-green', anim: 'avatar-bounce' },
-            { max: 9999, name: '중수', prop: '🐥', img: 'ranks/rank-jungsu.webp', borderColor: 'border-sky-400', bgColor: 'bg-sky-800', textColor: 'text-sky-300', anim: 'avatar-bounce' },
-            { max: 21999, name: '고수', prop: '🦅', img: 'ranks/rank-gosu.webp', borderColor: 'border-yellow-400', bgColor: 'bg-yellow-800', textColor: 'text-yellow-300', anim: 'avatar-flex' },
-            { max: 39999, name: '수호자', prop: '☄️', img: 'ranks/rank-guardian.webp', borderColor: 'border-fuchsia-400', bgColor: 'bg-fuchsia-800', textColor: 'text-fuchsia-200', anim: 'avatar-float' },
-            { max: Infinity, name: '전설', prop: '🐦‍🔥', img: 'ranks/rank-legend.webp', borderColor: 'border-sb-red', bgColor: 'bg-rose-800', textColor: 'text-sb-red', anim: 'avatar-legend' }
+            { max: 1499, name: '새내기', prop: '🥚', img: 'ranks/rank-saenaegi.webp', ring: 'saenaegi', borderColor: 'border-slate-300', bgColor: 'bg-slate-800', textColor: 'text-slate-100', anim: 'avatar-bounce' },
+            { max: 4499, name: '초보', prop: '🐣', img: 'ranks/rank-chobo.webp', ring: 'chobo', borderColor: 'border-sb-green', bgColor: 'bg-green-800', textColor: 'text-sb-green', anim: 'avatar-bounce' },
+            { max: 9999, name: '중수', prop: '🐥', img: 'ranks/rank-jungsu.webp', ring: 'jungsu', borderColor: 'border-sky-400', bgColor: 'bg-sky-800', textColor: 'text-sky-300', anim: 'avatar-bounce' },
+            { max: 21999, name: '고수', prop: '🦅', img: 'ranks/rank-gosu.webp', ring: 'gosu', borderColor: 'border-yellow-400', bgColor: 'bg-yellow-800', textColor: 'text-yellow-300', anim: 'avatar-flex' },
+            { max: 39999, name: '수호자', prop: '☄️', img: 'ranks/rank-guardian.webp', ring: 'guardian', borderColor: 'border-fuchsia-400', bgColor: 'bg-fuchsia-800', textColor: 'text-fuchsia-200', anim: 'avatar-float' },
+            { max: Infinity, name: '전설', prop: '🐦‍🔥', img: 'ranks/rank-legend.webp', ring: 'legend', borderColor: 'border-sb-red', bgColor: 'bg-rose-800', textColor: 'text-sb-red', anim: 'avatar-legend' }
         ];
 
         function rankBadgeHtml(info, extraClass = '') {
             const name = escapeHtmlAttr((info && info.name) || '');
-            const cls = `rank-badge ${extraClass}`.trim();
+            const ring = (info && info.ring) ? ` char-rank-${info.ring}` : '';
+            const clipCls = `rank-badge-clip ${extraClass}${ring}`.trim();
             if (info && info.img) {
-                return `<img src="${info.img}" alt="${name}" class="${cls}" />`;
+                return `<span class="${clipCls}"><img src="${info.img}" alt="${name}" class="rank-badge" /></span>`;
             }
-            return `<span class="${cls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
+            return `<span class="${clipCls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
         }
 
         const STUDENT_NAMES = { 
@@ -21057,10 +21063,11 @@ ${subjectLine}
                 ${staffHtml}
                 ${studentBaseHtml}
                 <div class="char-dress-rank">
-                    ${rank.img ? `<img src="${rank.img}" alt="">` : ''}
+                    ${rank.img ? `<span class="char-dress-rank-art${rank.ring ? ` char-rank-${rank.ring}` : ''}"><img src="${rank.img}" alt=""></span>` : ''}
                     <div>
                         <p class="char-dress-rank-title">등급 · ${rank.name}</p>
                         <p class="char-dress-rank-hint">${look.hint}</p>
+                        <p class="char-dress-rank-hint mt-0.5 text-slate-400">광장·홈 캐릭터 뒤 원형 테두리로 보여요.</p>
                     </div>
                 </div>
                 <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">상점 캐릭터</p>

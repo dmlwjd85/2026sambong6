@@ -35,14 +35,14 @@ export const STAFF_PORTRAITS = {
     gm_a: { img: 'chars/staff-tiger.webp', emoji: '🐯', label: '산군 호랑이', lookId: 'staff_tiger' },
 };
 
-/** 등급 안내 문구 — 착장은 통짜 캐릭터로 바꾸고, 등급은 이름·배지로 표현합니다. */
+/** 등급 안내 문구 — 캐릭터 뒤 원형 테두리 색으로 등급을 구별합니다. */
 export const RANK_LOOKS = [
-    { name: '새내기', hint: '모험의 첫걸음' },
-    { name: '초보', hint: '숲길을 익히는 중' },
-    { name: '중수', hint: '실력이 자리 잡았어요' },
-    { name: '고수', hint: '반에서 든든한 선배' },
-    { name: '수호자', hint: '학급을 지키는 수호자' },
-    { name: '전설', hint: '전설이 되었어요' },
+    { name: '새내기', hint: '은빛 원형 테두리 · 모험의 첫걸음' },
+    { name: '초보', hint: '초록 원형 테두리 · 숲길을 익히는 중' },
+    { name: '중수', hint: '하늘색 원형 테두리 · 실력이 자리 잡았어요' },
+    { name: '고수', hint: '금색 원형 테두리 · 반에서 든든한 선배' },
+    { name: '수호자', hint: '보라 원형 테두리 · 학급을 지키는 수호자' },
+    { name: '전설', hint: '붉은 원형 테두리 · 전설이 되었어요' },
 ];
 
 export function resolveRankLook(rankName) {

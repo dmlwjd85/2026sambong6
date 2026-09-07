@@ -583,7 +583,7 @@
             gap: 0.3rem;
         }
 
-        .plaza-card { min-width: 0; overflow: hidden; }
+        .plaza-card { min-width: 0; overflow: visible; }
         .plaza-card-face { overflow: visible; }
         /* 파랑=경험치, 금색=봉. 단위 글자는 생략하고 색으로만 구분합니다. */
         .plaza-stat-xp { color: #38bdf8; font-variant-numeric: tabular-nums; font-weight: 900; text-shadow: 0 1px 2px #082f49; }
@@ -720,7 +720,7 @@
                 min-height: 0;
                 padding: 0.42rem 0.18rem 0.55rem !important;
                 border-radius: 0.7rem !important;
-                overflow: hidden;
+                overflow: visible;
             }
             .plaza-cards-seating .plaza-card-face {
                 font-size: 1.45rem !important;
@@ -864,12 +864,12 @@
             gap: 0.85rem;
             border-width: 3px !important;
             border-radius: 1.2rem !important;
-            overflow: hidden;
+            overflow: visible;
         }
         .plaza-staff-front .plaza-staff-avatar {
-            flex-basis: 7.4rem;
-            width: 7.4rem;
-            min-width: 7.4rem;
+            flex-basis: 6.6rem;
+            width: 6.6rem;
+            min-width: 6.6rem;
         }
         .plaza-staff-front .plaza-staff-face-wrap {
             width: 5.4rem;
@@ -897,16 +897,17 @@
         }
         @media (max-width: 479px) {
             .plaza-staff-row { gap: 0.5rem; padding: 0.45rem 0.3rem 0.55rem; }
-            .plaza-staff-front .plaza-staff-card { min-height: 7.2rem; padding: 0.7rem 0.7rem 0.7rem 0.7rem !important; overflow: hidden; gap: 0.65rem; }
-            .plaza-staff-front .plaza-staff-avatar { flex-basis: 5.8rem; width: 5.8rem; min-width: 5.8rem; }
+            .plaza-staff-front .plaza-staff-card { min-height: 6.4rem; padding: 0.6rem 0.55rem 0.6rem 0.5rem !important; overflow: visible; gap: 0.4rem; }
+            .plaza-staff-front .plaza-staff-avatar { flex-basis: 4.6rem; width: 4.6rem; min-width: 4.6rem; }
             .plaza-staff-front .plaza-staff-face-wrap { width: 4.4rem; height: 4.4rem; }
         }
         .plaza-staff-card {
             position: relative;
-            overflow: hidden;
+            overflow: visible;
             display: flex;
             flex-direction: row;
             align-items: center;
+            flex-wrap: nowrap;
             min-width: 0;
             padding: 0.7rem 1rem 0.7rem 0.75rem !important;
             border-radius: 1rem !important;
@@ -935,8 +936,8 @@
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
         }
         .plaza-staff-card > * { position: relative; z-index: 2; }
-        .plaza-staff-card > .plaza-staff-avatar { z-index: 3; }
-        .plaza-staff-card > .plaza-staff-copy { z-index: 1; }
+        .plaza-staff-card > .plaza-staff-avatar { z-index: 2; }
+        .plaza-staff-card > .plaza-staff-copy { z-index: 4; }
         .plaza-staff-card > .plaza-staff-spark {
             position: absolute;
             z-index: 3;
@@ -1003,17 +1004,17 @@
         @media (min-width: 768px) {
             .plaza-staff-status { font-size: 1.35rem; padding: 0.85rem 1.05rem; }
         }
-        /* 초상+장비를 이름 칸과 분리해 겹치지 않게 합니다. */
+        /* 초상+장비를 이름 칸과 분리하되, 장비는 카드 밖으로 조금 나가도 됩니다. */
         .plaza-staff-avatar {
-            flex: 0 0 6.6rem;
-            width: 6.6rem;
-            min-width: 6.6rem;
+            flex: 0 0 5.6rem;
+            width: 5.6rem;
+            min-width: 5.6rem;
             display: flex;
             align-items: center;
             justify-content: center;
             position: relative;
-            z-index: 3;
-            overflow: hidden;
+            z-index: 2;
+            overflow: visible;
         }
         /* 마스터 얼굴 ≈ 학생 카드(작게 1.35rem)의 약 2배 */
         .plaza-staff-face-wrap {
@@ -1031,9 +1032,9 @@
             .plaza-staff-face-wrap { width: 5.2rem; height: 5.2rem; }
             .plaza-staff-front .plaza-staff-face-wrap { width: 6rem; height: 6rem; }
             .plaza-staff-front .plaza-staff-avatar {
-                flex-basis: 8rem;
-                width: 8rem;
-                min-width: 8rem;
+                flex-basis: 6.8rem;
+                width: 6.8rem;
+                min-width: 6.8rem;
             }
         }
         .plaza-staff-ring {
@@ -1073,6 +1074,7 @@
             border-radius: 9999px;
             border: 1px solid rgba(255, 255, 255, 0.25);
             z-index: 5;
+            white-space: nowrap;
         }
         .plaza-staff-card-master .plaza-staff-badge {
             color: #422006;
@@ -1089,6 +1091,7 @@
             letter-spacing: 0.22em;
             margin-bottom: 0 !important;
             text-shadow: 0 0 12px rgba(251, 191, 36, 0.35);
+            white-space: nowrap;
         }
         .plaza-staff-card-pirate .plaza-staff-role {
             text-shadow: 0 0 12px rgba(34, 211, 238, 0.35);
@@ -1112,6 +1115,60 @@
             .plaza-staff-name { font-size: 20px !important; }
             .plaza-staff-role { font-size: 15px !important; }
             .plaza-staff-badge { font-size: 11px; }
+        }
+        /* 스마트폰: 마스터·담임교사·마스터 J를 한 줄로 두고, 상태 문구는 아래로 내립니다. */
+        @media (max-width: 639px) {
+            .plaza-staff-card,
+            .plaza-staff-front .plaza-staff-card {
+                flex-wrap: wrap;
+            }
+            .plaza-staff-copy {
+                flex: 1 1 auto;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                align-items: center;
+                gap: 0.28rem;
+                min-width: 0;
+            }
+            .plaza-staff-badge,
+            .plaza-staff-role,
+            .plaza-staff-name,
+            .plaza-staff-copy .plaza-card-name {
+                white-space: nowrap !important;
+                word-break: keep-all;
+                overflow: visible;
+                text-overflow: clip;
+                display: block !important;
+                -webkit-line-clamp: unset;
+                -webkit-box-orient: unset;
+            }
+            .plaza-staff-badge {
+                flex: 0 0 auto;
+                letter-spacing: 0.08em;
+                padding: 0.14rem 0.42rem;
+                font-size: 9px;
+                align-self: center;
+            }
+            .plaza-staff-role {
+                flex: 0 0 auto;
+                letter-spacing: 0.04em;
+                font-size: 12px !important;
+            }
+            .plaza-staff-name {
+                flex: 0 0 auto;
+                min-width: 0;
+                width: auto;
+                max-width: none;
+                font-size: 14px !important;
+                padding: 0.22rem 0.5rem !important;
+            }
+            .plaza-staff-status {
+                flex: 1 1 100%;
+                min-width: 100%;
+                max-width: 100%;
+                font-size: 0.82rem;
+                padding: 0.4rem 0.5rem;
+            }
         }
         .plaza-staff-spark {
             position: absolute;
@@ -3377,7 +3434,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
 
         /* 스티커북 코디: 초상과 착장을 같은 1:1 프레임에 겹칩니다 */
         .char-avatar-stack { overflow: visible; isolation: isolate; }
-        #dashAvatar { overflow: visible; padding: 0.95rem 0.95rem 0.85rem; }
+        #dashAvatar { overflow: visible; padding: 1.55rem 1.55rem 1.35rem; }
         .dash-rank-bg {
             position: absolute;
             inset: 0;
@@ -3394,10 +3451,10 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             object-position: center top;
         }
         .plaza-card-face .char-avatar-stack {
-            padding: 0.22rem 0.38rem 0.48rem;
+            padding: 0.32rem 0.72rem 0.9rem;
         }
         .plaza-cards-seating .plaza-card-face .char-avatar-stack {
-            padding: 0.18rem 0.3rem 0.4rem;
+            padding: 0.26rem 0.55rem 0.78rem;
         }
         .plaza-card-lv,
         .plaza-card-name,
@@ -3424,7 +3481,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             display: flex;
             flex-direction: column;
             align-items: center;
-            overflow: hidden;
+            overflow: visible;
         }
         .plaza-gm-side {
             display: grid;
@@ -3464,16 +3521,16 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .plaza-gm-side { width: 3.55rem; }
             .plaza-gm-btn { font-size: 8px; padding: 0.2rem 0; }
         }
-        /* 초상 옆에 레벨을 두고, 신발은 초상 아래쪽에 붙여 카드 밖으로 나가지 않게 합니다. */
+        /* 초상 옆에 레벨을 두고, 장비는 초상 쪽으로 조금만 당겨 카드 밖으로 나가도 됩니다. */
         .plaza-card-figure {
             display: flex;
             flex-direction: row;
-            align-items: center;
+            align-items: flex-end;
             justify-content: center;
             gap: 0.28rem;
             width: 100%;
             margin-bottom: 0.3rem;
-            overflow: hidden;
+            overflow: visible;
         }
         .plaza-card-figure .plaza-card-face {
             margin-bottom: 0 !important;
@@ -3488,12 +3545,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .dash-figure {
             display: flex;
             flex-direction: row;
-            align-items: center;
+            align-items: flex-end;
             justify-content: center;
             gap: 0.55rem;
             width: 100%;
             margin: 1rem 0 0.35rem;
-            overflow: hidden;
+            overflow: visible;
         }
         .dash-figure #dashAvatar { margin: 0; }
         .dash-figure #dashLevelName { margin: 0 0 0.35rem; white-space: nowrap; }
@@ -3564,15 +3621,15 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .char-overlay-head { top: -20%; left: 10%; width: 80%; height: 46%; }
         .char-overlay-eyes { top: 30%; left: 14%; width: 72%; height: 26%; }
         .char-overlay-ear { top: 40%; left: auto; right: -6%; width: 30%; height: 30%; }
-        /* 무기·방패는 초상 어깨 쪽으로, 신발은 초상 아래쪽에 붙여 카드 밖으로 나가지 않게 합니다. */
-        .char-weapon { position: absolute; left: -12%; top: 16%; width: 44%; height: 44%; pointer-events: none; z-index: 32; }
+        /* 무기·방패·신발은 초상 쪽으로 조금만 당기고, 크기는 모든 화면에서 조금 키웁니다. */
+        .char-weapon { position: absolute; left: -34%; top: 18%; width: 64%; height: 64%; pointer-events: none; z-index: 32; }
         .char-weapon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55)); }
         .char-shield {
             position: absolute;
-            right: -10%;
-            top: 16%;
-            width: 40%;
-            height: 40%;
+            right: -30%;
+            top: 18%;
+            width: 60%;
+            height: 60%;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -3592,10 +3649,10 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .char-shoes {
             position: absolute;
             left: 50%;
-            bottom: 4%;
+            bottom: -22%;
             transform: translateX(-50%);
-            width: 48%;
-            height: 32%;
+            width: 66%;
+            height: 48%;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -3614,7 +3671,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .char-rank-bg {
             position: absolute;
-            inset: -36%;
+            inset: -42%;
             z-index: 0;
             pointer-events: none;
             display: flex;
@@ -3626,8 +3683,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             background: transparent;
         }
         .char-rank-bg img {
-            width: 122%;
-            height: 122%;
+            width: 130%;
+            height: 130%;
             max-width: none;
             object-fit: cover;
             object-position: center;

@@ -2254,12 +2254,13 @@
                                 <h2 class="text-xl sm:text-2xl font-display text-amber-50 tracking-wide">생각게시판</h2>
                             </div>
                         </div>
-                        <p id="thinkBoardQuestionBanner" class="think-board-q hidden"></p>
                     </div>
+                    <p id="thinkBoardQuestionBanner" class="think-board-q hidden"></p>
                     <div id="thinkBoardAdminBar" class="hidden think-board-admin">
                         <button type="button" id="thinkOpenBtn" onclick="void window.toggleThinkPosting()" class="think-admin-btn think-admin-btn-on">생각 열기</button>
                         <button type="button" onclick="void window.shareClassToolFullscreen()" class="think-admin-btn">전체 화면으로 뿌리기</button>
                         <button type="button" id="thinkEmpathyBtn" onclick="void window.toggleThinkEmpathyPublic()" class="think-admin-btn">공감 공개</button>
+                        <button type="button" onclick="void window.publishAllThinkPosts()" class="think-admin-btn">전체 공개</button>
                         <button type="button" onclick="void window.clearThinkBoard()" class="think-admin-btn think-admin-btn-warn">게시 비우기</button>
                         <div class="think-q-row">
                             <input type="text" id="thinkQuestionInput" maxlength="80" placeholder="질문카드 내용" class="think-q-input" autocomplete="off">
@@ -2267,24 +2268,28 @@
                             <button type="button" onclick="void window.clearThinkQuestion()" class="think-admin-btn">질문 내리기</button>
                         </div>
                     </div>
+                    <div id="thinkBoardClosedHint" class="hidden think-closed-hint">선생님이 생각 열기를 누르면 여기에 생각을 붙일 수 있습니다.</div>
+                    <div class="think-board-stage">
+                        <div id="thinkBoardGrid" class="think-board-grid"></div>
+                        <div id="thinkBoardFocus" class="hidden think-board-focus"></div>
+                    </div>
                     <div id="thinkComposer" class="hidden think-composer">
-                        <p class="text-[10px] font-black text-amber-100 mb-1">내 생각 붙이기</p>
-                        <textarea id="thinkTextInput" maxlength="280" rows="3" placeholder="생각을 적어 주세요" class="think-text"></textarea>
-                        <div class="think-draw-wrap">
-                            <canvas id="thinkDrawCanvas" width="240" height="160" aria-label="간단한 그림"></canvas>
-                            <div class="think-draw-tools">
-                                <button type="button" onclick="window.clearThinkDrawing()" class="think-mini-btn">그림 지우기</button>
-                                <span class="text-[9px] text-slate-400 font-bold">손가락·마우스로 그려요</span>
+                        <p class="text-[10px] font-black text-amber-100 mb-1">내 생각 붙이기 <span class="text-amber-200/80 font-bold">· 처음엔 비공개</span></p>
+                        <div class="think-composer-main">
+                            <textarea id="thinkTextInput" maxlength="280" rows="2" placeholder="생각을 적어 주세요" class="think-text"></textarea>
+                            <div class="think-draw-wrap">
+                                <canvas id="thinkDrawCanvas" width="240" height="160" aria-label="간단한 그림"></canvas>
+                                <div class="think-draw-tools">
+                                    <button type="button" onclick="window.clearThinkDrawing()" class="think-mini-btn">그림 지우기</button>
+                                    <span class="text-[9px] text-slate-400 font-bold">손가락·마우스로 그려요</span>
+                                </div>
                             </div>
                         </div>
-                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                        <div class="flex flex-wrap items-center gap-2 mt-1">
                             <div id="thinkColorRow" class="flex gap-1"></div>
                             <button type="button" onclick="void window.submitThinkPost()" class="ml-auto min-h-[44px] px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 text-xs font-black">포스트잇 붙이기</button>
                         </div>
                     </div>
-                    <div id="thinkBoardClosedHint" class="hidden think-closed-hint">선생님이 생각 열기를 누르면 여기에 생각을 붙일 수 있습니다.</div>
-                    <div id="thinkBoardGrid" class="think-board-grid"></div>
-                    <div id="thinkBoardFocus" class="hidden think-board-focus"></div>
                 </div>
 
                 <!-- 원형 돌림판 -->

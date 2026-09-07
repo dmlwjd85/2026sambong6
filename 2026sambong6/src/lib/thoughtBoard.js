@@ -60,7 +60,9 @@ export function sanitizeThoughtPost(raw) {
     const questionId = String(raw.questionId || '').trim().slice(0, 40);
     const createdAt = Math.max(0, Math.floor(Number(raw.createdAt) || 0));
     const name = cleanLine(raw.name, 24);
-    return { id, studentId, name, text, drawing, color, questionId, createdAt };
+    /** 붙일 때는 비공개. 선생님이 개별·전체 공개해야 반에 보입니다. */
+    const isPublic = raw.isPublic === true;
+    return { id, studentId, name, text, drawing, color, questionId, createdAt, isPublic };
 }
 
 function sanitizeEmpathyMap(raw, postIds) {
@@ -201,10 +203,41 @@ export function addThoughtPost(state, raw) {
         ...raw,
         id: raw && raw.id ? raw.id : newId('p'),
         createdAt: raw && raw.createdAt ? raw.createdAt : Date.now(),
+        isPublic: raw && raw.isPublic === true,
     });
     if (!post) return next;
     next.posts = [...next.posts.filter((p) => p.id !== post.id), post].slice(-THINK_POST_MAX);
     return next;
+}
+
+/** 한 장만 공개하거나 다시 가립니다. */
+export function setThoughtPostPublic(state, postId, isPublic) {
+    const next = sanitizeThoughtBoard(state);
+    const id = String(postId || '');
+    next.posts = next.posts.map((p) => (p.id === id ? { ...p, isPublic: !!isPublic } : p));
+    return next;
+}
+
+/** 붙여 둔 생각을 모두 반에 공개합니다. */
+export function publishAllThoughtPosts(state) {
+    const next = sanitizeThoughtBoard(state);
+    next.posts = next.posts.map((p) => ({ ...p, isPublic: true }));
+    return next;
+}
+
+/**
+ * 학생은 공개된 글과 자기 글만 보고, 선생님은 비공개 글도 봅니다.
+ * 전체화면 공유(TV)는 공개된 글만 보여 반 전체가 같은 화면을 봅니다.
+ */
+export function visibleThoughtPosts(state, { viewerId, isAdmin, follower } = {}) {
+    const board = sanitizeThoughtBoard(state);
+    const sid = String(viewerId || '').trim();
+    return board.posts.filter((p) => {
+        if (p.isPublic) return true;
+        if (follower) return false;
+        if (isAdmin) return true;
+        return !!(sid && p.studentId === sid);
+    });
 }
 
 /** 한 학생은 공감 1표. 같은 카드를 다시 누르면 취소. */

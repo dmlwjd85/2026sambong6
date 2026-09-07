@@ -8,13 +8,16 @@ import {
     emptyThoughtBoard,
     empathyCounts,
     glowingThoughtPostIds,
+    publishAllThoughtPosts,
     sanitizeDrawingDataUrl,
     sanitizeThoughtBoard,
     setThoughtEmpathyPublic,
     setThoughtFocus,
+    setThoughtPostPublic,
     setThoughtPostingOpen,
     thoughtPostExcerpt,
     toggleThoughtEmpathy,
+    visibleThoughtPosts,
 } from './thoughtBoard.js';
 
 describe('생각게시판 정리', () => {
@@ -26,6 +29,8 @@ describe('생각게시판 정리', () => {
         assert.equal(sanitizeDrawingDataUrl('data:image/png;base64,aaaa'), '');
         const jpeg = `data:image/jpeg;base64,${'A'.repeat(20)}=`;
         assert.equal(sanitizeDrawingDataUrl(jpeg), jpeg);
+        const old = sanitizeThoughtBoard({ posts: [{ id: 'p9', studentId: '1', text: '예전 글' }] });
+        assert.equal(old.posts[0].isPublic, false);
     });
 
     it('게시·공감·최다 공감 빛남을 맞춘다', () => {
@@ -35,6 +40,17 @@ describe('생각게시판 정리', () => {
         st = addThoughtPost(st, { id: 'p2', studentId: '2', name: '김라희', text: '운동장에서 놀기', color: 'hack' });
         assert.equal(st.posts.length, 2);
         assert.equal(st.posts[1].color, 'yellow');
+        assert.equal(st.posts[0].isPublic, false);
+        assert.equal(visibleThoughtPosts(st, { viewerId: '1', isAdmin: false }).map((p) => p.id).join(','), 'p1');
+        assert.equal(visibleThoughtPosts(st, { viewerId: '2', isAdmin: false }).map((p) => p.id).join(','), 'p2');
+        assert.equal(visibleThoughtPosts(st, { isAdmin: true }).length, 2);
+        assert.equal(visibleThoughtPosts(st, { viewerId: '1', follower: true }).length, 0);
+        st = setThoughtPostPublic(st, 'p1', true);
+        assert.equal(st.posts.find((p) => p.id === 'p1').isPublic, true);
+        assert.equal(visibleThoughtPosts(st, { viewerId: '2', isAdmin: false }).map((p) => p.id).join(','), 'p1,p2');
+        st = publishAllThoughtPosts(st);
+        assert.ok(st.posts.every((p) => p.isPublic));
+        assert.equal(visibleThoughtPosts(st, { viewerId: '9', follower: true }).length, 2);
         st = toggleThoughtEmpathy(st, '3', 'p1');
         st = toggleThoughtEmpathy(st, '4', 'p1');
         st = toggleThoughtEmpathy(st, '5', 'p2');

@@ -316,14 +316,17 @@ import {
     emptyThoughtBoard,
     empathyCounts,
     glowingThoughtPostIds,
+    publishAllThoughtPosts,
     sanitizeDrawingDataUrl,
     sanitizeThoughtBoard,
     setActiveThoughtQuestion,
     setThoughtEmpathyPublic,
     setThoughtFocus,
+    setThoughtPostPublic,
     setThoughtPostingOpen,
     thoughtPostExcerpt,
     toggleThoughtEmpathy,
+    visibleThoughtPosts,
 } from './lib/thoughtBoard.js';
 import {
     jobColorChoicesForPicker,
@@ -10078,8 +10081,13 @@ ${subjectLine}
             if (empBtn) empBtn.textContent = board.empathyPublic ? '공감 숨기기' : '공감 공개';
             const qBanner = document.getElementById('thinkBoardQuestionBanner');
             if (qBanner) {
-                qBanner.textContent = q ? `질문 · ${q.text}` : '';
-                qBanner.classList.toggle('hidden', !q);
+                if (q) {
+                    qBanner.innerHTML = `<span class="think-board-q-label">선생님 질문</span><span class="think-board-q-text">${escapeHtmlAttr(q.text)}</span>`;
+                    qBanner.classList.remove('hidden');
+                } else {
+                    qBanner.innerHTML = '';
+                    qBanner.classList.add('hidden');
+                }
             }
             const canCompose = !follower && (isAdmin || board.postingOpen) && !!(window.playerState && !window.playerState.isGuest);
             const composer = document.getElementById('thinkComposer');
@@ -10101,9 +10109,15 @@ ${subjectLine}
                 ? board.focusPostId
                 : (_thinkLocalFocusId || (isAdmin ? board.focusPostId : _thinkLocalFocusId));
             const focusPost = board.posts.find((p) => p.id === focusId) || null;
+            const canSeeFocus = !!(focusPost && (
+                focusPost.isPublic
+                || (!follower && isAdmin)
+                || (!follower && focusPost.studentId === myId)
+            ));
+            const shownPosts = visibleThoughtPosts(board, { viewerId: myId, isAdmin, follower });
             const grid = document.getElementById('thinkBoardGrid');
             const focusEl = document.getElementById('thinkBoardFocus');
-            const showFocus = !!(focusPost && (follower ? board.viewMode === 'post' : true) && focusId);
+            const showFocus = !!(canSeeFocus && (follower ? board.viewMode === 'post' : true) && focusId);
             if (grid) grid.classList.toggle('hidden', !!showFocus);
             if (focusEl) {
                 focusEl.classList.toggle('hidden', !showFocus);
@@ -10111,37 +10125,48 @@ ${subjectLine}
                     const countLabel = board.empathyPublic ? `공감 ${counts[focusPost.id] || 0}` : '공감(비공개)';
                     const mine = board.empathy[myId] === focusPost.id;
                     const qLine = board.questions.find((row) => row.id === focusPost.questionId);
+                    const publishBtn = (!follower && isAdmin)
+                        ? `<button type="button" class="think-admin-btn" onclick="void window.setThinkPostPublic('${focusPost.id}', ${focusPost.isPublic ? 'false' : 'true'})">${focusPost.isPublic ? '이 글 숨기기' : '이 글 공개'}</button>`
+                        : '';
                     focusEl.innerHTML = `
                         ${follower ? '' : `<button type="button" onclick="window.closeThinkFocus()" class="think-admin-btn mb-1 self-start">목록으로</button>`}
                         <div class="think-focus-card think-note-${focusPost.color} ${glowIds.has(focusPost.id) ? 'think-note-glow' : ''}">
+                            ${focusPost.isPublic ? '' : '<p class="think-note-private" style="position:static;display:inline-block;margin-bottom:0.35rem">비공개</p>'}
                             <p class="think-note-author">${escapeHtmlAttr(focusPost.name || getStudentDisplayLabel(focusPost.studentId))}</p>
                             ${qLine ? `<p class="text-[11px] font-black opacity-70 mt-1">Q. ${escapeHtmlAttr(qLine.text)}</p>` : ''}
                             ${focusPost.text ? `<p class="think-focus-text mt-2">${escapeHtmlAttr(focusPost.text)}</p>` : ''}
                             ${focusPost.drawing ? `<img src="${focusPost.drawing}" alt="" class="think-focus-draw">` : ''}
                         </div>
-                        <div class="flex items-center gap-2 think-keep-input">
+                        <div class="flex flex-wrap items-center gap-2 think-keep-input">
                             <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="void window.toggleThinkPostEmpathy('${focusPost.id}')">공감하기</button>
                             <span class="think-empathy-count">${countLabel}</span>
+                            ${publishBtn}
                         </div>`;
                 } else {
                     focusEl.innerHTML = '';
                 }
             }
             if (grid && !showFocus) {
-                if (board.posts.length === 0) {
-                    grid.innerHTML = `<p class="col-span-full text-[11px] text-amber-100/70 font-bold p-3">아직 붙여진 생각이 없습니다.</p>`;
+                if (shownPosts.length === 0) {
+                    grid.innerHTML = `<p class="col-span-full text-[11px] text-amber-100/70 font-bold p-3">${board.posts.length ? '아직 공개된 생각이 없습니다. 선생님이 공개하면 여기에 보여요.' : '아직 붙여진 생각이 없습니다.'}</p>`;
                 } else {
-                    grid.innerHTML = board.posts.map((p) => {
+                    grid.innerHTML = shownPosts.map((p) => {
                         const glow = glowIds.has(p.id) ? 'think-note-glow' : '';
                         const click = follower ? '' : `onclick="window.openThinkFocus('${p.id}')"`;
                         const mine = board.empathy[myId] === p.id;
                         const countLabel = board.empathyPublic ? String(counts[p.id] || 0) : '';
+                        const privateMark = p.isPublic ? '' : '<span class="think-note-private">비공개</span>';
+                        const publishBtn = (!follower && isAdmin)
+                            ? `<button type="button" class="think-note-publish think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${p.id}', ${p.isPublic ? 'false' : 'true'})">${p.isPublic ? '숨기기' : '개별 공개'}</button>`
+                            : '';
                         return `<article class="think-note think-note-${p.color} ${glow}" ${click}>
+                            ${privateMark}
                             <p class="think-note-author">${escapeHtmlAttr(p.name || getStudentDisplayLabel(p.studentId))}</p>
                             <p class="think-note-excerpt">${escapeHtmlAttr(thoughtPostExcerpt(p, 36))}</p>
                             ${p.drawing ? `<img src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
-                            <div class="mt-1 flex items-center justify-between think-keep-input" onclick="event.stopPropagation();">
+                            <div class="mt-1 flex items-center justify-between gap-1 think-keep-input" onclick="event.stopPropagation();">
                                 <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="event.stopPropagation(); void window.toggleThinkPostEmpathy('${p.id}')">공감</button>
+                                ${publishBtn}
                                 ${board.empathyPublic ? `<span class="think-empathy-count">${countLabel}</span>` : ''}
                             </div>
                         </article>`;
@@ -10186,6 +10211,20 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isAdmin) return;
             const next = !currentThoughtBoard().empathyPublic;
             await saveThoughtBoard((s) => setThoughtEmpathyPublic(s, next));
+        };
+
+        window.setThinkPostPublic = async function (postId, isPublic) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            await saveThoughtBoard((s) => setThoughtPostPublic(s, postId, isPublic === true || isPublic === 'true'));
+        };
+
+        window.publishAllThinkPosts = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const board = currentThoughtBoard();
+            if (!board.posts.length) return window.customAlert('공개할 생각이 없습니다.');
+            const ok = await window.customConfirm('붙여 둔 생각을 모두 반에 공개할까요?');
+            if (!ok) return;
+            await saveThoughtBoard((s) => publishAllThoughtPosts(s));
         };
 
         window.publishThinkQuestion = async function () {
@@ -10246,6 +10285,7 @@ ${subjectLine}
                 drawing,
                 color: _thinkNoteColor,
                 questionId: s.activeQuestionId,
+                isPublic: false,
             }));
             if (ok) {
                 if (ta) ta.value = '';

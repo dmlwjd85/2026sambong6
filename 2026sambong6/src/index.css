@@ -2209,6 +2209,7 @@
             color: #fff7ed;
             font-size: 1.45rem;
         }
+        .think-board-panel .hidden { display: none !important; }
         .think-board-panel {
             display: flex;
             flex-direction: column;

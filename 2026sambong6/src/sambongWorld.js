@@ -15582,10 +15582,11 @@ ${subjectLine}
             container.classList.add('plaza-cards', 'plaza-cards-md', 'plaza-cards-seating');
         }
 
-        function buildPlazaStatusMessageHtml(data) {
+        function buildPlazaStatusMessageHtml(data, extraClass = '') {
             const msg = sanitizeStatusMessage(data && data.statusMessage);
             if (!msg) return '';
-            return `<div class="plaza-card-status" title="${escapeHtmlAttr(msg)}">${escapeConvenienceHtml(msg)}</div>`;
+            const cls = extraClass ? `plaza-card-status ${extraClass}` : 'plaza-card-status';
+            return `<div class="${cls}" title="${escapeHtmlAttr(msg)}">${escapeConvenienceHtml(msg)}</div>`;
         }
 
         window.renderPlaza = function(studentsData, gmData, gmaData) {
@@ -15664,16 +15665,20 @@ ${subjectLine}
                 const gmXpSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-xp plaza-gm-controls" onclick="event.stopPropagation();">
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+1X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5X</button>
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5X</button>
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+10X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10X</button>
                     </div>` : '';
                 const gmBongSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-bong plaza-gm-controls" onclick="event.stopPropagation();">
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+1${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+2${getCurrencyUnit()}</button>
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -2, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-2${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+5${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+10${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10${getCurrencyUnit()}</button>
                     </div>` : '';
 
                 if (isGMCard) {
@@ -15692,7 +15697,7 @@ ${subjectLine}
                         <div class="plaza-staff-face-wrap">
                             <div class="plaza-staff-ring" aria-hidden="true"></div>
                             <div class="plaza-card-face plaza-staff-face">
-                                ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: false, portraitClass: 'char-portrait-staff' })}
+                                ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: true, portraitClass: 'char-portrait-staff' })}
                             </div>
                         </div>
                         <div class="plaza-staff-copy">
@@ -15701,8 +15706,8 @@ ${subjectLine}
                             <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} truncate border-2 ${isA ? 'border-cyan-300' : 'border-amber-300'}">
                                 ${idLabel}
                             </div>
-                            ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
+                        ${buildPlazaStatusMessageHtml(displayData, 'plaza-staff-status')}
                     </div>`;
                 }
 
@@ -15714,10 +15719,12 @@ ${subjectLine}
                         ${gmXpSide}
                         <div class="plaza-card-main">
                             ${shieldHtml}${jobHtml}${condHtml}
-                            <div class="plaza-card-face text-3xl sm:text-4xl mb-1 flex items-end justify-center z-10 ${lv.info.anim}">
-                                <div class="relative inline-block leading-none">${face}</div>
+                            <div class="plaza-card-figure">
+                                <div class="plaza-card-face text-3xl sm:text-4xl flex items-end justify-center z-10 ${lv.info.anim}">
+                                    <div class="relative inline-block leading-none">${face}</div>
+                                </div>
+                                <div class="plaza-card-lv text-[8px] font-bold ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             </div>
-                            <div class="plaza-card-lv text-[8px] font-bold mb-0.5 ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
                             ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
@@ -15866,7 +15873,7 @@ ${subjectLine}
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
-                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 2, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+2${getCurrencyUnit()}</button></div>` : '-'}
+                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+10X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+5${getCurrencyUnit()}</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+10${getCurrencyUnit()}</button></div>` : '-'}
                         </td>
                         <td class="p-2 text-center border-l border-slate-700/50 min-w-[4.5rem]">
                             ${canEdit ? (() => {
@@ -17626,7 +17633,7 @@ ${subjectLine}
             const overlays = '';
             
             const dashCard = document.getElementById('dashAvatarCard');
-            if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
+            if (dashCard) dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
             const dashRankBg = document.getElementById('dashRankBg');
             if (dashRankBg) {
                 // 등급 그림은 원형 캐릭터 뒤에만 두고, 카드 배경은 원래 그라데이션을 유지합니다.

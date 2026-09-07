@@ -614,8 +614,8 @@
         .plaza-cards-sm .plaza-card-stats { margin-top: 0.15rem !important; }
         .plaza-cards-sm .plaza-card-stats span { font-size: 8px !important; }
         .plaza-cards-sm .plaza-learning-thermometer { min-width: 1.6rem; max-width: 2rem; height: 0.9rem; font-size: 7px; }
-        .plaza-cards-sm .plaza-gm-side { width: 1.45rem; gap: 0.12rem; }
-        .plaza-cards-sm .plaza-gm-side .plaza-gm-btn { font-size: 7px !important; padding: 0.12rem 0 !important; }
+        .plaza-cards-sm .plaza-gm-side { width: 2.7rem; gap: 0.1rem; }
+        .plaza-cards-sm .plaza-gm-side .plaza-gm-btn { font-size: 6px !important; padding: 0.1rem 0 !important; }
 
         .plaza-cards-md .plaza-card { padding: 0.4rem !important; }
         .plaza-cards-md .plaza-card-face { font-size: 1.75rem !important; }
@@ -673,7 +673,7 @@
             .plaza-cards-sm .plaza-card-lv {
                 font-size: 12px !important;
                 padding: 0.2rem 0.45rem !important;
-                margin-bottom: 0.3rem !important;
+                margin-bottom: 0.12rem !important;
             }
             .plaza-cards-lg .plaza-card-name,
             .plaza-cards-md .plaza-card-name,
@@ -697,8 +697,8 @@
             .plaza-cards-sm .plaza-gm-side,
             .plaza-cards-md .plaza-gm-side,
             .plaza-cards-lg .plaza-gm-side {
-                width: 2.15rem;
-                gap: 0.18rem;
+                width: 3.15rem;
+                gap: 0.14rem;
             }
             .plaza-cards-sm .plaza-gm-side .plaza-gm-btn,
             .plaza-cards-md .plaza-gm-side .plaza-gm-btn,
@@ -724,12 +724,12 @@
             }
             .plaza-cards-seating .plaza-card-face {
                 font-size: 1.45rem !important;
-                margin-bottom: 0.18rem !important;
+                margin-bottom: 0 !important;
             }
             .plaza-cards-seating .plaza-card-lv {
                 font-size: 8px !important;
                 padding: 0 0.2rem !important;
-                margin-bottom: 0.12rem !important;
+                margin-bottom: 0.08rem !important;
             }
             .plaza-cards-seating .plaza-card-name {
                 font-size: 10px !important;
@@ -858,15 +858,17 @@
         .plaza-staff-front .plaza-staff-card {
             width: min(44rem, 98%);
             min-height: 8.6rem;
-            padding: 0.95rem 1.5rem 0.95rem 1.15rem !important;
+            padding: 1.15rem 1.5rem 1.25rem 2.15rem !important;
             justify-content: flex-start;
             border-width: 3px !important;
             border-radius: 1.2rem !important;
+            overflow: visible;
         }
         .plaza-staff-front .plaza-staff-face-wrap {
             width: 5.4rem;
             height: 5.4rem;
-            margin-bottom: 0;
+            margin-bottom: 1rem;
+            overflow: visible;
         }
         .plaza-staff-front .plaza-staff-face {
             font-size: 3.35rem !important;
@@ -888,12 +890,12 @@
         }
         @media (max-width: 479px) {
             .plaza-staff-row { gap: 0.5rem; padding: 0.45rem 0.3rem 0.55rem; }
-            .plaza-staff-front .plaza-staff-card { min-height: 7.2rem; padding: 0.7rem 0.75rem !important; }
+            .plaza-staff-front .plaza-staff-card { min-height: 7.2rem; padding: 0.75rem 0.75rem 1.15rem 1.55rem !important; overflow: visible; }
             .plaza-staff-front .plaza-staff-face-wrap { width: 4.4rem; height: 4.4rem; }
         }
         .plaza-staff-card {
             position: relative;
-            overflow: hidden;
+            overflow: visible;
             display: flex;
             flex-direction: row;
             align-items: center;
@@ -907,11 +909,13 @@
         .plaza-staff-card::before {
             content: '';
             position: absolute;
-            inset: -40%;
+            inset: 0;
+            border-radius: inherit;
             background: conic-gradient(from 0deg, transparent 0 70%, rgba(255, 255, 255, 0.12) 78%, transparent 88%);
             animation: plaza-staff-shine 5.5s linear infinite;
             pointer-events: none;
             z-index: 0;
+            overflow: hidden;
         }
         .plaza-staff-card::after {
             content: '';
@@ -950,7 +954,7 @@
             animation: plaza-staff-pulse-cyan 2.4s ease-in-out infinite alternate;
         }
         .plaza-staff-copy {
-            flex: 1;
+            flex: 0 1 16rem;
             min-width: 0;
             display: flex;
             flex-direction: column;
@@ -963,16 +967,41 @@
             margin-top: 0.1rem;
             max-width: 100%;
         }
+        .plaza-staff-status {
+            flex: 1 1 11rem;
+            min-width: 7.5rem;
+            max-width: 100%;
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+            font-size: 1.05rem;
+            font-weight: 800;
+            line-height: 1.45;
+            color: #fffbeb;
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid rgba(253, 230, 138, 0.45);
+            border-radius: 0.9rem;
+            padding: 0.7rem 0.85rem;
+            white-space: pre-wrap;
+            word-break: keep-all;
+            text-align: left;
+            overflow: visible;
+            text-overflow: unset;
+        }
+        @media (min-width: 768px) {
+            .plaza-staff-status { font-size: 1.35rem; padding: 0.85rem 1.05rem; }
+        }
         /* 마스터 얼굴 ≈ 학생 카드(작게 1.35rem)의 약 2배 */
         .plaza-staff-face-wrap {
             position: relative;
             width: 4.6rem;
             height: 4.6rem;
-            margin-bottom: 0;
+            margin-bottom: 0.85rem;
             flex: 0 0 auto;
             display: flex;
             align-items: center;
             justify-content: center;
+            overflow: visible;
         }
         @media (min-width: 640px) {
             .plaza-staff-face-wrap { width: 5.2rem; height: 5.2rem; }
@@ -3365,13 +3394,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             align-items: center;
         }
         .plaza-gm-side {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: stretch;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            align-content: center;
             gap: 0.15rem;
             flex: 0 0 auto;
-            width: 1.75rem;
+            width: 3.15rem;
             z-index: 20;
         }
         .plaza-gm-btn {
@@ -3400,9 +3428,42 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #fff;
         }
         @media (min-width: 640px) {
-            .plaza-gm-side { width: 2.05rem; }
-            .plaza-gm-btn { font-size: 9px; padding: 0.22rem 0; }
+            .plaza-gm-side { width: 3.55rem; }
+            .plaza-gm-btn { font-size: 8px; padding: 0.2rem 0; }
         }
+        /* 신발은 발 아래, 레벨은 그 옆에 두어 서로 가리지 않게 합니다. */
+        .plaza-card-figure {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 0.28rem;
+            width: 100%;
+            margin-bottom: 0.3rem;
+            overflow: visible;
+        }
+        .plaza-card-figure .plaza-card-face {
+            margin-bottom: 0 !important;
+            flex: 0 0 auto;
+        }
+        .plaza-card-figure .plaza-card-lv {
+            flex: 0 1 auto;
+            margin-bottom: 0.12rem !important;
+            white-space: nowrap;
+            z-index: 4;
+        }
+        .dash-figure {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 0.55rem;
+            width: 100%;
+            margin: 1rem 0 0.35rem;
+            overflow: visible;
+        }
+        .dash-figure #dashAvatar { margin: 0; }
+        .dash-figure #dashLevelName { margin: 0 0 0.35rem; white-space: nowrap; }
         /* 초상은 원형 클립만 남기고, 네모 흰 모서리·흰 테두리는 안쪽에서 확대해 가립니다. */
         .char-portrait-clip {
             display: block;

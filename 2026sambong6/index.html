@@ -701,14 +701,16 @@
                 <!-- 1열 (아바타 카드 & 무기고) -->
                 <div class="flex flex-col gap-4 sm:gap-6">
                     <!-- 아바타 카드 -->
-                    <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
+                    <div id="dashAvatarCard" class="glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible bg-card-grad shadow-lg border-2 border-slate-600 transition duration-300">
                         <div id="dashRankBg" class="dash-rank-bg" aria-hidden="true"></div>
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
-                        <div id="dashAvatar" class="text-6xl sm:text-7xl mb-4 relative z-10 drop-shadow-xl avatar-bounce mt-4">👦</div>
+                        <div class="dash-figure">
+                            <div id="dashAvatar" class="text-6xl sm:text-7xl relative z-10 drop-shadow-xl avatar-bounce">👦</div>
+                            <div id="dashLevelName" class="text-xs font-bold text-sb-blue z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
+                        </div>
                         <div id="baseFacePicker" class="hidden w-full mt-1 mb-2 z-10 char-dress-panel"></div>
                         <h3 id="dashName" class="text-2xl font-display text-white mt-2 z-10 tracking-wider">이름</h3>
-                        <div id="dashLevelName" class="text-xs font-bold text-sb-blue mb-4 z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
                         <div class="flex w-full justify-center gap-4 border-t border-slate-700/80 pt-4 z-10">
                             <div class="text-center w-1/2"><div class="text-[10px] text-slate-400 font-bold mb-1">XP</div><div id="dashXp" class="font-display text-lg text-white">0</div></div>
                             <div class="w-px bg-slate-700"></div>

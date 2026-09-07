@@ -35,6 +35,7 @@ import {
     countQuizBankBySource,
     downloadQuizBankTemplate as downloadQuizBankTemplateFile,
     fillGoldenBellSlotsFromBank,
+    filterQuizBank,
     gradeQuizRaidAnswer,
     isQuizRaidSkipAnswer,
     mergeQuizBank,
@@ -46,9 +47,12 @@ import {
     quizRaidTurnRemainingMs,
     quizRaidTurnTimedOut,
     quizRaidUnansweredIds,
+    quizBankSourceLabel,
+    removeQuizBankItem,
     sanitizeQuizBank,
     shouldAdvanceQuizRaidTurn,
     toRaidSessionQuestion,
+    updateQuizBankItem,
 } from './lib/quizBank.js';
 import { withRetry, isLikelyNetworkError } from './lib/withRetry.js';
 import {
@@ -23106,8 +23110,12 @@ ${subjectLine}
             const list = document.getElementById('raidQuestionInputs');
             const bank = getQuizBankQuestions();
             const c = countQuizBankBySource(bank);
+            const searchEl = document.getElementById('quizBankSearchInput');
+            const query = searchEl ? searchEl.value : '';
+            const shown = filterQuizBank(bank, query);
             if (summary) {
-                summary.textContent = `문제 은행 ${c.total}문항 · 골든벨 ${c.goldenbell} · 스피드퀴즈 ${c.speedquiz} · 엑셀 ${c.excel} (객관식 ${c.mc} · 주관식 ${c.short})`;
+                const extra = query ? ` · 검색 ${shown.length}문항` : '';
+                summary.textContent = `문제 은행 ${c.total}문항 · 골든벨 ${c.goldenbell} · 스피드퀴즈 ${c.speedquiz} · 엑셀 ${c.excel} (객관식 ${c.mc} · 주관식 ${c.short})${extra}`;
             }
             if (!list) return;
             if (!window.playerState || (!window.playerState.isGM && !window.playerState.isAdmin)) {
@@ -23118,17 +23126,154 @@ ${subjectLine}
                 list.innerHTML = '<p class="text-[10px] text-slate-500">아직 문제가 없습니다. 엑셀 서식을 받아 올리거나, 골든벨·스피드퀴즈를 출제하면 은행에 쌓입니다.</p>';
                 return;
             }
-            const sourceLabel = { goldenbell: '골든벨', speedquiz: '스피드퀴즈', excel: '엑셀', manual: '직접' };
-            const shown = bank.slice(0, 40);
+            if (shown.length === 0) {
+                list.innerHTML = '<p class="text-[10px] text-slate-500">검색과 맞는 문항이 없습니다.</p>';
+                return;
+            }
             list.innerHTML = shown.map((item, idx) => {
-                const src = sourceLabel[item.source] || item.source;
+                const src = quizBankSourceLabel(item.source);
                 const kind = item.type === 'mc' ? '객관식' : '주관식';
-                return `<div class="text-[10px] text-slate-300 bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1.5 flex gap-2">
+                return `<div class="text-[10px] text-slate-300 bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1.5 flex gap-2 items-start">
                     <span class="text-purple-300 font-bold shrink-0">${idx + 1}</span>
-                    <span class="min-w-0 truncate">${escapeHtmlGb(item.q)}</span>
-                    <span class="text-slate-500 shrink-0">${kind}·${src}</span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block break-words">${escapeHtmlGb(item.q)}</span>
+                        <span class="block text-slate-500 mt-0.5">${kind}·${src} · 정답 ${escapeHtmlGb(item.a)}</span>
+                    </span>
+                    <span class="shrink-0 flex gap-1">
+                        <button type="button" data-quiz-act="edit" data-quiz-id="${escapeHtmlGb(item.id)}" class="bg-slate-700 hover:bg-slate-600 text-lime-100 px-2 py-1 rounded font-bold border border-slate-500">수정</button>
+                        <button type="button" data-quiz-act="delete" data-quiz-id="${escapeHtmlGb(item.id)}" class="bg-red-950/70 hover:bg-red-900 text-red-100 px-2 py-1 rounded font-bold border border-red-800">삭제</button>
+                    </span>
                 </div>`;
-            }).join('') + (bank.length > 40 ? `<p class="text-[9px] text-slate-500 mt-1">외 ${bank.length - 40}문항</p>` : '');
+            }).join('');
+            if (!list.dataset.quizBankBound) {
+                list.dataset.quizBankBound = '1';
+                list.addEventListener('click', (ev) => {
+                    const btn = ev.target && ev.target.closest ? ev.target.closest('[data-quiz-act]') : null;
+                    if (!btn) return;
+                    const id = btn.getAttribute('data-quiz-id');
+                    const act = btn.getAttribute('data-quiz-act');
+                    if (act === 'edit') window.openQuizBankEditor(id);
+                    if (act === 'delete') void window.deleteQuizBankItem(id);
+                });
+            }
+        };
+
+        window.syncQuizBankEditorType = function() {
+            const typeEl = document.getElementById('quizBankEditType');
+            const shortWrap = document.getElementById('quizBankEditShortWrap');
+            const mcWrap = document.getElementById('quizBankEditMcWrap');
+            const isMc = typeEl && typeEl.value === 'mc';
+            if (shortWrap) shortWrap.classList.toggle('hidden', !!isMc);
+            if (mcWrap) mcWrap.classList.toggle('hidden', !isMc);
+        };
+
+        window.closeQuizBankEditor = function() {
+            const box = document.getElementById('quizBankEditor');
+            if (box) box.classList.add('hidden');
+            const idEl = document.getElementById('quizBankEditId');
+            if (idEl) idEl.value = '';
+        };
+
+        window.openQuizBankEditor = function(id) {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 문항을 고칠 수 있습니다.');
+            }
+            const item = getQuizBankQuestions().find((row) => String(row.id) === String(id || ''));
+            if (!item) return window.customAlert('해당 문항을 찾을 수 없습니다.');
+            const box = document.getElementById('quizBankEditor');
+            const title = document.getElementById('quizBankEditorTitle');
+            const idEl = document.getElementById('quizBankEditId');
+            const qEl = document.getElementById('quizBankEditQ');
+            const typeEl = document.getElementById('quizBankEditType');
+            const aEl = document.getElementById('quizBankEditA');
+            const srcEl = document.getElementById('quizBankEditSource');
+            if (idEl) idEl.value = item.id;
+            if (title) title.textContent = '문항 수정';
+            if (qEl) qEl.value = item.q;
+            if (typeEl) typeEl.value = item.type === 'mc' ? 'mc' : 'short';
+            if (aEl) aEl.value = item.a || '';
+            if (srcEl) srcEl.value = ['goldenbell', 'speedquiz', 'excel', 'manual'].includes(item.source) ? item.source : 'excel';
+            const opts = Array.isArray(item.options) ? item.options : [];
+            ['quizBankEditOpt1', 'quizBankEditOpt2', 'quizBankEditOpt3', 'quizBankEditOpt4'].forEach((fid, i) => {
+                const el = document.getElementById(fid);
+                if (el) el.value = opts[i] || '';
+            });
+            const noEl = document.getElementById('quizBankEditAnswerNo');
+            if (noEl) noEl.value = String((item.answerIndex == null ? 0 : item.answerIndex) + 1);
+            window.syncQuizBankEditorType();
+            if (box) {
+                box.classList.remove('hidden');
+                box.scrollIntoView({ block: 'nearest' });
+            }
+            if (qEl) qEl.focus();
+        };
+
+        window.saveQuizBankItem = async function() {
+            if (window._quizBankItemSaving) return;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 문항을 고칠 수 있습니다.');
+            }
+            const id = String((document.getElementById('quizBankEditId') || {}).value || '').trim();
+            if (!id) return window.customAlert('고칠 문항을 목록에서 먼저 고르세요.');
+            const q = String((document.getElementById('quizBankEditQ') || {}).value || '').trim();
+            const type = String((document.getElementById('quizBankEditType') || {}).value || 'short');
+            const source = String((document.getElementById('quizBankEditSource') || {}).value || 'excel');
+            const patch = { q, source };
+            if (type === 'mc') {
+                const options = [1, 2, 3, 4].map((n) => String((document.getElementById(`quizBankEditOpt${n}`) || {}).value || '').trim()).filter(Boolean);
+                const no = Math.floor(Number((document.getElementById('quizBankEditAnswerNo') || {}).value) || 0);
+                patch.options = options;
+                patch.answerIndex = no - 1;
+                patch.a = options[patch.answerIndex] || '';
+            } else {
+                patch.options = [];
+                patch.answerIndex = null;
+                patch.a = String((document.getElementById('quizBankEditA') || {}).value || '').trim();
+            }
+            const result = updateQuizBankItem(getQuizBankQuestions(), id, patch);
+            if (!result.ok) {
+                const msg = {
+                    missing: '해당 문항을 찾을 수 없습니다.',
+                    invalid: '문제와 정답을 확인해 주세요. 객관식은 보기 2개 이상과 정답 번호가 필요합니다.',
+                    duplicate: '같은 글의 문제가 이미 있습니다.',
+                }[result.reason] || '문항을 저장하지 못했습니다.';
+                return window.customAlert(msg);
+            }
+            window._quizBankItemSaving = true;
+            try {
+                await persistQuizBankQuestions(result.questions);
+                window.closeQuizBankEditor();
+                await window.customAlert('문항을 고쳤습니다.');
+            } catch (e) {
+                console.error('saveQuizBankItem', e);
+                await window.customAlert('문항 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window._quizBankItemSaving = false;
+            }
+        };
+
+        window.deleteQuizBankItem = async function(id) {
+            if (window._quizBankItemSaving) return;
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('선생님만 문항을 지울 수 있습니다.');
+            }
+            const item = getQuizBankQuestions().find((row) => String(row.id) === String(id || ''));
+            if (!item) return window.customAlert('해당 문항을 찾을 수 없습니다.');
+            const ok = await window.customConfirm(`이 문항을 문제 은행에서 지울까요?\n\n${item.q}`);
+            if (!ok) return;
+            window._quizBankItemSaving = true;
+            try {
+                const next = removeQuizBankItem(getQuizBankQuestions(), item.id);
+                await persistQuizBankQuestions(next);
+                const editingId = String((document.getElementById('quizBankEditId') || {}).value || '');
+                if (editingId === String(item.id)) window.closeQuizBankEditor();
+                await window.customAlert('문항을 지웠습니다.');
+            } catch (e) {
+                console.error('deleteQuizBankItem', e);
+                await window.customAlert('문항 삭제에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window._quizBankItemSaving = false;
+            }
         };
 
         window.downloadQuizBankTemplate = function() {

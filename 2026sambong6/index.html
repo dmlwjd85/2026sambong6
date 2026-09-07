@@ -1711,13 +1711,53 @@
                     </div>
                     <div id="raidAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-purple-500 bg-slate-900/80">
                         <div class="flex justify-between mb-3"><h3 class="text-white font-bold text-sm"><i class="fa-solid fa-brain text-purple-400"></i> 퀴즈 레이드 · 문제 은행</h3><span id="raidAdminStatus" class="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600">대기중</span></div>
-                        <p class="text-[9px] text-slate-400 mb-3">일일이 입력하지 말고 엑셀 서식에 문제·정답·보기(객관식)를 적어 한 번에 올리세요. 골든벨·스피드퀴즈로 출제한 문제도 은행에 쌓이며, 레이드 시작 시 그중 무작위로 나옵니다. 5명이 모이면 퀴즈가 시작됩니다.</p>
+                        <p class="text-[9px] text-slate-400 mb-3">일일이 입력하지 말고 엑셀 서식에 문제·정답·보기(객관식)를 적어 한 번에 올리세요. 골든벨·스피드퀴즈로 출제한 문제도 은행에 쌓이며, 아래 목록에서 문항을 하나씩 고치거나 지울 수 있습니다. 레이드 시작 시 그중 무작위로 나옵니다. 5명이 모이면 퀴즈가 시작됩니다.</p>
                         <div class="flex gap-2 flex-wrap mb-3">
                             <button type="button" onclick="window.downloadQuizBankTemplate()" class="flex-1 min-h-[44px] bg-slate-800 hover:bg-slate-700 text-lime-100 text-[12px] py-2.5 rounded-lg font-black border border-lime-500/80"><i class="fa-solid fa-file-excel"></i> 엑셀 서식 받기</button>
                             <button type="button" onclick="window.pickQuizBankExcel('bank')" class="flex-1 min-h-[44px] bg-lime-700 hover:bg-lime-600 text-white text-[12px] py-2.5 rounded-lg font-black border border-lime-400"><i class="fa-solid fa-upload"></i> 엑셀 한 번에 올리기</button>
                             <button type="button" onclick="window.clearQuizBank()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 px-3 rounded font-bold border border-slate-600">은행 비우기</button>
                         </div>
                         <p id="quizBankSummary" class="text-[10px] text-purple-200 font-bold mb-2">문제 은행 0문항</p>
+                        <input type="search" id="quizBankSearchInput" placeholder="문제·정답·출처 검색" class="w-full mb-2 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs" oninput="window.renderQuizBankAdmin()" />
+                        <div id="quizBankEditor" class="hidden mb-3 rounded-xl border border-lime-500/50 bg-slate-950/80 p-3 space-y-2">
+                            <p id="quizBankEditorTitle" class="text-[10px] text-lime-200 font-bold">문항 수정</p>
+                            <input type="hidden" id="quizBankEditId" value="" />
+                            <label class="block text-[10px] text-slate-300">문제
+                                <textarea id="quizBankEditQ" rows="2" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs"></textarea>
+                            </label>
+                            <label class="block text-[10px] text-slate-300">유형
+                                <select id="quizBankEditType" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" onchange="window.syncQuizBankEditorType()">
+                                    <option value="short">주관식</option>
+                                    <option value="mc">객관식</option>
+                                </select>
+                            </label>
+                            <div id="quizBankEditShortWrap">
+                                <label class="block text-[10px] text-slate-300">정답
+                                    <input id="quizBankEditA" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                </label>
+                            </div>
+                            <div id="quizBankEditMcWrap" class="hidden space-y-1">
+                                <label class="block text-[10px] text-slate-300">보기1 <input id="quizBankEditOpt1" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs" /></label>
+                                <label class="block text-[10px] text-slate-300">보기2 <input id="quizBankEditOpt2" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs" /></label>
+                                <label class="block text-[10px] text-slate-300">보기3 <input id="quizBankEditOpt3" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs" /></label>
+                                <label class="block text-[10px] text-slate-300">보기4 <input id="quizBankEditOpt4" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs" /></label>
+                                <label class="block text-[10px] text-slate-300">정답 번호 (1~4)
+                                    <input id="quizBankEditAnswerNo" type="number" min="1" max="4" step="1" value="1" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
+                                </label>
+                            </div>
+                            <label class="block text-[10px] text-slate-300">출처
+                                <select id="quizBankEditSource" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold">
+                                    <option value="excel">엑셀</option>
+                                    <option value="goldenbell">골든벨</option>
+                                    <option value="speedquiz">스피드퀴즈</option>
+                                    <option value="manual">직접</option>
+                                </select>
+                            </label>
+                            <div class="flex gap-2 pt-1">
+                                <button type="button" onclick="void window.saveQuizBankItem()" class="flex-1 bg-lime-700 hover:bg-lime-600 text-white text-[10px] py-2 rounded font-bold">문항 저장</button>
+                                <button type="button" onclick="window.closeQuizBankEditor()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] py-2 px-3 rounded font-bold border border-slate-600">취소</button>
+                            </div>
+                        </div>
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-3">
                             <label class="text-[10px] text-slate-300">출제 문항 수
                                 <input type="number" id="raidQuestionCountInput" min="1" max="20" step="1" value="5" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
@@ -1729,7 +1769,7 @@
                                 <input type="number" id="raidRewardBongInput" min="0" step="1" value="20" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs font-bold" />
                             </label>
                         </div>
-                        <div class="space-y-1 mb-4 max-h-48 overflow-y-auto scrollbar-hide" id="raidQuestionInputs"></div>
+                        <div class="space-y-1 mb-4 max-h-72 overflow-y-auto scrollbar-hide" id="raidQuestionInputs"></div>
                         <div class="flex gap-2">
                             <button onclick="window.saveRaidQuestions()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-2 rounded font-bold border border-slate-500">설정 저장</button>
                             <button onclick="window.openRaidLobby()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] py-2 rounded font-bold shadow-lg">레이드 시작</button>

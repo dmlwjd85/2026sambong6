@@ -12,6 +12,7 @@ import {
     computeQuizRaidReward,
     countQuizBankBySource,
     fillGoldenBellSlotsFromBank,
+    filterQuizBank,
     gradeQuizRaidAnswer,
     isQuizRaidSkipAnswer,
     mergeQuizBank,
@@ -26,9 +27,11 @@ import {
     quizRaidTurnRemainingMs,
     quizRaidTurnTimedOut,
     quizRaidUnansweredIds,
+    removeQuizBankItem,
     sanitizeQuizBank,
     shouldAdvanceQuizRaidTurn,
     toRaidSessionQuestion,
+    updateQuizBankItem,
 } from './quizBank.js';
 
 describe('문제 은행 정규화', () => {
@@ -70,6 +73,37 @@ describe('문제 은행 정규화', () => {
         assert.equal(c.goldenbell, 1);
         assert.equal(c.speedquiz, 1);
         assert.equal(c.excel, 1);
+    });
+
+    it('한 문항만 고치거나 지운다', () => {
+        const bank = sanitizeQuizBank([
+            { q: '수도는?', a: '부산', source: 'excel', addedAt: 1 },
+            { q: '1+1', a: '2', options: ['1', '2', '3', '4'], answerIndex: 1, source: 'excel', addedAt: 2 },
+        ]);
+        const id0 = bank[0].id;
+        const id1 = bank[1].id;
+        const edited = updateQuizBankItem(bank, id0, { a: '서울', source: 'goldenbell' });
+        assert.equal(edited.ok, true);
+        assert.equal(edited.item.id, id0);
+        assert.equal(edited.item.a, '서울');
+        assert.equal(edited.item.source, 'goldenbell');
+        assert.equal(edited.questions[1].id, id1);
+        const dup = updateQuizBankItem(edited.questions, id1, { q: '수도는?', a: '서울', options: [] });
+        assert.equal(dup.ok, false);
+        assert.equal(dup.reason, 'duplicate');
+        const missing = updateQuizBankItem(bank, '없는id', { a: '3' });
+        assert.equal(missing.ok, false);
+        const toShort = updateQuizBankItem(bank, id1, { q: '1+1은?', a: '2', options: [] });
+        assert.equal(toShort.ok, true);
+        assert.equal(toShort.item.type, 'short');
+        assert.equal(toShort.item.q, '1+1은?');
+        const left = removeQuizBankItem(edited.questions, id0);
+        assert.equal(left.length, 1);
+        assert.equal(left[0].id, id1);
+        const found = filterQuizBank(edited.questions, '골든벨');
+        assert.equal(found.length, 1);
+        assert.equal(found[0].id, id0);
+        assert.equal(filterQuizBank(bank, '없는검색어').length, 0);
     });
 });
 

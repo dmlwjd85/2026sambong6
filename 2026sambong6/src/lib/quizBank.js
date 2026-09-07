@@ -239,6 +239,85 @@ export function mergeQuizBank(existing, incoming, opts = {}) {
     return merged.slice(0, max);
 }
 
+const SOURCE_LABELS = {
+    goldenbell: '골든벨',
+    speedquiz: '스피드퀴즈',
+    excel: '엑셀',
+    manual: '직접',
+};
+
+export function quizBankSourceLabel(source) {
+    const key = String(source || '');
+    return SOURCE_LABELS[key] || key;
+}
+
+/**
+ * 문제·정답·보기·출처로 은행을 좁힙니다.
+ * @param {object[]} bank
+ * @param {string} query
+ */
+export function filterQuizBank(bank, query) {
+    const needle = normalizeQuizAnswer(query);
+    const list = sanitizeQuizBank(bank);
+    if (!needle) return list;
+    return list.filter((item) => {
+        const hay = [
+            item.q,
+            item.a,
+            item.type === 'mc' ? '객관식' : '주관식',
+            quizBankSourceLabel(item.source),
+            item.source,
+            ...(Array.isArray(item.options) ? item.options : []),
+        ].join(' ');
+        return normalizeQuizAnswer(hay).includes(needle);
+    });
+}
+
+/**
+ * id로 한 문항을 지웁니다.
+ * @param {object[]} bank
+ * @param {string} id
+ */
+export function removeQuizBankItem(bank, id) {
+    const sid = String(id || '').trim();
+    if (!sid) return sanitizeQuizBank(bank);
+    return sanitizeQuizBank(bank).filter((item) => String(item.id) !== sid);
+}
+
+/**
+ * id로 한 문항을 고칩니다. 문제 글이 다른 문항과 겹치면 거절합니다.
+ * @param {object[]} bank
+ * @param {string} id
+ * @param {object} patch
+ */
+export function updateQuizBankItem(bank, id, patch) {
+    const sid = String(id || '').trim();
+    const list = sanitizeQuizBank(bank);
+    const idx = list.findIndex((item) => String(item.id) === sid);
+    if (idx < 0) return { ok: false, reason: 'missing' };
+    const prev = list[idx];
+    const src = patch && typeof patch === 'object' ? patch : {};
+    const mergedRaw = {
+        ...prev,
+        ...src,
+        id: prev.id,
+        addedAt: prev.addedAt,
+    };
+    const incomingOptions = Array.isArray(src.options) ? src.options.map(cellText).filter(Boolean) : null;
+    if (incomingOptions && incomingOptions.length < QUIZ_MC_MIN_OPTIONS) {
+        mergedRaw.options = [];
+        mergedRaw.answerIndex = null;
+    }
+    const nextItem = sanitizeQuizItem(mergedRaw);
+    if (!nextItem) return { ok: false, reason: 'invalid' };
+    const key = quizQuestionKey(nextItem.q);
+    const dup = list.some((item, i) => i !== idx && quizQuestionKey(item.q) === key);
+    if (dup) return { ok: false, reason: 'duplicate' };
+    const out = list.slice();
+    out[idx] = { ...nextItem, id: prev.id, addedAt: prev.addedAt };
+    return { ok: true, questions: out, item: out[idx] };
+}
+
 /**
  * @param {object[]} bank
  * @returns {{ total: number, goldenbell: number, speedquiz: number, excel: number, manual: number, mc: number, short: number }}

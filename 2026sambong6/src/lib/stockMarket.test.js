@@ -161,8 +161,10 @@ describe('은행 지수 투자', () => {
         assert.equal(sum.principal, 60);
         assert.equal(sum.markets.find((m) => m.id === 'kospi').held, true);
         assert.equal(sum.markets.find((m) => m.id === 'kospi').payout, 20);
+        assert.equal(sum.markets.find((m) => m.id === 'kospi').buyIndex, 1000);
         assert.equal(sum.markets.find((m) => m.id === 'kosdaq').held, false);
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').held, true);
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').payout, 40);
+        assert.equal(sum.markets.find((m) => m.id === 'nasdaq').buyIndex, 17000);
     });
 });

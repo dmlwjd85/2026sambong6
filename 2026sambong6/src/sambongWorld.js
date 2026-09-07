@@ -193,6 +193,10 @@ import {
     yahooChartUrl,
 } from './lib/stockMarket.js';
 import {
+    canSettleShopGroupBuy,
+    shopGroupBuySettleExtra,
+} from './lib/shopGroupBuy.js';
+import {
     extractWeatherJson,
     isSharedWeatherFresh,
     openMeteoGeocodeUrl,
@@ -7662,6 +7666,35 @@ ${subjectLine}
             }
         }
 
+        /** 체육시간(s4) 공동구매 잔액을 이미 구매한 것으로 정산 — 환불 없이 contributions만 비움(1회) */
+        async function applyPeClassGroupBuySettleMigration() {
+            if (!db) return;
+            const shopId = 's4';
+            const markerId = 'shop_group_buy_s4_settle_20260907';
+            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
+            try {
+                const markerSnap = await getDoc(markerRef);
+                if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                const result = await settleShopGroupBuyPool(shopId, {
+                    note: '체육시간 공동구매 — 이미 구매 처리(환불 없음)',
+                    actor: 'migration',
+                });
+                await setDoc(markerRef, {
+                    done: true,
+                    clearedTotal: result && result.ok ? result.total : 0,
+                    note: result && result.ok
+                        ? '체육시간(s4) 공동구매 구매처리'
+                        : '체육시간(s4) 공동구매 — 이미 비어 있음',
+                    sanitizedAt: new Date().toISOString(),
+                }, { merge: true });
+                if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
+            } catch (e) {
+                console.warn('applyPeClassGroupBuySettleMigration', e);
+            }
+        }
+
         window.cancelAllWorldCupBetsAdmin = async function() {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 실행할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
@@ -14334,6 +14367,7 @@ ${subjectLine}
                 void applyWorldCupSimLinkMigration();
                 void applyLearningThermometerRahiMaxHotfix();
                 void applyLegendaryTimeGroupBuyPoolWipeMigration();
+                void applyPeClassGroupBuySettleMigration();
 
                 onAuthStateChanged(auth, user => {
                     if (user) {
@@ -16364,6 +16398,7 @@ ${subjectLine}
             return `<div class="text-right leading-tight">
                 <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
                 <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
+                <div class="text-[8px] text-slate-400 tabular-nums">매수 ${formatIndexPrice(row.buyIndex)}</div>
             </div>`;
         }
 
@@ -19963,6 +19998,12 @@ ${subjectLine}
                                 <button type="button" onclick="window.refundShopGroupBuyStudentAdmin('${shop.id}', '${r.sid}')" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-1 px-2 rounded text-[9px]">학생별 환불</button>
                             </div>
                         </div>`).join('');
+                    const lastSettleLine = pool.lastSettleAt
+                        ? `<div class="text-[9px] text-emerald-300/80 mt-1">마지막 구매처리 ${formatBongAmount(Number(pool.lastSettleOriginalTotal) || 0)} · ${new Date(Number(pool.lastSettleAt)).toLocaleString('ko-KR')}</div>`
+                        : '';
+                    const settleBtn = sum > 0
+                        ? `<button type="button" onclick="void window.settleShopGroupBuyAdmin('${shop.id}')" class="mt-2 w-full bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100 border border-emerald-700 font-bold py-1.5 px-2 rounded text-[9px]">구매처리 (환불 없음 · 목표 미달이어도 가능)</button>`
+                        : `<button type="button" disabled class="mt-2 w-full bg-slate-800 text-slate-600 border border-slate-700 font-bold py-1.5 px-2 rounded text-[9px] cursor-not-allowed">구매처리할 입금 없음</button>`;
                     const resetBtn = sum > 0
                         ? `<button type="button" onclick="window.resetShopGroupBuyAdmin('${shop.id}')" class="mt-2 w-full bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 font-bold py-1.5 px-2 rounded text-[9px]">10% 차감 환불 후 초기화</button>`
                         : `<button type="button" disabled class="mt-2 w-full bg-slate-800 text-slate-600 border border-slate-700 font-bold py-1.5 px-2 rounded text-[9px] cursor-not-allowed">초기화할 입금 없음</button>`;
@@ -19976,6 +20017,8 @@ ${subjectLine}
                                 <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
                             </div>
                             <div class="space-y-1">${contributors}</div>
+                            ${lastSettleLine}
+                            ${settleBtn}
                             ${resetBtn}
                         </div>`;
                 });
@@ -20117,6 +20160,48 @@ ${subjectLine}
             }
         };
 
+        /**
+         * 공동구매 모금을 환불 없이 비워 이미 구매한 것으로 처리합니다.
+         * 목표 금액에 못 미쳐도 가능합니다. 학생 지갑은 건드리지 않습니다.
+         */
+        async function settleShopGroupBuyPool(shopId, extra = {}) {
+            if (!shopId || !db) return { ok: false, reason: 'nodb', total: 0 };
+            const poolRef = doc(db, 'artifacts', appId, 'public', 'data', 'shopGroupBuy', shopId);
+            let total = 0;
+            let savedContributions = null;
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const poolSnap = await transaction.get(poolRef);
+                    const poolData = poolSnap.exists() ? poolSnap.data() || {} : {};
+                    const merged = buildSanitizedContributionsMap(poolData.contributions);
+                    total = Object.keys(merged).reduce((s, k) => s + merged[k], 0);
+                    const gate = canSettleShopGroupBuy(total);
+                    if (!gate.ok) throw new Error('empty');
+                    savedContributions = writeShopGroupBuyPoolInTransaction(
+                        transaction,
+                        poolRef,
+                        poolSnap,
+                        {},
+                        shopGroupBuySettleExtra(Date.now(), gate.total, {
+                            note: extra.note,
+                            actor: extra.actor,
+                            contributions: merged,
+                        })
+                    );
+                });
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'empty') return { ok: false, reason: 'empty', total: 0 };
+                throw e;
+            }
+            applyShopGroupBuyPoolLocal(shopId, savedContributions || {}, shopGroupBuySettleExtra(Date.now(), total, {
+                note: extra.note,
+                actor: extra.actor,
+            }));
+            await refreshShopGroupBuyPoolFromServer(shopId);
+            return { ok: true, total };
+        }
+
         window.resetShopGroupBuyAdmin = async function (shopId) {
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 초기화할 수 있습니다.`);
             if (!shopId || !db) return;
@@ -20163,6 +20248,46 @@ ${subjectLine}
             } catch (e) {
                 console.error('resetShopGroupBuyAdmin', e);
                 await window.customAlert('초기화 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.settleShopGroupBuyAdmin = async function (shopId) {
+            if (!window.playerState || !window.playerState.isGM) {
+                return await window.customAlert(`${getMasterDisplayName()}만 구매처리할 수 있습니다.`);
+            }
+            if (!shopId || shopId === 'item_mystery_dice' || !db) return;
+            const shop = getShopItemById(shopId);
+            const pool = (window.shopGroupBuyPools && window.shopGroupBuyPools[shopId]) || {};
+            const total = sumShopPoolContributions(pool);
+            const gate = canSettleShopGroupBuy(total);
+            if (!gate.ok) return await window.customAlert('구매 처리할 입금 내역이 없습니다.');
+            const ok = await window.customConfirm(
+                `「${shop ? shop.name : shopId}」 공동구매 모금 ${formatBongAmount(gate.total)}를 이미 구매한 것으로 처리할까요?\n\n` +
+                `목표 금액에 못 미쳐도 정산할 수 있습니다.\n` +
+                `환불하지 않으며 학생 지갑은 그대로입니다.\n` +
+                `모금 내역은 비워지고, 이후 다시 입금할 수 있습니다.`
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const result = await settleShopGroupBuyPool(shopId, {
+                    note: '교사 구매처리(환불 없음)',
+                    actor: 'gm',
+                });
+                if (!result.ok) {
+                    return await window.customAlert(
+                        result.reason === 'empty'
+                            ? '이미 비어 있거나 다른 처리로 모금이 없습니다.'
+                            : '구매처리에 실패했습니다.'
+                    );
+                }
+                window.renderShopGroupBuyAdminModal();
+                if (window._groupBuyModalShopId === shopId) window.renderShopGroupBuyModalContent(shopId);
+                await window.customAlert(`구매처리 완료. ${formatBongAmount(result.total)}를 사용한 것으로 기록했습니다.`);
+            } catch (e) {
+                console.error('settleShopGroupBuyAdmin', e);
+                await window.customAlert('구매처리 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 

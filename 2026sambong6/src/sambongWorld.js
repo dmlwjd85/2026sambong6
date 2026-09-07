@@ -10233,7 +10233,7 @@ ${subjectLine}
                         return `<article class="think-note think-note-${p.color} ${glow}" ${click}>
                             ${privateMark}
                             <p class="think-note-author">${escapeHtmlAttr(p.name || getStudentDisplayLabel(p.studentId))}</p>
-                            <p class="think-note-excerpt">${escapeHtmlAttr(thoughtPostExcerpt(p, 36))}</p>
+                            <p class="think-note-excerpt">${escapeHtmlAttr(thoughtPostExcerpt(p, 90))}</p>
                             ${p.drawing ? `<img src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
                             <div class="mt-1 flex items-center justify-between gap-1 think-keep-input" onclick="event.stopPropagation();">
                                 <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="event.stopPropagation(); void window.toggleThinkPostEmpathy('${p.id}')">공감</button>

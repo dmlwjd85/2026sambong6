@@ -2274,22 +2274,34 @@
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"] {
             max-width: none;
+            width: 100%;
+            margin: 0;
             height: 100%;
             min-height: 0;
             border-radius: 0;
             border-width: 0;
         }
+        /* 웹: 양옆은 화면 끝까지, 생각 목록만 위아래로 스크롤합니다. */
         .classtool-fs-body:has(> .classtool-pane[data-tool="padlet"]) {
             overflow: hidden;
             display: flex;
             flex-direction: column;
             min-height: 0;
             padding: 0;
+            width: 100%;
         }
         body.classtool-fs-open .think-board-panel {
             height: 100%;
             min-height: 0;
             max-height: none;
+            width: 100%;
+            overflow: hidden;
+            padding: 0.45rem 0.55rem 0.55rem;
+        }
+        @media (min-width: 768px) {
+            body.classtool-fs-open .think-board-panel {
+                padding: 0.55rem 0.85rem 0.7rem;
+            }
         }
         #classtoolFullscreen:fullscreen,
         #classtoolFullscreen:-webkit-full-screen {
@@ -2444,25 +2456,59 @@
             flex: 1 1 auto;
             min-height: 0;
             overflow: auto;
+            overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
             padding-right: 0.1rem;
+            width: 100%;
+        }
+        body.classtool-fs-open .think-board-stage {
+            overflow-x: hidden;
+            overflow-y: auto;
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
         }
         .think-board-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(7.6rem, 1fr));
-            gap: 0.55rem;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));
+            gap: 0.65rem;
             min-height: 8rem;
-            padding: 0.15rem;
+            padding: 0.15rem 0;
+            width: 100%;
+        }
+        @media (min-width: 768px) {
+            .think-board-grid {
+                grid-template-columns: repeat(auto-fit, minmax(14.75rem, 1fr));
+                gap: 0.85rem;
+            }
+        }
+        @media (min-width: 1280px) {
+            .think-board-grid {
+                grid-template-columns: repeat(auto-fit, minmax(16.75rem, 1fr));
+                gap: 1rem;
+            }
+        }
+        @media (min-width: 1600px) {
+            .think-board-grid {
+                grid-template-columns: repeat(auto-fit, minmax(18.5rem, 1fr));
+                gap: 1.1rem;
+            }
         }
         .think-note {
             position: relative;
-            min-height: 7.2rem;
+            min-height: 8.4rem;
             border-radius: 0.2rem 0.85rem 0.7rem 0.7rem;
-            padding: 0.55rem 0.5rem 0.45rem;
+            padding: 0.65rem 0.65rem 0.55rem;
             box-shadow: 0 8px 16px rgba(0, 0, 0, 0.28);
             transform: rotate(-1.2deg);
             cursor: pointer;
             overflow: hidden;
+        }
+        @media (min-width: 768px) {
+            .think-note {
+                min-height: 12.5rem;
+                padding: 0.85rem 0.9rem 0.7rem;
+            }
         }
         .think-note:nth-child(2n) { transform: rotate(1.1deg); }
         .think-note:nth-child(3n) { transform: rotate(-0.4deg); }
@@ -2473,14 +2519,26 @@
         .think-note-peach { background: #fed7aa; color: #7c2d12; }
         .think-note-author { font-size: 9px; font-weight: 900; opacity: 0.78; }
         .think-note-excerpt {
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 800;
-            line-height: 1.35;
-            margin-top: 0.25rem;
+            line-height: 1.4;
+            margin-top: 0.3rem;
             display: -webkit-box;
-            -webkit-line-clamp: 4;
+            -webkit-line-clamp: 5;
             -webkit-box-orient: vertical;
             overflow: hidden;
+            word-break: keep-all;
+        }
+        @media (min-width: 768px) {
+            .think-note-author { font-size: 12px; }
+            .think-note-excerpt {
+                font-size: 1.05rem;
+                line-height: 1.45;
+                -webkit-line-clamp: 7;
+            }
+        }
+        @media (min-width: 1280px) {
+            .think-note-excerpt { font-size: 1.15rem; }
         }
         .think-note-private {
             position: absolute;
@@ -2511,6 +2569,9 @@
             border-radius: 0.4rem;
             margin-top: 0.3rem;
         }
+        @media (min-width: 768px) {
+            .think-note-thumb { height: 5.2rem; }
+        }
         .think-note-glow {
             animation: think-glow 1.4s ease-in-out infinite alternate;
             box-shadow: 0 0 0 3px #fde68a, 0 0 28px 8px rgba(250, 204, 21, 0.75);
@@ -2529,13 +2590,18 @@
         }
         .think-focus-card {
             flex: 1 1 auto;
+            width: 100%;
             border-radius: 1.1rem;
             padding: 1rem 1.1rem;
             overflow: auto;
             box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
         }
         .think-focus-text { font-size: 1.35rem; font-weight: 800; line-height: 1.5; white-space: pre-wrap; }
-        .think-focus-draw { max-width: min(100%, 28rem); width: 100%; border-radius: 0.8rem; background: #fffbeb; margin-top: 0.7rem; }
+        @media (min-width: 768px) {
+            .think-focus-card { padding: 1.35rem 1.6rem; }
+            .think-focus-text { font-size: 1.7rem; }
+        }
+        .think-focus-draw { max-width: 100%; width: min(100%, 42rem); border-radius: 0.8rem; background: #fffbeb; margin-top: 0.7rem; }
         .think-empathy-btn {
             min-height: 40px;
             padding: 0.35rem 0.8rem;
@@ -2624,6 +2690,11 @@
         .classtool-fs-body > .classtool-pane {
             margin: 0 auto;
             max-width: 80rem;
+        }
+        .classtool-fs-body > .classtool-pane[data-tool="padlet"] {
+            margin: 0;
+            max-width: none;
+            width: 100%;
         }
 
         @keyframes bounce-subtle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }

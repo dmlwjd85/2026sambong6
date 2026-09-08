@@ -5,6 +5,7 @@ import {
     STOCK_INVEST_MAX,
     applyBuyStock,
     applySellStock,
+    applyStockTradeAgainstServer,
     blendStockBuyIndex,
     canBuyStock,
     canSellStock,
@@ -166,5 +167,32 @@ describe('은행 지수 투자', () => {
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').held, true);
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').payout, 40);
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').buyIndex, 17000);
+    });
+
+    it('서버에 이미 매도된 포지션은 낡은 일부 매도로 되살리지 않는다', () => {
+        const pos = { principal: 100, buyIndex: 1000, openedAt: 0, openedDate: '2026-09-08' };
+        const full = applyStockTradeAgainstServer(
+            { bong: 100, stockInvestments: { kospi: pos } },
+            { type: 'sell', marketId: 'kospi', currentIndex: 1000, nowMs: 1000, today: '2026-09-08' }
+        );
+        assert.equal(full.ok, true);
+        assert.equal(full.full, true);
+        assert.equal(full.payout, 100);
+        assert.equal(full.bong, 200);
+        assert.equal(full.investments.kospi, null);
+        const stalePartial = applyStockTradeAgainstServer(
+            { bong: full.bong, stockInvestments: full.investments, stockInvestDaily: full.daily },
+            { type: 'sell', marketId: 'kospi', amount: 40, currentIndex: 1000, nowMs: 2000, today: '2026-09-08' }
+        );
+        assert.equal(stalePartial.ok, false);
+        assert.equal(stalePartial.reason, 'none');
+        const staleBuyAdd = applyStockTradeAgainstServer(
+            { bong: full.bong, stockInvestments: full.investments, stockInvestDaily: full.daily },
+            { type: 'buy', marketId: 'kospi', amount: 50, buyIndex: 1000, nowMs: 2000, today: '2026-09-08' }
+        );
+        assert.equal(staleBuyAdd.ok, true);
+        assert.equal(staleBuyAdd.adding, false);
+        assert.equal(staleBuyAdd.investments.kospi.principal, 50);
+        assert.equal(staleBuyAdd.bong, 150);
     });
 });

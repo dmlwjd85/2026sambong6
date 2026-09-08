@@ -171,8 +171,8 @@ import {
     STOCK_INVEST_MAX,
     STOCK_INVEST_MIN,
     STOCK_MARKETS,
-    applyBuyStock,
     applySellStock,
+    applyStockTradeAgainstServer,
     canBuyStock,
     canSellStock,
     extractYahooChartJson,
@@ -7742,9 +7742,10 @@ ${subjectLine}
             }
         }
 
-        /** 체육시간(s4) 공동구매 잔액을 이미 구매한 것으로 정산 — 환불 없이 contributions만 비움(1회) */
+        /** 체육시간(s4) 공동구매 잔액을 이미 구매한 것으로 정산 — 환불 없이 contributions만 비움(1회, 시드 학급만) */
         async function applyPeClassGroupBuySettleMigration() {
             if (!db) return;
+            if (appId !== SEED_CLASS_ID) return;
             const shopId = 's4';
             const markerId = 'shop_group_buy_s4_settle_20260907';
             const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
@@ -16978,22 +16979,34 @@ ${subjectLine}
                     : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`
             );
             if (!ok) return;
-            const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gate.amount, q.price, Date.now(), getLocalDateStr());
-            if (!bought.ok) return window.customAlert('매수에 실패했습니다.');
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - gate.amount);
-            window.playerState.stockInvestments = bought.investments;
-            if (inp) inp.value = '';
-            updateUI();
+            const today = getLocalDateStr();
+            const nowMs = Date.now();
             const saved = await saveDataToCloud({
                 allowBongDecrease: true,
                 maxBongDecrease: gate.amount,
                 requireServerBongBalance: true,
+                allowStockFieldChanges: true,
+                stockTrade: {
+                    type: 'buy',
+                    marketId: market.id,
+                    amount: gate.amount,
+                    buyIndex: q.price,
+                    nowMs,
+                    today,
+                },
                 operationLabel: gate.adding ? `${market.name} 추가 매수` : `${market.name} 매수`,
             });
             if (!saved) return;
+            if (inp) inp.value = '';
+            updateUI();
+            const committed = lastStockTradeResult;
+            const nextPrincipal = committed && committed.nextPrincipal != null
+                ? committed.nextPrincipal
+                : gate.nextPrincipal;
+            const adding = committed && committed.adding != null ? committed.adding : gate.adding;
             await window.customAlert(
-                gate.adding
-                    ? `${market.name} ${formatBongAmount(gate.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(gate.nextPrincipal)}.`
+                adding
+                    ? `${market.name} ${formatBongAmount(gate.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(nextPrincipal)}.`
                     : `${market.name} ${formatBongAmount(gate.amount)} 매수했습니다.`
             );
         };
@@ -17035,20 +17048,27 @@ ${subjectLine}
                 + (sold.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
             );
             if (!ok) return;
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sold.payout);
-            window.playerState.stockInvestments = sold.investments;
-            window.playerState.stockInvestDaily = sold.daily;
-            if (sellInp) sellInp.value = '';
-            updateUI();
+            const nowMs = Date.now();
             const saved = await saveDataToCloud({
-                maxBongIncrease: Math.max(1, sold.payout),
+                allowStockFieldChanges: true,
+                stockTrade: {
+                    type: 'sell',
+                    marketId: market.id,
+                    amount: sellRaw === '' ? null : gate.amount,
+                    currentIndex: q.price,
+                    nowMs,
+                    today,
+                },
                 operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
             });
             if (!saved) return;
+            if (sellInp) sellInp.value = '';
+            updateUI();
+            const committed = lastStockTradeResult || sold;
             await window.customAlert(
-                sold.full
-                    ? `매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받았습니다.`
-                    : `일부 매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받고, 원금 ${formatBongAmount(sold.remaining)}가 남았습니다.`
+                committed.full
+                    ? `매도 완료. 지갑으로 ${formatBongAmount(committed.payout)}를 받았습니다.`
+                    : `일부 매도 완료. 지갑으로 ${formatBongAmount(committed.payout)}를 받고, 원금 ${formatBongAmount(committed.remaining)}가 남았습니다.`
             );
         };
 
@@ -18139,6 +18159,7 @@ ${subjectLine}
             }
         }
 
+        let lastStockTradeResult = null;
         async function saveDataToCloud(options = {}) {
             if (window.playerState.isGuest || !currentStudentDocRef) return;
             const opts = {
@@ -18148,6 +18169,8 @@ ${subjectLine}
                 maxBongDecrease: 0,
                 requireServerBongBalance: false,
                 allowBankFieldChanges: false,
+                allowStockFieldChanges: false,
+                stockTrade: null,
                 allowLunchBidChanges: false,
                 allowShieldPurchase: false,
                 allowShieldHpDecrease: false,
@@ -18178,12 +18201,15 @@ ${subjectLine}
             let blockedByBankReconcile = false;
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
+            let blockedByStockTrade = false;
+            let stockTradeFailReason = '';
             let serverRestoreData = null;
+            lastStockTradeResult = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
                     console.warn('saveDataToCloud: 익명 인증 실패');
-                    if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                    if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.allowStockFieldChanges || opts.operationLabel !== '저장') {
                         await window.customAlert('저장에 실패했습니다. 인증을 다시 받은 뒤 새로고침해 주세요.');
                     }
                     return false;
@@ -18248,6 +18274,24 @@ ${subjectLine}
                             dataToSave.bankDailyBonusLastDate = reconciled.bankDailyBonusLastDate;
                         } else {
                             ['bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate'].forEach((key) => {
+                                if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
+                            });
+                        }
+
+                        if (opts.allowStockFieldChanges && opts.stockTrade) {
+                            const trade = applyStockTradeAgainstServer(serverData, opts.stockTrade);
+                            if (!trade.ok) {
+                                blockedByStockTrade = true;
+                                stockTradeFailReason = String(trade.reason || '');
+                                serverRestoreData = serverData;
+                                return;
+                            }
+                            dataToSave.stockInvestments = trade.investments;
+                            dataToSave.stockInvestDaily = trade.daily;
+                            dataToSave.bong = normalizeBongValue(trade.bong);
+                            lastStockTradeResult = trade;
+                        } else {
+                            ['stockInvestments', 'stockInvestDaily'].forEach((key) => {
                                 if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
                             });
                         }
@@ -18339,7 +18383,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -18359,6 +18403,12 @@ ${subjectLine}
                             ? '이미 서버에 완료 처리된 퀘스트입니다.\n중복 보상을 막기 위해 저장하지 않았습니다. 새로고침 후 확인해 주세요.'
                             : blockedByBankReconcile
                             ? '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.'
+                            : blockedByStockTrade
+                            ? (stockTradeFailReason === 'none'
+                                ? '이미 매도되었거나 서버에 투자 내역이 없습니다.\n새로고침 후 다시 확인해 주세요.'
+                                : stockTradeFailReason === 'wallet'
+                                ? '서버 잔액이 부족합니다. 새로고침 후 다시 시도해 주세요.'
+                                : '지수 투자가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 다시 시도해 주세요.')
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
                                 '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
                     );
@@ -18377,10 +18427,16 @@ ${subjectLine}
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankDailyBonusLastDate')) {
                     window.playerState.bankDailyBonusLastDate = dataToSave.bankDailyBonusLastDate;
                 }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestments')) {
+                    window.playerState.stockInvestments = dataToSave.stockInvestments;
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestDaily')) {
+                    window.playerState.stockInvestDaily = dataToSave.stockInvestDaily;
+                }
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
-                if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.allowStockFieldChanges || opts.operationLabel !== '저장') {
                     const detail = (e && e.message) ? e.message : String(e);
                     await window.customAlert(`${opts.operationLabel}에 실패했습니다.\n${detail}`);
                 }

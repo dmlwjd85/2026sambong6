@@ -347,3 +347,65 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
         capped: uncappedDelta > delta,
     };
 }
+
+/**
+ * 서버 학생 문서 기준으로 매수·매도를 적용합니다.
+ * 낡은 탭이 이미 매도한 포지션을 되살리거나, 같은 원금을 두 번 정산하지 못하게 합니다.
+ */
+export function applyStockTradeAgainstServer(serverData, trade = {}) {
+    const type = String(trade.type || '');
+    const marketId = trade.marketId;
+    const nowMs = Math.floor(Number(trade.nowMs) || Date.now());
+    const today = String(trade.today || '');
+    const bag = sanitizeStockInvestments(serverData && serverData.stockInvestments);
+    const daily = sanitizeStockInvestDaily(serverData && serverData.stockInvestDaily, today);
+    const wallet = Number(serverData && serverData.bong) || 0;
+    if (type === 'buy') {
+        const held = bag[String(marketId || '')] || null;
+        const gate = canBuyStock({ wallet, amount: trade.amount, existing: held });
+        if (!gate.ok) return { ok: false, reason: gate.reason, room: gate.room };
+        const bought = applyBuyStock(bag, marketId, gate.amount, trade.buyIndex, nowMs, today);
+        if (!bought.ok) return { ok: false, reason: bought.reason };
+        return {
+            ok: true,
+            type: 'buy',
+            adding: !!bought.added,
+            amount: gate.amount,
+            bong: wallet - gate.amount,
+            investments: bought.investments,
+            daily,
+            nextPrincipal: gate.nextPrincipal,
+        };
+    }
+    if (type === 'sell') {
+        const held = bag[String(marketId || '')] || null;
+        const amount = trade.amount == null || trade.amount === '' ? null : trade.amount;
+        const gate = canSellStock({ existing: held, amount });
+        if (!gate.ok) {
+            return {
+                ok: false,
+                reason: gate.reason,
+                max: gate.max,
+                remaining: gate.remaining,
+                min: gate.min,
+            };
+        }
+        const sold = applySellStock(bag, marketId, trade.currentIndex, daily, today, nowMs, gate.amount);
+        if (!sold.ok) return { ok: false, reason: sold.reason };
+        return {
+            ok: true,
+            type: 'sell',
+            amount: sold.principal,
+            bong: wallet + sold.payout,
+            investments: sold.investments,
+            daily: sold.daily,
+            payout: sold.payout,
+            principal: sold.principal,
+            remaining: sold.remaining,
+            full: sold.full,
+            capped: sold.capped,
+            delta: sold.delta,
+        };
+    }
+    return { ok: false, reason: 'type' };
+}

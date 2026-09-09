@@ -362,6 +362,10 @@ import {
     openClassToolShare,
     sanitizeClassToolShare,
 } from './lib/classToolShare.js';
+import {
+    PASSWORD_CHANGE_BONG,
+    planPasswordChange,
+} from './lib/studentPassword.js';
 
 /** 마스터 지급 등: 로컬 캐시가 아닌 서버 최신 문서를 읽어 합산(캐시 기준 덮어쓰기로 새로고침 후 수치가 되돌아가는 현상 방지) */
 async function readStudentDocPreferServer(ref) {
@@ -17650,6 +17654,11 @@ ${subjectLine}
                 void runAdminOneShotMigrations();
             }
             document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
+            const dashChangePinBtn = document.getElementById('dashChangePinBtn');
+            if (dashChangePinBtn) {
+                const canChangePin = !!(window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin);
+                dashChangePinBtn.classList.toggle('hidden', !canChangePin);
+            }
             document.getElementById('dashLevelName').innerText = window.playerState.isAdmin ? '마스터 권한' : `Lv.${exactLv} ${lvInfo.info.name}`;
             document.getElementById('dashXp').innerText = xp.toLocaleString();
             const dashBongEl = document.getElementById('dashBong');
@@ -18042,6 +18051,98 @@ ${subjectLine}
                 if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
                 location.reload();
             }
+        };
+
+        /** 홈 캐릭터 화면에서 학생 본인 PIN을 바꿉니다. */
+        function promptMyPasswordChange(costLabel) {
+            return new Promise((resolve) => {
+                const d = document.createElement('div');
+                d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+                d.innerHTML = `
+                    <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-3 shadow-2xl">
+                        <h3 class="text-xl font-display text-sb-gold">비밀번호 변경</h3>
+                        <p class="text-xs text-slate-300 leading-relaxed">숫자 4자리로 바꿉니다. 바꾸면 ${costLabel}이 차감됩니다.</p>
+                        <input type="password" data-pin="current" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="현재 비밀번호" class="w-full bg-slate-800 text-white rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
+                        <input type="password" data-pin="next" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" placeholder="새 비밀번호" class="w-full bg-slate-800 text-white rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
+                        <input type="password" data-pin="confirm" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" placeholder="새 비밀번호 확인" class="w-full bg-slate-800 text-white rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
+                        <div class="flex gap-3 pt-1">
+                            <button type="button" data-act="no" class="bg-slate-700 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">취소</button>
+                            <button type="button" data-act="yes" class="bg-emerald-500 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">변경</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(d);
+                const cur = d.querySelector('[data-pin="current"]');
+                const next = d.querySelector('[data-pin="next"]');
+                const confirmEl = d.querySelector('[data-pin="confirm"]');
+                const finish = (value) => { d.remove(); resolve(value); };
+                d.querySelector('[data-act="yes"]').onclick = () => {
+                    finish({ current: cur ? cur.value : '', next: next ? next.value : '', confirm: confirmEl ? confirmEl.value : '' });
+                };
+                d.querySelector('[data-act="no"]').onclick = () => finish(null);
+                if (cur) cur.focus();
+            });
+        }
+
+        window.changeMyPassword = async function() {
+            if (!window.playerState || window.playerState.isGuest) {
+                return await window.customAlert('👀 게스트는 비밀번호를 바꿀 수 없어요.');
+            }
+            if (window.playerState.isAdmin) {
+                return await window.customAlert('마스터 PIN은 학급 관리에서 바꿔 주세요.');
+            }
+            const fee = PASSWORD_CHANGE_BONG;
+            const feeLabel = formatBongAmount(fee);
+            const wallet = Number(window.playerState.bong) || 0;
+            if (wallet < fee) {
+                return await window.customAlert(formatInsufficientBongAlert(fee - wallet));
+            }
+            const form = await promptMyPasswordChange(feeLabel);
+            if (!form) return;
+            const planned = planPasswordChange({
+                isGuest: !!window.playerState.isGuest,
+                isAdmin: !!window.playerState.isAdmin,
+                currentPin: window.playerState.pin,
+                inputCurrent: form.current,
+                newPin: form.next,
+                confirmPin: form.confirm,
+                bong: wallet,
+                cost: fee,
+            });
+            if (!planned.ok) {
+                const messages = {
+                    guest: '👀 게스트는 비밀번호를 바꿀 수 없어요.',
+                    admin: '마스터 PIN은 학급 관리에서 바꿔 주세요.',
+                    current: '❌ 현재 비밀번호가 틀렸어요.',
+                    format: '새 비밀번호는 숫자 4자리여야 해요.',
+                    mismatch: '새 비밀번호 확인이 같지 않아요.',
+                    same: '지금과 같은 비밀번호로는 바꿀 수 없어요.',
+                    funds: formatInsufficientBongAlert(fee - wallet),
+                };
+                return await window.customAlert(messages[planned.reason] || '비밀번호를 바꾸지 못했습니다.');
+            }
+            const ok = await window.customConfirm(`비밀번호를 바꿀까요?\n${feeLabel}이 즉시 차감됩니다.`);
+            if (!ok) return;
+            const prevPin = window.playerState.pin;
+            const prevBong = Number(window.playerState.bong) || 0;
+            window.playerState.pin = planned.pin;
+            window.playerState.bong = planned.nextBong;
+            updateUI();
+            const saved = await saveDataToCloud({
+                allowBongDecrease: true,
+                maxBongDecrease: fee,
+                requireServerBongBalance: true,
+                operationLabel: '비밀번호 변경',
+                bongLogSource: 'passwordChange',
+            });
+            if (!saved) {
+                window.playerState.pin = prevPin;
+                window.playerState.bong = prevBong;
+                updateUI();
+                return;
+            }
+            localStorage.setItem('sambong_student_pin', planned.pin);
+            updateUI();
+            await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
 
         async function attemptLogin(studentId, pin, isAutoLogin) {

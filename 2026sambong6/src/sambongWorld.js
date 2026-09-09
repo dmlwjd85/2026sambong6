@@ -173,6 +173,8 @@ import {
     STOCK_MARKETS,
     applyBuyStock,
     applySellStock,
+    applyStockBuyFromServer,
+    applyStockSellFromServer,
     canBuyStock,
     canSellStock,
     extractYahooChartJson,
@@ -13708,7 +13710,9 @@ ${subjectLine}
                 </div>`;
             document.body.appendChild(d);
             const okBtn = d.querySelector('.js-custom-alert-ok');
-            if (okBtn) okBtn.onclick = () => { d.remove(); r(true); };
+            let done = false;
+            const finish = () => { if (done) return; done = true; d.remove(); r(true); };
+            if (okBtn) okBtn.onclick = finish;
         });
 
         window.customConfirm = (m) => new Promise(r => {
@@ -13726,8 +13730,10 @@ ${subjectLine}
             document.body.appendChild(d);
             const yesBtn = d.querySelector('.js-custom-confirm-yes');
             const noBtn = d.querySelector('.js-custom-confirm-no');
-            if (yesBtn) yesBtn.onclick = () => { d.remove(); r(true); };
-            if (noBtn) noBtn.onclick = () => { d.remove(); r(false); };
+            let done = false;
+            const finish = (v) => { if (done) return; done = true; d.remove(); r(v); };
+            if (yesBtn) yesBtn.onclick = () => finish(true);
+            if (noBtn) noBtn.onclick = () => finish(false);
         });
 
         window.customPrompt = (m, type="password") => new Promise(r => {
@@ -13748,8 +13754,10 @@ ${subjectLine}
             const yesBtn = d.querySelector('.js-custom-prompt-yes');
             const noBtn = d.querySelector('.js-custom-prompt-no');
             if (inputEl) inputEl.focus();
-            if (yesBtn) yesBtn.onclick = () => { r(inputEl ? inputEl.value : ''); d.remove(); };
-            if (noBtn) noBtn.onclick = () => { r(null); d.remove(); };
+            let done = false;
+            const finish = (v) => { if (done) return; done = true; d.remove(); r(v); };
+            if (yesBtn) yesBtn.onclick = () => finish(inputEl ? inputEl.value : '');
+            if (noBtn) noBtn.onclick = () => finish(null);
         });
 
         // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
@@ -16947,113 +16955,212 @@ ${subjectLine}
                     </div>
                     <div class="flex gap-2 flex-wrap items-center mt-2">
                         <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
-                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded">매도</button>
+                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
                     </div>
                 </div>`;
             });
             box.innerHTML = rows.join('');
         }
 
+        /** 지수 매수·매도가 겹치면 같은 원금을 여러 번 정산할 수 있어 한 건씩만 처리합니다. */
+        let _stockTradeBusy = false;
+        function setStockTradeButtonsDisabled(disabled) {
+            document.querySelectorAll('.js-stock-trade-btn').forEach((el) => {
+                el.disabled = !!disabled;
+                el.classList.toggle('opacity-50', !!disabled);
+                el.classList.toggle('pointer-events-none', !!disabled);
+            });
+        }
+        function stockBuyFailMessage(reason, room) {
+            return reason === 'held_full' ? `이 시장 원금이 이미 ${formatBongAmount(STOCK_INVEST_MAX)}입니다.`
+                : reason === 'over_max' ? `원금 합계 ${formatBongAmount(STOCK_INVEST_MAX)}까지입니다. 지금은 ${formatBongAmount(room || 0)}만 더 넣을 수 있습니다.`
+                : reason === 'wallet' ? '지갑 잔액이 부족합니다.'
+                : `${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉만 투자할 수 있습니다.`;
+        }
+        function stockSellFailMessage(reason, max) {
+            return reason === 'none' ? '매도할 투자가 없습니다.'
+                : reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 합니다. 전액을 팔거나 원금을 더 남겨 주세요.`
+                : `팔 원금은 1~${formatBongAmount(max || 0)}만 입력할 수 있습니다. 칸을 비우면 전액 매도입니다.`;
+        }
+
         window.buyStockIndex = async function(marketId) {
+            if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            await refreshMarketQuotes(false);
-            const market = getStockMarket(marketId);
-            const q = market && _marketQuotes[market.id];
-            if (!q) return window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
-            const inp = document.getElementById('bankInvestAmount');
-            const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert(`${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 사이 금액을 입력하세요.`);
-            window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
-            const gate = canBuyStock({
-                wallet: Number(window.playerState.bong) || 0,
-                amount: amt,
-                existing: window.playerState.stockInvestments[market.id],
-            });
-            if (!gate.ok) {
-                const msg = gate.reason === 'held_full' ? `이 시장 원금이 이미 ${formatBongAmount(STOCK_INVEST_MAX)}입니다.`
-                    : gate.reason === 'over_max' ? `원금 합계 ${formatBongAmount(STOCK_INVEST_MAX)}까지입니다. 지금은 ${formatBongAmount(gate.room || 0)}만 더 넣을 수 있습니다.`
-                    : gate.reason === 'wallet' ? '지갑 잔액이 부족합니다.'
-                    : `${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉만 투자할 수 있습니다.`;
-                return window.customAlert(msg);
+            _stockTradeBusy = true;
+            setStockTradeButtonsDisabled(true);
+            try {
+                await refreshMarketQuotes(false);
+                const market = getStockMarket(marketId);
+                const q = market && _marketQuotes[market.id];
+                if (!q) {
+                    await window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    return;
+                }
+                const inp = document.getElementById('bankInvestAmount');
+                const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
+                if (amt == null) {
+                    await window.customAlert(`${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 사이 금액을 입력하세요.`);
+                    return;
+                }
+                window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+                const gate = canBuyStock({
+                    wallet: Number(window.playerState.bong) || 0,
+                    amount: amt,
+                    existing: window.playerState.stockInvestments[market.id],
+                });
+                if (!gate.ok) {
+                    await window.customAlert(stockBuyFailMessage(gate.reason, gate.room));
+                    return;
+                }
+                const ok = await window.customConfirm(
+                    gate.adding
+                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 추가 매수할까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)} → ${formatBongAmount(gate.nextPrincipal)}\n현재 지수 ${formatIndexPrice(q.price)}로 평균 매수가에 합산됩니다.`
+                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`
+                );
+                if (!ok) return;
+                // 확인 뒤에 최신 잔액·원금으로 다시 검사합니다. 창이 겹쳐도 같은 매수를 두 번 넣지 않습니다.
+                window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+                const qNow = _marketQuotes[market.id] || q;
+                const gateNow = canBuyStock({
+                    wallet: Number(window.playerState.bong) || 0,
+                    amount: gate.amount,
+                    existing: window.playerState.stockInvestments[market.id],
+                });
+                if (!gateNow.ok) {
+                    await window.customAlert(stockBuyFailMessage(gateNow.reason, gateNow.room));
+                    return;
+                }
+                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, qNow.price, Date.now(), getLocalDateStr());
+                if (!bought.ok) {
+                    await window.customAlert('매수에 실패했습니다.');
+                    return;
+                }
+                const trade = {
+                    kind: 'buy',
+                    marketId: market.id,
+                    amount: gateNow.amount,
+                    currentIndex: qNow.price,
+                    today: getLocalDateStr(),
+                    nowMs: Date.now(),
+                };
+                const saved = await saveDataToCloud({
+                    allowBongDecrease: true,
+                    maxBongDecrease: gateNow.amount,
+                    requireServerBongBalance: true,
+                    operationLabel: gateNow.adding ? `${market.name} 추가 매수` : `${market.name} 매수`,
+                    stockTrade: trade,
+                });
+                if (!saved) return;
+                if (inp) inp.value = '';
+                updateUI();
+                const applied = trade.applied;
+                const nextPrincipal = applied && applied.investments && applied.investments[market.id]
+                    ? applied.investments[market.id].principal
+                    : gateNow.nextPrincipal;
+                await window.customAlert(
+                    gateNow.adding
+                        ? `${market.name} ${formatBongAmount(gateNow.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(nextPrincipal)}.`
+                        : `${market.name} ${formatBongAmount(gateNow.amount)} 매수했습니다.`
+                );
+            } finally {
+                _stockTradeBusy = false;
+                setStockTradeButtonsDisabled(false);
             }
-            const ok = await window.customConfirm(
-                gate.adding
-                    ? `${market.name}에 ${formatBongAmount(gate.amount)}를 추가 매수할까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)} → ${formatBongAmount(gate.nextPrincipal)}\n현재 지수 ${formatIndexPrice(q.price)}로 평균 매수가에 합산됩니다.`
-                    : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`
-            );
-            if (!ok) return;
-            const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gate.amount, q.price, Date.now(), getLocalDateStr());
-            if (!bought.ok) return window.customAlert('매수에 실패했습니다.');
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - gate.amount);
-            window.playerState.stockInvestments = bought.investments;
-            if (inp) inp.value = '';
-            updateUI();
-            const saved = await saveDataToCloud({
-                allowBongDecrease: true,
-                maxBongDecrease: gate.amount,
-                requireServerBongBalance: true,
-                operationLabel: gate.adding ? `${market.name} 추가 매수` : `${market.name} 매수`,
-            });
-            if (!saved) return;
-            await window.customAlert(
-                gate.adding
-                    ? `${market.name} ${formatBongAmount(gate.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(gate.nextPrincipal)}.`
-                    : `${market.name} ${formatBongAmount(gate.amount)} 매수했습니다.`
-            );
         };
 
         window.sellStockIndex = async function(marketId) {
+            if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            await refreshMarketQuotes(true);
-            const market = getStockMarket(marketId);
-            const q = market && _marketQuotes[market.id];
-            if (!q) return window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
-            window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
-            const held = window.playerState.stockInvestments[market.id];
-            const sellInp = document.getElementById(`bankInvestSell_${market.id}`);
-            const sellRaw = sellInp && String(sellInp.value || '').trim() !== '' ? sellInp.value : '';
-            const gate = canSellStock({ existing: held, amount: sellRaw === '' ? null : sellRaw });
-            if (!gate.ok) {
-                const msg = gate.reason === 'none' ? '매도할 투자가 없습니다.'
-                    : gate.reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 합니다. 전액을 팔거나 원금을 더 남겨 주세요.`
-                    : `팔 원금은 1~${formatBongAmount(gate.max || 0)}만 입력할 수 있습니다. 칸을 비우면 전액 매도입니다.`;
-                return window.customAlert(msg);
+            _stockTradeBusy = true;
+            setStockTradeButtonsDisabled(true);
+            try {
+                await refreshMarketQuotes(true);
+                const market = getStockMarket(marketId);
+                const q = market && _marketQuotes[market.id];
+                if (!q) {
+                    await window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    return;
+                }
+                window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+                const held = window.playerState.stockInvestments[market.id];
+                const sellInp = document.getElementById(`bankInvestSell_${market.id}`);
+                const sellRaw = sellInp && String(sellInp.value || '').trim() !== '' ? sellInp.value : '';
+                const gate = canSellStock({ existing: held, amount: sellRaw === '' ? null : sellRaw });
+                if (!gate.ok) {
+                    await window.customAlert(stockSellFailMessage(gate.reason, gate.max));
+                    return;
+                }
+                const today = getLocalDateStr();
+                const preview = applySellStock(
+                    window.playerState.stockInvestments,
+                    market.id,
+                    q.price,
+                    window.playerState.stockInvestDaily,
+                    today,
+                    Date.now(),
+                    gate.amount
+                );
+                if (!preview.ok) {
+                    await window.customAlert('매도할 투자가 없습니다.');
+                    return;
+                }
+                const remainTxt = preview.full
+                    ? '전액 매도합니다.'
+                    : `남은 원금 ${formatBongAmount(preview.remaining)}.`;
+                const ok = await window.customConfirm(
+                    `${market.name} 원금 ${formatBongAmount(preview.principal)}를 매도할까요?\n정산 ${formatBongAmount(preview.payout)}`
+                    + `\n${remainTxt}`
+                    + (preview.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
+                );
+                if (!ok) return;
+                // 확인 뒤에 서버 원금 기준으로 다시 정산합니다. 아래 창이 남아 있어도 같은 매도를 두 번 넣지 않습니다.
+                window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+                const qNow = _marketQuotes[market.id] || q;
+                const heldNow = window.playerState.stockInvestments[market.id];
+                const gateNow = canSellStock({ existing: heldNow, amount: gate.amount });
+                if (!gateNow.ok) {
+                    await window.customAlert(stockSellFailMessage(gateNow.reason, gateNow.max));
+                    return;
+                }
+                const sold = applySellStock(
+                    window.playerState.stockInvestments,
+                    market.id,
+                    qNow.price,
+                    window.playerState.stockInvestDaily,
+                    getLocalDateStr(),
+                    Date.now(),
+                    gateNow.amount
+                );
+                if (!sold.ok) {
+                    await window.customAlert('이미 매도되었거나 매도할 수 없습니다.');
+                    return;
+                }
+                const trade = {
+                    kind: 'sell',
+                    marketId: market.id,
+                    amount: gateNow.amount,
+                    currentIndex: qNow.price,
+                    today: getLocalDateStr(),
+                    nowMs: Date.now(),
+                };
+                const saved = await saveDataToCloud({
+                    maxBongIncrease: Math.max(1, sold.payout),
+                    operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
+                    stockTrade: trade,
+                });
+                if (!saved) return;
+                if (sellInp) sellInp.value = '';
+                updateUI();
+                const applied = trade.applied || sold;
+                await window.customAlert(
+                    applied.full
+                        ? `매도 완료. 지갑으로 ${formatBongAmount(applied.payout)}를 받았습니다.`
+                        : `일부 매도 완료. 지갑으로 ${formatBongAmount(applied.payout)}를 받고, 원금 ${formatBongAmount(applied.remaining)}가 남았습니다.`
+                );
+            } finally {
+                _stockTradeBusy = false;
+                setStockTradeButtonsDisabled(false);
             }
-            const today = getLocalDateStr();
-            const sold = applySellStock(
-                window.playerState.stockInvestments,
-                market.id,
-                q.price,
-                window.playerState.stockInvestDaily,
-                today,
-                Date.now(),
-                gate.amount
-            );
-            if (!sold.ok) return window.customAlert('매도할 투자가 없습니다.');
-            const remainTxt = sold.full
-                ? '전액 매도합니다.'
-                : `남은 원금 ${formatBongAmount(sold.remaining)}.`;
-            const ok = await window.customConfirm(
-                `${market.name} 원금 ${formatBongAmount(sold.principal)}를 매도할까요?\n정산 ${formatBongAmount(sold.payout)}`
-                + `\n${remainTxt}`
-                + (sold.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
-            );
-            if (!ok) return;
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + sold.payout);
-            window.playerState.stockInvestments = sold.investments;
-            window.playerState.stockInvestDaily = sold.daily;
-            if (sellInp) sellInp.value = '';
-            updateUI();
-            const saved = await saveDataToCloud({
-                maxBongIncrease: Math.max(1, sold.payout),
-                operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
-            });
-            if (!saved) return;
-            await window.customAlert(
-                sold.full
-                    ? `매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받았습니다.`
-                    : `일부 매도 완료. 지갑으로 ${formatBongAmount(sold.payout)}를 받고, 원금 ${formatBongAmount(sold.remaining)}가 남았습니다.`
-            );
         };
 
 
@@ -18279,6 +18386,7 @@ ${subjectLine}
             let blockedByBankReconcile = false;
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
+            let blockedByStockTrade = false;
             let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -18291,6 +18399,10 @@ ${subjectLine}
                 }
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(currentStudentDocRef);
+                    if (opts.stockTrade && !snap.exists()) {
+                        blockedByStockTrade = true;
+                        return;
+                    }
                     if (snap.exists()) {
                         const serverData = snap.data() || {};
                         const serverSeason = Math.floor(Number(serverData.seasonNumberApplied) || 0);
@@ -18373,32 +18485,79 @@ ${subjectLine}
                             }
                         }
                         const maxBongDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
-                        if (
-                            opts.allowBongDecrease &&
-                            opts.requireServerBongBalance &&
-                            maxBongDrop > 0 &&
-                            Number.isFinite(serverBong) &&
-                            serverBong + 0.0001 < maxBongDrop
-                        ) {
-                            blockedByServerBalance = true;
-                            serverRestoreData = serverData;
-                            return;
-                        }
-                        if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
-                            if (opts.allowBongDecrease) {
-                                dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
+                        const trade = opts.stockTrade;
+                        if (trade && (trade.kind === 'sell' || trade.kind === 'buy')) {
+                            // 지수 매수·매도는 서버에 남은 원금·잔액만 정산합니다. 같은 포지션을 두 번 넣지 않습니다.
+                            const tradeNow = Math.floor(Number(trade.nowMs) || Date.now());
+                            const tradeToday = String(trade.today || getLocalDateStr());
+                            const tradeIndex = Number(trade.currentIndex);
+                            if (trade.kind === 'sell') {
+                                const sold = applyStockSellFromServer({
+                                    serverInvestments: serverData.stockInvestments,
+                                    serverDaily: serverData.stockInvestDaily,
+                                    serverBong: Number.isFinite(serverBong) ? serverBong : 0,
+                                    marketId: trade.marketId,
+                                    amount: trade.amount,
+                                    currentIndex: tradeIndex,
+                                    today: tradeToday,
+                                    nowMs: tradeNow,
+                                });
+                                if (!sold.ok) {
+                                    blockedByStockTrade = true;
+                                    serverRestoreData = serverData;
+                                    return;
+                                }
+                                dataToSave.stockInvestments = sold.investments;
+                                dataToSave.stockInvestDaily = sold.daily;
+                                dataToSave.bong = normalizeBongValue(sold.bong);
+                                trade.applied = sold;
                             } else {
-                                dataToSave.bong = normalizeBongValue(serverBong);
+                                const bought = applyStockBuyFromServer({
+                                    serverInvestments: serverData.stockInvestments,
+                                    serverBong: Number.isFinite(serverBong) ? serverBong : 0,
+                                    marketId: trade.marketId,
+                                    amount: trade.amount,
+                                    buyIndex: tradeIndex,
+                                    today: tradeToday,
+                                    nowMs: tradeNow,
+                                });
+                                if (!bought.ok) {
+                                    blockedByStockTrade = true;
+                                    serverRestoreData = serverData;
+                                    return;
+                                }
+                                dataToSave.stockInvestments = bought.investments;
+                                dataToSave.bong = normalizeBongValue(bought.bong);
+                                trade.applied = bought;
                             }
-                        }
-                        const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
-                        if (
-                            maxBongRise > 0 &&
-                            Number.isFinite(serverBong) &&
-                            Number.isFinite(Number(dataToSave.bong)) &&
-                            Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
-                        ) {
-                            dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                        } else {
+                            if (
+                                opts.allowBongDecrease &&
+                                opts.requireServerBongBalance &&
+                                maxBongDrop > 0 &&
+                                Number.isFinite(serverBong) &&
+                                serverBong + 0.0001 < maxBongDrop
+                            ) {
+                                blockedByServerBalance = true;
+                                serverRestoreData = serverData;
+                                return;
+                            }
+                            if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
+                                if (opts.allowBongDecrease) {
+                                    dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
+                                } else {
+                                    dataToSave.bong = normalizeBongValue(serverBong);
+                                }
+                            }
+                            const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
+                            if (
+                                maxBongRise > 0 &&
+                                Number.isFinite(serverBong) &&
+                                Number.isFinite(Number(dataToSave.bong)) &&
+                                Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
+                            ) {
+                                dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                            }
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));
                         if (Number.isFinite(serverBong) && Math.abs(finalBong - serverBong) > 0.0001) {
@@ -18440,7 +18599,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -18460,6 +18619,8 @@ ${subjectLine}
                             ? '이미 서버에 완료 처리된 퀘스트입니다.\n중복 보상을 막기 위해 저장하지 않았습니다. 새로고침 후 확인해 주세요.'
                             : blockedByBankReconcile
                             ? '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.'
+                            : blockedByStockTrade
+                            ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
                                 '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
                     );
@@ -18467,6 +18628,12 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestments')) {
+                    window.playerState.stockInvestments = dataToSave.stockInvestments;
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestDaily')) {
+                    window.playerState.stockInvestDaily = dataToSave.stockInvestDaily;
+                }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'shieldHP')) window.playerState.shieldHP = dataToSave.shieldHP;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'hasShield')) window.playerState.hasShield = dataToSave.hasShield;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankRegularSavings')) {

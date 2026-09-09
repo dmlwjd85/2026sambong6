@@ -5,6 +5,8 @@ import {
     STOCK_INVEST_MAX,
     applyBuyStock,
     applySellStock,
+    applyStockBuyFromServer,
+    applyStockSellFromServer,
     blendStockBuyIndex,
     canBuyStock,
     canSellStock,
@@ -120,6 +122,68 @@ describe('은행 지수 투자', () => {
         assert.equal(rest.ok, true);
         assert.equal(rest.full, true);
         assert.equal(rest.investments.kospi, null);
+    });
+
+    it('서버 원금이 없으면 같은 매도를 다시 정산하지 않는다', () => {
+        const pos = { principal: 100, buyIndex: 1000, openedAt: 0, openedDate: '2026-09-02' };
+        const first = applyStockSellFromServer({
+            serverInvestments: { kospi: pos },
+            serverDaily: { date: '2026-09-02', profit: 0, sells: 0 },
+            serverBong: 50,
+            marketId: 'kospi',
+            amount: 100,
+            currentIndex: 1000,
+            today: '2026-09-02',
+            nowMs: 1000,
+        });
+        assert.equal(first.ok, true);
+        assert.equal(first.bong, 150);
+        assert.equal(first.investments.kospi, null);
+        const again = applyStockSellFromServer({
+            serverInvestments: first.investments,
+            serverDaily: first.daily,
+            serverBong: first.bong,
+            marketId: 'kospi',
+            amount: 100,
+            currentIndex: 1000,
+            today: '2026-09-02',
+            nowMs: 1000,
+        });
+        assert.equal(again.ok, false);
+        assert.equal(again.reason, 'none');
+        const overSell = applyStockSellFromServer({
+            serverInvestments: { kospi: { principal: 40, buyIndex: 1000, openedAt: 0 } },
+            serverDaily: { date: '2026-09-02', profit: 0, sells: 0 },
+            serverBong: 10,
+            marketId: 'kospi',
+            amount: 100,
+            currentIndex: 1000,
+            today: '2026-09-02',
+            nowMs: 1000,
+        });
+        assert.equal(overSell.ok, false);
+        const bought = applyStockBuyFromServer({
+            serverInvestments: {},
+            serverBong: 50,
+            marketId: 'kospi',
+            amount: 20,
+            buyIndex: 1000,
+            today: '2026-09-02',
+            nowMs: 1000,
+        });
+        assert.equal(bought.ok, true);
+        assert.equal(bought.bong, 30);
+        const boughtAgain = applyStockBuyFromServer({
+            serverInvestments: bought.investments,
+            serverBong: 10,
+            marketId: 'kospi',
+            amount: 20,
+            buyIndex: 1000,
+            today: '2026-09-02',
+            nowMs: 1000,
+        });
+        assert.equal(boughtAgain.ok, false);
+        assert.equal(boughtAgain.reason, 'wallet');
     });
 
     it('코스닥 포지션을 지키고 한국 장중에만 시세를 다시 읽는다', () => {

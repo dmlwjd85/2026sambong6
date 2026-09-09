@@ -347,3 +347,64 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
         capped: uncappedDelta > delta,
     };
 }
+
+/**
+ * 서버에 남아 있는 원금만 매도합니다. 같은 포지션을 두 번 정산하지 못하게 합니다.
+ */
+export function applyStockSellFromServer({
+    serverInvestments,
+    serverDaily,
+    serverBong,
+    marketId,
+    amount,
+    currentIndex,
+    today,
+    nowMs,
+} = {}) {
+    const sold = applySellStock(
+        serverInvestments,
+        marketId,
+        currentIndex,
+        serverDaily,
+        today,
+        nowMs,
+        amount
+    );
+    if (!sold.ok) return { ok: false, reason: sold.reason || 'none' };
+    return {
+        ...sold,
+        bong: Math.floor(Number(serverBong) || 0) + sold.payout,
+    };
+}
+
+/**
+ * 서버 잔액·원금 한도를 기준으로 매수합니다.
+ */
+export function applyStockBuyFromServer({
+    serverInvestments,
+    serverBong,
+    marketId,
+    amount,
+    buyIndex,
+    today,
+    nowMs,
+} = {}) {
+    const bag = sanitizeStockInvestments(serverInvestments);
+    const market = getStockMarket(marketId);
+    if (!market) return { ok: false, reason: 'market' };
+    const gate = canBuyStock({
+        wallet: Math.floor(Number(serverBong) || 0),
+        amount,
+        existing: bag[market.id],
+    });
+    if (!gate.ok) return { ok: false, reason: gate.reason };
+    const bought = applyBuyStock(bag, market.id, gate.amount, buyIndex, nowMs, today);
+    if (!bought.ok) return { ok: false, reason: bought.reason || 'buy' };
+    return {
+        ok: true,
+        investments: bought.investments,
+        bong: Math.floor(Number(serverBong) || 0) - gate.amount,
+        amount: gate.amount,
+        added: !!bought.added,
+    };
+}

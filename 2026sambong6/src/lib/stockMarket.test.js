@@ -7,6 +7,7 @@ import {
     applySellStock,
     applyStockBuyFromServer,
     applyStockSellFromServer,
+    overlayServerStockFields,
     blendStockBuyIndex,
     canBuyStock,
     canSellStock,
@@ -184,6 +185,22 @@ describe('은행 지수 투자', () => {
         });
         assert.equal(boughtAgain.ok, false);
         assert.equal(boughtAgain.reason, 'wallet');
+    });
+
+    it('일반 저장은 서버에서 이미 판 원금을 되살리지 않는다', () => {
+        const server = {
+            stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
+            stockInvestDaily: { date: '2026-09-09', profit: 0, sells: 1 },
+        };
+        const client = {
+            bong: 40,
+            stockInvestments: { kospi: { principal: 60, buyIndex: 1000, openedAt: 0 } },
+            stockInvestDaily: { date: '2026-09-08', profit: 0, sells: 0 },
+        };
+        overlayServerStockFields(server, client);
+        assert.equal(client.stockInvestments.kospi, null);
+        assert.equal(client.stockInvestDaily.sells, 1);
+        assert.equal(client.bong, 40);
     });
 
     it('코스닥 포지션을 지키고 한국 장중에만 시세를 다시 읽는다', () => {

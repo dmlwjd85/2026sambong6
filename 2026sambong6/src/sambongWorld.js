@@ -292,6 +292,10 @@ import {
     visibleClassDirectory,
 } from './lib/classDirectory.js';
 import {
+    filterLunchQueueStudents,
+    lunchQueueDisplayName,
+} from './lib/lunchQueue.js';
+import {
     CLASS_BELL_CHECK_MS,
     CLASS_BELL_POPUP_MS,
     CLASS_BELL_STORAGE_KEY,
@@ -16765,7 +16769,9 @@ ${subjectLine}
             const now = new Date(); 
             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             
-            let queue = studentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+            // 명단의 활성 학생만. Firestore에만 남은 유령 문서는 올리지 않습니다.
+            let queue = filterLunchQueueStudents(studentsData, getActiveStudentIds());
+            queue = queue.filter((s) => lunchQueueDisplayName(s, STUDENT_NAMES));
             
             queue.sort((a, b) => {
                 const aBid = (a.lunchBid && a.lunchBid.date === todayStr) ? a.lunchBid.amount : 0;
@@ -16778,6 +16784,7 @@ ${subjectLine}
                 const bidAmt = (s.lunchBid && s.lunchBid.date === todayStr) ? s.lunchBid.amount : 0;
                 const exactLv = calculateExactLevel(s.xp || 0);
                 const face = buildCharacterAvatarHtml({ studentId: s.id, data: s, showWeapon: false, portraitClass: 'char-portrait-sm' });
+                const displayName = lunchQueueDisplayName(s, STUDENT_NAMES);
                 
                 const rankColor = idx === 0 ? 'text-yellow-400 font-black' : (idx < 3 ? 'text-orange-300 font-bold' : 'text-slate-300 font-bold');
                 const borderClass = idx === 0 ? 'border-yellow-500 bg-yellow-900/40 ring-1 ring-yellow-500' : 'border-slate-700 bg-slate-800/50';
@@ -16789,7 +16796,7 @@ ${subjectLine}
                         <div class="w-5 text-center text-base ${rankColor}">${idx + 1}</div>
                         <div class="text-2xl relative">${crown}${face}</div>
                         <div>
-                            <div class="font-bold text-xs text-white">${STUDENT_NAMES[s.id]}</div>
+                            <div class="font-bold text-xs text-white">${displayName}</div>
                             <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
                         </div>
                     </div>

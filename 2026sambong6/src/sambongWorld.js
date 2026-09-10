@@ -9046,7 +9046,12 @@ ${subjectLine}
             await window.customAlert(`${item.label}을(를) 열었습니다.`);
         };
 
-        function syncClassModuleUi() {
+        let _classModuleUiSig = '';
+        function syncClassModuleUi(force) {
+            const raw = window.globalSettings && window.globalSettings.classModules;
+            const sig = `${isSeedDemoClass() ? '1' : '0'}|${JSON.stringify(raw || {})}|${TABS[currentTabIndex] || ''}`;
+            if (!force && sig === _classModuleUiSig) return;
+            _classModuleUiSig = sig;
             document.querySelectorAll('[data-class-module]').forEach((el) => {
                 const on = classModuleOn(el.getAttribute('data-class-module'));
                 el.classList.toggle('hidden', !on);
@@ -18226,7 +18231,7 @@ ${subjectLine}
             
             checkTimeEvents();
             applyClassWatchUI();
-            if (typeof syncClassModuleUi === 'function') syncClassModuleUi();
+            if (!_classModuleUiSig) syncClassModuleUi();
             if (typeof window.renderLiterature === 'function') window.renderLiterature();
             renderConvenienceManagerUi();
             maybeShowConvenienceOrderPopup();
@@ -21727,7 +21732,7 @@ ${subjectLine}
             const burst = root.querySelector('.gear-enhance-fx-burst');
             if (burst) {
                 burst.querySelectorAll('.gear-enhance-fx-spark').forEach((n) => n.remove());
-                const count = success ? 20 : 8;
+                const count = success ? 10 : 6;
                 for (let i = 0; i < count; i++) {
                     const spark = document.createElement('span');
                     spark.className = 'gear-enhance-fx-spark';

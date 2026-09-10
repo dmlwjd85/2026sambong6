@@ -69,6 +69,6 @@ describe('강화 테두리', () => {
         assert.equal(gearEnhanceRingClass(5), 'gear-enhance-lv5');
         assert.notEqual(gearEnhanceRingClass(2), gearEnhanceRingClass(4));
         assert.equal(gearEnhanceRingClass(99), 'gear-enhance-lv5');
-        assert.match(gearEnhanceRingClass(3), /^gear-enhance-lv[1-5]$/);
+        assert.equal(gearEnhanceRingClass(3), 'gear-enhance-lv3');
     });
 });

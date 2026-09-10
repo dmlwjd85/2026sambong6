@@ -4019,78 +4019,27 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             white-space: pre-wrap;
             word-break: break-word;
         }
-        /* 장비 1~5강: 투명 이미지 실루엣(누끼)을 따라 색 테두리를 그립니다. */
+        /* 장비 1~5강: 실루엣을 4방향 1px만 칠합니다. 겹드롭섀도·맥박은 광장을 느리게 해서 빼 둡니다. */
         .gear-enhance-cutout { overflow: visible; }
-        .gear-enhance-cutout.gear-enhance-lv1 { --gear-line: #cbd5e1; --gear-glow: rgba(148, 163, 184, 0.55); }
-        .gear-enhance-cutout.gear-enhance-lv2 { --gear-line: #4ade80; --gear-glow: rgba(74, 222, 128, 0.7); }
-        .gear-enhance-cutout.gear-enhance-lv3 { --gear-line: #38bdf8; --gear-glow: rgba(56, 189, 248, 0.75); }
-        .gear-enhance-cutout.gear-enhance-lv4 { --gear-line: #c084fc; --gear-glow: rgba(192, 132, 252, 0.8); }
-        .gear-enhance-cutout.gear-enhance-lv5 { --gear-line: #fbbf24; --gear-glow: rgba(251, 191, 36, 0.9); }
-        .gear-enhance-cutout img,
+        .gear-enhance-cutout.gear-enhance-lv1 { --gear-line: #cbd5e1; }
+        .gear-enhance-cutout.gear-enhance-lv2 { --gear-line: #4ade80; }
+        .gear-enhance-cutout.gear-enhance-lv3 { --gear-line: #38bdf8; }
+        .gear-enhance-cutout.gear-enhance-lv4 { --gear-line: #c084fc; }
+        .gear-enhance-cutout.gear-enhance-lv5 { --gear-line: #fbbf24; }
         .char-weapon.gear-enhance-cutout img,
         .char-shield.gear-enhance-cutout img,
-        .char-shoes.gear-enhance-cutout img,
-        .weapon-slot-art.gear-enhance-cutout img,
-        .gear-enhance-cutout:not(:has(img)) {
+        .char-shoes.gear-enhance-cutout img {
+            filter: none;
+        }
+        .char-weapon.gear-enhance-cutout,
+        .char-shield.gear-enhance-cutout,
+        .char-shoes.gear-enhance-cutout,
+        .weapon-slot-art.gear-enhance-cutout {
             filter:
                 drop-shadow(1px 0 0 var(--gear-line))
                 drop-shadow(-1px 0 0 var(--gear-line))
                 drop-shadow(0 1px 0 var(--gear-line))
-                drop-shadow(0 -1px 0 var(--gear-line))
-                drop-shadow(1px 1px 0 var(--gear-line))
-                drop-shadow(-1px 1px 0 var(--gear-line))
-                drop-shadow(1px -1px 0 var(--gear-line))
-                drop-shadow(-1px -1px 0 var(--gear-line))
-                drop-shadow(2px 0 0 var(--gear-line))
-                drop-shadow(-2px 0 0 var(--gear-line))
-                drop-shadow(0 2px 0 var(--gear-line))
-                drop-shadow(0 -2px 0 var(--gear-line))
-                drop-shadow(0 0 5px var(--gear-glow))
-                drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
-        }
-        .gear-enhance-cutout.gear-enhance-lv5 img,
-        .char-weapon.gear-enhance-cutout.gear-enhance-lv5 img,
-        .char-shield.gear-enhance-cutout.gear-enhance-lv5 img,
-        .char-shoes.gear-enhance-cutout.gear-enhance-lv5 img,
-        .weapon-slot-art.gear-enhance-cutout.gear-enhance-lv5 img,
-        .gear-enhance-cutout.gear-enhance-lv5:not(:has(img)) {
-            animation: gearEnhancePulse 1.5s ease-in-out infinite;
-        }
-        @keyframes gearEnhancePulse {
-            0%, 100% {
-                filter:
-                    drop-shadow(1px 0 0 var(--gear-line))
-                    drop-shadow(-1px 0 0 var(--gear-line))
-                    drop-shadow(0 1px 0 var(--gear-line))
-                    drop-shadow(0 -1px 0 var(--gear-line))
-                    drop-shadow(1px 1px 0 var(--gear-line))
-                    drop-shadow(-1px 1px 0 var(--gear-line))
-                    drop-shadow(1px -1px 0 var(--gear-line))
-                    drop-shadow(-1px -1px 0 var(--gear-line))
-                    drop-shadow(2px 0 0 var(--gear-line))
-                    drop-shadow(-2px 0 0 var(--gear-line))
-                    drop-shadow(0 2px 0 var(--gear-line))
-                    drop-shadow(0 -2px 0 var(--gear-line))
-                    drop-shadow(0 0 4px var(--gear-glow))
-                    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
-            }
-            50% {
-                filter:
-                    drop-shadow(1px 0 0 var(--gear-line))
-                    drop-shadow(-1px 0 0 var(--gear-line))
-                    drop-shadow(0 1px 0 var(--gear-line))
-                    drop-shadow(0 -1px 0 var(--gear-line))
-                    drop-shadow(1px 1px 0 var(--gear-line))
-                    drop-shadow(-1px 1px 0 var(--gear-line))
-                    drop-shadow(1px -1px 0 var(--gear-line))
-                    drop-shadow(-1px -1px 0 var(--gear-line))
-                    drop-shadow(2px 0 0 var(--gear-line))
-                    drop-shadow(-2px 0 0 var(--gear-line))
-                    drop-shadow(0 2px 0 var(--gear-line))
-                    drop-shadow(0 -2px 0 var(--gear-line))
-                    drop-shadow(0 0 12px var(--gear-glow))
-                    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.45));
-            }
+                drop-shadow(0 -1px 0 var(--gear-line));
         }
         .gear-enhance-fx {
             position: fixed;

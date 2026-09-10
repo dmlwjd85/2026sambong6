@@ -114,7 +114,7 @@ export function clampGearEnhance(level) {
     return Math.min(GEAR_ENHANCE_MAX, n);
 }
 
-/** 1~5강 테두리 클래스. 광장·장착칸에서 같은 색을 씁니다. */
+/** 1~5강 누끼 테두리 클래스. 광장·장착칸 이미지 실루엣에 같은 색을 씁니다. */
 export function gearEnhanceRingClass(level) {
     return `gear-enhance-lv${clampGearEnhance(level)}`;
 }

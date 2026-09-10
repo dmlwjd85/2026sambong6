@@ -1899,7 +1899,7 @@ function redrawPlazaGrantsUi() {
                         : isEquipped
                           ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
                           : `${g.border} ${g.bg}`;
-                const enhanceCls = have ? gearEnhanceRingClass(lv) : '';
+                const enhanceCls = have ? `gear-enhance-cutout ${gearEnhanceRingClass(lv)}` : '';
                 const click = have ? `onclick="window.equipGear('${g.id}')"` : '';
                 const cursor = have ? 'cursor-pointer hover:scale-105' : 'cursor-default';
                 const art = g.img
@@ -1909,10 +1909,10 @@ function redrawPlazaGrantsUi() {
                     ? `<button type="button" onclick="event.stopPropagation(); void window.enhanceGear('${g.id}')" class="mt-0.5 w-full bg-violet-800/80 hover:bg-violet-700 text-violet-50 text-[7px] font-black py-0.5 rounded border border-violet-400/50">강화 ${rate}%</button>`
                     : '';
                 return `
-                    <div data-gear-id="${g.id}" ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} ${enhanceCls} relative">
+                    <div data-gear-id="${g.id}" ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
                         ${isEquipped ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
                         ${have ? `<div class="absolute -top-1 left-0 bg-slate-950 text-violet-200 text-[7px] font-black px-0.5 rounded z-10 border border-violet-500/40">${lv}단계</div>` : ''}
-                        <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art">${art}</div>
+                        <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art ${enhanceCls}">${art}</div>
                         <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${g.name}</div>
                         <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">${have ? `×${isMaster ? Math.max(n, 1) : n}` : '미보유'}</div>
                         ${
@@ -2016,27 +2016,27 @@ function redrawPlazaGrantsUi() {
         }
 
         function weaponMarkHtml(wp, enhanceLevel) {
-            const ring = `gear-enhance-ring ${gearEnhanceRingClass(enhanceLevel)}`;
+            const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (wp.img) {
-                return `<span class="char-weapon pointer-events-none z-30 ${ring}"><img src="${wp.img}" alt=""></span>`;
+                return `<span class="char-weapon pointer-events-none z-30 ${cutout}"><img src="${wp.img}" alt=""></span>`;
             }
-            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none ${ring}">${wp.emoji || ''}</span>`;
+            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none ${cutout}">${wp.emoji || ''}</span>`;
         }
 
         function shieldMarkHtml(sh, enhanceLevel) {
-            const ring = `gear-enhance-ring ${gearEnhanceRingClass(enhanceLevel)}`;
+            const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (sh && sh.img) {
-                return `<span class="char-shield pointer-events-none z-30 ${ring}"><img src="${sh.img}" alt=""></span>`;
+                return `<span class="char-shield pointer-events-none z-30 ${cutout}"><img src="${sh.img}" alt=""></span>`;
             }
-            return `<span class="char-shield char-shield-emoji pointer-events-none z-30 ${ring}">${(sh && sh.emoji) || ''}</span>`;
+            return `<span class="char-shield char-shield-emoji pointer-events-none z-30 ${cutout}">${(sh && sh.emoji) || ''}</span>`;
         }
 
         function shoeMarkHtml(shoes, enhanceLevel) {
-            const ring = `gear-enhance-ring ${gearEnhanceRingClass(enhanceLevel)}`;
+            const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (shoes && shoes.img) {
-                return `<span class="char-shoes pointer-events-none z-30 ${ring}"><img src="${shoes.img}" alt=""></span>`;
+                return `<span class="char-shoes pointer-events-none z-30 ${cutout}"><img src="${shoes.img}" alt=""></span>`;
             }
-            return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30 ${ring}">${(shoes && shoes.emoji) || ''}</span>`;
+            return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30 ${cutout}">${(shoes && shoes.emoji) || ''}</span>`;
         }
 
         /** 학생/스태프 초상 + 통짜 캐릭터·무기·방패·신발. 방패는 오른쪽, 신발은 아래. */

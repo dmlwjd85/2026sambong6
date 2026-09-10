@@ -1,9 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CLASS_CREATE_NOTIFY_STORAGE_KEY,
     CLASS_CREATE_REQUEST_COLLECTION,
     CLASS_CREATE_REQUEST_STORAGE_KEY,
+    CLASS_CREATE_UNLOCK_FIELD,
+    CLASS_CREATE_UNLOCK_STORAGE_KEY,
     SEED_MASTER_CLASS_ID,
+    classCreatePendingSignature,
     classCreateRequestPath,
     applyClassCreateApproval,
     applyClassCreateRejection,
@@ -11,11 +15,20 @@ import {
     canCreateClassImmediately,
     classCreateRequestStatusLabel,
     classCreateWorkspacePayload,
+    generateClassCreateUnlockCode,
     isSeedMasterViewer,
+    isValidClassCreateUnlockCode,
+    matchesClassCreateUnlockCode,
+    normalizeClassCreateUnlockCode,
     pendingClassCreateRequests,
+    readClassCreateNotifySignature,
+    readClassCreateUnlockFromClassData,
+    readClassCreateUnlockSession,
     readStoredClassCreateRequestId,
     sanitizeClassCreateRequest,
     validateClassCreateRequestDraft,
+    writeClassCreateNotifySignature,
+    writeClassCreateUnlockSession,
     writeStoredClassCreateRequestId,
 } from './classCreateRequest.js';
 
@@ -112,5 +125,34 @@ describe('학급 개설 인증 요청', () => {
         assert.equal(readStoredClassCreateRequestId(mem), 'ccr_saved');
         writeStoredClassCreateRequestId('', mem);
         assert.equal(readStoredClassCreateRequestId(mem), '');
+    });
+
+    it('학급 개설 코드가 맞을 때만 통과하고 세션에 기억한다', () => {
+        assert.equal(CLASS_CREATE_UNLOCK_FIELD, 'classCreateUnlockCode');
+        assert.equal(normalizeClassCreateUnlockCode(' ab-23cd '), 'AB23CD');
+        assert.equal(isValidClassCreateUnlockCode('AB23CD'), true);
+        assert.equal(isValidClassCreateUnlockCode('abc'), false);
+        assert.equal(isValidClassCreateUnlockCode('OOOOOO'), false);
+        const code = generateClassCreateUnlockCode();
+        assert.equal(isValidClassCreateUnlockCode(code), true);
+        assert.equal(matchesClassCreateUnlockCode(code.toLowerCase(), code), true);
+        assert.equal(matchesClassCreateUnlockCode('XXXXXX', code), false);
+        assert.equal(readClassCreateUnlockFromClassData({ classCreateUnlockCode: 'ab23cd' }), 'AB23CD');
+        const sess = {
+            data: {},
+            getItem(k) { return Object.prototype.hasOwnProperty.call(this.data, k) ? this.data[k] : null; },
+            setItem(k, v) { this.data[k] = String(v); },
+            removeItem(k) { delete this.data[k]; },
+        };
+        writeClassCreateUnlockSession(true, sess);
+        assert.equal(sess.data[CLASS_CREATE_UNLOCK_STORAGE_KEY], '1');
+        assert.equal(readClassCreateUnlockSession(sess), true);
+        writeClassCreateUnlockSession(false, sess);
+        assert.equal(readClassCreateUnlockSession(sess), false);
+        const pending = [{ id: 'b', status: 'pending' }, { id: 'a', status: 'pending' }, { id: 'c', status: 'approved' }];
+        assert.equal(classCreatePendingSignature(pending), 'a|b');
+        writeClassCreateNotifySignature('a|b', sess);
+        assert.equal(sess.data[CLASS_CREATE_NOTIFY_STORAGE_KEY], 'a|b');
+        assert.equal(readClassCreateNotifySignature(sess), 'a|b');
     });
 });

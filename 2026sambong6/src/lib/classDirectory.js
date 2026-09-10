@@ -25,6 +25,7 @@ export function sanitizeClassDirectoryEntry(raw, classId) {
         grade: Number(src.grade) || 0,
         homeroom: Number(src.homeroom) || 0,
         isActive: src.isActive !== false,
+        hiddenFromDirectory: !!src.hiddenFromDirectory,
         isDemoSeed: !!src.isDemoSeed || id === SEED_MASTER_CLASS_ID,
         teacherName: String(src.teacherName || src.masterDisplayName || '').trim().slice(0, 20),
     };
@@ -50,6 +51,29 @@ export function canArchiveManagedClass(viewer, currentClassId, targetClassId) {
     const target = safeManagedClassId(targetClassId);
     if (!target || target === SEED_MASTER_CLASS_ID) return false;
     return canResetManagedClass(viewer, currentClassId, target);
+}
+
+/** 목록에서 숨기기: 시드 반이 아니면 마스터가 자기 목록에서 지울 수 있습니다. */
+export function canHideManagedClassFromDirectory(viewer, currentClassId, targetClassId) {
+    const target = safeManagedClassId(targetClassId);
+    if (!target || target === SEED_MASTER_CLASS_ID) return false;
+    return !!(viewer && viewer.isGM);
+}
+
+/**
+ * 기본 목록은 운영 중인 반만 둡니다. 보관된 반은 토글을 켜야 보입니다.
+ * 목록에서 지운 반(hiddenFromDirectory)은 토글과 관계없이 숨깁니다.
+ * 지금 들어와 있는 반은 숨기지 않습니다.
+ */
+export function visibleClassDirectory(entries, { includeArchived = false, currentClassId = '' } = {}) {
+    const cur = String(currentClassId || '');
+    return (Array.isArray(entries) ? entries : []).filter((entry) => {
+        if (!entry || !entry.classId) return false;
+        if (entry.classId === cur) return true;
+        if (entry.hiddenFromDirectory) return false;
+        if (!includeArchived && entry.isActive === false) return false;
+        return true;
+    });
 }
 
 export function sortClassDirectory(entries, currentClassId) {

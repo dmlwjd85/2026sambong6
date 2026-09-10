@@ -14,6 +14,11 @@ export function classCreateRequestPath(requestId) {
 }
 export const CLASS_CREATE_REQUEST_STORAGE_KEY = 'sambong_class_create_request_id';
 export const CLASS_CREATE_REQUEST_STATUSES = Object.freeze(['pending', 'approved', 'rejected']);
+/** 로그인 화면에서 개설 폼을 열려면 필요한 코드. 시드 학급 문서에 저장합니다. */
+export const CLASS_CREATE_UNLOCK_FIELD = 'classCreateUnlockCode';
+export const CLASS_CREATE_UNLOCK_STORAGE_KEY = 'sambong_class_create_unlocked';
+export const CLASS_CREATE_NOTIFY_STORAGE_KEY = 'sambong_class_create_notified_sig';
+const UNLOCK_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function clipText(raw, max) {
     const s = String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
@@ -180,5 +185,75 @@ export function writeStoredClassCreateRequestId(id, storage) {
         const next = String(id || '').trim();
         if (next) store.setItem(CLASS_CREATE_REQUEST_STORAGE_KEY, next);
         else store.removeItem(CLASS_CREATE_REQUEST_STORAGE_KEY);
+    } catch (_) { /* ignore */ }
+}
+
+/** 개설 코드는 대문자·숫자 6자리. 0/O, 1/I는 쓰지 않습니다. */
+export function normalizeClassCreateUnlockCode(raw) {
+    return String(raw == null ? '' : raw).trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+}
+
+export function isValidClassCreateUnlockCode(raw) {
+    return /^[A-HJ-NP-Z2-9]{6}$/.test(normalizeClassCreateUnlockCode(raw));
+}
+
+export function generateClassCreateUnlockCode() {
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+        code += UNLOCK_CODE_CHARS.charAt(Math.floor(Math.random() * UNLOCK_CODE_CHARS.length));
+    }
+    return code;
+}
+
+export function matchesClassCreateUnlockCode(input, stored) {
+    const a = normalizeClassCreateUnlockCode(input);
+    const b = normalizeClassCreateUnlockCode(stored);
+    return isValidClassCreateUnlockCode(a) && a === b;
+}
+
+export function readClassCreateUnlockFromClassData(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    return normalizeClassCreateUnlockCode(src[CLASS_CREATE_UNLOCK_FIELD]);
+}
+
+export function readClassCreateUnlockSession(storage) {
+    try {
+        const store = storage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+        return !!(store && store.getItem(CLASS_CREATE_UNLOCK_STORAGE_KEY) === '1');
+    } catch (_) {
+        return false;
+    }
+}
+
+export function writeClassCreateUnlockSession(unlocked, storage) {
+    try {
+        const store = storage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+        if (!store) return;
+        if (unlocked) store.setItem(CLASS_CREATE_UNLOCK_STORAGE_KEY, '1');
+        else store.removeItem(CLASS_CREATE_UNLOCK_STORAGE_KEY);
+    } catch (_) { /* ignore */ }
+}
+
+/** 같은 대기 요청이면 접속할 때마다 알림을 반복하지 않습니다. */
+export function classCreatePendingSignature(rows) {
+    return pendingClassCreateRequests(rows).map((r) => String(r.id || '')).filter(Boolean).sort().join('|');
+}
+
+export function readClassCreateNotifySignature(storage) {
+    try {
+        const store = storage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+        return store ? String(store.getItem(CLASS_CREATE_NOTIFY_STORAGE_KEY) || '') : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+export function writeClassCreateNotifySignature(sig, storage) {
+    try {
+        const store = storage || (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+        if (!store) return;
+        const next = String(sig || '');
+        if (next) store.setItem(CLASS_CREATE_NOTIFY_STORAGE_KEY, next);
+        else store.removeItem(CLASS_CREATE_NOTIFY_STORAGE_KEY);
     } catch (_) { /* ignore */ }
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
 import {
     canArchiveManagedClass,
+    canHideManagedClassFromDirectory,
     canResetManagedClass,
     classDirectoryStatusLabel,
     mergeClassDirectory,
@@ -10,6 +11,7 @@ import {
     sanitizeClassDirectoryEntry,
     shouldRotateMasterPinOnReset,
     sortClassDirectory,
+    visibleClassDirectory,
 } from './classDirectory.js';
 
 describe('학급 관리 목록', () => {
@@ -44,6 +46,23 @@ describe('학급 관리 목록', () => {
         const sorted = sortClassDirectory([archived, seed], 'test-class');
         assert.equal(sorted[0].classId, 'test-class');
         assert.equal(sorted[1].classId, SEED_MASTER_CLASS_ID);
+    });
+
+    it('보관·숨긴 학급은 기본 목록에서 빼고, 지금 반은 남긴다', () => {
+        const gm = { isGM: true };
+        const live = sanitizeClassDirectoryEntry({ displayName: '운영', isActive: true }, 'live-class');
+        const archived = sanitizeClassDirectoryEntry({ displayName: '보관', isActive: false }, 'old-class');
+        const hidden = sanitizeClassDirectoryEntry({ displayName: '숨김', isActive: false, hiddenFromDirectory: true }, 'gone-class');
+        assert.equal(archived.hiddenFromDirectory, false);
+        assert.equal(hidden.hiddenFromDirectory, true);
+        assert.equal(canHideManagedClassFromDirectory(gm, SEED_MASTER_CLASS_ID, 'old-class'), true);
+        assert.equal(canHideManagedClassFromDirectory(gm, SEED_MASTER_CLASS_ID, SEED_MASTER_CLASS_ID), false);
+        const def = visibleClassDirectory([live, archived, hidden], { currentClassId: 'now-class' });
+        assert.deepEqual(def.map((r) => r.classId), ['live-class']);
+        const withArchived = visibleClassDirectory([live, archived, hidden], { includeArchived: true, currentClassId: 'now-class' });
+        assert.deepEqual(withArchived.map((r) => r.classId).sort(), ['live-class', 'old-class']);
+        const keepCurrent = visibleClassDirectory([archived], { currentClassId: 'old-class' });
+        assert.equal(keepCurrent.length, 1);
     });
 
     it('서버 목록과 최근 학급을 학급 ID로 합친다', () => {

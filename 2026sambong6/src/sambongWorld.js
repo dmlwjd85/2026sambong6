@@ -256,21 +256,32 @@ import {
 } from './lib/literature.js';
 import {
     CLASS_CREATE_REQUEST_COLLECTION,
+    CLASS_CREATE_UNLOCK_FIELD,
     SEED_MASTER_CLASS_ID,
     applyClassCreateApproval,
     applyClassCreateRejection,
     buildClassCreateRequest,
     canCreateClassImmediately,
+    classCreatePendingSignature,
     classCreateRequestStatusLabel,
     classCreateWorkspacePayload,
+    generateClassCreateUnlockCode,
     isSeedMasterViewer,
+    isValidClassCreateUnlockCode,
+    matchesClassCreateUnlockCode,
     pendingClassCreateRequests,
+    readClassCreateNotifySignature,
+    readClassCreateUnlockFromClassData,
+    readClassCreateUnlockSession,
     readStoredClassCreateRequestId,
     sanitizeClassCreateRequest,
+    writeClassCreateNotifySignature,
+    writeClassCreateUnlockSession,
     writeStoredClassCreateRequestId,
 } from './lib/classCreateRequest.js';
 import {
     canArchiveManagedClass,
+    canHideManagedClassFromDirectory,
     canResetManagedClass,
     classDirectoryStatusLabel,
     mergeClassDirectory,
@@ -278,6 +289,7 @@ import {
     sanitizeClassDirectoryEntry,
     shouldRotateMasterPinOnReset,
     sortClassDirectory,
+    visibleClassDirectory,
 } from './lib/classDirectory.js';
 import {
     CLASS_BELL_CHECK_MS,
@@ -1626,6 +1638,9 @@ function redrawPlazaGrantsUi() {
             const status = document.getElementById('settingsStatus');
             if (status) status.textContent = '현재 설정을 불러왔습니다. 수정 후 「설정 저장」을 누르세요.';
             if (typeof window.refreshSeason2StartPanel === 'function') window.refreshSeason2StartPanel();
+            window.paintClassCreateInbox?.();
+            window.paintClassCreateUnlockAdmin?.();
+            window.renderClassCreateRequestStatus?.();
         };
 
         window.saveWorldSettingsFromPanel = async function() {
@@ -2088,7 +2103,8 @@ function redrawPlazaGrantsUi() {
         let _myClassCreateRequest = null;
         let _unsubClassCreateRequests = null;
         let _unsubMyClassCreateRequest = null;
-        let _classCreateRequestNotified = false;
+        let _classCreateUnlockCode = '';
+        let _showArchivedClasses = false;
 
         /** 시드(데모) 학급인지 — 부동산 자동복구 등은 여기에만 적용 */
         function isSeedDemoClass() {
@@ -2210,6 +2226,15 @@ function redrawPlazaGrantsUi() {
                 ...getRecentClasses().filter((x) => x.classId !== id),
             ].slice(0, 8);
             localStorage.setItem(RECENT_CLASSES_KEY, JSON.stringify(next));
+        }
+
+        function forgetRecentClass(classId) {
+            const id = String(classId || '').trim();
+            if (!id) return;
+            try {
+                const next = getRecentClasses().filter((x) => x.classId !== id);
+                localStorage.setItem(RECENT_CLASSES_KEY, JSON.stringify(next));
+            } catch (_) { /* ignore */ }
         }
 
         window.classMeta = null;
@@ -2438,7 +2463,7 @@ function redrawPlazaGrantsUi() {
             if (teacherHint && meta) {
                 teacherHint.textContent = `현재 학급: ${meta.displayName || appId} (초대 ${meta.inviteCode || '—'})`;
             }
-            if (meta) rememberRecentClass(appId, meta.displayName, meta.inviteCode);
+            if (meta && meta.isActive !== false) rememberRecentClass(appId, meta.displayName, meta.inviteCode);
             renderLoginRecentClasses();
             renderTeacherClassHub();
             populateTeacherLoginSelect();
@@ -2663,6 +2688,7 @@ function redrawPlazaGrantsUi() {
                     archivedAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                 }, { merge: true });
+                forgetRecentClass(appId);
                 if (code) {
                     await setDoc(doc(db, 'inviteCodes', String(code).toUpperCase()), {
                         classId: appId,
@@ -2814,6 +2840,7 @@ function redrawPlazaGrantsUi() {
                     archivedAt: serverTimestamp(),
                     updatedAt: serverTimestamp(),
                 }, { merge: true });
+                forgetRecentClass(id);
                 if (inviteCode) {
                     await setDoc(doc(db, 'inviteCodes', String(inviteCode).toUpperCase()), {
                         classId: id,
@@ -2837,10 +2864,56 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        window.hideManagedClassFromDirectory = async function(classId) {
+            const id = safeManagedClassId(classId);
+            if (!id) return;
+            if (!canHideManagedClassFromDirectory(window.playerState, appId, id)) {
+                return window.customAlert('이 학급을 목록에서 지울 수 없습니다.');
+            }
+            const ok = await window.customConfirm(
+                '이 학급을 목록에서 지웁니다.\n\n' +
+                `학급 ID: ${id}\n\n` +
+                '최근 목록에서도 빠집니다. 서버 데이터는 그대로 두고, 초대 코드로 다시 열 수는 있습니다.'
+            );
+            if (!ok) return;
+            forgetRecentClass(id);
+            const canWriteServer = canArchiveManagedClass(window.playerState, appId, id)
+                || isSeedMasterViewer(window.playerState, appId);
+            if (canWriteServer && db) {
+                try {
+                    window.showGlobalLoading('목록에서 지우는 중…');
+                    const authOk = await ensureAnonAuthReady();
+                    if (!authOk) throw new Error('인증 실패');
+                    await setDoc(doc(db, 'classes', id), {
+                        hiddenFromDirectory: true,
+                        updatedAt: serverTimestamp(),
+                    }, { merge: true });
+                } catch (e) {
+                    window.hideGlobalLoading();
+                    await window.customAlert('목록에서 지우지 못했습니다: ' + (e && e.message ? e.message : String(e)));
+                    return;
+                } finally {
+                    window.hideGlobalLoading();
+                }
+            }
+            await window.customAlert('목록에서 지웠습니다.');
+            void window.refreshManagedClassDirectory();
+        };
+
+        window.setShowArchivedClasses = function(on) {
+            _showArchivedClasses = !!on;
+            document.querySelectorAll('.js-show-archived-classes').forEach((el) => {
+                el.checked = _showArchivedClasses;
+            });
+            void window.refreshManagedClassDirectory();
+        };
+
         window.renderManagedClassDirectoryHtml = function(entries) {
             const list = Array.isArray(entries) ? entries : [];
             if (!list.length) {
-                return '<p class="text-[10px] text-white">아직 목록이 없습니다. 아래에서 새 학급을 추가하거나 초대 코드로 여세요.</p>';
+                return _showArchivedClasses
+                    ? '<p class="text-[10px] text-white">목록이 비었습니다. 숨긴 학급은 초대 코드로 다시 열 수 있습니다.</p>'
+                    : '<p class="text-[10px] text-white">운영 중인 학급이 없습니다. 보관된 반은 위 체크를 켜면 보입니다.</p>';
             }
             return list.map((row) => {
                 const id = safeManagedClassId(row.classId);
@@ -2849,6 +2922,7 @@ function redrawPlazaGrantsUi() {
                 const status = classDirectoryStatusLabel(row);
                 const canReset = canResetManagedClass(window.playerState, appId, id);
                 const canArchive = canArchiveManagedClass(window.playerState, appId, id);
+                const canHide = canHideManagedClassFromDirectory(window.playerState, appId, id);
                 const name = escapeNavClassText(row.displayName || id);
                 const code = escapeNavClassText(row.inviteCode || '—');
                 return `<div class="rounded-xl border-2 ${cur ? 'border-emerald-300 bg-emerald-900' : 'border-cyan-300 bg-slate-950'} p-2.5 space-y-1.5">
@@ -2858,6 +2932,7 @@ function redrawPlazaGrantsUi() {
                         <button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); window.openManagedClass('${id}')">열람</button>
                         ${canReset ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.resetManagedClass('${id}')">초기화</button>` : ''}
                         ${canArchive ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-red-700 hover:bg-red-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.archiveManagedClass('${id}')">삭제</button>` : ''}
+                        ${canHide ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.hideManagedClassFromDirectory('${id}')">목록에서 지우기</button>` : ''}
                     </div>
                 </div>`;
             }).join('');
@@ -2866,6 +2941,9 @@ function redrawPlazaGrantsUi() {
         window.refreshManagedClassDirectory = async function() {
             const boxes = document.querySelectorAll('.js-managed-class-directory');
             if (!boxes.length) return;
+            document.querySelectorAll('.js-show-archived-classes').forEach((el) => {
+                el.checked = _showArchivedClasses;
+            });
             if (!window.playerState?.isGM) {
                 boxes.forEach((el) => { el.innerHTML = '<p class="text-[10px] text-white">마스터로 로그인하면 학급 목록이 나타납니다.</p>'; });
                 return;
@@ -2887,7 +2965,11 @@ function redrawPlazaGrantsUi() {
                 mergeClassDirectory(serverEntries, getRecentClasses(), current),
                 appId,
             );
-            const html = window.renderManagedClassDirectoryHtml(merged);
+            const visible = visibleClassDirectory(merged, {
+                includeArchived: _showArchivedClasses,
+                currentClassId: appId,
+            });
+            const html = window.renderManagedClassDirectoryHtml(visible);
             boxes.forEach((el) => { el.innerHTML = html; });
         };
 
@@ -2945,10 +3027,10 @@ function redrawPlazaGrantsUi() {
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '학급 개설을 요청하거나 초대 코드로 기존 학급에 들어가세요.'
+                    ? '초대 코드로 기존 학급에 들어가세요. 새 학급은 원래 마스터가 준 개설 코드가 있을 때만 요청할 수 있습니다.'
                     : '초대 코드로 학급을 연 뒤 이름을 선택하세요.';
             }
-            if (isTeacher) window.setTeacherSubMode('create');
+            if (isTeacher) window.setTeacherSubMode('join');
             if (typeof window.renderClassCreateRequestStatus === 'function') {
                 window.renderClassCreateRequestStatus();
             }
@@ -3107,13 +3189,21 @@ function redrawPlazaGrantsUi() {
         window.renderClassCreateRequestStatus = function() {
             const mine = _myClassCreateRequest;
             const waiting = !!(mine && (mine.status === 'pending' || mine.status === 'approved' || mine.status === 'rejected'));
-            const hideForm = waiting && mine.status !== 'rejected';
+            const hideFormWaiting = waiting && mine.status !== 'rejected';
+            const unlocked = canCreateClassImmediately(window.playerState, appId) || readClassCreateUnlockSession();
+            const hideCreateForm = hideFormWaiting || !unlocked;
             const form = document.getElementById('teacherCreateFormFields');
             const settingsForm = document.getElementById('newClassCreateFormFields');
+            const settingsFields = document.getElementById('settingsNewClassCreateFields');
             const box = document.getElementById('classCreateRequestBox');
             const hint = document.getElementById('teacherCreateIntro');
-            if (form) form.classList.toggle('hidden', hideForm);
-            if (settingsForm) settingsForm.classList.toggle('hidden', hideForm);
+            const loginGate = document.getElementById('teacherCreateUnlockGate');
+            const settingsGate = document.getElementById('settingsClassCreateUnlockGate');
+            if (form) form.classList.toggle('hidden', hideCreateForm);
+            if (settingsForm) settingsForm.classList.toggle('hidden', hideCreateForm);
+            if (settingsFields) settingsFields.classList.toggle('hidden', hideCreateForm);
+            if (loginGate) loginGate.classList.toggle('hidden', unlocked || hideFormWaiting);
+            if (settingsGate) settingsGate.classList.toggle('hidden', unlocked || hideFormWaiting);
             if (box) {
                 box.classList.toggle('hidden', !waiting);
                 if (waiting) box.innerHTML = renderClassCreateRequestHtml(mine);
@@ -3121,7 +3211,9 @@ function redrawPlazaGrantsUi() {
             if (hint) {
                 hint.textContent = waiting && mine.status === 'pending'
                     ? '원래 마스터에게 인증 요청을 보냈습니다. 허락되면 반이 생성됩니다.'
-                    : '새 교실은 원래 마스터 허락 뒤에 만들어집니다.';
+                    : (unlocked
+                        ? '새 교실은 원래 마스터 허락 뒤에 만들어집니다.'
+                        : '새 교실은 원래 마스터가 준 개설 코드가 있을 때만 요청할 수 있습니다.');
             }
             const adminBox = document.getElementById('myClassCreateRequestBox');
             if (adminBox) {
@@ -3157,6 +3249,161 @@ function redrawPlazaGrantsUi() {
             }, (err) => console.warn('classCreateRequest mine', err));
         }
 
+        window.openClassCreateRequestInbox = function() {
+            if (typeof window.switchTab === 'function') window.switchTab('settings');
+            if (typeof window.switchInnerPane === 'function') window.switchInnerPane('settings', 'class');
+            const box = document.getElementById('settingsClassCreateInbox')
+                || document.querySelector('.js-class-create-inbox');
+            if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+
+        window.renderClassCreateInboxHtml = function() {
+            if (!isSeedMasterViewer(window.playerState, appId)) return '';
+            const pending = pendingClassCreateRequests(_classCreateRequests);
+            const rows = pending.length
+                ? pending.map((r) => `
+                    <div class="rounded-xl border border-amber-500/30 bg-slate-950/70 p-2 space-y-1">
+                        <p class="text-[11px] font-black text-amber-100">${escapeHofText(r.displayName)}</p>
+                        <p class="text-[10px] text-slate-300">${escapeHofText(r.schoolName || '')} ${r.schoolYear}학년도 ${r.grade}학년 ${r.homeroom}반 · ${escapeHofText(r.teacherName)}</p>
+                        <div class="flex gap-2 pt-1">
+                            <button type="button" onclick="void window.approveClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px]">허락</button>
+                            <button type="button" onclick="void window.rejectClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg text-[10px]">거절</button>
+                        </div>
+                    </div>`).join('')
+                : '<p class="text-[10px] text-slate-200">대기 중인 요청이 없습니다.</p>';
+            return `<div class="rounded-xl border-2 border-amber-300 bg-amber-950/50 p-3 space-y-2">
+                <h4 class="text-white font-black text-xs"><i class="fa-solid fa-envelope-open-text text-amber-300"></i> 학급 개설 요청 ${pending.length ? `<span class="text-amber-200">(${pending.length})</span>` : ''}</h4>
+                <p class="text-[10px] text-amber-50">다른 선생님이 보낸 요청입니다. 여기서 허락하거나 거절하세요.</p>
+                <div class="space-y-2">${rows}</div>
+            </div>`;
+        };
+
+        window.paintClassCreateInbox = function() {
+            const html = window.renderClassCreateInboxHtml();
+            document.querySelectorAll('.js-class-create-inbox').forEach((el) => {
+                el.classList.toggle('hidden', !html);
+                el.innerHTML = html;
+            });
+        };
+
+        window.renderClassCreateUnlockAdminHtml = function() {
+            if (!isSeedMasterViewer(window.playerState, appId)) return '';
+            const code = escapeHofText(_classCreateUnlockCode || '만드는 중…');
+            return `<div class="rounded-xl border-2 border-sky-300 bg-slate-950 p-3 space-y-2">
+                <h4 class="text-white font-black text-xs"><i class="fa-solid fa-key text-sky-300"></i> 학급 개설 코드</h4>
+                <p class="text-[10px] text-slate-200">이 코드를 아는 선생님만 로그인 화면에서 「새 학급 만들기」 요청을 보낼 수 있습니다. 학생에게는 알려 주지 마세요.</p>
+                <p class="text-lg font-black tracking-[0.35em] text-sky-200 text-center">${code}</p>
+                <div class="flex flex-wrap gap-1.5">
+                    <button type="button" onclick="void window.copyClassCreateUnlockCode()" class="min-h-[36px] px-3 rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-black text-[10px]">복사</button>
+                    <button type="button" onclick="void window.regenerateClassCreateUnlockCode()" class="min-h-[36px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px]">새로 만들기</button>
+                </div>
+            </div>`;
+        };
+
+        window.paintClassCreateUnlockAdmin = function() {
+            const html = window.renderClassCreateUnlockAdminHtml();
+            document.querySelectorAll('.js-class-create-unlock-admin').forEach((el) => {
+                el.classList.toggle('hidden', !html);
+                el.innerHTML = html;
+            });
+        };
+
+        async function fetchSeedClassCreateUnlockCode() {
+            if (!db) return '';
+            const snap = await getDoc(doc(db, 'classes', SEED_MASTER_CLASS_ID));
+            return readClassCreateUnlockFromClassData(snap.exists() ? snap.data() : {});
+        }
+
+        async function ensureClassCreateUnlockCode() {
+            if (!isSeedMasterViewer(window.playerState, appId) || !db) return '';
+            let code = await fetchSeedClassCreateUnlockCode();
+            if (!isValidClassCreateUnlockCode(code)) {
+                code = generateClassCreateUnlockCode();
+                await setDoc(doc(db, 'classes', SEED_MASTER_CLASS_ID), {
+                    [CLASS_CREATE_UNLOCK_FIELD]: code,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+            }
+            _classCreateUnlockCode = code;
+            window.paintClassCreateUnlockAdmin();
+            return code;
+        }
+
+        window.copyClassCreateUnlockCode = async function() {
+            const code = _classCreateUnlockCode || await ensureClassCreateUnlockCode();
+            if (!isValidClassCreateUnlockCode(code)) {
+                return window.customAlert('개설 코드를 아직 만들지 못했습니다.');
+            }
+            try {
+                await navigator.clipboard.writeText(code);
+                window.showToast && window.showToast('개설 코드를 복사했습니다.');
+            } catch (_) {
+                await window.customAlert(`개설 코드: ${code}`);
+            }
+        };
+
+        window.regenerateClassCreateUnlockCode = async function() {
+            if (!isSeedMasterViewer(window.playerState, appId)) {
+                return window.customAlert('원래 마스터만 개설 코드를 바꿀 수 있습니다.');
+            }
+            const ok = await window.customConfirm('학급 개설 코드를 새로 만듭니다.\n예전 코드는 더 이상 쓸 수 없습니다.');
+            if (!ok) return;
+            try {
+                window.showGlobalLoading('개설 코드를 만드는 중…');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
+                const code = generateClassCreateUnlockCode();
+                await setDoc(doc(db, 'classes', SEED_MASTER_CLASS_ID), {
+                    [CLASS_CREATE_UNLOCK_FIELD]: code,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+                _classCreateUnlockCode = code;
+                window.hideGlobalLoading();
+                window.paintClassCreateUnlockAdmin();
+                await window.customAlert(`새 개설 코드: ${code}`);
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('개설 코드를 만들지 못했습니다: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
+        window.verifyTeacherCreateUnlock = async function(source) {
+            const fromSettings = source === 'settings';
+            const input = document.getElementById(fromSettings ? 'settingsClassCreateUnlockInput' : 'teacherCreateUnlockInput');
+            const typed = String(input?.value || '').trim();
+            const err = document.getElementById('teacherCreateUnlockError');
+            if (err) {
+                err.classList.add('hidden');
+                err.textContent = '';
+            }
+            if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('개설 코드를 확인하는 중…');
+                const stored = await fetchSeedClassCreateUnlockCode();
+                window.hideGlobalLoading();
+                if (!isValidClassCreateUnlockCode(stored)) {
+                    return window.customAlert('아직 개설 코드가 없습니다. 삼봉초 원래 마스터에게 코드를 받아 주세요.');
+                }
+                if (!matchesClassCreateUnlockCode(typed, stored)) {
+                    if (err && !fromSettings) {
+                        err.textContent = '개설 코드가 올바르지 않습니다.';
+                        err.classList.remove('hidden');
+                    }
+                    return window.customAlert('개설 코드가 올바르지 않습니다. 원래 마스터에게 받은 코드를 다시 입력해 주세요.');
+                }
+                writeClassCreateUnlockSession(true);
+                window.renderClassCreateRequestStatus();
+                window.showToast && window.showToast('개설 코드가 확인되었습니다.');
+            } catch (e) {
+                window.hideGlobalLoading();
+                await window.customAlert('코드를 확인하지 못했습니다. 네트워크를 점검해 주세요.');
+            } finally {
+                window.hideGlobalLoading();
+            }
+        };
+
         function bindSeedMasterClassCreateWatch() {
             const seedMaster = isSeedMasterViewer(window.playerState, appId);
             if (!seedMaster || !db) {
@@ -3165,21 +3412,30 @@ function redrawPlazaGrantsUi() {
                     _unsubClassCreateRequests = null;
                 }
                 _classCreateRequests = [];
+                window.paintClassCreateInbox();
+                window.paintClassCreateUnlockAdmin();
                 return;
             }
-            if (_unsubClassCreateRequests) return;
+            void ensureClassCreateUnlockCode();
+            if (_unsubClassCreateRequests) {
+                window.paintClassCreateInbox();
+                return;
+            }
             const col = classCreateRequestColRef();
             _unsubClassCreateRequests = onSnapshot(col, (snap) => {
                 const rows = [];
                 snap.forEach((d) => rows.push(sanitizeClassCreateRequest({ ...(d.data() || {}), id: d.id })));
                 _classCreateRequests = rows;
-                if (typeof window.renderClassAdminPanel === 'function' && window.playerState?.isGM) {
-                    window.renderClassAdminPanel();
-                }
+                window.paintClassCreateInbox();
                 const pending = pendingClassCreateRequests(rows);
-                if (!_classCreateRequestNotified && pending.length > 0 && typeof window.customAlert === 'function') {
-                    _classCreateRequestNotified = true;
-                    void window.customAlert(`다른 학급 개설 요청이 ${pending.length}건 있습니다.\n설정 → 학급 관리에서 허락할 수 있습니다.`);
+                const sig = classCreatePendingSignature(rows);
+                if (!sig || !pending.length) return;
+                if (readClassCreateNotifySignature() === sig) return;
+                writeClassCreateNotifySignature(sig);
+                if (typeof window.customAlert === 'function') {
+                    void window.customAlert(`다른 학급 개설 요청이 ${pending.length}건 있습니다.\n확인을 누르면 설정 → 학급에서 허락할 수 있습니다.`).then(() => {
+                        window.openClassCreateRequestInbox();
+                    });
                 }
             }, (err) => console.warn('classCreateRequests', err));
         }
@@ -3281,6 +3537,9 @@ function redrawPlazaGrantsUi() {
 
         window.createClassFromLogin = async function() {
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            if (!readClassCreateUnlockSession()) {
+                return window.customAlert('학급을 개설하려면 원래 마스터가 준 개설 코드가 필요합니다.');
+            }
             const displayName = String(document.getElementById('createClassDisplayName')?.value || '').trim();
             const schoolName = String(document.getElementById('createClassSchoolName')?.value || '').trim();
             const schoolYear = Number(document.getElementById('createClassYear')?.value) || new Date().getFullYear();
@@ -3409,25 +3668,11 @@ function redrawPlazaGrantsUi() {
                     <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
                     <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
-                </div>
-                ${isSeedMasterViewer(window.playerState, appId) ? `
-                <div class="border-t border-slate-700 pt-3 mt-3">
-                    <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-envelope-open-text text-amber-300"></i> 학급 개설 인증 요청 ${pendingClassCreateRequests(_classCreateRequests).length ? `<span class="ml-1 text-amber-200">(${pendingClassCreateRequests(_classCreateRequests).length})</span>` : ''}</h4>
-                    <p class="text-[9px] text-slate-500 mb-2">다른 선생님이 보낸 요청입니다. 허락하면 그때 반이 생성됩니다.</p>
-                    <div class="space-y-2">${pendingClassCreateRequests(_classCreateRequests).length
-                        ? pendingClassCreateRequests(_classCreateRequests).map((r) => `
-                            <div class="rounded-xl border border-amber-500/30 bg-slate-950/70 p-2 space-y-1">
-                                <p class="text-[11px] font-black text-amber-100">${escapeHofText(r.displayName)}</p>
-                                <p class="text-[10px] text-slate-400">${escapeHofText(r.schoolName || '')} ${r.schoolYear}학년도 ${r.grade}학년 ${r.homeroom}반 · ${escapeHofText(r.teacherName)}</p>
-                                <div class="flex gap-2 pt-1">
-                                    <button type="button" onclick="void window.approveClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px]">허락</button>
-                                    <button type="button" onclick="void window.rejectClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg text-[10px]">거절</button>
-                                </div>
-                            </div>`).join('')
-                        : '<p class="text-[10px] text-slate-500">대기 중인 요청이 없습니다.</p>'}</div>
-                </div>` : ''}`;
+                </div>`;
             bindSeedMasterClassCreateWatch();
             window.renderClassCreateRequestStatus();
+            window.paintClassCreateInbox();
+            window.paintClassCreateUnlockAdmin();
             void window.refreshManagedClassDirectory();
         };
 
@@ -3521,6 +3766,9 @@ function redrawPlazaGrantsUi() {
             }
             const teacherName = getStaffMember('gm')?.name || '담임 선생님';
             const immediate = canCreateClassImmediately(window.playerState, appId);
+            if (!immediate && !readClassCreateUnlockSession()) {
+                return window.customAlert('새 학급을 요청하려면 원래 마스터가 준 개설 코드가 필요합니다.');
+            }
             const ok = await window.customConfirm(
                 immediate
                     ? `새 학급을 만듭니다.\n\n이름: ${displayName}\n${schoolYear}학년도 ${grade}학년 ${homeroom}반\n\n빈 명단으로 시작하고, 고유 학급 ID·초대 코드가 발급됩니다.`
@@ -8504,6 +8752,9 @@ ${subjectLine}
             }
             if ((g === 'admin' && id === 'roster') || (g === 'settings' && id === 'class')) {
                 void window.refreshManagedClassDirectory?.();
+                window.paintClassCreateInbox?.();
+                window.paintClassCreateUnlockAdmin?.();
+                window.renderClassCreateRequestStatus?.();
             }
         };
 

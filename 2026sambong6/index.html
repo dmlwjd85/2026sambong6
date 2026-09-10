@@ -118,9 +118,17 @@
                 </div>
 
                 <div id="teacherCreatePanel" class="hidden space-y-3">
-                    <p id="teacherCreateIntro" class="text-[10px] text-slate-400">새 교실은 원래 마스터 허락 뒤에 만들어집니다.</p>
+                    <p id="teacherCreateIntro" class="text-[10px] text-slate-400">새 교실은 원래 마스터가 준 개설 코드가 있을 때만 요청할 수 있습니다.</p>
                     <div id="classCreateRequestBox" class="hidden p-3 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
-                    <div id="teacherCreateFormFields" class="space-y-3">
+                    <div id="teacherCreateUnlockGate" class="space-y-3">
+                        <p class="text-[10px] text-amber-100/90 leading-relaxed">학생은 학급을 만들 수 없습니다. 선생님이 받은 <strong class="text-white">학급 개설 코드</strong>를 입력해야 요청 화면이 열립니다.</p>
+                        <div class="flex gap-2">
+                            <input id="teacherCreateUnlockInput" type="text" maxlength="8" placeholder="개설 코드 6자리" autocomplete="off" class="flex-1 min-w-0 bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2.5 text-xs font-black uppercase tracking-[0.3em] text-center min-h-[44px]" onkeydown="if(event.key==='Enter'){event.preventDefault(); void window.verifyTeacherCreateUnlock();}">
+                            <button type="button" onclick="void window.verifyTeacherCreateUnlock()" class="shrink-0 bg-sky-700 hover:bg-sky-600 text-white font-black px-3 py-2 rounded-xl text-[10px] whitespace-nowrap min-h-[44px]">코드 확인</button>
+                        </div>
+                        <p id="teacherCreateUnlockError" class="hidden text-[10px] text-rose-300"></p>
+                    </div>
+                    <div id="teacherCreateFormFields" class="hidden space-y-3">
                     <label class="block text-[10px] text-slate-300 font-bold">학급명 <span class="text-rose-400">(필수)</span>
                         <input id="createClassDisplayName" type="text" maxlength="40" placeholder="예: 해오름초 6학년 2반" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2.5 text-xs font-bold min-h-[44px]">
                     </label>
@@ -2403,9 +2411,15 @@
             <div id="classAdminSection" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-users text-emerald-400"></i> 학급·명단 관리</h3>
                 <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">학생 명단은 Firestore에 저장됩니다. 내년에는 <strong class="text-emerald-200">새 학급 만들기</strong>로 데이터를 분리하고, 다른 선생님은 초대 코드로 접속할 수 있습니다.</p>
+                <div id="adminClassCreateInbox" class="js-class-create-inbox hidden mb-3"></div>
+                <div id="adminClassCreateUnlockAdmin" class="js-class-create-unlock-admin hidden mb-3"></div>
                 <div class="mb-4 rounded-xl border-2 border-cyan-300 bg-slate-950 p-3 space-y-2">
                     <h4 class="text-white font-black text-xs"><i class="fa-solid fa-school text-cyan-300"></i> 다른 학급 열람 · 삭제 · 추가</h4>
-                    <p class="text-[10px] text-slate-200 leading-relaxed">시드 마스터는 서버에 있는 학급을 모두 봅니다. 시험 삼아 만든 반은 <strong class="text-white">초기화</strong>로 마스터 PIN을 바꾸고, 쓰지 않으면 <strong class="text-white">삭제(보관)</strong>하세요.</p>
+                    <p class="text-[10px] text-slate-200 leading-relaxed">시드 마스터는 서버에 있는 학급을 모두 봅니다. 쓰지 않는 반은 <strong class="text-white">삭제(보관)</strong>하면 기본 목록에서 빠지고, <strong class="text-white">목록에서 지우기</strong>로 완전히 숨길 수 있습니다.</p>
+                    <label class="flex items-center gap-2 text-[10px] text-white font-bold">
+                        <input type="checkbox" class="js-show-archived-classes rounded border-slate-500" onchange="window.setShowArchivedClasses(this.checked)">
+                        보관된 학급도 보기
+                    </label>
                     <div id="managedClassDirectory" class="js-managed-class-directory space-y-2 text-[10px] text-slate-200">목록을 불러오는 중…</div>
                 </div>
                 <div id="classAdminPanel" class="text-[10px] text-slate-400">마스터로 로그인하면 편집할 수 있습니다.</div>
@@ -2770,7 +2784,9 @@
             <div class="inner-pane hidden" data-pane-group="settings" data-pane="class">
             <div id="settingsClassPanel" class="glass-panel p-4 rounded-2xl border border-amber-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-school text-amber-400"></i> 5. 학급 정보</h3>
-                <p class="text-[9px] text-slate-500">학급 ID·명단 상세는 마스터 탭 「학급·명단 관리」에서도 다룰 수 있습니다.</p>
+                <p class="text-[9px] text-slate-500">학급 ID·명단 상세는 마스터 탭 「학급·명단 관리」에서도 다룰 수 있습니다. 학급 개설 요청은 이 화면 위에서 허락합니다.</p>
+                <div id="settingsClassCreateInbox" class="js-class-create-inbox hidden"></div>
+                <div id="settingsClassCreateUnlockAdmin" class="js-class-create-unlock-admin hidden"></div>
                 <div class="grid sm:grid-cols-2 gap-3">
                     <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">학급 표시 이름
                         <input id="wsClassDisplayName" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]" placeholder="예: 6학년 1반">
@@ -2799,14 +2815,27 @@
                 </div>
                 <div class="pt-2 border-t border-slate-800">
                     <h4 class="text-[11px] text-amber-200 font-bold mb-2">학급 목록 (열람·삭제·추가)</h4>
+                    <label class="flex items-center gap-2 text-[10px] text-white font-bold mb-2">
+                        <input type="checkbox" class="js-show-archived-classes rounded border-slate-500" onchange="window.setShowArchivedClasses(this.checked)">
+                        보관된 학급도 보기
+                    </label>
                     <div id="myClassesList" class="js-managed-class-directory space-y-1.5 text-[10px] text-slate-200">목록을 불러오는 중…</div>
-                    <div class="mt-3 grid sm:grid-cols-2 gap-2">
+                    <div id="settingsClassCreateUnlockGate" class="mt-3 space-y-2">
+                        <p class="text-[10px] text-slate-300">새 학급을 요청하려면 원래 마스터가 준 개설 코드가 필요합니다.</p>
+                        <div class="flex gap-2">
+                            <input id="settingsClassCreateUnlockInput" type="text" maxlength="8" placeholder="개설 코드 6자리" autocomplete="off" class="flex-1 min-w-0 bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-black uppercase tracking-[0.3em] text-center min-h-[44px]" onkeydown="if(event.key==='Enter'){event.preventDefault(); void window.verifyTeacherCreateUnlock('settings');}">
+                            <button type="button" onclick="void window.verifyTeacherCreateUnlock('settings')" class="shrink-0 bg-sky-700 hover:bg-sky-600 text-white font-black px-3 py-2 rounded-xl text-[10px] whitespace-nowrap min-h-[44px]">코드 확인</button>
+                        </div>
+                    </div>
+                    <div id="settingsNewClassCreateFields" class="mt-3 hidden">
+                    <div class="grid sm:grid-cols-2 gap-2">
                         <input id="settingsNewClassDisplayName" type="text" placeholder="새 학급 이름" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                         <input id="settingsNewClassSchoolYear" type="number" placeholder="학년도" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                         <input id="settingsNewClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                         <input id="settingsNewClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-950 border-2 border-cyan-300 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
                     </div>
                     <button type="button" onclick="void window.createNewClass()" class="mt-2 w-full min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-black rounded-xl">새 학급 추가</button>
+                    </div>
                     <button type="button" onclick="window.openClassSwitchPanel()" class="mt-2 w-full min-h-[44px] bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold rounded-xl border-2 border-slate-400">초대 코드로 열기</button>
                 </div>
                 <div class="pt-2 border-t border-slate-800">

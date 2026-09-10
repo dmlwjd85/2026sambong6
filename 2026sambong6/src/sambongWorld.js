@@ -144,6 +144,7 @@ import {
     SHOE_GEAR,
     WEAPON_GEAR,
     applyFullXpDeduct,
+    applyQuestGearDrop,
     attemptGearEnhance,
     countOwnedGear,
     enhanceSuccessChance,
@@ -1794,13 +1795,13 @@ function redrawPlazaGrantsUi() {
             bg: g.id === 'shoe1' ? 'bg-lime-950/40' : g.id === 'shoe2' ? 'bg-amber-950/40' : g.id === 'shoe3' ? 'bg-sky-950/40' : g.id === 'shoe4' ? 'bg-cyan-950/40' : 'bg-yellow-950/40',
         }));
 
-        /** 마스터는 무기·방패·신발을 모두 보유한 것으로 맞춥니다. */
+        /** 마스터는 무기·방패·신발을 종류당 10개 보유한 것으로 맞춰 강화를 연습할 수 있습니다. */
         function ensureMasterAllGear() {
             if (!window.playerState || !window.playerState.isAdmin) return false;
             window.playerState.inventory = sanitizeGearInventory(window.playerState.inventory);
-            const next = grantMasterGear(window.playerState.inventory);
+            const next = grantMasterGear(window.playerState.inventory, window.playerState.gearEnhance);
             const changed = next.length !== window.playerState.inventory.length
-                || next.some((id) => !(window.playerState.inventory || []).includes(id));
+                || next.some((id) => countOwnedGear(next, id) !== countOwnedGear(window.playerState.inventory, id));
             if (changed) window.playerState.inventory = next;
             window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
             return changed;
@@ -19223,14 +19224,18 @@ ${subjectLine}
             const dropped = pickQuestDropId(xp, window.playerState.inventory);
             if (!dropped) return;
             const g = getGear(dropped);
-            window.playerState.inventory.push(dropped);
+            const applied = applyQuestGearDrop(window.playerState.inventory, dropped);
+            if (!applied.ok) return;
+            window.playerState.inventory = applied.inventory;
             window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
             if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
             const slotName = gearSlotLabel(g && g.slot);
-            const n = countOwnedGear(window.playerState.inventory, dropped);
+            const n = applied.count;
             const lv = gearEnhanceOf(window.playerState, dropped);
             await window.customAlert(
-                `🎉 [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요. 같은 칸을 탭하면 장착합니다.`
+                applied.duplicate
+                    ? `🎁 [${slotName} 중복]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] 갯수만 늘어납니다. 추가 경험치·봉은 없습니다.\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요.`
+                    : `🎉 [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요. 같은 칸을 탭하면 장착합니다.`
             );
         }
 

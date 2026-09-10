@@ -48,6 +48,8 @@ export const SHOE_GEAR = [
 
 export const ALL_GEAR = [...WEAPON_GEAR, ...SHIELD_GEAR, ...SHOE_GEAR];
 export const MASTER_GEAR_IDS = ALL_GEAR.map((g) => g.id);
+/** 마스터가 강화 연습을 할 수 있도록 종류마다 채워 주는 갯수 */
+export const MASTER_GEAR_COPIES = 10;
 
 /** 스킨·오라 미세 보너스. 값은 확률 가산(0.002 = 0.2%p). */
 export const SKIN_GEAR_STATS = {
@@ -248,12 +250,41 @@ export function countUniqueGearOfSlot(inventory, slot) {
     return seen.size;
 }
 
-export function grantMasterGear(inventory) {
+/**
+ * 마스터 인벤토리를 맞춥니다.
+ * 없거나(또는 예전처럼 1개만 있고 아직 강화 전)이면 종류당 10개를 채워 강화를 연습할 수 있게 합니다.
+ * 이미 2개 이상이면 강화로 재료를 쓴 갯수를 그대로 둡니다.
+ */
+export function grantMasterGear(inventory, enhanceMap) {
     const next = sanitizeGearInventory(inventory);
+    const enhance = sanitizeGearEnhance(enhanceMap, next);
     MASTER_GEAR_IDS.forEach((id) => {
-        if (!next.includes(id)) next.push(id);
+        const have = countOwnedGear(next, id);
+        if (have >= 2) return;
+        const lv = enhance[id] != null ? clampGearEnhance(enhance[id]) : GEAR_ENHANCE_MIN;
+        if (have === 1 && lv > GEAR_ENHANCE_MIN) return;
+        for (let i = have; i < MASTER_GEAR_COPIES; i++) next.push(id);
     });
     return next;
+}
+
+/**
+ * 퀘스트 장비 드롭. 같은 아이템이 나와도 갯수만 늘리고 경험치·봉은 주지 않습니다.
+ */
+export function applyQuestGearDrop(inventory, gearId) {
+    const id = String(gearId || '');
+    const bag = sanitizeGearInventory(inventory);
+    if (!getGear(id)) return { ok: false, reason: 'unknown', inventory: bag, extraXp: 0, extraBong: 0 };
+    const had = countOwnedGear(bag, id);
+    return {
+        ok: true,
+        inventory: bag.concat([id]),
+        gearId: id,
+        duplicate: had > 0,
+        count: had + 1,
+        extraXp: 0,
+        extraBong: 0,
+    };
 }
 
 export function skinStatLabel(skinId) {
@@ -375,7 +406,7 @@ export function pickQuestDropId(xp, inventory, rng = Math.random) {
                 ? ['wp2', 'sh2', 'shoe2', 'wp1', 'sh1', 'shoe1']
                 : ['wp1', 'sh1', 'shoe1'];
     const owned = sanitizeGearInventory(inventory);
-    // 이미 가진 아이템도 갯수·강화 재료로 다시 나옵니다.
+    // 이미 가진 아이템도 강화 재료로 다시 나옵니다. 중복이어도 경험치·봉은 주지 않습니다.
     const available = pool.slice();
     if (!available.length) return null;
     const ownedMin = Math.min(

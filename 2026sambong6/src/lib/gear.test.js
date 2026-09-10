@@ -8,6 +8,7 @@ import {
     SHOE_GEAR,
     WEAPON_GEAR,
     applyFullXpDeduct,
+    applyQuestGearDrop,
     applyXpDeductWithGear,
     attachXpDeductResult,
     attemptGearEnhance,
@@ -21,6 +22,7 @@ import {
     gearWithEnhance,
     getGear,
     grantMasterGear,
+    MASTER_GEAR_COPIES,
     pickQuestDropId,
     resolveQuestWeaponProc,
     resolveShieldBlock,
@@ -47,10 +49,16 @@ describe('장비 목록', () => {
         assert.ok(SHOE_GEAR.every((g) => g.img && g.img.startsWith('chars/')));
     });
 
-    it('마스터는 전 장비를 받는다', () => {
+    it('마스터는 전 장비를 10개씩 받는다', () => {
         const next = grantMasterGear(['wp1']);
-        assert.equal(next.length, 15);
-        assert.ok(next.includes('shoe5'));
+        assert.equal(countOwnedGear(next, 'wp1'), MASTER_GEAR_COPIES);
+        assert.equal(countOwnedGear(next, 'shoe5'), MASTER_GEAR_COPIES);
+        assert.equal(next.length, MASTER_GEAR_IDS.length * MASTER_GEAR_COPIES);
+        const leftover = grantMasterGear(['wp1', 'wp1', 'wp1'], { wp1: 2 });
+        assert.equal(countOwnedGear(leftover, 'wp1'), 3);
+        assert.equal(countOwnedGear(leftover, 'sh1'), MASTER_GEAR_COPIES);
+        const enhancedOne = grantMasterGear(['wp1'], { wp1: 3 });
+        assert.equal(countOwnedGear(enhancedOne, 'wp1'), 1);
         assert.equal(countGearOfSlot(['wp1', 'wp2', 'sh1'], 'weapon'), 2);
     });
 });
@@ -148,6 +156,20 @@ describe('퀘스트 드롭', () => {
         assert.ok(['wp1', 'sh1', 'shoe1'].includes(id));
         const stacked = pickQuestDropId(8, ['wp1', 'sh1', 'shoe1'], () => 0);
         assert.ok(['wp1', 'sh1', 'shoe1'].includes(stacked));
+    });
+
+    it('같은 아이템이 나와도 경험치·봉은 주지 않고 갯수만 늘린다', () => {
+        const first = applyQuestGearDrop([], 'wp1');
+        assert.equal(first.ok, true);
+        assert.equal(first.duplicate, false);
+        assert.equal(first.extraXp, 0);
+        assert.equal(first.extraBong, 0);
+        const again = applyQuestGearDrop(first.inventory, 'wp1');
+        assert.equal(again.duplicate, true);
+        assert.equal(again.count, 2);
+        assert.equal(again.extraXp, 0);
+        assert.equal(again.extraBong, 0);
+        assert.deepEqual(again.inventory, ['wp1', 'wp1']);
     });
 });
 

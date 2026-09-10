@@ -164,7 +164,7 @@
                         <input id="createClassTeacherPin" type="password" maxlength="4" pattern="[0-9]*" inputmode="numeric" placeholder="••••" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-2.5 text-xs font-bold text-center tracking-[0.4em] min-h-[44px]">
                     </label>
                     <label class="flex items-start gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2.5 min-h-[44px]">
-                        <input id="createClassApplyTemplate" type="checkbox" checked class="mt-0.5 rounded border-slate-600">
+                        <input id="createClassApplyTemplate" type="checkbox" class="mt-0.5 rounded border-slate-600">
                         <span>기본 템플릿 적용 (퀘스트·직업·헌법 기본값)</span>
                     </label>
                     <button type="button" onclick="void window.createClassFromLogin()" class="w-full bg-gradient-to-r from-sky-600 to-emerald-500 hover:from-sky-500 text-white font-black py-3.5 rounded-xl shadow-lg text-sm min-h-[48px]">
@@ -224,7 +224,7 @@
                 <span class="app-nav-icon"><img src="nav/nav-quests.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">퀘스트</span>
             </button>
-            <button type="button" id="tab-literature" onclick="window.switchTab('literature')" class="app-nav-item" aria-label="문학">
+            <button type="button" id="tab-literature" data-class-module="literature" onclick="window.switchTab('literature')" class="app-nav-item" aria-label="문학">
                 <span class="app-nav-icon"><img src="nav/nav-literature.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">문학</span>
             </button>
@@ -232,15 +232,15 @@
                 <span class="app-nav-icon"><img src="nav/nav-jobs.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">직업</span>
             </button>
-            <button type="button" id="tab-economy" onclick="window.switchTab('economy')" class="app-nav-item" aria-label="경제">
+            <button type="button" id="tab-economy" data-class-module="economy" onclick="window.switchTab('economy')" class="app-nav-item" aria-label="경제">
                 <span class="app-nav-icon"><img src="nav/nav-economy.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">경제</span>
             </button>
-            <button type="button" id="tab-lunch" onclick="window.switchTab('lunch')" class="hidden app-nav-item" aria-label="밥줄">
+            <button type="button" id="tab-lunch" data-class-module="lunch" onclick="window.switchTab('lunch')" class="hidden app-nav-item" aria-label="밥줄">
                 <span class="app-nav-icon"><img src="nav/nav-lunch.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">밥줄</span>
             </button>
-            <button type="button" id="tab-challenge" onclick="window.switchTab('challenge')" class="app-nav-item" aria-label="도전">
+            <button type="button" id="tab-challenge" data-class-module="challenge" onclick="window.switchTab('challenge')" class="app-nav-item" aria-label="도전">
                 <span class="app-nav-icon"><img src="nav/nav-challenge.webp" alt="" width="192" height="192"></span>
                 <span class="app-nav-label">도전</span>
             </button>
@@ -420,48 +420,7 @@
                     </div>
                     <button type="button" onclick="window.closeExternalPortal()" class="shrink-0 text-slate-400 hover:text-white text-xs font-bold">닫기</button>
                 </div>
-                <div class="grid gap-3">
-                    <a href="https://dmlwjd85.github.io/sambong-FC/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-lime-400/50 bg-lime-950/25 hover:bg-lime-900/45 p-4 flex items-center gap-3 transition">
-                        <div class="w-12 h-12 rounded-2xl bg-lime-500/20 flex items-center justify-center text-3xl group-hover:scale-110 transition">⚽</div>
-                        <div class="flex-1">
-                            <div class="text-lime-200 font-black text-sm">삼봉FC</div>
-                            <div class="text-[10px] text-slate-400">축구 세계로 이동</div>
-                        </div>
-                        <i class="fa-solid fa-arrow-up-right-from-square text-lime-300"></i>
-                    </a>
-                    <a href="https://dmlwjd85.github.io/ncgame/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-cyan-400/50 bg-cyan-950/25 hover:bg-cyan-900/45 p-4 flex items-center gap-3 transition">
-                        <div class="w-12 h-12 rounded-2xl bg-blue-800/80 border border-cyan-300 flex items-center justify-center text-cyan-100 text-lg font-black group-hover:scale-110 transition">ㄱㄴㄷ</div>
-                        <div class="flex-1">
-                            <div class="text-cyan-200 font-black text-sm">가나다 눈치게임</div>
-                            <div class="text-[10px] text-slate-400">눈치게임 세계로 이동</div>
-                        </div>
-                        <i class="fa-solid fa-arrow-up-right-from-square text-cyan-300"></i>
-                    </a>
-                    <a href="https://joontube82.github.io/English-RPG/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-red-400/50 bg-red-950/20 hover:bg-red-900/35 p-4 flex items-center gap-3 transition">
-                        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-400 via-white to-yellow-300 flex items-center justify-center text-3xl group-hover:scale-110 transition">🐾</div>
-                        <div class="flex-1">
-                            <div class="text-red-200 font-black text-sm">영켓몬</div>
-                            <div class="text-[10px] text-slate-400">영어 RPG 세계로 이동</div>
-                        </div>
-                        <i class="fa-solid fa-arrow-up-right-from-square text-red-300"></i>
-                    </a>
-                    <a href="https://www.i-scream.co.kr/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-amber-300/60 bg-amber-950/25 hover:bg-amber-900/45 p-4 flex items-center gap-3 transition">
-                        <div class="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-200/60 flex items-center justify-center text-3xl group-hover:scale-110 transition">📚</div>
-                        <div class="flex-1">
-                            <div class="text-amber-100 font-black text-sm">지식의 샘</div>
-                            <div class="text-[10px] text-slate-400">아이스크림 지식 세계로 이동</div>
-                        </div>
-                        <i class="fa-solid fa-arrow-up-right-from-square text-amber-200"></i>
-                    </a>
-                    <a href="https://dmlwjd85.github.io/picbook/" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border border-fuchsia-300/60 bg-fuchsia-950/25 hover:bg-fuchsia-900/45 p-4 flex items-center gap-3 transition">
-                        <div class="w-12 h-12 rounded-2xl bg-fuchsia-400/20 border border-fuchsia-200/60 flex items-center justify-center text-3xl group-hover:scale-110 transition">📖</div>
-                        <div class="flex-1">
-                            <div class="text-fuchsia-100 font-black text-sm">픽북</div>
-                            <div class="text-[10px] text-slate-400">AI 그림책 세계로 이동</div>
-                        </div>
-                        <i class="fa-solid fa-arrow-up-right-from-square text-fuchsia-200"></i>
-                    </a>
-                </div>
+                <div class="grid gap-3" id="externalPortalList"></div>
             </div>
         </div>
     </div>
@@ -605,13 +564,13 @@
                 </div>
 
                 <!-- 2-0. 문학 (서재) -->
-                <div onclick="window.switchTab('literature')" class="island-hover worldmap-pin absolute top-[33%] left-[8%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
+                <div onclick="window.switchTab('literature')" data-class-module="literature" class="island-hover worldmap-pin absolute top-[33%] left-[8%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
                     <span class="worldmap-crest worldmap-crest-literature pointer-events-none" aria-hidden="true"><i class="fa-solid fa-book-open"></i></span>
                     <div class="worldmap-label mt-1.5">문학</div>
                 </div>
 
                 <!-- 2-1. 상점 (시장) -->
-                <div onclick="window.switchTab('economy','shop')" class="island-hover worldmap-pin absolute top-[46%] left-[28%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                <div onclick="window.switchTab('economy','shop')" data-class-module="economy" class="island-hover worldmap-pin absolute top-[46%] left-[28%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <span class="worldmap-crest worldmap-crest-shop pointer-events-none" aria-hidden="true"><i class="fa-solid fa-shop"></i></span>
                     <div class="worldmap-label mt-1.5">상점</div>
                 </div>
@@ -635,37 +594,37 @@
                 </div>
 
                 <!-- 6. VIP 밥줄 (연회장) -->
-                <div onclick="window.switchTab('lunch')" class="island-hover worldmap-pin absolute top-[84%] left-[28%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                <div onclick="window.switchTab('lunch')" data-class-module="lunch" class="island-hover worldmap-pin absolute top-[84%] left-[28%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <span class="worldmap-crest worldmap-crest-lunch pointer-events-none" aria-hidden="true"><i class="fa-solid fa-utensils"></i></span>
                     <div class="worldmap-label mt-1.5">VIP 밥줄</div>
                 </div>
 
                 <!-- 7. 부동산 (장원) -->
-                <div onclick="window.switchTab('economy','estate')" class="island-hover worldmap-pin absolute top-[82%] left-[78%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                <div onclick="window.switchTab('economy','estate')" data-class-module="economy" class="island-hover worldmap-pin absolute top-[82%] left-[78%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <span class="worldmap-crest worldmap-crest-estate pointer-events-none" aria-hidden="true"><i class="fa-solid fa-chess-rook"></i></span>
                     <div class="worldmap-label mt-1.5">부동산</div>
                 </div>
 
                 <!-- 8. 도전 (종탑) -->
-                <div onclick="window.switchTab('challenge','goldenbell')" class="island-hover worldmap-pin absolute top-[10%] left-[48%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
+                <div onclick="window.switchTab('challenge','goldenbell')" data-class-module="challenge" class="island-hover worldmap-pin absolute top-[10%] left-[48%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center">
                     <span class="worldmap-crest worldmap-crest-challenge pointer-events-none" aria-hidden="true"><i class="fa-solid fa-bell"></i></span>
                     <div class="worldmap-label mt-1.5">도전</div>
                 </div>
 
                 <!-- 9. 외부 세계 차원문 -->
-                <div onclick="window.openExternalPortal()" class="island-hover worldmap-pin absolute top-[44%] left-[91%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
+                <div onclick="window.openExternalPortal()" data-class-module="portal" class="island-hover worldmap-pin absolute top-[44%] left-[91%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
                     <span class="worldmap-crest worldmap-crest-portal pointer-events-none" aria-hidden="true"><i class="fa-solid fa-circle-notch"></i></span>
                     <div class="worldmap-label worldmap-label-arcane mt-1.5">외부 세계</div>
                 </div>
 
                 <!-- 10. 은행 -->
-                <div onclick="window.visitBank()" class="island-hover worldmap-pin absolute top-[91%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
+                <div onclick="window.visitBank()" data-class-module="economy" class="island-hover worldmap-pin absolute top-[91%] left-[50%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-10">
                     <span class="worldmap-crest worldmap-crest-bank pointer-events-none" aria-hidden="true"><i class="fa-solid fa-landmark"></i></span>
                     <div id="mapBankLabel" class="worldmap-label worldmap-label-arcane mt-1.5">삼봉 은행</div>
                 </div>
 
                 <!-- 11. 명예의 전당 (시즌 1 기록 도서관) -->
-                <div onclick="window.openSeason1HallOfFame()" class="island-hover worldmap-pin worldmap-pin-library absolute top-[36%] left-[62%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
+                <div onclick="window.openSeason1HallOfFame()" data-class-module="hof" class="island-hover worldmap-pin worldmap-pin-library absolute top-[36%] left-[62%] -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center z-20">
                     <span class="hof-library-pin" aria-hidden="true">
                         <span class="hof-library-pin-roof"></span>
                         <span class="hof-library-pin-body">
@@ -1107,7 +1066,7 @@
                     <span class="app-sub-fa"><i class="fa-solid fa-calendar-week"></i></span>
                     <span>주간</span>
                 </button>
-                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="raid" onclick="window.switchInnerPane('quests','raid')">
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="raid" data-class-module="challenge" onclick="window.switchInnerPane('quests','raid')">
                     <span class="app-sub-fa"><i class="fa-solid fa-star"></i></span>
                     <span>레이드</span>
                 </button>
@@ -2609,10 +2568,14 @@
 
             <div id="settingsStatus" class="text-[10px] text-violet-300/90 font-bold min-h-[1rem]">—</div>
 
-            <div class="app-sub-dock cols-7 mb-3">
+            <div class="app-sub-dock cols-8 mb-3">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="settings" data-pane="world" onclick="window.switchInnerPane('settings','world')">
                     <span class="app-sub-fa"><i class="fa-solid fa-globe"></i></span>
                     <span>월드</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="modules" onclick="window.switchInnerPane('settings','modules')">
+                    <span class="app-sub-fa"><i class="fa-solid fa-unlock"></i></span>
+                    <span>기능</span>
                 </button>
                 <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="settings" data-pane="season" onclick="window.switchInnerPane('settings','season')">
                     <span class="app-sub-fa"><i class="fa-solid fa-calendar-week"></i></span>
@@ -2903,6 +2866,19 @@
             </div>
             </div>
 
+            <div class="inner-pane hidden" data-pane-group="settings" data-pane="modules">
+            <div class="glass-panel p-4 rounded-2xl border border-emerald-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-unlock text-emerald-400"></i> 기능 해금</h3>
+                <p class="text-[10px] text-slate-400 leading-relaxed">새 학급은 홈·광장·퀘스트·직업·헌법·도움말만 켜져 있습니다. 사용법을 익힌 뒤 아래에서 하나씩 여세요. 기존 삼봉 교실은 모든 기능이 이미 열려 있습니다.</p>
+                <div id="classModuleUnlockList" class="class-module-unlock-list"></div>
+            </div>
+            <div class="glass-panel p-4 rounded-2xl border border-cyan-500/40 bg-slate-900/80 space-y-3">
+                <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-wand-sparkles text-cyan-400"></i> 외부 세계 링크</h3>
+                <p class="text-[10px] text-slate-400 leading-relaxed">새 학급은 이전 교실의 외부 링크를 가져오지 않습니다. 이 반에서 쓸 주소만 넣으세요.</p>
+                <div id="gmExternalPortalEditor"></div>
+            </div>
+            </div>
+
             <div class="sticky bottom-2 z-10 flex flex-col sm:flex-row gap-2">
                 <button type="button" onclick="window.saveWorldSettingsFromPanel()" class="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-3 px-4 rounded-xl text-sm border border-violet-300/40 shadow-lg">
                     <i class="fa-solid fa-floppy-disk"></i> 설정 저장
@@ -2953,13 +2929,14 @@
 
             <div class="inner-pane" data-pane-group="help" data-pane="guide">
             <div class="glass-panel p-4 rounded-2xl border border-sky-500/40 bg-slate-900/80 space-y-2">
-                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chalkboard-user text-sky-400"></i> 선생님 시작 가이드 (5단계)</h3>
+                <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chalkboard-user text-sky-400"></i> 선생님 시작 가이드 (6단계)</h3>
                 <ol class="text-[11px] text-slate-300 leading-relaxed list-decimal pl-4 space-y-1.5">
                     <li>새 학급 만들기 → 학급명·시즌·마스터 이름 입력</li>
                     <li>초대 코드 복사해서 학생에게 공유</li>
                     <li>마스터로 로그인 후 명단 입력</li>
                     <li>기본 템플릿 적용 (선택)</li>
-                    <li>퀘스트·상점 확인 후 수업 시작</li>
+                    <li>설정 → 기능에서 문학·경제·도전 등을 하나씩 해금</li>
+                    <li>헌법을 우리 반 약속에 맞게 고친 뒤 수업 시작</li>
                 </ol>
                 <button type="button" onclick="void window.applyDefaultClassTemplates()" class="mt-2 w-full sm:w-auto min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-3 rounded-lg">기본 템플릿 적용</button>
             </div>
@@ -3301,6 +3278,13 @@
                 <div id="classTimerHourglassDigits" class="analog-digits font-display mt-3">00:00</div>
             </div>
             <p id="classTimerStatus" class="mt-4 text-xs sm:text-sm font-black tracking-[0.3em] text-lime-300/90">OPERATION IN PROGRESS</p>
+        </div>
+    </div>
+
+    <div id="gearEnhanceFx" class="gear-enhance-fx" aria-hidden="true">
+        <div class="gear-enhance-fx-burst">
+            <div class="gear-enhance-fx-ring"></div>
+            <div class="gear-enhance-fx-label" id="gearEnhanceFxLabel">강화 성공!</div>
         </div>
     </div>
 

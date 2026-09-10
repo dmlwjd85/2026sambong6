@@ -157,9 +157,25 @@ import {
     resolveQuestWeaponProc,
     sanitizeGearEnhance,
     sanitizeGearInventory,
+    gearEnhanceRingClass,
     skinStatLabel,
     staffLookStatLabel,
 } from './lib/gear.js';
+import {
+    CLASS_MODULE_CATALOG,
+    NEW_CLASS_CONSTITUTION_ITEMS,
+    classModuleById,
+    classModuleForTab,
+    hasClassModuleRecord,
+    isClassModuleEnabled,
+    newClassModules,
+    unlockClassModule,
+} from './lib/classModules.js';
+import {
+    resolveExternalPortals,
+    sanitizeExternalPortal,
+    sanitizeExternalPortals,
+} from './lib/externalPortals.js';
 import {
     applyBankTransfer,
     bankTransferWalletFields,
@@ -532,6 +548,33 @@ function redrawPlazaGrantsUi() {
                     osc.start(now);
                     osc.stop(now + 0.2);
                 }
+            } else if (type === 'enhance') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(520, now);
+                osc.frequency.exponentialRampToValueAtTime(1400, now + 0.22);
+                gainNode.gain.setValueAtTime(0.16, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                osc.start(now);
+                osc.stop(now + 0.35);
+                const osc2 = audioCtx.createOscillator();
+                const gain2 = audioCtx.createGain();
+                osc2.type = 'sine';
+                osc2.connect(gain2);
+                gain2.connect(audioCtx.destination);
+                osc2.frequency.setValueAtTime(780, now + 0.05);
+                osc2.frequency.exponentialRampToValueAtTime(1860, now + 0.28);
+                gain2.gain.setValueAtTime(0.12, now + 0.05);
+                gain2.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc2.start(now + 0.05);
+                osc2.stop(now + 0.4);
+            } else if (type === 'enhanceFail') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(280, now);
+                osc.frequency.exponentialRampToValueAtTime(90, now + 0.28);
+                gainNode.gain.setValueAtTime(0.18, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.32);
+                osc.start(now);
+                osc.stop(now + 0.32);
             }
         }
 
@@ -1645,6 +1688,8 @@ function redrawPlazaGrantsUi() {
             window.paintClassCreateInbox?.();
             window.paintClassCreateUnlockAdmin?.();
             window.renderClassCreateRequestStatus?.();
+            renderClassModuleUnlockList();
+            renderGmExternalPortalEditor();
         };
 
         window.saveWorldSettingsFromPanel = async function() {
@@ -1854,6 +1899,7 @@ function redrawPlazaGrantsUi() {
                         : isEquipped
                           ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
                           : `${g.border} ${g.bg}`;
+                const enhanceCls = have ? gearEnhanceRingClass(lv) : '';
                 const click = have ? `onclick="window.equipGear('${g.id}')"` : '';
                 const cursor = have ? 'cursor-pointer hover:scale-105' : 'cursor-default';
                 const art = g.img
@@ -1863,7 +1909,7 @@ function redrawPlazaGrantsUi() {
                     ? `<button type="button" onclick="event.stopPropagation(); void window.enhanceGear('${g.id}')" class="mt-0.5 w-full bg-violet-800/80 hover:bg-violet-700 text-violet-50 text-[7px] font-black py-0.5 rounded border border-violet-400/50">강화 ${rate}%</button>`
                     : '';
                 return `
-                    <div ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
+                    <div data-gear-id="${g.id}" ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} ${enhanceCls} relative">
                         ${isEquipped ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
                         ${have ? `<div class="absolute -top-1 left-0 bg-slate-950 text-violet-200 text-[7px] font-black px-0.5 rounded z-10 border border-violet-500/40">${lv}단계</div>` : ''}
                         <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art">${art}</div>
@@ -1969,25 +2015,28 @@ function redrawPlazaGrantsUi() {
             return `<span class="absolute ${skin.overlayClass || ''} z-20 pointer-events-none">${skin.emoji || ''}</span>`;
         }
 
-        function weaponMarkHtml(wp) {
+        function weaponMarkHtml(wp, enhanceLevel) {
+            const ring = `gear-enhance-ring ${gearEnhanceRingClass(enhanceLevel)}`;
             if (wp.img) {
-                return `<span class="char-weapon pointer-events-none z-30"><img src="${wp.img}" alt=""></span>`;
+                return `<span class="char-weapon pointer-events-none z-30 ${ring}"><img src="${wp.img}" alt=""></span>`;
             }
-            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none">${wp.emoji || ''}</span>`;
+            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none ${ring}">${wp.emoji || ''}</span>`;
         }
 
-        function shieldMarkHtml(sh) {
+        function shieldMarkHtml(sh, enhanceLevel) {
+            const ring = `gear-enhance-ring ${gearEnhanceRingClass(enhanceLevel)}`;
             if (sh && sh.img) {
-                return `<span class="char-shield pointer-events-none z-30"><img src="${sh.img}" alt=""></span>`;
+                return `<span class="char-shield pointer-events-none z-30 ${ring}"><img src="${sh.img}" alt=""></span>`;
             }
-            return `<span class="char-shield char-shield-emoji pointer-events-none z-30">${(sh && sh.emoji) || ''}</span>`;
+            return `<span class="char-shield char-shield-emoji pointer-events-none z-30 ${ring}">${(sh && sh.emoji) || ''}</span>`;
         }
 
-        function shoeMarkHtml(shoes) {
+        function shoeMarkHtml(shoes, enhanceLevel) {
+            const ring = `gear-enhance-ring ${gearEnhanceRingClass(enhanceLevel)}`;
             if (shoes && shoes.img) {
-                return `<span class="char-shoes pointer-events-none z-30"><img src="${shoes.img}" alt=""></span>`;
+                return `<span class="char-shoes pointer-events-none z-30 ${ring}"><img src="${shoes.img}" alt=""></span>`;
             }
-            return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30">${(shoes && shoes.emoji) || ''}</span>`;
+            return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30 ${ring}">${(shoes && shoes.emoji) || ''}</span>`;
         }
 
         /** 학생/스태프 초상 + 통짜 캐릭터·무기·방패·신발. 방패는 오른쪽, 신발은 아래. */
@@ -2026,15 +2075,15 @@ function redrawPlazaGrantsUi() {
             let overlays = '';
             if (showWeapon && row.equippedWeapon) {
                 const wp = WEAPON_DATA.find((w) => w.id === row.equippedWeapon);
-                if (wp) overlays += weaponMarkHtml(wp);
+                if (wp) overlays += weaponMarkHtml(wp, gearEnhanceOf(row, row.equippedWeapon));
             }
             if (drawShield && row.equippedShield) {
                 const sh = getGear(row.equippedShield) || SHIELD_DATA.find((g) => g.id === row.equippedShield);
-                if (sh) overlays += shieldMarkHtml(sh);
+                if (sh) overlays += shieldMarkHtml(sh, gearEnhanceOf(row, row.equippedShield));
             }
             if (drawShoes && row.equippedShoes) {
                 const shoes = getGear(row.equippedShoes) || SHOE_DATA.find((g) => g.id === row.equippedShoes);
-                if (shoes) overlays += shoeMarkHtml(shoes);
+                if (shoes) overlays += shoeMarkHtml(shoes, gearEnhanceOf(row, row.equippedShoes));
             }
             return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none">${rankLayer}${inner}${overlays}</div>`;
         }
@@ -2113,6 +2162,18 @@ function redrawPlazaGrantsUi() {
         /** 시드(데모) 학급인지 — 부동산 자동복구 등은 여기에만 적용 */
         function isSeedDemoClass() {
             return appId === SEED_CLASS_ID || !!(window.classMeta && window.classMeta.isDemoSeed);
+        }
+
+        /** 이 학급에서 해당 기능이 열려 있는지. 시드·예전 반은 기록이 없으면 전부 연 것으로 봅니다. */
+        function classModuleOn(moduleId) {
+            return isClassModuleEnabled(window.globalSettings, moduleId, { isSeed: isSeedDemoClass() });
+        }
+
+        function currentExternalPortals() {
+            return resolveExternalPortals(window.globalSettings && window.globalSettings.externalPortals, {
+                isSeed: isSeedDemoClass(),
+                hasModuleRecord: hasClassModuleRecord(window.globalSettings),
+            });
         }
 
         function buildDefaultRosterFromLegacy() {
@@ -3092,47 +3153,47 @@ function redrawPlazaGrantsUi() {
             }, { merge: true });
             await registerInviteCode(inviteCode, newClassId, { displayName });
 
-            // 기본 운영 설정 (지정 학급·현재 학급 복사 또는 최소 기본값)
-            const settingsCopySrc = String(copyFromClassId || '').trim() || (copySettingsFromCurrent ? appId : '');
-            if (settingsCopySrc) {
-                const globalSnap = await getDoc(doc(db, 'artifacts', settingsCopySrc, 'public', 'data', 'settings', 'global'));
-                if (globalSnap.exists()) {
-                    const src = globalSnap.data();
-                    const { announcement, screenNotice, classToolShare, lastAutoXpTime, lastSalaryWeek, researchJournal, ...copySettings } = src;
-                    await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
-                        ...copySettings,
-                        worldSettings: {
-                            ...(copySettings.worldSettings || {}),
-                            worldName: deriveWorldNameFromSchool(schoolName) || displayName || 'MATE',
-                            worldNameEn: deriveWorldNameFromSchool(schoolName) || displayName || 'MATE',
-                            footerCredit: `${deriveWorldNameFromSchool(schoolName) || displayName || 'MATE'} · ${teacherName || '담임 선생님'}`,
-                        },
-                    }, { merge: true });
-                }
-            } else {
-                const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
-                const derivedWorld = deriveWorldNameFromSchool(schoolName) || displayName || 'MATE';
-                await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
-                    raidPassword: raidPw,
-                    raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
-                    shieldStock: SHIELD_STOCK_DEFAULT,
-                    weekendRaidRewardXp: 40,
-                    weekendRaidRewardBong: 20,
-                    curriculumTags: DEFAULT_CURRICULUM_TAGS,
-                    curriculumMapping: DEFAULT_CURRICULUM_MAPPING,
-                    worldSettings: {
-                        worldName: derivedWorld,
-                        worldNameEn: derivedWorld,
-                        navBadge: 'S1',
-                        seasonNumber: 1,
-                        seasonLabel: String(seasonLabel || '시즌 1').trim().slice(0, 30) || '시즌 1',
-                        seasonTheme: String(seasonTheme || '우리 반 모험').trim().slice(0, 60) || '우리 반 모험',
-                        academicYear: schoolYear,
-                        footerCredit: `${derivedWorld} · ${teacherName || '담임 선생님'}`,
-                    },
-                    applyDefaultTemplatePending: !!applyDefaultTemplate,
-                }, { merge: true });
-            }
+            // 새 학급은 기존 교실 설정을 복사하지 않습니다. 기본 기능만 켠 깨끗한 시작값만 넣습니다.
+            const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
+            const derivedWorld = deriveWorldNameFromSchool(schoolName) || displayName || 'MATE';
+            await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
+                raidPassword: raidPw,
+                raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
+                shieldStock: SHIELD_STOCK_DEFAULT,
+                weekendRaidRewardXp: 40,
+                weekendRaidRewardBong: 20,
+                curriculumTags: DEFAULT_CURRICULUM_TAGS,
+                curriculumMapping: DEFAULT_CURRICULUM_MAPPING,
+                worldSettings: {
+                    worldName: derivedWorld,
+                    worldNameEn: derivedWorld,
+                    navBadge: 'S1',
+                    seasonNumber: 1,
+                    seasonLabel: String(seasonLabel || '시즌 1').trim().slice(0, 30) || '시즌 1',
+                    seasonTheme: String(seasonTheme || '우리 반 모험').trim().slice(0, 60) || '우리 반 모험',
+                    academicYear: schoolYear,
+                    footerCredit: `${derivedWorld} · ${teacherName || '담임 선생님'}`,
+                },
+                applyDefaultTemplatePending: !!applyDefaultTemplate,
+                classModules: newClassModules(),
+                constitutionItems: NEW_CLASS_CONSTITUTION_ITEMS,
+                externalPortals: [],
+                thoughtBoard: emptyThoughtBoard(),
+                announcement: '',
+                morningActivityNotice: '',
+                screenNotice: null,
+                classToolShare: null,
+                customShopItems: [],
+                convenienceItems: [],
+                customQuests: [],
+                customJobs: [],
+                jobOverrides: {},
+                deletedQuestIds: [],
+                deletedJobIds: [],
+                birthdayCelebrations: [],
+                musicTimeQueue: [],
+            }, { merge: true });
+            // copySettingsFromCurrent / copyFromClassId 는 더 이상 쓰지 않습니다(기존 교실 정보 해지).
 
             if (teacherPin) {
                 const pin = String(teacherPin).trim();
@@ -3792,7 +3853,7 @@ function redrawPlazaGrantsUi() {
                         teacherName,
                         studentCount: 25,
                         teacherPin: '',
-                        copySettingsFromCurrent: true,
+                        copySettingsFromCurrent: false,
                     });
                     window.hideGlobalLoading();
                     await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
@@ -3809,7 +3870,6 @@ function redrawPlazaGrantsUi() {
                     teacherPin: '',
                     requesterHint: 'settings',
                     sourceClassId: appId,
-                    copyFromClassId: appId,
                     applyDefaultTemplate: false,
                 });
                 if (!sent.ok) throw new Error('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
@@ -6060,7 +6120,10 @@ ${subjectLine}
             const saved = window.globalSettings && Array.isArray(window.globalSettings.constitutionItems)
                 ? window.globalSettings.constitutionItems
                 : null;
-            const source = saved && saved.length > 0 ? saved : DEFAULT_CONSTITUTION_ITEMS;
+            const fallback = (!isSeedDemoClass() && hasClassModuleRecord(window.globalSettings))
+                ? NEW_CLASS_CONSTITUTION_ITEMS
+                : DEFAULT_CONSTITUTION_ITEMS;
+            const source = saved && saved.length > 0 ? saved : fallback;
             return source
                 .map((item, idx) => ({
                     id: String(item && item.id ? item.id : `constitution_${idx}_${Date.now().toString(36)}`),
@@ -8760,6 +8823,10 @@ ${subjectLine}
                 window.paintClassCreateUnlockAdmin?.();
                 window.renderClassCreateRequestStatus?.();
             }
+            if (g === 'settings' && id === 'modules') {
+                renderClassModuleUnlockList();
+                renderGmExternalPortalEditor();
+            }
         };
 
         window.switchShopSub = function(sub) {
@@ -8838,6 +8905,172 @@ ${subjectLine}
             }
         };
 
+        const PORTAL_TONE_UI = {
+            lime: { border: 'border-lime-400/50', bg: 'bg-lime-950/25 hover:bg-lime-900/45', name: 'text-lime-200', icon: 'text-lime-300', wrap: 'bg-lime-500/20' },
+            cyan: { border: 'border-cyan-400/50', bg: 'bg-cyan-950/25 hover:bg-cyan-900/45', name: 'text-cyan-200', icon: 'text-cyan-300', wrap: 'bg-blue-800/80 border border-cyan-300' },
+            red: { border: 'border-red-400/50', bg: 'bg-red-950/20 hover:bg-red-900/35', name: 'text-red-200', icon: 'text-red-300', wrap: 'bg-gradient-to-br from-red-400 via-white to-yellow-300' },
+            amber: { border: 'border-amber-300/60', bg: 'bg-amber-950/25 hover:bg-amber-900/45', name: 'text-amber-100', icon: 'text-amber-200', wrap: 'bg-amber-400/20 border border-amber-200/60' },
+            fuchsia: { border: 'border-fuchsia-300/60', bg: 'bg-fuchsia-950/25 hover:bg-fuchsia-900/45', name: 'text-fuchsia-100', icon: 'text-fuchsia-200', wrap: 'bg-fuchsia-400/20 border border-fuchsia-200/60' },
+            sky: { border: 'border-sky-400/50', bg: 'bg-sky-950/25 hover:bg-sky-900/45', name: 'text-sky-200', icon: 'text-sky-300', wrap: 'bg-sky-500/20' },
+        };
+
+        function lockedClassModuleMessage(moduleId) {
+            const item = classModuleById(moduleId);
+            const label = item ? item.label : '이 기능';
+            return `${label}은(는) 아직 열려 있지 않습니다.\n선생님이 설정 → 기능에서 해금하면 쓸 수 있어요.`;
+        }
+
+        function renderExternalPortalList() {
+            const box = document.getElementById('externalPortalList');
+            if (!box) return;
+            const list = currentExternalPortals();
+            if (!list.length) {
+                box.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-6 leading-relaxed">이 학급에 등록된 외부 세계 링크가 없습니다.<br>선생님이 설정 → 기능에서 주소를 넣을 수 있어요.</p>';
+                return;
+            }
+            box.innerHTML = list.map((row) => {
+                const tone = PORTAL_TONE_UI[row.tone] || PORTAL_TONE_UI.sky;
+                const name = escapeHtmlAttr(row.name);
+                const desc = escapeHtmlAttr(row.desc || '새 창으로 이동합니다');
+                const url = escapeHtmlAttr(row.url);
+                const emoji = escapeHtmlAttr(row.emoji || '🌐');
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border ${tone.border} ${tone.bg} p-4 flex items-center gap-3 transition">
+                    <div class="w-12 h-12 rounded-2xl ${tone.wrap} flex items-center justify-center text-3xl group-hover:scale-110 transition">${emoji}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="${tone.name} font-black text-sm">${name}</div>
+                        <div class="text-[10px] text-slate-400">${desc}</div>
+                    </div>
+                    <i class="fa-solid fa-arrow-up-right-from-square ${tone.icon}"></i>
+                </a>`;
+            }).join('');
+        }
+
+        function renderClassModuleUnlockList() {
+            const box = document.getElementById('classModuleUnlockList');
+            if (!box) return;
+            if (isSeedDemoClass()) {
+                box.innerHTML = '<p class="text-[11px] text-emerald-200 leading-relaxed">이 교실(기존 삼봉 교실)은 모든 기능이 이미 열려 있습니다. 새 학급을 만들면 기본 기능만 켜진 채로 시작합니다.</p>';
+                return;
+            }
+            const unlockable = CLASS_MODULE_CATALOG.filter((m) => !m.basic);
+            box.innerHTML = unlockable.map((m) => {
+                const on = classModuleOn(m.id);
+                const hint = escapeHtmlAttr(m.hint);
+                const label = escapeHtmlAttr(m.label);
+                const btn = on
+                    ? '<span class="shrink-0 text-[10px] font-black text-emerald-300 px-2 py-1 rounded-lg border border-emerald-400/40">켜짐</span>'
+                    : `<button type="button" onclick="void window.unlockClassModuleNow('${m.id}')" class="shrink-0 min-h-[40px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black">해금</button>`;
+                return `<div class="class-module-row ${on ? '' : 'is-locked'}">
+                    <div><h5>${label}</h5><p>${hint}</p></div>
+                    ${btn}
+                </div>`;
+            }).join('');
+        }
+
+        function renderGmExternalPortalEditor() {
+            const box = document.getElementById('gmExternalPortalEditor');
+            if (!box) return;
+            if (isSeedDemoClass()) {
+                box.innerHTML = '<p class="text-[11px] text-slate-300 leading-relaxed">기존 삼봉 교실의 기본 외부 세계 링크는 그대로 둡니다. 새 학급에서는 링크가 비어 있고, 그 반에서만 따로 넣을 수 있습니다.</p>';
+                return;
+            }
+            const list = currentExternalPortals();
+            const rows = list.map((row, idx) => `
+                <div class="gm-portal-editor-row">
+                    <input data-portal-field="emoji" value="${escapeHtmlAttr(row.emoji || '🌐')}" maxlength="8" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-center text-sm">
+                    <input data-portal-field="name" value="${escapeHtmlAttr(row.name)}" maxlength="24" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-xs font-bold" placeholder="이름">
+                    <input data-portal-field="url" value="${escapeHtmlAttr(row.url)}" maxlength="300" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-[10px]" placeholder="https://">
+                    <button type="button" onclick="this.closest('.gm-portal-editor-row').remove()" class="min-h-[40px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">삭제</button>
+                </div>`).join('');
+            box.innerHTML = `
+                <div class="gm-portal-editor-list">${rows || '<p class="text-[10px] text-slate-500">아직 링크가 없습니다.</p>'}</div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" onclick="window.addExternalPortalEditorRow()" class="min-h-[40px] px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">링크 추가</button>
+                    <button type="button" onclick="void window.saveExternalPortalsFromEditor()" class="min-h-[40px] px-3 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black">링크 저장</button>
+                </div>
+                <p class="text-[9px] text-slate-500 mt-2">http 또는 https 주소만 저장됩니다. 이전 교실 링크는 자동으로 가져오지 않습니다.</p>`;
+        }
+
+        window.addExternalPortalEditorRow = function() {
+            const list = document.querySelector('#gmExternalPortalEditor .gm-portal-editor-list');
+            if (!list) return;
+            if (list.querySelectorAll('.gm-portal-editor-row').length >= 12) {
+                return window.customAlert('링크는 12개까지 넣을 수 있습니다.');
+            }
+            const empty = list.querySelector('p');
+            if (empty) empty.remove();
+            const row = document.createElement('div');
+            row.className = 'gm-portal-editor-row';
+            row.innerHTML = `
+                <input data-portal-field="emoji" value="🌐" maxlength="8" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-center text-sm">
+                <input data-portal-field="name" value="" maxlength="24" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-xs font-bold" placeholder="이름">
+                <input data-portal-field="url" value="" maxlength="300" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-[10px]" placeholder="https://">
+                <button type="button" onclick="this.closest('.gm-portal-editor-row').remove()" class="min-h-[40px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">삭제</button>`;
+            list.appendChild(row);
+        };
+
+        window.saveExternalPortalsFromEditor = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 저장할 수 있습니다.');
+            if (isSeedDemoClass()) return window.customAlert('기존 삼봉 교실의 기본 링크는 여기서 바꾸지 않습니다.');
+            if (!db) return window.customAlert('서버에 연결되지 않았습니다.');
+            const rows = [...document.querySelectorAll('#gmExternalPortalEditor .gm-portal-editor-row')].map((row, idx) => ({
+                emoji: row.querySelector('[data-portal-field="emoji"]')?.value,
+                name: row.querySelector('[data-portal-field="name"]')?.value,
+                url: row.querySelector('[data-portal-field="url"]')?.value,
+                id: `portal_${idx}`,
+            }));
+            const list = sanitizeExternalPortals(rows.map((row, i) => sanitizeExternalPortal(row, i)));
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            await setDoc(getGlobalSettingsDocRef(), { externalPortals: list }, { merge: true });
+            window.globalSettings = { ...(window.globalSettings || {}), externalPortals: list };
+            renderExternalPortalList();
+            renderGmExternalPortalEditor();
+            window.showToast && window.showToast('외부 세계 링크를 저장했습니다.');
+        };
+
+        window.unlockClassModuleNow = async function(moduleId) {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('마스터만 기능을 열 수 있습니다.');
+            if (isSeedDemoClass()) return window.customAlert('이 교실은 모든 기능이 이미 열려 있습니다.');
+            const item = classModuleById(moduleId);
+            if (!item || item.basic) return;
+            const ok = await window.customConfirm(`${item.label} 기능을 열까요?\n\n${item.hint}`);
+            if (!ok) return;
+            if (!db) return window.customAlert('서버에 연결되지 않았습니다.');
+            const next = unlockClassModule(window.globalSettings, moduleId);
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            await setDoc(getGlobalSettingsDocRef(), { classModules: next }, { merge: true });
+            window.globalSettings = { ...(window.globalSettings || {}), classModules: next };
+            syncClassModuleUi();
+            await window.customAlert(`${item.label}을(를) 열었습니다.`);
+        };
+
+        function syncClassModuleUi() {
+            document.querySelectorAll('[data-class-module]').forEach((el) => {
+                const on = classModuleOn(el.getAttribute('data-class-module'));
+                el.classList.toggle('hidden', !on);
+            });
+            if (!classModuleOn('challenge') && innerPaneState.quests === 'raid') {
+                window.switchInnerPane('quests', 'daily');
+            }
+            if (typeof enforceClassToolsAccess === 'function') enforceClassToolsAccess();
+            const modulesPane = document.querySelector('.inner-pane[data-pane-group="settings"][data-pane="modules"]');
+            if (modulesPane && !modulesPane.classList.contains('hidden')) {
+                const editor = document.getElementById('gmExternalPortalEditor');
+                const typing = !!(editor && editor.contains(document.activeElement));
+                if (!typing) {
+                    renderClassModuleUnlockList();
+                    renderGmExternalPortalEditor();
+                }
+            }
+            const lockedMod = classModuleForTab(TABS[currentTabIndex]);
+            if (lockedMod && !classModuleOn(lockedMod)) {
+                const plazaBtn = document.getElementById('tab-plaza');
+                if (plazaBtn && !plazaBtn.classList.contains('hidden')) window.switchTab('plaza');
+            }
+        }
+
         /**
          * @param {string} tabId
          * @param {string} [subOrOpts] 경제/도전 서브 또는 생략
@@ -8859,6 +9092,10 @@ ${subjectLine}
 
             if (tabId === 'settings' && (!window.playerState || !window.playerState.isAdmin)) {
                 return window.customAlert('마스터만 설정 탭을 열 수 있습니다.');
+            }
+            const tabModule = classModuleForTab(tabId);
+            if (tabModule && !classModuleOn(tabModule)) {
+                return window.customAlert(lockedClassModuleMessage(tabModule));
             }
             if (tabId === 'classtools' && (!canViewClassTools())) {
                 enforceClassToolsAccess();
@@ -9040,6 +9277,9 @@ ${subjectLine}
         };
 
         window.openSeason1HallOfFame = function() {
+            if (!classModuleOn('hof')) {
+                return window.customAlert(lockedClassModuleMessage('hof'));
+            }
             window.renderSeason1HallOfFame();
             const modal = document.getElementById('season1HallModal');
             if (modal) modal.classList.remove('hidden');
@@ -9855,6 +10095,10 @@ ${subjectLine}
         };
 
         window.openExternalPortal = function() {
+            if (!classModuleOn('portal')) {
+                return window.customAlert(lockedClassModuleMessage('portal'));
+            }
+            renderExternalPortalList();
             const modal = document.getElementById('externalPortalModal');
             if (modal) modal.classList.remove('hidden');
         };
@@ -9974,7 +10218,7 @@ ${subjectLine}
         let _learningThermometerIgnoreRemoteUntil = 0;
 
         function canViewClassTools() {
-            return !!(window.playerState && !window.playerState.isGuest);
+            return !!(window.playerState && !window.playerState.isGuest && classModuleOn('classtools'));
         }
 
         function canEditLearningThermometer() {
@@ -15326,6 +15570,7 @@ ${subjectLine}
                                 if (typeof window.renderShopGroupBuyAdminModal === 'function') window.renderShopGroupBuyAdminModal();
                                 updateShopPriceLabels();
                                 applyClassWatchUI();
+                                if (typeof syncClassModuleUi === 'function') syncClassModuleUi();
                                 updateUI();
                             }
                         });
@@ -15542,7 +15787,7 @@ ${subjectLine}
             const isPast1210 = (h > 12) || (h === 12 && m >= 10);
             
             const lunchTab = document.getElementById('tab-lunch');
-            if (lunchTab) lunchTab.classList.remove('hidden');
+            if (lunchTab) lunchTab.classList.toggle('hidden', !classModuleOn('lunch'));
 
             const queueContainer = document.getElementById('lunchQueueWrapper');
             if (queueContainer) {
@@ -17981,6 +18226,7 @@ ${subjectLine}
             
             checkTimeEvents();
             applyClassWatchUI();
+            if (typeof syncClassModuleUi === 'function') syncClassModuleUi();
             if (typeof window.renderLiterature === 'function') window.renderLiterature();
             renderConvenienceManagerUi();
             maybeShowConvenienceOrderPopup();
@@ -21470,6 +21716,42 @@ ${subjectLine}
             }
         };
 
+        function playGearEnhanceFx(success, afterLevel) {
+            const root = document.getElementById('gearEnhanceFx');
+            if (!root) return Promise.resolve();
+            root.classList.remove('is-success', 'is-fail');
+            root.classList.add(success ? 'is-success' : 'is-fail');
+            root.setAttribute('aria-hidden', 'false');
+            const label = document.getElementById('gearEnhanceFxLabel');
+            if (label) label.textContent = success ? `강화 성공! ${afterLevel}강` : '강화 실패…';
+            const burst = root.querySelector('.gear-enhance-fx-burst');
+            if (burst) {
+                burst.querySelectorAll('.gear-enhance-fx-spark').forEach((n) => n.remove());
+                const count = success ? 20 : 8;
+                for (let i = 0; i < count; i++) {
+                    const spark = document.createElement('span');
+                    spark.className = 'gear-enhance-fx-spark';
+                    const ang = (Math.PI * 2 * i) / count + (success ? 0 : 0.4);
+                    const dist = success ? 100 + (i % 4) * 26 : 48 + (i % 3) * 18;
+                    spark.style.setProperty('--sx', `${Math.cos(ang) * dist}px`);
+                    spark.style.setProperty('--sy', `${Math.sin(ang) * dist}px`);
+                    spark.style.left = '50%';
+                    spark.style.top = '50%';
+                    spark.style.animationDelay = `${(i % 7) * 0.025}s`;
+                    if (!success) spark.style.background = '#94a3b8';
+                    burst.appendChild(spark);
+                }
+            }
+            return new Promise((resolve) => {
+                window.setTimeout(() => {
+                    root.classList.remove('is-success', 'is-fail');
+                    root.setAttribute('aria-hidden', 'true');
+                    burst && burst.querySelectorAll('.gear-enhance-fx-spark').forEach((n) => n.remove());
+                    resolve();
+                }, success ? 1100 : 900);
+            });
+        }
+
         window.enhanceGear = async function(gearId) {
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
             if (shouldIgnoreAccidentalPointer()) return;
@@ -21495,8 +21777,15 @@ ${subjectLine}
             window.playerState.inventory = result.inventory;
             window.playerState.gearEnhance = result.gearEnhance;
             updateUI();
+            const card = document.querySelector(`[data-gear-id="${gearId}"]`);
+            if (card) {
+                card.classList.remove('gear-enhance-just');
+                void card.offsetWidth;
+                card.classList.add('gear-enhance-just');
+            }
             if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
-            playSfx(result.success ? 'bong' : 'xp', result.success);
+            playSfx(result.success ? 'enhance' : 'enhanceFail', result.success);
+            await playGearEnhanceFx(result.success, result.after);
             await window.customAlert(
                 result.success
                     ? `✨ 강화 성공!\n[${g.name}] ${result.after}단계가 되었습니다.`

@@ -114,6 +114,11 @@ export function clampGearEnhance(level) {
     return Math.min(GEAR_ENHANCE_MAX, n);
 }
 
+/** 1~5강 테두리 클래스. 광장·장착칸에서 같은 색을 씁니다. */
+export function gearEnhanceRingClass(level) {
+    return `gear-enhance-lv${clampGearEnhance(level)}`;
+}
+
 export function enhanceSuccessChance(currentLevel) {
     const lv = clampGearEnhance(currentLevel);
     if (lv >= GEAR_ENHANCE_MAX) return 0;

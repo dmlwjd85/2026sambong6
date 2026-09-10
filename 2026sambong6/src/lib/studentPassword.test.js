@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     PASSWORD_CHANGE_BONG,
+    applyPasswordChangeFromServer,
     normalizeLoginPin,
     planPasswordChange,
 } from './studentPassword.js';
@@ -39,5 +40,37 @@ describe('학생 비밀번호 변경', () => {
         assert.equal(r.pin, '9876');
         assert.equal(r.nextBong, 15);
         assert.equal(r.cost, 10);
+    });
+
+    it('서버 PIN·잔액만 바꾸고, 낡은 큰 지갑으로 봉을 늘리지 않습니다', () => {
+        const ok = applyPasswordChangeFromServer({
+            serverPin: '1111',
+            serverBong: 40,
+            currentPin: '1111',
+            nextPin: '2222',
+        });
+        assert.equal(ok.ok, true);
+        assert.equal(ok.pin, '2222');
+        assert.equal(ok.bong, 30);
+
+        const stalePin = applyPasswordChangeFromServer({
+            serverPin: '2222',
+            serverBong: 30,
+            currentPin: '1111',
+            nextPin: '3333',
+        });
+        assert.equal(stalePin.ok, false);
+        assert.equal(stalePin.reason, 'current');
+
+        const staleWallet = applyPasswordChangeFromServer({
+            serverPin: '1111',
+            serverBong: 5,
+            currentPin: '1111',
+            nextPin: '2222',
+        });
+        assert.equal(staleWallet.ok, false);
+        assert.equal(staleWallet.reason, 'funds');
+        // 로컬 지갑이 100이어도 서버 40에서만 10을 뗍니다. 90으로 올리지 않습니다.
+        assert.notEqual(ok.bong, 90);
     });
 });

@@ -18,6 +18,13 @@ function newId(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** onclick 문자열에 섞이지 않도록 영문·숫자·밑줄만 남깁니다. */
+function sanitizeThoughtId(raw, prefix) {
+    const s = String(raw || '').trim().slice(0, 40);
+    if (/^[a-zA-Z0-9_-]+$/.test(s)) return s;
+    return newId(prefix);
+}
+
 export function emptyThoughtBoard() {
     return {
         postingOpen: false,
@@ -43,7 +50,7 @@ export function sanitizeThoughtQuestion(raw) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const text = cleanLine(raw.text, THINK_QUESTION_MAX);
     if (!text) return null;
-    const id = String(raw.id || '').trim().slice(0, 40) || newId('q');
+    const id = sanitizeThoughtId(raw.id, 'q');
     const createdAt = Math.max(0, Math.floor(Number(raw.createdAt) || 0));
     return { id, text, createdAt };
 }
@@ -55,7 +62,7 @@ export function sanitizeThoughtPost(raw) {
     const text = cleanLine(raw.text, THINK_TEXT_MAX);
     const drawing = sanitizeDrawingDataUrl(raw.drawing);
     if (!text && !drawing) return null;
-    const id = String(raw.id || '').trim().slice(0, 40) || newId('p');
+    const id = sanitizeThoughtId(raw.id, 'p');
     const color = THINK_NOTE_COLORS.includes(raw.color) ? raw.color : 'yellow';
     const questionId = String(raw.questionId || '').trim().slice(0, 40);
     const createdAt = Math.max(0, Math.floor(Number(raw.createdAt) || 0));

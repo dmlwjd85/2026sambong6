@@ -27,6 +27,11 @@ describe('생각게시판 정리', () => {
         assert.equal(empty.posts.length, 0);
         assert.equal(sanitizeDrawingDataUrl('javascript:alert(1)'), '');
         assert.equal(sanitizeDrawingDataUrl('data:image/png;base64,aaaa'), '');
+        const injected = sanitizeThoughtBoard({
+            posts: [{ id: "p');alert(1);//", studentId: '1', text: '악성 글' }],
+        });
+        assert.equal(/^[a-zA-Z0-9_-]+$/.test(injected.posts[0].id), true);
+        assert.equal(injected.posts[0].id.includes("'"), false);
         const jpeg = `data:image/jpeg;base64,${'A'.repeat(20)}=`;
         assert.equal(sanitizeDrawingDataUrl(jpeg), jpeg);
         const old = sanitizeThoughtBoard({ posts: [{ id: 'p9', studentId: '1', text: '예전 글' }] });

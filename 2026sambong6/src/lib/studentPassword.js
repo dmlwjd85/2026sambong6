@@ -45,3 +45,29 @@ export function planPasswordChange({
 
     return { ok: true, pin: nextPin, nextBong: wallet - fee, cost: fee };
 }
+
+/**
+ * 서버에 저장된 PIN·잔액만 바꿉니다. 낡은 탭의 지갑으로 봉이 늘어나거나
+ * 이미 바뀐 비밀번호를 다시 덮어쓰지 못하게 합니다.
+ */
+export function applyPasswordChangeFromServer({
+    serverPin,
+    serverBong,
+    currentPin,
+    nextPin,
+    cost = PASSWORD_CHANGE_BONG,
+} = {}) {
+    const stored = String(serverPin == null ? '' : serverPin);
+    const typed = String(currentPin == null ? '' : currentPin);
+    if (!stored || typed !== stored) return { ok: false, reason: 'current' };
+
+    const pin = normalizeLoginPin(nextPin);
+    if (!pin) return { ok: false, reason: 'format' };
+    if (pin === stored) return { ok: false, reason: 'same' };
+
+    const fee = Math.max(0, Math.floor(Number(cost) || 0));
+    const wallet = Math.floor(Number(serverBong) || 0);
+    if (wallet < fee) return { ok: false, reason: 'funds', need: fee, wallet };
+
+    return { ok: true, pin, bong: wallet - fee, cost: fee };
+}

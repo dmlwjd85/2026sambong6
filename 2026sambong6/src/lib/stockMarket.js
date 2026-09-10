@@ -408,3 +408,18 @@ export function applyStockBuyFromServer({
         added: !!bought.added,
     };
 }
+
+/**
+ * 일반 저장이 낡은 탭의 원금을 되살리지 못하게 서버 포지션을 덮어씁니다.
+ */
+export function overlayServerStockFields(serverData, dataToSave) {
+    const out = dataToSave && typeof dataToSave === 'object' ? dataToSave : {};
+    const src = serverData && typeof serverData === 'object' ? serverData : {};
+    if (Object.prototype.hasOwnProperty.call(src, 'stockInvestments')) {
+        out.stockInvestments = src.stockInvestments;
+    }
+    if (Object.prototype.hasOwnProperty.call(src, 'stockInvestDaily')) {
+        out.stockInvestDaily = src.stockInvestDaily;
+    }
+    return out;
+}

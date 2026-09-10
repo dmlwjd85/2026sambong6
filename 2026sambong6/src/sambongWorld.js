@@ -176,6 +176,7 @@ import {
     applySellStock,
     applyStockBuyFromServer,
     applyStockSellFromServer,
+    overlayServerStockFields,
     canBuyStock,
     canSellStock,
     extractYahooChartJson,
@@ -367,6 +368,7 @@ import {
 } from './lib/classToolShare.js';
 import {
     PASSWORD_CHANGE_BONG,
+    applyPasswordChangeFromServer,
     planPasswordChange,
 } from './lib/studentPassword.js';
 
@@ -7749,9 +7751,10 @@ ${subjectLine}
             }
         }
 
-        /** 체육시간(s4) 공동구매 잔액을 이미 구매한 것으로 정산 — 환불 없이 contributions만 비움(1회) */
+        /** 체육시간(s4) 공동구매 잔액을 이미 구매한 것으로 정산 — 환불 없이 contributions만 비움(1회, 시드 학급만) */
         async function applyPeClassGroupBuySettleMigration() {
             if (!db) return;
+            if (appId !== SEED_CLASS_ID) return;
             const shopId = 's4';
             const markerId = 'shop_group_buy_s4_settle_20260907';
             const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', markerId);
@@ -18230,24 +18233,20 @@ ${subjectLine}
             }
             const ok = await window.customConfirm(`비밀번호를 바꿀까요?\n${feeLabel}이 즉시 차감됩니다.`);
             if (!ok) return;
-            const prevPin = window.playerState.pin;
-            const prevBong = Number(window.playerState.bong) || 0;
-            window.playerState.pin = planned.pin;
-            window.playerState.bong = planned.nextBong;
-            updateUI();
+            // 로컬 지갑을 먼저 깎지 않습니다. 서버 PIN·잔액만 한 번에 바꿉니다.
             const saved = await saveDataToCloud({
                 allowBongDecrease: true,
                 maxBongDecrease: fee,
                 requireServerBongBalance: true,
                 operationLabel: '비밀번호 변경',
                 bongLogSource: 'passwordChange',
+                pinChange: {
+                    currentPin: String(window.playerState.pin == null ? '' : window.playerState.pin),
+                    nextPin: planned.pin,
+                    fee,
+                },
             });
-            if (!saved) {
-                window.playerState.pin = prevPin;
-                window.playerState.bong = prevBong;
-                updateUI();
-                return;
-            }
+            if (!saved) return;
             localStorage.setItem('sambong_student_pin', planned.pin);
             updateUI();
             await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
@@ -18361,6 +18360,7 @@ ${subjectLine}
                 allowShieldPurchase: false,
                 allowShieldHpDecrease: false,
                 operationLabel: '저장',
+                pinChange: null,
                 ...options,
             };
             const dataToSave = { ...window.playerState };
@@ -18388,12 +18388,14 @@ ${subjectLine}
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
             let blockedByStockTrade = false;
+            let blockedByPinChange = false;
+            let pinChangeFailReason = '';
             let serverRestoreData = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) {
                     console.warn('saveDataToCloud: 익명 인증 실패');
-                    if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                    if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.pinChange || opts.stockTrade || opts.operationLabel !== '저장') {
                         await window.customAlert('저장에 실패했습니다. 인증을 다시 받은 뒤 새로고침해 주세요.');
                     }
                     return false;
@@ -18487,7 +18489,8 @@ ${subjectLine}
                         }
                         const maxBongDrop = Math.max(0, Number(opts.maxBongDecrease) || 0);
                         const trade = opts.stockTrade;
-                        if (trade && (trade.kind === 'sell' || trade.kind === 'buy')) {
+                        const isStockTrade = !!(trade && (trade.kind === 'sell' || trade.kind === 'buy'));
+                        if (isStockTrade) {
                             // 지수 매수·매도는 서버에 남은 원금·잔액만 정산합니다. 같은 포지션을 두 번 넣지 않습니다.
                             const tradeNow = Math.floor(Number(trade.nowMs) || Date.now());
                             const tradeToday = String(trade.today || getLocalDateStr());
@@ -18532,32 +18535,57 @@ ${subjectLine}
                                 trade.applied = bought;
                             }
                         } else {
-                            if (
-                                opts.allowBongDecrease &&
-                                opts.requireServerBongBalance &&
-                                maxBongDrop > 0 &&
-                                Number.isFinite(serverBong) &&
-                                serverBong + 0.0001 < maxBongDrop
-                            ) {
-                                blockedByServerBalance = true;
+                            // 퀘스트·옷 입히기 등 일반 저장이 이미 판 원금을 되살리지 못하게 합니다.
+                            overlayServerStockFields(serverData, dataToSave);
+                        }
+                        if (opts.pinChange) {
+                            const changed = applyPasswordChangeFromServer({
+                                serverPin: serverData.pin,
+                                serverBong: Number.isFinite(serverBong) ? serverBong : 0,
+                                currentPin: opts.pinChange.currentPin,
+                                nextPin: opts.pinChange.nextPin,
+                                cost: opts.pinChange.fee,
+                            });
+                            if (!changed.ok) {
+                                blockedByPinChange = true;
+                                pinChangeFailReason = String(changed.reason || '');
                                 serverRestoreData = serverData;
                                 return;
                             }
-                            if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
-                                if (opts.allowBongDecrease) {
-                                    dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
-                                } else {
-                                    dataToSave.bong = normalizeBongValue(serverBong);
-                                }
+                            dataToSave.pin = changed.pin;
+                            dataToSave.bong = normalizeBongValue(changed.bong);
+                        } else {
+                            if (Object.prototype.hasOwnProperty.call(serverData, 'pin')) {
+                                dataToSave.pin = serverData.pin;
                             }
-                            const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
-                            if (
-                                maxBongRise > 0 &&
-                                Number.isFinite(serverBong) &&
-                                Number.isFinite(Number(dataToSave.bong)) &&
-                                Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
-                            ) {
-                                dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                            if (!isStockTrade) {
+                                if (
+                                    opts.allowBongDecrease &&
+                                    opts.requireServerBongBalance &&
+                                    maxBongDrop > 0 &&
+                                    Number.isFinite(serverBong) &&
+                                    serverBong + 0.0001 < maxBongDrop
+                                ) {
+                                    blockedByServerBalance = true;
+                                    serverRestoreData = serverData;
+                                    return;
+                                }
+                                if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
+                                    if (opts.allowBongDecrease) {
+                                        dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
+                                    } else {
+                                        dataToSave.bong = normalizeBongValue(serverBong);
+                                    }
+                                }
+                                const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
+                                if (
+                                    maxBongRise > 0 &&
+                                    Number.isFinite(serverBong) &&
+                                    Number.isFinite(Number(dataToSave.bong)) &&
+                                    Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
+                                ) {
+                                    dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                                }
                             }
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));
@@ -18600,7 +18628,7 @@ ${subjectLine}
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade) {
+                if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade || blockedByPinChange) {
                     if (serverRestoreData) {
                         const roleFlags = {
                             isGuest: window.playerState.isGuest,
@@ -18622,6 +18650,12 @@ ${subjectLine}
                             ? '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.'
                             : blockedByStockTrade
                             ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
+                            : blockedByPinChange
+                            ? (pinChangeFailReason === 'funds'
+                                ? '서버 최신 잔액 기준으로 비밀번호 변경에 필요한 삼봉이 부족합니다.\n오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
+                                : pinChangeFailReason === 'current'
+                                ? '서버에 저장된 현재 비밀번호와 맞지 않아 바꾸지 못했습니다.\n다른 기기에서 이미 바꿨다면 새로고침 후 다시 시도해 주세요.'
+                                : '비밀번호를 바꾸지 못했습니다. 새로고침 후 다시 시도해 주세요.')
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
                                 '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
                     );
@@ -18629,6 +18663,7 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'pin')) window.playerState.pin = dataToSave.pin;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestments')) {
                     window.playerState.stockInvestments = dataToSave.stockInvestments;
                 }
@@ -18649,7 +18684,7 @@ ${subjectLine}
                 return true;
             } catch (e) {
                 console.warn('saveDataToCloud', e);
-                if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.operationLabel !== '저장') {
+                if (opts.allowBongDecrease || opts.allowBankFieldChanges || opts.pinChange || opts.stockTrade || opts.operationLabel !== '저장') {
                     const detail = (e && e.message) ? e.message : String(e);
                     await window.customAlert(`${opts.operationLabel}에 실패했습니다.\n${detail}`);
                 }

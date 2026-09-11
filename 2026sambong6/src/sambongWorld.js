@@ -246,14 +246,20 @@ import {
     diaryDocId,
     diaryHasDrawing,
     diaryStatusLabel,
+    clipDiaryBodyLive,
+    diaryBodyLength,
+    diaryLocalDraftKey,
     diarySubmitState,
     DIARY_MOODS,
     DIARY_WEATHER,
     literatureArrivalMessage,
+    LITERATURE_DIARY_MAX,
     literaturePendingCounts,
     moodMeta,
     pendingDiaries,
     pendingReadingLogs,
+    parseDiaryLocalDraft,
+    pickDiaryComposerSource,
     readingLogDocId,
     readingLogStatusLabel,
     readingLogSubmitState,
@@ -264,6 +270,7 @@ import {
     sanitizeDiaryEntry,
     sanitizeLiteratureRewards,
     sanitizeReadingLog,
+    shouldReplaceDiaryComposer,
     stripTeacherNoteForStudentWrite,
     teacherNoteOnlyPatch,
     validateDiaryDraft,
@@ -9310,6 +9317,11 @@ ${subjectLine}
         let _diaryStrokes = [];
         let _diaryStroke = null;
         let _diaryCanvasReady = false;
+        let _diaryBodyBound = false;
+        let _diaryBodyDirty = false;
+        let _diaryAutoSaveTimer = null;
+        let _diarySaving = false;
+        const DIARY_AUTOSAVE_MS = 2500;
         let _readingSnapReady = false;
         let _diarySnapReady = false;
         let _literatureAwaitEnterNotice = false;
@@ -9416,6 +9428,103 @@ ${subjectLine}
             if (cur && ids.includes(cur)) sel.value = cur;
         }
 
+        function splitDiaryHydrateKey(key) {
+            const s = String(key || '');
+            const i = s.indexOf(':');
+            if (i < 0) return { sid: '', date: '' };
+            return { sid: s.slice(0, i), date: s.slice(i + 1) };
+        }
+
+        function readDiaryLocalDraft(sid, dateStr) {
+            try {
+                return parseDiaryLocalDraft(localStorage.getItem(diaryLocalDraftKey(appId, sid, dateStr)));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function writeDiaryLocalDraft(sid, dateStr, extra) {
+            if (!sid || !dateStr) return;
+            const bodyEl = document.getElementById('diaryBody');
+            const payload = {
+                body: clipDiaryBodyLive(bodyEl ? bodyEl.value : ''),
+                weather: _diaryWeather,
+                mood: _diaryMood,
+                strokes: Array.isArray(_diaryStrokes) ? _diaryStrokes : [],
+                updatedAt: Date.now(),
+                ...(extra && typeof extra === 'object' ? extra : {}),
+            };
+            try {
+                localStorage.setItem(diaryLocalDraftKey(appId, sid, dateStr), JSON.stringify(payload));
+            } catch (e) { /* 용량이 모자라면 본문이라도 남깁니다. */
+                try {
+                    localStorage.setItem(diaryLocalDraftKey(appId, sid, dateStr), JSON.stringify({
+                        body: payload.body,
+                        weather: payload.weather,
+                        mood: payload.mood,
+                        strokes: [],
+                        updatedAt: payload.updatedAt,
+                    }));
+                } catch (e2) { /* 초안 저장 실패는 본문 입력을 막지 않습니다. */ }
+            }
+        }
+
+        function updateDiaryBodyCounter() {
+            const el = document.getElementById('diaryBody');
+            const chip = document.getElementById('diaryBodyCount');
+            if (!chip) return;
+            const n = diaryBodyLength(el ? el.value : '');
+            chip.textContent = `${n} / ${LITERATURE_DIARY_MAX}자`;
+            chip.classList.toggle('text-amber-300', n >= LITERATURE_DIARY_MAX);
+        }
+
+        function setDiaryAutoSaveHint(text) {
+            const hint = document.getElementById('diaryAutoSaveHint');
+            if (hint) hint.textContent = text;
+        }
+
+        function scheduleDiaryAutosave() {
+            if (_diaryAutoSaveTimer) clearTimeout(_diaryAutoSaveTimer);
+            _diaryAutoSaveTimer = setTimeout(() => {
+                _diaryAutoSaveTimer = null;
+                void persistDiaryEntry({ silent: true });
+            }, DIARY_AUTOSAVE_MS);
+        }
+
+        function bindDiaryComposer() {
+            const el = document.getElementById('diaryBody');
+            if (!el || _diaryBodyBound) return;
+            _diaryBodyBound = true;
+            const onEdit = (ev) => {
+                if (el.disabled) return;
+                if (ev && ev.type === 'input' && (ev.isComposing || ev.inputType === 'insertCompositionText')) {
+                    _diaryBodyDirty = true;
+                    updateDiaryBodyCounter();
+                    return;
+                }
+                const next = clipDiaryBodyLive(el.value);
+                if (next !== el.value) el.value = next;
+                _diaryBodyDirty = true;
+                const sid = literatureStudentId();
+                const today = getLocalDateStr();
+                writeDiaryLocalDraft(sid, today);
+                updateDiaryBodyCounter();
+                scheduleDiaryAutosave();
+            };
+            el.addEventListener('input', onEdit);
+            el.addEventListener('compositionend', onEdit);
+            const flush = () => {
+                const sid = literatureStudentId();
+                const today = getLocalDateStr();
+                if (sid) writeDiaryLocalDraft(sid, today);
+                if (_diaryBodyDirty) void persistDiaryEntry({ silent: true });
+            };
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') flush();
+            });
+            window.addEventListener('pagehide', flush);
+        }
+
         function diaryCanvasPoint(ev, canvas) {
             const rect = canvas.getBoundingClientRect();
             const x = (ev.clientX - rect.left) / Math.max(1, rect.width);
@@ -9474,6 +9583,11 @@ ${subjectLine}
                 if (_diaryStroke.pts.length >= 4) _diaryStrokes.push(_diaryStroke);
                 _diaryStroke = null;
                 paintDiaryStrokes(canvas, _diaryStrokes);
+                if (!(window.playerState && window.playerState.isAdmin)) {
+                    _diaryBodyDirty = true;
+                    writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
+                    scheduleDiaryAutosave();
+                }
             };
             canvas.addEventListener('pointerdown', start);
             canvas.addEventListener('pointermove', move);
@@ -9492,6 +9606,11 @@ ${subjectLine}
             if (window.playerState && window.playerState.isAdmin) return;
             _diaryStrokes = [];
             paintDiaryStrokes(document.getElementById('diaryCanvas'), []);
+            if (!(window.playerState && window.playerState.isAdmin)) {
+                _diaryBodyDirty = true;
+                writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
+                scheduleDiaryAutosave();
+            }
         };
 
         window.setReadingStars = function(n) {
@@ -9600,6 +9719,7 @@ ${subjectLine}
         window.renderLiteratureDiaryPane = function() {
             const noteDrafts = captureLiteratureNoteDrafts(document, document.activeElement);
             bindDiaryCanvas();
+            bindDiaryComposer();
             window.setDiaryInk(_diaryInk);
             renderReadingChips();
             const admin = !!(window.playerState && window.playerState.isAdmin);
@@ -9631,20 +9751,41 @@ ${subjectLine}
                 else if (state.reason === 'already') hint.textContent = '오늘은 이미 확인된 일기입니다. 내일 다시 쓸 수 있어요.';
                 else if (state.reason === 'update') hint.textContent = '오늘 일기가 확인 대기 중입니다. 선생님이 보기 전에 고칠 수 있어요.';
                 else if (state.reason === 'resubmit') hint.textContent = '반려된 일기를 고쳐 다시 저장할 수 있습니다.';
-                else hint.textContent = '친구는 볼 수 없고, 선생님만 읽습니다. 선생님이 확인하면 보상을 받습니다.';
+                else hint.textContent = '친구는 볼 수 없고, 선생님만 읽습니다. 길게 써도 자동 저장되며, 선생님이 확인하면 보상을 받습니다.';
             }
             const hydrateKey = `${targetId}:${today}`;
-            if (todayEntry && window._diaryHydrateKey !== hydrateKey && !_diaryStroke) {
-                window._diaryHydrateKey = hydrateKey;
-                if (bodyEl && document.activeElement !== bodyEl) bodyEl.value = todayEntry.body || '';
-                _diaryWeather = todayEntry.weather || 'sunny';
-                _diaryMood = todayEntry.mood || 'calm';
-                _diaryStrokes = Array.isArray(todayEntry.strokes) ? todayEntry.strokes.slice() : [];
-            } else if (!todayEntry && window._diaryHydrateKey !== hydrateKey && !_diaryStroke) {
-                window._diaryHydrateKey = hydrateKey;
-                if (bodyEl && document.activeElement !== bodyEl) bodyEl.value = '';
-                _diaryStrokes = [];
+            const localBody = bodyEl ? bodyEl.value : '';
+            const replace = shouldReplaceDiaryComposer({
+                prevKey: window._diaryHydrateKey,
+                nextKey: hydrateKey,
+                localBody,
+                serverBody: todayEntry ? todayEntry.body : '',
+                focused: !!(bodyEl && document.activeElement === bodyEl),
+                drawing: !!_diaryStroke,
+                keepLocalDraft: !admin,
+            });
+            if (window._diaryHydrateKey && window._diaryHydrateKey !== hydrateKey && !admin) {
+                const prev = splitDiaryHydrateKey(window._diaryHydrateKey);
+                if (prev.sid && prev.date) writeDiaryLocalDraft(prev.sid, prev.date);
             }
+            window._diaryHydrateKey = hydrateKey;
+            if (replace) {
+                const draft = !admin ? readDiaryLocalDraft(targetId, today) : null;
+                const picked = pickDiaryComposerSource({
+                    serverBody: todayEntry ? todayEntry.body : '',
+                    serverStrokes: todayEntry ? todayEntry.strokes : [],
+                    serverUpdatedAt: todayEntry ? todayEntry.updatedAt : 0,
+                    draft,
+                });
+                if (bodyEl) bodyEl.value = picked.body || '';
+                _diaryWeather = (picked.fromDraft && picked.weather) || (todayEntry && todayEntry.weather) || 'sunny';
+                _diaryMood = (picked.fromDraft && picked.mood) || (todayEntry && todayEntry.mood) || 'calm';
+                _diaryStrokes = picked.strokes && picked.strokes.length
+                    ? picked.strokes.slice()
+                    : (todayEntry && Array.isArray(todayEntry.strokes) ? todayEntry.strokes.slice() : []);
+                _diaryBodyDirty = !!picked.fromDraft;
+            }
+            updateDiaryBodyCounter();
             const note = document.getElementById('diaryTeacherNote');
             const noteAdmin = document.getElementById('diaryTeacherNoteAdmin');
             const noteInput = document.getElementById('diaryTeacherNoteInput');
@@ -9713,6 +9854,9 @@ ${subjectLine}
         window.setDiaryWeather = function(id) {
             if (window.playerState && window.playerState.isAdmin) return;
             _diaryWeather = String(id || 'sunny');
+            _diaryBodyDirty = true;
+            writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
+            scheduleDiaryAutosave();
             const weatherWrap = document.getElementById('diaryWeather');
             if (!weatherWrap) return;
             weatherWrap.querySelectorAll('button').forEach((btn, i) => {
@@ -9724,6 +9868,9 @@ ${subjectLine}
         window.setDiaryMood = function(id) {
             if (window.playerState && window.playerState.isAdmin) return;
             _diaryMood = String(id || 'calm');
+            _diaryBodyDirty = true;
+            writeDiaryLocalDraft(literatureStudentId(), getLocalDateStr());
+            scheduleDiaryAutosave();
             const moodWrap = document.getElementById('diaryMood');
             if (!moodWrap) return;
             moodWrap.querySelectorAll('button').forEach((btn, i) => {
@@ -9969,16 +10116,24 @@ ${subjectLine}
             }
         };
 
-        window.saveDiaryEntry = async function() {
+        async function persistDiaryEntry({ silent } = {}) {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
-                return window.customAlert('학생 계정으로 일기를 저장해 주세요.');
+                if (!silent) return window.customAlert('학생 계정으로 일기를 저장해 주세요.');
+                return false;
             }
             const sid = literatureStudentId();
             const today = getLocalDateStr();
             const state = diarySubmitState(_diaries, sid, today);
             if (!state.ok) {
-                return window.customAlert('오늘은 이미 확인된 일기입니다.');
+                if (!silent) return window.customAlert('오늘은 이미 확인된 일기입니다.');
+                return false;
             }
+            const bodyEl = document.getElementById('diaryBody');
+            if (bodyEl) {
+                const clipped = clipDiaryBodyLive(bodyEl.value);
+                if (clipped !== bodyEl.value) bodyEl.value = clipped;
+            }
+            writeDiaryLocalDraft(sid, today);
             const existing = state.existing;
             const now = Date.now();
             const keepReview = !!(existing && existing.status === 'approved' && existing.rewarded);
@@ -10001,9 +10156,24 @@ ${subjectLine}
                 teacherNoteAt: existing && existing.teacherNoteAt ? existing.teacherNoteAt : 0,
             };
             const checked = validateDiaryDraft(draft);
-            if (!checked.ok) return window.customAlert('글이나 그림을 조금 남긴 뒤 저장해 주세요.');
+            if (!checked.ok) {
+                if (!silent) return window.customAlert('글이나 그림을 조금 남긴 뒤 저장해 주세요.');
+                return false;
+            }
+            if (silent && !_diaryBodyDirty) return true;
+            if (_diarySaving) {
+                if (silent) return false;
+                for (let i = 0; i < 20 && _diarySaving; i += 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                }
+            }
             const authOk = await ensureAnonAuthReady();
-            if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+            if (!authOk || !db) {
+                if (!silent) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+                setDiaryAutoSaveHint('연결이 불안정합니다. 글은 이 기기에 보관했습니다.');
+                return false;
+            }
+            _diarySaving = true;
             try {
                 await runWithNetworkRetry(async () => {
                     await setDoc(
@@ -10012,11 +10182,32 @@ ${subjectLine}
                         { merge: true },
                     );
                 }, '일기 저장');
-                window.showToast && window.showToast(keepReview ? '확인된 일기를 고쳐서 저장했습니다.' : '오늘의 일기를 저장했습니다. 선생님 확인을 기다려 주세요.');
+                _diaryBodyDirty = false;
+                writeDiaryLocalDraft(sid, today, { body: checked.entry.body, strokes: checked.entry.strokes, updatedAt: now });
+                const clock = new Date();
+                const hh = String(clock.getHours()).padStart(2, '0');
+                const mm = String(clock.getMinutes()).padStart(2, '0');
+                setDiaryAutoSaveHint(silent ? `자동 저장됨 ${hh}:${mm}` : `저장됨 ${hh}:${mm}`);
+                if (!silent && typeof window.showToast === 'function') {
+                    window.showToast(keepReview ? '확인된 일기를 고쳐서 저장했습니다.' : '오늘의 일기를 저장했습니다. 선생님 확인을 기다려 주세요.');
+                }
+                return true;
             } catch (e) {
                 console.error('saveDiaryEntry', e);
-                await window.customAlert('일기 저장에 실패했습니다.');
+                if (!silent) await window.customAlert('일기 저장에 실패했습니다.');
+                else setDiaryAutoSaveHint('자동 저장에 실패했습니다. 글은 이 기기에 남아 있습니다.');
+                return false;
+            } finally {
+                _diarySaving = false;
             }
+        }
+
+        window.saveDiaryEntry = async function() {
+            if (_diaryAutoSaveTimer) {
+                clearTimeout(_diaryAutoSaveTimer);
+                _diaryAutoSaveTimer = null;
+            }
+            return persistDiaryEntry({ silent: false });
         };
 
         window.saveReadingTeacherNoteById = async function(logId) {

@@ -16,7 +16,7 @@ export const LITERATURE_TITLE_MAX = 40;
 export const LITERATURE_AUTHOR_MAX = 30;
 export const LITERATURE_PUBLISHER_MAX = 30;
 export const LITERATURE_QUOTE_MAX = 120;
-export const LITERATURE_DIARY_MAX = 800;
+export const LITERATURE_DIARY_MAX = 4000;
 export const LITERATURE_TEACHER_NOTE_MAX = 120;
 export const READING_LOG_DAILY_LIMIT = 1;
 export const DIARY_STROKE_MAX = 60;
@@ -51,6 +51,81 @@ function clipText(raw, max) {
 function clipMultiline(raw, max) {
     const s = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').trim();
     return Array.from(s).slice(0, max).join('');
+}
+
+/** 입력 중에는 앞뒤 공백을 자르지 않습니다. 한글 조합이 중간에 날아가지 않게 씁니다. */
+export function clipDiaryBodyLive(raw, max = LITERATURE_DIARY_MAX) {
+    const s = String(raw == null ? '' : raw).replace(/\r\n/g, '\n');
+    const cap = Math.max(1, Math.floor(Number(max) || LITERATURE_DIARY_MAX));
+    return Array.from(s).slice(0, cap).join('');
+}
+
+export function diaryBodyLength(raw) {
+    return Array.from(String(raw == null ? '' : raw).replace(/\r\n/g, '\n')).length;
+}
+
+export function diaryLocalDraftKey(classId, studentId, dateStr) {
+    return `sambong_diary_draft_${String(classId || '')}_${String(studentId || '')}_${String(dateStr || '')}`;
+}
+
+/** 화면이 다시 그려질 때 쓰던 일기를 서버 빈값으로 덮을지 봅니다. */
+export function shouldReplaceDiaryComposer({
+    prevKey,
+    nextKey,
+    localBody,
+    serverBody,
+    focused,
+    drawing,
+    keepLocalDraft,
+} = {}) {
+    if (drawing) return false;
+    if (String(prevKey || '') === String(nextKey || '')) return false;
+    if (keepLocalDraft === false) return true;
+    if (focused) return false;
+    const local = String(localBody || '');
+    if (local && local !== String(serverBody || '')) return false;
+    return true;
+}
+
+/** 기기 초안이 서버보다 최신이면 초안을 보여 길게 쓰던 글이 남지 않게 합니다. */
+export function pickDiaryComposerSource({ serverBody, serverStrokes, serverUpdatedAt, draft } = {}) {
+    const server = {
+        body: String(serverBody || ''),
+        strokes: Array.isArray(serverStrokes) ? serverStrokes : [],
+        weather: '',
+        mood: '',
+    };
+    if (!draft || typeof draft !== 'object') return { ...server, fromDraft: false };
+    const draftBody = clipDiaryBodyLive(draft.body);
+    const draftAt = Number(draft.updatedAt) || 0;
+    const serverAt = Number(serverUpdatedAt) || 0;
+    const draftHas = !!(draftBody || (Array.isArray(draft.strokes) && draft.strokes.length));
+    if (!draftHas) return { ...server, fromDraft: false };
+    if (draftAt >= serverAt) {
+        return {
+            body: draftBody,
+            strokes: sanitizeDiaryStrokes(draft.strokes),
+            weather: String(draft.weather || ''),
+            mood: String(draft.mood || ''),
+            fromDraft: true,
+        };
+    }
+    return { ...server, fromDraft: false };
+}
+
+export function parseDiaryLocalDraft(raw) {
+    let src = raw;
+    if (typeof raw === 'string') {
+        try { src = JSON.parse(raw); } catch (e) { return null; }
+    }
+    if (!src || typeof src !== 'object') return null;
+    return {
+        body: clipDiaryBodyLive(src.body),
+        weather: String(src.weather || ''),
+        mood: String(src.mood || ''),
+        strokes: sanitizeDiaryStrokes(src.strokes),
+        updatedAt: Number.isFinite(Number(src.updatedAt)) ? Number(src.updatedAt) : 0,
+    };
 }
 
 function clampInt(v, min, max, fallback) {

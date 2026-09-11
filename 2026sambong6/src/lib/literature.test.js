@@ -8,6 +8,9 @@ import {
     applyReadingLogReview,
     applyReadingTeacherNote,
     captureLiteratureNoteDrafts,
+    clipDiaryBodyLive,
+    diaryBodyLength,
+    diaryLocalDraftKey,
     restoreLiteratureNoteDrafts,
     stripTeacherNoteForStudentWrite,
     teacherNoteOnlyPatch,
@@ -20,9 +23,12 @@ import {
     diaryHasDrawing,
     diarySubmitState,
     literatureArrivalMessage,
+    LITERATURE_DIARY_MAX,
     literaturePendingCounts,
     pendingDiaries,
     pendingReadingLogs,
+    parseDiaryLocalDraft,
+    pickDiaryComposerSource,
     readingLogDocId,
     readingLogSubmitState,
     readingLogsForStudent,
@@ -30,6 +36,7 @@ import {
     sanitizeDiaryEntry,
     sanitizeLiteratureRewards,
     sanitizeReadingLog,
+    shouldReplaceDiaryComposer,
     validateDiaryDraft,
     validateReadingLogDraft,
 } from './literature.js';
@@ -130,6 +137,62 @@ describe('일기장', () => {
         const ok = validateDiaryDraft({ studentId: '12', date: '2026-09-02', body: '오늘 하루' });
         assert.equal(ok.ok, true);
         assert.equal(ok.entry.status, 'pending');
+        const long = '가'.repeat(LITERATURE_DIARY_MAX + 20);
+        const clipped = sanitizeDiaryEntry({ studentId: '12', date: '2026-09-02', body: long });
+        assert.equal(Array.from(clipped.body).length, LITERATURE_DIARY_MAX);
+        assert.equal(LITERATURE_DIARY_MAX, 4000);
+        assert.equal(diaryBodyLength('가나다\n'), 4);
+        assert.equal(clipDiaryBodyLive(' 오늘 \n', 2), ' 오');
+    });
+
+    it('쓰던 일기는 화면을 다시 그려도 서버 빈값으로 덮지 않는다', () => {
+        assert.equal(shouldReplaceDiaryComposer({
+            prevKey: '12|2026-09-11',
+            nextKey: '12|2026-09-11',
+            localBody: '길게 쓴 글',
+            serverBody: '',
+        }), false);
+        assert.equal(shouldReplaceDiaryComposer({
+            prevKey: '',
+            nextKey: '12|2026-09-11',
+            localBody: '길게 쓴 글',
+            serverBody: '',
+            keepLocalDraft: true,
+        }), false);
+        assert.equal(shouldReplaceDiaryComposer({
+            prevKey: '',
+            nextKey: '12|2026-09-11',
+            localBody: '길게 쓴 글',
+            drawing: true,
+        }), false);
+        assert.equal(shouldReplaceDiaryComposer({
+            prevKey: '12|2026-09-11',
+            nextKey: '7|2026-09-11',
+            localBody: '다른 학생 글',
+            keepLocalDraft: false,
+        }), true);
+        assert.equal(shouldReplaceDiaryComposer({
+            prevKey: '',
+            nextKey: '12|2026-09-11',
+            localBody: '',
+            serverBody: '저장된 일기',
+        }), true);
+        const draft = parseDiaryLocalDraft(JSON.stringify({
+            body: '초안',
+            weather: 'rain',
+            mood: 'happy',
+            updatedAt: 20,
+            strokes: [{ color: '#111', width: 2, pts: [0.1, 0.1, 0.2, 0.2] }],
+        }));
+        const picked = pickDiaryComposerSource({
+            serverBody: '서버',
+            serverStrokes: [],
+            serverUpdatedAt: 10,
+            draft,
+        });
+        assert.equal(picked.body, '초안');
+        assert.equal(picked.fromDraft, true);
+        assert.equal(diaryLocalDraftKey('cls', '12', '2026-09-11'), 'sambong_diary_draft_cls_12_2026-09-11');
     });
 
     it('확인 전까지는 같은 날을 고쳐 저장하고, 확인하면 보상을 준다', () => {

@@ -1248,8 +1248,12 @@
                         </div>
                     </div>
                     <label class="block text-[10px] text-slate-400 font-bold">오늘 있었던 일
-                        <textarea id="diaryBody" maxlength="800" rows="5" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="오늘 하루를 적어 보세요."></textarea>
+                        <textarea id="diaryBody" rows="10" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-2 rounded-lg text-xs leading-relaxed" placeholder="오늘 하루를 적어 보세요. 길게 써도 자동으로 보관됩니다."></textarea>
                     </label>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p id="diaryAutoSaveHint" class="text-[10px] text-slate-500">길게 쓰면 잠시 뒤 자동 저장됩니다.</p>
+                        <p id="diaryBodyCount" class="text-[10px] text-slate-500 tabular-nums">0 / 4000자</p>
+                    </div>
                     <div>
                         <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
                             <p class="text-[10px] text-slate-400 font-bold">그림</p>

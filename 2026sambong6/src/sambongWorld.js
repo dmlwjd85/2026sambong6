@@ -10202,11 +10202,21 @@ ${subjectLine}
                 e.preventDefault();
                 e.stopPropagation();
             }, true);
+
+            swipeRoot.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
         }
 
         const todoPanelEl = document.getElementById('todoPanel');
         if (todoPanelEl) {
             todoPanelEl.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
+        }
+        const jobsSectionEl = document.getElementById('jobsSection');
+        if (jobsSectionEl) {
+            jobsSectionEl.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
+        }
+        const jobGridEl = document.getElementById('jobGrid');
+        if (jobGridEl) {
+            jobGridEl.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
         }
 
         // ==========================================
@@ -15153,7 +15163,7 @@ ${subjectLine}
                     ? (selectedId
                         ? `onclick="void window.toggleStudentJob('${selectedId}', '${job.id}')"`
                         : `onclick="void window.customAlert('먼저 아래 명단에서 학생을 골라 주세요.')"`)
-                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}')"`;
+                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}', '${job.id}')"`;
                 const ring = isEquipped ? 'ring-1 ring-sb-blue bg-slate-800' : '';
                 const border = isEquipped ? 'border-l-sb-blue' : `border-l-${job.color.replace('text-', '')}`;
                 return `
@@ -18866,6 +18876,7 @@ ${subjectLine}
                 maxBongDecrease: 0,
                 requireServerBongBalance: false,
                 allowBankFieldChanges: false,
+                allowJobChanges: false,
                 allowLunchBidChanges: false,
                 allowShieldPurchase: false,
                 allowShieldHpDecrease: false,
@@ -19088,6 +19099,14 @@ ${subjectLine}
                         }
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
+                        }
+                        // 직업은 본인 확인·마스터 장착 경로만 씁니다. 다른 저장이 낡은 jobs를 덮어쓰지 않게 서버 값을 지킵니다.
+                        if (!opts.allowJobChanges) {
+                            if (Object.prototype.hasOwnProperty.call(serverData, 'jobs')) {
+                                dataToSave.jobs = serverData.jobs;
+                            } else {
+                                delete dataToSave.jobs;
+                            }
                         }
                         // 낡은 클라이언트가 깎인 절대 방패를 되돌리거나, 산 적 없는 방패를 지우는 것을 막습니다.
                         const shieldFix = reconcileShieldFieldsForSave(serverData, dataToSave, opts);
@@ -21657,7 +21676,7 @@ ${subjectLine}
             await window.buyItem(shopId, shop.name, !!shop.isConsumable, { groupBuyExecute: true });
         };
 
-        window.toggleJob = async function(jobName, iconClass, colorClass) {
+        window.toggleJob = async function(jobName, iconClass, colorClass, jobId) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
             if (window.playerState.isAdmin) {
@@ -21665,11 +21684,32 @@ ${subjectLine}
             }
             if (!window.playerState.jobs) window.playerState.jobs = [];
             const catalog = getJobCatalog();
-            const job = catalog.find((j) => j.name === jobName)
-                || { name: jobName, icon: iconClass, color: colorClass };
+            const job = (jobId != null && jobId !== '' && catalog.find((j) => String(j.id) === String(jobId)))
+                || catalog.find((j) => j.name === jobName)
+                || { name: jobName, icon: iconClass, color: colorClass, ...(jobId ? { id: jobId } : {}) };
+            const had = studentHasJob(window.playerState.jobs, job, catalog);
+            const current = resolveStudentJobsFromCatalog(window.playerState.jobs, catalog);
+            const curName = current[0] && current[0].name;
+            if (had) {
+                if (!await window.customConfirm(`[${job.name}] 직업을 해제할까요?`)) return;
+            } else if (curName) {
+                if (!await window.customConfirm(`지금 직업은 [${curName}]입니다.\n[${job.name}](으)로 바꿀까요?\n(1인 1역 · 이전 직업은 해제됩니다)`)) return;
+            } else if (!await window.customConfirm(`[${job.name}] 직업을 선택할까요?`)) {
+                return;
+            }
+            const prevJobs = window.playerState.jobs;
             window.playerState.jobs = toggleJobAssignment(window.playerState.jobs, job, catalog);
-            
-            updateUI(); saveDataToCloud(); window.switchTab('plaza');
+            updateUI();
+            const saved = await saveDataToCloud({ allowJobChanges: true, operationLabel: '직업 변경' });
+            if (saved === false) {
+                window.playerState.jobs = prevJobs;
+                updateUI();
+                return;
+            }
+            const on = studentHasJob(window.playerState.jobs, job, catalog);
+            if (typeof window.showToast === 'function') {
+                window.showToast(on ? `${job.name} 직업을 장착했습니다` : `${job.name} 직업을 해제했습니다`);
+            }
         };
 
         window.selectJobAssignStudent = function(studentId) {
@@ -21703,6 +21743,16 @@ ${subjectLine}
                     if (row) stu = { ...row };
                 }
                 const catalog = getJobCatalog();
+                const had = studentHasJob(stu.jobs, job, catalog);
+                if (!had) {
+                    const current = resolveStudentJobsFromCatalog(stu.jobs, catalog);
+                    const curName = current[0] && current[0].name;
+                    const who = STUDENT_NAMES[sid] || sid;
+                    const msg = curName
+                        ? `${who}의 직업 [${curName}]을 [${job.name}](으)로 바꿀까요?\n(1인 1역 · 이전 직업은 해제됩니다)`
+                        : `${who}에게 [${job.name}]을(를) 달까요?`;
+                    if (!await window.customConfirm(msg)) return;
+                }
                 const nextJobs = toggleJobAssignment(stu.jobs, job, catalog);
                 await setDoc(ref, { jobs: nextJobs }, { merge: true });
                 mergeStudentDocIntoPlazaCache(sid, { ...stu, id: sid, jobs: nextJobs });

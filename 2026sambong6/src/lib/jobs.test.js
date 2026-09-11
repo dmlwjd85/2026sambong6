@@ -126,6 +126,25 @@ describe('직업 아이콘·색', () => {
         assert.equal(off.length, 0);
     });
 
+    it('다른 직업을 고르면 기존 직업을 교체하고 한 개만 남긴다', () => {
+        const vac = { id: 'job_vac', name: '블랙홀 마스터', icon: 'fa-wind', color: 'text-teal-400' };
+        const flag = { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const stacked = [
+            { id: 'job3', name: '심연의 청소부', icon: 'fa-trash-can', color: 'text-stone-400' },
+            { id: 'job4', name: '체력물약 보급관', icon: 'fa-glass-water', color: 'text-sky-400' },
+        ];
+        const switched = toggleJobAssignment([vac], flag);
+        assert.equal(switched.length, 1);
+        assert.equal(switched[0].id, 'job1');
+        assert.equal(studentHasJobName(switched, '블랙홀 마스터'), false);
+        const replaced = toggleJobAssignment(stacked, flag);
+        assert.equal(replaced.length, 1);
+        assert.equal(replaced[0].name, '길드 마스터');
+        const peeled = toggleJobAssignment(stacked, stacked[0]);
+        assert.equal(peeled.length, 1);
+        assert.equal(peeled[0].id, 'job4');
+    });
+
     it('예전에 id 없이 저장된 직업도 이름이나 모양으로 카탈로그에 맞춘다', () => {
         const snapshot = [{ name: '편의점 매니저', icon: 'fa-store', color: 'text-rose-400' }];
         const byName = resolveStudentJobsFromCatalog(snapshot, [{

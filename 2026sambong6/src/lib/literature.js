@@ -236,7 +236,8 @@ export function canApproveReadingLog(log) {
 
 export function applyReadingLogReview(log, action, note, rewards, nowMs = Date.now()) {
     const cur = sanitizeReadingLog(log, nowMs);
-    if (cur.status !== 'pending') return { skip: true, log: cur, grantXp: 0, grantBong: 0 };
+    // 이미 지급됐거나 대기 상태가 아니면 재시도·동시 확인에서 보상을 다시 주지 않습니다.
+    if (cur.status !== 'pending' || cur.rewarded) return { skip: true, log: cur, grantXp: 0, grantBong: 0 };
     const pay = sanitizeLiteratureRewards(rewards);
     const next = {
         ...cur,
@@ -397,7 +398,8 @@ export function canApproveDiary(entry) {
 
 export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now()) {
     const cur = sanitizeDiaryEntry(entry, nowMs);
-    if (cur.status !== 'pending') return { skip: true, entry: cur, grantXp: 0, grantBong: 0 };
+    // 이미 지급됐거나 대기 상태가 아니면 재시도·동시 확인에서 보상을 다시 주지 않습니다.
+    if (cur.status !== 'pending' || cur.rewarded) return { skip: true, entry: cur, grantXp: 0, grantBong: 0 };
     const pay = sanitizeLiteratureRewards(rewards);
     const next = {
         ...cur,
@@ -419,6 +421,61 @@ export function applyDiaryReview(entry, action, note, rewards, nowMs = Date.now(
         },
         grantXp: pay.diaryRewardXp,
         grantBong: pay.diaryRewardBong,
+    };
+}
+
+/**
+ * 학생 저장(자동 저장 포함)이 서버의 확인·보상 상태를 되돌리지 않게 합칩니다.
+ * 화면 캐시가 비어 있거나 확인과 동시에 저장되어도, 이미 지급된 일기는 pending으로 돌아가지 않습니다.
+ */
+export function mergeDiaryStudentWriteWithServer(draft, server, nowMs = Date.now()) {
+    const next = sanitizeDiaryEntry(draft, nowMs);
+    if (!server) {
+        return {
+            ok: true,
+            entry: {
+                ...next,
+                status: 'pending',
+                rewarded: false,
+                rewardXp: 0,
+                rewardBong: 0,
+                reviewedAt: 0,
+            },
+        };
+    }
+    const prev = sanitizeDiaryEntry(server, nowMs);
+    if (String(prev.studentId) && String(next.studentId) && String(prev.studentId) !== String(next.studentId)) {
+        return { ok: false, reason: 'not_owner', entry: prev };
+    }
+    if (prev.status === 'approved' || prev.rewarded) {
+        return {
+            ok: true,
+            entry: {
+                ...next,
+                status: 'approved',
+                rewarded: true,
+                rewardXp: prev.rewardXp,
+                rewardBong: prev.rewardBong,
+                reviewedAt: prev.reviewedAt,
+                submittedAt: prev.submittedAt || next.submittedAt,
+                teacherNote: prev.teacherNote,
+                teacherNoteAt: prev.teacherNoteAt,
+            },
+        };
+    }
+    return {
+        ok: true,
+        entry: {
+            ...next,
+            status: 'pending',
+            rewarded: false,
+            rewardXp: 0,
+            rewardBong: 0,
+            reviewedAt: 0,
+            submittedAt: prev.submittedAt || next.submittedAt,
+            teacherNote: prev.teacherNote,
+            teacherNoteAt: prev.teacherNoteAt,
+        },
     };
 }
 

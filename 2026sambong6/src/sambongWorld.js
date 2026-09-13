@@ -67,8 +67,11 @@ import {
     isQuestCompletedForUi,
     isWeeklyQuestCompletedThisWeek,
     patchStudentQuestBoardRow,
+    questCompleteConfirmMessage,
     sanitizeDailyQuestFlags,
     sanitizeWeeklyQuestFlags,
+    todayQuestHistoryKeys,
+    unexpectedQuestCompletions,
     weekRangeMondaySunday,
 } from './lib/questCompletionGuard.js';
 import {
@@ -10319,6 +10322,35 @@ ${subjectLine}
             return Date.now() < ignoreAccidentalPointerUntil;
         }
 
+        function rememberLocalQuestComplete(qId, dateStr) {
+            if (!window._localQuestCompleteKeys) window._localQuestCompleteKeys = new Set();
+            window._localQuestCompleteKeys.add(`${qId}|${dateStr}`);
+        }
+
+        function forgetLocalQuestComplete(qId, dateStr) {
+            if (!window._localQuestCompleteKeys) return;
+            window._localQuestCompleteKeys.delete(`${qId}|${dateStr}`);
+        }
+
+        function noteRemoteQuestCompletions(myData) {
+            const today = getLocalDateStr();
+            const nextKeys = todayQuestHistoryKeys(myData && myData.questHistory, today);
+            if (!window._questHistorySyncReady) {
+                window._prevTodayQuestKeys = nextKeys;
+                window._questHistorySyncReady = true;
+                return;
+            }
+            const unexpected = unexpectedQuestCompletions(
+                window._prevTodayQuestKeys,
+                nextKeys,
+                window._localQuestCompleteKeys,
+            );
+            window._prevTodayQuestKeys = nextKeys;
+            if (unexpected.length && typeof window.showToast === 'function') {
+                window.showToast('다른 기기나 화면에서 퀘스트가 완료되어 반영했어요.');
+            }
+        }
+
         function isElectionOverlayOpen() {
             const el = document.getElementById('electionOverlay');
             return !!(el && !el.classList.contains('hidden'));
@@ -10408,6 +10440,16 @@ ${subjectLine}
         const jobGridEl = document.getElementById('jobGrid');
         if (jobGridEl) {
             jobGridEl.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
+        }
+        ['questsSection', 'dailyQuestContainer', 'weeklyQuestContainer', 'specialQuestContainer', 'dailyQuestBoard'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('scroll', () => markAccidentalPointerSuppression(), { passive: true });
+        });
+        if (swipeRoot) {
+            swipeRoot.addEventListener('wheel', () => markAccidentalPointerSuppression(), { passive: true });
+            swipeRoot.addEventListener('pointerdown', () => { pointerIsDown = true; }, { passive: true });
+            swipeRoot.addEventListener('pointerup', () => { pointerIsDown = false; }, { passive: true });
+            swipeRoot.addEventListener('pointercancel', () => { pointerIsDown = false; }, { passive: true });
         }
 
         // ==========================================
@@ -15591,6 +15633,7 @@ ${subjectLine}
                             if (myId && !window.playerState.isGuest) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
+                                    noteRemoteQuestCompletions(myData);
                                     const nx = Number(myData.xp) || 0;
 
                                     if (
@@ -18539,8 +18582,9 @@ ${subjectLine}
             const todayStrUi = getLocalDateStr();
             const weekRangeUi = weekRangeMondaySunday();
             if (pointerIsDown) markAccidentalPointerSuppression();
+            const skipQuestButtons = !!pointerIsDown;
             const todoBox = document.getElementById('todoContainer');
-            if (todoBox) {
+            if (todoBox && !skipQuestButtons) {
                 todoBox.innerHTML = dailyQuestList.map(q => {
                 const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                 const act = done ? 'cancelQuest' : 'attemptQuest';
@@ -18640,9 +18684,11 @@ ${subjectLine}
                 }).join('');
             };
             
-            renderQuests(getQuestCatalog().filter(q => q.type === 'daily'), 'dailyQuestContainer');
-            renderQuests(getQuestCatalog().filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
-            renderQuests(getQuestCatalog().filter(q => q.type === 'locked'), 'specialQuestContainer');
+            if (!skipQuestButtons) {
+                renderQuests(getQuestCatalog().filter(q => q.type === 'daily'), 'dailyQuestContainer');
+                renderQuests(getQuestCatalog().filter(q => q.type === 'weekly'), 'weeklyQuestContainer');
+                renderQuests(getQuestCatalog().filter(q => q.type === 'locked'), 'specialQuestContainer');
+            }
 
             if (typeof renderJobGrid === 'function') renderJobGrid();
 
@@ -19026,6 +19072,9 @@ ${subjectLine}
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                window._questHistorySyncReady = false;
+                window._localQuestCompleteKeys = new Set();
+                window._prevTodayQuestKeys = todayQuestHistoryKeys(window.playerState.questHistory, getLocalDateStr());
                 if (isAdmin) ensureMasterAllGear();
                 localStorage.setItem('sambong_student_id', studentId);
                 localStorage.setItem('sambong_student_pin', pin);
@@ -19979,6 +20028,9 @@ ${subjectLine}
             }
             if (qMetaEarly && qMetaEarly.type !== 'daily' && qMetaEarly.type !== 'weekly' && window.playerState.quests && window.playerState.quests[qId]) return;
 
+            const qNameAsk = (qMetaEarly && qMetaEarly.name) || qId;
+            if (!await window.customConfirm(questCompleteConfirmMessage(qNameAsk))) return;
+
             window._questActionRunning = true;
             try {
             const bongBefore = normalizeBongValue(Number(window.playerState.bong) || 0);
@@ -20022,6 +20074,7 @@ ${subjectLine}
             const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             if(qInfo) {
                 window.playerState.questHistory.push({ id: qId, name: qInfo.name, date: dateStr, timestamp: now.getTime(), xp: finalXp, bong: finalBong });
+                rememberLocalQuestComplete(qId, dateStr);
             }
 
             // 일일 퀘스트를 모두 완료한 날 1회 보너스 — 기록 기준
@@ -20105,6 +20158,7 @@ ${subjectLine}
                         const histXp = Math.floor(Number(window.playerState.questHistory[idx].xp) || 0);
                         if (histXp > 0) deductXp = histXp;
                         window.playerState.questHistory.splice(idx, 1);
+                        forgetLocalQuestComplete(qId, dateStr);
                     }
                 }
 

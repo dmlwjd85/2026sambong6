@@ -128,10 +128,38 @@ export function sanitizeWeeklyQuestFlags(state, weeklyQuestIds, weekStart, weekE
 
 /** 스크롤·스와이프 후 따라오는 클릭을 무시할 픽셀 임계값 */
 export const ACCIDENTAL_POINTER_MOVE_PX = 12;
-export const ACCIDENTAL_POINTER_SUPPRESS_MS = 450;
+export const ACCIDENTAL_POINTER_SUPPRESS_MS = 700;
 
 export function didPointerMoveEnough(startX, startY, endX, endY, threshold = ACCIDENTAL_POINTER_MOVE_PX) {
     return Math.abs(endX - startX) > threshold || Math.abs(endY - startY) > threshold;
+}
+
+/** 오늘 완료된 퀘스트를 id|날짜 키로 모읍니다. */
+export function todayQuestHistoryKeys(history, dateStr) {
+    const date = String(dateStr || '');
+    if (!date || !Array.isArray(history)) return [];
+    const keys = [];
+    const seen = new Set();
+    history.forEach((h) => {
+        if (!h || !h.id || String(h.date) !== date) return;
+        const key = `${h.id}|${h.date}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        keys.push(key);
+    });
+    return keys;
+}
+
+/** 이 기기에서 누르지 않은 오늘 완료가 새로 생겼는지 봅니다. */
+export function unexpectedQuestCompletions(prevKeys, nextKeys, localKeys) {
+    const prev = new Set(Array.isArray(prevKeys) ? prevKeys : []);
+    const local = new Set(localKeys instanceof Set ? localKeys : (Array.isArray(localKeys) ? localKeys : []));
+    return (Array.isArray(nextKeys) ? nextKeys : []).filter((key) => !prev.has(key) && !local.has(key));
+}
+
+export function questCompleteConfirmMessage(questName) {
+    const name = String(questName || '').trim() || '이 퀘스트';
+    return `[${name}] 퀘스트를 완료할까요?\n본인이 직접 한 일만 완료해 주세요.`;
 }
 
 /**

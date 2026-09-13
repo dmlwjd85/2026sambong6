@@ -9,6 +9,10 @@ import {
     weekRangeMondaySunday,
     didPointerMoveEnough,
     ACCIDENTAL_POINTER_MOVE_PX,
+    ACCIDENTAL_POINTER_SUPPRESS_MS,
+    unexpectedQuestCompletions,
+    questCompleteConfirmMessage,
+    todayQuestHistoryKeys,
     patchStudentQuestBoardRow,
 } from './questCompletionGuard.js';
 
@@ -122,5 +126,24 @@ describe('퀘스트 현황판 즉시 반영', () => {
         assert.equal(isDailyQuestCompletedToday(next[0], 'q8', '2026-09-04'), true);
         assert.equal(isDailyQuestCompletedToday(next[1], 'q1', '2026-09-04'), true);
         assert.equal(rows[0].questHistory.length, 2);
+    });
+});
+
+describe('퀘스트 오완료 방지', () => {
+    it('스크롤 오클릭 억제 시간은 0.7초다', () => {
+        assert.equal(ACCIDENTAL_POINTER_SUPPRESS_MS, 700);
+    });
+
+    it('이 기기에서 누르지 않은 오늘 완료만 골라낸다', () => {
+        const prev = todayQuestHistoryKeys([{ id: 'q1', date: '2026-09-13' }], '2026-09-13');
+        const next = todayQuestHistoryKeys([
+            { id: 'q1', date: '2026-09-13' },
+            { id: 'q8', date: '2026-09-13' },
+            { id: 'q6', date: '2026-09-13' },
+        ], '2026-09-13');
+        const unexpected = unexpectedQuestCompletions(prev, next, ['q8|2026-09-13']);
+        assert.deepEqual(unexpected, ['q6|2026-09-13']);
+        assert.match(questCompleteConfirmMessage('잔반 제로'), /잔반 제로/);
+        assert.match(questCompleteConfirmMessage('잔반 제로'), /본인이 직접/);
     });
 });

@@ -77,6 +77,7 @@ import {
 import {
     formatDragonBallHomeRewardHint,
     mergeDragonBallCollections,
+    planDragonBallClaim,
     resolveDragonBallWeekendKey,
     resolveDragonBallsForSave,
     resolveDragonBallsForSnapshot,
@@ -461,7 +462,7 @@ async function refreshStudentsCacheFromServer() {
     window.gmaData = gmaD;
 
     const myId = localStorage.getItem('sambong_student_id');
-    if (myId && window.playerState && !window.playerState.isGuest) {
+    if (myId && window.playerState && !window.playerState.isGuest && !window._claimingDragonBall) {
         const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
         if (myData) {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
@@ -15670,7 +15671,7 @@ ${subjectLine}
                             window.gmaData = gmaD;
                             
                             const myId = localStorage.getItem('sambong_student_id');
-                            if (myId && !window.playerState.isGuest) {
+                            if (myId && !window.playerState.isGuest && !window._claimingDragonBall) {
                                 const myData = myId === 'gm' ? gmD : (myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId)));
                                 if (myData) {
                                     noteRemoteQuestCompletions(myData);
@@ -24953,48 +24954,56 @@ ${subjectLine}
             if(window.playerState.dragonBalls.includes(dbNum)) {
                 return window.customAlert("이미 가지고 있는 드래곤볼입니다!");
             }
+            if (!db || !currentStudentDocRef) {
+                return window.customAlert('서버 연결 후 다시 시도해 주세요.');
+            }
 
             window._claimingDragonBall = true;
             try {
-            /** 안내창이 떠 있는 동안 스냅샷이 덮어도 성구가 남도록 먼저 서버에 합쳐 둡니다. */
+            /** 성구와 찾기 보상을 한 트랜잭션에 남깁니다. 안내창 동안 스냅샷이 XP만 지우지 않게 합니다. */
             const satKey = getWeekendSaturdayKey() || getLastSaturdayDateKey();
-            let merged = mergeDragonBallCollections(window.playerState.dragonBalls, [dbNum]);
-            if (db && currentStudentDocRef) {
-                try {
-                    await runTransaction(db, async (transaction) => {
-                        const snap = await transaction.get(currentStudentDocRef);
-                        const server = snap.exists() ? (snap.data() || {}) : {};
-                        merged = mergeDragonBallCollections(server.dragonBalls, [...sanitizeDragonBallList(window.playerState.dragonBalls), dbNum]);
-                        const payload = { dragonBalls: merged };
-                        if (satKey) payload.dragonBallWeekendKey = satKey;
-                        transaction.set(currentStudentDocRef, payload, { merge: true });
-                    });
-                } catch (e) {
-                    console.error('claimDragonBall persist', e);
-                }
+            const reward = getDragonBallRewards();
+            const xpBefore = Math.floor(Number(window.playerState.xp) || 0);
+            const bongBefore = normalizeBongValue(Number(window.playerState.bong) || 0);
+            let plan = planDragonBallClaim(window.playerState.dragonBalls, window.playerState.dragonBalls, dbNum, reward);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(currentStudentDocRef);
+                    const server = snap.exists() ? (snap.data() || {}) : {};
+                    plan = planDragonBallClaim(server.dragonBalls, window.playerState.dragonBalls, dbNum, reward);
+                    if (!plan.ok) return;
+                    const payload = { dragonBalls: plan.balls };
+                    if (satKey) payload.dragonBallWeekendKey = satKey;
+                    if (plan.grantXp > 0) payload.xp = increment(plan.grantXp);
+                    if (plan.grantBong > 0) payload.bong = increment(plan.grantBong);
+                    transaction.set(currentStudentDocRef, payload, { merge: true });
+                });
+            } catch (e) {
+                console.error('claimDragonBall persist', e);
+                await window.customAlert('드래곤볼 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+                return;
             }
-            window.playerState.dragonBalls = merged;
+            window.playerState.dragonBalls = plan.balls;
             if (satKey) window.playerState.dragonBallWeekendKey = satKey;
+            if (!plan.ok) {
+                updateUI();
+                updateDragonBallUI();
+                return window.customAlert("이미 가지고 있는 드래곤볼입니다!");
+            }
+            /** 스냅샷이 끼어들어도 지급 전 XP를 기준으로 맞춥니다. */
+            window.playerState.xp = xpBefore + plan.grantXp;
+            window.playerState.bong = normalizeBongValue(bongBefore + plan.grantBong);
             updateUI();
 
-            const reward = getDragonBallRewards();
-            window.playerState.xp += reward.findXp;
-            if (reward.findBong > 0) {
-                window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + reward.findBong);
-            }
             const findBits = [];
-            if (reward.findXp > 0) findBits.push(`+${reward.findXp} XP`);
-            if (reward.findBong > 0) findBits.push(`+${formatBongAmount(reward.findBong)}`);
+            if (plan.findXp > 0) findBits.push(`+${plan.findXp} XP`);
+            if (plan.findBong > 0) findBits.push(`+${formatBongAmount(plan.findBong)}`);
             await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다!${findBits.length ? ` (${findBits.join(' · ')})` : ''}\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
             
-            if(window.playerState.dragonBalls.length >= 7) {
-                window.playerState.xp += reward.completeXp;
-                if (reward.completeBong > 0) {
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + reward.completeBong);
-                }
+            if(plan.completed) {
                 const doneBits = [];
-                if (reward.completeXp > 0) doneBits.push(`+${reward.completeXp} XP`);
-                if (reward.completeBong > 0) doneBits.push(`+${formatBongAmount(reward.completeBong)}`);
+                if (plan.completeXp > 0) doneBits.push(`+${plan.completeXp} XP`);
+                if (plan.completeBong > 0) doneBits.push(`+${formatBongAmount(plan.completeBong)}`);
                 await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복${doneBits.length ? `(${doneBits.join(' · ')})` : ''}을 획득했습니다!`);
             }
             
@@ -25021,7 +25030,7 @@ ${subjectLine}
             updateUI();
             await saveDataToCloud({
                 operationLabel: `드래곤볼 ${dbNum}성구 수집`,
-                maxBongIncrease: Math.max(5, Number(reward.findBong || 0) + Number(reward.completeBong || 0) + 5),
+                maxBongIncrease: Math.max(5, Number(plan.grantBong || 0) + 5),
             });
             updateDragonBallUI();
             } finally {

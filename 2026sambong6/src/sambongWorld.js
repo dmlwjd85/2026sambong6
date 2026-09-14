@@ -75,6 +75,14 @@ import {
     weekRangeMondaySunday,
 } from './lib/questCompletionGuard.js';
 import {
+    formatDragonBallHomeRewardHint,
+    mergeDragonBallCollections,
+    resolveDragonBallWeekendKey,
+    resolveDragonBallsForSave,
+    resolveDragonBallsForSnapshot,
+    sanitizeDragonBallList,
+} from './lib/dragonBallKeep.js';
+import {
     MAX_CANDIDATES_PER_POSITION,
     MAX_POSITIONS,
     NUMERIC_VOTE_TIMEOUT_MS,
@@ -456,12 +464,16 @@ async function refreshStudentsCacheFromServer() {
     if (myId && window.playerState && !window.playerState.isGuest) {
         const myData = myId === 'gm' ? gmD : myId === 'gm_a' ? gmaD : students.find((s) => String(s.id) === String(myId));
         if (myData) {
+            const prevBalls = window.playerState && window.playerState.dragonBalls;
+            const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             window.playerState = {
                 ...myData,
                 isGuest: false,
                 isGM: myId === 'gm',
                 isGMA: myId === 'gm_a',
                 isAdmin: myId === 'gm' || myId === 'gm_a',
+                dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData.dragonBalls),
+                dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData.dragonBallWeekendKey),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
@@ -1804,6 +1816,7 @@ function redrawPlazaGrantsUi() {
                 }
 
                 applyWorldBranding();
+                if (typeof fillDragonBallRewardInputs === 'function') fillDragonBallRewardInputs();
                 if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
                 updateUI();
                 const pwDisplay = document.getElementById('currentRaidPwDisplay');
@@ -6088,6 +6101,33 @@ ${subjectLine}
             setVal('dragonBallFindBongInput', r.findBong);
             setVal('dragonBallCompleteXpInput', r.completeXp);
             setVal('dragonBallCompleteBongInput', r.completeBong);
+            updateDragonBallHomeRewardHint();
+        }
+
+        /** 홈 보관함에 설정에서 정한 1개·7개 완성 보상을 그대로 보여 줍니다. */
+        function updateDragonBallHomeRewardHint() {
+            const el = document.getElementById('dragonBallHomeRewardHint');
+            if (!el) return;
+            el.textContent = formatDragonBallHomeRewardHint(getDragonBallRewards(), formatBongAmount);
+        }
+
+        /**
+         * 내 학생 문서를 playerState에 넣을 때 보관함을 합칩니다.
+         * 캐시 스냅샷의 빈 배열이 방금 모은 성구를 지우지 않습니다.
+         */
+        function applyOwnStudentDocPreservingDragonBalls(myData, myId) {
+            const prevBalls = window.playerState && window.playerState.dragonBalls;
+            const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
+            window.playerState = {
+                ...myData,
+                isGuest: false,
+                isGM: myId === 'gm',
+                isGMA: myId === 'gm_a',
+                isAdmin: myId === 'gm' || myId === 'gm_a',
+                dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData && myData.dragonBalls),
+                dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData && myData.dragonBallWeekendKey),
+            };
+            if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
         }
 
         const DEFAULT_CONSTITUTION_ITEMS = [
@@ -15645,10 +15685,7 @@ ${subjectLine}
                                     }
                                     _prevXpFromSnapshot = nx;
 
-                                    window.playerState = {
-                                        ...myData, isGuest: false, isGM: myId === 'gm', isGMA: myId === 'gm_a', isAdmin: (myId === 'gm' || myId === 'gm_a')
-                                    };
-                                    if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+                                    applyOwnStudentDocPreservingDragonBalls(myData, myId);
                                     /** 스냅샷이 어제 quests·lastDailyReset을 다시 주면 자정 초기화가 덮어씌워지는 문제 보정(학생만, 알림 없음) */
                                     if (myId !== 'gm' && myId !== 'gm_a' && !window.playerState.isAdmin) {
                                         const dq = applyDailyQuestResetIfNewDay({ silent: true });
@@ -18271,7 +18308,7 @@ ${subjectLine}
                         errors.push(`${sid}: 읽기 실패`);
                         continue;
                     }
-                    const merged = [...new Set([...existing, ...balls])].filter((n) => n >= 1 && n <= 7).sort((a, b) => a - b);
+                    const merged = mergeDragonBallCollections(existing, balls);
                     try {
                         await setDoc(ref, { dragonBalls: merged, dragonBallWeekendKey: weekendKey }, { merge: true });
                         okCount++;
@@ -18614,11 +18651,13 @@ ${subjectLine}
                 dqHint.classList.add('hidden');
             }
 
+            updateDragonBallHomeRewardHint();
             const dbSlots = document.getElementById('dragonBallSlots');
             if(dbSlots) {
                 const dbBox = document.getElementById('dragonballContainer');
                 if (dbBox) dbBox.classList.remove('hidden');
-                const collected = window.playerState.dragonBalls || [];
+                const collected = sanitizeDragonBallList(window.playerState.dragonBalls);
+                if (window.playerState) window.playerState.dragonBalls = collected;
                 let slotsHtml = '';
                 
                 for(let i=1; i<=7; i++) {
@@ -19072,6 +19111,7 @@ ${subjectLine}
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                window.playerState.dragonBalls = sanitizeDragonBallList(window.playerState.dragonBalls);
                 window._questHistorySyncReady = false;
                 window._localQuestCompleteKeys = new Set();
                 window._prevTodayQuestKeys = todayQuestHistoryKeys(window.playerState.questHistory, getLocalDateStr());
@@ -19128,6 +19168,7 @@ ${subjectLine}
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
+            dataToSave.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
             dataToSave.unlockedFeatures = sanitizeUnlockedFeatures(dataToSave.unlockedFeatures);
             dataToSave.statusMessage = sanitizeStatusMessage(dataToSave.statusMessage);
             if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
@@ -19340,6 +19381,16 @@ ${subjectLine}
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
                         }
+                        // 캐시·다른 화면의 빈 보관함이 서버 성구를 지우지 않게 합칩니다.
+                        if (opts.replaceDragonBalls) {
+                            dataToSave.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
+                        } else {
+                            dataToSave.dragonBalls = resolveDragonBallsForSave(dataToSave.dragonBalls, serverData.dragonBalls);
+                            dataToSave.dragonBallWeekendKey = resolveDragonBallWeekendKey(
+                                dataToSave.dragonBallWeekendKey,
+                                serverData.dragonBallWeekendKey,
+                            );
+                        }
                         // 직업은 본인 확인·마스터 장착 경로만 씁니다. 다른 저장이 낡은 jobs를 덮어쓰지 않게 서버 값을 지킵니다.
                         if (!opts.allowJobChanges) {
                             if (Object.prototype.hasOwnProperty.call(serverData, 'jobs')) {
@@ -19376,7 +19427,11 @@ ${subjectLine}
                             isGMA: window.playerState.isGMA,
                             isAdmin: window.playerState.isAdmin,
                         };
+                        const prevBalls = window.playerState.dragonBalls;
+                        const prevKey = window.playerState.dragonBallWeekendKey;
                         window.playerState = { ...serverRestoreData, ...roleFlags };
+                        window.playerState.dragonBalls = resolveDragonBallsForSnapshot(prevBalls, serverRestoreData.dragonBalls);
+                        window.playerState.dragonBallWeekendKey = resolveDragonBallWeekendKey(prevKey, serverRestoreData.dragonBallWeekendKey);
                         if (typeof updateUI === 'function') updateUI();
                     }
                     if (blockedByStaleSeason2) {
@@ -19397,6 +19452,12 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'dragonBalls')) {
+                    window.playerState.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'dragonBallWeekendKey')) {
+                    window.playerState.dragonBallWeekendKey = dataToSave.dragonBallWeekendKey || '';
+                }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestments')) {
                     window.playerState.stockInvestments = dataToSave.stockInvestments;
                 }
@@ -24881,26 +24942,41 @@ ${subjectLine}
 
         window.claimDragonBall = async function() {
             if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window._claimingDragonBall) return;
             if(!window.dragonBallState || !window.dragonBallState.isActive) return;
             if (!isLocalWeekend()) return window.customAlert('드래곤볼은 주말(토·일)에만 수집할 수 있어요!');
             
             const dbNum = Number(window.dragonBallState.number);
             if (!Number.isFinite(dbNum) || dbNum < 1 || dbNum > 7) return window.customAlert('드래곤볼 번호가 올바르지 않습니다. 잠시 후 다시 시도해 주세요.');
-            if(!window.playerState.dragonBalls) window.playerState.dragonBalls = [];
-            window.playerState.dragonBalls = [...new Set(
-                window.playerState.dragonBalls
-                    .map((n) => Number(n))
-                    .filter((n) => Number.isFinite(n) && n >= 1 && n <= 7)
-            )].sort((a, b) => a - b);
+            window.playerState.dragonBalls = sanitizeDragonBallList(window.playerState.dragonBalls);
             
             if(window.playerState.dragonBalls.includes(dbNum)) {
                 return window.customAlert("이미 가지고 있는 드래곤볼입니다!");
             }
-            
-            window.playerState.dragonBalls.push(dbNum);
-            window.playerState.dragonBalls.sort((a, b) => a - b);
-            const satKey = getWeekendSaturdayKey();
+
+            window._claimingDragonBall = true;
+            try {
+            /** 안내창이 떠 있는 동안 스냅샷이 덮어도 성구가 남도록 먼저 서버에 합쳐 둡니다. */
+            const satKey = getWeekendSaturdayKey() || getLastSaturdayDateKey();
+            let merged = mergeDragonBallCollections(window.playerState.dragonBalls, [dbNum]);
+            if (db && currentStudentDocRef) {
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const snap = await transaction.get(currentStudentDocRef);
+                        const server = snap.exists() ? (snap.data() || {}) : {};
+                        merged = mergeDragonBallCollections(server.dragonBalls, [...sanitizeDragonBallList(window.playerState.dragonBalls), dbNum]);
+                        const payload = { dragonBalls: merged };
+                        if (satKey) payload.dragonBallWeekendKey = satKey;
+                        transaction.set(currentStudentDocRef, payload, { merge: true });
+                    });
+                } catch (e) {
+                    console.error('claimDragonBall persist', e);
+                }
+            }
+            window.playerState.dragonBalls = merged;
             if (satKey) window.playerState.dragonBallWeekendKey = satKey;
+            updateUI();
+
             const reward = getDragonBallRewards();
             window.playerState.xp += reward.findXp;
             if (reward.findBong > 0) {
@@ -24943,8 +25019,14 @@ ${subjectLine}
                 );
             }
             updateUI();
-            saveDataToCloud();
+            await saveDataToCloud({
+                operationLabel: `드래곤볼 ${dbNum}성구 수집`,
+                maxBongIncrease: Math.max(5, Number(reward.findBong || 0) + Number(reward.completeBong || 0) + 5),
+            });
             updateDragonBallUI();
+            } finally {
+                window._claimingDragonBall = false;
+            }
         };
 
         function updateDragonBallUI() {

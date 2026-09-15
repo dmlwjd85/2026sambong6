@@ -2419,7 +2419,8 @@
             box-shadow: 0 0 45px rgba(245, 158, 11, 0.18);
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
-        .classtool-fs-body > .classtool-pane[data-tool="classboard"] {
+        .classtool-fs-body > .classtool-pane[data-tool="classboard"],
+        .classtool-fs-body > .classtool-pane[data-tool="openlesson"] {
             max-width: none;
             width: 100%;
             margin: 0;
@@ -2430,7 +2431,8 @@
         }
         /* 웹: 양옆은 화면 끝까지, 생각 목록만 위아래로 스크롤합니다. */
         .classtool-fs-body:has(> .classtool-pane[data-tool="padlet"]),
-        .classtool-fs-body:has(> .classtool-pane[data-tool="classboard"]) {
+        .classtool-fs-body:has(> .classtool-pane[data-tool="classboard"]),
+        .classtool-fs-body:has(> .classtool-pane[data-tool="openlesson"]) {
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -3219,6 +3221,164 @@
             white-space: nowrap;
         }
         .class-board-panel.is-view-together .class-board-composer { display: none !important; }
+        .open-lesson-panel {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            height: min(78vh, 46rem);
+            min-height: 22rem;
+            overflow: hidden;
+            padding: 0.7rem 0.8rem 0.65rem;
+            border-radius: 1.15rem;
+            border: 2px solid rgba(251, 191, 36, 0.42);
+            background:
+                radial-gradient(circle at 12% 0%, rgba(251, 191, 36, 0.16), transparent 34%),
+                linear-gradient(165deg, #422006 0%, #1c1917 48%, #0c0a09 100%);
+        }
+        body.classtool-fs-open .open-lesson-panel {
+            height: 100%;
+            min-height: 0;
+            max-height: none;
+            width: 100%;
+            padding: 0.4rem 0.5rem 0.5rem;
+        }
+        .open-lesson-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.45rem;
+            flex-shrink: 0;
+        }
+        .open-lesson-progress {
+            min-height: 2rem;
+            padding: 0.2rem 0.7rem;
+            border-radius: 999px;
+            border: 1px solid rgba(253, 230, 138, 0.55);
+            background: rgba(15, 23, 42, 0.72);
+            color: #fef3c7;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .open-lesson-admin-btn {
+            min-height: 40px;
+            padding: 0.4rem 0.75rem;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(253, 230, 138, 0.45);
+            background: rgba(15, 23, 42, 0.72);
+            color: #fef3c7;
+            font-size: 11px;
+            font-weight: 900;
+        }
+        .open-lesson-picker {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+            gap: 0.75rem;
+            overflow: auto;
+            min-height: 0;
+            flex: 1;
+        }
+        .open-lesson-card {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+            border-radius: 1rem;
+            overflow: hidden;
+            border: 1px solid rgba(253, 230, 138, 0.35);
+            background: rgba(12, 10, 9, 0.72);
+            color: #fffbeb;
+        }
+        .open-lesson-card-cover {
+            display: block;
+            height: 8.4rem;
+            background-size: cover;
+            background-position: center;
+            background-color: #1c1917;
+        }
+        .open-lesson-card-title {
+            font-size: 14px;
+            font-weight: 900;
+            padding: 0.55rem 0.7rem 0.15rem;
+        }
+        .open-lesson-card-meta {
+            font-size: 10px;
+            font-weight: 700;
+            color: #fde68a;
+            padding: 0 0.7rem 0.65rem;
+        }
+        .open-lesson-empty {
+            color: #cbd5e1;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 1rem;
+        }
+        .open-lesson-stage {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        .open-lesson-canvas {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 12rem;
+            overflow: hidden;
+            border-radius: 1rem;
+            background: #0c0a09;
+            cursor: pointer;
+        }
+        .open-lesson-canvas img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            pointer-events: none;
+        }
+        .open-lesson-caption {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            margin: 0;
+            padding: 2.4rem 1.15rem 1.05rem;
+            background: linear-gradient(180deg, rgba(12, 10, 9, 0) 0%, rgba(12, 10, 9, 0.86) 42%);
+            color: #fffbeb;
+            font-size: clamp(1.05rem, 2.8vw, 1.85rem);
+            font-weight: 800;
+            line-height: 1.45;
+            word-break: keep-all;
+        }
+        .open-lesson-text-slide {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.6rem 1.4rem;
+            background:
+                radial-gradient(circle at 50% 38%, rgba(251, 191, 36, 0.16), transparent 42%),
+                linear-gradient(180deg, #1c1917 0%, #0c0a09 100%);
+        }
+        .open-lesson-text-slide p {
+            margin: 0;
+            max-width: 42rem;
+            text-align: center;
+            color: #fffbeb;
+            font-size: clamp(1.55rem, 4.2vw, 2.85rem);
+            font-weight: 900;
+            line-height: 1.5;
+            word-break: keep-all;
+            white-space: pre-wrap;
+        }
+        .open-lesson-hint {
+            flex-shrink: 0;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 800;
+            color: #fde68a;
+            padding: 0.4rem 0 0.1rem;
+        }
         .app-tool-item.is-active {
             border-color: #84cc16;
             color: #ecfccb;
@@ -3278,7 +3438,9 @@
         body.class-tool-share-view .think-keep-input,
         body.class-tool-share-view .think-keep-input *,
         body.class-tool-share-view .class-board-keep-input,
-        body.class-tool-share-view .class-board-keep-input * {
+        body.class-tool-share-view .class-board-keep-input *,
+        body.class-tool-share-view .open-lesson-keep-input,
+        body.class-tool-share-view .open-lesson-keep-input * {
             pointer-events: auto;
         }
         body.class-tool-share-view #chalkboardToolbar {
@@ -3299,7 +3461,8 @@
             max-width: 80rem;
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
-        .classtool-fs-body > .classtool-pane[data-tool="classboard"] {
+        .classtool-fs-body > .classtool-pane[data-tool="classboard"],
+        .classtool-fs-body > .classtool-pane[data-tool="openlesson"] {
             margin: 0;
             max-width: none;
             width: 100%;

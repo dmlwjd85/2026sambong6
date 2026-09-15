@@ -2006,6 +2006,10 @@
                     <span class="app-tool-icon"><img src="nav/tool-notes.webp" alt="" width="192" height="192"></span>
                     <span>학급게시판</span>
                 </button>
+                <button type="button" class="app-tool-item" data-tool="openlesson" onclick="window.switchClassTool('openlesson')">
+                    <span class="app-tool-icon"><img src="nav/tool-openlesson.webp" alt="" width="192" height="192"></span>
+                    <span>공개수업</span>
+                </button>
             </div>
 
             <div id="classtoolPanesHome">
@@ -2370,6 +2374,30 @@
                                 <button type="button" class="class-board-admin-btn class-board-admin-btn-warn" onclick="void window.confirmClearClassBoardAll()">확인</button>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 공개수업: 수업 아이디어를 전체화면으로 넘기며 봅니다. 새 수업은 openLessons.js에 추가합니다. -->
+                <div class="classtool-pane hidden open-lesson-panel" data-tool="openlesson">
+                    <div class="open-lesson-head">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-12 h-12 rounded-lg overflow-hidden border-2 border-amber-300/70 shadow-inner shrink-0">
+                                <img src="nav/tool-openlesson.webp" alt="" width="48" height="48" class="w-full h-full object-cover">
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-[10px] font-black tracking-[0.28em] text-amber-200/90">OPEN LESSON</p>
+                                <h2 id="openLessonTitle" class="text-xl sm:text-2xl font-display text-amber-50 tracking-wide">공개수업</h2>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <p id="openLessonProgress" class="open-lesson-progress hidden">1 / 10</p>
+                            <button type="button" id="openLessonBackBtn" class="hidden open-lesson-admin-btn" onclick="void window.closeOpenLessonNow()">목록</button>
+                        </div>
+                    </div>
+                    <div id="openLessonPicker" class="open-lesson-picker"></div>
+                    <div id="openLessonStage" class="hidden open-lesson-stage">
+                        <div id="openLessonCanvas" class="open-lesson-canvas open-lesson-keep-input" role="button" tabindex="0" aria-label="다음 화면"></div>
+                        <p id="openLessonHint" class="open-lesson-hint">화면을 터치하면 다음으로 넘어갑니다</p>
                     </div>
                 </div>
 

@@ -428,6 +428,17 @@ import {
     viewedClassBoardPage,
 } from './lib/classBoard.js';
 import {
+    closeOpenLesson,
+    emptyOpenLessonState,
+    openLessonById,
+    openLessonCatalog,
+    openLessonSlideAt,
+    openLessonSlideCount,
+    sanitizeOpenLessonState,
+    startOpenLesson,
+    stepOpenLesson,
+} from './lib/openLessons.js';
+import {
     jobColorChoicesForPicker,
     jobColorLabel,
     jobIconChoicesForPicker,
@@ -3267,6 +3278,7 @@ function redrawPlazaGrantsUi() {
                 externalPortals: [],
                 thoughtBoard: emptyThoughtBoard(),
                 classBoard: emptyClassBoard(),
+                openLesson: emptyOpenLessonState(),
                 announcement: '',
                 morningActivityNotice: '',
                 screenNotice: null,
@@ -4293,7 +4305,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), openLesson: emptyOpenLessonState(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -10708,6 +10720,28 @@ ${subjectLine}
             return ok;
         }
 
+        async function shareOpenLessonToClass() {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            if (!isClassToolFullscreenOpen() || classtoolSub !== 'openlesson') {
+                openClassToolWindow('openlesson', { remote: false });
+            }
+            const current = currentClassToolShare();
+            if (current.active && current.toolId === 'openlesson') {
+                requestClassToolBrowserFullscreen();
+                return true;
+            }
+            const payload = openClassToolShare('openlesson');
+            if (!payload) return false;
+            const ok = await publishClassToolShare(payload);
+            if (ok) {
+                _followedClassToolShareSession = payload.sessionId;
+                _classToolShareFollower = false;
+                updateClassToolShareBar();
+                requestClassToolBrowserFullscreen();
+            }
+            return ok;
+        }
+
         function restoreClassToolPane() {
             const home = document.getElementById('classtoolPanesHome');
             if (_classtoolFsPane && home) {
@@ -10748,7 +10782,7 @@ ${subjectLine}
                 btn.classList.toggle('hidden', !isAdmin);
             });
             if (closeBtn) {
-                const shareLocked = share.active && (share.toolId === 'padlet' || share.toolId === 'classboard') && !isAdmin;
+                const shareLocked = share.active && (share.toolId === 'padlet' || share.toolId === 'classboard' || share.toolId === 'openlesson') && !isAdmin;
                 closeBtn.classList.toggle('hidden', !!_classToolShareFollower || shareLocked);
             }
             const chalkClose = document.querySelector('#chalkboardOverlay .chalk-tool-danger');
@@ -10825,6 +10859,10 @@ ${subjectLine}
                 renderClassBoardPanel();
                 requestClassToolBrowserFullscreen();
             }
+            if (classtoolSub === 'openlesson') {
+                renderOpenLessonPanel();
+                requestClassToolBrowserFullscreen();
+            }
             updateClassToolShareBar();
             return true;
         }
@@ -10858,7 +10896,7 @@ ${subjectLine}
             if (e.key !== 'Escape' || !isClassToolFullscreenOpen()) return;
             if (_classToolShareFollower) return;
             const liveShare = currentClassToolShare();
-            if (liveShare.active && (liveShare.toolId === 'padlet' || liveShare.toolId === 'classboard') && !(window.playerState && window.playerState.isAdmin)) return;
+            if (liveShare.active && (liveShare.toolId === 'padlet' || liveShare.toolId === 'classboard' || liveShare.toolId === 'openlesson') && !(window.playerState && window.playerState.isAdmin)) return;
             const chalk = document.getElementById('chalkboardOverlay');
             if (chalk && !chalk.classList.contains('hidden')) return;
             window.closeClassToolFullscreen();
@@ -10876,6 +10914,7 @@ ${subjectLine}
             morning: '아침·공지',
             padlet: '생각게시판',
             classboard: '학급게시판',
+            openlesson: '공개수업',
         };
 
         window.switchClassTool = function(toolId) {
@@ -11867,6 +11906,156 @@ ${subjectLine}
                 text,
             }, Date.now()));
             if (ok && ta) ta.value = '';
+        };
+
+        let _openLessonTapLock = 0;
+        let _openLessonCanvasKey = '';
+
+        function currentOpenLesson() {
+            return sanitizeOpenLessonState(window.globalSettings && window.globalSettings.openLesson);
+        }
+
+        function canAdvanceOpenLesson() {
+            const p = window.playerState;
+            if (!p) return false;
+            if (p.isAdmin) return true;
+            if (p.isGuest) return true;
+            return false;
+        }
+
+        async function saveOpenLesson(mutator) {
+            if (!db) {
+                const next = sanitizeOpenLessonState(mutator(currentOpenLesson()));
+                if (window.globalSettings) window.globalSettings.openLesson = next;
+                renderOpenLessonPanel();
+                return true;
+            }
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                return false;
+            }
+            const ref = getGlobalSettingsDocRef();
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const cur = sanitizeOpenLessonState(snap.exists() ? snap.data().openLesson : currentOpenLesson());
+                    const next = sanitizeOpenLessonState(mutator(cur));
+                    tx.set(ref, { openLesson: next }, { merge: true });
+                    if (window.globalSettings) window.globalSettings.openLesson = next;
+                });
+                renderOpenLessonPanel();
+                return true;
+            } catch (e) {
+                console.error('saveOpenLesson', e);
+                await window.customAlert('공개수업 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
+            }
+        }
+
+        function renderOpenLessonPanel() {
+            const state = currentOpenLesson();
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const lesson = openLessonById(state.lessonId);
+            const titleEl = document.getElementById('openLessonTitle');
+            if (titleEl) titleEl.textContent = lesson ? lesson.title : '공개수업';
+            const backBtn = document.getElementById('openLessonBackBtn');
+            if (backBtn) backBtn.classList.toggle('hidden', !isAdmin || !lesson);
+            const progress = document.getElementById('openLessonProgress');
+            const picker = document.getElementById('openLessonPicker');
+            const stage = document.getElementById('openLessonStage');
+            const canvas = document.getElementById('openLessonCanvas');
+            const hint = document.getElementById('openLessonHint');
+            const n = openLessonSlideCount(lesson);
+            if (progress) {
+                if (lesson && n) {
+                    progress.textContent = `${state.slideIndex + 1} / ${n}`;
+                    progress.classList.remove('hidden');
+                } else {
+                    progress.classList.add('hidden');
+                }
+            }
+            if (!lesson) {
+                if (stage) stage.classList.add('hidden');
+                if (picker) {
+                    picker.classList.remove('hidden');
+                    if (!isAdmin) {
+                        picker.innerHTML = `<p class="open-lesson-empty">선생님이 수업을 열면 여기에 나옵니다.</p>`;
+                    } else {
+                        picker.innerHTML = openLessonCatalog().map((row) => {
+                            const cover = row.cover ? `style="background-image:url('${escapeHtmlAttr(row.cover)}')"` : '';
+                            return `<button type="button" class="open-lesson-card open-lesson-keep-input" onclick="void window.startOpenLessonNow('${row.id}')">
+                                <span class="open-lesson-card-cover" ${cover}></span>
+                                <span class="open-lesson-card-title">${escapeHtmlAttr(row.title)}</span>
+                                <span class="open-lesson-card-meta">${openLessonSlideCount(row)}장 · 터치로 넘김</span>
+                            </button>`;
+                        }).join('') || `<p class="open-lesson-empty">아직 등록된 수업이 없습니다.</p>`;
+                    }
+                }
+                _openLessonCanvasKey = '';
+                return;
+            }
+            if (picker) {
+                picker.classList.add('hidden');
+                picker.innerHTML = '';
+            }
+            if (stage) stage.classList.remove('hidden');
+            const slide = openLessonSlideAt(lesson, state.slideIndex);
+            const last = state.slideIndex >= n - 1;
+            if (hint) {
+                hint.textContent = last ? '마지막 화면입니다. 목록으로 돌아가려면 위를 누르세요.' : '화면을 터치하면 다음으로 넘어갑니다';
+            }
+            const key = `${state.lessonId}:${state.slideIndex}:${slide && slide.kind}`;
+            if (canvas && key !== _openLessonCanvasKey) {
+                _openLessonCanvasKey = key;
+                if (!slide) {
+                    canvas.innerHTML = '';
+                } else if (slide.kind === 'text') {
+                    canvas.innerHTML = `<div class="open-lesson-text-slide"><p>${escapeHtmlAttr(slide.text).replace(/\n/g, '<br>')}</p></div>`;
+                } else {
+                    const img = slide.image ? `<img src="${escapeHtmlAttr(slide.image)}" alt="">` : '';
+                    const cap = slide.caption ? `<p class="open-lesson-caption">${escapeHtmlAttr(slide.caption)}</p>` : '';
+                    canvas.innerHTML = `${img}${cap}`;
+                }
+                canvas.onclick = (ev) => {
+                    ev.preventDefault();
+                    void window.advanceOpenLesson(1);
+                };
+                canvas.onkeydown = (ev) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                        ev.preventDefault();
+                        void window.advanceOpenLesson(1);
+                    } else if (ev.key === 'ArrowRight') {
+                        ev.preventDefault();
+                        void window.advanceOpenLesson(1);
+                    } else if (ev.key === 'ArrowLeft') {
+                        ev.preventDefault();
+                        void window.advanceOpenLesson(-1);
+                    }
+                };
+            }
+        }
+
+        window.startOpenLessonNow = async function (lessonId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!openLessonById(lessonId)) return window.customAlert('수업을 찾을 수 없습니다.');
+            _openLessonCanvasKey = '';
+            const ok = await saveOpenLesson((s) => startOpenLesson(s, lessonId, Date.now()));
+            if (ok) await shareOpenLessonToClass();
+        };
+
+        window.closeOpenLessonNow = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            _openLessonCanvasKey = '';
+            await saveOpenLesson((s) => closeOpenLesson(s, Date.now()));
+        };
+
+        window.advanceOpenLesson = async function (delta) {
+            if (!canAdvanceOpenLesson()) return;
+            const now = Date.now();
+            if (now < _openLessonTapLock) return;
+            _openLessonTapLock = now + 420;
+            await saveOpenLesson((s) => stepOpenLesson(s, delta, now));
         };
 
         function renderQuestStatsLockGate() {
@@ -16540,6 +16729,10 @@ ${subjectLine}
                                     window.globalSettings.classBoard = sanitizeClassBoard(settingsData.classBoard);
                                     maybePlayClassBoardCheer(window.globalSettings.classBoard);
                                     if (classtoolSub === 'classboard') renderClassBoardPanel();
+                                }
+                                if (settingsData.openLesson !== undefined) {
+                                    window.globalSettings.openLesson = sanitizeOpenLessonState(settingsData.openLesson);
+                                    if (classtoolSub === 'openlesson') renderOpenLessonPanel();
                                 }
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {

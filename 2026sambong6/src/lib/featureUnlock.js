@@ -8,7 +8,7 @@
 export const FEATURE_UNLOCK_PRICE = 300;
 
 /** 마스터만 쓰는 수업도구 (학생 잠금해제 대상이 아님) */
-export const MASTER_ONLY_CLASS_TOOLS = ['thermo', 'martial', 'vote', 'morning'];
+export const MASTER_ONLY_CLASS_TOOLS = ['thermo', 'martial', 'vote', 'morning', 'openlesson'];
 
 /** 학급 공용 수업도구 — 로그인 학생이면 바로 엽니다. */
 export const CLASS_WIDE_CLASS_TOOLS = ['padlet', 'classboard'];

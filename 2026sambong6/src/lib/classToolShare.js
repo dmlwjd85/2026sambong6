@@ -15,6 +15,7 @@ export const CLASS_TOOL_SHARE_IDS = Object.freeze([
     'morning',
     'padlet', // 생각게시판
     'classboard', // 학급게시판
+    'openlesson', // 공개수업
 ]);
 
 export function isClassToolShareId(toolId) {

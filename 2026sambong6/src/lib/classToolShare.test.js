@@ -17,6 +17,7 @@ describe('수업도구 창 공유', () => {
         assert.equal(isClassToolShareId('timer'), true);
         assert.equal(isClassToolShareId('padlet'), true);
         assert.equal(isClassToolShareId('classboard'), true);
+        assert.equal(isClassToolShareId('openlesson'), true);
         assert.equal(isClassToolShareId('unknown'), false);
         assert.equal(openClassToolShare('nope'), null);
         const opened = openClassToolShare('wheel');

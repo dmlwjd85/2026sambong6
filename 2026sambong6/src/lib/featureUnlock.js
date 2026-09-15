@@ -2,7 +2,7 @@
  * 학생 기능 잠금해제 — 퀘스트 통계·수업도구를 항목당 300봉에 엽니다.
  * 마스터(isAdmin)는 결제 없이 전부 사용할 수 있습니다.
  * 온도계·비상계엄·학급투표·아침·공지는 마스터 전용입니다.
- * 생각게시판은 학급 공용이라 학생도 잠금해제 없이 엽니다.
+ * 생각게시판·학급게시판은 학급 공용이라 학생도 잠금해제 없이 엽니다.
  */
 
 export const FEATURE_UNLOCK_PRICE = 300;
@@ -11,7 +11,7 @@ export const FEATURE_UNLOCK_PRICE = 300;
 export const MASTER_ONLY_CLASS_TOOLS = ['thermo', 'martial', 'vote', 'morning'];
 
 /** 학급 공용 수업도구 — 로그인 학생이면 바로 엽니다. */
-export const CLASS_WIDE_CLASS_TOOLS = ['padlet'];
+export const CLASS_WIDE_CLASS_TOOLS = ['padlet', 'classboard'];
 
 export const FEATURE_UNLOCK_CATALOG = [
     { id: 'stats', kind: 'stats', label: '퀘스트 통계' },

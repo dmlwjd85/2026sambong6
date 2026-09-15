@@ -403,6 +403,28 @@ import {
     visibleThoughtPosts,
 } from './lib/thoughtBoard.js';
 import {
+    CLASS_NOTE_COLORS,
+    CLASS_BOARD_PAGE_MAX,
+    classBoardCanWrite,
+    classBoardNoteExcerpt,
+    classBoardNotesList,
+    classBoardPagesList,
+    classBoardPromptForView,
+    classBoardRemainingMs,
+    clearClassBoard,
+    clearClassBoardFocus,
+    closeClassBoardPosting,
+    emptyClassBoard,
+    sanitizeClassBoard,
+    setClassBoardFocus,
+    setClassBoardViewPage,
+    setClassBoardViewTogether,
+    startClassBoardPrompt,
+    submitClassNote,
+    turnClassBoardPage,
+    viewedClassBoardPage,
+} from './lib/classBoard.js';
+import {
     jobColorChoicesForPicker,
     jobColorLabel,
     jobIconChoicesForPicker,
@@ -3241,6 +3263,7 @@ function redrawPlazaGrantsUi() {
                 constitutionItems: NEW_CLASS_CONSTITUTION_ITEMS,
                 externalPortals: [],
                 thoughtBoard: emptyThoughtBoard(),
+                classBoard: emptyClassBoard(),
                 announcement: '',
                 morningActivityNotice: '',
                 screenNotice: null,
@@ -4267,7 +4290,7 @@ function redrawPlazaGrantsUi() {
         window.allStudentsData = []; 
         window.gmData = null; 
         window.gmaData = null; 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -10660,6 +10683,28 @@ ${subjectLine}
             return ok;
         }
 
+        async function shareClassBoardToClass() {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            if (!isClassToolFullscreenOpen() || classtoolSub !== 'classboard') {
+                openClassToolWindow('classboard', { remote: false });
+            }
+            const current = currentClassToolShare();
+            if (current.active && current.toolId === 'classboard') {
+                requestClassToolBrowserFullscreen();
+                return true;
+            }
+            const payload = openClassToolShare('classboard');
+            if (!payload) return false;
+            const ok = await publishClassToolShare(payload);
+            if (ok) {
+                _followedClassToolShareSession = payload.sessionId;
+                _classToolShareFollower = false;
+                updateClassToolShareBar();
+                requestClassToolBrowserFullscreen();
+            }
+            return ok;
+        }
+
         function restoreClassToolPane() {
             const home = document.getElementById('classtoolPanesHome');
             if (_classtoolFsPane && home) {
@@ -10700,8 +10745,8 @@ ${subjectLine}
                 btn.classList.toggle('hidden', !isAdmin);
             });
             if (closeBtn) {
-                const padletLocked = share.active && share.toolId === 'padlet' && !isAdmin;
-                closeBtn.classList.toggle('hidden', !!_classToolShareFollower || padletLocked);
+                const shareLocked = share.active && (share.toolId === 'padlet' || share.toolId === 'classboard') && !isAdmin;
+                closeBtn.classList.toggle('hidden', !!_classToolShareFollower || shareLocked);
             }
             const chalkClose = document.querySelector('#chalkboardOverlay .chalk-tool-danger');
             if (chalkClose) chalkClose.classList.toggle('hidden', !!_classToolShareFollower);
@@ -10773,6 +10818,10 @@ ${subjectLine}
                 renderThinkBoardPanel();
                 requestClassToolBrowserFullscreen();
             }
+            if (classtoolSub === 'classboard') {
+                renderClassBoardPanel();
+                requestClassToolBrowserFullscreen();
+            }
             updateClassToolShareBar();
             return true;
         }
@@ -10806,7 +10855,7 @@ ${subjectLine}
             if (e.key !== 'Escape' || !isClassToolFullscreenOpen()) return;
             if (_classToolShareFollower) return;
             const liveShare = currentClassToolShare();
-            if (liveShare.active && liveShare.toolId === 'padlet' && !(window.playerState && window.playerState.isAdmin)) return;
+            if (liveShare.active && (liveShare.toolId === 'padlet' || liveShare.toolId === 'classboard') && !(window.playerState && window.playerState.isAdmin)) return;
             const chalk = document.getElementById('chalkboardOverlay');
             if (chalk && !chalk.classList.contains('hidden')) return;
             window.closeClassToolFullscreen();
@@ -10823,6 +10872,7 @@ ${subjectLine}
             martial: '비상계엄',
             morning: '아침·공지',
             padlet: '생각게시판',
+            classboard: '학급게시판',
         };
 
         window.switchClassTool = function(toolId) {
@@ -11263,6 +11313,390 @@ ${subjectLine}
                 if (ta) ta.value = '';
                 window.clearThinkDrawing();
             }
+        };
+
+        let _classBoardNoteColor = 'yellow';
+        let _classBoardLocalFocusId = '';
+        let _classBoardSeenStamp = {};
+        let _classBoardAnimReady = false;
+        let _classBoardGridKey = '';
+        let _classBoardTimerTick = 0;
+        let _classBoardWasWritable = false;
+
+        function currentClassBoard() {
+            return sanitizeClassBoard(window.globalSettings && window.globalSettings.classBoard);
+        }
+
+        function classBoardStudentId() {
+            return String(localStorage.getItem('sambong_student_id') || (window.playerState && window.playerState.id) || '').trim();
+        }
+
+        function classBoardFollowTeacherView() {
+            const board = currentClassBoard();
+            if (board.viewTogether) return !!(window.playerState && !window.playerState.isAdmin);
+            return false;
+        }
+
+        function formatClassBoardTimer(ms) {
+            if (!Number.isFinite(ms)) return '시간 제한 없음';
+            const total = Math.max(0, Math.ceil(ms / 1000));
+            const m = Math.floor(total / 60);
+            const s = total % 60;
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+
+        async function saveClassBoard(mutator) {
+            if (!db) return false;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                return false;
+            }
+            const ref = getGlobalSettingsDocRef();
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const cur = sanitizeClassBoard(snap.exists() ? snap.data().classBoard : currentClassBoard());
+                    const next = sanitizeClassBoard(mutator(cur));
+                    tx.set(ref, { classBoard: next }, { merge: true });
+                    if (window.globalSettings) window.globalSettings.classBoard = next;
+                });
+                renderClassBoardPanel();
+                return true;
+            } catch (e) {
+                console.error('saveClassBoard', e);
+                await window.customAlert('학급게시판 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                return false;
+            }
+        }
+
+        function classNoteFlyOffsets() {
+            const w = Math.max(320, window.innerWidth || 800);
+            const h = Math.max(240, window.innerHeight || 600);
+            const dirs = [
+                { x: -w, y: (Math.random() * h) - (h / 2) },
+                { x: w, y: (Math.random() * h) - (h / 2) },
+                { x: (Math.random() * w) - (w / 2), y: -h },
+                { x: (Math.random() * w) - (w / 2), y: h },
+                { x: -w, y: -h },
+                { x: w, y: -h },
+                { x: -w, y: h },
+                { x: w, y: h },
+            ];
+            return dirs[Math.floor(Math.random() * dirs.length)];
+        }
+
+        function flyClassBoardNoteIn(slot) {
+            if (!slot || typeof slot.animate !== 'function') return;
+            if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            const note = slot.querySelector('.class-note') || slot;
+            const rect = note.getBoundingClientRect();
+            if (!rect.width || !rect.height) {
+                note.style.opacity = '';
+                return;
+            }
+            const from = classNoteFlyOffsets();
+            const ghost = note.cloneNode(true);
+            ghost.classList.add('class-note-flying', 'is-animating');
+            ghost.style.left = `${rect.left}px`;
+            ghost.style.top = `${rect.top}px`;
+            ghost.style.width = `${rect.width}px`;
+            ghost.style.height = `${rect.height}px`;
+            ghost.style.setProperty('--fly-x', `${from.x}px`);
+            ghost.style.setProperty('--fly-y', `${from.y}px`);
+            ghost.style.setProperty('--fly-rot', `${(Math.random() * 90 - 45).toFixed(1)}deg`);
+            note.style.opacity = '0';
+            document.body.appendChild(ghost);
+            const finish = () => {
+                if (ghost._classBoardDone) return;
+                ghost._classBoardDone = true;
+                if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+                note.style.opacity = '';
+            };
+            ghost.addEventListener('animationend', finish, { once: true });
+            window.setTimeout(finish, 900);
+        }
+
+        function updateClassBoardTimerBanner(board) {
+            const timerEl = document.getElementById('classBoardTimerBanner');
+            if (!timerEl) return;
+            if (!board.postingOpen) {
+                timerEl.classList.add('hidden');
+                timerEl.classList.remove('is-end');
+                timerEl.textContent = '';
+                return;
+            }
+            const remain = classBoardRemainingMs(board, Date.now());
+            timerEl.classList.remove('hidden');
+            if (!Number.isFinite(remain)) {
+                timerEl.classList.remove('is-end');
+                timerEl.textContent = '시간 제한 없음';
+                return;
+            }
+            const ended = remain <= 0;
+            timerEl.classList.toggle('is-end', ended);
+            timerEl.textContent = ended ? '시간 종료' : formatClassBoardTimer(remain);
+        }
+
+        function ensureClassBoardTimerTick() {
+            if (_classBoardTimerTick) return;
+            _classBoardTimerTick = window.setInterval(() => {
+                if (classtoolSub !== 'classboard') return;
+                const board = currentClassBoard();
+                updateClassBoardTimerBanner(board);
+                const writable = classBoardCanWrite(board, Date.now());
+                if (_classBoardWasWritable && !writable) renderClassBoardPanel();
+                _classBoardWasWritable = writable;
+            }, 250);
+        }
+
+        function renderClassBoardPanel() {
+            const board = currentClassBoard();
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const follower = classBoardFollowTeacherView();
+            const viewPage = (isAdmin || board.viewTogether)
+                ? viewedClassBoardPage(board)
+                : (board.pages[board.currentPageId] || viewedClassBoardPage(board));
+            const notes = classBoardNotesList(viewPage);
+            const promptText = classBoardPromptForView(board);
+            const canWrite = classBoardCanWrite(board, Date.now()) && !!(window.playerState && !window.playerState.isGuest) && !follower;
+            const pages = classBoardPagesList(board);
+            const panel = document.querySelector('.class-board-panel');
+            if (panel) panel.classList.toggle('is-view-together', !!board.viewTogether);
+            const adminBar = document.getElementById('classBoardAdminBar');
+            if (adminBar) adminBar.classList.toggle('hidden', !isAdmin || follower);
+            const togetherBtn = document.getElementById('classBoardViewTogetherBtn');
+            if (togetherBtn) {
+                togetherBtn.textContent = board.viewTogether ? '함께 보기 끄기' : '함께 보기';
+                togetherBtn.classList.toggle('class-board-admin-btn-on', !!board.viewTogether);
+            }
+            const promptInput = document.getElementById('classBoardPromptInput');
+            if (promptInput && document.activeElement !== promptInput) {
+                promptInput.value = board.prompt || '';
+            }
+            if (promptInput) promptInput.disabled = !!board.viewTogether;
+            ['classBoardMinInput', 'classBoardSecInput'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = !!board.viewTogether;
+            });
+            const banner = document.getElementById('classBoardPromptBanner');
+            if (banner) {
+                if (promptText) {
+                    banner.innerHTML = `<span class="class-board-q-label">선생님 발문</span><span>${escapeHtmlAttr(promptText)}</span>`;
+                    banner.classList.remove('hidden');
+                } else {
+                    banner.innerHTML = '';
+                    banner.classList.add('hidden');
+                }
+            }
+            updateClassBoardTimerBanner(board);
+            ensureClassBoardTimerTick();
+            _classBoardWasWritable = canWrite;
+            const pageBadge = document.getElementById('classBoardPageBadge');
+            if (pageBadge) {
+                const viewIdx = (viewPage && viewPage.index) || 1;
+                const cur = board.pages[board.currentPageId];
+                const curIdx = (cur && cur.index) || viewIdx;
+                pageBadge.textContent = viewIdx === curIdx ? `${viewIdx}쪽` : `보는 중 ${viewIdx}쪽 · 제출 ${curIdx}쪽`;
+            }
+            const tabs = document.getElementById('classBoardPageTabs');
+            if (tabs) {
+                tabs.innerHTML = pages.map((p) => {
+                    const viewOn = p.id === board.viewPageId ? 'is-view' : '';
+                    const submitOn = p.id === board.currentPageId ? 'is-submit' : '';
+                    const label = p.id === board.currentPageId ? `${p.index}쪽 제출` : `${p.index}쪽`;
+                    return `<button type="button" class="class-board-page-btn ${viewOn} ${submitOn}" onclick="void window.viewClassBoardPage('${p.id}')">${label}</button>`;
+                }).join('');
+            }
+            const composer = document.getElementById('classBoardComposer');
+            if (composer) composer.classList.toggle('hidden', !canWrite);
+            const hint = document.getElementById('classBoardHint');
+            if (hint) {
+                let msg = '';
+                if (board.viewTogether) msg = '선생님이 함께 보기를 켜 두었습니다. 화면만 보세요.';
+                else if (!isAdmin && !board.postingOpen) msg = '선생님이 발문을 열고 시간을 주면 여기에 쪽지를 붙일 수 있습니다.';
+                else if (!isAdmin && board.postingOpen && !classBoardCanWrite(board, Date.now())) msg = '제출 시간이 끝났습니다. 선생님이 새 시간을 열 때까지 화면만 봅니다.';
+                if (msg) {
+                    hint.textContent = msg;
+                    hint.classList.remove('hidden');
+                } else {
+                    hint.classList.add('hidden');
+                }
+            }
+            const colorRow = document.getElementById('classBoardColorRow');
+            if (colorRow && canWrite) {
+                colorRow.innerHTML = CLASS_NOTE_COLORS.map((c) => (
+                    `<button type="button" class="class-board-color-dot class-note-${c} ${_classBoardNoteColor === c ? 'is-on' : ''}" onclick="window.setClassBoardNoteColor('${c}')" title="${c}"></button>`
+                )).join('');
+            }
+
+            const focusId = follower ? board.focusNoteId : (_classBoardLocalFocusId || (isAdmin ? board.focusNoteId : _classBoardLocalFocusId));
+            const focusNote = (focusId && viewPage && viewPage.notes && viewPage.notes[focusId]) || null;
+            const modal = document.getElementById('classBoardFocusModal');
+            if (modal) {
+                if (focusNote) {
+                    modal.classList.remove('hidden');
+                    const closeBtn = follower
+                        ? ''
+                        : `<button type="button" class="class-board-admin-btn mb-2 class-board-keep-input" onclick="void window.closeClassBoardFocus()">닫기</button>`;
+                    modal.innerHTML = `${closeBtn}
+                        <div class="class-board-modal-card class-note-${focusNote.color} class-board-keep-input">
+                            <p class="class-note-author">${escapeHtmlAttr(focusNote.name || getStudentDisplayLabel(focusNote.studentId))}</p>
+                            <p class="class-board-modal-text">${escapeHtmlAttr(focusNote.text)}</p>
+                        </div>`;
+                    modal.onclick = follower ? null : (e) => {
+                        if (e.target === modal) void window.closeClassBoardFocus();
+                    };
+                } else {
+                    modal.classList.add('hidden');
+                    modal.innerHTML = '';
+                    modal.onclick = null;
+                }
+            }
+
+            const grid = document.getElementById('classBoardGrid');
+            const gridKey = `${viewPage && viewPage.id}:${notes.map((n) => `${n.id}:${n.updatedAt}`).join('|')}:${canWrite ? 1 : 0}`;
+            if (grid && gridKey !== _classBoardGridKey) {
+                _classBoardGridKey = gridKey;
+                if (!notes.length) {
+                    grid.innerHTML = `<p class="col-span-full text-[11px] text-lime-100/70 font-bold p-3">${board.postingOpen ? '아직 붙은 쪽지가 없습니다. 아래에 적어 제출해 보세요.' : '아직 붙은 쪽지가 없습니다.'}</p>`;
+                } else {
+                    grid.innerHTML = notes.map((n) => {
+                        const click = follower ? '' : `onclick="void window.openClassBoardFocus('${n.id}')"`;
+                        return `<article class="class-note-slot" data-note-id="${n.id}" data-updated="${n.updatedAt}">
+                            <div class="class-note class-note-${n.color} class-board-keep-input" ${click}>
+                                <p class="class-note-author">${escapeHtmlAttr(n.name || getStudentDisplayLabel(n.studentId))}</p>
+                                <p class="class-note-excerpt">${escapeHtmlAttr(classBoardNoteExcerpt(n, 90))}</p>
+                            </div>
+                        </article>`;
+                    }).join('');
+                    const fresh = [];
+                    notes.forEach((n) => {
+                        const prev = _classBoardSeenStamp[n.id];
+                        const recent = (Date.now() - Number(n.updatedAt || 0)) < 8000;
+                        if (_classBoardAnimReady && prev !== n.updatedAt && recent) fresh.push(n.id);
+                        _classBoardSeenStamp[n.id] = n.updatedAt;
+                    });
+                    if (!_classBoardAnimReady) {
+                        notes.forEach((n) => { _classBoardSeenStamp[n.id] = n.updatedAt; });
+                        _classBoardAnimReady = true;
+                    } else if (fresh.length) {
+                        window.requestAnimationFrame(() => {
+                            fresh.forEach((id) => {
+                                const slot = grid.querySelector(`[data-note-id="${id}"]`);
+                                if (slot) flyClassBoardNoteIn(slot);
+                            });
+                        });
+                    }
+                }
+            }
+        }
+
+        window.setClassBoardNoteColor = function (color) {
+            if (!CLASS_NOTE_COLORS.includes(color)) return;
+            _classBoardNoteColor = color;
+            renderClassBoardPanel();
+        };
+
+        window.openClassBoardFocus = async function (noteId) {
+            if (classBoardFollowTeacherView()) return;
+            _classBoardLocalFocusId = String(noteId || '');
+            if (window.playerState && window.playerState.isAdmin) {
+                await saveClassBoard((s) => setClassBoardFocus(s, noteId));
+                return;
+            }
+            renderClassBoardPanel();
+        };
+
+        window.closeClassBoardFocus = async function () {
+            if (classBoardFollowTeacherView()) return;
+            _classBoardLocalFocusId = '';
+            if (window.playerState && window.playerState.isAdmin) {
+                await saveClassBoard((s) => clearClassBoardFocus(s));
+                return;
+            }
+            renderClassBoardPanel();
+        };
+
+        window.viewClassBoardPage = async function (pageId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            await saveClassBoard((s) => setClassBoardViewPage(s, pageId));
+        };
+
+        window.startClassBoardSession = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const promptEl = document.getElementById('classBoardPromptInput');
+            const minEl = document.getElementById('classBoardMinInput');
+            const secEl = document.getElementById('classBoardSecInput');
+            const prompt = promptEl ? promptEl.value : '';
+            if (!String(prompt || '').trim()) return window.customAlert('발문을 적어 주세요.');
+            const minutes = Math.max(0, Math.floor(Number(minEl && minEl.value) || 0));
+            const seconds = Math.max(0, Math.floor(Number(secEl && secEl.value) || 0));
+            const total = Math.min(3600, (minutes * 60) + seconds);
+            const ok = await saveClassBoard((s) => startClassBoardPrompt(s, { prompt, seconds: total }, Date.now()));
+            if (ok) await shareClassBoardToClass();
+        };
+
+        window.turnClassBoardPageNow = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const board = currentClassBoard();
+            if (board.viewTogether) {
+                return window.customAlert('함께 보기 중에는 페이지를 넘길 수 없습니다. 먼저 함께 보기를 끄세요.');
+            }
+            if (classBoardPagesList(board).length >= CLASS_BOARD_PAGE_MAX) {
+                return window.customAlert(`페이지는 ${CLASS_BOARD_PAGE_MAX}장까지입니다.`);
+            }
+            _classBoardLocalFocusId = '';
+            _classBoardGridKey = '';
+            await saveClassBoard((s) => turnClassBoardPage(s, Date.now()));
+        };
+
+        window.toggleClassBoardViewTogether = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const next = !currentClassBoard().viewTogether;
+            const ok = await saveClassBoard((s) => setClassBoardViewTogether(s, next));
+            if (ok && next) await shareClassBoardToClass();
+        };
+
+        window.closeClassBoardSession = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            await saveClassBoard((s) => closeClassBoardPosting(s));
+        };
+
+        window.clearClassBoardAll = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('모든 페이지의 쪽지를 지울까요?');
+            if (!ok) return;
+            _classBoardLocalFocusId = '';
+            _classBoardAnimReady = false;
+            _classBoardSeenStamp = {};
+            _classBoardGridKey = '';
+            await saveClassBoard((s) => clearClassBoard(s));
+        };
+
+        window.submitClassBoardNote = async function () {
+            if (!window.playerState || window.playerState.isGuest) {
+                return window.customAlert('로그인한 학생만 제출할 수 있습니다.');
+            }
+            const board = currentClassBoard();
+            if (board.viewTogether) {
+                return window.customAlert('선생님이 함께 보기를 켜 두었습니다. 지금은 화면만 봅니다.');
+            }
+            if (!classBoardCanWrite(board, Date.now())) {
+                return window.customAlert(board.postingOpen ? '제출 시간이 끝났습니다.' : '선생님이 발문을 연 뒤에 제출할 수 있습니다.');
+            }
+            const ta = document.getElementById('classBoardNoteInput');
+            const text = ta ? ta.value : '';
+            if (!String(text || '').trim()) return window.customAlert('쪽지 내용을 적어 주세요.');
+            const sid = classBoardStudentId() || (window.playerState.isAdmin ? 'gm' : '');
+            if (!sid) return window.customAlert('학번을 확인할 수 없습니다. 다시 로그인해 주세요.');
+            const ok = await saveClassBoard((s) => submitClassNote(s, {
+                studentId: sid,
+                name: getStudentDisplayLabel(sid),
+                text,
+                color: _classBoardNoteColor,
+            }, Date.now()));
+            if (ok && ta) ta.value = '';
         };
 
         function renderQuestStatsLockGate() {
@@ -15920,6 +16354,10 @@ ${subjectLine}
                                 if (settingsData.thoughtBoard !== undefined) {
                                     window.globalSettings.thoughtBoard = sanitizeThoughtBoard(settingsData.thoughtBoard);
                                     if (classtoolSub === 'padlet') renderThinkBoardPanel();
+                                }
+                                if (settingsData.classBoard !== undefined) {
+                                    window.globalSettings.classBoard = sanitizeClassBoard(settingsData.classBoard);
+                                    if (classtoolSub === 'classboard') renderClassBoardPanel();
                                 }
                                 const rateEl = document.getElementById('gmBankInterestRate');
                                 if (rateEl && window.globalSettings.bankInterestPercent != null) {

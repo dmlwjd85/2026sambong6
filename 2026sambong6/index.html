@@ -1946,7 +1946,7 @@
             </div>
         </section>
 
-        <!-- ★ 수업도구 탭 (타이머 · 제비뽑기 · 생각게시판) ★ -->
+        <!-- ★ 수업도구 탭 (타이머 · 제비뽑기 · 생각게시판 · 학급게시판) ★ -->
         <section id="classtoolsSection" class="hidden">
             <div class="max-w-7xl mx-auto px-1 pb-10 space-y-6">
 
@@ -2001,6 +2001,10 @@
                 <button type="button" class="app-tool-item" data-tool="padlet" onclick="window.switchClassTool('padlet')">
                     <span class="app-tool-icon"><img src="nav/tool-ideas.webp" alt="" width="192" height="192"></span>
                     <span>생각게시판</span>
+                </button>
+                <button type="button" class="app-tool-item" data-tool="classboard" onclick="window.switchClassTool('classboard')">
+                    <span class="app-tool-icon"><img src="nav/tool-notes.webp" alt="" width="192" height="192"></span>
+                    <span>학급게시판</span>
                 </button>
             </div>
 
@@ -2309,6 +2313,54 @@
                             <button type="button" onclick="void window.submitThinkPost()" class="ml-auto min-h-[44px] px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-900 text-xs font-black">포스트잇 붙이기</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- 학급게시판: 발문·시간·쪽지 제출·페이지 넘김·함께 보기 -->
+                <div class="classtool-pane hidden class-board-panel" data-tool="classboard">
+                    <div class="class-board-head">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-12 h-12 rounded-lg overflow-hidden border-2 border-lime-300/70 shadow-inner shrink-0">
+                                <img src="nav/tool-notes.webp" alt="" width="48" height="48" class="w-full h-full object-cover">
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-[10px] font-black tracking-[0.28em] text-lime-200/90">CLASS NOTES</p>
+                                <h2 class="text-xl sm:text-2xl font-display text-lime-50 tracking-wide">학급게시판</h2>
+                            </div>
+                        </div>
+                        <p id="classBoardPageBadge" class="class-board-page-badge">1쪽</p>
+                    </div>
+                    <p id="classBoardPromptBanner" class="class-board-q hidden"></p>
+                    <p id="classBoardTimerBanner" class="class-board-timer hidden"></p>
+                    <div id="classBoardAdminBar" class="hidden class-board-admin">
+                        <textarea id="classBoardPromptInput" maxlength="120" rows="2" placeholder="발문을 적어 주세요. 예: 이 장면에서 주인공의 마음은?" class="class-board-prompt-input"></textarea>
+                        <div class="class-board-time-row">
+                            <label class="class-board-time-label">분
+                                <input id="classBoardMinInput" type="number" min="0" max="60" value="3" class="class-board-time-input">
+                            </label>
+                            <label class="class-board-time-label">초
+                                <input id="classBoardSecInput" type="number" min="0" max="59" value="0" class="class-board-time-input">
+                            </label>
+                            <button type="button" onclick="void window.startClassBoardSession()" class="class-board-admin-btn class-board-admin-btn-on" title="발문을 열고 시간을 셉니다. 학급 화면에 띄웁니다.">발문 시작</button>
+                            <button type="button" onclick="void window.turnClassBoardPageNow()" class="class-board-admin-btn">페이지 넘김</button>
+                            <button type="button" id="classBoardViewTogetherBtn" onclick="void window.toggleClassBoardViewTogether()" class="class-board-admin-btn">함께 보기</button>
+                            <button type="button" onclick="void window.closeClassBoardSession()" class="class-board-admin-btn">작성 마치기</button>
+                            <button type="button" onclick="void window.clearClassBoardAll()" class="class-board-admin-btn class-board-admin-btn-warn">게시판 비우기</button>
+                        </div>
+                        <div id="classBoardPageTabs" class="class-board-pages"></div>
+                    </div>
+                    <div id="classBoardHint" class="hidden class-board-hint">선생님이 발문을 열고 시간을 주면 여기에 쪽지를 붙일 수 있습니다.</div>
+                    <div class="class-board-stage">
+                        <div id="classBoardGrid" class="class-board-grid"></div>
+                    </div>
+                    <div id="classBoardComposer" class="hidden class-board-composer class-board-keep-input">
+                        <p class="text-[10px] font-black text-lime-100 mb-1">쪽지 쓰기 <span class="text-lime-200/80 font-bold">· 다시 내면 지금 열린 페이지에 붙습니다</span></p>
+                        <textarea id="classBoardNoteInput" maxlength="160" rows="2" placeholder="짧게 적어 제출하세요" class="class-board-text"></textarea>
+                        <div class="flex flex-wrap items-center gap-2 mt-1">
+                            <div id="classBoardColorRow" class="flex gap-1"></div>
+                            <button type="button" onclick="void window.submitClassBoardNote()" class="ml-auto min-h-[44px] px-4 rounded-xl bg-lime-500 hover:bg-lime-400 text-stone-900 text-xs font-black">쪽지 제출</button>
+                        </div>
+                    </div>
+                    <div id="classBoardFocusModal" class="hidden class-board-modal" role="dialog" aria-modal="true"></div>
                 </div>
 
                 <!-- 원형 돌림판 -->
@@ -3035,6 +3087,7 @@
                     <li><strong class="text-white">Q. 다른 반으로 바꾸려면?</strong> A. 상단 학급 메뉴에서 전환하거나, 다른 초대 코드 링크로 접속하세요.</li>
                     <li><strong class="text-white">Q. 게스트는?</strong> A. 구경만 가능하며 실제 데이터는 변경되지 않습니다.</li>
                     <li><strong class="text-white">Q. 레이드 비밀번호는?</strong> A. 마스터 탭 「퀘스트」 상단에서 바꿉니다. 기본 1234는 사용하지 않습니다.</li>
+                    <li><strong class="text-white">Q. 학급게시판은?</strong> A. 수업도구에서 교사가 발문과 시간을 열면 학생이 쪽지로 바로 제출합니다. 페이지 넘김은 이전 쪽지를 남기고 새 페이지를 엽니다. 「함께 보기」를 켜면 작성이 멈추고 화면만 봅니다.</li>
                 </ul>
             </div>
             </div>

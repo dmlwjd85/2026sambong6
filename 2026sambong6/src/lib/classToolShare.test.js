@@ -16,6 +16,7 @@ describe('수업도구 창 공유', () => {
         assert.ok(CLASS_TOOL_SHARE_IDS.includes('timer'));
         assert.equal(isClassToolShareId('timer'), true);
         assert.equal(isClassToolShareId('padlet'), true);
+        assert.equal(isClassToolShareId('classboard'), true);
         assert.equal(isClassToolShareId('unknown'), false);
         assert.equal(openClassToolShare('nope'), null);
         const opened = openClassToolShare('wheel');
@@ -38,11 +39,14 @@ describe('수업도구 창 공유', () => {
         assert.equal(classToolShareShouldClose(next, opened.sessionId), true);
     });
 
-    it('생각게시판 공유는 로그인 학생을 보기 전용으로 잠그지 않는다', () => {
+    it('생각게시판·학급게시판 공유는 로그인 학생을 보기 전용으로 잠그지 않는다', () => {
         const opened = openClassToolShare('padlet');
         assert.equal(classToolShareIsViewOnly(opened, { isAdmin: true, isGuest: false }), false);
         assert.equal(classToolShareIsViewOnly(opened, { isAdmin: false, isGuest: false }), false);
         assert.equal(classToolShareIsViewOnly(opened, { isAdmin: false, isGuest: true }), true);
+        const board = openClassToolShare('classboard');
+        assert.equal(classToolShareIsViewOnly(board, { isAdmin: false, isGuest: false }), false);
+        assert.equal(classToolShareIsViewOnly(board, { isAdmin: false, isGuest: true }), true);
         const timer = openClassToolShare('timer');
         assert.equal(classToolShareIsViewOnly(timer, { isAdmin: false, isGuest: false }), true);
     });

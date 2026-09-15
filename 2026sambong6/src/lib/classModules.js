@@ -14,7 +14,7 @@ export const CLASS_MODULE_CATALOG = [
     { id: 'economy', label: '경제', basic: false, hint: '상점·은행·부동산·공동구매를 엽니다.' },
     { id: 'lunch', label: '밥줄', basic: false, hint: '점심 우선권 투자를 엽니다.' },
     { id: 'challenge', label: '도전', basic: false, hint: '골든벨·스피드퀴즈·레이드를 엽니다.' },
-    { id: 'classtools', label: '수업도구', basic: false, hint: '시간표·칠판·타이머·돌림판 등을 엽니다.' },
+    { id: 'classtools', label: '수업도구', basic: false, hint: '시간표·칠판·타이머·학급게시판·돌림판 등을 엽니다.' },
     { id: 'portal', label: '외부 세계', basic: false, hint: '차원문 링크를 엽니다. 링크는 이 학급에만 따로 넣습니다.' },
     { id: 'hof', label: '명예의 전당', basic: false, hint: '시즌 기록 도서관을 맵에 보여 줍니다.' },
 ];

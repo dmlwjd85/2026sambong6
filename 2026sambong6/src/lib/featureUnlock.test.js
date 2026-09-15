@@ -36,8 +36,9 @@ describe('기능 잠금해제 카탈로그', () => {
         assert.deepEqual(MASTER_ONLY_CLASS_TOOLS, ['thermo', 'martial', 'vote', 'morning']);
         assert.equal(isMasterOnlyClassTool('vote'), true);
         assert.equal(isMasterOnlyClassTool('timer'), false);
-        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet']);
+        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet', 'classboard']);
         assert.equal(isClassWideClassTool('padlet'), true);
+        assert.equal(isClassWideClassTool('classboard'), true);
         assert.equal(isClassWideClassTool('timer'), false);
     });
 });
@@ -57,7 +58,9 @@ describe('잠금해제 판정', () => {
         assert.equal(canOpenClassTool(stu, 'chalk'), false);
         assert.equal(canOpenClassTool(stu, 'thermo'), false);
         assert.equal(canOpenClassTool(stu, 'padlet'), true);
+        assert.equal(canOpenClassTool(stu, 'classboard'), true);
         assert.equal(canOpenClassTool({ isGuest: true }, 'padlet'), false);
+        assert.equal(canOpenClassTool({ isGuest: true }, 'classboard'), false);
         assert.deepEqual(sanitizeUnlockedFeatures(stu.unlockedFeatures), { tool_timer: true });
     });
 });

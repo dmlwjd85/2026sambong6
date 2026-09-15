@@ -11020,6 +11020,8 @@ ${subjectLine}
         }
 
         let _thinkLocalFocusId = '';
+        let _thinkFocusEpoch = 0;
+        let _thinkClosedLocally = false;
         let _thinkNoteColor = 'yellow';
         let _thinkDrawBound = false;
         let _thinkDrawing = false;
@@ -11166,9 +11168,10 @@ ${subjectLine}
             }
             if (canCompose) initThinkDrawCanvas();
 
+            // 교사가 닫기를 눌렀으면 저장·실시간 반영이 늦어도 목록을 유지합니다.
             const focusId = follower
                 ? board.focusPostId
-                : (_thinkLocalFocusId || (isAdmin ? board.focusPostId : _thinkLocalFocusId));
+                : (_thinkLocalFocusId || (isAdmin && !_thinkClosedLocally ? board.focusPostId : ''));
             const focusPost = board.posts.find((p) => p.id === focusId) || null;
             const canSeeFocus = !!(focusPost && (
                 focusPost.isPublic
@@ -11187,10 +11190,14 @@ ${subjectLine}
                     const mine = board.empathy[myId] === focusPost.id;
                     const qLine = board.questions.find((row) => row.id === focusPost.questionId);
                     const publishBtn = (!follower && isAdmin)
-                        ? `<button type="button" class="think-admin-btn" onclick="void window.setThinkPostPublic('${focusPost.id}', ${focusPost.isPublic ? 'false' : 'true'})">${focusPost.isPublic ? '이 글 숨기기' : '이 글 공개'}</button>`
+                        ? `<button type="button" class="think-admin-btn think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${focusPost.id}', ${focusPost.isPublic ? 'false' : 'true'})">${focusPost.isPublic ? '이 글 숨기기' : '이 글 공개'}</button>`
                         : '';
+                    // 닫기는 공유 화면에서도 눌러야 하므로 think-keep-input을 붙입니다.
+                    const closeBtn = follower
+                        ? ''
+                        : `<button type="button" class="think-focus-close-btn think-keep-input" onclick="event.stopPropagation(); void window.closeThinkFocus()">닫기</button>`;
                     focusEl.innerHTML = `
-                        ${follower ? '' : `<button type="button" onclick="window.closeThinkFocus()" class="think-admin-btn mb-1 self-start">목록으로</button>`}
+                        ${closeBtn}
                         <div class="think-focus-card think-note-${focusPost.color} ${glowIds.has(focusPost.id) ? 'think-note-glow' : ''}">
                             ${focusPost.isPublic ? '' : '<p class="think-note-private" style="position:static;display:inline-block;margin-bottom:0.35rem">비공개</p>'}
                             <p class="think-note-author">${escapeHtmlAttr(focusPost.name || getStudentDisplayLabel(focusPost.studentId))}</p>
@@ -11202,6 +11209,7 @@ ${subjectLine}
                             <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="void window.toggleThinkPostEmpathy('${focusPost.id}')">공감하기</button>
                             <span class="think-empathy-count">${countLabel}</span>
                             ${publishBtn}
+                            ${closeBtn}
                         </div>`;
                 } else {
                     focusEl.innerHTML = '';
@@ -11209,7 +11217,7 @@ ${subjectLine}
             }
             if (grid && !showFocus) {
                 if (shownPosts.length === 0) {
-                    grid.innerHTML = `<p class="col-span-full text-[11px] text-amber-100/70 font-bold p-3">${board.posts.length ? '아직 공개된 생각이 없습니다. 선생님이 공개하면 여기에 보여요.' : '아직 붙여진 생각이 없습니다.'}</p>`;
+                    grid.innerHTML = `<p class="col-span-full text-[11px] text-amber-900/80 font-bold p-3">${board.posts.length ? '아직 공개된 생각이 없습니다. 선생님이 공개하면 여기에 보여요.' : '아직 붙여진 생각이 없습니다.'}</p>`;
                 } else {
                     grid.innerHTML = shownPosts.map((p) => {
                         const glow = glowIds.has(p.id) ? 'think-note-glow' : '';
@@ -11244,9 +11252,17 @@ ${subjectLine}
 
         window.openThinkFocus = async function (postId) {
             if (thinkFollowTeacherView()) return;
-            _thinkLocalFocusId = String(postId || '');
+            const epoch = ++_thinkFocusEpoch;
+            const id = String(postId || '');
+            _thinkLocalFocusId = id;
+            _thinkClosedLocally = false;
             if (window.playerState && window.playerState.isAdmin) {
-                await saveThoughtBoard((s) => setThoughtFocus(s, postId));
+                // 저장이 끝나기 전에 쪽지를 바로 띄워 다른 글을 이어서 볼 수 있게 합니다.
+                if (window.globalSettings) {
+                    window.globalSettings.thoughtBoard = setThoughtFocus(currentThoughtBoard(), id);
+                }
+                renderThinkBoardPanel();
+                await saveThoughtBoard((s) => (epoch === _thinkFocusEpoch ? setThoughtFocus(s, id) : s));
                 return;
             }
             renderThinkBoardPanel();
@@ -11254,9 +11270,22 @@ ${subjectLine}
 
         window.closeThinkFocus = async function () {
             if (thinkFollowTeacherView()) return;
+            const epoch = ++_thinkFocusEpoch;
             _thinkLocalFocusId = '';
+            _thinkClosedLocally = true;
             if (window.playerState && window.playerState.isAdmin) {
-                await saveThoughtBoard((s) => clearThoughtFocus(s));
+                const prev = currentThoughtBoard();
+                // 저장 대기 없이 목록으로 돌려, 닫기가 먹히지 않는 것처럼 보이지 않게 합니다.
+                if (window.globalSettings) {
+                    window.globalSettings.thoughtBoard = clearThoughtFocus(prev);
+                }
+                renderThinkBoardPanel();
+                const ok = await saveThoughtBoard((s) => (epoch === _thinkFocusEpoch ? clearThoughtFocus(s) : s));
+                if (!ok && epoch === _thinkFocusEpoch && window.globalSettings) {
+                    _thinkClosedLocally = false;
+                    window.globalSettings.thoughtBoard = prev;
+                    renderThinkBoardPanel();
+                }
                 return;
             }
             renderThinkBoardPanel();
@@ -11311,6 +11340,7 @@ ${subjectLine}
             const ok = await window.customConfirm('붙여 둔 생각을 모두 지울까요?');
             if (!ok) return;
             _thinkLocalFocusId = '';
+            _thinkClosedLocally = true;
             await saveThoughtBoard((s) => clearThoughtBoardPosts(s));
         };
 

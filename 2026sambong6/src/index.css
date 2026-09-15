@@ -2412,10 +2412,11 @@
             overflow: hidden;
             padding: 0.85rem 0.9rem 0.7rem;
             border-radius: 1.15rem;
-            border: 2px solid rgba(251, 191, 36, 0.45);
+            border: 2px solid #fdba74;
+            /* 쪽지 팝업과 같은 크림·코르크 밝기로 기본 화면을 맞춥니다. */
             background:
-                radial-gradient(circle at 12% 0%, rgba(251, 191, 36, 0.16), transparent 34%),
-                linear-gradient(165deg, #422006 0%, #1c1917 48%, #0c0a09 100%);
+                radial-gradient(circle at 12% 0%, rgba(253, 230, 138, 0.7), transparent 38%),
+                linear-gradient(165deg, #fff7ed 0%, #ffedd5 46%, #fed7aa 100%);
             box-shadow: 0 0 45px rgba(245, 158, 11, 0.18);
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
@@ -2440,6 +2441,19 @@
             padding: 0;
             width: 100%;
         }
+        .classtool-fs-body:has(> .classtool-pane[data-tool="padlet"]) {
+            background: #fff7ed;
+        }
+        #classtoolFullscreen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)) {
+            background: #fff7ed;
+        }
+        #classtoolFullscreen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)) .classtool-fs-bar {
+            background: #ffedd5;
+            border-bottom-color: #fdba74;
+        }
+        #classtoolFullscreen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)) #classtoolFullscreenTitle {
+            color: #7c2d12;
+        }
         body.classtool-fs-open .think-board-panel {
             height: 100%;
             min-height: 0;
@@ -2457,6 +2471,10 @@
         #classtoolFullscreen:-webkit-full-screen {
             background: #0c0a09;
         }
+        #classtoolFullscreen:fullscreen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)),
+        #classtoolFullscreen:-webkit-full-screen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)) {
+            background: #fff7ed;
+        }
         #classtoolFullscreen > .sambong-custom-modal,
         #classtoolFullscreen:fullscreen > .sambong-custom-modal,
         #classtoolFullscreen:-webkit-full-screen > .sambong-custom-modal {
@@ -2472,7 +2490,7 @@
             gap: 0.55rem;
             margin-bottom: 0.45rem;
             padding-bottom: 0.45rem;
-            border-bottom: 1px solid rgba(251, 191, 36, 0.28);
+            border-bottom: 1px solid rgba(180, 83, 9, 0.22);
             flex-shrink: 0;
         }
         .think-board-q {
@@ -2514,14 +2532,14 @@
             min-height: 40px;
             padding: 0.4rem 0.75rem;
             border-radius: 0.75rem;
-            border: 1px solid rgba(253, 230, 138, 0.45);
-            background: rgba(15, 23, 42, 0.72);
-            color: #fef3c7;
+            border: 1px solid #f59e0b;
+            background: #fffbeb;
+            color: #7c2d12;
             font-size: 11px;
             font-weight: 900;
         }
-        .think-admin-btn-on { background: #b45309; border-color: #fbbf24; color: #fffbeb; }
-        .think-admin-btn-warn { border-color: rgba(248, 113, 113, 0.5); color: #fecaca; }
+        .think-admin-btn-on { background: #f59e0b; border-color: #d97706; color: #422006; }
+        .think-admin-btn-warn { border-color: #ef4444; color: #b91c1c; background: #fff1f2; }
         .think-q-row {
             display: flex;
             flex-wrap: wrap;
@@ -2532,20 +2550,20 @@
             flex: 1 1 12rem;
             min-height: 40px;
             border-radius: 0.75rem;
-            border: 1px solid rgba(251, 191, 36, 0.4);
-            background: #1c1917;
-            color: #fffbeb;
+            border: 1px solid #f59e0b;
+            background: #fffbeb;
+            color: #422006;
             padding: 0.4rem 0.7rem;
             font-weight: 800;
             font-size: 12px;
         }
         .think-composer {
-            border: 1px dashed rgba(252, 211, 77, 0.45);
+            border: 1px dashed #f59e0b;
             border-radius: 1rem;
             padding: 0.55rem 0.65rem 0.6rem;
             margin-top: 0.45rem;
             margin-bottom: 0;
-            background: rgba(28, 25, 23, 0.88);
+            background: rgba(255, 251, 235, 0.92);
             flex-shrink: 0;
         }
         .think-composer-main {
@@ -2562,9 +2580,9 @@
         .think-text {
             width: 100%;
             border-radius: 0.75rem;
-            border: 1px solid rgba(251, 191, 36, 0.35);
-            background: #0c0a09;
-            color: #fffbeb;
+            border: 1px solid #fbbf24;
+            background: #fffbeb;
+            color: #1c1917;
             padding: 0.55rem 0.7rem;
             font-size: 13px;
             font-weight: 700;
@@ -2586,9 +2604,9 @@
             min-height: 32px;
             padding: 0.2rem 0.55rem;
             border-radius: 0.55rem;
-            border: 1px solid rgba(148, 163, 184, 0.45);
-            background: #1e293b;
-            color: #e2e8f0;
+            border: 1px solid #fdba74;
+            background: #fff7ed;
+            color: #7c2d12;
             font-size: 10px;
             font-weight: 800;
         }
@@ -2602,8 +2620,8 @@
         .think-closed-hint {
             font-size: 11px;
             font-weight: 800;
-            color: #cbd5e1;
-            background: rgba(15, 23, 42, 0.55);
+            color: #7c2d12;
+            background: rgba(255, 237, 213, 0.95);
             border-radius: 0.8rem;
             padding: 0.55rem 0.7rem;
             margin-bottom: 0.45rem;
@@ -2745,6 +2763,17 @@
             flex-direction: column;
             gap: 0.6rem;
         }
+        .think-focus-close-btn {
+            min-height: 44px;
+            padding: 0.45rem 1.15rem;
+            border-radius: 0.85rem;
+            border: 2px solid #9a3412;
+            background: #fff7ed;
+            color: #7c2d12;
+            font-size: 13px;
+            font-weight: 900;
+            align-self: flex-start;
+        }
         .think-focus-card {
             flex: 1 1 auto;
             width: 100%;
@@ -2763,14 +2792,14 @@
             min-height: 40px;
             padding: 0.35rem 0.8rem;
             border-radius: 999px;
-            border: 1px solid rgba(244, 63, 94, 0.45);
-            background: rgba(15, 23, 42, 0.8);
-            color: #fecdd3;
+            border: 1px solid #fb7185;
+            background: #fff1f2;
+            color: #9f1239;
             font-size: 11px;
             font-weight: 900;
         }
         .think-empathy-btn.is-on { background: #9f1239; color: #fff1f2; }
-        .think-empathy-count { font-size: 11px; font-weight: 900; color: #fde68a; }
+        .think-empathy-count { font-size: 11px; font-weight: 900; color: #9a3412; }
 
         .class-board-panel .hidden { display: none !important; }
         .class-board-panel {

@@ -7,6 +7,7 @@ import {
     clearThoughtBoardPosts,
     emptyThoughtBoard,
     empathyCounts,
+    clearThoughtFocus,
     glowingThoughtPostIds,
     publishAllThoughtPosts,
     sanitizeDrawingDataUrl,
@@ -63,6 +64,9 @@ describe('생각게시판 정리', () => {
         st = setThoughtFocus(st, 'p2');
         assert.equal(st.viewMode, 'post');
         assert.equal(st.focusPostId, 'p2');
+        st = clearThoughtFocus(st);
+        assert.equal(st.viewMode, 'board');
+        assert.equal(st.focusPostId, '');
         assert.equal(thoughtPostExcerpt({ text: '가'.repeat(50) }).endsWith('…'), true);
         st = clearThoughtBoardPosts(st);
         assert.equal(st.posts.length, 0);

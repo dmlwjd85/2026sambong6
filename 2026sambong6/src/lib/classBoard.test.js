@@ -150,10 +150,41 @@ describe('학급게시판 정리', () => {
         assert.ok(st.cheer.token);
     });
 
+    it('빈 2쪽은 재사용하고 번호는 1부터 이어진다', () => {
+        const t0 = 1_700_000_500_000;
+        let st = startClassBoardPrompt(emptyClassBoard(), { prompt: '1쪽', seconds: 0 }, t0);
+        st = submitClassNote(st, { studentId: '1', text: '첫 쪽' }, t0 + 1);
+        st = turnClassBoardPage(st, t0 + 2);
+        assert.equal(classBoardPagesList(st).map((p) => p.index).join(','), '1,2');
+        st = setClassBoardViewPage(st, classBoardPagesList(st)[0].id);
+        st = turnClassBoardPage(st, t0 + 3);
+        const afterReuse = classBoardPagesList(st);
+        assert.equal(afterReuse.length, 2);
+        assert.equal(afterReuse.map((p) => p.index).join(','), '1,2');
+        assert.equal(st.pages[st.currentPageId].index, 2);
+        assert.equal(st.viewPageId, st.currentPageId);
+        st = submitClassNote(st, { studentId: '1', text: '둘째 쪽' }, t0 + 4);
+        st = turnClassBoardPage(st, t0 + 5);
+        assert.equal(classBoardPagesList(st).map((p) => p.index).join(','), '1,2,3');
+        const gapped = sanitizeClassBoard({
+            currentPageId: 'pg_c',
+            viewPageId: 'pg_c',
+            pages: {
+                pg_a: { id: 'pg_a', index: 1, notes: { n1: { id: 'n1', studentId: '1', text: '남김' } } },
+                pg_b: { id: 'pg_b', index: 2, notes: {} },
+                pg_c: { id: 'pg_c', index: 4, notes: { n2: { id: 'n2', studentId: '2', text: '세 번째' } } },
+            },
+        });
+        assert.equal(classBoardPagesList(gapped).map((p) => p.index).join(','), '1,2');
+        assert.equal(gapped.pages.pg_c.index, 2);
+        assert.equal(Object.keys(gapped.pages).includes('pg_b'), false);
+    });
+
     it('페이지·쪽지 상한과 글자 수를 지킨다', () => {
         let st = startClassBoardPrompt(emptyClassBoard(), { prompt: '상한', seconds: 0 }, 1);
         for (let i = 0; i < CLASS_BOARD_PAGE_MAX + 3; i++) {
-            st = turnClassBoardPage(st, 10 + i);
+            st = submitClassNote(st, { studentId: '1', text: `쪽 ${i}` }, 10 + i);
+            st = turnClassBoardPage(st, 20 + i);
         }
         assert.equal(classBoardPagesList(st).length, CLASS_BOARD_PAGE_MAX);
         for (let i = 0; i < CLASS_BOARD_NOTES_PER_PAGE + 5; i++) {

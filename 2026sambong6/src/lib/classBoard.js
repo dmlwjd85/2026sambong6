@@ -139,6 +139,44 @@ export function classBoardPagesList(state) {
     return Object.values(board.pages || {}).sort((a, b) => (a.index - b.index) || String(a.id).localeCompare(String(b.id)));
 }
 
+function pageHasNotes(page) {
+    return !!(page && page.notes && Object.keys(page.notes).length);
+}
+
+/** 빈 중간 쪽을 버리고 번호를 1부터 다시 매깁니다. 제출 중인 마지막 빈 쪽만 남깁니다. */
+function compactClassBoardPages(pages, currentPageId, viewPageId) {
+    const curId = String(currentPageId || '');
+    const viewId = String(viewPageId || '');
+    const list = Object.values(pages || {}).sort((a, b) => (
+        (Number(a.index) - Number(b.index))
+        || (Number(a.createdAt) - Number(b.createdAt))
+        || String(a.id).localeCompare(String(b.id))
+    ));
+    if (!list.length) {
+        const p = makePage(FIRST_PAGE_ID, 1, '', 0);
+        return { pages: { [p.id]: p }, currentPageId: p.id, viewPageId: p.id };
+    }
+    const kept = [];
+    list.forEach((p, i) => {
+        const empty = !pageHasNotes(p);
+        const isLast = i === list.length - 1;
+        if (empty && kept.length) {
+            if (!isLast) return;
+            if (p.id !== curId && p.id !== viewId) return;
+        }
+        kept.push(p);
+    });
+    if (!kept.length) kept.push(list[0]);
+    const map = {};
+    kept.forEach((p, i) => {
+        map[p.id] = { ...p, index: i + 1 };
+    });
+    const ids = new Set(Object.keys(map));
+    const nextCurrent = ids.has(curId) ? curId : kept[kept.length - 1].id;
+    const nextView = ids.has(viewId) ? viewId : nextCurrent;
+    return { pages: map, currentPageId: nextCurrent, viewPageId: nextView };
+}
+
 function ensurePages(pages, prompt = '') {
     if (pages && Object.keys(pages).length) return pages;
     return { [FIRST_PAGE_ID]: makePage(FIRST_PAGE_ID, 1, prompt, 0) };
@@ -158,9 +196,11 @@ export function sanitizeClassBoard(raw) {
         pages = { [FIRST_PAGE_ID]: makePage(FIRST_PAGE_ID, 1, '', 0) };
         list = [pages[FIRST_PAGE_ID]];
     }
-    const ids = new Set(list.map((p) => p.id));
-    const currentPageId = ids.has(String(src.currentPageId || '')) ? String(src.currentPageId) : list[list.length - 1].id;
-    const viewPageId = ids.has(String(src.viewPageId || '')) ? String(src.viewPageId) : currentPageId;
+    const compacted = compactClassBoardPages(pages, src.currentPageId, src.viewPageId);
+    pages = compacted.pages;
+    list = classBoardPagesList({ pages });
+    const currentPageId = compacted.currentPageId;
+    const viewPageId = compacted.viewPageId;
     const viewPage = pages[viewPageId] || pages[currentPageId];
     const noteIds = new Set(Object.keys((viewPage && viewPage.notes) || {}));
     const focusNoteId = noteIds.has(String(src.focusNoteId || '')) ? String(src.focusNoteId) : '';
@@ -268,9 +308,17 @@ export function setClassBoardViewPage(state, pageId) {
 export function turnClassBoardPage(state, now = Date.now()) {
     const next = sanitizeClassBoard(state);
     const list = classBoardPagesList(next);
+    const last = list[list.length - 1];
+    // 마지막 쪽이 비어 있으면 새 번호를 만들지 않고 그 쪽으로 갑니다.
+    if (last && !pageHasNotes(last)) {
+        last.prompt = next.prompt || last.prompt;
+        next.currentPageId = last.id;
+        next.viewPageId = last.id;
+        next.focusNoteId = '';
+        return next;
+    }
     if (list.length >= CLASS_BOARD_PAGE_MAX) return next;
-    const index = (list[list.length - 1] && list[list.length - 1].index || 0) + 1;
-    const page = makePage(newId('pg'), index, next.prompt, now);
+    const page = makePage(newId('pg'), list.length + 1, next.prompt, now);
     next.pages[page.id] = page;
     next.currentPageId = page.id;
     next.viewPageId = page.id;

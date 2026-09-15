@@ -1027,7 +1027,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-            const APP_VERSION = 'v1.33';
+        const APP_VERSION = 'v1.34';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -11907,7 +11907,10 @@ ${subjectLine}
             if (board.viewTogether) {
                 return window.customAlert('함께 보기 중에는 페이지를 넘길 수 없습니다. 먼저 함께 보기를 끄세요.');
             }
-            if (classBoardPagesList(board).length >= CLASS_BOARD_PAGE_MAX) {
+            const pages = classBoardPagesList(board);
+            const last = pages[pages.length - 1];
+            const lastEmpty = !!(last && last.notes && Object.keys(last.notes).length === 0);
+            if (!lastEmpty && pages.length >= CLASS_BOARD_PAGE_MAX) {
                 return window.customAlert(`페이지는 ${CLASS_BOARD_PAGE_MAX}장까지입니다.`);
             }
             _classBoardLocalFocusId = '';

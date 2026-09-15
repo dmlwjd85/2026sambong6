@@ -17797,6 +17797,9 @@ ${subjectLine}
                 bankDock.classList.toggle('cols-6', !adminDock);
                 bankDock.classList.toggle('cols-7', adminDock);
                 bankDock.classList.remove('cols-5');
+                bankDock.querySelectorAll('.inner-pane-admin').forEach((el) => {
+                    el.classList.toggle('hidden', !adminDock);
+                });
             }
             const feeNow = getBankTransferFeeNow();
             const feeHint = document.getElementById('bankTransferFeeHint');

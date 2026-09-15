@@ -3129,6 +3129,17 @@
             padding: 1.05rem 1.25rem 1.2rem;
             box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255,255,255,0.5) inset;
         }
+        .class-board-focus-close-btn {
+            min-height: 44px;
+            padding: 0.45rem 1.15rem;
+            margin-bottom: 0.55rem;
+            border-radius: 0.85rem;
+            border: 2px solid #3f6212;
+            background: #f7fee7;
+            color: #14532d;
+            font-size: 13px;
+            font-weight: 900;
+        }
         .class-board-modal-text {
             font-size: 1.45rem;
             font-weight: 800;

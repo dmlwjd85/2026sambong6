@@ -1027,7 +1027,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.32';
+            const APP_VERSION = 'v1.33';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10873,6 +10873,13 @@ ${subjectLine}
             const fromShare = !!opts.fromShare;
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             // 쪽지를 보고 있을 때 위쪽 닫기는 창이 아니라 쪽지만 닫습니다.
+            if (!fromShare && classtoolSub === 'classboard' && isAdmin) {
+                const board = currentClassBoard();
+                if (_classBoardLocalFocusId || (!_classBoardClosedLocally && board.focusNoteId)) {
+                    void window.closeClassBoardFocus();
+                    return;
+                }
+            }
             if (!fromShare && classtoolSub === 'padlet' && isAdmin) {
                 const board = currentThoughtBoard();
                 if (_thinkLocalFocusId || (!_thinkClosedLocally && board.focusPostId)) {
@@ -11401,6 +11408,8 @@ ${subjectLine}
         };
 
         let _classBoardLocalFocusId = '';
+        let _classBoardFocusEpoch = 0;
+        let _classBoardClosedLocally = false;
         let _classBoardSeenStamp = {};
         let _classBoardAnimReady = false;
         let _classBoardGridKey = '';
@@ -11756,18 +11765,26 @@ ${subjectLine}
                     pageBadge.textContent = viewIdx === curIdx ? `${viewIdx}쪽` : `보는 중 ${viewIdx}쪽 · 제출 ${curIdx}쪽`;
                 }
             }
-            const focusId = follower ? board.focusNoteId : (_classBoardLocalFocusId || board.focusNoteId);
+            const focusId = follower
+                ? board.focusNoteId
+                : (_classBoardLocalFocusId || ((isAdmin && _classBoardClosedLocally) ? '' : board.focusNoteId));
             const focusNote = (focusId && viewPage && viewPage.notes && viewPage.notes[focusId])
                 || classBoardFocusNote({ ...board, focusNoteId: focusId })
                 || null;
             const modal = document.getElementById('classBoardFocusModal');
             const modalKey = focusNote ? `${focusNote.id}:${isAdmin ? 1 : 0}:${CLASS_BOARD_CHEER_XP}` : '';
-            if (modal && modalKey !== _classBoardModalKey) {
-                _classBoardModalKey = modalKey;
-                if (focusNote) {
+            if (modal) {
+                if (!focusNote) {
+                    // 닫기 직후 키가 같아도 팝업을 반드시 내립니다.
+                    _classBoardModalKey = '';
+                    modal.classList.add('hidden');
+                    modal.innerHTML = '';
+                    modal.onclick = null;
+                } else if (modalKey !== _classBoardModalKey) {
+                    _classBoardModalKey = modalKey;
                     modal.classList.remove('hidden');
                     const closeBtn = isAdmin
-                        ? `<button type="button" class="class-board-admin-btn mb-2 class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`
+                        ? `<button type="button" class="class-board-focus-close-btn class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`
                         : '';
                     const thumbsCls = isAdmin ? '' : 'is-view';
                     const thumbsClick = isAdmin
@@ -11786,10 +11803,6 @@ ${subjectLine}
                     modal.onclick = isAdmin ? (e) => {
                         if (e.target === modal) void window.closeClassBoardFocus();
                     } : null;
-                } else {
-                    modal.classList.add('hidden');
-                    modal.innerHTML = '';
-                    modal.onclick = null;
                 }
             }
 
@@ -11838,25 +11851,35 @@ ${subjectLine}
 
         window.openClassBoardFocus = async function (noteId) {
             if (!window.playerState || !window.playerState.isAdmin) return;
-            _classBoardLocalFocusId = String(noteId || '');
+            const epoch = ++_classBoardFocusEpoch;
+            const id = String(noteId || '');
+            _classBoardLocalFocusId = id;
+            _classBoardClosedLocally = false;
             _classBoardModalKey = '';
             if (window.globalSettings) {
-                window.globalSettings.classBoard = setClassBoardFocus(currentClassBoard(), noteId);
+                window.globalSettings.classBoard = setClassBoardFocus(currentClassBoard(), id);
             }
             renderClassBoardPanel();
-            await saveClassBoard((s) => setClassBoardFocus(s, noteId));
-            await shareClassBoardToClass();
+            await saveClassBoard((s) => (epoch === _classBoardFocusEpoch ? setClassBoardFocus(s, id) : s));
+            if (epoch === _classBoardFocusEpoch) await shareClassBoardToClass();
         };
 
         window.closeClassBoardFocus = async function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
+            const epoch = ++_classBoardFocusEpoch;
+            const prev = currentClassBoard();
             _classBoardLocalFocusId = '';
-            _classBoardModalKey = '';
+            _classBoardClosedLocally = true;
             if (window.globalSettings) {
-                window.globalSettings.classBoard = clearClassBoardFocus(currentClassBoard());
+                window.globalSettings.classBoard = clearClassBoardFocus(prev);
             }
             renderClassBoardPanel();
-            await saveClassBoard((s) => clearClassBoardFocus(s));
+            const ok = await saveClassBoard((s) => (epoch === _classBoardFocusEpoch ? clearClassBoardFocus(s) : s));
+            if (!ok && epoch === _classBoardFocusEpoch && window.globalSettings) {
+                _classBoardClosedLocally = false;
+                window.globalSettings.classBoard = prev;
+                renderClassBoardPanel();
+            }
         };
 
         window.viewClassBoardPage = async function (pageId) {
@@ -11888,6 +11911,7 @@ ${subjectLine}
                 return window.customAlert(`페이지는 ${CLASS_BOARD_PAGE_MAX}장까지입니다.`);
             }
             _classBoardLocalFocusId = '';
+            _classBoardClosedLocally = true;
             _classBoardGridKey = '';
             await saveClassBoard((s) => turnClassBoardPage(s, Date.now()));
         };
@@ -11920,6 +11944,7 @@ ${subjectLine}
             const el = document.getElementById('classBoardClearModal');
             if (el) el.classList.add('hidden');
             _classBoardLocalFocusId = '';
+            _classBoardClosedLocally = true;
             _classBoardAnimReady = false;
             _classBoardSeenStamp = {};
             _classBoardGridKey = '';

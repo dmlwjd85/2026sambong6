@@ -1027,7 +1027,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.31';
+        const APP_VERSION = 'v1.32';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10836,6 +10836,7 @@ ${subjectLine}
             if (titleEl) titleEl.textContent = CLASSTOOL_TITLES[classtoolSub] || '수업도구';
             overlay.classList.remove('hidden');
             document.body.classList.add('classtool-fs-open');
+            overlay.classList.toggle('is-think-board', classtoolSub === 'padlet');
             if (classtoolSub === 'chalk' && typeof window.openChalkboard === 'function') {
                 window.openChalkboard({ remote });
             } else if (typeof window.closeChalkboard === 'function') {
@@ -10870,6 +10871,15 @@ ${subjectLine}
         /** 마스터가 연 수업도구 창을 학생·TV에도 같이 띄우거나 내립니다. */
         window.closeClassToolFullscreen = function (opts = {}) {
             const fromShare = !!opts.fromShare;
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            // 쪽지를 보고 있을 때 위쪽 닫기는 창이 아니라 쪽지만 닫습니다.
+            if (!fromShare && classtoolSub === 'padlet' && isAdmin) {
+                const board = currentThoughtBoard();
+                if (_thinkLocalFocusId || (!_thinkClosedLocally && board.focusPostId)) {
+                    void window.closeThinkFocus();
+                    return;
+                }
+            }
             if (_classToolShareFollower && !fromShare) return;
             const share = currentClassToolShare();
             const shouldPublish = !fromShare
@@ -10884,7 +10894,10 @@ ${subjectLine}
             }
             restoreClassToolPane();
             const overlay = document.getElementById('classtoolFullscreen');
-            if (overlay) overlay.classList.add('hidden');
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('is-think-board');
+            }
             exitClassToolBrowserFullscreen();
             document.body.classList.remove('classtool-fs-open');
             document.body.classList.remove('class-tool-share-view');
@@ -11192,8 +11205,8 @@ ${subjectLine}
                     const publishBtn = (!follower && isAdmin)
                         ? `<button type="button" class="think-admin-btn think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${focusPost.id}', ${focusPost.isPublic ? 'false' : 'true'})">${focusPost.isPublic ? '이 글 숨기기' : '이 글 공개'}</button>`
                         : '';
-                    // 닫기는 공유 화면에서도 눌러야 하므로 think-keep-input을 붙입니다.
-                    const closeBtn = follower
+                    // 닫기는 공유 화면·TV에서도 교사가 눌러야 하므로 관리자면 항상 둡니다.
+                    const closeBtn = (follower && !isAdmin)
                         ? ''
                         : `<button type="button" class="think-focus-close-btn think-keep-input" onclick="event.stopPropagation(); void window.closeThinkFocus()">닫기</button>`;
                     focusEl.innerHTML = `
@@ -11221,7 +11234,7 @@ ${subjectLine}
                 } else {
                     grid.innerHTML = shownPosts.map((p) => {
                         const glow = glowIds.has(p.id) ? 'think-note-glow' : '';
-                        const click = follower ? '' : `onclick="window.openThinkFocus('${p.id}')"`;
+                        const click = (follower && !isAdmin) ? '' : `onclick="window.openThinkFocus('${p.id}')"`;
                         const mine = board.empathy[myId] === p.id;
                         const countLabel = board.empathyPublic ? String(counts[p.id] || 0) : '';
                         const privateMark = p.isPublic ? '' : '<span class="think-note-private">비공개</span>';
@@ -11251,7 +11264,7 @@ ${subjectLine}
         };
 
         window.openThinkFocus = async function (postId) {
-            if (thinkFollowTeacherView()) return;
+            if (thinkFollowTeacherView() && !(window.playerState && window.playerState.isAdmin)) return;
             const epoch = ++_thinkFocusEpoch;
             const id = String(postId || '');
             _thinkLocalFocusId = id;
@@ -11269,7 +11282,7 @@ ${subjectLine}
         };
 
         window.closeThinkFocus = async function () {
-            if (thinkFollowTeacherView()) return;
+            if (thinkFollowTeacherView() && !(window.playerState && window.playerState.isAdmin)) return;
             const epoch = ++_thinkFocusEpoch;
             _thinkLocalFocusId = '';
             _thinkClosedLocally = true;

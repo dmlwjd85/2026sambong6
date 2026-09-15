@@ -2416,7 +2416,7 @@
             /* 쪽지 팝업과 같은 크림·코르크 밝기로 기본 화면을 맞춥니다. */
             background:
                 radial-gradient(circle at 12% 0%, rgba(253, 230, 138, 0.7), transparent 38%),
-                linear-gradient(165deg, #fff7ed 0%, #ffedd5 46%, #fed7aa 100%);
+                linear-gradient(165deg, #fff7ed 0%, #ffedd5 46%, #fed7aa 100%) !important;
             box-shadow: 0 0 45px rgba(245, 158, 11, 0.18);
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
@@ -2471,9 +2471,17 @@
         #classtoolFullscreen:-webkit-full-screen {
             background: #0c0a09;
         }
-        #classtoolFullscreen:fullscreen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)),
-        #classtoolFullscreen:-webkit-full-screen:has(.classtool-pane[data-tool="padlet"]:not(.hidden)) {
-            background: #fff7ed;
+        #classtoolFullscreen.is-think-board,
+        #classtoolFullscreen.is-think-board:fullscreen,
+        #classtoolFullscreen.is-think-board:-webkit-full-screen {
+            background: #fff7ed !important;
+        }
+        #classtoolFullscreen.is-think-board .classtool-fs-bar {
+            background: #ffedd5 !important;
+            border-bottom-color: #fdba74 !important;
+        }
+        #classtoolFullscreen.is-think-board #classtoolFullscreenTitle {
+            color: #7c2d12 !important;
         }
         #classtoolFullscreen > .sambong-custom-modal,
         #classtoolFullscreen:fullscreen > .sambong-custom-modal,

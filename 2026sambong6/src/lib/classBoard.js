@@ -9,6 +9,20 @@ export const CLASS_BOARD_PAGE_MAX = 12;
 export const CLASS_BOARD_NOTES_PER_PAGE = 40;
 export const CLASS_BOARD_TIMER_MAX_SEC = 3600;
 export const CLASS_NOTE_COLORS = Object.freeze(['yellow', 'pink', 'mint', 'sky', 'peach']);
+export const CLASS_BOARD_CHEER_XP = 10;
+export const CLASS_BOARD_CHEER_BONG = 1;
+
+/** 학번(번호)마다 쪽지 색을 고정합니다. 1번부터 색 목록을 반복합니다. */
+export function classNoteColorForStudent(studentId) {
+    const raw = String(studentId || '').trim();
+    const n = parseInt(raw.replace(/^[^\d]*/, ''), 10);
+    if (Number.isFinite(n) && n > 0) {
+        return CLASS_NOTE_COLORS[(n - 1) % CLASS_NOTE_COLORS.length];
+    }
+    let h = 0;
+    Array.from(raw).forEach((ch) => { h += ch.charCodeAt(0); });
+    return CLASS_NOTE_COLORS[Math.abs(h) % CLASS_NOTE_COLORS.length] || 'yellow';
+}
 
 const FIRST_PAGE_ID = 'pg_1';
 
@@ -46,6 +60,7 @@ export function emptyClassBoard() {
         currentPageId: FIRST_PAGE_ID,
         viewPageId: FIRST_PAGE_ID,
         focusNoteId: '',
+        cheer: null,
         pages: {
             [FIRST_PAGE_ID]: makePage(FIRST_PAGE_ID, 1, '', 0),
         },
@@ -59,7 +74,7 @@ export function sanitizeClassNote(raw) {
     const text = cleanLine(raw.text, CLASS_NOTE_TEXT_MAX);
     if (!text) return null;
     const id = String(raw.id || '').trim().slice(0, 40) || newId('n');
-    const color = CLASS_NOTE_COLORS.includes(raw.color) ? raw.color : 'yellow';
+    const color = classNoteColorForStudent(studentId);
     const createdAt = Math.max(0, Math.floor(Number(raw.createdAt) || 0));
     const updatedAt = Math.max(createdAt, Math.floor(Number(raw.updatedAt) || createdAt));
     const name = cleanLine(raw.name, 24);
@@ -149,6 +164,14 @@ export function sanitizeClassBoard(raw) {
     const viewPage = pages[viewPageId] || pages[currentPageId];
     const noteIds = new Set(Object.keys((viewPage && viewPage.notes) || {}));
     const focusNoteId = noteIds.has(String(src.focusNoteId || '')) ? String(src.focusNoteId) : '';
+    const cheerSrc = src.cheer && typeof src.cheer === 'object' && !Array.isArray(src.cheer) ? src.cheer : null;
+    const cheerSid = cheerSrc ? String(cheerSrc.studentId || '').trim().slice(0, 20) : '';
+    const cheer = cheerSid ? {
+        studentId: cheerSid,
+        noteId: String(cheerSrc.noteId || '').trim().slice(0, 40),
+        at: Math.max(0, Math.floor(Number(cheerSrc.at) || 0)),
+        token: String(cheerSrc.token || '').trim().slice(0, 40),
+    } : null;
     return {
         postingOpen: src.postingOpen === true,
         viewTogether: src.viewTogether === true,
@@ -158,6 +181,7 @@ export function sanitizeClassBoard(raw) {
         currentPageId,
         viewPageId,
         focusNoteId,
+        cheer,
         pages,
     };
 }
@@ -325,4 +349,18 @@ export function classBoardFocusNote(state) {
     if (!board.focusNoteId) return null;
     const page = viewedClassBoardPage(board);
     return (page && page.notes && page.notes[board.focusNoteId]) || null;
+}
+
+/** 따봉: 해당 쪽지 작성자에게 팡파레를 보냅니다. 경험치·봉 지급은 화면에서 이어서 합니다. */
+export function cheerClassBoardNote(state, noteId, now = Date.now()) {
+    const next = setClassBoardFocus(state, noteId);
+    const note = classBoardFocusNote(next);
+    if (!note) return next;
+    next.cheer = {
+        studentId: note.studentId,
+        noteId: note.id,
+        at: Math.max(0, Math.floor(Number(now) || 0)),
+        token: newId('ch'),
+    };
+    return next;
 }

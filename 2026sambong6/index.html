@@ -2353,10 +2353,9 @@
                         <div id="classBoardGrid" class="class-board-grid"></div>
                     </div>
                     <div id="classBoardComposer" class="hidden class-board-composer class-board-keep-input">
-                        <p class="text-[10px] font-black text-lime-100 mb-1">쪽지 쓰기 <span class="text-lime-200/80 font-bold">· 다시 내면 지금 열린 페이지에 붙습니다</span></p>
+                        <p class="text-[10px] font-black text-lime-100 mb-1">쪽지 쓰기 <span class="text-lime-200/80 font-bold">· 앞에 띄운 화면을 보세요. 다시 내면 지금 열린 페이지에 붙습니다</span></p>
                         <textarea id="classBoardNoteInput" maxlength="160" rows="2" placeholder="짧게 적어 제출하세요" class="class-board-text"></textarea>
                         <div class="flex flex-wrap items-center gap-2 mt-1">
-                            <div id="classBoardColorRow" class="flex gap-1"></div>
                             <button type="button" onclick="void window.submitClassBoardNote()" class="ml-auto min-h-[44px] px-4 rounded-xl bg-lime-500 hover:bg-lime-400 text-stone-900 text-xs font-black">쪽지 제출</button>
                         </div>
                     </div>
@@ -3144,6 +3143,7 @@
 
 
     <div id="rankUpCelebrate" class="hidden rank-up-celebrate" aria-live="polite"></div>
+    <div id="classBoardFanfare" class="hidden class-board-fanfare" aria-live="polite"></div>
 
     <!-- 수업 중 마스터 감시(용의 눈·레이저) -->
     <div id="classWatchOverlay" class="hidden class-watch-overlay" aria-hidden="true">

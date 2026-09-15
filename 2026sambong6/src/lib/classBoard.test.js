@@ -10,6 +10,7 @@ import {
     classBoardPagesList,
     classBoardPromptForView,
     classBoardRemainingMs,
+    cheerClassBoardNote,
     clearClassBoard,
     clearClassBoardFocus,
     closeClassBoardPosting,
@@ -54,7 +55,8 @@ describe('학급게시판 정리', () => {
         const notes = classBoardNotesList(st);
         assert.equal(notes.length, 2);
         assert.equal(notes[0].text, '사이좋게');
-        assert.equal(notes[1].color, 'yellow');
+        assert.equal(notes[0].color, 'yellow');
+        assert.equal(notes[1].color, 'pink');
         assert.equal(classBoardPromptForView(st), '오늘의 다짐은?');
     });
 
@@ -71,10 +73,11 @@ describe('학급게시판 정리', () => {
         st = submitClassNote(st, { studentId: '1', name: '김단엘', text: '둘째 답', color: 'pink' }, t0 + 30);
         assert.equal(classBoardNotesList(st.pages[page1])[0].text, '첫 답');
         assert.equal(classBoardNotesList(st)[0].text, '둘째 답');
-        assert.equal(classBoardNotesList(st)[0].color, 'pink');
+        assert.equal(classBoardNotesList(st)[0].color, 'yellow');
         st = submitClassNote(st, { studentId: '1', name: '김단엘', text: '고친 답', color: 'sky' }, t0 + 40);
         assert.equal(classBoardNotesList(st).length, 1);
         assert.equal(classBoardNotesList(st)[0].text, '고친 답');
+        assert.equal(classBoardNotesList(st)[0].color, 'yellow');
         assert.equal(classBoardNotesList(st.pages[page1]).length, 1);
     });
 
@@ -120,6 +123,23 @@ describe('학급게시판 정리', () => {
         assert.equal(classBoardPagesList(st).length, 1);
         assert.equal(classBoardNotesList(st).length, 0);
         assert.equal(st.timerSeconds, 0);
+    });
+
+    it('학번마다 쪽지 색이 고정되고 따봉 신호를 남긴다', () => {
+        const t0 = 1_700_000_400_000;
+        let st = startClassBoardPrompt(emptyClassBoard(), { prompt: '색', seconds: 0 }, t0);
+        st = submitClassNote(st, { studentId: '1', text: '노랑' }, t0 + 1);
+        st = submitClassNote(st, { studentId: '6', text: '다시 노랑' }, t0 + 2);
+        st = submitClassNote(st, { studentId: '3', text: '민트' }, t0 + 3);
+        const byId = Object.fromEntries(classBoardNotesList(st).map((n) => [n.studentId, n.color]));
+        assert.equal(byId['1'], 'yellow');
+        assert.equal(byId['6'], 'yellow');
+        assert.equal(byId['3'], 'mint');
+        const noteId = classBoardNotesList(st).find((n) => n.studentId === '3').id;
+        st = cheerClassBoardNote(st, noteId, t0 + 4);
+        assert.equal(st.cheer.studentId, '3');
+        assert.equal(st.cheer.noteId, noteId);
+        assert.ok(st.cheer.token);
     });
 
     it('페이지·쪽지 상한과 글자 수를 지킨다', () => {

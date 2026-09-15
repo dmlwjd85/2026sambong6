@@ -403,14 +403,17 @@ import {
     visibleThoughtPosts,
 } from './lib/thoughtBoard.js';
 import {
-    CLASS_NOTE_COLORS,
     CLASS_BOARD_PAGE_MAX,
+    CLASS_BOARD_CHEER_XP,
+    CLASS_BOARD_CHEER_BONG,
     classBoardCanWrite,
+    classBoardFocusNote,
     classBoardNoteExcerpt,
     classBoardNotesList,
     classBoardPagesList,
     classBoardPromptForView,
     classBoardRemainingMs,
+    cheerClassBoardNote,
     clearClassBoard,
     clearClassBoardFocus,
     closeClassBoardPosting,
@@ -11315,13 +11318,15 @@ ${subjectLine}
             }
         };
 
-        let _classBoardNoteColor = 'yellow';
         let _classBoardLocalFocusId = '';
         let _classBoardSeenStamp = {};
         let _classBoardAnimReady = false;
         let _classBoardGridKey = '';
         let _classBoardTimerTick = 0;
         let _classBoardWasWritable = false;
+        let _classBoardCheerToken = '';
+        let _classBoardCheerBusy = false;
+        let _classBoardModalKey = '';
 
         function currentClassBoard() {
             return sanitizeClassBoard(window.globalSettings && window.globalSettings.classBoard);
@@ -11332,8 +11337,12 @@ ${subjectLine}
         }
 
         function classBoardFollowTeacherView() {
-            const board = currentClassBoard();
-            if (board.viewTogether) return !!(window.playerState && !window.playerState.isAdmin);
+            return !(window.playerState && window.playerState.isAdmin);
+        }
+
+        function classBoardShowsNoteWall() {
+            if (window.playerState && window.playerState.isAdmin) return true;
+            if (window.playerState && window.playerState.isGuest) return true;
             return false;
         }
 
@@ -11387,7 +11396,7 @@ ${subjectLine}
         }
 
         function flyClassBoardNoteIn(slot) {
-            if (!slot || typeof slot.animate !== 'function') return;
+            if (!slot) return;
             if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             const note = slot.querySelector('.class-note') || slot;
             const rect = note.getBoundingClientRect();
@@ -11396,6 +11405,9 @@ ${subjectLine}
                 return;
             }
             const from = classNoteFlyOffsets();
+            const landRot = slot.matches(':nth-child(4n)') ? '2.4deg'
+                : slot.matches(':nth-child(3n)') ? '-0.6deg'
+                : slot.matches(':nth-child(2n)') ? '1.8deg' : '-2.2deg';
             const ghost = note.cloneNode(true);
             ghost.classList.add('class-note-flying', 'is-animating');
             ghost.style.left = `${rect.left}px`;
@@ -11404,9 +11416,10 @@ ${subjectLine}
             ghost.style.height = `${rect.height}px`;
             ghost.style.setProperty('--fly-x', `${from.x}px`);
             ghost.style.setProperty('--fly-y', `${from.y}px`);
-            ghost.style.setProperty('--fly-rot', `${(Math.random() * 90 - 45).toFixed(1)}deg`);
+            ghost.style.setProperty('--fly-rot', `${(Math.random() * 420 - 210).toFixed(1)}deg`);
+            ghost.style.setProperty('--land-rot', landRot);
             note.style.opacity = '0';
-            document.body.appendChild(ghost);
+            sambongModalHost().appendChild(ghost);
             const finish = () => {
                 if (ghost._classBoardDone) return;
                 ghost._classBoardDone = true;
@@ -11414,8 +11427,110 @@ ${subjectLine}
                 note.style.opacity = '';
             };
             ghost.addEventListener('animationend', finish, { once: true });
-            window.setTimeout(finish, 900);
+            window.setTimeout(finish, 2300);
         }
+
+        function playClassBoardFanfare() {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                [523, 659, 784, 1047, 1319].forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    const t = now + i * 0.11;
+                    osc.frequency.setValueAtTime(freq, t);
+                    gain.gain.setValueAtTime(0.0001, t);
+                    gain.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(t);
+                    osc.stop(t + 0.3);
+                });
+            } catch (e) {
+                console.warn('playClassBoardFanfare', e);
+            }
+            let host = document.getElementById('classBoardFanfare');
+            if (!host) {
+                host = document.createElement('div');
+                host.id = 'classBoardFanfare';
+                host.className = 'class-board-fanfare';
+            }
+            host.classList.remove('hidden');
+            sambongModalHost().appendChild(host);
+            host.innerHTML = '<p class="class-board-fanfare-label">따봉!</p>';
+            const colors = ['#fbbf24', '#f59e0b', '#ef4444', '#a3e635', '#38bdf8', '#f472b6', '#fde68a'];
+            for (let i = 0; i < 56; i++) {
+                const el = document.createElement('div');
+                el.className = 'lottery-confetti-piece';
+                el.style.left = `${Math.random() * 100}%`;
+                el.style.background = colors[i % colors.length];
+                el.style.animationDuration = `${1.8 + Math.random() * 1.4}s`;
+                el.style.animationDelay = `${Math.random() * 0.4}s`;
+                host.appendChild(el);
+            }
+            clearTimeout(window._classBoardFanfareTimer);
+            window._classBoardFanfareTimer = setTimeout(() => {
+                if (host) {
+                    host.classList.add('hidden');
+                    host.innerHTML = '';
+                }
+            }, 3600);
+        }
+
+        function maybePlayClassBoardCheer(board) {
+            const cheer = board && board.cheer;
+            if (!cheer || !cheer.token || !cheer.studentId) return;
+            const myId = classBoardStudentId();
+            if (!myId || String(cheer.studentId) !== myId) return;
+            if (_classBoardCheerToken === cheer.token) return;
+            if (Date.now() - Number(cheer.at || 0) > 20000) return;
+            _classBoardCheerToken = cheer.token;
+            playClassBoardFanfare();
+        }
+
+        window.cheerClassBoardNoteNow = async function (noteId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (_classBoardCheerBusy) return;
+            const note = classBoardFocusNote(setClassBoardFocus(currentClassBoard(), noteId));
+            if (!note) return window.customAlert('쪽지를 다시 골라 주세요.');
+            const sid = String(note.studentId || '').trim();
+            if (!sid || sid === 'gm' || sid === 'gm_a') {
+                return window.customAlert('학생 쪽지에만 따봉을 줄 수 있습니다.');
+            }
+            _classBoardCheerBusy = true;
+            try {
+                if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                let stu = null;
+                try {
+                    const snapIn = await readStudentDocPreferServer(ref);
+                    if (snapIn.exists()) stu = snapIn.data();
+                } catch (eRead) {
+                    console.warn('cheerClassBoardNoteNow 읽기', eRead);
+                }
+                if (stu == null && window.allStudentsData) {
+                    const row = window.allStudentsData.find((s) => String(s.id) === sid);
+                    if (row) stu = { ...row };
+                }
+                if (stu == null) return window.customAlert('해당 학생 데이터를 찾을 수 없습니다.');
+                const nx = Math.max(0, Math.floor(Number(stu.xp) || 0) + CLASS_BOARD_CHEER_XP);
+                const nb = normalizeBongValue((Number(stu.bong) || 0) + CLASS_BOARD_CHEER_BONG);
+                await setDoc(ref, { xp: nx, bong: nb }, { merge: true });
+                mergeStudentDocIntoPlazaCache(sid, { ...stu, xp: nx, bong: nb });
+                playSfx('xp', true);
+                const ok = await saveClassBoard((s) => cheerClassBoardNote(s, noteId, Date.now()));
+                if (ok) window.showToast && window.showToast(`따봉! ${getStudentDisplayLabel(sid)} +${CLASS_BOARD_CHEER_XP}XP +${CLASS_BOARD_CHEER_BONG}봉`);
+            } catch (e) {
+                console.error('cheerClassBoardNoteNow', e);
+                await window.customAlert('따봉 지급 실패: ' + (e && e.message ? e.message : String(e)));
+            } finally {
+                _classBoardCheerBusy = false;
+            }
+        };
 
         function updateClassBoardTimerBanner(board) {
             const timerEl = document.getElementById('classBoardTimerBanner');
@@ -11454,17 +11569,22 @@ ${subjectLine}
             const board = currentClassBoard();
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             const follower = classBoardFollowTeacherView();
-            const viewPage = (isAdmin || board.viewTogether)
+            const showWall = classBoardShowsNoteWall();
+            const viewPage = (isAdmin || showWall)
                 ? viewedClassBoardPage(board)
                 : (board.pages[board.currentPageId] || viewedClassBoardPage(board));
             const notes = classBoardNotesList(viewPage);
             const promptText = classBoardPromptForView(board);
-            const canWrite = classBoardCanWrite(board, Date.now()) && !!(window.playerState && !window.playerState.isGuest) && !follower;
+            const canWrite = classBoardCanWrite(board, Date.now()) && !!(window.playerState && !window.playerState.isGuest) && !board.viewTogether;
             const pages = classBoardPagesList(board);
             const panel = document.querySelector('.class-board-panel');
-            if (panel) panel.classList.toggle('is-view-together', !!board.viewTogether);
+            if (panel) {
+                panel.classList.toggle('is-view-together', !!board.viewTogether);
+                panel.classList.toggle('is-student-submit', !showWall);
+            }
+            maybePlayClassBoardCheer(board);
             const adminBar = document.getElementById('classBoardAdminBar');
-            if (adminBar) adminBar.classList.toggle('hidden', !isAdmin || follower);
+            if (adminBar) adminBar.classList.toggle('hidden', !isAdmin);
             const togetherBtn = document.getElementById('classBoardViewTogetherBtn');
             if (togetherBtn) {
                 togetherBtn.textContent = board.viewTogether ? '함께 보기 끄기' : '함께 보기';
@@ -11513,9 +11633,10 @@ ${subjectLine}
             const hint = document.getElementById('classBoardHint');
             if (hint) {
                 let msg = '';
+                if (!isAdmin && !showWall) msg = '앞에 띄운 삼봉월드 화면을 보세요. 여기서는 쪽지만 제출합니다.';
                 if (board.viewTogether) msg = '선생님이 함께 보기를 켜 두었습니다. 화면만 보세요.';
-                else if (!isAdmin && !board.postingOpen) msg = '선생님이 발문을 열고 시간을 주면 여기에 쪽지를 붙일 수 있습니다.';
-                else if (!isAdmin && board.postingOpen && !classBoardCanWrite(board, Date.now())) msg = '제출 시간이 끝났습니다. 선생님이 새 시간을 열 때까지 화면만 봅니다.';
+                else if (!isAdmin && !board.postingOpen) msg = '앞에 띄운 화면을 보세요. 선생님이 발문을 열고 시간을 주면 쪽지를 제출할 수 있습니다.';
+                else if (!isAdmin && board.postingOpen && !classBoardCanWrite(board, Date.now())) msg = '제출 시간이 끝났습니다. 앞에 띄운 화면을 보세요.';
                 if (msg) {
                     hint.textContent = msg;
                     hint.classList.remove('hidden');
@@ -11523,31 +11644,37 @@ ${subjectLine}
                     hint.classList.add('hidden');
                 }
             }
-            const colorRow = document.getElementById('classBoardColorRow');
-            if (colorRow && canWrite) {
-                colorRow.innerHTML = CLASS_NOTE_COLORS.map((c) => (
-                    `<button type="button" class="class-board-color-dot class-note-${c} ${_classBoardNoteColor === c ? 'is-on' : ''}" onclick="window.setClassBoardNoteColor('${c}')" title="${c}"></button>`
-                )).join('');
-            }
 
-            const focusId = follower ? board.focusNoteId : (_classBoardLocalFocusId || (isAdmin ? board.focusNoteId : _classBoardLocalFocusId));
-            const focusNote = (focusId && viewPage && viewPage.notes && viewPage.notes[focusId]) || null;
+            const focusId = follower ? board.focusNoteId : (_classBoardLocalFocusId || board.focusNoteId);
+            const focusNote = (focusId && viewPage && viewPage.notes && viewPage.notes[focusId])
+                || classBoardFocusNote({ ...board, focusNoteId: focusId })
+                || null;
             const modal = document.getElementById('classBoardFocusModal');
-            if (modal) {
+            const modalKey = focusNote ? `${focusNote.id}:${isAdmin ? 1 : 0}` : '';
+            if (modal && modalKey !== _classBoardModalKey) {
+                _classBoardModalKey = modalKey;
                 if (focusNote) {
                     modal.classList.remove('hidden');
-                    const closeBtn = follower
-                        ? ''
-                        : `<button type="button" class="class-board-admin-btn mb-2 class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`;
+                    const closeBtn = isAdmin
+                        ? `<button type="button" class="class-board-admin-btn mb-2 class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`
+                        : '';
+                    const thumbsCls = isAdmin ? '' : 'is-view';
+                    const thumbsClick = isAdmin
+                        ? `onclick="event.stopPropagation(); void window.cheerClassBoardNoteNow('${focusNote.id}')"`
+                        : '';
                     modal.innerHTML = `
                         <div class="class-board-modal-card class-note-${focusNote.color} class-board-keep-input">
                             ${closeBtn}
                             <p class="class-note-author">${escapeHtmlAttr(focusNote.name || getStudentDisplayLabel(focusNote.studentId))}</p>
                             <p class="class-board-modal-text">${escapeHtmlAttr(focusNote.text)}</p>
+                            <button type="button" class="class-board-thumbs ${thumbsCls} class-board-keep-input" ${thumbsClick} title="따봉 +${CLASS_BOARD_CHEER_XP}XP +${CLASS_BOARD_CHEER_BONG}봉">
+                                <img src="nav/thumbs-up.svg" alt="따봉" width="72" height="72">
+                                <span>따봉 · ${CLASS_BOARD_CHEER_XP}XP · ${CLASS_BOARD_CHEER_BONG}봉</span>
+                            </button>
                         </div>`;
-                    modal.onclick = follower ? null : (e) => {
+                    modal.onclick = isAdmin ? (e) => {
                         if (e.target === modal) void window.closeClassBoardFocus();
-                    };
+                    } : null;
                 } else {
                     modal.classList.add('hidden');
                     modal.innerHTML = '';
@@ -11556,32 +11683,37 @@ ${subjectLine}
             }
 
             const grid = document.getElementById('classBoardGrid');
-            const gridKey = `${viewPage && viewPage.id}:${notes.map((n) => `${n.id}:${n.updatedAt}`).join('|')}:${canWrite ? 1 : 0}`;
+            if (!showWall) {
+                if (grid && _classBoardGridKey !== 'student-hidden') {
+                    _classBoardGridKey = 'student-hidden';
+                    grid.innerHTML = '';
+                }
+                return;
+            }
+            const gridKey = `${viewPage && viewPage.id}:${notes.map((n) => `${n.id}:${n.updatedAt}`).join('|')}`;
             if (grid && gridKey !== _classBoardGridKey) {
                 _classBoardGridKey = gridKey;
                 if (!notes.length) {
-                    grid.innerHTML = `<p class="col-span-full text-[11px] text-lime-100/70 font-bold p-3">${board.postingOpen ? '아직 붙은 쪽지가 없습니다. 아래에 적어 제출해 보세요.' : '아직 붙은 쪽지가 없습니다.'}</p>`;
+                    grid.innerHTML = `<p class="text-[11px] text-lime-100/70 font-bold p-3">아직 붙은 쪽지가 없습니다.</p>`;
                 } else {
                     grid.innerHTML = notes.map((n) => {
-                        const click = follower ? '' : `onclick="void window.openClassBoardFocus('${n.id}')"`;
+                        const click = isAdmin ? `onclick="void window.openClassBoardFocus('${n.id}')"` : '';
                         return `<article class="class-note-slot" data-note-id="${n.id}" data-updated="${n.updatedAt}">
                             <div class="class-note class-note-${n.color} class-board-keep-input" ${click}>
                                 <p class="class-note-author">${escapeHtmlAttr(n.name || getStudentDisplayLabel(n.studentId))}</p>
-                                <p class="class-note-excerpt">${escapeHtmlAttr(classBoardNoteExcerpt(n, 90))}</p>
+                                <p class="class-note-excerpt">${escapeHtmlAttr(classBoardNoteExcerpt(n, 72))}</p>
                             </div>
                         </article>`;
                     }).join('');
                     const fresh = [];
                     notes.forEach((n) => {
                         const prev = _classBoardSeenStamp[n.id];
-                        const recent = (Date.now() - Number(n.updatedAt || 0)) < 8000;
-                        if (_classBoardAnimReady && prev !== n.updatedAt && recent) fresh.push(n.id);
+                        const recent = (Date.now() - Number(n.updatedAt || 0)) < 14000;
+                        if (prev !== n.updatedAt && recent) fresh.push(n.id);
                         _classBoardSeenStamp[n.id] = n.updatedAt;
                     });
-                    if (!_classBoardAnimReady) {
-                        notes.forEach((n) => { _classBoardSeenStamp[n.id] = n.updatedAt; });
-                        _classBoardAnimReady = true;
-                    } else if (fresh.length) {
+                    _classBoardAnimReady = true;
+                    if (fresh.length) {
                         window.requestAnimationFrame(() => {
                             fresh.forEach((id) => {
                                 const slot = grid.querySelector(`[data-note-id="${id}"]`);
@@ -11593,30 +11725,18 @@ ${subjectLine}
             }
         }
 
-        window.setClassBoardNoteColor = function (color) {
-            if (!CLASS_NOTE_COLORS.includes(color)) return;
-            _classBoardNoteColor = color;
-            renderClassBoardPanel();
-        };
-
         window.openClassBoardFocus = async function (noteId) {
-            if (classBoardFollowTeacherView()) return;
+            if (!window.playerState || !window.playerState.isAdmin) return;
             _classBoardLocalFocusId = String(noteId || '');
-            if (window.playerState && window.playerState.isAdmin) {
-                await saveClassBoard((s) => setClassBoardFocus(s, noteId));
-                return;
-            }
-            renderClassBoardPanel();
+            _classBoardModalKey = '';
+            await saveClassBoard((s) => setClassBoardFocus(s, noteId));
         };
 
         window.closeClassBoardFocus = async function () {
-            if (classBoardFollowTeacherView()) return;
+            if (!window.playerState || !window.playerState.isAdmin) return;
             _classBoardLocalFocusId = '';
-            if (window.playerState && window.playerState.isAdmin) {
-                await saveClassBoard((s) => clearClassBoardFocus(s));
-                return;
-            }
-            renderClassBoardPanel();
+            _classBoardModalKey = '';
+            await saveClassBoard((s) => clearClassBoardFocus(s));
         };
 
         window.viewClassBoardPage = async function (pageId) {
@@ -11666,12 +11786,13 @@ ${subjectLine}
 
         window.clearClassBoardAll = async function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('모든 페이지의 쪽지를 지울까요?');
+            const ok = await window.customConfirm('게시판을 비우시겠습니까?\n모든 페이지의 쪽지가 지워집니다.');
             if (!ok) return;
             _classBoardLocalFocusId = '';
             _classBoardAnimReady = false;
             _classBoardSeenStamp = {};
             _classBoardGridKey = '';
+            _classBoardModalKey = '';
             await saveClassBoard((s) => clearClassBoard(s));
         };
 
@@ -11695,7 +11816,6 @@ ${subjectLine}
                 studentId: sid,
                 name: getStudentDisplayLabel(sid),
                 text,
-                color: _classBoardNoteColor,
             }, Date.now()));
             if (ok && ta) ta.value = '';
         };
@@ -15026,6 +15146,11 @@ ${subjectLine}
         // ==========================================
         // ★ 커스텀 모달 유틸리티 ★
         // ==========================================
+        /** 브라우저 전체화면 안에서는 body에 붙인 창이 보이지 않습니다. */
+        function sambongModalHost() {
+            return document.fullscreenElement || document.webkitFullscreenElement || document.body;
+        }
+
         window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
             // 전역 로딩(z-390)·오프라인 배너(z-400)·수업도구(z-560)·용의 눈(z-730)보다 위 — 확인창이 가려져 이체·구매가 먹통처럼 보이는 문제 방지
@@ -15036,7 +15161,7 @@ ${subjectLine}
                     <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
                     <button type="button" class="js-custom-alert-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
                 </div>`;
-            document.body.appendChild(d);
+            sambongModalHost().appendChild(d);
             const okBtn = d.querySelector('.js-custom-alert-ok');
             let done = false;
             const finish = () => { if (done) return; done = true; d.remove(); r(true); };
@@ -15055,7 +15180,7 @@ ${subjectLine}
                         <button type="button" class="js-custom-confirm-yes bg-sb-red text-white font-bold py-2 rounded-full w-full">확인</button>
                     </div>
                 </div>`;
-            document.body.appendChild(d);
+            sambongModalHost().appendChild(d);
             const yesBtn = d.querySelector('.js-custom-confirm-yes');
             const noBtn = d.querySelector('.js-custom-confirm-no');
             let done = false;
@@ -15077,7 +15202,7 @@ ${subjectLine}
                         <button type="button" class="js-custom-prompt-yes bg-emerald-500 text-white font-bold py-2 w-full rounded">확인</button>
                     </div>
                 </div>`;
-            document.body.appendChild(d);
+            sambongModalHost().appendChild(d);
             const inputEl = d.querySelector('.js-custom-prompt-input');
             const yesBtn = d.querySelector('.js-custom-prompt-yes');
             const noBtn = d.querySelector('.js-custom-prompt-no');
@@ -16358,6 +16483,7 @@ ${subjectLine}
                                 }
                                 if (settingsData.classBoard !== undefined) {
                                     window.globalSettings.classBoard = sanitizeClassBoard(settingsData.classBoard);
+                                    maybePlayClassBoardCheer(window.globalSettings.classBoard);
                                     if (classtoolSub === 'classboard') renderClassBoardPanel();
                                 }
                                 const rateEl = document.getElementById('gmBankInterestRate');

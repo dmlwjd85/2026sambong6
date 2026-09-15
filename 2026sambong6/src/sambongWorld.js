@@ -22888,7 +22888,7 @@ ${subjectLine}
             if (window.playerState.isGuest) return;
             const pw = String(window.globalSettings.raidPassword || '').trim();
             if (!pw) {
-                return await window.customAlert('레이드 비밀번호가 아직 설정되지 않았습니다.\n마스터 설정에서 비밀번호를 먼저 정해 주세요.');
+                return await window.customAlert('레이드 비밀번호가 아직 설정되지 않았습니다.\n마스터 탭 「퀘스트」 상단에서 비밀번호를 먼저 정해 주세요.');
             }
             const code = await window.customPrompt(`전담 선생님 비밀번호를 입력하세요:`, "password");
             const masterBypass = String(getMasterDisplayName()).replace(/\s/g, '');

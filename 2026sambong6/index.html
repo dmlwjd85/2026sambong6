@@ -2440,6 +2440,18 @@
 
             <!-- ★ 실시간 일일 퀘스트 현황: 컴팩트 체크 대시보드 ★ -->
             <div class="inner-pane" data-pane-group="admin" data-pane="quests">
+            <div class="glass-panel p-4 rounded-xl mb-4 border border-purple-500/50 flex flex-col sm:flex-row justify-between gap-3 sm:items-center">
+                <div>
+                    <h3 class="text-white font-bold text-sm">전담 레이드</h3>
+                    <p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">설정 필요</span></p>
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    <button type="button" onclick="window.setRaidPassword()" class="bg-purple-600 hover:bg-purple-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button>
+                    <button type="button" onclick="window.generateRaidPassword()" class="bg-cyan-700 hover:bg-cyan-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">랜덤생성</button>
+                    <button type="button" onclick="window.resetRaidPassword()" class="bg-slate-700 hover:bg-slate-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번초기화</button>
+                    <button type="button" onclick="window.resetRaids()" class="bg-red-600 hover:bg-red-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">레이드초기화</button>
+                </div>
+            </div>
             <div class="glass-panel p-2 sm:p-3 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
                     <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
@@ -2572,15 +2584,6 @@
                 </table>
             </div>
 
-            <div class="glass-panel p-4 rounded-xl mt-4 border border-purple-500/50 flex flex-col sm:flex-row justify-between gap-3 sm:items-center">
-                <div><h3 class="text-white font-bold text-sm">전담 레이드</h3><p class="text-[9px] text-slate-400">비번: <span id="currentRaidPwDisplay" class="text-purple-300 font-bold">설정 필요</span></p></div>
-                <div class="flex flex-wrap gap-1">
-                    <button onclick="window.setRaidPassword()" class="bg-purple-600 hover:bg-purple-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번변경</button>
-                    <button onclick="window.generateRaidPassword()" class="bg-cyan-700 hover:bg-cyan-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">랜덤생성</button>
-                    <button onclick="window.resetRaidPassword()" class="bg-slate-700 hover:bg-slate-600 text-white py-1.5 px-2 rounded text-[9px] font-bold">비번초기화</button>
-                    <button onclick="window.resetRaids()" class="bg-red-600 hover:bg-red-500 text-white py-1.5 px-2 rounded text-[9px] font-bold">레이드초기화</button>
-                </div>
-            </div>
             </div>
 
             <!-- ★ 완전 초기화 (맨 아래·위험) ★ -->
@@ -2867,7 +2870,7 @@
             <div class="glass-panel p-4 rounded-2xl border border-pink-500/40 bg-slate-900/80 space-y-3">
                 <h3 class="text-white font-bold text-sm border-b border-slate-700 pb-2"><i class="fa-solid fa-screwdriver-wrench text-pink-400"></i> 6. 운영 기본값</h3>
                 <div class="grid sm:grid-cols-2 gap-3">
-                    <label class="text-[10px] text-slate-300 font-bold">레이드 비밀번호 <span class="text-slate-500">(비우면 설정 필요)</span>
+                    <label class="text-[10px] text-slate-300 font-bold">레이드 비밀번호 <span class="text-slate-500">(마스터 탭 「퀘스트」 상단에서도 변경)</span>
                         <input id="wsRaidPassword" type="text" maxlength="20" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]" placeholder="직접 설정">
                     </label>
                     <label class="text-[10px] text-slate-300 font-bold">은행 이자율 (%)
@@ -3031,7 +3034,7 @@
                     <li><strong class="text-white">Q. 학급마다 다른 주소를 줄 수 있나요?</strong> A. 네. 「접속 링크 복사」하면 <code class="text-sky-300">?c=초대코드</code> 형태 링크가 복사됩니다.</li>
                     <li><strong class="text-white">Q. 다른 반으로 바꾸려면?</strong> A. 상단 학급 메뉴에서 전환하거나, 다른 초대 코드 링크로 접속하세요.</li>
                     <li><strong class="text-white">Q. 게스트는?</strong> A. 구경만 가능하며 실제 데이터는 변경되지 않습니다.</li>
-                    <li><strong class="text-white">Q. 레이드 비밀번호는?</strong> A. 마스터 설정에서 직접 설정합니다. 기본 1234는 사용하지 않습니다.</li>
+                    <li><strong class="text-white">Q. 레이드 비밀번호는?</strong> A. 마스터 탭 「퀘스트」 상단에서 바꿉니다. 기본 1234는 사용하지 않습니다.</li>
                 </ul>
             </div>
             </div>

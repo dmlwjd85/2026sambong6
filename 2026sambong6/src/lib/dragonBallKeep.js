@@ -54,6 +54,61 @@ export function resolveDragonBallWeekendKey(localKey, serverKey) {
 }
 
 /**
+ * 서버 보관함 기준으로 이번 수집 보상과 저장할 성구를 계산합니다.
+ * 이미 가진 번호면 보상을 주지 않아 다른 탭이 두 번 지급하지 않게 합니다.
+ */
+export function planDragonBallClaim(serverBalls, localBalls, dbNum, rewards = {}) {
+    const n = Math.floor(Number(dbNum));
+    const ballsBefore = mergeDragonBallCollections(serverBalls, localBalls);
+    if (!Number.isFinite(n) || n < 1 || n > 7) {
+        return {
+            ok: false,
+            reason: 'invalid',
+            balls: ballsBefore,
+            grantXp: 0,
+            grantBong: 0,
+            findXp: 0,
+            findBong: 0,
+            completeXp: 0,
+            completeBong: 0,
+            completed: false,
+        };
+    }
+    if (ballsBefore.includes(n)) {
+        return {
+            ok: false,
+            reason: 'already',
+            balls: ballsBefore,
+            grantXp: 0,
+            grantBong: 0,
+            findXp: 0,
+            findBong: 0,
+            completeXp: 0,
+            completeBong: 0,
+            completed: false,
+        };
+    }
+    const balls = mergeDragonBallCollections(ballsBefore, [n]);
+    const findXp = Math.max(0, Math.floor(Number(rewards.findXp) || 0));
+    const findBong = Math.max(0, Math.floor(Number(rewards.findBong) || 0));
+    const completeXp = Math.max(0, Math.floor(Number(rewards.completeXp) || 0));
+    const completeBong = Math.max(0, Math.floor(Number(rewards.completeBong) || 0));
+    const completed = ballsBefore.length < 7 && balls.length >= 7;
+    return {
+        ok: true,
+        reason: 'claimed',
+        balls,
+        findXp,
+        findBong,
+        completeXp: completed ? completeXp : 0,
+        completeBong: completed ? completeBong : 0,
+        grantXp: findXp + (completed ? completeXp : 0),
+        grantBong: findBong + (completed ? completeBong : 0),
+        completed,
+    };
+}
+
+/**
  * 홈 보관함 안내 문구. 설정에서 정한 1개·7개 완성 보상을 그대로 보여 줍니다.
  */
 export function formatDragonBallHomeRewardHint(rewards, formatBong) {

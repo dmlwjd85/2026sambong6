@@ -2360,6 +2360,17 @@
                         </div>
                     </div>
                     <div id="classBoardFocusModal" class="hidden class-board-modal" role="dialog" aria-modal="true"></div>
+                    <!-- 전체화면에서도 게시판 위에서 바로 뜨는 비우기 확인 -->
+                    <div id="classBoardClearModal" class="hidden class-board-confirm" role="dialog" aria-modal="true">
+                        <div class="class-board-confirm-card class-board-keep-input">
+                            <h3 class="class-board-confirm-title">확인</h3>
+                            <p class="class-board-confirm-text">게시판을 비우시겠습니까?<br>모든 페이지의 쪽지가 지워집니다.</p>
+                            <div class="class-board-confirm-actions">
+                                <button type="button" class="class-board-admin-btn" onclick="void window.cancelClearClassBoard()">취소</button>
+                                <button type="button" class="class-board-admin-btn class-board-admin-btn-warn" onclick="void window.confirmClearClassBoardAll()">확인</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 원형 돌림판 -->

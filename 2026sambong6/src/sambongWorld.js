@@ -11336,8 +11336,16 @@ ${subjectLine}
             return String(localStorage.getItem('sambong_student_id') || (window.playerState && window.playerState.id) || '').trim();
         }
 
+        function classBoardShareIsLive() {
+            const share = currentClassToolShare();
+            return !!(share.active && share.toolId === 'classboard');
+        }
+
+        /** 교사 공유 중이면 학생·TV는 교사가 고른 쪽지 팝업을 따라갑니다. */
         function classBoardFollowTeacherView() {
-            return !(window.playerState && window.playerState.isAdmin);
+            if (window.playerState && window.playerState.isAdmin) return false;
+            if (classBoardShareIsLive()) return true;
+            return !!(window.playerState && window.playerState.isGuest);
         }
 
         function classBoardShowsNoteWall() {
@@ -11380,54 +11388,70 @@ ${subjectLine}
         }
 
         function classNoteFlyOffsets() {
-            const w = Math.max(320, window.innerWidth || 800);
-            const h = Math.max(240, window.innerHeight || 600);
+            const host = sambongModalHost();
+            const box = (host && host.getBoundingClientRect) ? host.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+            const w = Math.max(280, box.width || window.innerWidth || 800);
+            const h = Math.max(200, box.height || window.innerHeight || 600);
+            const hx = w * 0.52;
+            const hy = h * 0.48;
             const dirs = [
-                { x: -w, y: (Math.random() * h) - (h / 2) },
-                { x: w, y: (Math.random() * h) - (h / 2) },
-                { x: (Math.random() * w) - (w / 2), y: -h },
-                { x: (Math.random() * w) - (w / 2), y: h },
-                { x: -w, y: -h },
-                { x: w, y: -h },
-                { x: -w, y: h },
-                { x: w, y: h },
+                { x: -hx, y: (Math.random() * h * 0.4) - (h * 0.2) },
+                { x: hx, y: (Math.random() * h * 0.4) - (h * 0.2) },
+                { x: (Math.random() * w * 0.4) - (w * 0.2), y: -hy },
+                { x: (Math.random() * w * 0.4) - (w * 0.2), y: hy },
+                { x: -hx * 0.85, y: -hy * 0.7 },
+                { x: hx * 0.85, y: -hy * 0.7 },
+                { x: -hx * 0.85, y: hy * 0.7 },
+                { x: hx * 0.85, y: hy * 0.7 },
             ];
             return dirs[Math.floor(Math.random() * dirs.length)];
         }
 
-        function flyClassBoardNoteIn(slot) {
+        function flyClassBoardNoteIn(slot, delayMs = 0) {
             if (!slot) return;
             if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             const note = slot.querySelector('.class-note') || slot;
-            const rect = note.getBoundingClientRect();
-            if (!rect.width || !rect.height) {
-                note.style.opacity = '';
-                return;
-            }
-            const from = classNoteFlyOffsets();
-            const landRot = slot.matches(':nth-child(4n)') ? '2.4deg'
-                : slot.matches(':nth-child(3n)') ? '-0.6deg'
-                : slot.matches(':nth-child(2n)') ? '1.8deg' : '-2.2deg';
-            const ghost = note.cloneNode(true);
-            ghost.classList.add('class-note-flying', 'is-animating');
-            ghost.style.left = `${rect.left}px`;
-            ghost.style.top = `${rect.top}px`;
-            ghost.style.width = `${rect.width}px`;
-            ghost.style.height = `${rect.height}px`;
-            ghost.style.setProperty('--fly-x', `${from.x}px`);
-            ghost.style.setProperty('--fly-y', `${from.y}px`);
-            ghost.style.setProperty('--fly-rot', `${(Math.random() * 420 - 210).toFixed(1)}deg`);
-            ghost.style.setProperty('--land-rot', landRot);
-            note.style.opacity = '0';
-            sambongModalHost().appendChild(ghost);
-            const finish = () => {
-                if (ghost._classBoardDone) return;
-                ghost._classBoardDone = true;
-                if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
-                note.style.opacity = '';
+            const run = () => {
+                const rect = note.getBoundingClientRect();
+                if (!rect.width || !rect.height) {
+                    note.style.opacity = '';
+                    return;
+                }
+                const host = sambongModalHost();
+                const hostRect = (host === document.body)
+                    ? { left: 0, top: 0 }
+                    : host.getBoundingClientRect();
+                const from = classNoteFlyOffsets();
+                const landRot = slot.matches(':nth-child(4n)') ? '2.4deg'
+                    : slot.matches(':nth-child(3n)') ? '-0.6deg'
+                    : slot.matches(':nth-child(2n)') ? '1.8deg' : '-2.2deg';
+                const spin = (Math.random() * 380 - 190);
+                const ghost = note.cloneNode(true);
+                ghost.classList.add('class-note-flying', 'is-animating');
+                ghost.style.left = `${rect.left - hostRect.left}px`;
+                ghost.style.top = `${rect.top - hostRect.top}px`;
+                ghost.style.width = `${rect.width}px`;
+                ghost.style.height = `${rect.height}px`;
+                ghost.style.setProperty('--fly-x', `${from.x}px`);
+                ghost.style.setProperty('--fly-y', `${from.y}px`);
+                ghost.style.setProperty('--fly-mid-x', `${(from.x * 0.42) + (Math.random() * 90 - 45)}px`);
+                ghost.style.setProperty('--fly-mid-y', `${(from.y * 0.38) - 50 - (Math.random() * 70)}px`);
+                ghost.style.setProperty('--fly-rot', `${spin.toFixed(1)}deg`);
+                ghost.style.setProperty('--fly-rot-mid', `${(spin * 0.38).toFixed(1)}deg`);
+                ghost.style.setProperty('--land-rot', landRot);
+                note.style.opacity = '0';
+                host.appendChild(ghost);
+                const finish = () => {
+                    if (ghost._classBoardDone) return;
+                    ghost._classBoardDone = true;
+                    if (ghost.parentNode) ghost.parentNode.removeChild(ghost);
+                    note.style.opacity = '';
+                };
+                ghost.addEventListener('animationend', finish, { once: true });
+                window.setTimeout(finish, 3800);
             };
-            ghost.addEventListener('animationend', finish, { once: true });
-            window.setTimeout(finish, 2300);
+            if (delayMs > 0) window.setTimeout(run, delayMs);
+            else run();
         }
 
         function playClassBoardFanfare() {
@@ -11459,7 +11483,7 @@ ${subjectLine}
             }
             host.classList.remove('hidden');
             sambongModalHost().appendChild(host);
-            host.innerHTML = '<p class="class-board-fanfare-label">따봉!</p>';
+            host.innerHTML = '<p class="class-board-fanfare-label">따봉! +10XP +1봉</p>';
             const colors = ['#fbbf24', '#f59e0b', '#ef4444', '#a3e635', '#38bdf8', '#f472b6', '#fde68a'];
             for (let i = 0; i < 56; i++) {
                 const el = document.createElement('div');
@@ -11570,7 +11594,7 @@ ${subjectLine}
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             const follower = classBoardFollowTeacherView();
             const showWall = classBoardShowsNoteWall();
-            const viewPage = (isAdmin || showWall)
+            const viewPage = (isAdmin || showWall || follower)
                 ? viewedClassBoardPage(board)
                 : (board.pages[board.currentPageId] || viewedClassBoardPage(board));
             const notes = classBoardNotesList(viewPage);
@@ -11612,13 +11636,6 @@ ${subjectLine}
             updateClassBoardTimerBanner(board);
             ensureClassBoardTimerTick();
             _classBoardWasWritable = canWrite;
-            const pageBadge = document.getElementById('classBoardPageBadge');
-            if (pageBadge) {
-                const viewIdx = (viewPage && viewPage.index) || 1;
-                const cur = board.pages[board.currentPageId];
-                const curIdx = (cur && cur.index) || viewIdx;
-                pageBadge.textContent = viewIdx === curIdx ? `${viewIdx}쪽` : `보는 중 ${viewIdx}쪽 · 제출 ${curIdx}쪽`;
-            }
             const tabs = document.getElementById('classBoardPageTabs');
             if (tabs) {
                 tabs.innerHTML = pages.map((p) => {
@@ -11645,12 +11662,24 @@ ${subjectLine}
                 }
             }
 
+            const pageBadge = document.getElementById('classBoardPageBadge');
+            if (pageBadge) {
+                if (!showWall) {
+                    pageBadge.classList.add('hidden');
+                } else {
+                    pageBadge.classList.remove('hidden');
+                    const viewIdx = (viewPage && viewPage.index) || 1;
+                    const cur = board.pages[board.currentPageId];
+                    const curIdx = (cur && cur.index) || viewIdx;
+                    pageBadge.textContent = viewIdx === curIdx ? `${viewIdx}쪽` : `보는 중 ${viewIdx}쪽 · 제출 ${curIdx}쪽`;
+                }
+            }
             const focusId = follower ? board.focusNoteId : (_classBoardLocalFocusId || board.focusNoteId);
             const focusNote = (focusId && viewPage && viewPage.notes && viewPage.notes[focusId])
                 || classBoardFocusNote({ ...board, focusNoteId: focusId })
                 || null;
             const modal = document.getElementById('classBoardFocusModal');
-            const modalKey = focusNote ? `${focusNote.id}:${isAdmin ? 1 : 0}` : '';
+            const modalKey = focusNote ? `${focusNote.id}:${isAdmin ? 1 : 0}:${CLASS_BOARD_CHEER_XP}` : '';
             if (modal && modalKey !== _classBoardModalKey) {
                 _classBoardModalKey = modalKey;
                 if (focusNote) {
@@ -11715,9 +11744,9 @@ ${subjectLine}
                     _classBoardAnimReady = true;
                     if (fresh.length) {
                         window.requestAnimationFrame(() => {
-                            fresh.forEach((id) => {
+                            fresh.forEach((id, i) => {
                                 const slot = grid.querySelector(`[data-note-id="${id}"]`);
-                                if (slot) flyClassBoardNoteIn(slot);
+                                if (slot) flyClassBoardNoteIn(slot, 90 + (i * 240));
                             });
                         });
                     }
@@ -11730,6 +11759,7 @@ ${subjectLine}
             _classBoardLocalFocusId = String(noteId || '');
             _classBoardModalKey = '';
             await saveClassBoard((s) => setClassBoardFocus(s, noteId));
+            await shareClassBoardToClass();
         };
 
         window.closeClassBoardFocus = async function () {
@@ -11784,10 +11814,21 @@ ${subjectLine}
             await saveClassBoard((s) => closeClassBoardPosting(s));
         };
 
-        window.clearClassBoardAll = async function () {
+        window.clearClassBoardAll = function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('게시판을 비우시겠습니까?\n모든 페이지의 쪽지가 지워집니다.');
-            if (!ok) return;
+            const el = document.getElementById('classBoardClearModal');
+            if (el) el.classList.remove('hidden');
+        };
+
+        window.cancelClearClassBoard = function () {
+            const el = document.getElementById('classBoardClearModal');
+            if (el) el.classList.add('hidden');
+        };
+
+        window.confirmClearClassBoardAll = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const el = document.getElementById('classBoardClearModal');
+            if (el) el.classList.add('hidden');
             _classBoardLocalFocusId = '';
             _classBoardAnimReady = false;
             _classBoardSeenStamp = {};
@@ -15146,9 +15187,15 @@ ${subjectLine}
         // ==========================================
         // ★ 커스텀 모달 유틸리티 ★
         // ==========================================
-        /** 브라우저 전체화면 안에서는 body에 붙인 창이 보이지 않습니다. */
+        /** 브라우저 전체화면·수업도구 창 안에서는 body에 붙인 창이 가려집니다. */
         function sambongModalHost() {
-            return document.fullscreenElement || document.webkitFullscreenElement || document.body;
+            const fs = document.fullscreenElement || document.webkitFullscreenElement;
+            if (fs) return fs;
+            const chalk = document.getElementById('chalkboardOverlay');
+            if (chalk && !chalk.classList.contains('hidden')) return chalk;
+            const overlay = document.getElementById('classtoolFullscreen');
+            if (overlay && !overlay.classList.contains('hidden')) return overlay;
+            return document.body;
         }
 
         window.customAlert = (m) => new Promise(r => {

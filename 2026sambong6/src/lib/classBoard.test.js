@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CLASS_BOARD_CHEER_BONG,
+    CLASS_BOARD_CHEER_XP,
     CLASS_BOARD_NOTES_PER_PAGE,
     CLASS_BOARD_PAGE_MAX,
     CLASS_NOTE_TEXT_MAX,
@@ -10,6 +12,7 @@ import {
     classBoardPagesList,
     classBoardPromptForView,
     classBoardRemainingMs,
+    classNoteColorForStudent,
     cheerClassBoardNote,
     clearClassBoard,
     clearClassBoardFocus,
@@ -135,6 +138,11 @@ describe('학급게시판 정리', () => {
         assert.equal(byId['1'], 'yellow');
         assert.equal(byId['6'], 'yellow');
         assert.equal(byId['3'], 'mint');
+        assert.equal(classNoteColorForStudent('2'), 'pink');
+        assert.equal(classNoteColorForStudent('4'), 'sky');
+        assert.equal(classNoteColorForStudent('5'), 'peach');
+        assert.equal(CLASS_BOARD_CHEER_XP, 10);
+        assert.equal(CLASS_BOARD_CHEER_BONG, 1);
         const noteId = classBoardNotesList(st).find((n) => n.studentId === '3').id;
         st = cheerClassBoardNote(st, noteId, t0 + 4);
         assert.equal(st.cheer.studentId, '3');

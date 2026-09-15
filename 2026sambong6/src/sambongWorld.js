@@ -11758,6 +11758,10 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isAdmin) return;
             _classBoardLocalFocusId = String(noteId || '');
             _classBoardModalKey = '';
+            if (window.globalSettings) {
+                window.globalSettings.classBoard = setClassBoardFocus(currentClassBoard(), noteId);
+            }
+            renderClassBoardPanel();
             await saveClassBoard((s) => setClassBoardFocus(s, noteId));
             await shareClassBoardToClass();
         };
@@ -11766,6 +11770,10 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isAdmin) return;
             _classBoardLocalFocusId = '';
             _classBoardModalKey = '';
+            if (window.globalSettings) {
+                window.globalSettings.classBoard = clearClassBoardFocus(currentClassBoard());
+            }
+            renderClassBoardPanel();
             await saveClassBoard((s) => clearClassBoardFocus(s));
         };
 

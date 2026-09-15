@@ -101,3 +101,11 @@ export function resolveBankSaveBongDelta(validation, targetBong, serverBong) {
     }
     return Math.floor(Number(targetBong) || 0) - Math.floor(Number(serverBong) || 0);
 }
+
+/** 차감 전 지갑으로 지출 가능 여부를 봅니다. 이미 뺀 잔액으로 다시 검사하지 않습니다. */
+export function walletCoversSpend(beforeBong, spend) {
+    const before = Number(beforeBong);
+    const drop = Math.max(0, Number(spend) || 0);
+    if (!Number.isFinite(before) || drop <= 0) return true;
+    return before + 0.0001 >= drop;
+}

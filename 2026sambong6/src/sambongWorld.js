@@ -214,6 +214,7 @@ import {
     canBankTransfer,
     resolveBankSaveBongDelta,
     sanitizeBankTransferFee,
+    walletCoversSpend,
     BANK_TRANSFER_AMOUNT_MAX,
 } from './lib/bankTransfer.js';
 import {
@@ -1027,7 +1028,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.34';
+        const APP_VERSION = 'v1.35';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -19024,7 +19025,7 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankDepositInput');
             const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert('1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.');
+            if (amt == null) return window.customAlert(`1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.`);
             const wallet = normalizeBongValue(Number(window.playerState.bong) || 0);
             if (wallet < amt) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 부족합니다. (현재 ${formatBongAmount(wallet)})`);
             const ok = await window.customConfirm(`일반예금 통장에 ${formatBongAmount(amt)}를 넣을까요?\n(일반예금은 이자가 없습니다.)`);
@@ -19043,7 +19044,7 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             const inp = document.getElementById('bankWithdrawInput');
             const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert('1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.');
+            if (amt == null) return window.customAlert(`1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.`);
             const sav = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             if (sav < amt) return window.customAlert('일반예금 잔액이 부족합니다.');
             const ok = await window.customConfirm(`일반예금에서 ${formatBongAmount(amt)}를 지갑으로 출금할까요?`);
@@ -19089,7 +19090,7 @@ ${subjectLine}
             if (!ok) return;
             const inp = document.getElementById('bankTermDepositInput');
             const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
-            if (amt == null) return window.customAlert('1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.');
+            if (amt == null) return window.customAlert(`1${getCurrencyUnit()} 이상 정수 금액을 입력하세요.`);
             const w0 = normalizeBongValue(Number(window.playerState.bong) || 0);
             if (w0 < amt) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 부족합니다. (현재 ${formatBongAmount(w0)})`);
             if (!window.playerState.bankTermDeposits) window.playerState.bankTermDeposits = [];
@@ -20529,6 +20530,12 @@ ${subjectLine}
                                 : serverData.bong
                         );
                         const nextBong = Number(dataToSave.bong);
+                        // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.
+                        const bongBeforeSpend = Number(
+                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay')
+                                ? bankAccrued.bong
+                                : (bankAccrued.changed ? bankAccrued.bong : serverData.bong)
+                        );
                         if (opts.questCompletionId) {
                             const qid = String(opts.questCompletionId);
                             const serverQuests = serverData.quests || {};
@@ -20597,8 +20604,7 @@ ${subjectLine}
                                 opts.allowBongDecrease &&
                                 opts.requireServerBongBalance &&
                                 maxBongDrop > 0 &&
-                                Number.isFinite(serverBong) &&
-                                serverBong + 0.0001 < maxBongDrop
+                                !walletCoversSpend(bongBeforeSpend, maxBongDrop)
                             ) {
                                 blockedByServerBalance = true;
                                 serverRestoreData = serverData;

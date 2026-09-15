@@ -3235,6 +3235,7 @@
                 radial-gradient(circle at 12% 0%, rgba(251, 191, 36, 0.16), transparent 34%),
                 linear-gradient(165deg, #422006 0%, #1c1917 48%, #0c0a09 100%);
         }
+        .open-lesson-panel .hidden { display: none !important; }
         body.classtool-fs-open .open-lesson-panel {
             height: 100%;
             min-height: 0;

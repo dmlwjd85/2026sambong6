@@ -11538,9 +11538,10 @@ ${subjectLine}
                     modal.classList.remove('hidden');
                     const closeBtn = follower
                         ? ''
-                        : `<button type="button" class="class-board-admin-btn mb-2 class-board-keep-input" onclick="void window.closeClassBoardFocus()">닫기</button>`;
-                    modal.innerHTML = `${closeBtn}
+                        : `<button type="button" class="class-board-admin-btn mb-2 class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`;
+                    modal.innerHTML = `
                         <div class="class-board-modal-card class-note-${focusNote.color} class-board-keep-input">
+                            ${closeBtn}
                             <p class="class-note-author">${escapeHtmlAttr(focusNote.name || getStudentDisplayLabel(focusNote.studentId))}</p>
                             <p class="class-board-modal-text">${escapeHtmlAttr(focusNote.text)}</p>
                         </div>`;

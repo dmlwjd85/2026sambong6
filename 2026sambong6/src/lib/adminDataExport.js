@@ -15,7 +15,7 @@ export const ADMIN_EXPORT_SHEET_OPTIONS = [
     { id: 'jobs', label: '직업', defaultOn: true },
     { id: 'inventory', label: '인벤토리·스킨·장착', defaultOn: true },
     { id: 'purchases', label: '구매 기록 (편의점·학급활동·환불)', defaultOn: true },
-    { id: 'bank', label: '은행·예금·적금', defaultOn: false },
+    { id: 'bank', label: '은행·예금·적금·대출', defaultOn: false },
     { id: 'questStatus', label: '오늘 일일 퀘스트 완료 현황', defaultOn: false },
     { id: 'dragonBalls', label: '드래곤볼 보관함', defaultOn: false },
     { id: 'lottoBets', label: '로또·승부예측', defaultOn: false },
@@ -341,12 +341,13 @@ function buildPurchaseRows(ctx) {
 }
 
 function buildBankRows(ctx) {
-    const rows = [['학번', '이름', '지갑(B)', '일반예금(B)', '적금건수', '적금원금합(B)', '주기보너스최근일', '적금상세']];
+    const rows = [['학번', '이름', '지갑(B)', '일반예금(B)', '적금건수', '적금원금합(B)', '대출원금(B)', '대출이자(B)', '대출약정일', '신용불량종료일', '마이너스시작일', '주기보너스최근일', '적금상세']];
     listStudents(ctx).forEach((stu) => {
         const sid = String(stu.id);
         const terms = Array.isArray(stu.bankTermDeposits) ? stu.bankTermDeposits : [];
         const termSum = terms.reduce((s, t) => s + (Number(t && t.amount) || 0), 0);
         const detail = terms.map((t, i) => `#${i + 1} ${Number(t.amount) || 0}B(${t.startDate || '?'})`).join(' / ');
+        const loan = stu.bankLoan && typeof stu.bankLoan === 'object' ? stu.bankLoan : null;
         rows.push([
             sid,
             studentName(ctx, sid),
@@ -354,6 +355,11 @@ function buildBankRows(ctx) {
             Number(stu.bankRegularSavings) || 0,
             terms.length,
             termSum,
+            loan ? Number(loan.principal) || 0 : 0,
+            loan ? Number(loan.interest) || 0 : 0,
+            loan ? (loan.dueYmd || '') : '',
+            stu.creditDefaultUntilYmd || '',
+            stu.bankNegativeSinceYmd || '',
             stu.bankDailyBonusLastDate || '',
             detail,
         ]);

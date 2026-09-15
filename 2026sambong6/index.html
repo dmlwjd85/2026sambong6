@@ -672,6 +672,7 @@
                         <div id="dashRankBg" class="dash-rank-bg" aria-hidden="true"></div>
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
+                        <div id="dashCreditStamp" class="credit-default-stamp hidden" aria-hidden="true">신용불량</div>
                         <div class="dash-figure">
                             <div id="dashAvatar" class="text-6xl sm:text-7xl relative z-10 drop-shadow-xl avatar-bounce">👦</div>
                             <div id="dashLevelName" class="text-xs font-bold text-sb-blue z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
@@ -800,6 +801,7 @@
                             </div>
                         </h3>
                         <p id="dailyQuestProgressHint" class="hidden text-[10px] text-emerald-200/90 font-bold mb-2 px-0.5 leading-snug"></p>
+                        <p id="creditDefaultQuestHint" class="hidden text-[10px] text-red-200 font-bold mb-2 px-0.5 leading-snug border border-red-500/50 bg-red-950/40 rounded-lg p-2"></p>
                         <div id="todoContainer" class="space-y-2"></div>
                         <button type="button" id="studentSurveyBtn" class="hidden mt-3 w-full min-h-[44px] bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-bold rounded-xl" onclick="window.openResearchSurveyLink()">설문 참여하기</button>
                     </div>
@@ -1786,8 +1788,8 @@
             <div class="max-w-6xl mx-auto grid gap-4 lg:grid-cols-3 lg:items-start px-1 pb-8">
                 <div class="mb-2 lg:col-span-3">
                     <h2 class="text-xl sm:text-2xl font-display text-sky-400"><i class="fa-solid fa-building-columns"></i> 삼봉 은행</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">일반예금은 이자 없음 · 일반예금+적금 원금 합 100 <span data-currency-unit>B</span> 이상이면 마지막 지급일 기준 3일마다 1 <span data-currency-unit>B</span>. 적금은 30일 보물상자 잠금 후 만기 이자(반올림) 지급. 코스피·나스닥 투자는 실제 지수 등락을 조금 반영합니다.</p>
-                    <div class="app-sub-dock cols-5 mt-3">
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">일반예금은 이자 없음 · 일반예금+적금 원금 합 100 <span data-currency-unit>B</span> 이상이면 마지막 지급일 기준 3일마다 1 <span data-currency-unit>B</span>. 적금은 30일 보물상자 잠금 후 만기 이자(반올림) 지급. 대출 이자는 적금 이율보다 세게(1.5배) 매기며 약정일에 자동이체됩니다. 코스피·나스닥 투자는 실제 지수 등락을 조금 반영합니다.</p>
+                    <div class="app-sub-dock cols-6 mt-3">
                         <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="bank" data-pane="summary" onclick="window.switchInnerPane('bank','summary')">
                             <span class="app-sub-fa"><i class="fa-solid fa-wallet"></i></span>
                             <span>잔액</span>
@@ -1799,6 +1801,10 @@
                         <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="bank" data-pane="term" onclick="window.switchInnerPane('bank','term')">
                             <span class="app-sub-fa"><i class="fa-solid fa-box-open"></i></span>
                             <span>적금</span>
+                        </button>
+                        <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="bank" data-pane="loan" onclick="window.switchInnerPane('bank','loan')">
+                            <span class="app-sub-fa"><i class="fa-solid fa-file-invoice-dollar"></i></span>
+                            <span>대출</span>
                         </button>
                         <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="bank" data-pane="invest" onclick="window.switchInnerPane('bank','invest')">
                             <span class="app-sub-fa"><i class="fa-solid fa-chart-line"></i></span>
@@ -1818,7 +1824,34 @@
                     <div class="flex justify-between text-sm"><span class="text-slate-400">지갑(<span data-currency-unit>B</span>)</span><span id="bankWalletDisplay" class="font-bold text-sb-gold">0</span></div>
                     <div class="flex justify-between text-sm"><span class="text-slate-400">일반예금 잔액</span><span id="bankRegularDisplay" class="font-bold text-sky-300">0</span></div>
                     <div class="flex justify-between text-xs border-t border-slate-700 pt-2"><span class="text-slate-500">적금 만기 이자율 (마스터 설정)</span><span class="text-slate-300"><span id="bankRateDisplay">0</span>%</span></div>
+                    <div class="flex justify-between text-xs"><span class="text-slate-500">대출 한도 (1인)</span><span class="text-slate-300"><span id="bankLoanLimitDisplay">50</span> <span data-currency-unit>B</span></span></div>
                     <p id="bankDailyBonusLine" class="text-[9px] sm:text-[10px] text-emerald-300/90 leading-snug border-t border-slate-700/80 pt-2"></p>
+                    <p id="bankCreditDefaultLine" class="hidden text-[10px] text-red-300 font-bold leading-snug border-t border-red-800/60 pt-2"></p>
+                </div>
+                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-rose-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="loan">
+                    <h3 class="text-rose-200 font-bold text-sm"><i class="fa-solid fa-file-invoice-dollar"></i> 대출</h3>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">최소 10봉 · 10봉 단위 · 1~5영업일. 이자는 적금 만기 이율과 연동하되 1.5배로 세게 매기고, 최소 1봉입니다. 약정일이 되면 지갑→일반예금 순으로 강제 자동이체되며 적금은 건드리지 않습니다. 지갑이 마이너스인 채로 5영업일이 지나면 3일간 신용불량이 되어 퀘스트·추가 경험치를 받을 수 없습니다.</p>
+                    <div id="bankLoanStatus" class="text-[11px] text-slate-300 leading-relaxed border border-slate-700 rounded-xl p-3 bg-slate-950/50"></div>
+                    <div id="bankLoanPreview" class="text-[10px] text-rose-100/90 font-bold"></div>
+                    <div id="bankLoanForm" class="space-y-2">
+                        <label class="block text-[10px] text-slate-400 font-bold">금액 (10봉 단위)
+                            <input type="number" id="bankLoanAmountInput" min="10" step="10" placeholder="빌릴 B" data-currency-placeholder="빌릴 {u}" class="mt-1 w-full bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" oninput="window.previewBankLoan && window.previewBankLoan()" />
+                        </label>
+                        <label class="block text-[10px] text-slate-400 font-bold">기간 (영업일)
+                            <select id="bankLoanDaysInput" class="mt-1 w-full bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" onchange="window.previewBankLoan && window.previewBankLoan()">
+                                <option value="1">1영업일</option>
+                                <option value="2">2영업일</option>
+                                <option value="3" selected>3영업일</option>
+                                <option value="4">4영업일</option>
+                                <option value="5">5영업일</option>
+                            </select>
+                        </label>
+                        <div class="flex gap-2 flex-wrap items-center">
+                            <button type="button" onclick="window.previewBankLoan()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl text-xs">이자 미리보기</button>
+                            <button type="button" onclick="void window.takeBankLoan()" class="js-bank-loan-btn bg-rose-700 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-xl text-xs">대출 받기</button>
+                        </div>
+                    </div>
+                    <button type="button" id="bankLoanRepayBtn" onclick="void window.repayBankLoan()" class="js-bank-loan-btn hidden bg-rose-900 hover:bg-rose-800 text-rose-50 font-bold py-2 px-4 rounded-xl text-xs border border-rose-600">지금 갚기 (이자 포함)</button>
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="regular">
                     <h3 class="text-sky-200 font-bold text-sm"><i class="fa-solid fa-piggy-bank"></i> 일반예금</h3>
@@ -1872,10 +1905,19 @@
                 <div class="inner-pane hidden lg:col-span-3 space-y-3" data-pane-group="bank" data-pane="admin">
                 <div id="bankInterestAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-sky-500/50 bg-slate-900/80">
                     <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-percent text-sky-400"></i> 적금 만기 이자율 (%)</h3>
-                    <p class="text-[9px] text-slate-400 mb-2">적금 보물상자가 30일 만기될 때, 원금에 대해 이 비율(%)만큼 이자가 반올림되어 지급됩니다. 이율 변경 시 이후 만기분부터 변경된 비율이 적용됩니다.</p>
+                    <p class="text-[9px] text-slate-400 mb-2">적금 보물상자가 30일 만기될 때, 원금에 대해 이 비율(%)만큼 이자가 반올림되어 지급됩니다. 대출 이자도 이 이율에 연동되며 1.5배로 더 세게 적용됩니다. 이율 변경 시 이후 만기·신규 대출부터 변경된 비율이 적용됩니다.</p>
                     <div class="flex flex-wrap gap-2 items-center">
                         <input type="number" id="gmBankInterestRate" min="0" max="100" step="0.1" placeholder="예: 3" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
                         <button type="button" onclick="window.saveBankInterestRate()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
+                    </div>
+                </div>
+
+                <div id="bankLoanLimitAdminPanel" class="hidden glass-panel p-4 rounded-xl border border-rose-500/50 bg-slate-900/80">
+                    <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-file-invoice-dollar text-rose-400"></i> 1인당 대출 한도 (봉)</h3>
+                    <p class="text-[9px] text-slate-400 mb-2">학생 한 명이 한 번에 빌릴 수 있는 최대 금액입니다. 10봉 단위·최소 10봉. 0이면 대출을 닫습니다. 최대 500봉.</p>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <input type="number" id="gmBankLoanLimit" min="0" max="500" step="10" placeholder="예: 50" class="w-28 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-sm font-bold" />
+                        <button type="button" onclick="void window.saveBankLoanLimit()" class="bg-rose-600 hover:bg-rose-500 text-white font-bold py-1.5 px-4 rounded text-[10px]">저장</button>
                     </div>
                 </div>
 
@@ -1890,7 +1932,7 @@
 
                 <div id="bankAdminBalancesPanel" class="hidden glass-panel p-4 rounded-xl border border-cyan-500/50 bg-slate-900/80 lg:col-span-2">
                     <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-vault text-cyan-300"></i> 학생 통장 잔고</h3>
-                    <p class="text-[9px] text-slate-400 mb-2">지갑, 일반예금, 적금 원금 합계를 한 번에 확인합니다.</p>
+                    <p class="text-[9px] text-slate-400 mb-2">지갑, 일반예금, 적금, 대출, 신용 상태를 한 번에 확인합니다.</p>
                     <div id="bankAdminBalancesList" class="max-h-72 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950/50 text-[10px]"></div>
                 </div>
 
@@ -2830,6 +2872,9 @@
                     </label>
                     <label class="text-[10px] text-slate-300 font-bold">은행 이자율 (%)
                         <input id="wsBankInterest" type="number" min="0" max="100" step="0.1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
+                    </label>
+                    <label class="text-[10px] text-slate-300 font-bold">1인당 대출 한도 (<span data-currency-unit>B</span>)
+                        <input id="wsBankLoanLimit" type="number" min="0" max="500" step="10" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">
                     </label>
                     <label class="text-[10px] text-slate-300 font-bold">퀴즈 레이드 보상 XP
                         <input id="wsRaidRewardXp" type="number" min="0" step="1" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold">

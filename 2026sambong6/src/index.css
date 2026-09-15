@@ -585,6 +585,34 @@
 
         .plaza-card { min-width: 0; overflow: visible; }
         .plaza-card-face { overflow: visible; }
+        .plaza-card.is-credit-default {
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 14px rgba(239, 68, 68, 0.55);
+        }
+        .credit-default-stamp {
+            position: absolute;
+            z-index: 35;
+            top: 42%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-18deg);
+            pointer-events: none;
+            font-size: 0.62rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            color: #fecaca;
+            background: rgba(127, 29, 29, 0.82);
+            border: 2px solid #f87171;
+            border-radius: 0.35rem;
+            padding: 0.12rem 0.4rem;
+            white-space: nowrap;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
+        }
+        .plaza-cards-sm .credit-default-stamp { font-size: 0.48rem; padding: 0.05rem 0.22rem; }
+        #dashAvatarCard.is-credit-default {
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 18px rgba(239, 68, 68, 0.45);
+        }
+        #dashAvatarCard .credit-default-stamp { font-size: 0.95rem; }
         /* 파랑=경험치, 금색=봉. 단위 글자는 생략하고 색으로만 구분합니다. */
         .plaza-stat-xp { color: #38bdf8; font-variant-numeric: tabular-nums; font-weight: 900; text-shadow: 0 1px 2px #082f49; }
         .plaza-stat-bong { color: #facc15; font-variant-numeric: tabular-nums; font-weight: 900; text-shadow: 0 1px 2px #422006; }

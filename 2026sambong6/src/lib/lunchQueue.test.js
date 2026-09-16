@@ -31,14 +31,13 @@ describe('밥줄 명단', () => {
 });
 
 describe('밥줄 투자 마감 시각', () => {
-    it('평일 낮 12시 전에는 열고, 12시부터·주말은 닫는다', () => {
+    it('점심 이후·주말에도 투자는 열어 둔다', () => {
         assert.equal(isLunchBidOpen(new Date(2026, 8, 16, 11, 59, 0)), true);
-        assert.equal(isLunchBidOpen(new Date(2026, 8, 16, 12, 0, 0)), false);
-        assert.equal(isLunchBidOpen(new Date(2026, 8, 16, 12, 10, 0)), false);
-        assert.equal(isLunchBidOpen(new Date(2026, 8, 19, 10, 0, 0)), false);
-        assert.equal(lunchBidClosedReason(new Date(2026, 8, 16, 11, 0, 0)), '');
-        assert.ok(lunchBidClosedReason(new Date(2026, 8, 16, 12, 1, 0)).includes('12시까지'));
-        assert.ok(lunchBidClosedReason(new Date(2026, 8, 19, 10, 0, 0)).includes('주말'));
+        assert.equal(isLunchBidOpen(new Date(2026, 8, 16, 12, 0, 0)), true);
+        assert.equal(isLunchBidOpen(new Date(2026, 8, 16, 12, 10, 0)), true);
+        assert.equal(isLunchBidOpen(new Date(2026, 8, 19, 10, 0, 0)), true);
+        assert.equal(lunchBidClosedReason(new Date(2026, 8, 16, 12, 1, 0)), '');
+        assert.equal(lunchBidClosedReason(new Date(2026, 8, 19, 10, 0, 0)), '');
     });
 
     it('순위는 12시 10분부터 학생에게 보이고 선생님은 항상 본다', () => {

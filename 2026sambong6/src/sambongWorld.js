@@ -349,9 +349,7 @@ import {
 } from './lib/classDirectory.js';
 import {
     filterLunchQueueStudents,
-    isLunchBidOpen,
     isLunchRankVisible,
-    lunchBidClosedReason,
     lunchQueueDisplayName,
 } from './lib/lunchQueue.js';
 import {
@@ -1031,7 +1029,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.36';
+        const APP_VERSION = 'v1.37';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -20104,11 +20102,18 @@ ${subjectLine}
             }
         }
 
-        // 밥줄: 평일 낮 12시 마감, 보유 10B 이하(또는 마이너스)면 추가 투자 불가
+        // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가. 시각으로 입찰을 막지 않습니다.
         function updateLunchInvestLockUI() {
             const hint = document.getElementById('lunchInvestLockHint');
             const btn = document.getElementById('lunchBidSubmitBtn');
             const input = document.getElementById('lunchBidInput');
+            const myBidEl = document.getElementById('lunchMyBidStatus');
+            if (myBidEl && window.playerState) {
+                const today = typeof getLocalDateStr === 'function' ? getLocalDateStr() : '';
+                const bid = window.playerState.lunchBid;
+                const amt = (bid && bid.date === today) ? (Number(bid.amount) || 0) : 0;
+                myBidEl.textContent = `오늘 내가 넣은 금액: ${formatBongAmount(amt)}`;
+            }
             if (!hint || !btn || !input || !window.playerState) return;
             if (window.playerState.isGuest || window.playerState.isAdmin) {
                 hint.classList.add('hidden');
@@ -20116,23 +20121,14 @@ ${subjectLine}
                 input.disabled = false;
                 return;
             }
-            const closedReason = lunchBidClosedReason(new Date());
-            if (closedReason) {
-                hint.textContent = closedReason;
-                hint.classList.remove('hidden');
-                btn.disabled = true;
-                input.disabled = true;
-                input.placeholder = '마감 (평일 낮 12시까지)';
-                return;
-            }
             const bal = Number(window.playerState.bong) || 0;
             const locked = bal <= 10;
             const unit = typeof getCurrencyUnit === 'function' ? getCurrencyUnit() : 'B';
             hint.textContent = locked
-                ? `보유 ${unit}이(가) 10${unit} 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.`
+                ? `보유 ${unit}이(가) 10${unit} 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요. 점심값 10${unit}이 빠진 뒤에는 지갑에 11${unit} 이상이 남아 있어야 합니다.`
                 : '';
             hint.classList.toggle('hidden', !locked);
-            btn.disabled = locked;
+            btn.disabled = false;
             input.disabled = locked;
             input.max = String(Math.max(0, Math.floor(bal - 10)));
             input.placeholder = locked ? '투자 불가' : `최대 ${formatBongAmount(Math.max(0, Math.floor(bal - 10)))}`;
@@ -20780,11 +20776,9 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (window.playerState.isAdmin) return window.customAlert("선생님은 식권 경매에 참여할 수 없습니다.");
             if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
-            const closedReason = lunchBidClosedReason(new Date());
-            if (closedReason) return window.customAlert(closedReason);
 
             const bal = Number(window.playerState.bong) || 0;
-            if (bal <= 10) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 10${getCurrencyUnit()} 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.`);
+            if (bal <= 10) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 10${getCurrencyUnit()} 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.\n점심값이 빠진 뒤에는 지갑에 11${getCurrencyUnit()} 이상이 남아 있어야 합니다.`);
 
             const inputEl = document.getElementById('lunchBidInput');
             const amt = parseInt(inputEl.value, 10);
@@ -20818,8 +20812,12 @@ ${subjectLine}
                     window.playerState.bong = nextBong;
                     window.playerState.lunchBid = nextLunchBid;
                     updateUI();
-                    playSfx('bong', false); 
-                    await window.customAlert(`✅ 결제 완료!\n오늘 총 ${formatBongAmount(window.playerState.lunchBid.amount)}를 썼습니다.\n밥줄 탭에서 순위를 확인해보세요.`);
+                    playSfx('bong', false);
+                    const rankOpen = isLunchRankVisible(new Date(), false);
+                    const rankHint = rankOpen
+                        ? '밥줄 탭 순위에서 확인할 수 있어요.'
+                        : '순위는 낮 12시 10분에 공개됩니다. 투자 칸에 오늘 넣은 금액이 바로 보입니다.';
+                    await window.customAlert(`✅ 결제 완료!\n오늘 총 ${formatBongAmount(window.playerState.lunchBid.amount)}를 썼습니다.\n${rankHint}`);
                     inputEl.value = '';
                 } catch (e) {
                     if (e && e.message === 'reserve') {

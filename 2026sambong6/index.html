@@ -1543,7 +1543,7 @@
             <div class="max-w-6xl mx-auto space-y-3 lg:grid lg:grid-cols-[0.9fr_1.1fr] lg:items-start lg:gap-3 lg:space-y-0">
                 <div class="mb-1 lg:col-span-2">
                     <h2 class="text-xl sm:text-2xl font-display text-orange-400"><i class="fa-solid fa-utensils"></i> 급식 우선권 (VIP 밥줄)</h2>
-                    <p class="text-[9px] sm:text-[10px] text-slate-300 mt-0.5">밥줄 투자는 <strong class="text-orange-200">평일 낮 12시까지</strong> 가능합니다. 12시 이후 점심값(10<span data-currency-unit>B</span>)이 자동 차감되고, 순위는 12시 10분에 공개됩니다. 투자액이 많을수록 먼저 먹고, 동점이면 레벨(XP)이 높은 사람이 이깁니다.</p>
+                    <p class="text-[9px] sm:text-[10px] text-slate-300 mt-0.5">투자는 당일 계속 가능합니다. 순위는 <strong class="text-orange-200">평일 낮 12시 10분</strong>에 공개되고, 그 뒤 투자해도 순위가 바로 바뀝니다. 12시 이후 점심값(10<span data-currency-unit>B</span>)이 자동 차감됩니다. 투자액이 많을수록 먼저 먹고, 동점이면 레벨(XP)이 높은 사람이 이깁니다.</p>
                     <p id="lunchInvestLockHint" class="hidden text-[9px] text-red-400 font-bold mt-1">보유 삼봉이 10B 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.</p>
                     <div class="app-sub-dock cols-3 mt-3">
                         <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="lunch" data-pane="invest" onclick="window.switchInnerPane('lunch','invest')">
@@ -1558,11 +1558,12 @@
                 </div>
                 
                 <div class="inner-pane glass-panel p-3 rounded-2xl border border-orange-500/30" data-pane-group="lunch" data-pane="invest">
-                    <h3 class="font-bold text-xs text-white mb-2">식권 투자하기 <span class="text-orange-300 font-black">(평일 낮 12시까지)</span></h3>
+                    <h3 class="font-bold text-xs text-white mb-2">식권 투자하기</h3>
                     <div class="flex gap-2">
                         <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" data-currency-placeholder="추가 투자할 {u} 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
                         <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition transform hover:scale-105 disabled:opacity-40 disabled:pointer-events-none">입찰</button>
                     </div>
+                    <p id="lunchMyBidStatus" class="text-[10px] text-orange-200 font-bold mt-2">오늘 내가 넣은 금액: 0B</p>
                 </div>
 
                 <!-- 12시 10분 전까지 학생들에게는 이 영역이 숨겨집니다 -->

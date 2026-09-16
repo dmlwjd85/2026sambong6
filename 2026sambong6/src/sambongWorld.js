@@ -54,7 +54,7 @@ import {
     toRaidSessionQuestion,
     updateQuizBankItem,
 } from './lib/quizBank.js';
-import { withRetry, isLikelyNetworkError } from './lib/withRetry.js';
+import { withRetry, isLikelyNetworkError, isRetryableWriteError } from './lib/withRetry.js';
 import {
     computeResearchStats,
     researchStatsToCsv,
@@ -1029,7 +1029,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.37';
+        const APP_VERSION = 'v1.38';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -4326,6 +4326,10 @@ function redrawPlazaGrantsUi() {
         let unsubscribeShopGroupBuy = null;
         let unsubscribeConvenienceOrders = null;
         let unsubscribeStudentBackups = null;
+        let unsubscribeClassBoard = null;
+        let unsubscribeOpenLesson = null;
+        let _classBoardDocReady = false;
+        let _openLessonDocReady = false;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
         const appId = resolveClassId();
 
@@ -4501,6 +4505,24 @@ function redrawPlazaGrantsUi() {
 
         function getGlobalSettingsDocRef() {
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+        }
+
+        /** 학급게시판은 전역 설정 문서와 분리합니다. 생각게시판 그림 때문에 전역 문서가 커져도 저장이 되게 합니다. */
+        function getClassBoardDocRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'classBoard');
+        }
+
+        /** 공개수업 슬라이드 위치도 전역 설정과 분리합니다. */
+        function getOpenLessonDocRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'openLesson');
+        }
+
+        function settingsSliceEqual(a, b) {
+            try {
+                return JSON.stringify(a) === JSON.stringify(b);
+            } catch (e) {
+                return false;
+            }
         }
 
         /**
@@ -11462,15 +11484,22 @@ ${subjectLine}
                 await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return false;
             }
-            const ref = getGlobalSettingsDocRef();
+            const ref = getClassBoardDocRef();
             try {
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(ref);
-                    const cur = sanitizeClassBoard(snap.exists() ? snap.data().classBoard : currentClassBoard());
-                    const next = sanitizeClassBoard(mutator(cur));
-                    tx.set(ref, { classBoard: next }, { merge: true });
-                    if (window.globalSettings) window.globalSettings.classBoard = next;
-                });
+                await withRetry(async () => {
+                    await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(ref);
+                        const cur = sanitizeClassBoard(snap.exists() ? snap.data().classBoard : currentClassBoard());
+                        const next = sanitizeClassBoard(mutator(cur));
+                        if (settingsSliceEqual(cur, next)) {
+                            if (window.globalSettings) window.globalSettings.classBoard = next;
+                            return;
+                        }
+                        tx.set(ref, { classBoard: next, updatedAt: Date.now() });
+                        if (window.globalSettings) window.globalSettings.classBoard = next;
+                    });
+                }, { retries: 3, baseDelayMs: 280, retryIf: isRetryableWriteError });
+                _classBoardDocReady = true;
                 renderClassBoardPanel();
                 return true;
             } catch (e) {
@@ -11886,6 +11915,9 @@ ${subjectLine}
 
         window.viewClassBoardPage = async function (pageId) {
             if (!window.playerState || !window.playerState.isAdmin) return;
+            const next = setClassBoardViewPage(currentClassBoard(), pageId);
+            if (window.globalSettings) window.globalSettings.classBoard = next;
+            renderClassBoardPanel();
             await saveClassBoard((s) => setClassBoardViewPage(s, pageId));
         };
 
@@ -11989,6 +12021,7 @@ ${subjectLine}
         }
 
         function canAdvanceOpenLesson() {
+            if (_classToolShareFollower) return false;
             const p = window.playerState;
             if (!p) return false;
             if (p.isAdmin) return true;
@@ -11997,9 +12030,14 @@ ${subjectLine}
         }
 
         async function saveOpenLesson(mutator) {
+            const nextLocal = sanitizeOpenLessonState(mutator(currentOpenLesson()));
+            if (window.playerState && window.playerState.isGuest) {
+                if (window.globalSettings) window.globalSettings.openLesson = nextLocal;
+                renderOpenLessonPanel();
+                return true;
+            }
             if (!db) {
-                const next = sanitizeOpenLessonState(mutator(currentOpenLesson()));
-                if (window.globalSettings) window.globalSettings.openLesson = next;
+                if (window.globalSettings) window.globalSettings.openLesson = nextLocal;
                 renderOpenLessonPanel();
                 return true;
             }
@@ -12008,15 +12046,22 @@ ${subjectLine}
                 await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return false;
             }
-            const ref = getGlobalSettingsDocRef();
+            const ref = getOpenLessonDocRef();
             try {
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(ref);
-                    const cur = sanitizeOpenLessonState(snap.exists() ? snap.data().openLesson : currentOpenLesson());
-                    const next = sanitizeOpenLessonState(mutator(cur));
-                    tx.set(ref, { openLesson: next }, { merge: true });
-                    if (window.globalSettings) window.globalSettings.openLesson = next;
-                });
+                await withRetry(async () => {
+                    await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(ref);
+                        const cur = sanitizeOpenLessonState(snap.exists() ? snap.data().openLesson : currentOpenLesson());
+                        const next = sanitizeOpenLessonState(mutator(cur));
+                        if (settingsSliceEqual(cur, next)) {
+                            if (window.globalSettings) window.globalSettings.openLesson = next;
+                            return;
+                        }
+                        tx.set(ref, { openLesson: next, updatedAt: Date.now() });
+                        if (window.globalSettings) window.globalSettings.openLesson = next;
+                    });
+                }, { retries: 3, baseDelayMs: 280, retryIf: isRetryableWriteError });
+                _openLessonDocReady = true;
                 renderOpenLessonPanel();
                 return true;
             } catch (e) {
@@ -12128,6 +12173,9 @@ ${subjectLine}
             const now = Date.now();
             if (now < _openLessonTapLock) return;
             _openLessonTapLock = now + 420;
+            const next = stepOpenLesson(currentOpenLesson(), delta, now);
+            if (window.globalSettings) window.globalSettings.openLesson = next;
+            renderOpenLessonPanel();
             await saveOpenLesson((s) => stepOpenLesson(s, delta, now));
         };
 
@@ -16798,12 +16846,12 @@ ${subjectLine}
                                     window.globalSettings.thoughtBoard = sanitizeThoughtBoard(settingsData.thoughtBoard);
                                     if (classtoolSub === 'padlet') renderThinkBoardPanel();
                                 }
-                                if (settingsData.classBoard !== undefined) {
+                                if (settingsData.classBoard !== undefined && !_classBoardDocReady) {
                                     window.globalSettings.classBoard = sanitizeClassBoard(settingsData.classBoard);
                                     maybePlayClassBoardCheer(window.globalSettings.classBoard);
                                     if (classtoolSub === 'classboard') renderClassBoardPanel();
                                 }
-                                if (settingsData.openLesson !== undefined) {
+                                if (settingsData.openLesson !== undefined && !_openLessonDocReady) {
                                     window.globalSettings.openLesson = sanitizeOpenLessonState(settingsData.openLesson);
                                     if (classtoolSub === 'openlesson') renderOpenLessonPanel();
                                 }
@@ -16888,6 +16936,25 @@ ${subjectLine}
                                     purchaseHistory: ph,
                                 });
                             }
+                        });
+
+                        if (unsubscribeClassBoard) unsubscribeClassBoard();
+                        unsubscribeClassBoard = onSnapshot(getClassBoardDocRef(), (snap) => {
+                            if (!snap.exists()) return;
+                            _classBoardDocReady = true;
+                            const board = sanitizeClassBoard(snap.data() && snap.data().classBoard);
+                            if (window.globalSettings) window.globalSettings.classBoard = board;
+                            maybePlayClassBoardCheer(board);
+                            if (classtoolSub === 'classboard') renderClassBoardPanel();
+                        });
+
+                        if (unsubscribeOpenLesson) unsubscribeOpenLesson();
+                        unsubscribeOpenLesson = onSnapshot(getOpenLessonDocRef(), (snap) => {
+                            if (!snap.exists()) return;
+                            _openLessonDocReady = true;
+                            const lesson = sanitizeOpenLessonState(snap.data() && snap.data().openLesson);
+                            if (window.globalSettings) window.globalSettings.openLesson = lesson;
+                            if (classtoolSub === 'openlesson') renderOpenLessonPanel();
                         });
 
                         if(unsubscribeRaid) unsubscribeRaid();

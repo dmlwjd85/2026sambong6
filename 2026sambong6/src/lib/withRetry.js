@@ -23,6 +23,20 @@ export function isLikelyNetworkError(err) {
     );
 }
 
+/** 동시 쓰기·잠깐 끊김으로 트랜잭션이 깨진 경우도 다시 시도합니다. */
+export function isRetryableWriteError(err) {
+    if (isLikelyNetworkError(err)) return true;
+    const code = String(err.code || '').toLowerCase();
+    const msg = String(err.message || err || '').toLowerCase();
+    return (
+        code.includes('aborted')
+        || code.includes('failed-precondition')
+        || msg.includes('aborted')
+        || msg.includes('contention')
+        || msg.includes('too much contention')
+    );
+}
+
 /**
  * @param {() => Promise<any>} fn
  * @param {{ retries?: number, baseDelayMs?: number, label?: string, onRetry?: (n, err) => void }} [opts]
@@ -36,7 +50,8 @@ export async function withRetry(fn, opts = {}) {
             return await fn();
         } catch (err) {
             lastErr = err;
-            const canRetry = attempt < retries && isLikelyNetworkError(err);
+            const retryIf = typeof opts.retryIf === 'function' ? opts.retryIf : isLikelyNetworkError;
+            const canRetry = attempt < retries && retryIf(err);
             if (!canRetry) throw err;
             if (typeof opts.onRetry === 'function') opts.onRetry(attempt + 1, err);
             await sleep(baseDelayMs * (attempt + 1));

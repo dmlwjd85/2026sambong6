@@ -349,6 +349,9 @@ import {
 } from './lib/classDirectory.js';
 import {
     filterLunchQueueStudents,
+    isLunchBidOpen,
+    isLunchRankVisible,
+    lunchBidClosedReason,
     lunchQueueDisplayName,
 } from './lib/lunchQueue.js';
 import {
@@ -1028,7 +1031,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.35';
+        const APP_VERSION = 'v1.36';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -17062,21 +17065,18 @@ ${subjectLine}
             const now = new Date();
             checkClassStartReminders(now);
             checkClassBells(now);
-            const h = now.getHours();
-            const m = now.getMinutes();
-            const isPast1210 = (h > 12) || (h === 12 && m >= 10);
-            
             const lunchTab = document.getElementById('tab-lunch');
             if (lunchTab) lunchTab.classList.toggle('hidden', !classModuleOn('lunch'));
 
             const queueContainer = document.getElementById('lunchQueueWrapper');
             if (queueContainer) {
-                if ((window.playerState && window.playerState.isAdmin) || isPast1210) {
+                if (isLunchRankVisible(now, !!(window.playerState && window.playerState.isAdmin))) {
                     queueContainer.classList.remove('hidden');
                 } else {
                     queueContainer.classList.add('hidden');
                 }
             }
+            if (typeof updateLunchInvestLockUI === 'function') updateLunchInvestLockUI();
 
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
@@ -20104,7 +20104,7 @@ ${subjectLine}
             }
         }
 
-        // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가
+        // 밥줄: 평일 낮 12시 마감, 보유 10B 이하(또는 마이너스)면 추가 투자 불가
         function updateLunchInvestLockUI() {
             const hint = document.getElementById('lunchInvestLockHint');
             const btn = document.getElementById('lunchBidSubmitBtn');
@@ -20116,8 +20116,21 @@ ${subjectLine}
                 input.disabled = false;
                 return;
             }
+            const closedReason = lunchBidClosedReason(new Date());
+            if (closedReason) {
+                hint.textContent = closedReason;
+                hint.classList.remove('hidden');
+                btn.disabled = true;
+                input.disabled = true;
+                input.placeholder = '마감 (평일 낮 12시까지)';
+                return;
+            }
             const bal = Number(window.playerState.bong) || 0;
             const locked = bal <= 10;
+            const unit = typeof getCurrencyUnit === 'function' ? getCurrencyUnit() : 'B';
+            hint.textContent = locked
+                ? `보유 ${unit}이(가) 10${unit} 이하(또는 마이너스)면 밥줄 추가 투자를 할 수 없어요.`
+                : '';
             hint.classList.toggle('hidden', !locked);
             btn.disabled = locked;
             input.disabled = locked;
@@ -20767,7 +20780,9 @@ ${subjectLine}
             if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (window.playerState.isAdmin) return window.customAlert("선생님은 식권 경매에 참여할 수 없습니다.");
             if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
-            
+            const closedReason = lunchBidClosedReason(new Date());
+            if (closedReason) return window.customAlert(closedReason);
+
             const bal = Number(window.playerState.bong) || 0;
             if (bal <= 10) return window.customAlert(`보유 ${getCurrencyUnit()}이(가) 10${getCurrencyUnit()} 이하(또는 마이너스)인 경우 밥줄에 추가 투자할 수 없어요.`);
 
@@ -20808,7 +20823,7 @@ ${subjectLine}
                     inputEl.value = '';
                 } catch (e) {
                     if (e && e.message === 'reserve') {
-                        return window.customAlert('서버 최신 지갑 잔액 기준으로 밥줄 투자 후 최소 10${getCurrencyUnit()}가 남지 않아 차단했습니다.\n은행 예금은 밥줄 투자에 사용되지 않습니다.');
+                        return window.customAlert(`서버 최신 지갑 잔액 기준으로 밥줄 투자 후 최소 10${getCurrencyUnit()}가 남지 않아 차단했습니다.\n은행 예금은 밥줄 투자에 사용되지 않습니다.`);
                     }
                     console.error('submitLunchBid', e);
                     return window.customAlert('밥줄 투자 저장 중 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.');

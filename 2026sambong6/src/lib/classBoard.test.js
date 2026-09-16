@@ -12,12 +12,14 @@ import {
     classBoardPagesList,
     classBoardPromptForView,
     classBoardRemainingMs,
+    classBoardStateFromSnaps,
     classNoteColorForStudent,
     cheerClassBoardNote,
     clearClassBoard,
     clearClassBoardFocus,
     closeClassBoardPosting,
     emptyClassBoard,
+    planClassBoardCheer,
     sanitizeClassBoard,
     setClassBoardFocus,
     setClassBoardViewPage,
@@ -195,4 +197,73 @@ describe('학급게시판 정리', () => {
         const mine = classBoardNotesList(long).find((n) => n.studentId === '99');
         assert.equal(Array.from(mine.text).length, CLASS_NOTE_TEXT_MAX);
     });
+
+    it('onclick에 넣을 수 없는 쪽지·페이지 id는 버린다', () => {
+        const dirty = sanitizeClassBoard({
+            currentPageId: "pg');alert(1)//",
+            viewPageId: "pg');alert(1)//",
+            pages: {
+                "pg');alert(1)//": {
+                    id: "pg');alert(1)//",
+                    index: 1,
+                    notes: {
+                        "n');alert(1)//": {
+                            id: "n');alert(1)//",
+                            studentId: '1',
+                            text: '위험',
+                        },
+                    },
+                },
+                pg_ok: {
+                    id: 'pg_ok',
+                    index: 2,
+                    notes: {
+                        n_ok: { id: 'n_ok', studentId: '2', text: '안전' },
+                    },
+                },
+            },
+        });
+        assert.equal(Object.keys(dirty.pages).includes("pg');alert(1)//"), false);
+        assert.ok(dirty.pages.pg_ok);
+        assert.equal(Object.keys(dirty.pages.pg_ok.notes).includes("n');alert(1)//"), false);
+        assert.equal(dirty.pages.pg_ok.notes.n_ok.text, '안전');
+        assert.equal(isSafeId(dirty.currentPageId), true);
+        assert.equal(isSafeId(dirty.viewPageId), true);
+    });
+
+    it('별도 문서가 없으면 전역 설정의 쪽지를 지키고 빈 로컬로 덮지 않는다', () => {
+        const t0 = 1_700_000_600_000;
+        let saved = startClassBoardPrompt(emptyClassBoard(), { prompt: '오전의 다짐', seconds: 0 }, t0);
+        saved = submitClassNote(saved, { studentId: '1', text: '사이좋게' }, t0 + 1);
+        const emptyLocal = setClassBoardViewTogether(emptyClassBoard(), true);
+        const cur = classBoardStateFromSnaps(null, { classBoard: saved }, emptyLocal);
+        assert.equal(classBoardNotesList(cur).length, 1);
+        assert.equal(classBoardNotesList(cur)[0].text, '사이좋게');
+        const next = setClassBoardViewTogether(cur, true);
+        assert.equal(classBoardNotesList(next).length, 1);
+        const dedicated = classBoardStateFromSnaps({ classBoard: emptyClassBoard() }, { classBoard: saved }, saved);
+        assert.equal(classBoardNotesList(dedicated).length, 0);
+    });
+
+    it('없는 쪽지에는 따봉 경험치·봉을 주지 않는다', () => {
+        const t0 = 1_700_000_700_000;
+        let st = startClassBoardPrompt(emptyClassBoard(), { prompt: '따봉', seconds: 0 }, t0);
+        st = submitClassNote(st, { studentId: '3', text: '큰 글씨' }, t0 + 1);
+        const noteId = classBoardNotesList(st)[0].id;
+        const ok = planClassBoardCheer(st, noteId, t0 + 2);
+        assert.equal(ok.ok, true);
+        assert.equal(ok.studentId, '3');
+        assert.equal(ok.xp, CLASS_BOARD_CHEER_XP);
+        assert.equal(ok.bong, CLASS_BOARD_CHEER_BONG);
+        assert.equal(ok.next.cheer.noteId, noteId);
+        const miss = planClassBoardCheer(st, 'n_missing', t0 + 3);
+        assert.equal(miss.ok, false);
+        assert.equal(miss.xp, 0);
+        assert.equal(miss.bong, 0);
+        assert.equal(miss.studentId, '');
+    });
 });
+
+function isSafeId(id) {
+    return /^[a-zA-Z0-9_-]{1,40}$/.test(String(id || ''));
+}

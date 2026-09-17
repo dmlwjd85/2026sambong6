@@ -392,6 +392,149 @@ export function applyBusSeatRelease({
 }
 
 /**
+ * 마스터가 자리를 비우거나 구매자를 바꿉니다.
+ * - 비우면 기존 구매자에게 paid만 환불합니다.
+ * - 빈 자리로 옮기면 낸 paid를 그대로 가져가고 환불하지 않습니다.
+ * - 다른 구매자와 바꾸면 각자 paid를 들고 자리를 맞바꿉니다.
+ * - 구입 자리가 없는 학생으로 바꾸면 기존 구매자에게 환불하고 새 주인의 paid는 0입니다.
+ * - 주인이 없는 자리에 구입 이력이 없는 학생을 넣으면 뽑기(assignee)만 바꿉니다.
+ */
+export function applyBusSeatAdminAssign({
+    state,
+    seatId,
+    selectedId = null,
+    locked = false,
+    price,
+    actionId = '',
+} = {}) {
+    const board = sanitizeBusState(state);
+    const sid = Math.floor(Number(seatId));
+    if (!Number.isFinite(sid) || sid < 0 || sid >= BUS_SEAT_COUNT) {
+        return { ok: false, reason: 'missing', state: board, refunds: [] };
+    }
+    const aid = String(actionId || '').trim().slice(0, 80);
+    if (aid && historyHasId(board, aid)) {
+        return {
+            ok: true,
+            already: true,
+            reason: 'already',
+            state: board,
+            refunds: [],
+            seatId: sid,
+            actionId: aid,
+            kind: 'already',
+            movedFromSeatId: null,
+            prevOwner: board.seats[sid] ? board.seats[sid].owner : null,
+            selectedId: cleanId(selectedId) || null,
+            paid: board.seats[sid] ? sanitizeBusPaid(board.seats[sid].paid) : 0,
+        };
+    }
+    const seat = board.seats[sid];
+    if (!seat) {
+        return { ok: false, reason: 'missing', state: board, refunds: [] };
+    }
+    const selected = cleanId(selectedId) || null;
+    const prevOwner = seat.owner || null;
+    const prevPaid = prevOwner ? sanitizeBusPaid(seat.paid) : 0;
+    const otherOwned = selected
+        ? board.seats.find((s) => s && s.id !== sid && String(s.owner || '') === selected)
+        : null;
+    const refunds = [];
+    let kind = 'keep';
+    let movedFromSeatId = null;
+
+    function clearLotteryAssignee(id, exceptId) {
+        if (!id) return;
+        board.seats.forEach((s) => {
+            if (!s || s.id === exceptId) return;
+            if (String(s.assignee || '') === id && !s.owner) s.assignee = null;
+        });
+    }
+
+    if (!selected) {
+        if (prevOwner && prevPaid > 0) {
+            refunds.push({ studentId: prevOwner, amount: prevPaid, seatId: sid, kind: 'vacate' });
+        }
+        seat.owner = null;
+        seat.paid = 0;
+        seat.assignee = null;
+        kind = prevOwner ? 'vacate' : 'clear';
+    } else if (otherOwned && prevOwner && prevOwner !== selected) {
+        const otherPaid = sanitizeBusPaid(otherOwned.paid);
+        otherOwned.owner = prevOwner;
+        otherOwned.paid = prevPaid;
+        otherOwned.assignee = prevOwner;
+        seat.owner = selected;
+        seat.paid = otherPaid;
+        seat.assignee = selected;
+        clearLotteryAssignee(selected, sid);
+        clearLotteryAssignee(prevOwner, otherOwned.id);
+        movedFromSeatId = otherOwned.id;
+        kind = 'swap';
+    } else if (otherOwned) {
+        const carry = sanitizeBusPaid(otherOwned.paid);
+        if (prevOwner && prevOwner !== selected && prevPaid > 0) {
+            refunds.push({ studentId: prevOwner, amount: prevPaid, seatId: sid, kind: 'replace' });
+        }
+        otherOwned.owner = null;
+        otherOwned.paid = 0;
+        if (String(otherOwned.assignee || '') === selected) otherOwned.assignee = null;
+        seat.owner = selected;
+        seat.paid = carry;
+        seat.assignee = selected;
+        clearLotteryAssignee(selected, sid);
+        movedFromSeatId = otherOwned.id;
+        kind = 'move';
+    } else if (prevOwner && prevOwner !== selected) {
+        if (prevPaid > 0) {
+            refunds.push({ studentId: prevOwner, amount: prevPaid, seatId: sid, kind: 'replace' });
+        }
+        seat.owner = selected;
+        seat.paid = 0;
+        seat.assignee = selected;
+        clearLotteryAssignee(selected, sid);
+        kind = 'replace';
+    } else if (prevOwner && prevOwner === selected) {
+        seat.assignee = selected;
+        kind = 'keep';
+    } else {
+        clearLotteryAssignee(selected, sid);
+        seat.assignee = selected;
+        kind = 'assign';
+    }
+
+    seat.hidden = false;
+    seat.locked = locked === true;
+    if (price != null) seat.price = sanitizeBusSeatPrice(price, seat.price);
+
+    if (aid) {
+        pushHistory(board, {
+            id: aid,
+            studentId: selected || prevOwner || '',
+            seatId: sid,
+            price: sanitizeBusPaid(seat.paid),
+            prevOwner,
+            kind: kind === 'keep' || kind === 'clear' || kind === 'assign' ? 'admin' : kind,
+            at: Date.now(),
+        });
+    }
+
+    return {
+        ok: true,
+        already: false,
+        state: board,
+        refunds,
+        prevOwner,
+        seatId: sid,
+        selectedId: selected,
+        movedFromSeatId,
+        kind,
+        paid: sanitizeBusPaid(seat.paid),
+        actionId: aid,
+    };
+}
+
+/**
  * 마스터가 자리 활성·기본 가격을 한 번에 맞출 때 씁니다.
  * 비활성으로 바뀌고 주인이 있으면 낸 paid만 환불 목록에 넣습니다.
  */

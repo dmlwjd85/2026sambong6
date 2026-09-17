@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     BUS_SEAT_COUNT,
     BUS_SEAT_DEFAULT_PRICE,
+    applyBusSeatAdminAssign,
     applyBusSeatBulkSettings,
     applyBusSeatPurchase,
     applyBusSeatRelease,
@@ -323,5 +324,136 @@ describe('버스 자리 구입·입찰 환불', () => {
             updates: [{ id: 1, hidden: true, price: 12 }],
         });
         assert.equal(again.refunds.length, 0);
+    });
+});
+
+describe('마스터 버스 자리 비우기·구매자 변경', () => {
+    function ownedBoard() {
+        const huntae = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 11,
+            buyerId: '12',
+            bid: 18,
+            buyerBong: 50,
+            purchaseId: 'buy-12',
+        });
+        return applyBusSeatPurchase({
+            state: huntae.state,
+            seatId: 7,
+            buyerId: '8',
+            bid: 14,
+            buyerBong: 40,
+            purchaseId: 'buy-8',
+        });
+    }
+
+    it('구매 자리를 비우면 낸 봉만 환불한다', () => {
+        const board = ownedBoard();
+        const vacated = applyBusSeatAdminAssign({
+            state: board.state,
+            seatId: 11,
+            selectedId: '',
+            actionId: 'adm-vacate',
+        });
+        assert.equal(vacated.ok, true);
+        assert.equal(vacated.kind, 'vacate');
+        assert.equal(vacated.state.seats[11].owner, null);
+        assert.equal(vacated.state.seats[11].paid, 0);
+        assert.equal(vacated.state.seats[11].assignee, null);
+        assert.equal(vacated.state.seats[7].owner, '8');
+        assert.deepEqual(vacated.refunds, [{ studentId: '12', amount: 18, seatId: 11, kind: 'vacate' }]);
+        const again = applyBusSeatAdminAssign({
+            state: vacated.state,
+            seatId: 11,
+            selectedId: '',
+            actionId: 'adm-vacate',
+        });
+        assert.equal(again.already, true);
+        assert.equal(again.refunds.length, 0);
+    });
+
+    it('빈 자리로 옮기면 paid를 가져가고 환불하지 않는다', () => {
+        const board = ownedBoard();
+        const moved = applyBusSeatAdminAssign({
+            state: board.state,
+            seatId: 20,
+            selectedId: '12',
+            actionId: 'adm-move',
+        });
+        assert.equal(moved.ok, true);
+        assert.equal(moved.kind, 'move');
+        assert.equal(moved.movedFromSeatId, 11);
+        assert.equal(moved.state.seats[20].owner, '12');
+        assert.equal(moved.state.seats[20].paid, 18);
+        assert.equal(moved.state.seats[20].assignee, '12');
+        assert.equal(moved.state.seats[11].owner, null);
+        assert.equal(moved.state.seats[11].paid, 0);
+        assert.equal(moved.state.seats[7].owner, '8');
+        assert.equal(moved.refunds.length, 0);
+    });
+
+    it('두 구매자 자리를 맞바꾸면 각자 낸 봉을 들고 간다', () => {
+        const board = ownedBoard();
+        const swapped = applyBusSeatAdminAssign({
+            state: board.state,
+            seatId: 11,
+            selectedId: '8',
+            actionId: 'adm-swap',
+        });
+        assert.equal(swapped.ok, true);
+        assert.equal(swapped.kind, 'swap');
+        assert.equal(swapped.state.seats[11].owner, '8');
+        assert.equal(swapped.state.seats[11].paid, 14);
+        assert.equal(swapped.state.seats[7].owner, '12');
+        assert.equal(swapped.state.seats[7].paid, 18);
+        assert.equal(swapped.refunds.length, 0);
+    });
+
+    it('구입 자리가 없는 학생으로 바꾸면 기존 구매자에게 환불한다', () => {
+        const board = ownedBoard();
+        const replaced = applyBusSeatAdminAssign({
+            state: board.state,
+            seatId: 7,
+            selectedId: '1',
+            actionId: 'adm-replace',
+        });
+        assert.equal(replaced.ok, true);
+        assert.equal(replaced.kind, 'replace');
+        assert.equal(replaced.state.seats[7].owner, '1');
+        assert.equal(replaced.state.seats[7].paid, 0);
+        assert.deepEqual(replaced.refunds, [{ studentId: '8', amount: 14, seatId: 7, kind: 'replace' }]);
+        assert.equal(replaced.state.seats[11].owner, '12');
+    });
+
+    it('주인이 없는 자리는 뽑기 앉히기만 한다', () => {
+        const assigned = applyBusSeatAdminAssign({
+            state: emptyBusState(),
+            seatId: 3,
+            selectedId: '5',
+            actionId: 'adm-assign',
+        });
+        assert.equal(assigned.ok, true);
+        assert.equal(assigned.kind, 'assign');
+        assert.equal(assigned.state.seats[3].owner, null);
+        assert.equal(assigned.state.seats[3].assignee, '5');
+        assert.equal(assigned.refunds.length, 0);
+    });
+
+    it('비활성 자리를 다시 켜도 구매자와 낸 봉을 유지한다', () => {
+        const hiddenKeep = sanitizeBusState({
+            seats: [{ id: 0, hidden: true, owner: '12', paid: 18, price: 10 }],
+        });
+        const opened = applyBusSeatAdminAssign({
+            state: hiddenKeep,
+            seatId: 0,
+            selectedId: '12',
+            actionId: 'adm-unhide',
+        });
+        assert.equal(opened.ok, true);
+        assert.equal(opened.kind, 'keep');
+        assert.equal(opened.state.seats[0].hidden, false);
+        assert.equal(opened.state.seats[0].owner, '12');
+        assert.equal(opened.state.seats[0].paid, 18);
+        assert.equal(opened.refunds.length, 0);
     });
 });

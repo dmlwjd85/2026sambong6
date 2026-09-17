@@ -4992,15 +4992,24 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 flex-direction: column-reverse;
                 gap: 0.35rem;
                 margin-bottom: 0;
-                margin-right: 0.45rem;
-                min-width: 2.35rem;
+                margin-right: 0.5rem;
+                width: 3.6rem;
+                min-width: 3.6rem;
             }
             .bus-deck-cab,
             .bus-deck-door {
-                writing-mode: vertical-rl;
+                writing-mode: horizontal-tb;
+                text-orientation: mixed;
+                flex: 1 1 0;
                 min-height: 0;
-                min-width: 2.2rem;
-                letter-spacing: 0.08em;
+                min-width: 0;
+                flex-direction: column;
+                gap: 0.2rem;
+                font-size: 11px;
+                letter-spacing: 0;
+                padding: 0.25rem 0.15rem;
+                line-height: 1.25;
+                word-break: keep-all;
             }
             .bus-deck-grid {
                 flex: 1 1 auto;
@@ -5008,20 +5017,22 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 grid-template-rows: repeat(5, minmax(2.5rem, auto));
                 grid-auto-flow: column;
             }
-            /* 세로 배치의 왼쪽(운전석·창)이 가로에서는 아래, 오른쪽(출입문)이 위로 가게 뒤집습니다. */
-            .bus-deck-grid > *:nth-child(5n + 1) { grid-row: 5; }
-            .bus-deck-grid > *:nth-child(5n + 2) { grid-row: 4; }
-            .bus-deck-grid > *:nth-child(5n + 3) { grid-row: 3; }
-            .bus-deck-grid > *:nth-child(5n + 4) { grid-row: 2; }
-            .bus-deck-grid > *:nth-child(5n + 5) { grid-row: 1; }
             .bus-deck-rear {
-                writing-mode: vertical-rl;
+                writing-mode: horizontal-tb;
+                text-orientation: mixed;
                 margin-top: 0;
-                margin-left: 0.45rem;
+                margin-left: 0.5rem;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                min-width: 2rem;
+                width: 3.4rem;
+                min-width: 3.4rem;
+                font-size: 11px;
+                line-height: 1.35;
+                letter-spacing: 0;
+                word-break: keep-all;
+                text-align: center;
+                white-space: pre-line;
             }
             .bus-aisle {
                 writing-mode: horizontal-tb;

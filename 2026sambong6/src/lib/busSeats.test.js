@@ -9,6 +9,7 @@ import {
     applyBusSeatRelease,
     applyBusSeatWalletChanges,
     busLayoutCells,
+    busWideGridArea,
     busSeatSummary,
     emptyBusState,
     isBusSeatDisabled,
@@ -30,6 +31,21 @@ describe('45인승 버스 자리', () => {
         const lastRow = cells.filter((c) => c.row === 10);
         assert.equal(lastRow.filter((c) => c.kind === 'seat').length, 5);
         assert.equal(emptyBusState().seats.length, 45);
+        const first = seats[0];
+        const last = seats[seats.length - 1];
+        assert.deepEqual(busWideGridArea(first), { column: 1, row: 5 });
+        assert.deepEqual(busWideGridArea({ row: 0, col: 4 }), { column: 1, row: 1 });
+        assert.deepEqual(busWideGridArea(last), { column: 11, row: 1 });
+        assert.deepEqual(busWideGridArea({ row: 10, col: 0 }), { column: 11, row: 5 });
+        const aisle = aisles[0];
+        assert.deepEqual(busWideGridArea(aisle), { column: 1, row: 3 });
+        const areas = cells.map((c) => {
+            const a = busWideGridArea(c);
+            assert.ok(a.column >= 1 && a.column <= 11);
+            assert.ok(a.row >= 1 && a.row <= 5);
+            return `${a.column},${a.row}`;
+        });
+        assert.equal(new Set(areas).size, cells.length);
     });
 
     it('비활성 자리와 위험한 학번을 버린다', () => {

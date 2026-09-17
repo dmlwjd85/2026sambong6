@@ -1047,7 +1047,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.44';
+        const APP_VERSION = 'v1.45';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -18637,8 +18637,9 @@ ${subjectLine}
             }
             const seats = window.busSeatState.seats;
             grid.innerHTML = busLayoutCells().map((cell) => {
+                const pos = `--bus-row:${cell.row};--bus-col:${cell.col}`;
                 if (cell.kind === 'aisle') {
-                    return `<div class="bus-aisle" aria-hidden="true">통로</div>`;
+                    return `<div class="bus-aisle" style="${pos}" aria-hidden="true">통로</div>`;
                 }
                 const seat = seats[cell.id] || { id: cell.id, assignee: null, hidden: false, locked: false, owner: null, paid: 0, price: BUS_SEAT_DEFAULT_PRICE };
                 const unused = isBusSeatDisabled(seat);
@@ -18664,7 +18665,7 @@ ${subjectLine}
                         ? formatBongAmount(seat.paid)
                         : formatBongAmount(seat.price));
                 if (admin) {
-                    return `<div class="${cls} is-admin-edit" data-bus-seat="${seat.id}">
+                    return `<div class="${cls} is-admin-edit" data-bus-seat="${seat.id}" style="${pos}">
                         <label class="bus-seat-on">
                             <input type="checkbox" class="bus-admin-active" data-bus-id="${seat.id}" ${unused ? '' : 'checked'}>
                             <span class="bus-seat-no">${cell.no}번</span>
@@ -18675,7 +18676,7 @@ ${subjectLine}
                     </div>`;
                 }
                 const click = buyable ? `onclick="window.buyBusSeat(${seat.id})"` : '';
-                return `<div class="${cls}" ${click}>
+                return `<div class="${cls}" style="${pos}" ${click}>
                     <span class="bus-seat-no">${cell.no}번</span>
                     <span class="bus-seat-name">${escapeHtmlAttr(status)}</span>
                     ${priceText ? `<span class="bus-seat-price">${escapeHtmlAttr(priceText)}</span>` : ''}

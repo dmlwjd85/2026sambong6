@@ -75,6 +75,18 @@ export function busLayoutCells() {
     return cells;
 }
 
+/**
+ * 가로 버스 칸 위치. 세로 앞은 왼쪽, 세로 왼쪽(운전석·창)은 아래로 90도 돌린 값입니다.
+ */
+export function busWideGridArea(cell) {
+    const row = Math.floor(Number(cell && cell.row));
+    const col = Math.floor(Number(cell && cell.col));
+    return {
+        column: row + 1,
+        row: BUS_COLS - col,
+    };
+}
+
 export function sanitizeBusSeat(raw, fallbackId) {
     const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     const id = Number.isFinite(Number(src.id)) ? Math.floor(Number(src.id)) : fallbackId;

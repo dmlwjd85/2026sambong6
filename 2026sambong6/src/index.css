@@ -5015,7 +5015,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 flex: 1 1 auto;
                 grid-template-columns: repeat(11, minmax(0, 1fr));
                 grid-template-rows: repeat(5, minmax(2.5rem, auto));
-                grid-auto-flow: column;
+                grid-auto-flow: row;
+            }
+            /* 모바일 앞→가로 왼쪽, 모바일 왼쪽(운전석·창)→가로 아래. auto-flow만 바꾸면 칸이 뒤집힙니다. */
+            .bus-deck-grid > * {
+                grid-column: calc(var(--bus-row) + 1);
+                grid-row: calc(5 - var(--bus-col));
             }
             .bus-deck-rear {
                 writing-mode: horizontal-tb;

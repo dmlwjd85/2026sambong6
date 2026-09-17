@@ -34,6 +34,11 @@ function newId(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** onclick에 넣는 쪽지·페이지 id는 영문·숫자·_-만 남깁니다. */
+function isSafeClassBoardId(raw) {
+    return /^[a-zA-Z0-9_-]{1,40}$/.test(String(raw || ''));
+}
+
 function clampInt(raw, min, max, fallback) {
     const n = Math.floor(Number(raw));
     if (!Number.isFinite(n)) return fallback;
@@ -73,7 +78,10 @@ export function sanitizeClassNote(raw) {
     if (!studentId) return null;
     const text = cleanLine(raw.text, CLASS_NOTE_TEXT_MAX);
     if (!text) return null;
-    const id = String(raw.id || '').trim().slice(0, 40) || newId('n');
+    const rawId = String(raw.id || '').trim().slice(0, 40);
+    // 위험한 id는 새로 만들지 않고 버립니다. 매번 다시 만들면 스냅샷마다 쪽지가 바뀝니다.
+    if (rawId && !isSafeClassBoardId(rawId)) return null;
+    const id = rawId || newId('n');
     const color = classNoteColorForStudent(studentId);
     const createdAt = Math.max(0, Math.floor(Number(raw.createdAt) || 0));
     const updatedAt = Math.max(createdAt, Math.floor(Number(raw.updatedAt) || createdAt));
@@ -104,7 +112,7 @@ function sanitizeNotesMap(raw) {
 export function sanitizeClassPage(raw, fallbackIndex = 1) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const id = String(raw.id || '').trim().slice(0, 40);
-    if (!id) return null;
+    if (!isSafeClassBoardId(id)) return null;
     const index = clampInt(raw.index, 1, CLASS_BOARD_PAGE_MAX, fallbackIndex);
     const createdAt = Math.max(0, Math.floor(Number(raw.createdAt) || 0));
     const prompt = cleanLine(raw.prompt, CLASS_BOARD_PROMPT_MAX);
@@ -399,16 +407,74 @@ export function classBoardFocusNote(state) {
     return (page && page.notes && page.notes[board.focusNoteId]) || null;
 }
 
+/**
+ * 별도 문서가 아직 없으면 예전 전역 설정의 학급게시판을 씁니다.
+ * 빈 로컬 값으로 먼저 쓰면 오전에 붙인 쪽지가 사라집니다.
+ */
+export function classBoardStateFromSnaps(dedicatedData, globalData, localFallback) {
+    if (dedicatedData && typeof dedicatedData === 'object' && !Array.isArray(dedicatedData)
+        && dedicatedData.classBoard !== undefined) {
+        return sanitizeClassBoard(dedicatedData.classBoard);
+    }
+    if (globalData && typeof globalData === 'object' && !Array.isArray(globalData)
+        && globalData.classBoard !== undefined) {
+        return sanitizeClassBoard(globalData.classBoard);
+    }
+    return sanitizeClassBoard(localFallback);
+}
+
+/**
+ * 따봉 화면 신호. 쪽지가 없으면 지급하지 않습니다.
+ * 경험치·봉 숫자는 호출 쪽에서 increment로 더합니다.
+ * cheerId가 이미 저장돼 있으면 같은 탭의 재시도에서 두 번 주지 않습니다.
+ */
+export function planClassBoardCheer(state, noteId, now = Date.now(), cheerId = '') {
+    const cur = sanitizeClassBoard(state);
+    const cid = String(cheerId || '').trim().slice(0, 40);
+    if (cid && cur.cheer && String(cur.cheer.token) === cid) {
+        return {
+            ok: true,
+            already: true,
+            reason: 'already',
+            next: cur,
+            studentId: String(cur.cheer.studentId || ''),
+            xp: 0,
+            bong: 0,
+        };
+    }
+    const next = cheerClassBoardNote(cur, noteId, now, cid);
+    const note = classBoardFocusNote(next);
+    if (!note || String(note.id) !== String(noteId || '')) {
+        return {
+            ok: false,
+            reason: 'missing-note',
+            next: cur,
+            studentId: '',
+            xp: 0,
+            bong: 0,
+        };
+    }
+    return {
+        ok: true,
+        already: false,
+        next,
+        studentId: note.studentId,
+        xp: CLASS_BOARD_CHEER_XP,
+        bong: CLASS_BOARD_CHEER_BONG,
+    };
+}
+
 /** 따봉: 해당 쪽지 작성자에게 팡파레를 보냅니다. 경험치·봉 지급은 화면에서 이어서 합니다. */
-export function cheerClassBoardNote(state, noteId, now = Date.now()) {
+export function cheerClassBoardNote(state, noteId, now = Date.now(), cheerId = '') {
     const next = setClassBoardFocus(state, noteId);
     const note = classBoardFocusNote(next);
     if (!note) return next;
+    const token = String(cheerId || '').trim().slice(0, 40) || newId('ch');
     next.cheer = {
         studentId: note.studentId,
         noteId: note.id,
         at: Math.max(0, Math.floor(Number(now) || 0)),
-        token: newId('ch'),
+        token,
     };
     return next;
 }

@@ -415,11 +415,12 @@ import {
     classBoardPagesList,
     classBoardPromptForView,
     classBoardRemainingMs,
-    cheerClassBoardNote,
+    classBoardStateFromSnaps,
     clearClassBoard,
     clearClassBoardFocus,
     closeClassBoardPosting,
     emptyClassBoard,
+    planClassBoardCheer,
     sanitizeClassBoard,
     setClassBoardFocus,
     setClassBoardViewPage,
@@ -454,6 +455,7 @@ import {
     openLessonCatalog,
     openLessonSlideAt,
     openLessonSlideCount,
+    openLessonStateFromSnaps,
     sanitizeOpenLessonState,
     startOpenLesson,
     stepOpenLesson,
@@ -4535,6 +4537,36 @@ function redrawPlazaGrantsUi() {
         /** 공개수업 슬라이드 위치도 전역 설정과 분리합니다. */
         function getOpenLessonDocRef() {
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'openLesson');
+        }
+
+        /** 별도 문서가 없으면 전역 설정에 남은 학급게시판을 트랜잭션 안에서 읽습니다. */
+        async function classBoardCurFromTx(tx) {
+            const ref = getClassBoardDocRef();
+            const snap = await tx.get(ref);
+            let globalData = null;
+            if (!snap.exists() || !snap.data() || snap.data().classBoard === undefined) {
+                const gSnap = await tx.get(getGlobalSettingsDocRef());
+                globalData = gSnap.exists() ? gSnap.data() : null;
+            }
+            return {
+                ref,
+                cur: classBoardStateFromSnaps(snap.exists() ? snap.data() : null, globalData, currentClassBoard()),
+            };
+        }
+
+        /** 별도 문서가 없으면 전역 설정에 남은 공개수업을 트랜잭션 안에서 읽습니다. */
+        async function openLessonCurFromTx(tx) {
+            const ref = getOpenLessonDocRef();
+            const snap = await tx.get(ref);
+            let globalData = null;
+            if (!snap.exists() || !snap.data() || snap.data().openLesson === undefined) {
+                const gSnap = await tx.get(getGlobalSettingsDocRef());
+                globalData = gSnap.exists() ? gSnap.data() : null;
+            }
+            return {
+                ref,
+                cur: openLessonStateFromSnaps(snap.exists() ? snap.data() : null, globalData, currentOpenLesson()),
+            };
         }
 
         function settingsSliceEqual(a, b) {
@@ -11514,12 +11546,10 @@ ${subjectLine}
                 await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return false;
             }
-            const ref = getClassBoardDocRef();
             try {
                 await withRetry(async () => {
                     await runTransaction(db, async (tx) => {
-                        const snap = await tx.get(ref);
-                        const cur = sanitizeClassBoard(snap.exists() ? snap.data().classBoard : currentClassBoard());
+                        const { ref, cur } = await classBoardCurFromTx(tx);
                         const next = sanitizeClassBoard(mutator(cur));
                         if (settingsSliceEqual(cur, next)) {
                             if (window.globalSettings) window.globalSettings.classBoard = next;
@@ -11680,28 +11710,52 @@ ${subjectLine}
                 if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-                let stu = null;
-                try {
-                    const snapIn = await readStudentDocPreferServer(ref);
-                    if (snapIn.exists()) stu = snapIn.data();
-                } catch (eRead) {
-                    console.warn('cheerClassBoardNoteNow 읽기', eRead);
+                const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+                const cheerId = `ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+                let paidXp = 0;
+                let paidBong = 0;
+                await withRetry(async () => {
+                    await runTransaction(db, async (tx) => {
+                        const { ref: boardRef, cur } = await classBoardCurFromTx(tx);
+                        const planned = planClassBoardCheer(cur, noteId, Date.now(), cheerId);
+                        if (!planned.ok || String(planned.studentId) !== sid) throw new Error('missing-note');
+                        if (planned.already) {
+                            if (window.globalSettings) window.globalSettings.classBoard = planned.next;
+                            return;
+                        }
+                        const stuSnap = await tx.get(stuRef);
+                        if (!stuSnap.exists()) throw new Error('missing-student');
+                        const stu = stuSnap.data() || {};
+                        paidXp = studentIsCreditDefault(stu) ? 0 : planned.xp;
+                        paidBong = planned.bong;
+                        const payload = {};
+                        if (paidXp > 0) payload.xp = increment(paidXp);
+                        if (paidBong > 0) payload.bong = increment(paidBong);
+                        tx.set(stuRef, payload, { merge: true });
+                        tx.set(boardRef, { classBoard: planned.next, updatedAt: Date.now() });
+                        if (window.globalSettings) window.globalSettings.classBoard = planned.next;
+                    });
+                }, { retries: 3, baseDelayMs: 280, retryIf: isRetryableWriteError });
+                _classBoardDocReady = true;
+                const cached = (window.allStudentsData || []).find((s) => String(s.id) === sid);
+                if (cached) {
+                    mergeStudentDocIntoPlazaCache(sid, {
+                        ...cached,
+                        xp: Math.max(0, Math.floor(Number(cached.xp) || 0) + paidXp),
+                        bong: normalizeBongValue((Number(cached.bong) || 0) + paidBong),
+                    });
                 }
-                if (stu == null && window.allStudentsData) {
-                    const row = window.allStudentsData.find((s) => String(s.id) === sid);
-                    if (row) stu = { ...row };
-                }
-                if (stu == null) return window.customAlert('해당 학생 데이터를 찾을 수 없습니다.');
-                const nx = Math.max(0, Math.floor(Number(stu.xp) || 0) + CLASS_BOARD_CHEER_XP);
-                const nb = normalizeBongValue((Number(stu.bong) || 0) + CLASS_BOARD_CHEER_BONG);
-                await setDoc(ref, { xp: nx, bong: nb }, { merge: true });
-                mergeStudentDocIntoPlazaCache(sid, { ...stu, xp: nx, bong: nb });
                 playSfx('xp', true);
-                const ok = await saveClassBoard((s) => cheerClassBoardNote(s, noteId, Date.now()));
-                if (ok) window.showToast && window.showToast(`따봉! ${getStudentDisplayLabel(sid)} +${CLASS_BOARD_CHEER_XP}XP +${CLASS_BOARD_CHEER_BONG}봉`);
+                renderClassBoardPanel();
+                window.showToast && window.showToast(`따봉! ${getStudentDisplayLabel(sid)} +${paidXp}XP +${paidBong}봉`);
             } catch (e) {
                 console.error('cheerClassBoardNoteNow', e);
+                if (e && e.message === 'missing-note') {
+                    return window.customAlert('쪽지를 다시 골라 주세요.');
+                }
+                if (e && e.message === 'missing-student') {
+                    return window.customAlert('해당 학생 데이터를 찾을 수 없습니다.');
+                }
                 await window.customAlert('따봉 지급 실패: ' + (e && e.message ? e.message : String(e)));
             } finally {
                 _classBoardCheerBusy = false;
@@ -12076,12 +12130,10 @@ ${subjectLine}
                 await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return false;
             }
-            const ref = getOpenLessonDocRef();
             try {
                 await withRetry(async () => {
                     await runTransaction(db, async (tx) => {
-                        const snap = await tx.get(ref);
-                        const cur = sanitizeOpenLessonState(snap.exists() ? snap.data().openLesson : currentOpenLesson());
+                        const { ref, cur } = await openLessonCurFromTx(tx);
                         const next = sanitizeOpenLessonState(mutator(cur));
                         if (settingsSliceEqual(cur, next)) {
                             if (window.globalSettings) window.globalSettings.openLesson = next;

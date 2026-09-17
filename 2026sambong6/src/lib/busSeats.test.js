@@ -43,6 +43,12 @@ describe('45인승 버스 자리', () => {
         assert.equal(dirty.seats[0].assignee, null);
         assert.equal(dirty.seats[0].owner, null);
         assert.equal(dirty.seats[0].paid, 0);
+        const keptHidden = sanitizeBusState({
+            seats: [{ id: 0, hidden: true, owner: '4', paid: 22, price: 10 }],
+        });
+        assert.equal(keptHidden.seats[0].hidden, true);
+        assert.equal(keptHidden.seats[0].owner, '4');
+        assert.equal(keptHidden.seats[0].paid, 22);
         assert.equal(dirty.seats[1].assignee, '7');
         assert.equal(dirty.seats[1].owner, '7');
         assert.equal(dirty.seats[1].paid, 30);

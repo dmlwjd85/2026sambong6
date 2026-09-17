@@ -18609,7 +18609,6 @@ ${subjectLine}
             if (!grid) return;
             window.busSeatState = sanitizeBusState(window.busSeatState);
             const admin = !!(window.playerState && window.playerState.isAdmin);
-            const student = !!(window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin);
             const shuffleBtn = document.getElementById('btnBusShuffle');
             const resetBtn = document.getElementById('btnBusReset');
             if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
@@ -18628,13 +18627,13 @@ ${subjectLine}
                 const unused = isBusSeatDisabled(seat);
                 const ownerName = busSeatName(seat.owner);
                 const assignName = busSeatName(seat.assignee);
-                const buyable = student && !unused && !seat.locked;
+                const buyable = !unused && !seat.locked;
                 const click = admin
                     ? `onclick="window.openBusSeatAdmin(${seat.id})"`
                     : (buyable ? `onclick="window.buyBusSeat(${seat.id})"` : '');
                 let cls = 'bus-seat';
                 if (admin) cls += ' is-admin';
-                if (buyable) cls += ' is-buyable';
+                if (!admin && buyable) cls += ' is-buyable';
                 if (unused) cls += ' is-off';
                 else if (seat.locked) cls += ' is-locked';
                 else if (ownerName) cls += ' is-owned';

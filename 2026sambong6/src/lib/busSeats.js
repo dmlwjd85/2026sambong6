@@ -80,7 +80,8 @@ export function sanitizeBusSeat(raw, fallbackId) {
     const id = Number.isFinite(Number(src.id)) ? Math.floor(Number(src.id)) : fallbackId;
     if (!Number.isFinite(id) || id < 0 || id >= BUS_SEAT_COUNT) return emptySeat(fallbackId);
     const hidden = src.hidden === true;
-    const owner = hidden ? null : (cleanId(src.owner) || null);
+    // 비활성이어도 owner·paid는 남겨 환불이 빠지지 않게 합니다.
+    const owner = cleanId(src.owner) || null;
     const paid = owner ? sanitizeBusPaid(src.paid) : 0;
     return {
         id,
@@ -399,6 +400,7 @@ export function shuffleBusAssignees(state, studentIds, rng = Math.random) {
     next.seats.forEach((s) => {
         if (s.hidden) {
             s.assignee = null;
+            if (s.owner) kept.add(String(s.owner));
             return;
         }
         if (s.owner) {

@@ -18710,6 +18710,7 @@ ${subjectLine}
                 const purchaseId = `bus_${sid}_${buyerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                 let appliedBuyerBong = null;
                 let appliedBid = bid;
+                let appliedState = null;
                 await runWithNetworkRetry(async () => {
                     await runTransaction(db, async (transaction) => {
                         const busRef = busSeatDocRef();
@@ -18742,6 +18743,7 @@ ${subjectLine}
                         if (!applied.ok) throw Object.assign(new Error(applied.reason), { extra: applied });
                         if (applied.already) {
                             appliedBuyerBong = buyerLiveBong;
+                            appliedState = liveBoard;
                             return;
                         }
                         const otherBongs = {};
@@ -18777,12 +18779,14 @@ ${subjectLine}
                         });
                         appliedBuyerBong = nextWallets[buyerId];
                         appliedBid = applied.charge;
+                        appliedState = applied.state;
                     });
                 }, '버스 자리 구입');
 
                 if (Number.isFinite(Number(appliedBuyerBong))) {
                     window.playerState.bong = normalizeBongValue(appliedBuyerBong);
                 }
+                if (appliedState) window.busSeatState = appliedState;
                 if (typeof updateUI === 'function') updateUI();
                 if (typeof window.renderBusSeats === 'function') window.renderBusSeats();
                 await window.customAlert(`🚌 ${sid + 1}번 자리를 ${formatBongAmount(appliedBid)}에 구입했습니다.`);

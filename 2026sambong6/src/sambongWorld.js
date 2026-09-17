@@ -430,6 +430,7 @@ import {
     viewedClassBoardPage,
 } from './lib/classBoard.js';
 import {
+    applyBusSeatBulkSettings,
     applyBusSeatPurchase,
     applyBusSeatRelease,
     applyBusSeatWalletChanges,
@@ -1045,7 +1046,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.40';
+        const APP_VERSION = 'v1.41';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -18604,15 +18605,30 @@ ${subjectLine}
             }), { merge: true });
         }
 
-        window.renderBusSeats = function () {
+        window.renderBusSeats = function (opts) {
             const grid = document.getElementById('busSeatGrid');
             if (!grid) return;
+            const force = !!(opts && opts.force);
+            if (window._busSeatAdminDirty && !force) {
+                const sumLive = busSeatSummary(sanitizeBusState(window.busSeatState));
+                const hintLive = document.getElementById('busSeatHint');
+                if (hintLive) {
+                    hintLive.textContent = `활성 ${sumLive.active}석 · 구입 ${sumLive.owned}석 · 앉은 ${sumLive.filled}명 · 고정 ${sumLive.locked}석 · 비활성 ${sumLive.hidden}석 · 저장 안 한 변경 있음`;
+                }
+                return;
+            }
             window.busSeatState = sanitizeBusState(window.busSeatState);
             const admin = !!(window.playerState && window.playerState.isAdmin);
             const shuffleBtn = document.getElementById('btnBusShuffle');
             const resetBtn = document.getElementById('btnBusReset');
+            const adminBar = document.getElementById('busAdminBar');
             if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
             if (resetBtn) resetBtn.style.display = admin ? 'block' : 'none';
+            if (adminBar) adminBar.classList.toggle('hidden', !admin);
+            const bulkPriceEl = document.getElementById('busBulkPrice');
+            if (admin && bulkPriceEl && !window._busSeatAdminDirty) {
+                bulkPriceEl.value = String(BUS_SEAT_DEFAULT_PRICE);
+            }
             const sum = busSeatSummary(window.busSeatState);
             const hint = document.getElementById('busSeatHint');
             if (hint) {
@@ -18628,9 +18644,6 @@ ${subjectLine}
                 const ownerName = busSeatName(seat.owner);
                 const assignName = busSeatName(seat.assignee);
                 const buyable = !unused && !seat.locked;
-                const click = admin
-                    ? `onclick="window.openBusSeatAdmin(${seat.id})"`
-                    : (buyable ? `onclick="window.buyBusSeat(${seat.id})"` : '');
                 let cls = 'bus-seat';
                 if (admin) cls += ' is-admin';
                 if (!admin && buyable) cls += ' is-buyable';
@@ -18649,12 +18662,164 @@ ${subjectLine}
                     : (ownerName
                         ? formatBongAmount(seat.paid)
                         : formatBongAmount(seat.price));
+                if (admin) {
+                    return `<div class="${cls} is-admin-edit" data-bus-seat="${seat.id}">
+                        <label class="bus-seat-on">
+                            <input type="checkbox" class="bus-admin-active" data-bus-id="${seat.id}" ${unused ? '' : 'checked'}>
+                            <span class="bus-seat-no">${cell.no}번</span>
+                        </label>
+                        <span class="bus-seat-name">${escapeHtmlAttr(status)}</span>
+                        <input type="number" class="bus-admin-price" data-bus-id="${seat.id}" min="0" max="${BUS_SEAT_PRICE_MAX}" step="1" value="${Number(seat.price) || BUS_SEAT_DEFAULT_PRICE}" ${unused ? 'disabled' : ''} aria-label="${cell.no}번 기본 가격">
+                        <button type="button" class="bus-admin-more" onclick="event.stopPropagation(); window.openBusSeatAdmin(${seat.id})">잠금</button>
+                    </div>`;
+                }
+                const click = buyable ? `onclick="window.buyBusSeat(${seat.id})"` : '';
                 return `<div class="${cls}" ${click}>
                     <span class="bus-seat-no">${cell.no}번</span>
                     <span class="bus-seat-name">${escapeHtmlAttr(status)}</span>
                     ${priceText ? `<span class="bus-seat-price">${escapeHtmlAttr(priceText)}</span>` : ''}
                 </div>`;
             }).join('');
+            if (admin) bindBusAdminGrid(grid);
+        };
+
+        function markBusAdminDirty() {
+            window._busSeatAdminDirty = true;
+            const hint = document.getElementById('busSeatHint');
+            if (hint && !/저장 안 한/.test(hint.textContent || '')) {
+                hint.textContent = `${hint.textContent} · 저장 안 한 변경 있음`;
+            }
+        }
+
+        function bindBusAdminGrid(grid) {
+            if (!grid || grid.dataset.busAdminBound === '1') return;
+            grid.dataset.busAdminBound = '1';
+            grid.addEventListener('change', (e) => {
+                const t = e.target;
+                if (!t) return;
+                if (t.classList.contains('bus-admin-active')) {
+                    const id = t.getAttribute('data-bus-id');
+                    const price = grid.querySelector(`.bus-admin-price[data-bus-id="${id}"]`);
+                    const card = t.closest('.bus-seat');
+                    if (price) price.disabled = !t.checked;
+                    if (card) card.classList.toggle('is-off', !t.checked);
+                    markBusAdminDirty();
+                }
+                if (t.classList.contains('bus-admin-price')) markBusAdminDirty();
+            });
+            grid.addEventListener('input', (e) => {
+                const t = e.target;
+                if (t && t.classList.contains('bus-admin-price')) markBusAdminDirty();
+            });
+        }
+
+        window.applyBusBulkPrice = function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const raw = document.getElementById('busBulkPrice');
+            const v = sanitizeBusSeatPrice(raw && raw.value, BUS_SEAT_DEFAULT_PRICE);
+            if (raw) raw.value = String(v);
+            document.querySelectorAll('.bus-admin-price').forEach((inp) => {
+                const id = inp.getAttribute('data-bus-id');
+                const chk = document.querySelector(`.bus-admin-active[data-bus-id="${id}"]`);
+                if (chk && chk.checked) inp.value = String(v);
+            });
+            markBusAdminDirty();
+        };
+
+        function collectBusAdminUpdates() {
+            const updates = [];
+            document.querySelectorAll('.bus-admin-active').forEach((chk) => {
+                const id = Math.floor(Number(chk.getAttribute('data-bus-id')));
+                if (!Number.isFinite(id)) return;
+                const priceEl = document.querySelector(`.bus-admin-price[data-bus-id="${id}"]`);
+                updates.push({
+                    id,
+                    hidden: !chk.checked,
+                    price: sanitizeBusSeatPrice(priceEl && priceEl.value, BUS_SEAT_DEFAULT_PRICE),
+                });
+            });
+            return updates;
+        }
+
+        window.saveBusSeatLayout = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 버스 자리를 저장할 수 있습니다.');
+            }
+            const updates = collectBusAdminUpdates();
+            if (!updates.length) return window.customAlert('자리 편집 칸을 찾을 수 없습니다.');
+            const hideCount = updates.filter((u) => u.hidden).length;
+            const preview = applyBusSeatBulkSettings({
+                state: window.busSeatState,
+                updates,
+            });
+            const refundN = (preview.refunds || []).length;
+            let msg = `활성 ${updates.length - hideCount}석 · 비활성 ${hideCount}석으로 저장할까요?`;
+            if (refundN) msg += `\n구입된 자리 ${refundN}곳은 비활성으로 바꾸며 낸 봉을 돌려줍니다.`;
+            const ok = await window.customConfirm(msg);
+            if (!ok) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            const batchId = `busbulk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            try {
+                await runWithNetworkRetry(async () => {
+                    await runTransaction(db, async (transaction) => {
+                        const busRef = busSeatDocRef();
+                        const busSnap = await transaction.get(busRef);
+                        const live = sanitizeBusState(busSnap.exists() ? busSnap.data() : emptyBusState());
+                        const ownerIds = new Set();
+                        updates.forEach((u) => {
+                            const seat = live.seats[u.id];
+                            if (u.hidden && seat && seat.owner && Number(seat.paid) > 0) {
+                                ownerIds.add(String(seat.owner));
+                            }
+                        });
+                        const sorted = Array.from(ownerIds).sort();
+                        const walletSnaps = {};
+                        for (let i = 0; i < sorted.length; i += 1) {
+                            walletSnaps[sorted[i]] = await transaction.get(studentWalletRef(sorted[i]));
+                        }
+                        const applied = applyBusSeatBulkSettings({
+                            state: live,
+                            updates,
+                            batchId,
+                        });
+                        if (!applied.ok) throw new Error('bulk');
+                        const otherBongs = {};
+                        (applied.refunds || []).forEach((row) => {
+                            const id = String(row.studentId || '');
+                            if (!id || otherBongs[id] != null) return;
+                            const snap = walletSnaps[id];
+                            otherBongs[id] = snap && snap.exists() ? (Number((snap.data() || {}).bong) || 0) : 0;
+                        });
+                        const nextWallets = {};
+                        (applied.refunds || []).forEach((row) => {
+                            const id = String(row.studentId || '');
+                            const amt = Math.max(0, Math.floor(Number(row.amount) || 0));
+                            if (!id || amt <= 0) return;
+                            if (nextWallets[id] == null) nextWallets[id] = otherBongs[id] || 0;
+                            nextWallets[id] += amt;
+                        });
+                        transaction.set(busRef, applied.state);
+                        Object.keys(nextWallets).forEach((id) => {
+                            writeBusSeatWallet(
+                                transaction,
+                                walletSnaps[id],
+                                id,
+                                nextWallets[id],
+                                '버스 자리 비활성 환불',
+                                { source: 'busSeatRefund', batchId }
+                            );
+                        });
+                    });
+                }, '버스 자리 일괄 저장');
+                window._busSeatAdminDirty = false;
+                window.renderBusSeats({ force: true });
+                await window.customAlert('버스 자리 활성·기본 가격을 저장했습니다.');
+            } catch (e) {
+                console.error('saveBusSeatLayout', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
         };
 
         window.buyBusSeat = async function (seatId) {
@@ -18800,6 +18965,9 @@ ${subjectLine}
 
         window.openBusSeatAdmin = function (seatId) {
             if (!window.playerState || !window.playerState.isAdmin) return;
+            if (window._busSeatAdminDirty) {
+                return window.customAlert('자리 활성·가격을 먼저 저장해 주세요.');
+            }
             window.busSeatState = sanitizeBusState(window.busSeatState);
             const seat = window.busSeatState.seats[seatId];
             if (!seat) return;
@@ -18895,7 +19063,7 @@ ${subjectLine}
                             return live;
                         });
                     }
-                    window.renderBusSeats();
+                    window.renderBusSeats({ force: true });
                     await window.customAlert(`✅ ${seatId + 1}번 버스 자리를 저장했습니다.`);
                 } catch (e) {
                     console.error('openBusSeatAdmin', e);
@@ -18957,6 +19125,9 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isAdmin) {
                 return window.customAlert('마스터만 버스 자리를 뽑을 수 있습니다.');
             }
+            if (window._busSeatAdminDirty) {
+                return window.customAlert('자리 활성·가격을 먼저 저장해 주세요.');
+            }
             window.busSeatState = sanitizeBusState(window.busSeatState);
             const ids = getActiveStudentIds();
             const preview = shuffleBusAssignees(window.busSeatState, ids);
@@ -18976,7 +19147,8 @@ ${subjectLine}
                     drawn = shuffleBusAssignees(live, ids);
                     return drawn.state;
                 });
-                window.renderBusSeats();
+                window._busSeatAdminDirty = false;
+                window.renderBusSeats({ force: true });
                 let tail = '';
                 if (drawn && drawn.leftoverStudents) tail += `\n학생 ${drawn.leftoverStudents}명은 자리가 모자라 빠졌습니다.`;
                 if (drawn && drawn.leftoverSeats) tail += `\n빈 자리 ${drawn.leftoverSeats}석은 비워 두었습니다.`;
@@ -18989,11 +19161,15 @@ ${subjectLine}
 
         window.masterResetBusSeats = async function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
+            if (window._busSeatAdminDirty) {
+                return window.customAlert('자리 활성·가격을 먼저 저장해 주세요.');
+            }
             const ok = await window.customConfirm('버스 뽑기 이름만 지울까요?\n구입한 자리와 비활성·고정 표시는 그대로 둡니다.');
             if (!ok) return;
             try {
                 await persistBusSeatPatch((live) => resetBusAssignees(live, { keepHidden: true }));
-                window.renderBusSeats();
+                window._busSeatAdminDirty = false;
+                window.renderBusSeats({ force: true });
                 await window.customAlert('버스 뽑기를 초기화했습니다. 구입한 자리는 그대로입니다.');
             } catch (e) {
                 console.error('masterResetBusSeats', e);

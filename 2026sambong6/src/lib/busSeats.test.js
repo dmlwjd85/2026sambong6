@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     BUS_SEAT_COUNT,
     BUS_SEAT_DEFAULT_PRICE,
+    applyBusSeatBulkSettings,
     applyBusSeatPurchase,
     applyBusSeatRelease,
     applyBusSeatWalletChanges,
@@ -289,5 +290,38 @@ describe('버스 자리 구입·입찰 환불', () => {
         assert.equal(cleared.seats[0].paid, 10);
         const sum = busSeatSummary(cleared);
         assert.equal(sum.owned, 1);
+    });
+
+    it('한 번에 활성·가격을 맞추고 비활성 자리는 낸 봉을 환불한다', () => {
+        const bought = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 1,
+            buyerId: '6',
+            bid: 20,
+            buyerBong: 20,
+            purchaseId: 'bulk-own',
+        });
+        const bulk = applyBusSeatBulkSettings({
+            state: bought.state,
+            batchId: 'bulk-1',
+            updates: [
+                { id: 0, hidden: true, price: 7 },
+                { id: 1, hidden: true, price: 12 },
+                { id: 2, hidden: false, price: 15 },
+            ],
+        });
+        assert.equal(bulk.ok, true);
+        assert.equal(bulk.state.seats[0].hidden, true);
+        assert.equal(bulk.state.seats[0].price, 7);
+        assert.equal(bulk.state.seats[1].owner, null);
+        assert.equal(bulk.state.seats[1].paid, 0);
+        assert.equal(bulk.state.seats[2].price, 15);
+        assert.deepEqual(bulk.refunds, [{ studentId: '6', amount: 20, seatId: 1, kind: 'release' }]);
+        const again = applyBusSeatBulkSettings({
+            state: bulk.state,
+            batchId: 'bulk-1',
+            updates: [{ id: 1, hidden: true, price: 12 }],
+        });
+        assert.equal(again.refunds.length, 0);
     });
 });

@@ -4930,6 +4930,40 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .bus-seat.is-admin { cursor: pointer; }
         .bus-seat.is-buyable { cursor: pointer; }
         .bus-seat-price { display: block; font-size: 8px; font-weight: 800; color: #fbbf24; margin-top: 2px; }
+        .bus-seat-on {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.2rem;
+        }
+        .bus-admin-price {
+            width: 100%;
+            margin-top: 0.15rem;
+            background: #020617;
+            border: 1px solid #64748b;
+            color: #fde68a;
+            border-radius: 0.35rem;
+            font-size: 10px;
+            font-weight: 800;
+            text-align: center;
+            padding: 0.12rem 0.1rem;
+        }
+        .bus-admin-price:disabled {
+            opacity: 0.35;
+        }
+        .bus-admin-more {
+            display: block;
+            width: 100%;
+            margin-top: 0.15rem;
+            font-size: 8px;
+            font-weight: 800;
+            color: #cbd5e1;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 0.35rem;
+            padding: 0.1rem 0;
+        }
+        .bus-seat.is-admin-edit { min-height: 4.7rem; }
         .bus-aisle {
             min-height: 3.15rem;
             border-radius: 999px;
@@ -4941,4 +4975,58 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             font-weight: 800;
             color: #64748b;
             writing-mode: vertical-rl;
+        }
+
+        /* 넓은 웹 화면만 버스를 가로로 눕힙니다. 전화·좁은 화면은 세로 배치를 유지합니다. */
+        @media (min-width: 860px) {
+            .bus-deck {
+                display: flex;
+                flex-direction: row;
+                align-items: stretch;
+                max-width: min(76rem, 100%);
+                border-radius: 1.2rem 2.2rem 2.2rem 1.2rem;
+                padding: 0.7rem 0.8rem;
+            }
+            .bus-deck-front {
+                display: grid;
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+                gap: 0.35rem;
+                margin-bottom: 0;
+                margin-right: 0.45rem;
+                min-width: 2.35rem;
+            }
+            .bus-deck-cab,
+            .bus-deck-door {
+                writing-mode: vertical-rl;
+                min-height: 0;
+                min-width: 2.2rem;
+                letter-spacing: 0.08em;
+            }
+            .bus-deck-grid {
+                flex: 1 1 auto;
+                grid-template-columns: repeat(11, minmax(0, 1fr));
+                grid-template-rows: repeat(5, minmax(2.5rem, auto));
+                grid-auto-flow: column;
+            }
+            .bus-deck-rear {
+                writing-mode: vertical-rl;
+                margin-top: 0;
+                margin-left: 0.45rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 2rem;
+            }
+            .bus-aisle {
+                writing-mode: horizontal-tb;
+                min-height: 1.35rem;
+                background: repeating-linear-gradient(90deg, rgba(148, 163, 184, 0.18) 0 6px, transparent 6px 12px);
+            }
+            .bus-seat {
+                min-height: 2.5rem;
+            }
+            .bus-seat.is-admin-edit {
+                min-height: 4.4rem;
+            }
         }

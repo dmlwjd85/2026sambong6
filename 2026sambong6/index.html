@@ -1813,6 +1813,16 @@
                     <button id="btnBusReset" type="button" onclick="window.masterResetBusSeats()" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-slate-500">뽑기 초기화</button>
                 </div>
             </div>
+            <div id="busAdminBar" class="hidden mb-3 glass-panel p-3 rounded-2xl border border-amber-500/40 bg-slate-900/80">
+                <p class="text-[10px] text-amber-100 font-bold mb-2">마스터 · 자리 활성과 기본 가격을 한 화면에서 맞춘 뒤 저장하세요. 비활성으로 바꾸면 구매자에게 낸 봉을 돌려줍니다.</p>
+                <div class="flex flex-wrap items-end gap-2">
+                    <label class="text-[10px] text-slate-300 font-bold">일괄 가격
+                        <input id="busBulkPrice" type="number" min="0" step="1" value="10" class="mt-1 w-24 bg-slate-950 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold">
+                    </label>
+                    <button type="button" onclick="window.applyBusBulkPrice()" class="bg-slate-800 hover:bg-slate-700 text-amber-100 text-[10px] font-bold py-2 px-3 rounded-xl border border-amber-600/60">활성 자리에 넣기</button>
+                    <button type="button" onclick="window.saveBusSeatLayout()" class="bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold py-2 px-4 rounded-xl">활성·가격 저장</button>
+                </div>
+            </div>
             <div id="busSeatDeck" class="bus-deck mx-auto">
                 <div class="bus-deck-front">
                     <span class="bus-deck-cab"><i class="fa-solid fa-car"></i> 운전석</span>

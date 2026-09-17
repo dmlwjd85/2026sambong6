@@ -392,6 +392,50 @@ export function applyBusSeatRelease({
 }
 
 /**
+ * 마스터가 자리 활성·기본 가격을 한 번에 맞출 때 씁니다.
+ * 비활성으로 바뀌고 주인이 있으면 낸 paid만 환불 목록에 넣습니다.
+ */
+export function applyBusSeatBulkSettings({ state, updates, batchId = '' } = {}) {
+    let board = sanitizeBusState(state);
+    const refunds = [];
+    const bid = String(batchId || '').trim().slice(0, 60);
+    (Array.isArray(updates) ? updates : []).forEach((u) => {
+        const sid = Math.floor(Number(u && u.id));
+        if (!Number.isFinite(sid) || sid < 0 || sid >= BUS_SEAT_COUNT) return;
+        const seat = board.seats[sid];
+        const hidden = u.hidden === true;
+        const price = sanitizeBusSeatPrice(u.price, seat.price);
+        const wasHidden = seat.hidden === true;
+        if (hidden && seat.owner && sanitizeBusPaid(seat.paid) > 0) {
+            const rid = bid ? `${bid}_${sid}` : '';
+            const applied = applyBusSeatRelease({
+                state: board,
+                seatId: sid,
+                hidden: true,
+                refundId: rid,
+            });
+            board = applied.state;
+            if (!applied.already) refunds.push(...applied.refunds);
+            board.seats[sid].price = price;
+            return;
+        }
+        seat.hidden = hidden;
+        seat.price = price;
+        if (hidden) {
+            seat.locked = true;
+            if (!seat.owner) seat.assignee = null;
+        } else if (wasHidden) {
+            seat.locked = false;
+        }
+    });
+    return {
+        ok: true,
+        state: sanitizeBusState(board),
+        refunds,
+    };
+}
+
+/**
  * 고정(잠금+이름) 자리와 구입한 자리는 남기고, 활성·잠기지 않은 자리에 학생을 무작위로 앉힙니다.
  */
 export function shuffleBusAssignees(state, studentIds, rng = Math.random) {

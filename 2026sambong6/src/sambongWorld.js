@@ -430,13 +430,20 @@ import {
     viewedClassBoardPage,
 } from './lib/classBoard.js';
 import {
+    applyBusSeatPurchase,
+    applyBusSeatRelease,
+    applyBusSeatWalletChanges,
     busLayoutCells,
     busSeatSummary,
     emptyBusState,
     isBusSeatDisabled,
+    minBusSeatBid,
     resetBusAssignees,
+    sanitizeBusSeatPrice,
     sanitizeBusState,
     shuffleBusAssignees,
+    BUS_SEAT_DEFAULT_PRICE,
+    BUS_SEAT_PRICE_MAX,
 } from './lib/busSeats.js';
 import {
     closeOpenLesson,
@@ -1038,7 +1045,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.39';
+        const APP_VERSION = 'v1.40';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -18521,15 +18528,23 @@ ${subjectLine}
             return doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'bus');
         }
 
-        async function persistBusSeatState() {
+        /** 최신 버스 문서에 패치를 적용해 구입 트랜잭션과 덮어쓰지 않게 합니다. */
+        async function persistBusSeatPatch(mutator) {
             if (!db) return false;
             const authOk = await ensureAnonAuthReady();
             if (!authOk) {
                 await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return false;
             }
-            window.busSeatState = sanitizeBusState(window.busSeatState);
-            await setDoc(busSeatDocRef(), window.busSeatState);
+            let next = null;
+            await runTransaction(db, async (transaction) => {
+                const snap = await transaction.get(busSeatDocRef());
+                const live = sanitizeBusState(snap.exists() ? snap.data() : emptyBusState());
+                const patched = typeof mutator === 'function' ? mutator(live) : live;
+                next = sanitizeBusState(patched || live);
+                transaction.set(busSeatDocRef(), next);
+            });
+            window.busSeatState = next;
             return true;
         }
 
@@ -18539,11 +18554,62 @@ ${subjectLine}
             return STUDENT_NAMES[id] || id;
         }
 
+        function busSeatBuyErrorMessage(code, extra = {}) {
+            const unit = getCurrencyUnit();
+            return {
+                guest: '학생만 버스 자리를 구입할 수 있습니다.',
+                login: '로그인 후 구입할 수 있습니다.',
+                hidden: '비활성 자리는 구입할 수 없습니다.',
+                locked: '잠긴 자리는 구입할 수 없습니다.',
+                self: '이미 내가 구입한 자리입니다.',
+                bid: `제시 가격은 0~${BUS_SEAT_PRICE_MAX}${unit}만 가능합니다.`,
+                low: extra.minBid != null
+                    ? `지금 가격보다 높아야 합니다. 최소 ${formatBongAmount(extra.minBid)}`
+                    : '지금 가격보다 높은 금액을 제시해 주세요.',
+                funds: extra.need != null
+                    ? `잔액이 부족합니다. (필요 ${formatBongAmount(extra.need)}, 지갑 ${formatBongAmount(extra.wallet || 0)}${extra.credit ? `, 기존 자리 환불 ${formatBongAmount(extra.credit)}` : ''})`
+                    : '잔액이 부족합니다.',
+                missing: '자리를 찾을 수 없습니다.',
+            }[code] || ('구입에 실패했습니다. ' + code);
+        }
+
+        function writeBusSeatWallet(transaction, snap, studentId, nextBong, reason, extra) {
+            const exists = !!(snap && snap.exists());
+            const data = exists ? (snap.data() || {}) : {};
+            const before = exists
+                ? (Number(data.bong) || 0)
+                : (String(studentId) === String(window.playerState && window.playerState.id)
+                    ? (Number(window.playerState.bong) || 0)
+                    : 0);
+            const logs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice() : [];
+            logs.push(buildBongChangeLogEntry(reason, before, nextBong, extra || {}));
+            const seed = exists
+                ? {
+                    studentId,
+                    name: data.name || busSeatName(studentId),
+                    number: data.number,
+                    job: data.job || '',
+                    xp: data.xp,
+                }
+                : bankHolderSeedFields(studentId);
+            transaction.set(studentWalletRef(studentId), bankTransferWalletFields({
+                exists,
+                studentId: seed.studentId,
+                name: seed.name,
+                number: seed.number,
+                job: seed.job,
+                xp: seed.xp,
+                nextBong,
+                bongChangeLog: logs.slice(-BONG_CHANGE_LOG_LIMIT),
+            }), { merge: true });
+        }
+
         window.renderBusSeats = function () {
             const grid = document.getElementById('busSeatGrid');
             if (!grid) return;
             window.busSeatState = sanitizeBusState(window.busSeatState);
             const admin = !!(window.playerState && window.playerState.isAdmin);
+            const student = !!(window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin);
             const shuffleBtn = document.getElementById('btnBusShuffle');
             const resetBtn = document.getElementById('btnBusReset');
             if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
@@ -18551,31 +18617,182 @@ ${subjectLine}
             const sum = busSeatSummary(window.busSeatState);
             const hint = document.getElementById('busSeatHint');
             if (hint) {
-                hint.textContent = `활성 ${sum.active}석 · 앉은 ${sum.filled}명 · 고정 ${sum.locked}석 · 비활성 ${sum.hidden}석`;
+                hint.textContent = `활성 ${sum.active}석 · 구입 ${sum.owned}석 · 앉은 ${sum.filled}명 · 고정 ${sum.locked}석 · 비활성 ${sum.hidden}석`;
             }
             const seats = window.busSeatState.seats;
             grid.innerHTML = busLayoutCells().map((cell) => {
                 if (cell.kind === 'aisle') {
                     return `<div class="bus-aisle" aria-hidden="true">통로</div>`;
                 }
-                const seat = seats[cell.id] || { id: cell.id, assignee: null, hidden: false, locked: false };
+                const seat = seats[cell.id] || { id: cell.id, assignee: null, hidden: false, locked: false, owner: null, paid: 0, price: BUS_SEAT_DEFAULT_PRICE };
                 const unused = isBusSeatDisabled(seat);
-                const name = busSeatName(seat.assignee);
-                const adminClick = admin ? `onclick="window.openBusSeatAdmin(${seat.id})"` : '';
+                const ownerName = busSeatName(seat.owner);
+                const assignName = busSeatName(seat.assignee);
+                const buyable = student && !unused && !seat.locked;
+                const click = admin
+                    ? `onclick="window.openBusSeatAdmin(${seat.id})"`
+                    : (buyable ? `onclick="window.buyBusSeat(${seat.id})"` : '');
                 let cls = 'bus-seat';
                 if (admin) cls += ' is-admin';
+                if (buyable) cls += ' is-buyable';
                 if (unused) cls += ' is-off';
                 else if (seat.locked) cls += ' is-locked';
-                else if (name) cls += ' is-filled';
+                else if (ownerName) cls += ' is-owned';
+                else if (assignName) cls += ' is-filled';
                 else cls += ' is-empty';
                 const status = unused
                     ? '비활성'
-                    : (seat.locked ? '고정' : (name ? name : '빈 자리'));
-                return `<div class="${cls}" ${adminClick}>
+                    : (seat.locked
+                        ? (assignName || '고정')
+                        : (ownerName || assignName || '빈 자리'));
+                const priceText = unused
+                    ? ''
+                    : (ownerName
+                        ? formatBongAmount(seat.paid)
+                        : formatBongAmount(seat.price));
+                return `<div class="${cls}" ${click}>
                     <span class="bus-seat-no">${cell.no}번</span>
                     <span class="bus-seat-name">${escapeHtmlAttr(status)}</span>
+                    ${priceText ? `<span class="bus-seat-price">${escapeHtmlAttr(priceText)}</span>` : ''}
                 </div>`;
             }).join('');
+        };
+
+        window.buyBusSeat = async function (seatId) {
+            if (window._busSeatBuyRunning) return;
+            if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) {
+                return window.customAlert('학생만 버스 자리를 구입할 수 있습니다.');
+            }
+            const sid = Math.floor(Number(seatId));
+            window.busSeatState = sanitizeBusState(window.busSeatState);
+            const seat = window.busSeatState.seats[sid];
+            if (!seat) return;
+            if (isBusSeatDisabled(seat)) return window.customAlert(busSeatBuyErrorMessage('hidden'));
+            if (seat.locked) return window.customAlert(busSeatBuyErrorMessage('locked'));
+            const buyerId = String(window.playerState.id || '');
+            if (!buyerId) return window.customAlert(busSeatBuyErrorMessage('login'));
+            if (String(seat.owner || '') === buyerId) {
+                return window.customAlert(busSeatBuyErrorMessage('self'));
+            }
+            const minBid = minBusSeatBid(seat);
+            const ownerName = seat.owner ? busSeatName(seat.owner) : '';
+            const hint = seat.owner
+                ? `${sid + 1}번 자리는 ${ownerName}이(가) ${formatBongAmount(seat.paid)}에 갖고 있습니다.\n더 높은 가격을 내면 자리를 가져오고, 그분은 낸 ${getCurrencyUnit()}을(를) 그대로 돌려받습니다.\n제시 가격 (최소 ${formatBongAmount(minBid)}):`
+                : `${sid + 1}번 자리를 구입합니다.\n기본 가격 ${formatBongAmount(seat.price)} · 최소 ${formatBongAmount(minBid)}\n제시 가격:`;
+            window._busSeatBuyRunning = true;
+            try {
+                const raw = await window.customPrompt(hint, 'number');
+                if (raw == null || String(raw).trim() === '') return;
+                const bid = Math.floor(Number(raw));
+                const preview = applyBusSeatPurchase({
+                    state: window.busSeatState,
+                    seatId: sid,
+                    buyerId,
+                    bid,
+                    buyerBong: Number(window.playerState.bong) || 0,
+                });
+                if (!preview.ok) {
+                    return window.customAlert(busSeatBuyErrorMessage(preview.reason, preview));
+                }
+                let confirmMsg = `${sid + 1}번 자리를 ${formatBongAmount(bid)}에 구입할까요?`;
+                if (preview.prevOwner) {
+                    confirmMsg += `\n기존 구매자 ${busSeatName(preview.prevOwner)}에게 ${formatBongAmount(seat.paid)}를 돌려줍니다.`;
+                }
+                if (preview.vacatedSeatIds && preview.vacatedSeatIds.length) {
+                    confirmMsg += `\n내가 갖고 있던 ${preview.vacatedSeatIds.map((n) => `${n + 1}번`).join(', ')} 자리는 비우고 낸 돈을 돌려받습니다.`;
+                }
+                const ok = await window.customConfirm(confirmMsg);
+                if (!ok) return;
+                if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+
+                const purchaseId = `bus_${sid}_${buyerId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                let appliedBuyerBong = null;
+                let appliedBid = bid;
+                await runWithNetworkRetry(async () => {
+                    await runTransaction(db, async (transaction) => {
+                        const busRef = busSeatDocRef();
+                        const busSnap = await transaction.get(busRef);
+                        const liveBoard = sanitizeBusState(busSnap.exists() ? busSnap.data() : emptyBusState());
+                        const liveSeat = liveBoard.seats[sid];
+                        const prevOwnerGuess = liveSeat && liveSeat.owner ? String(liveSeat.owner) : '';
+                        const walletIds = new Set([buyerId]);
+                        if (prevOwnerGuess && prevOwnerGuess !== buyerId) walletIds.add(prevOwnerGuess);
+                        const sortedIds = Array.from(walletIds).sort();
+                        const walletSnaps = {};
+                        for (let i = 0; i < sortedIds.length; i += 1) {
+                            const id = sortedIds[i];
+                            walletSnaps[id] = await transaction.get(studentWalletRef(id));
+                        }
+                        const buyerSnap = walletSnaps[buyerId];
+                        const buyerExists = !!(buyerSnap && buyerSnap.exists());
+                        const buyerData = buyerExists ? (buyerSnap.data() || {}) : {};
+                        const buyerLiveBong = buyerExists
+                            ? (Number(buyerData.bong) || 0)
+                            : (Number(window.playerState.bong) || 0);
+                        const applied = applyBusSeatPurchase({
+                            state: liveBoard,
+                            seatId: sid,
+                            buyerId,
+                            bid,
+                            buyerBong: buyerLiveBong,
+                            purchaseId,
+                        });
+                        if (!applied.ok) throw Object.assign(new Error(applied.reason), { extra: applied });
+                        if (applied.already) {
+                            appliedBuyerBong = buyerLiveBong;
+                            return;
+                        }
+                        const otherBongs = {};
+                        applied.refunds.forEach((row) => {
+                            const id = String(row.studentId || '');
+                            if (!id || id === buyerId) return;
+                            const snap = walletSnaps[id];
+                            if (!snap) throw new Error('refund_wallet');
+                            otherBongs[id] = snap.exists() ? (Number((snap.data() || {}).bong) || 0) : 0;
+                        });
+                        const nextWallets = applyBusSeatWalletChanges({
+                            buyerId,
+                            buyerBong: buyerLiveBong,
+                            charge: applied.charge,
+                            refunds: applied.refunds,
+                            otherBongs,
+                        });
+                        transaction.set(busRef, applied.state);
+                        Object.keys(nextWallets).forEach((id) => {
+                            const isBuyer = id === buyerId;
+                            writeBusSeatWallet(
+                                transaction,
+                                walletSnaps[id],
+                                id,
+                                nextWallets[id],
+                                isBuyer ? `버스 ${sid + 1}번 자리 구입` : `버스 ${sid + 1}번 자리 환불`,
+                                {
+                                    source: isBuyer ? 'busSeatBuy' : 'busSeatRefund',
+                                    seatId: sid,
+                                    purchaseId,
+                                }
+                            );
+                        });
+                        appliedBuyerBong = nextWallets[buyerId];
+                        appliedBid = applied.charge;
+                    });
+                }, '버스 자리 구입');
+
+                if (Number.isFinite(Number(appliedBuyerBong))) {
+                    window.playerState.bong = normalizeBongValue(appliedBuyerBong);
+                }
+                if (typeof updateUI === 'function') updateUI();
+                if (typeof window.renderBusSeats === 'function') window.renderBusSeats();
+                await window.customAlert(`🚌 ${sid + 1}번 자리를 ${formatBongAmount(appliedBid)}에 구입했습니다.`);
+            } catch (e) {
+                const code = String(e && e.message ? e.message : e);
+                console.error('buyBusSeat', e);
+                await window.customAlert(busSeatBuyErrorMessage(code, (e && e.extra) || {}));
+            } finally {
+                window._busSeatBuyRunning = false;
+            }
         };
 
         window.openBusSeatAdmin = function (seatId) {
@@ -18585,6 +18802,8 @@ ${subjectLine}
             if (!seat) return;
             const unused = isBusSeatDisabled(seat);
             const assignName = seat.assignee ? busSeatName(seat.assignee) : '없음';
+            const ownerName = seat.owner ? busSeatName(seat.owner) : '없음';
+            const owned = !!seat.owner;
             const ownerOptions = ['<option value="">(비움)</option>']
                 .concat(getActiveStudentIds().map((sid) => {
                     const id = String(sid);
@@ -18598,8 +18817,10 @@ ${subjectLine}
                 <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-amber-500/50 max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
                     <h3 class="text-lg font-display text-amber-300 text-center">🚌 ${seatId + 1}번 버스 자리</h3>
                     <p class="text-[10px] text-slate-400 text-center leading-relaxed">
-                        현재: <strong class="text-white">${escapeHtmlGb(assignName)}</strong>
-                        · ${unused ? '<span class="text-slate-400 font-bold">비활성</span>' : (seat.locked ? '<span class="text-rose-400 font-bold">고정</span>' : '<span class="text-emerald-300 font-bold">뽑기 대상</span>')}
+                        구매자: <strong class="text-white">${escapeHtmlGb(ownerName)}</strong>
+                        ${owned ? `(${formatBongAmount(seat.paid)})` : ''}
+                        · 앉은 사람: ${escapeHtmlGb(assignName)}
+                        · ${unused ? '<span class="text-slate-400 font-bold">비활성</span>' : (seat.locked ? '<span class="text-rose-400 font-bold">고정</span>' : '<span class="text-emerald-300 font-bold">구입·뽑기</span>')}
                     </p>
                     <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
                         <input type="checkbox" id="busAdminUnused" ${unused ? 'checked' : ''} class="rounded border-slate-600">
@@ -18607,12 +18828,15 @@ ${subjectLine}
                     </label>
                     <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
                         <input type="checkbox" id="busAdminLock" ${seat.locked && !unused ? 'checked' : ''} class="rounded border-slate-600" ${unused ? 'disabled' : ''}>
-                        <span>뽑기에서 빼 두고 고정</span>
+                        <span>구입·뽑기에서 빼 두고 고정</span>
+                    </label>
+                    <label class="block text-[10px] text-slate-300 font-bold">기본 가격 (${getCurrencyUnit()})
+                        <input type="number" id="busAdminPrice" min="0" max="${BUS_SEAT_PRICE_MAX}" step="1" value="${Number(seat.price) || BUS_SEAT_DEFAULT_PRICE}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>
                     </label>
                     <label class="block text-[10px] text-slate-300 font-bold">앉힐 학생
-                        <select id="busAdminAssignee" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
+                        <select id="busAdminAssignee" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused || owned ? 'disabled' : ''}>${ownerOptions}</select>
                     </label>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">고정한 자리는 랜덤 뽑기 때 그대로 둡니다. 비활성이면 통로처럼 비워 둡니다.</p>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">기본 가격은 빈 자리 구입의 시작가입니다. 비활성으로 바꾸면 구매자에게 낸 봉을 돌려줍니다. 구입한 자리는 뽑기에서 그대로 둡니다.</p>
                     <div class="flex gap-2">
                         <button type="button" id="busAdminSave" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs">저장</button>
                         <button type="button" id="busAdminCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">취소</button>
@@ -18622,27 +18846,52 @@ ${subjectLine}
             const unusedEl = document.getElementById('busAdminUnused');
             const lockEl = document.getElementById('busAdminLock');
             const assignEl = document.getElementById('busAdminAssignee');
+            const priceEl = document.getElementById('busAdminPrice');
             unusedEl.addEventListener('change', () => {
                 const on = !!unusedEl.checked;
                 lockEl.disabled = on;
-                assignEl.disabled = on;
+                assignEl.disabled = on || owned;
+                if (priceEl) priceEl.disabled = on;
             });
             document.getElementById('busAdminCancel').onclick = () => d.remove();
             document.getElementById('busAdminSave').onclick = async () => {
                 const becomeUnused = !!unusedEl.checked;
                 const becomeLocked = becomeUnused ? true : !!lockEl.checked;
-                const newAssignee = becomeUnused ? null : (assignEl.value || null);
+                const newAssignee = becomeUnused || owned ? (owned && !becomeUnused ? seat.owner : null) : (assignEl.value || null);
+                const newPrice = sanitizeBusSeatPrice(priceEl && priceEl.value, seat.price);
                 d.remove();
-                if (newAssignee) {
-                    window.busSeatState.seats.forEach((s) => {
-                        if (s.id !== seat.id && String(s.assignee || '') === String(newAssignee)) s.assignee = null;
-                    });
-                }
-                seat.hidden = becomeUnused;
-                seat.locked = becomeLocked;
-                seat.assignee = newAssignee;
                 try {
-                    await persistBusSeatState();
+                    if (becomeUnused) {
+                        await releaseBusSeatWithRefund(seatId, {
+                            locked: true,
+                            price: newPrice,
+                        });
+                    } else {
+                        await persistBusSeatPatch((live) => {
+                            const target = live.seats[seatId];
+                            if (!target) return live;
+                            if (newAssignee && !becomeUnused) {
+                                live.seats.forEach((s) => {
+                                    if (s.id !== target.id && String(s.assignee || '') === String(newAssignee) && !s.owner) {
+                                        s.assignee = null;
+                                    }
+                                });
+                            }
+                            target.hidden = becomeUnused;
+                            target.locked = becomeLocked;
+                            target.price = newPrice;
+                            if (becomeUnused) {
+                                target.owner = null;
+                                target.paid = 0;
+                                target.assignee = null;
+                            } else if (target.owner) {
+                                target.assignee = target.owner;
+                            } else {
+                                target.assignee = newAssignee;
+                            }
+                            return live;
+                        });
+                    }
                     window.renderBusSeats();
                     await window.customAlert(`✅ ${seatId + 1}번 버스 자리를 저장했습니다.`);
                 } catch (e) {
@@ -18651,6 +18900,55 @@ ${subjectLine}
                 }
             };
         };
+
+        /** 비활성 전환 시 낸 봉만 주인 지갑으로 되돌립니다. */
+        async function releaseBusSeatWithRefund(seatId, extra = {}) {
+            if (!db) throw new Error('no_db');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) throw new Error('auth');
+            const refundId = `busrel_${seatId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            await runWithNetworkRetry(async () => {
+                await runTransaction(db, async (transaction) => {
+                    const busRef = busSeatDocRef();
+                    const busSnap = await transaction.get(busRef);
+                    const live = sanitizeBusState(busSnap.exists() ? busSnap.data() : emptyBusState());
+                    const cur = live.seats[seatId];
+                    const ownerGuess = cur && cur.owner ? String(cur.owner) : '';
+                    let walletSnap = null;
+                    if (ownerGuess) {
+                        walletSnap = await transaction.get(studentWalletRef(ownerGuess));
+                    }
+                    const applied = applyBusSeatRelease({
+                        state: live,
+                        seatId,
+                        hidden: true,
+                        refundId,
+                    });
+                    if (!applied.ok) throw new Error(applied.reason || 'release');
+                    const next = applied.state;
+                    const target = next.seats[seatId];
+                    if (target) {
+                        if (extra.price != null) target.price = sanitizeBusSeatPrice(extra.price, target.price);
+                        if (extra.locked != null) target.locked = extra.locked === true;
+                    }
+                    transaction.set(busRef, next);
+                    if (applied.already || !applied.refunds.length) return;
+                    const row = applied.refunds[0];
+                    const ownerId = String(row.studentId || '');
+                    if (!ownerId) return;
+                    const exists = !!(walletSnap && walletSnap.exists());
+                    const before = exists ? (Number((walletSnap.data() || {}).bong) || 0) : 0;
+                    writeBusSeatWallet(
+                        transaction,
+                        walletSnap,
+                        ownerId,
+                        before + Number(row.amount || 0),
+                        `버스 ${seatId + 1}번 자리 환불`,
+                        { source: 'busSeatRefund', seatId, refundId }
+                    );
+                });
+            }, '버스 자리 환불');
+        }
 
         window.shuffleBusSeatAssignments = async function () {
             if (!window.playerState || !window.playerState.isAdmin) {
@@ -18663,21 +18961,23 @@ ${subjectLine}
                 return window.customAlert('명단에 활성 학생이 없습니다.');
             }
             if (preview.available === 0) {
-                return window.customAlert('뽑을 활성 자리가 없습니다. 비활성·고정만 있으면 자리를 켜 주세요.');
+                return window.customAlert('뽑을 활성 자리가 없습니다. 비활성·고정·구입 자리만 있으면 자리를 켜 주세요.');
             }
             const ok = await window.customConfirm(
-                `고정 ${preview.kept}석은 그대로 두고,\n활성 학생 ${preview.needing}명을 빈 자리 ${preview.available}석에 랜덤 뽑기할까요?`
+                `구입·고정 ${preview.kept}석은 그대로 두고,\n활성 학생 ${preview.needing}명을 빈 자리 ${preview.available}석에 랜덤 뽑기할까요?`
             );
             if (!ok) return;
-            const drawn = shuffleBusAssignees(window.busSeatState, ids);
-            window.busSeatState = drawn.state;
             try {
-                await persistBusSeatState();
+                let drawn = null;
+                await persistBusSeatPatch((live) => {
+                    drawn = shuffleBusAssignees(live, ids);
+                    return drawn.state;
+                });
                 window.renderBusSeats();
                 let tail = '';
-                if (drawn.leftoverStudents) tail += `\n학생 ${drawn.leftoverStudents}명은 자리가 모자라 빠졌습니다.`;
-                if (drawn.leftoverSeats) tail += `\n빈 자리 ${drawn.leftoverSeats}석은 비워 두었습니다.`;
-                await window.customAlert(`🚌 버스 랜덤 뽑기 완료!\n배치: ${drawn.placed}명${tail}`);
+                if (drawn && drawn.leftoverStudents) tail += `\n학생 ${drawn.leftoverStudents}명은 자리가 모자라 빠졌습니다.`;
+                if (drawn && drawn.leftoverSeats) tail += `\n빈 자리 ${drawn.leftoverSeats}석은 비워 두었습니다.`;
+                await window.customAlert(`🚌 버스 랜덤 뽑기 완료!\n배치: ${drawn ? drawn.placed : 0}명${tail}`);
             } catch (e) {
                 console.error('shuffleBusSeatAssignments', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -18686,13 +18986,12 @@ ${subjectLine}
 
         window.masterResetBusSeats = async function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('버스 자리에 앉은 이름을 모두 지울까요?\n비활성·고정 표시는 그대로 둡니다.');
+            const ok = await window.customConfirm('버스 뽑기 이름만 지울까요?\n구입한 자리와 비활성·고정 표시는 그대로 둡니다.');
             if (!ok) return;
-            window.busSeatState = resetBusAssignees(window.busSeatState, { keepHidden: true });
             try {
-                await persistBusSeatState();
+                await persistBusSeatPatch((live) => resetBusAssignees(live, { keepHidden: true }));
                 window.renderBusSeats();
-                await window.customAlert('버스 뽑기를 초기화했습니다.');
+                await window.customAlert('버스 뽑기를 초기화했습니다. 구입한 자리는 그대로입니다.');
             } catch (e) {
                 console.error('masterResetBusSeats', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));

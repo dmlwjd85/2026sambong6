@@ -2,10 +2,15 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     BUS_SEAT_COUNT,
+    BUS_SEAT_DEFAULT_PRICE,
+    applyBusSeatPurchase,
+    applyBusSeatRelease,
+    applyBusSeatWalletChanges,
     busLayoutCells,
     busSeatSummary,
     emptyBusState,
     isBusSeatDisabled,
+    minBusSeatBid,
     resetBusAssignees,
     sanitizeBusState,
     shuffleBusAssignees,
@@ -28,17 +33,23 @@ describe('45인승 버스 자리', () => {
     it('비활성 자리와 위험한 학번을 버린다', () => {
         const dirty = sanitizeBusState({
             seats: [
-                { id: 0, assignee: 'gm', hidden: true, locked: false },
-                { id: 1, assignee: '7', hidden: false, locked: true },
+                { id: 0, assignee: 'gm', hidden: true, locked: false, owner: 'gm', paid: 9 },
+                { id: 1, assignee: '7', hidden: false, locked: true, price: 25, owner: '7', paid: 30 },
                 { id: 99, assignee: 'hack' },
             ],
         });
         assert.equal(dirty.seats.length, 45);
         assert.equal(isBusSeatDisabled(dirty.seats[0]), true);
         assert.equal(dirty.seats[0].assignee, null);
+        assert.equal(dirty.seats[0].owner, null);
+        assert.equal(dirty.seats[0].paid, 0);
         assert.equal(dirty.seats[1].assignee, '7');
+        assert.equal(dirty.seats[1].owner, '7');
+        assert.equal(dirty.seats[1].paid, 30);
+        assert.equal(dirty.seats[1].price, 25);
         assert.equal(dirty.seats[1].locked, true);
         assert.equal(dirty.seats[2].assignee, null);
+        assert.equal(dirty.seats[2].price, BUS_SEAT_DEFAULT_PRICE);
     });
 
     it('고정 자리는 남기고 나머지만 랜덤 뽑기한다', () => {
@@ -66,5 +77,211 @@ describe('45인승 버스 자리', () => {
         assert.equal(sum.total, 45);
         assert.equal(sum.hidden, 1);
         assert.equal(sum.active, 44);
+    });
+});
+
+describe('버스 자리 구입·입찰 환불', () => {
+    it('빈 자리는 기본가 이상으로 사고, 같은 가격 재입찰은 거절한다', () => {
+        const first = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 0,
+            buyerId: '1',
+            bid: BUS_SEAT_DEFAULT_PRICE,
+            buyerBong: 100,
+            purchaseId: 'buy-a',
+        });
+        assert.equal(first.ok, true);
+        assert.equal(first.state.seats[0].owner, '1');
+        assert.equal(first.state.seats[0].paid, 10);
+        assert.equal(first.buyerBong, 90);
+        assert.equal(minBusSeatBid(first.state.seats[0]), 11);
+
+        const same = applyBusSeatPurchase({
+            state: first.state,
+            seatId: 0,
+            buyerId: '2',
+            bid: 10,
+            buyerBong: 50,
+            purchaseId: 'buy-b',
+        });
+        assert.equal(same.ok, false);
+        assert.equal(same.reason, 'low');
+        assert.equal(same.minBid, 11);
+        assert.equal(first.state.seats[0].owner, '1');
+    });
+
+    it('더 높은 가격이면 구매자가 바뀌고 기존 구매자는 낸 봉만 돌려받는다', () => {
+        const first = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 3,
+            buyerId: '1',
+            bid: 10,
+            buyerBong: 40,
+            purchaseId: 'p1',
+        });
+        const second = applyBusSeatPurchase({
+            state: first.state,
+            seatId: 3,
+            buyerId: '2',
+            bid: 18,
+            buyerBong: 20,
+            purchaseId: 'p2',
+        });
+        assert.equal(second.ok, true);
+        assert.equal(second.state.seats[3].owner, '2');
+        assert.equal(second.state.seats[3].paid, 18);
+        assert.equal(second.prevOwner, '1');
+        assert.deepEqual(second.refunds, [{ studentId: '1', amount: 10, seatId: 3, kind: 'outbid' }]);
+        assert.equal(second.buyerBong, 2);
+
+        const wallets = applyBusSeatWalletChanges({
+            buyerId: '2',
+            buyerBong: 20,
+            charge: second.charge,
+            refunds: second.refunds,
+            otherBongs: { 1: 30 },
+        });
+        assert.equal(wallets['2'], 2);
+        assert.equal(wallets['1'], 40);
+        assert.equal(wallets['1'] + wallets['2'], 42);
+    });
+
+    it('같은 자리를 다시 사려는 본인과 잔액 부족은 거절한다', () => {
+        const owned = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 1,
+            buyerId: '5',
+            bid: 12,
+            buyerBong: 12,
+            purchaseId: 'me',
+        });
+        const self = applyBusSeatPurchase({
+            state: owned.state,
+            seatId: 1,
+            buyerId: '5',
+            bid: 20,
+            buyerBong: 100,
+            purchaseId: 'me2',
+        });
+        assert.equal(self.ok, false);
+        assert.equal(self.reason, 'self');
+
+        const poor = applyBusSeatPurchase({
+            state: owned.state,
+            seatId: 1,
+            buyerId: '8',
+            bid: 13,
+            buyerBong: 12,
+            purchaseId: 'poor',
+        });
+        assert.equal(poor.ok, false);
+        assert.equal(poor.reason, 'funds');
+        assert.equal(owned.state.seats[1].owner, '5');
+        assert.equal(owned.state.seats[1].paid, 12);
+    });
+
+    it('한 학생이 다른 자리를 사면 예전 자리를 비우고 낸 봉을 돌려준다', () => {
+        let state = emptyBusState();
+        const a = applyBusSeatPurchase({
+            state,
+            seatId: 0,
+            buyerId: '3',
+            bid: 10,
+            buyerBong: 30,
+            purchaseId: 's0',
+        });
+        const b = applyBusSeatPurchase({
+            state: a.state,
+            seatId: 2,
+            buyerId: '3',
+            bid: 15,
+            buyerBong: a.buyerBong,
+            purchaseId: 's2',
+        });
+        assert.equal(b.ok, true);
+        assert.equal(b.state.seats[0].owner, null);
+        assert.equal(b.state.seats[0].paid, 0);
+        assert.equal(b.state.seats[2].owner, '3');
+        assert.equal(b.state.seats[2].paid, 15);
+        assert.equal(b.buyerBong, 15);
+        assert.equal(b.refunds.some((r) => r.kind === 'vacate' && r.amount === 10 && r.seatId === 0), true);
+    });
+
+    it('같은 구매 번호는 두 번 깎이지 않는다', () => {
+        const first = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 4,
+            buyerId: '9',
+            bid: 10,
+            buyerBong: 50,
+            purchaseId: 'once',
+        });
+        const retry = applyBusSeatPurchase({
+            state: first.state,
+            seatId: 4,
+            buyerId: '9',
+            bid: 10,
+            buyerBong: first.buyerBong,
+            purchaseId: 'once',
+        });
+        assert.equal(retry.ok, true);
+        assert.equal(retry.already, true);
+        assert.equal(retry.charge, 0);
+        assert.equal(retry.buyerBong, 40);
+        assert.equal(first.state.seats[4].paid, 10);
+    });
+
+    it('비우면 기존 구매자에게 paid만 환불한다', () => {
+        const bought = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 6,
+            buyerId: '4',
+            bid: 22,
+            buyerBong: 22,
+            purchaseId: 'own',
+        });
+        const released = applyBusSeatRelease({
+            state: bought.state,
+            seatId: 6,
+            hidden: true,
+            refundId: 'rel-1',
+        });
+        assert.equal(released.ok, true);
+        assert.equal(released.state.seats[6].hidden, true);
+        assert.equal(released.state.seats[6].owner, null);
+        assert.equal(released.state.seats[6].paid, 0);
+        assert.deepEqual(released.refunds, [{ studentId: '4', amount: 22, seatId: 6, kind: 'release' }]);
+        const again = applyBusSeatRelease({
+            state: released.state,
+            seatId: 6,
+            hidden: true,
+            refundId: 'rel-1',
+        });
+        assert.equal(again.already, true);
+        assert.equal(again.refunds.length, 0);
+    });
+
+    it('뽑기와 초기화는 구입한 주인을 지우지 않는다', () => {
+        const bought = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 0,
+            buyerId: '1',
+            bid: 10,
+            buyerBong: 10,
+            purchaseId: 'keep',
+        });
+        const drawn = shuffleBusAssignees(bought.state, ['1', '2']);
+        assert.equal(drawn.state.seats[0].owner, '1');
+        assert.equal(drawn.state.seats[0].assignee, '1');
+        assert.equal(drawn.state.seats[0].paid, 10);
+        assert.equal(drawn.kept, 1);
+        const names = drawn.state.seats.map((s) => s.assignee).filter(Boolean).sort();
+        assert.deepEqual(names, ['1', '2']);
+        const cleared = resetBusAssignees(drawn.state);
+        assert.equal(cleared.seats[0].owner, '1');
+        assert.equal(cleared.seats[0].assignee, '1');
+        assert.equal(cleared.seats[0].paid, 10);
+        const sum = busSeatSummary(cleared);
+        assert.equal(sum.owned, 1);
     });
 });

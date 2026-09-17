@@ -4912,7 +4912,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #94a3b8;
         }
         .bus-seat {
-            min-height: 3.15rem;
+            min-height: 3.55rem;
             border-radius: 0.7rem;
             padding: 0.28rem 0.18rem;
             text-align: center;
@@ -4924,9 +4924,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .bus-seat-name { display: block; font-size: 10px; font-weight: 900; line-height: 1.2; word-break: keep-all; }
         .bus-seat.is-empty { background: #0f172a; }
         .bus-seat.is-filled { background: #134e4a; border-color: #2dd4bf; color: #ccfbf1; }
+        .bus-seat.is-owned { background: #3b2a08; border-color: #fbbf24; color: #fde68a; }
         .bus-seat.is-locked { background: #1e293b; border-color: #fb7185; }
         .bus-seat.is-off { opacity: 0.42; filter: grayscale(1); border-style: dashed; }
         .bus-seat.is-admin { cursor: pointer; }
+        .bus-seat.is-buyable { cursor: pointer; }
+        .bus-seat-price { display: block; font-size: 8px; font-weight: 800; color: #fbbf24; margin-top: 2px; }
         .bus-aisle {
             min-height: 3.15rem;
             border-radius: 999px;

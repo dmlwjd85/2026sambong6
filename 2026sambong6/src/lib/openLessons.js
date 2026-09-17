@@ -93,6 +93,22 @@ export function emptyOpenLessonState() {
     return { lessonId: '', slideIndex: 0, updatedAt: 0 };
 }
 
+/**
+ * 별도 문서가 아직 없으면 예전 전역 설정의 공개수업을 씁니다.
+ * 이미 넘긴 로컬 장 수를 다시 더하면 슬라이드가 한 장 건너뜁니다.
+ */
+export function openLessonStateFromSnaps(dedicatedData, globalData, localFallback) {
+    if (dedicatedData && typeof dedicatedData === 'object' && !Array.isArray(dedicatedData)
+        && dedicatedData.openLesson !== undefined) {
+        return sanitizeOpenLessonState(dedicatedData.openLesson);
+    }
+    if (globalData && typeof globalData === 'object' && !Array.isArray(globalData)
+        && globalData.openLesson !== undefined) {
+        return sanitizeOpenLessonState(globalData.openLesson);
+    }
+    return sanitizeOpenLessonState(localFallback);
+}
+
 export function sanitizeOpenLessonState(raw) {
     const src = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     const lesson = openLessonById(src.lessonId);

@@ -1764,11 +1764,27 @@
             </div>
         </section>
 
-        <!-- ★ 7. 부동산(자리표) — 경제 서브 ★ -->
+        <!-- ★ 7. 부동산(자리표·버스 뽑기) — 경제 서브 ★ -->
         <section id="estateSection" class="hidden">
+            <div class="mb-3">
+                <h2 class="text-xl sm:text-2xl font-display text-teal-400"><i class="fa-solid fa-building"></i> 학급 부동산</h2>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">교실 자리표와 45인승 버스 자리 뽑기를 한곳에서 다룹니다.</p>
+                <div class="app-sub-dock cols-2 mt-3">
+                    <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="estate" data-pane="classroom" onclick="window.switchInnerPane('estate','classroom')">
+                        <span class="app-sub-fa"><i class="fa-solid fa-table-cells"></i></span>
+                        <span>자리표</span>
+                    </button>
+                    <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="estate" data-pane="bus" onclick="window.switchInnerPane('estate','bus')">
+                        <span class="app-sub-fa"><i class="fa-solid fa-bus"></i></span>
+                        <span>버스 뽑기</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="inner-pane" data-pane-group="estate" data-pane="classroom">
             <div class="mb-4 flex flex-wrap justify-between items-end gap-2">
                 <div>
-                    <h2 class="text-xl sm:text-2xl font-display text-teal-400"><i class="fa-solid fa-building"></i> 학급 부동산 (자리표)</h2>
+                    <h3 class="text-base font-bold text-teal-200">학급 자리표</h3>
                     <p class="text-[10px] sm:text-xs text-slate-400 mt-1">원하는 자리를 영구 구매하세요! 마스터는 행·열·사용 안 함 자리를 자유롭게 배열할 수 있습니다.</p>
                     <p id="estateLayoutHint" class="text-[10px] text-teal-300/80 font-bold mt-1">—</p>
                 </div>
@@ -1782,6 +1798,29 @@
                 <div class="w-full text-center bg-slate-800 text-slate-400 font-bold py-2 mb-4 rounded-xl border border-slate-600 tracking-widest text-xs">칠판 (앞)</div>
                 <div class="grid gap-2 sm:gap-3 w-full" id="estateGrid" style="grid-template-columns: repeat(4, minmax(0, 1fr));"><div class="text-center text-slate-500 text-xs py-10" style="grid-column: 1 / -1;">로딩 중...</div></div>
                 <div id="estatePurchaseLog" class="hidden"></div>
+            </div>
+            </div>
+
+            <div class="inner-pane hidden" data-pane-group="estate" data-pane="bus">
+            <div class="mb-4 flex flex-wrap justify-between items-end gap-2">
+                <div>
+                    <h3 class="text-base font-bold text-amber-200">45인승 버스 자리 뽑기</h3>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">앞 10열은 2+통로+2, 맨 뒷줄은 5칸입니다. 마스터는 자리를 켜고 끄거나 고정한 뒤 랜덤 뽑기를 할 수 있습니다.</p>
+                    <p id="busSeatHint" class="text-[10px] text-amber-200/80 font-bold mt-1">—</p>
+                </div>
+                <div class="flex flex-wrap gap-2 shrink-0">
+                    <button id="btnBusShuffle" type="button" onclick="window.shuffleBusSeatAssignments()" class="hidden bg-amber-800 hover:bg-amber-700 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-amber-500">버스 랜덤 뽑기</button>
+                    <button id="btnBusReset" type="button" onclick="window.masterResetBusSeats()" class="hidden bg-slate-700 hover:bg-slate-600 text-white text-[10px] py-1.5 px-3 rounded font-bold border border-slate-500">뽑기 초기화</button>
+                </div>
+            </div>
+            <div id="busSeatDeck" class="bus-deck mx-auto">
+                <div class="bus-deck-front">
+                    <span class="bus-deck-cab"><i class="fa-solid fa-car"></i> 운전석</span>
+                    <span class="bus-deck-door"><i class="fa-solid fa-door-open"></i> 출입문</span>
+                </div>
+                <div id="busSeatGrid" class="bus-deck-grid"></div>
+                <div class="bus-deck-rear">뒷문 · 비상구</div>
+            </div>
             </div>
         </section>
 

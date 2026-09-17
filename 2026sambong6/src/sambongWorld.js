@@ -430,6 +430,15 @@ import {
     viewedClassBoardPage,
 } from './lib/classBoard.js';
 import {
+    busLayoutCells,
+    busSeatSummary,
+    emptyBusState,
+    isBusSeatDisabled,
+    resetBusAssignees,
+    sanitizeBusState,
+    shuffleBusAssignees,
+} from './lib/busSeats.js';
+import {
     closeOpenLesson,
     emptyOpenLessonState,
     openLessonById,
@@ -1029,7 +1038,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.38';
+        const APP_VERSION = 'v1.39';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -4306,7 +4315,8 @@ function redrawPlazaGrantsUi() {
         
         window.allStudentsData = []; 
         window.gmData = null; 
-        window.gmaData = null; 
+        window.gmaData = null;
+        window.busSeatState = emptyBusState(); 
                 window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), openLesson: emptyOpenLessonState(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
@@ -4328,6 +4338,7 @@ function redrawPlazaGrantsUi() {
         let unsubscribeStudentBackups = null;
         let unsubscribeClassBoard = null;
         let unsubscribeOpenLesson = null;
+        let unsubscribeBusSeats = null;
         let _classBoardDocReady = false;
         let _openLessonDocReady = false;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
@@ -9040,6 +9051,12 @@ ${subjectLine}
                 renderClassModuleUnlockList();
                 renderGmExternalPortalEditor();
             }
+            if (g === 'estate' && id === 'classroom' && typeof window.renderEstate === 'function') {
+                window.renderEstate();
+            }
+            if (g === 'estate' && id === 'bus' && typeof window.renderBusSeats === 'function') {
+                window.renderBusSeats();
+            }
         };
 
         window.switchShopSub = function(sub) {
@@ -9085,7 +9102,11 @@ ${subjectLine}
                     window.updateBankPanel();
                     window.switchInnerPane('bank', innerPaneState.bank || 'summary');
                 }
-                if (economySub === 'estate' && typeof window.renderEstate === 'function') window.renderEstate();
+                if (economySub === 'estate') {
+                    window.switchInnerPane('estate', innerPaneState.estate || 'classroom');
+                    if (typeof window.renderEstate === 'function') window.renderEstate();
+                    if (typeof window.renderBusSeats === 'function') window.renderBusSeats();
+                }
             }
             const ecoSec = document.getElementById('economySection');
             if (ecoSec) ecoSec.classList.remove('hidden');
@@ -16938,6 +16959,16 @@ ${subjectLine}
                             }
                         });
 
+                        if (unsubscribeBusSeats) unsubscribeBusSeats();
+                        unsubscribeBusSeats = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'bus'), (snap) => {
+                            if (snap.exists()) {
+                                window.busSeatState = sanitizeBusState(snap.data());
+                            } else {
+                                window.busSeatState = emptyBusState();
+                            }
+                            if (typeof window.renderBusSeats === 'function') window.renderBusSeats();
+                        });
+
                         if (unsubscribeClassBoard) unsubscribeClassBoard();
                         unsubscribeClassBoard = onSnapshot(getClassBoardDocRef(), (snap) => {
                             if (!snap.exists()) return;
@@ -18483,6 +18514,188 @@ ${subjectLine}
             // 자리 배열·배치가 바뀌면 광장 교실 격자에도 바로 반영
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
+        };
+
+        function busSeatDocRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'bus');
+        }
+
+        async function persistBusSeatState() {
+            if (!db) return false;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                return false;
+            }
+            window.busSeatState = sanitizeBusState(window.busSeatState);
+            await setDoc(busSeatDocRef(), window.busSeatState);
+            return true;
+        }
+
+        function busSeatName(sid) {
+            const id = String(sid || '');
+            if (!id) return '';
+            return STUDENT_NAMES[id] || id;
+        }
+
+        window.renderBusSeats = function () {
+            const grid = document.getElementById('busSeatGrid');
+            if (!grid) return;
+            window.busSeatState = sanitizeBusState(window.busSeatState);
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            const shuffleBtn = document.getElementById('btnBusShuffle');
+            const resetBtn = document.getElementById('btnBusReset');
+            if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
+            if (resetBtn) resetBtn.style.display = admin ? 'block' : 'none';
+            const sum = busSeatSummary(window.busSeatState);
+            const hint = document.getElementById('busSeatHint');
+            if (hint) {
+                hint.textContent = `활성 ${sum.active}석 · 앉은 ${sum.filled}명 · 고정 ${sum.locked}석 · 비활성 ${sum.hidden}석`;
+            }
+            const seats = window.busSeatState.seats;
+            grid.innerHTML = busLayoutCells().map((cell) => {
+                if (cell.kind === 'aisle') {
+                    return `<div class="bus-aisle" aria-hidden="true">통로</div>`;
+                }
+                const seat = seats[cell.id] || { id: cell.id, assignee: null, hidden: false, locked: false };
+                const unused = isBusSeatDisabled(seat);
+                const name = busSeatName(seat.assignee);
+                const adminClick = admin ? `onclick="window.openBusSeatAdmin(${seat.id})"` : '';
+                let cls = 'bus-seat';
+                if (admin) cls += ' is-admin';
+                if (unused) cls += ' is-off';
+                else if (seat.locked) cls += ' is-locked';
+                else if (name) cls += ' is-filled';
+                else cls += ' is-empty';
+                const status = unused
+                    ? '비활성'
+                    : (seat.locked ? '고정' : (name ? name : '빈 자리'));
+                return `<div class="${cls}" ${adminClick}>
+                    <span class="bus-seat-no">${cell.no}번</span>
+                    <span class="bus-seat-name">${escapeHtmlAttr(status)}</span>
+                </div>`;
+            }).join('');
+        };
+
+        window.openBusSeatAdmin = function (seatId) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            window.busSeatState = sanitizeBusState(window.busSeatState);
+            const seat = window.busSeatState.seats[seatId];
+            if (!seat) return;
+            const unused = isBusSeatDisabled(seat);
+            const assignName = seat.assignee ? busSeatName(seat.assignee) : '없음';
+            const ownerOptions = ['<option value="">(비움)</option>']
+                .concat(getActiveStudentIds().map((sid) => {
+                    const id = String(sid);
+                    const sel = String(seat.assignee || '') === id ? 'selected' : '';
+                    return `<option value="${id}" ${sel}>${escapeHtmlGb(STUDENT_NAMES[id] || id)} (${id}번)</option>`;
+                }))
+                .join('');
+            const d = document.createElement('div');
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-amber-500/50 max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-lg font-display text-amber-300 text-center">🚌 ${seatId + 1}번 버스 자리</h3>
+                    <p class="text-[10px] text-slate-400 text-center leading-relaxed">
+                        현재: <strong class="text-white">${escapeHtmlGb(assignName)}</strong>
+                        · ${unused ? '<span class="text-slate-400 font-bold">비활성</span>' : (seat.locked ? '<span class="text-rose-400 font-bold">고정</span>' : '<span class="text-emerald-300 font-bold">뽑기 대상</span>')}
+                    </p>
+                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
+                        <input type="checkbox" id="busAdminUnused" ${unused ? 'checked' : ''} class="rounded border-slate-600">
+                        <span>이 자리 사용 안 함 (비활성)</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
+                        <input type="checkbox" id="busAdminLock" ${seat.locked && !unused ? 'checked' : ''} class="rounded border-slate-600" ${unused ? 'disabled' : ''}>
+                        <span>뽑기에서 빼 두고 고정</span>
+                    </label>
+                    <label class="block text-[10px] text-slate-300 font-bold">앉힐 학생
+                        <select id="busAdminAssignee" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
+                    </label>
+                    <p class="text-[9px] text-slate-500 leading-relaxed">고정한 자리는 랜덤 뽑기 때 그대로 둡니다. 비활성이면 통로처럼 비워 둡니다.</p>
+                    <div class="flex gap-2">
+                        <button type="button" id="busAdminSave" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs">저장</button>
+                        <button type="button" id="busAdminCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">취소</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(d);
+            const unusedEl = document.getElementById('busAdminUnused');
+            const lockEl = document.getElementById('busAdminLock');
+            const assignEl = document.getElementById('busAdminAssignee');
+            unusedEl.addEventListener('change', () => {
+                const on = !!unusedEl.checked;
+                lockEl.disabled = on;
+                assignEl.disabled = on;
+            });
+            document.getElementById('busAdminCancel').onclick = () => d.remove();
+            document.getElementById('busAdminSave').onclick = async () => {
+                const becomeUnused = !!unusedEl.checked;
+                const becomeLocked = becomeUnused ? true : !!lockEl.checked;
+                const newAssignee = becomeUnused ? null : (assignEl.value || null);
+                d.remove();
+                if (newAssignee) {
+                    window.busSeatState.seats.forEach((s) => {
+                        if (s.id !== seat.id && String(s.assignee || '') === String(newAssignee)) s.assignee = null;
+                    });
+                }
+                seat.hidden = becomeUnused;
+                seat.locked = becomeLocked;
+                seat.assignee = newAssignee;
+                try {
+                    await persistBusSeatState();
+                    window.renderBusSeats();
+                    await window.customAlert(`✅ ${seatId + 1}번 버스 자리를 저장했습니다.`);
+                } catch (e) {
+                    console.error('openBusSeatAdmin', e);
+                    await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                }
+            };
+        };
+
+        window.shuffleBusSeatAssignments = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 버스 자리를 뽑을 수 있습니다.');
+            }
+            window.busSeatState = sanitizeBusState(window.busSeatState);
+            const ids = getActiveStudentIds();
+            const preview = shuffleBusAssignees(window.busSeatState, ids);
+            if (preview.needing === 0 && preview.kept === 0) {
+                return window.customAlert('명단에 활성 학생이 없습니다.');
+            }
+            if (preview.available === 0) {
+                return window.customAlert('뽑을 활성 자리가 없습니다. 비활성·고정만 있으면 자리를 켜 주세요.');
+            }
+            const ok = await window.customConfirm(
+                `고정 ${preview.kept}석은 그대로 두고,\n활성 학생 ${preview.needing}명을 빈 자리 ${preview.available}석에 랜덤 뽑기할까요?`
+            );
+            if (!ok) return;
+            const drawn = shuffleBusAssignees(window.busSeatState, ids);
+            window.busSeatState = drawn.state;
+            try {
+                await persistBusSeatState();
+                window.renderBusSeats();
+                let tail = '';
+                if (drawn.leftoverStudents) tail += `\n학생 ${drawn.leftoverStudents}명은 자리가 모자라 빠졌습니다.`;
+                if (drawn.leftoverSeats) tail += `\n빈 자리 ${drawn.leftoverSeats}석은 비워 두었습니다.`;
+                await window.customAlert(`🚌 버스 랜덤 뽑기 완료!\n배치: ${drawn.placed}명${tail}`);
+            } catch (e) {
+                console.error('shuffleBusSeatAssignments', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.masterResetBusSeats = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            const ok = await window.customConfirm('버스 자리에 앉은 이름을 모두 지울까요?\n비활성·고정 표시는 그대로 둡니다.');
+            if (!ok) return;
+            window.busSeatState = resetBusAssignees(window.busSeatState, { keepHidden: true });
+            try {
+                await persistBusSeatState();
+                window.renderBusSeats();
+                await window.customAlert('버스 뽑기를 초기화했습니다.');
+            } catch (e) {
+                console.error('masterResetBusSeats', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };
 

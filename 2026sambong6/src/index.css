@@ -4988,9 +4988,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 padding: 0.7rem 0.8rem;
             }
             .bus-deck-front {
-                display: grid;
-                grid-template-columns: 1fr;
-                grid-template-rows: 1fr 1fr;
+                display: flex;
+                flex-direction: column-reverse;
                 gap: 0.35rem;
                 margin-bottom: 0;
                 margin-right: 0.45rem;
@@ -5009,6 +5008,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
                 grid-template-rows: repeat(5, minmax(2.5rem, auto));
                 grid-auto-flow: column;
             }
+            /* 세로 배치의 왼쪽(운전석·창)이 가로에서는 아래, 오른쪽(출입문)이 위로 가게 뒤집습니다. */
+            .bus-deck-grid > *:nth-child(5n + 1) { grid-row: 5; }
+            .bus-deck-grid > *:nth-child(5n + 2) { grid-row: 4; }
+            .bus-deck-grid > *:nth-child(5n + 3) { grid-row: 3; }
+            .bus-deck-grid > *:nth-child(5n + 4) { grid-row: 2; }
+            .bus-deck-grid > *:nth-child(5n + 5) { grid-row: 1; }
             .bus-deck-rear {
                 writing-mode: vertical-rl;
                 margin-top: 0;

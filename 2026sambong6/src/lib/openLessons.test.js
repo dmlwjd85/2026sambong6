@@ -8,6 +8,7 @@ import {
     openLessonCatalog,
     openLessonSlideAt,
     openLessonSlideCount,
+    openLessonStateFromSnaps,
     sanitizeOpenLessonState,
     startOpenLesson,
     stepOpenLesson,
@@ -48,5 +49,22 @@ describe('공개수업 목록', () => {
         const closed = closeOpenLesson(last, 600);
         assert.equal(closed.lessonId, '');
         assert.equal(closed.slideIndex, 0);
+    });
+
+    it('별도 문서가 없으면 전역 설정의 장을 쓰고 이미 넘긴 로컬을 다시 더하지 않는다', () => {
+        const global = {
+            openLesson: { lessonId: 'parallel-theory', slideIndex: 0, updatedAt: 100 },
+        };
+        const localStepped = { lessonId: 'parallel-theory', slideIndex: 1, updatedAt: 200 };
+        const cur = openLessonStateFromSnaps(null, global, localStepped);
+        assert.equal(cur.slideIndex, 0);
+        const next = stepOpenLesson(cur, 1, 300);
+        assert.equal(next.slideIndex, 1);
+        const dedicated = openLessonStateFromSnaps(
+            { openLesson: { lessonId: 'parallel-theory', slideIndex: 4, updatedAt: 400 } },
+            global,
+            localStepped,
+        );
+        assert.equal(dedicated.slideIndex, 4);
     });
 });

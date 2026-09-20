@@ -2499,10 +2499,14 @@
         .rps-move-btn:disabled { opacity: 0.45; }
         .rps-reveal-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(7.4rem, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(8.2rem, 1fr));
             gap: 0.45rem;
         }
         .rps-reveal-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.12rem;
             border-radius: 0.85rem;
             padding: 0.55rem 0.4rem;
             border: 1px solid #334155;
@@ -2513,8 +2517,8 @@
         .rps-reveal-card.is-lose { opacity: 0.55; filter: grayscale(0.4); }
         .rps-reveal-card.is-timeout { border-style: dashed; color: #94a3b8; }
         .rps-reveal-move { font-size: 1.6rem; display: block; margin: 0.15rem 0; }
-        .rps-reveal-name { font-size: 11px; font-weight: 900; }
-        .rps-reveal-tag { font-size: 10px; font-weight: 800; color: #fde68a; }
+        .rps-reveal-name { display: block; font-size: 11px; font-weight: 900; line-height: 1.25; text-align: center; }
+        .rps-reveal-tag { display: block; font-size: 10px; font-weight: 800; color: #fde68a; }
         .rps-dock {
             position: fixed;
             right: 0.85rem;

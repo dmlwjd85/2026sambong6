@@ -2403,6 +2403,134 @@
             color: #fff7ed;
             font-size: 1.45rem;
         }
+        .app-tool-icon-rps {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(160deg, #67e8f9, #0e7490 58%, #155e75);
+            color: #ecfeff;
+            font-size: 1.45rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.35);
+        }
+        .rps-panel .rps-start-btn {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            min-height: 6.2rem;
+            padding: 0.9rem 0.85rem;
+            text-align: left;
+            border-radius: 1rem;
+            font-weight: 900;
+            color: #ecfeff;
+            background: linear-gradient(180deg, #0891b2, #155e75);
+            border: 2px solid rgba(165, 243, 252, 0.55);
+            box-shadow: 0 4px 0 #164e63;
+        }
+        .rps-panel .rps-start-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #164e63;
+        }
+        .rps-panel .rps-start-btn-teacher:active {
+            box-shadow: 0 2px 0 #92400e;
+        }
+        .rps-mini-btn {
+            min-height: 44px;
+            padding: 0.45rem 0.85rem;
+            border-radius: 0.75rem;
+            font-size: 11px;
+            font-weight: 800;
+            color: #e2e8f0;
+            background: #1e293b;
+            border: 1px solid #475569;
+        }
+        .rps-overlay {
+            background: rgba(2, 6, 23, 0.94);
+        }
+        .rps-overlay-bg {
+            background:
+                radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.28), transparent 42%),
+                radial-gradient(circle at 90% 80%, rgba(245, 158, 11, 0.18), transparent 40%);
+        }
+        .rps-overlay-close {
+            min-height: 44px;
+            padding: 0 0.85rem;
+            border-radius: 0.8rem;
+            font-size: 12px;
+            font-weight: 800;
+            color: #e2e8f0;
+            background: #1e293b;
+            border: 1px solid #475569;
+        }
+        .rps-countdown {
+            font-size: clamp(4.5rem, 18vw, 8rem);
+            line-height: 1;
+            color: #fde68a;
+            text-shadow: 0 0 24px rgba(251, 191, 36, 0.45);
+            margin-bottom: 0.4rem;
+        }
+        .rps-move-row {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.65rem;
+            max-width: 42rem;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .rps-move-btn {
+            min-height: 6.2rem;
+            border-radius: 1.1rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.35rem;
+            font-size: 1.05rem;
+            font-weight: 900;
+            color: #ecfeff;
+            background: #164e63;
+            border: 3px solid #67e8f9;
+        }
+        .rps-move-btn i { font-size: 2.1rem; }
+        .rps-move-btn.is-selected {
+            background: #f59e0b;
+            border-color: #fde68a;
+            color: #1c1917;
+        }
+        .rps-move-btn:disabled { opacity: 0.45; }
+        .rps-reveal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(7.4rem, 1fr));
+            gap: 0.45rem;
+        }
+        .rps-reveal-card {
+            border-radius: 0.85rem;
+            padding: 0.55rem 0.4rem;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        .rps-reveal-card.is-win { border-color: #22d3ee; background: #164e63; }
+        .rps-reveal-card.is-lose { opacity: 0.55; filter: grayscale(0.4); }
+        .rps-reveal-card.is-timeout { border-style: dashed; color: #94a3b8; }
+        .rps-reveal-move { font-size: 1.6rem; display: block; margin: 0.15rem 0; }
+        .rps-reveal-name { font-size: 11px; font-weight: 900; }
+        .rps-reveal-tag { font-size: 10px; font-weight: 800; color: #fde68a; }
+        .rps-dock {
+            position: fixed;
+            right: 0.85rem;
+            bottom: 5.2rem;
+            z-index: 540;
+            min-height: 44px;
+            padding: 0.55rem 0.9rem;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 900;
+            color: #083344;
+            background: #67e8f9;
+            border: 2px solid #ecfeff;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+        }
+        body.rps-overlay-active { overflow: hidden !important; }
         .think-board-panel .hidden { display: none !important; }
         .think-board-panel {
             display: flex;

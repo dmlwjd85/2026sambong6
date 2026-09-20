@@ -131,6 +131,21 @@ import {
     undoLastBallot,
 } from './lib/classElection.js';
 import {
+    RPS_MOVE_LABEL,
+    RPS_NEXT_ROUND_MS,
+    RPS_REVEAL_GRACE_MS,
+    applyRpsReveal,
+    collectRpsPicksFromStudents,
+    createRpsSessionId,
+    emptyRpsGame,
+    rpsCanReveal,
+    rpsChooseRemainingMs,
+    sanitizeRpsGame,
+    sanitizeRpsMove,
+    sanitizeRpsPick,
+    startRpsRound,
+} from './lib/rpsGame.js';
+import {
     DAILY_ALL_CLEAR_BONG,
     DAILY_ALL_CLEAR_XP,
     DRAGON_BALL_COMPLETE_XP,
@@ -543,6 +558,7 @@ async function refreshStudentsCacheFromServer() {
         if (myData) {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
+            const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -553,6 +569,10 @@ async function refreshStudentsCacheFromServer() {
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData.dragonBallWeekendKey),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+            const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
+            if (prevRpsPick.move && prevRpsPick.at >= nextRpsPick.at) {
+                window.playerState.rpsPick = prevRpsPick;
+            }
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
             updateUI();
         }
@@ -1047,7 +1067,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.45';
+        const APP_VERSION = 'v1.46';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -4326,7 +4346,7 @@ function redrawPlazaGrantsUi() {
         window.gmData = null; 
         window.gmaData = null;
         window.busSeatState = emptyBusState(); 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), openLesson: emptyOpenLessonState(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), openLesson: emptyOpenLessonState(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, rpsGame: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -6239,6 +6259,7 @@ ${subjectLine}
         function applyOwnStudentDocPreservingDragonBalls(myData, myId) {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
+            const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -6249,6 +6270,10 @@ ${subjectLine}
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData && myData.dragonBallWeekendKey),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
+            const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
+            if (prevRpsPick.move && prevRpsPick.at >= nextRpsPick.at) {
+                window.playerState.rpsPick = prevRpsPick;
+            }
         }
 
         const DEFAULT_CONSTITUTION_ITEMS = [
@@ -8946,6 +8971,8 @@ ${subjectLine}
             if (isVisible('lotteryDrawOverlay')) return true;
             if (isVisible('electionOverlay')) return true;
             if (isVisible('studentElectionOverlay')) return true;
+            if (isVisible('rpsOverlay')) return true;
+            if (typeof _rpsGame !== 'undefined' && _rpsGame && _rpsGame.sessionId && _rpsGame.phase !== 'idle') return true;
             if (isVisible('classtoolsSection')) return true;
             if (typeof isClassToolFullscreenOpen === 'function' && isClassToolFullscreenOpen()) return true;
             if (_lotteryRunning || _classWheelSpinning || _electionCounting) return true;
@@ -10903,6 +10930,7 @@ ${subjectLine}
             }
             if (classtoolSub === 'wheel') renderClassWheelPanel();
             if (classtoolSub === 'vote') renderClassElectionPanel();
+            if (classtoolSub === 'rps') renderRpsToolPanel();
             if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
             }
@@ -10989,6 +11017,7 @@ ${subjectLine}
             padlet: '생각게시판',
             classboard: '학급게시판',
             openlesson: '공개수업',
+            rps: '가위바위보',
         };
 
         window.switchClassTool = function(toolId) {
@@ -14514,6 +14543,598 @@ ${subjectLine}
         loadElectionFromStorage();
 
         // ==========================================
+        // ★ 수업도구: 가위바위보 ★
+        // ==========================================
+        const RPS_MOVE_EMOJI = Object.freeze({ scissors: '✌️', rock: '✊', paper: '🖐️' });
+        let _rpsGame = emptyRpsGame();
+        let _rpsLocalTeacherPick = '';
+        let _rpsIgnoreRemoteUntil = 0;
+        let _rpsRevealTimer = null;
+        let _rpsNextTimer = null;
+        let _rpsCountdownTimer = null;
+        let _rpsLastSession = '';
+        let _rpsDismissed = false;
+        let _rpsBusy = false;
+        let _rpsPickBusy = false;
+
+        function getPublishedRpsGame() {
+            return sanitizeRpsGame(window.globalSettings && window.globalSettings.rpsGame);
+        }
+
+        function getRpsRosterIds() {
+            return getActiveStudentIds().filter((id) => id && id !== 'gm' && id !== 'gm_a');
+        }
+
+        function getMyRpsStudentId() {
+            const id = String(localStorage.getItem('sambong_student_id') || '').trim();
+            if (!id || id === 'gm' || id === 'gm_a' || id === 'guest') return '';
+            return id;
+        }
+
+        function rpsStudentName(id) {
+            return getStudentDisplayLabel(id) || getLotteryDisplayName(id) || String(id);
+        }
+
+        function rpsMoveLabel(move) {
+            const m = sanitizeRpsMove(move);
+            return m ? (RPS_MOVE_LABEL[m] || m) : '없음';
+        }
+
+        function rpsMoveEmoji(move) {
+            const m = sanitizeRpsMove(move);
+            return m ? (RPS_MOVE_EMOJI[m] || '') : '—';
+        }
+
+        function isRpsOverlayOpen() {
+            const el = document.getElementById('rpsOverlay');
+            return !!(el && !el.classList.contains('hidden'));
+        }
+
+        function clearRpsAdminTimers() {
+            if (_rpsRevealTimer) {
+                clearTimeout(_rpsRevealTimer);
+                _rpsRevealTimer = null;
+            }
+            if (_rpsNextTimer) {
+                clearTimeout(_rpsNextTimer);
+                _rpsNextTimer = null;
+            }
+            if (_rpsCountdownTimer) {
+                clearInterval(_rpsCountdownTimer);
+                _rpsCountdownTimer = null;
+            }
+        }
+
+        async function publishRpsGame(patch = {}) {
+            _rpsGame = sanitizeRpsGame({ ..._rpsGame, ...patch, updatedAt: Date.now() });
+            if (window.globalSettings) window.globalSettings.rpsGame = _rpsGame;
+            if (!db) return false;
+            _rpsIgnoreRemoteUntil = Date.now() + 1600;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+                await setDoc(getGlobalSettingsDocRef(), { rpsGame: _rpsGame }, { merge: true });
+                return true;
+            } catch (e) {
+                console.warn('publishRpsGame', e);
+                return false;
+            }
+        }
+
+        function collectLiveRpsPicks() {
+            const picks = collectRpsPicksFromStudents(
+                window.allStudentsData || [],
+                _rpsGame.sessionId,
+                _rpsGame.round
+            );
+            const me = window.playerState;
+            const myId = getMyRpsStudentId();
+            if (me && !me.isGuest && myId) {
+                const mine = sanitizeRpsPick(me.rpsPick);
+                if (mine.sessionId === _rpsGame.sessionId && mine.round === _rpsGame.round && mine.move) {
+                    picks[myId] = mine.move;
+                }
+            }
+            return picks;
+        }
+
+        function myRpsPickMove() {
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            if (isAdmin && _rpsGame.mode === 'teacher') return sanitizeRpsMove(_rpsLocalTeacherPick);
+            const mine = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            if (mine.sessionId === _rpsGame.sessionId && mine.round === _rpsGame.round) return mine.move;
+            return '';
+        }
+
+        function rpsResultBanner(result) {
+            if (!result) return '';
+            const kind = String(result.kind || '');
+            if (kind === 'win') return '이긴 손이 남았습니다.';
+            if (kind === 'tie') return '세 손이 나와 다시 합니다. 고른 사람만 남습니다.';
+            if (kind === 'timeout_all') return '모두 고르지 못해 탈락했습니다.';
+            if (kind === 'teacher_win') return '선생님을 이긴 학생만 남습니다.';
+            if (kind === 'teacher_hold') return '선생님을 이긴 학생이 없어, 고른 사람만 다시 합니다.';
+            if (kind === 'teacher_miss') return '선생님 손이 없어, 고른 학생만 다시 합니다.';
+            return '이번 라운드 결과입니다.';
+        }
+
+        function syncRpsDock() {
+            const dock = document.getElementById('rpsDock');
+            if (!dock) return;
+            const live = !!(_rpsGame.sessionId && _rpsGame.phase !== 'idle');
+            const overlayOpen = isRpsOverlayOpen();
+            dock.classList.toggle('hidden', !(live && !overlayOpen && _rpsDismissed));
+            if (_rpsGame.phase === 'done') dock.textContent = '✊ 우승자 보기';
+            else if (_rpsGame.phase === 'reveal') dock.textContent = '✊ 결과 보기';
+            else dock.textContent = '✊ 가위바위보';
+        }
+
+        function closeRpsOverlayInternal(hideDock) {
+            const el = document.getElementById('rpsOverlay');
+            if (el) el.classList.add('hidden');
+            document.body.classList.remove('rps-overlay-active');
+            if (hideDock) _rpsDismissed = false;
+            syncRpsDock();
+        }
+
+        function openRpsOverlay() {
+            const el = document.getElementById('rpsOverlay');
+            if (!el) return;
+            _rpsDismissed = false;
+            el.classList.remove('hidden');
+            document.body.classList.add('rps-overlay-active');
+            renderRpsOverlay();
+            syncRpsDock();
+        }
+
+        function startRpsCountdownTick() {
+            if (_rpsCountdownTimer) {
+                clearInterval(_rpsCountdownTimer);
+                _rpsCountdownTimer = null;
+            }
+            if (_rpsGame.phase !== 'choose') return;
+            const tick = () => {
+                if (_rpsGame.phase !== 'choose') {
+                    if (_rpsCountdownTimer) {
+                        clearInterval(_rpsCountdownTimer);
+                        _rpsCountdownTimer = null;
+                    }
+                    return;
+                }
+                renderRpsChooseProgress();
+            };
+            tick();
+            _rpsCountdownTimer = setInterval(tick, 100);
+        }
+
+        function armRpsAdminTimers() {
+            if (!(window.playerState && window.playerState.isAdmin)) return;
+            if (_rpsRevealTimer) {
+                clearTimeout(_rpsRevealTimer);
+                _rpsRevealTimer = null;
+            }
+            if (_rpsNextTimer) {
+                clearTimeout(_rpsNextTimer);
+                _rpsNextTimer = null;
+            }
+            if (_rpsGame.phase === 'choose' && _rpsGame.sessionId) {
+                const wait = Math.max(80, (_rpsGame.chooseUntil + RPS_REVEAL_GRACE_MS) - Date.now());
+                _rpsRevealTimer = setTimeout(() => { void revealClassRps(); }, wait);
+            } else if (_rpsGame.phase === 'reveal' && _rpsGame.aliveIds.length > 1) {
+                _rpsNextTimer = setTimeout(() => { void window.nextRpsRound(); }, RPS_NEXT_ROUND_MS);
+            }
+            startRpsCountdownTick();
+        }
+
+        function renderRpsChooseProgress() {
+            const countEl = document.getElementById('rpsCountdown');
+            const remain = rpsChooseRemainingMs(_rpsGame);
+            const sec = Math.ceil(remain / 1000);
+            if (countEl) countEl.textContent = String(Math.max(0, sec));
+            const forceBtn = document.getElementById('rpsForceRevealBtn');
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            if (forceBtn) {
+                forceBtn.classList.toggle('hidden', !(isAdmin && _rpsGame.phase === 'choose' && rpsCanReveal(_rpsGame)));
+            }
+            const tally = document.getElementById('rpsTally');
+            if (tally && isAdmin && _rpsGame.phase === 'choose') {
+                const picks = collectLiveRpsPicks();
+                const alive = _rpsGame.aliveIds || [];
+                const n = alive.filter((id) => !!picks[id]).length;
+                const teacherBit = _rpsGame.mode === 'teacher'
+                    ? (_rpsLocalTeacherPick ? ' · 선생님 손 고름' : ' · 선생님 손 없음')
+                    : '';
+                tally.textContent = `생존 ${alive.length}명 중 ${n}명 고름${teacherBit}`;
+            }
+            const btns = document.querySelectorAll('#rpsMoveButtons .rps-move-btn');
+            const canPickNow = _rpsGame.phase === 'choose' && remain > 0;
+            btns.forEach((btn) => {
+                btn.disabled = !canPickNow || btn.dataset.rpsLocked === '1';
+            });
+        }
+
+        function renderRpsRevealGrid() {
+            const box = document.getElementById('rpsRevealGrid');
+            if (!box) return;
+            const result = _rpsGame.lastResult;
+            if (!result) {
+                box.innerHTML = '';
+                return;
+            }
+            const winSet = new Set(result.winners || []);
+            const loseSet = new Set(result.losers || []);
+            const toSet = new Set(result.timeouts || []);
+            const order = [];
+            const seen = new Set();
+            const pushId = (id) => {
+                const sid = String(id || '');
+                if (!sid || seen.has(sid)) return;
+                seen.add(sid);
+                order.push(sid);
+            };
+            (result.winners || []).forEach(pushId);
+            (result.losers || []).forEach(pushId);
+            (result.timeouts || []).forEach(pushId);
+            Object.keys(result.picks || {}).forEach(pushId);
+            box.innerHTML = order.map((id) => {
+                const move = result.picks && result.picks[id];
+                const isWin = winSet.has(id);
+                const isTimeout = toSet.has(id);
+                const isLose = loseSet.has(id) || (!isWin && !isTimeout);
+                const cls = isTimeout ? 'is-timeout' : (isWin ? 'is-win' : (isLose ? 'is-lose' : ''));
+                const tag = isTimeout ? '시간 초과' : (isWin ? '생존' : '탈락');
+                const hand = isTimeout ? '—' : `${rpsMoveEmoji(move)} ${rpsMoveLabel(move)}`;
+                return `<div class="rps-reveal-card ${cls}">
+                    <span class="rps-reveal-move">${escapeHtmlElection(hand)}</span>
+                    <span class="rps-reveal-name">${escapeHtmlElection(rpsStudentName(id))}</span>
+                    <span class="rps-reveal-tag">${tag}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function renderRpsOverlay() {
+            const overlay = document.getElementById('rpsOverlay');
+            if (!overlay) return;
+            const live = !!(_rpsGame.sessionId && _rpsGame.phase !== 'idle');
+            if (!live) {
+                closeRpsOverlayInternal(true);
+                return;
+            }
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const isGuest = !!(window.playerState && window.playerState.isGuest);
+            const myId = getMyRpsStudentId();
+            const alive = new Set(_rpsGame.aliveIds || []);
+            const iAmAlive = !!myId && alive.has(myId);
+            const title = document.getElementById('rpsTitle');
+            const kicker = document.getElementById('rpsKicker');
+            const sub = document.getElementById('rpsSub');
+            const choosePane = document.getElementById('rpsChoosePane');
+            const revealPane = document.getElementById('rpsRevealPane');
+            const hint = document.getElementById('rpsChooseHint');
+            const status = document.getElementById('rpsPickStatus');
+            const closeBtn = document.getElementById('rpsOverlayCloseBtn');
+            const teacherHand = document.getElementById('rpsTeacherHand');
+            const banner = document.getElementById('rpsRevealBanner');
+            const champ = document.getElementById('rpsChampion');
+            const adminNext = document.getElementById('rpsAdminNext');
+            const modeLabel = _rpsGame.mode === 'teacher' ? '쌤을 이겨라' : '학급 가위바위보';
+            if (title) title.textContent = modeLabel;
+            if (kicker) kicker.textContent = _rpsGame.mode === 'teacher' ? 'BEAT THE TEACHER' : 'CLASS RPS';
+            if (sub) sub.textContent = _rpsGame.phase === 'done'
+                ? '최후의 1인'
+                : `${_rpsGame.round}라운드 · 생존 ${_rpsGame.aliveIds.length}명`;
+            const choosing = _rpsGame.phase === 'choose';
+            if (choosePane) choosePane.classList.toggle('hidden', !choosing);
+            if (revealPane) revealPane.classList.toggle('hidden', choosing);
+            if (closeBtn) closeBtn.classList.toggle('hidden', choosing);
+            if (choosing) {
+                const remain = rpsChooseRemainingMs(_rpsGame);
+                const teacherChooses = isAdmin && _rpsGame.mode === 'teacher';
+                const studentChooses = !isAdmin && !isGuest && iAmAlive;
+                const canPick = remain > 0 && (teacherChooses || studentChooses);
+                if (hint) {
+                    if (isGuest) hint.textContent = '손님은 구경만 할 수 있습니다. 로그인한 학생이 3초 안에 손을 고릅니다.';
+                    else if (isAdmin && _rpsGame.mode === 'free') hint.textContent = '학생들이 3초 안에 손을 고릅니다. 못 고르면 패배입니다.';
+                    else if (!iAmAlive && !teacherChooses) hint.textContent = '탈락했습니다. 남은 학생들의 대결을 구경하세요.';
+                    else if (_rpsGame.mode === 'teacher') hint.textContent = '3초 안에 손을 고르세요. 선생님을 이긴 학생만 남고, 못 고르면 패배입니다.';
+                    else hint.textContent = '3초 안에 손을 고르세요. 못 고르면 패배입니다.';
+                }
+                const picked = myRpsPickMove();
+                document.querySelectorAll('#rpsMoveButtons .rps-move-btn').forEach((btn) => {
+                    const move = btn.getAttribute('data-rps-move');
+                    btn.classList.toggle('is-selected', !!picked && move === picked);
+                    btn.dataset.rpsLocked = canPick ? '' : '1';
+                    btn.disabled = !canPick;
+                });
+                if (status) {
+                    if (isGuest) status.textContent = '구경 중입니다';
+                    else if (isAdmin && _rpsGame.mode === 'free') status.textContent = '학생들이 고르는 중입니다';
+                    else if (!canPick && !picked && !teacherChooses && !studentChooses) status.textContent = '이번 라운드는 구경입니다';
+                    else if (picked) status.textContent = `고른 손: ${rpsMoveEmoji(picked)} ${rpsMoveLabel(picked)}`;
+                    else status.textContent = '손을 고르세요';
+                }
+                const tally = document.getElementById('rpsTally');
+                if (tally && !isAdmin) tally.textContent = '';
+                renderRpsChooseProgress();
+                startRpsCountdownTick();
+            } else {
+                if (banner) banner.textContent = rpsResultBanner(_rpsGame.lastResult);
+                if (teacherHand) {
+                    const showTeacher = _rpsGame.mode === 'teacher' && _rpsGame.teacherPick;
+                    teacherHand.classList.toggle('hidden', !showTeacher);
+                    if (showTeacher) {
+                        teacherHand.textContent = `선생님 손: ${rpsMoveEmoji(_rpsGame.teacherPick)} ${rpsMoveLabel(_rpsGame.teacherPick)}`;
+                    }
+                }
+                renderRpsRevealGrid();
+                const winnerId = _rpsGame.winnerId || (_rpsGame.aliveIds.length === 1 ? _rpsGame.aliveIds[0] : '');
+                if (champ) {
+                    const showChamp = _rpsGame.phase === 'done';
+                    champ.classList.toggle('hidden', !showChamp);
+                    if (showChamp) {
+                        champ.textContent = winnerId
+                            ? `${rpsStudentName(winnerId)} · 최후의 1인!`
+                            : '남은 사람이 없습니다';
+                    }
+                }
+                if (adminNext) {
+                    adminNext.classList.toggle('hidden', !isAdmin);
+                    const nextBtn = adminNext.querySelector('button[onclick="window.nextRpsRound()"]');
+                    if (nextBtn) nextBtn.classList.toggle('hidden', !(_rpsGame.phase === 'reveal' && _rpsGame.aliveIds.length > 1));
+                }
+            }
+            syncRpsDock();
+        }
+
+        function renderRpsToolPanel() {
+            const hint = document.getElementById('rpsSetupHint');
+            if (!hint) return;
+            const n = getRpsRosterIds().length;
+            if (!_rpsGame.sessionId || _rpsGame.phase === 'idle') {
+                hint.textContent = n >= 2
+                    ? `활성 학생 ${n}명. 시작하면 모든 화면에 3초 카운트가 뜹니다.`
+                    : '학생이 2명 이상이어야 시작할 수 있습니다.';
+                return;
+            }
+            const modeLabel = _rpsGame.mode === 'teacher' ? '쌤을 이겨라' : '학급 가위바위보';
+            const phaseLabel = _rpsGame.phase === 'choose' ? '고르는 중' : (_rpsGame.phase === 'reveal' ? '공개' : '종료');
+            hint.textContent = `${modeLabel} ${_rpsGame.round}라운드 · ${phaseLabel} · 생존 ${_rpsGame.aliveIds.length}명`;
+        }
+
+        function applyRemoteRpsGame(raw) {
+            const remote = sanitizeRpsGame(raw);
+            const sessionChanged = remote.sessionId !== _rpsLastSession;
+            _rpsLastSession = remote.sessionId;
+            if (window.globalSettings) window.globalSettings.rpsGame = remote;
+            if (Date.now() < _rpsIgnoreRemoteUntil && _rpsGame.sessionId && remote.sessionId === _rpsGame.sessionId) {
+                const remoteAhead = remote.updatedAt > _rpsGame.updatedAt && (remote.phase !== _rpsGame.phase || remote.round !== _rpsGame.round);
+                if (!remoteAhead) {
+                    renderRpsOverlay();
+                    renderRpsToolPanel();
+                    return;
+                }
+            }
+            if (sessionChanged || remote.round !== _rpsGame.round) {
+                if (!(window.playerState && window.playerState.isAdmin && Date.now() < _rpsIgnoreRemoteUntil)) {
+                    _rpsLocalTeacherPick = '';
+                }
+                if (sessionChanged || remote.phase === 'choose') _rpsDismissed = false;
+            }
+            _rpsGame = remote;
+            if (remote.phase === 'idle' || !remote.sessionId) {
+                clearRpsAdminTimers();
+                closeRpsOverlayInternal(true);
+                renderRpsToolPanel();
+                return;
+            }
+            if (remote.phase === 'choose') _rpsDismissed = false;
+            if (!_rpsDismissed) openRpsOverlay();
+            else {
+                renderRpsOverlay();
+                syncRpsDock();
+            }
+            renderRpsToolPanel();
+            armRpsAdminTimers();
+        }
+
+        function refreshRpsLiveUi() {
+            if (!_rpsGame.sessionId || _rpsGame.phase === 'idle') return;
+            if (_rpsGame.phase === 'choose') renderRpsChooseProgress();
+            else if (isRpsOverlayOpen()) renderRpsOverlay();
+        }
+
+        window.closeRpsOverlay = function() {
+            if (_rpsGame.phase === 'choose') return;
+            _rpsDismissed = true;
+            closeRpsOverlayInternal(false);
+        };
+
+        window.resumeClassRps = function() {
+            const remote = getPublishedRpsGame();
+            if (remote.sessionId && remote.phase !== 'idle') _rpsGame = remote;
+            if (!_rpsGame.sessionId || _rpsGame.phase === 'idle') {
+                return window.customAlert('진행 중인 가위바위보가 없습니다. 모드를 고른 뒤 시작해 주세요.');
+            }
+            _rpsDismissed = false;
+            openRpsOverlay();
+        };
+
+        window.startClassRps = async function(mode) {
+            if (!(window.playerState && window.playerState.isAdmin)) {
+                return window.customAlert('가위바위보는 선생님이 시작합니다.');
+            }
+            if (_rpsBusy) return;
+            const ids = getRpsRosterIds();
+            if (ids.length < 2) return window.customAlert('학생이 2명 이상이어야 가위바위보를 시작할 수 있습니다.');
+            const nextMode = mode === 'teacher' ? 'teacher' : 'free';
+            if (_rpsGame.sessionId && _rpsGame.phase !== 'idle' && _rpsGame.phase !== 'done') {
+                const restart = await window.customConfirm('이미 진행 중인 게임이 있습니다. 처음부터 다시 할까요?');
+                if (!restart) return;
+            }
+            const ok = await window.customConfirm(
+                nextMode === 'teacher'
+                    ? '쌤을 이겨라를 시작할까요?\n선생님과 학생이 3초 안에 손을 고릅니다.\n선생님을 이긴 학생만 남고, 최후의 1인까지 이어갑니다.'
+                    : '학급 가위바위보를 시작할까요?\n모든 학생 화면에 3초 카운트가 뜹니다.\n못 고르면 패배이고, 고른 손끼리 승패를 가릅니다.'
+            );
+            if (!ok) return;
+            _rpsBusy = true;
+            try {
+                clearRpsAdminTimers();
+                _rpsLocalTeacherPick = '';
+                _rpsDismissed = false;
+                _rpsGame = startRpsRound({
+                    mode: nextMode,
+                    aliveIds: ids,
+                    sessionId: createRpsSessionId(),
+                    round: 1,
+                    now: Date.now(),
+                    history: [],
+                });
+                const published = await publishRpsGame();
+                if (!published) {
+                    _rpsGame = emptyRpsGame();
+                    if (window.globalSettings) window.globalSettings.rpsGame = _rpsGame;
+                    await window.customAlert('학생 화면으로 보내기 실패. 네트워크를 확인한 뒤 다시 시작해 주세요.');
+                    return;
+                }
+                _rpsLastSession = _rpsGame.sessionId;
+                openRpsOverlay();
+                armRpsAdminTimers();
+                renderRpsToolPanel();
+                try { playSfx('bong', true); } catch (_) { /* 시작음 */ }
+            } finally {
+                _rpsBusy = false;
+            }
+        };
+
+        window.pickRpsMove = async function(rawMove) {
+            const move = sanitizeRpsMove(rawMove);
+            if (!move) return;
+            if (_rpsGame.phase !== 'choose' || !_rpsGame.sessionId) return;
+            if (rpsChooseRemainingMs(_rpsGame) <= 0) return;
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            const isGuest = !!(window.playerState && window.playerState.isGuest);
+            if (isGuest) return;
+            if (isAdmin) {
+                if (_rpsGame.mode !== 'teacher') return;
+                _rpsLocalTeacherPick = move;
+                renderRpsOverlay();
+                try { playSfx('bong', true); } catch (_) { /* 선택음 */ }
+                return;
+            }
+            const myId = getMyRpsStudentId();
+            if (!myId || !(_rpsGame.aliveIds || []).includes(myId)) return;
+            if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
+            if (_rpsPickBusy) return;
+            _rpsPickBusy = true;
+            const recorded = {
+                sessionId: _rpsGame.sessionId,
+                round: _rpsGame.round,
+                move,
+                at: Date.now(),
+            };
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+                await setDoc(currentStudentDocRef, { rpsPick: recorded }, { merge: true });
+                window.playerState.rpsPick = recorded;
+                renderRpsOverlay();
+                try { playSfx('bong', true); } catch (_) { /* 선택음 */ }
+            } catch (e) {
+                console.warn('pickRpsMove', e);
+                window.customAlert('손 저장에 실패했습니다. 다시 눌러 주세요.');
+            } finally {
+                _rpsPickBusy = false;
+            }
+        };
+
+        async function revealClassRps() {
+            if (!(window.playerState && window.playerState.isAdmin)) return;
+            if (_rpsBusy) return;
+            if (_rpsGame.phase !== 'choose' || !_rpsGame.sessionId) return;
+            if (!rpsCanReveal(_rpsGame)) return;
+            _rpsBusy = true;
+            try {
+                const picks = collectLiveRpsPicks();
+                const teacherPick = _rpsGame.mode === 'teacher' ? sanitizeRpsMove(_rpsLocalTeacherPick) : '';
+                const revealed = applyRpsReveal({
+                    state: _rpsGame,
+                    picks,
+                    teacherPick,
+                    now: Date.now(),
+                });
+                if (!revealed.ok) return;
+                _rpsGame = revealed.state;
+                const published = await publishRpsGame();
+                if (!published) {
+                    await window.customAlert('결과 보내기에 실패했습니다. 다시 공개해 주세요.');
+                    return;
+                }
+                _rpsDismissed = false;
+                openRpsOverlay();
+                armRpsAdminTimers();
+                renderRpsToolPanel();
+                try { playSfx('bong', true); } catch (_) { /* 공개음 */ }
+            } finally {
+                _rpsBusy = false;
+            }
+        }
+        window.revealClassRps = revealClassRps;
+
+        window.nextRpsRound = async function() {
+            if (!(window.playerState && window.playerState.isAdmin)) return;
+            if (_rpsBusy) return;
+            if (_rpsGame.phase !== 'reveal' || !_rpsGame.sessionId) return;
+            if ((_rpsGame.aliveIds || []).length <= 1) return;
+            _rpsBusy = true;
+            try {
+                clearRpsAdminTimers();
+                _rpsLocalTeacherPick = '';
+                _rpsGame = startRpsRound({
+                    mode: _rpsGame.mode,
+                    aliveIds: _rpsGame.aliveIds,
+                    sessionId: _rpsGame.sessionId,
+                    round: _rpsGame.round + 1,
+                    now: Date.now(),
+                    history: _rpsGame.history,
+                });
+                const published = await publishRpsGame();
+                if (!published) {
+                    await window.customAlert('다음 라운드 보내기에 실패했습니다. 다시 눌러 주세요.');
+                    return;
+                }
+                _rpsDismissed = false;
+                openRpsOverlay();
+                armRpsAdminTimers();
+                renderRpsToolPanel();
+            } finally {
+                _rpsBusy = false;
+            }
+        };
+
+        window.endClassRps = async function() {
+            if (!(window.playerState && window.playerState.isAdmin)) return;
+            if (_rpsBusy) return;
+            const live = _rpsGame.sessionId && _rpsGame.phase !== 'idle';
+            const ok = await window.customConfirm(
+                live ? '가위바위보를 종료할까요?\n모든 화면에서 게임이 닫힙니다.' : '열려 있는 가위바위보 화면을 닫을까요?'
+            );
+            if (!ok) return;
+            _rpsBusy = true;
+            try {
+                clearRpsAdminTimers();
+                _rpsLocalTeacherPick = '';
+                _rpsDismissed = false;
+                _rpsGame = emptyRpsGame();
+                await publishRpsGame();
+                closeRpsOverlayInternal(true);
+                renderRpsToolPanel();
+            } finally {
+                _rpsBusy = false;
+            }
+        };
+
+        // ==========================================
         // ★ 수업도구: 원형 돌림판 ★
         // ==========================================
         const CLASS_WHEEL_STORAGE_KEY = 'sambong_class_wheel_v1';
@@ -16778,6 +17399,7 @@ ${subjectLine}
                             window.renderLunchQueue(students);
                             if (typeof refreshElectionLiveTurnout === 'function') refreshElectionLiveTurnout();
                             if (typeof syncStudentElectionUi === 'function') syncStudentElectionUi();
+                            if (typeof refreshRpsLiveUi === 'function') refreshRpsLiveUi();
                         });
 
                         if(unsubscribeSettings) unsubscribeSettings();
@@ -16842,6 +17464,12 @@ ${subjectLine}
                                 } else if (!_electionChromeReady) {
                                     // 첫 설정에 투표가 없어도, 이후 새로 시작한 투표는 한 번 띄울 수 있게 한다.
                                     _electionChromeReady = true;
+                                }
+                                if (settingsData.rpsGame !== undefined) {
+                                    window.globalSettings.rpsGame = sanitizeRpsGame(settingsData.rpsGame);
+                                    if (typeof applyRemoteRpsGame === 'function') {
+                                        applyRemoteRpsGame(settingsData.rpsGame);
+                                    }
                                 }
                                 applyConvenienceDeliveryFeeFromSettingsData(settingsData);
                                 if (settingsData.weatherRegion !== undefined) {
@@ -21490,6 +22118,12 @@ ${subjectLine}
                         }
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
+                        }
+                        // 가위바위보 손은 전용 저장이 더 최신이면 덮지 않습니다.
+                        const serverRpsPick = sanitizeRpsPick(serverData.rpsPick);
+                        const localRpsPick = sanitizeRpsPick(dataToSave.rpsPick);
+                        if (serverRpsPick.move && serverRpsPick.at >= localRpsPick.at) {
+                            dataToSave.rpsPick = serverRpsPick;
                         }
                         // 캐시·다른 화면의 빈 보관함이 서버 성구를 지우지 않게 합칩니다.
                         if (opts.replaceDragonBalls) {

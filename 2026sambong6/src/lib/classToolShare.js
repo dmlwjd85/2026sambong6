@@ -16,6 +16,7 @@ export const CLASS_TOOL_SHARE_IDS = Object.freeze([
     'padlet', // 생각게시판
     'classboard', // 학급게시판
     'openlesson', // 공개수업
+    'rps', // 가위바위보
 ]);
 
 export function isClassToolShareId(toolId) {
@@ -83,6 +84,6 @@ export function classToolShareIsViewOnly(share, { isAdmin, isGuest } = {}) {
     const n = sanitizeClassToolShare(share);
     if (!n.active) return false;
     if (isAdmin) return false;
-    if ((n.toolId === 'padlet' || n.toolId === 'classboard') && !isGuest) return false;
+    if ((n.toolId === 'padlet' || n.toolId === 'classboard' || n.toolId === 'rps') && !isGuest) return false;
     return true;
 }

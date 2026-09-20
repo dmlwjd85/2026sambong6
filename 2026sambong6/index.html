@@ -2037,6 +2037,10 @@
                     <span class="app-tool-icon"><img src="nav/tool-vote.webp" alt="" width="192" height="192"></span>
                     <span>학급투표</span>
                 </button>
+                <button type="button" class="app-tool-item" data-tool="rps" onclick="window.switchClassTool('rps')">
+                    <span class="app-tool-icon app-tool-icon-rps" aria-hidden="true"><i class="fa-solid fa-hand-fist"></i></span>
+                    <span>가위바위보</span>
+                </button>
                 <button type="button" class="app-tool-item" data-tool="wheel" onclick="window.switchClassTool('wheel')">
                     <span class="app-tool-icon"><img src="nav/tool-wheel.webp" alt="" width="192" height="192"></span>
                     <span>돌림판</span>
@@ -2281,6 +2285,32 @@
                         <button type="button" onclick="window.resetClassElection()" class="election-mini-btn py-3.5 px-4">초기화</button>
                     </div>
                     <p id="electionSetupHint" class="mt-3 text-[10px] text-rose-200/70 font-bold min-h-[1rem]"></p>
+                </div>
+
+                <div class="classtool-pane hidden rps-panel rounded-2xl p-4 sm:p-6 border-2 border-cyan-500/50 shadow-[0_0_40px_rgba(6,182,212,0.18)]" data-tool="rps">
+                    <div class="flex items-center gap-3 mb-4 border-b border-cyan-800/40 pb-3">
+                        <div class="w-12 h-12 rounded-lg bg-cyan-950 border-2 border-cyan-400/70 flex items-center justify-center text-2xl shadow-inner">✊</div>
+                        <div>
+                            <p class="text-[10px] font-black tracking-[0.35em] text-cyan-300/90">CLASS RPS</p>
+                            <h2 class="text-xl sm:text-2xl font-display text-cyan-50 tracking-wide">가위바위보</h2>
+                        </div>
+                    </div>
+                    <p class="text-[10px] sm:text-[11px] text-cyan-100/75 mb-4 leading-relaxed">모든 학생 화면에 3초 안에 손을 고르게 합니다. 못 고르면 패배입니다. 최후의 1인이 남을 때까지 이어갑니다.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                        <button type="button" onclick="window.startClassRps('free')" class="rps-start-btn">
+                            <span class="text-lg font-black">학급 가위바위보</span>
+                            <span class="text-[10px] font-bold text-cyan-100/80 leading-relaxed">고른 사람끼리 승패를 가릅니다. 세 손이 다 나오면 다시 합니다.</span>
+                        </button>
+                        <button type="button" onclick="window.startClassRps('teacher')" class="rps-start-btn rps-start-btn-teacher">
+                            <span class="text-lg font-black">쌤을 이겨라</span>
+                            <span class="text-[10px] font-bold text-amber-100/80 leading-relaxed">학생끼리 겨루지 않습니다. 선생님을 이긴 학생만 남습니다.</span>
+                        </button>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="window.resumeClassRps()" class="rps-mini-btn">진행 화면</button>
+                        <button type="button" onclick="window.endClassRps()" class="rps-mini-btn">게임 종료</button>
+                    </div>
+                    <p id="rpsSetupHint" class="mt-3 text-[10px] text-cyan-200/80 font-bold min-h-[1rem]"></p>
                 </div>
 
                 <!-- 사회 수업 연출 (비상계엄) — 마스터 탭에서 이동 -->
@@ -3436,6 +3466,42 @@
     <button type="button" id="masterElectionDock" onclick="window.resumeClassElection()" class="hidden student-election-dock master-election-dock">
         🗳️ 투표 화면
     </button>
+
+    <!-- ★ 수업도구: 가위바위보 전체 화면 ★ -->
+    <div id="rpsOverlay" class="hidden fixed inset-0 z-[568] rps-overlay flex items-center justify-center p-3 sm:p-6 overflow-y-auto" aria-live="polite">
+        <div class="absolute inset-0 rps-overlay-bg pointer-events-none" aria-hidden="true"></div>
+        <button type="button" id="rpsOverlayCloseBtn" onclick="window.closeRpsOverlay()" class="absolute top-3 right-3 z-30 rps-overlay-close hidden">
+            <i class="fa-solid fa-xmark mr-1"></i>닫기
+        </button>
+        <div class="relative z-20 w-full max-w-5xl text-center px-1">
+            <p id="rpsKicker" class="text-[10px] sm:text-xs font-black tracking-[0.4em] text-cyan-300/90 mb-1">CLASS RPS</p>
+            <h2 id="rpsTitle" class="font-display text-2xl sm:text-4xl text-cyan-50 mb-1">가위바위보</h2>
+            <p id="rpsSub" class="text-sm sm:text-lg font-black text-amber-200 mb-3">—</p>
+            <div id="rpsChoosePane">
+                <p id="rpsCountdown" class="rps-countdown font-display">3</p>
+                <p id="rpsChooseHint" class="text-[11px] sm:text-sm text-cyan-100/85 mb-4 leading-relaxed">3초 안에 손을 고르세요. 못 고르면 패배입니다.</p>
+                <div id="rpsMoveButtons" class="rps-move-row mb-4">
+                    <button type="button" class="rps-move-btn" data-rps-move="scissors" onclick="window.pickRpsMove('scissors')"><i class="fa-solid fa-hand-scissors"></i><span>가위</span></button>
+                    <button type="button" class="rps-move-btn" data-rps-move="rock" onclick="window.pickRpsMove('rock')"><i class="fa-solid fa-hand-back-fist"></i><span>바위</span></button>
+                    <button type="button" class="rps-move-btn" data-rps-move="paper" onclick="window.pickRpsMove('paper')"><i class="fa-solid fa-hand"></i><span>보</span></button>
+                </div>
+                <p id="rpsPickStatus" class="text-sm font-black text-white mb-2">손을 고르세요</p>
+                <p id="rpsTally" class="text-[11px] font-bold text-cyan-100/70 min-h-[1rem]"></p>
+                <button type="button" id="rpsForceRevealBtn" onclick="window.revealClassRps()" class="hidden rps-mini-btn mt-2">지금 공개</button>
+            </div>
+            <div id="rpsRevealPane" class="hidden">
+                <p id="rpsRevealBanner" class="text-base sm:text-xl font-black text-amber-200 mb-3"></p>
+                <p id="rpsTeacherHand" class="hidden text-sm sm:text-lg font-black text-white mb-3"></p>
+                <div id="rpsRevealGrid" class="rps-reveal-grid mb-4"></div>
+                <p id="rpsChampion" class="hidden font-display text-2xl sm:text-4xl text-amber-200 mb-3"></p>
+                <div id="rpsAdminNext" class="hidden flex flex-wrap justify-center gap-2">
+                    <button type="button" onclick="window.nextRpsRound()" class="py-2.5 px-5 rounded-xl font-black text-sm bg-cyan-500 hover:bg-cyan-400 text-cyan-950">다음 라운드</button>
+                    <button type="button" onclick="window.endClassRps()" class="rps-mini-btn py-2.5 px-4">게임 종료</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <button type="button" id="rpsDock" onclick="window.resumeClassRps()" class="hidden rps-dock">✊ 가위바위보</button>
 
     <!-- ★ 수업도구: 전술 카운트다운 전체 화면 ★ -->
     <div id="classTimerOverlay" class="hidden fixed inset-0 z-[560] military-timer-overlay flex items-center justify-center p-4" aria-live="polite">

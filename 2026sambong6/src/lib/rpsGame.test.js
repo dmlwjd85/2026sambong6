@@ -47,6 +47,16 @@ describe('학급 전원 가위바위보', () => {
         assert.deepEqual(r.losers, []);
     });
 
+    it('학급 가위바위보에서 선생님도 고른 손끼리 승패에 들어간다', () => {
+        const r = resolveFreeRpsRound({
+            aliveIds: ['8', 'teacher', '1'],
+            picks: { 8: 'rock', teacher: 'rock', 1: 'scissors' },
+        });
+        assert.equal(r.kind, 'win');
+        assert.deepEqual(r.winners, ['8', 'teacher']);
+        assert.deepEqual(r.losers, ['1']);
+    });
+
     it('모두 못 고르면 전원 시간초과다', () => {
         const r = resolveFreeRpsRound({ aliveIds: ['1', '2'], picks: {} });
         assert.equal(r.kind, 'timeout_all');

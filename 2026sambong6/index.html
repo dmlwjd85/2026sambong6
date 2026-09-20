@@ -2038,7 +2038,7 @@
                     <span>학급투표</span>
                 </button>
                 <button type="button" class="app-tool-item" data-tool="rps" onclick="window.switchClassTool('rps')">
-                    <span class="app-tool-icon app-tool-icon-rps" aria-hidden="true"><i class="fa-solid fa-hand-fist"></i></span>
+                    <span class="app-tool-icon"><img src="nav/tool-rps.webp" alt="" width="192" height="192"></span>
                     <span>가위바위보</span>
                 </button>
                 <button type="button" class="app-tool-item" data-tool="wheel" onclick="window.switchClassTool('wheel')">
@@ -2289,17 +2289,17 @@
 
                 <div class="classtool-pane hidden rps-panel rounded-2xl p-4 sm:p-6 border-2 border-cyan-500/50 shadow-[0_0_40px_rgba(6,182,212,0.18)]" data-tool="rps">
                     <div class="flex items-center gap-3 mb-4 border-b border-cyan-800/40 pb-3">
-                        <div class="w-12 h-12 rounded-lg bg-cyan-950 border-2 border-cyan-400/70 flex items-center justify-center text-2xl shadow-inner">✊</div>
+                        <img src="nav/tool-rps.webp" alt="" width="192" height="192" class="w-12 h-12 rounded-lg border-2 border-cyan-400/70 shadow-inner">
                         <div>
                             <p class="text-[10px] font-black tracking-[0.35em] text-cyan-300/90">CLASS RPS</p>
                             <h2 class="text-xl sm:text-2xl font-display text-cyan-50 tracking-wide">가위바위보</h2>
                         </div>
                     </div>
-                    <p class="text-[10px] sm:text-[11px] text-cyan-100/75 mb-4 leading-relaxed">모든 학생 화면에 3초 안에 손을 고르게 합니다. 못 고르면 패배입니다. 최후의 1인이 남을 때까지 이어갑니다.</p>
+                    <p class="text-[10px] sm:text-[11px] text-cyan-100/75 mb-4 leading-relaxed">모든 학생 화면에 3초 안에 손을 고르게 합니다. 선생님도 학급 가위바위보에 함께 참여합니다. 못 고르면 패배입니다. 최후의 1인이 남을 때까지 이어갑니다.</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                         <button type="button" onclick="window.startClassRps('free')" class="rps-start-btn">
                             <span class="text-lg font-black">학급 가위바위보</span>
-                            <span class="text-[10px] font-bold text-cyan-100/80 leading-relaxed">고른 사람끼리 승패를 가릅니다. 세 손이 다 나오면 다시 합니다.</span>
+                            <span class="text-[10px] font-bold text-cyan-100/80 leading-relaxed">선생님도 함께 고릅니다. 고른 사람끼리 승패를 가릅니다. 세 손이 다 나오면 다시 합니다.</span>
                         </button>
                         <button type="button" onclick="window.startClassRps('teacher')" class="rps-start-btn rps-start-btn-teacher">
                             <span class="text-lg font-black">쌤을 이겨라</span>

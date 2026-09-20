@@ -134,6 +134,7 @@ import {
     RPS_MOVE_LABEL,
     RPS_NEXT_ROUND_MS,
     RPS_REVEAL_GRACE_MS,
+    RPS_TEACHER_ID,
     applyRpsReveal,
     collectRpsPicksFromStudents,
     createRpsSessionId,
@@ -1067,7 +1068,7 @@ function redrawPlazaGrantsUi() {
         // ==========================================
         // ★ 월드 설정 / 시즌 타이머 ★
         // ==========================================
-        const APP_VERSION = 'v1.46';
+        const APP_VERSION = 'v1.47';
         window.APP_VERSION = APP_VERSION;
 
         /** 레거시 브랜드명(삼봉월드) → MATE */
@@ -10930,7 +10931,10 @@ ${subjectLine}
             }
             if (classtoolSub === 'wheel') renderClassWheelPanel();
             if (classtoolSub === 'vote') renderClassElectionPanel();
-            if (classtoolSub === 'rps') renderRpsToolPanel();
+            if (classtoolSub === 'rps') {
+                renderRpsToolPanel();
+                requestClassToolBrowserFullscreen();
+            }
             if (classtoolSub === 'timetable' && typeof window.renderClassTimetableAdminPanel === 'function') {
                 window.renderClassTimetableAdminPanel();
             }
@@ -10982,6 +10986,7 @@ ${subjectLine}
                 window.closeChalkboard({ skipWindow: true, fromShare: true });
             }
             restoreClassToolPane();
+            if (typeof parkRpsOverlayForToolWindow === 'function') parkRpsOverlayForToolWindow(false);
             const overlay = document.getElementById('classtoolFullscreen');
             if (overlay) {
                 overlay.classList.add('hidden');
@@ -14565,6 +14570,12 @@ ${subjectLine}
             return getActiveStudentIds().filter((id) => id && id !== 'gm' && id !== 'gm_a');
         }
 
+        function getRpsParticipantIds(mode) {
+            const ids = getRpsRosterIds();
+            if (mode !== 'teacher') ids.push(RPS_TEACHER_ID);
+            return ids;
+        }
+
         function getMyRpsStudentId() {
             const id = String(localStorage.getItem('sambong_student_id') || '').trim();
             if (!id || id === 'gm' || id === 'gm_a' || id === 'guest') return '';
@@ -14572,6 +14583,7 @@ ${subjectLine}
         }
 
         function rpsStudentName(id) {
+            if (String(id) === RPS_TEACHER_ID) return getMasterDisplayName() || '선생님';
             return getStudentDisplayLabel(id) || getLotteryDisplayName(id) || String(id);
         }
 
@@ -14635,15 +14647,28 @@ ${subjectLine}
                     picks[myId] = mine.move;
                 }
             }
+            if (_rpsGame.mode === 'free') {
+                const teacherMove = sanitizeRpsMove(_rpsLocalTeacherPick);
+                if (teacherMove) picks[RPS_TEACHER_ID] = teacherMove;
+            }
             return picks;
         }
 
         function myRpsPickMove() {
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
-            if (isAdmin && _rpsGame.mode === 'teacher') return sanitizeRpsMove(_rpsLocalTeacherPick);
+            if (isAdmin && (_rpsGame.mode === 'teacher' || _rpsGame.mode === 'free')) {
+                return sanitizeRpsMove(_rpsLocalTeacherPick);
+            }
             const mine = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
             if (mine.sessionId === _rpsGame.sessionId && mine.round === _rpsGame.round) return mine.move;
             return '';
+        }
+
+        function adminChoosesThisRound() {
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
+            if (!isAdmin) return false;
+            if (_rpsGame.mode === 'teacher') return true;
+            return _rpsGame.mode === 'free' && (_rpsGame.aliveIds || []).includes(RPS_TEACHER_ID);
         }
 
         function rpsResultBanner(result) {
@@ -14669,7 +14694,38 @@ ${subjectLine}
             else dock.textContent = '✊ 가위바위보';
         }
 
+        function parkRpsOverlayForToolWindow(intoTool) {
+            const overlay = document.getElementById('rpsOverlay');
+            const tool = document.getElementById('classtoolFullscreen');
+            if (!overlay) return;
+            if (intoTool && tool && !tool.classList.contains('hidden')) {
+                if (overlay.parentElement !== tool) tool.appendChild(overlay);
+                overlay.classList.add('is-in-tool');
+            } else if (overlay.parentElement !== document.body) {
+                document.body.appendChild(overlay);
+                overlay.classList.remove('is-in-tool');
+            }
+        }
+
+        function requestRpsBrowserFullscreen() {
+            const el = document.getElementById('rpsOverlay');
+            if (!el || el.classList.contains('hidden')) return;
+            const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+            if (fsEl === el) return;
+            const req = el.requestFullscreen || el.webkitRequestFullscreen;
+            if (typeof req === 'function') req.call(el).catch(() => {});
+        }
+
+        function exitRpsBrowserFullscreen() {
+            const el = document.getElementById('rpsOverlay');
+            const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+            if (!el || fsEl !== el) return;
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (typeof exit === 'function') exit.call(document).catch(() => {});
+        }
+
         function closeRpsOverlayInternal(hideDock) {
+            exitRpsBrowserFullscreen();
             const el = document.getElementById('rpsOverlay');
             if (el) el.classList.add('hidden');
             document.body.classList.remove('rps-overlay-active');
@@ -14681,10 +14737,12 @@ ${subjectLine}
             const el = document.getElementById('rpsOverlay');
             if (!el) return;
             _rpsDismissed = false;
+            parkRpsOverlayForToolWindow(true);
             el.classList.remove('hidden');
             document.body.classList.add('rps-overlay-active');
             renderRpsOverlay();
             syncRpsDock();
+            requestRpsBrowserFullscreen();
         }
 
         function startRpsCountdownTick() {
@@ -14743,7 +14801,9 @@ ${subjectLine}
                 const n = alive.filter((id) => !!picks[id]).length;
                 const teacherBit = _rpsGame.mode === 'teacher'
                     ? (_rpsLocalTeacherPick ? ' · 선생님 손 고름' : ' · 선생님 손 없음')
-                    : '';
+                    : ((_rpsGame.aliveIds || []).includes(RPS_TEACHER_ID)
+                        ? (_rpsLocalTeacherPick ? ' · 선생님 손 고름' : ' · 선생님 손 없음')
+                        : '');
                 tally.textContent = `생존 ${alive.length}명 중 ${n}명 고름${teacherBit}`;
             }
             const btns = document.querySelectorAll('#rpsMoveButtons .rps-move-btn');
@@ -14829,12 +14889,14 @@ ${subjectLine}
             if (closeBtn) closeBtn.classList.toggle('hidden', choosing);
             if (choosing) {
                 const remain = rpsChooseRemainingMs(_rpsGame);
-                const teacherChooses = isAdmin && _rpsGame.mode === 'teacher';
+                const teacherChooses = adminChoosesThisRound();
                 const studentChooses = !isAdmin && !isGuest && iAmAlive;
                 const canPick = remain > 0 && (teacherChooses || studentChooses);
                 if (hint) {
                     if (isGuest) hint.textContent = '손님은 구경만 할 수 있습니다. 로그인한 학생이 3초 안에 손을 고릅니다.';
-                    else if (isAdmin && _rpsGame.mode === 'free') hint.textContent = '학생들이 3초 안에 손을 고릅니다. 못 고르면 패배입니다.';
+                    else if (isAdmin && _rpsGame.mode === 'free' && !teacherChooses) hint.textContent = '탈락했습니다. 남은 학생들의 대결을 구경하세요.';
+                    else if (isAdmin && _rpsGame.mode === 'free') hint.textContent = '선생님도 3초 안에 손을 고르세요. 못 고르면 패배입니다.';
+                    else if (isAdmin && _rpsGame.mode === 'teacher') hint.textContent = '3초 안에 손을 고르세요. 선생님을 이긴 학생만 남고, 못 고르면 패배입니다.';
                     else if (!iAmAlive && !teacherChooses) hint.textContent = '탈락했습니다. 남은 학생들의 대결을 구경하세요.';
                     else if (_rpsGame.mode === 'teacher') hint.textContent = '3초 안에 손을 고르세요. 선생님을 이긴 학생만 남고, 못 고르면 패배입니다.';
                     else hint.textContent = '3초 안에 손을 고르세요. 못 고르면 패배입니다.';
@@ -14848,7 +14910,7 @@ ${subjectLine}
                 });
                 if (status) {
                     if (isGuest) status.textContent = '구경 중입니다';
-                    else if (isAdmin && _rpsGame.mode === 'free') status.textContent = '학생들이 고르는 중입니다';
+                    else if (isAdmin && _rpsGame.mode === 'free' && !teacherChooses) status.textContent = '이번 라운드는 구경입니다';
                     else if (!canPick && !picked && !teacherChooses && !studentChooses) status.textContent = '이번 라운드는 구경입니다';
                     else if (picked) status.textContent = `고른 손: ${rpsMoveEmoji(picked)} ${rpsMoveLabel(picked)}`;
                     else status.textContent = '손을 고르세요';
@@ -14891,9 +14953,9 @@ ${subjectLine}
             if (!hint) return;
             const n = getRpsRosterIds().length;
             if (!_rpsGame.sessionId || _rpsGame.phase === 'idle') {
-                hint.textContent = n >= 2
-                    ? `활성 학생 ${n}명. 시작하면 모든 화면에 3초 카운트가 뜹니다.`
-                    : '학생이 2명 이상이어야 시작할 수 있습니다.';
+                hint.textContent = n >= 1
+                    ? `활성 학생 ${n}명. 학급 가위바위보에는 선생님도 참여합니다. 시작하면 화면이 가득 찹니다.`
+                    : '학생이 1명 이상이어야 시작할 수 있습니다.';
                 return;
             }
             const modeLabel = _rpsGame.mode === 'teacher' ? '쌤을 이겨라' : '학급 가위바위보';
@@ -14964,9 +15026,13 @@ ${subjectLine}
                 return window.customAlert('가위바위보는 선생님이 시작합니다.');
             }
             if (_rpsBusy) return;
-            const ids = getRpsRosterIds();
-            if (ids.length < 2) return window.customAlert('학생이 2명 이상이어야 가위바위보를 시작할 수 있습니다.');
             const nextMode = mode === 'teacher' ? 'teacher' : 'free';
+            const ids = getRpsParticipantIds(nextMode);
+            if (ids.length < 2) {
+                return window.customAlert(nextMode === 'teacher'
+                    ? '학생이 2명 이상이어야 쌤을 이겨라를 시작할 수 있습니다.'
+                    : '학생이 1명 이상이어야 가위바위보를 시작할 수 있습니다.');
+            }
             if (_rpsGame.sessionId && _rpsGame.phase !== 'idle' && _rpsGame.phase !== 'done') {
                 const restart = await window.customConfirm('이미 진행 중인 게임이 있습니다. 처음부터 다시 할까요?');
                 if (!restart) return;
@@ -14974,7 +15040,7 @@ ${subjectLine}
             const ok = await window.customConfirm(
                 nextMode === 'teacher'
                     ? '쌤을 이겨라를 시작할까요?\n선생님과 학생이 3초 안에 손을 고릅니다.\n선생님을 이긴 학생만 남고, 최후의 1인까지 이어갑니다.'
-                    : '학급 가위바위보를 시작할까요?\n모든 학생 화면에 3초 카운트가 뜹니다.\n못 고르면 패배이고, 고른 손끼리 승패를 가릅니다.'
+                    : '학급 가위바위보를 시작할까요?\n선생님도 함께 손을 고릅니다.\n모든 화면에 3초 카운트가 뜨고, 못 고르면 패배입니다.'
             );
             if (!ok) return;
             _rpsBusy = true;
@@ -15016,7 +15082,7 @@ ${subjectLine}
             const isGuest = !!(window.playerState && window.playerState.isGuest);
             if (isGuest) return;
             if (isAdmin) {
-                if (_rpsGame.mode !== 'teacher') return;
+                if (!adminChoosesThisRound()) return;
                 _rpsLocalTeacherPick = move;
                 renderRpsOverlay();
                 try { playSfx('bong', true); } catch (_) { /* 선택음 */ }
@@ -16160,6 +16226,16 @@ ${subjectLine}
         function sambongModalHost() {
             const fs = document.fullscreenElement || document.webkitFullscreenElement;
             if (fs) return fs;
+            const rps = document.getElementById('rpsOverlay');
+            if (rps && !rps.classList.contains('hidden')) return rps;
+            const election = document.getElementById('electionOverlay');
+            if (election && !election.classList.contains('hidden')) return election;
+            const studentElection = document.getElementById('studentElectionOverlay');
+            if (studentElection && !studentElection.classList.contains('hidden')) return studentElection;
+            const lottery = document.getElementById('lotteryDrawOverlay');
+            if (lottery && !lottery.classList.contains('hidden')) return lottery;
+            const timer = document.getElementById('classTimerOverlay');
+            if (timer && !timer.classList.contains('hidden')) return timer;
             const chalk = document.getElementById('chalkboardOverlay');
             if (chalk && !chalk.classList.contains('hidden')) return chalk;
             const overlay = document.getElementById('classtoolFullscreen');

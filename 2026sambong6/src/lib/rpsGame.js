@@ -6,6 +6,8 @@
 export const RPS_MOVES = Object.freeze(['rock', 'paper', 'scissors']);
 export const RPS_MODES = Object.freeze(['free', 'teacher']);
 export const RPS_PHASES = Object.freeze(['idle', 'choose', 'reveal', 'done']);
+/** 학급 가위바위보에 참여하는 선생님 자리 */
+export const RPS_TEACHER_ID = 'teacher';
 export const RPS_CHOOSE_MS = 3000;
 export const RPS_REVEAL_GRACE_MS = 400;
 export const RPS_NEXT_ROUND_MS = 3500;

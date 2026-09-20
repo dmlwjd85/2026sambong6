@@ -2444,7 +2444,23 @@
             border: 1px solid #475569;
         }
         .rps-overlay {
-            background: rgba(2, 6, 23, 0.94);
+            background: #020617;
+        }
+        .rps-overlay.is-in-tool {
+            position: absolute;
+            inset: 0;
+            z-index: 80;
+        }
+        #rpsOverlay:fullscreen,
+        #rpsOverlay:-webkit-full-screen {
+            background: #020617;
+        }
+        #rpsOverlay > .sambong-custom-modal,
+        #rpsOverlay:fullscreen > .sambong-custom-modal,
+        #rpsOverlay:-webkit-full-screen > .sambong-custom-modal {
+            position: absolute;
+            inset: 0;
+            z-index: 800;
         }
         .rps-overlay-bg {
             background:

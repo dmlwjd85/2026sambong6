@@ -36,9 +36,10 @@ describe('기능 잠금해제 카탈로그', () => {
         assert.deepEqual(MASTER_ONLY_CLASS_TOOLS, ['thermo', 'martial', 'vote', 'morning', 'openlesson', 'rps']);
         assert.equal(isMasterOnlyClassTool('openlesson'), true);
         assert.equal(isMasterOnlyClassTool('timer'), false);
-        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet', 'classboard']);
+        assert.deepEqual(CLASS_WIDE_CLASS_TOOLS, ['padlet', 'classboard', 'boardgames']);
         assert.equal(isClassWideClassTool('padlet'), true);
         assert.equal(isClassWideClassTool('classboard'), true);
+        assert.equal(isClassWideClassTool('boardgames'), true);
         assert.equal(isClassWideClassTool('timer'), false);
     });
 });
@@ -59,10 +60,12 @@ describe('잠금해제 판정', () => {
         assert.equal(canOpenClassTool(stu, 'thermo'), false);
         assert.equal(canOpenClassTool(stu, 'padlet'), true);
         assert.equal(canOpenClassTool(stu, 'classboard'), true);
+        assert.equal(canOpenClassTool(stu, 'boardgames'), true);
         assert.equal(canOpenClassTool(stu, 'openlesson'), false);
         assert.equal(canOpenClassTool(stu, 'rps'), false);
         assert.equal(canOpenClassTool({ isGuest: true }, 'padlet'), false);
         assert.equal(canOpenClassTool({ isGuest: true }, 'classboard'), false);
+        assert.equal(canOpenClassTool({ isGuest: true }, 'boardgames'), false);
         assert.deepEqual(sanitizeUnlockedFeatures(stu.unlockedFeatures), { tool_timer: true });
     });
 });

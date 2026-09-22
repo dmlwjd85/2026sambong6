@@ -45,6 +45,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 보드게임 방: 로그인(익명 인증)한 학급 화면에서만 만들고 고칩니다.
+    // 학번·방장 권한은 클라이언트 상태 머신(boardGameRooms.js)이 검사합니다.
+    // 익명 Auth에는 학번이 없으므로 규칙에서 명단 대조는 하지 않습니다.
+    match /artifacts/{appId}/public/data/boardGameRooms/{roomId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.gameType is string
+        && request.resource.data.hostId is string
+        && request.resource.data.status is string;
+      allow update: if signedIn();
+      allow delete: if signedIn();
+    }
+
     match /artifacts/{appId}/public/{document=**} {
       allow read: if true;
       allow write: if request.auth != null;

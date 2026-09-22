@@ -15,6 +15,7 @@ import {
     increment,
     runTransaction,
     arrayUnion,
+    deleteDoc,
     serverTimestamp,
     query,
     where,
@@ -151,6 +152,40 @@ import {
     sanitizeRpsPick,
     startRpsRound,
 } from './lib/rpsGame.js';
+import {
+    applyGomokuTimeout,
+    GOMOKU_BLACK,
+    GOMOKU_SIZE,
+    GOMOKU_WHITE,
+    gomokuEndText,
+    gomokuErrorText,
+    gomokuSeatColor,
+    placeGomokuStone,
+} from './lib/gomokuGame.js';
+import {
+    applyBoardRoomGame,
+    approveJoinBoardRoom,
+    boardRoomErrorText,
+    boardRoomToDoc,
+    boardRoomStatusLabel,
+    closeBoardRoom,
+    continueBoardRoom,
+    createBoardRoom,
+    expireIdleBoardRoom,
+    getBoardGameDef,
+    isRoomHost,
+    isRoomIdleExpired,
+    isRoomMember,
+    isTurnTimedOut,
+    listVisibleBoardRooms,
+    rejectJoinBoardRoom,
+    remainingSeats,
+    requestJoinBoardRoom,
+    roomMemberSeat,
+    sanitizeBoardRoom,
+    setBoardRoomTimer,
+    turnRemainingMs,
+} from './lib/boardGameRooms.js';
 import {
     DAILY_ALL_CLEAR_BONG,
     DAILY_ALL_CLEAR_XP,
@@ -4374,6 +4409,7 @@ function redrawPlazaGrantsUi() {
         let unsubscribeClassBoard = null;
         let unsubscribeOpenLesson = null;
         let unsubscribeBusSeats = null;
+        let unsubscribeBoardRooms = null;
         let _classBoardDocReady = false;
         let _openLessonDocReady = false;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
@@ -10955,6 +10991,10 @@ ${subjectLine}
                 renderOpenLessonPanel();
                 requestClassToolBrowserFullscreen();
             }
+            if (classtoolSub === 'boardgames') {
+                renderBoardGamePanel();
+                requestClassToolBrowserFullscreen();
+            }
             updateClassToolShareBar();
             return true;
         }
@@ -11028,6 +11068,7 @@ ${subjectLine}
             classboard: '학급게시판',
             openlesson: '공개수업',
             rps: '가위바위보',
+            boardgames: '보드게임',
         };
 
         window.switchClassTool = function(toolId) {
@@ -11131,6 +11172,669 @@ ${subjectLine}
                 if (pane !== _classtoolFsPane) pane.classList.add('hidden');
             });
         }
+
+        /**
+         * 보드게임 공통 방 + 오목 UI.
+         * 다음 게임은 boardGameRooms.js 카탈로그에 등록한 뒤 이 블록의 로비/방 쓰기를 재사용하세요.
+         */
+        let _boardGameRooms = [];
+        let _boardGameView = 'home';
+        let _boardGameType = 'gomoku';
+        let _boardGameActiveId = '';
+        let _boardGameWriteChain = Promise.resolve();
+        let _boardGameIdleTimer = 0;
+        let _gomokuTickTimer = 0;
+        let _gomokuPending = null;
+        let _gomokuGesturesBound = false;
+        let _gomokuResizeBound = false;
+        let _gomokuNeedFit = true;
+        let _gomokuPanning = false;
+        const _gomokuView = { scale: 1, min: 1, max: 3.4, x: 0, y: 0 };
+
+        function escapeBoardGameText(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        }
+
+        function boardGameSelfId() {
+            return String(localStorage.getItem('sambong_student_id') || (window.playerState && window.playerState.id) || '').trim();
+        }
+
+        function boardGameSelfName() {
+            const id = boardGameSelfId();
+            if (!id) return '학생';
+            if (id === 'gm') return getMasterDisplayName();
+            if (id === 'gm_a') return getCoMasterDisplayName();
+            if (typeof getStudentDisplayLabel === 'function') return getStudentDisplayLabel(id);
+            return STUDENT_NAMES[id] || id;
+        }
+
+        function boardGameRoomRef(roomId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms', roomId);
+        }
+
+        function currentBoardGameRoom() {
+            return _boardGameRooms.find((r) => r.id === _boardGameActiveId) || null;
+        }
+
+        function applyBoardGameRoomsSnapshot(snap) {
+            const now = Date.now();
+            const rows = [];
+            snap.forEach((d) => {
+                rows.push(sanitizeBoardRoom({ id: d.id, ...d.data() }, now));
+            });
+            _boardGameRooms = rows;
+            void sweepIdleBoardRooms(now);
+            if (classtoolSub === 'boardgames') renderBoardGamePanel();
+            const minePlaying = rows.find((r) => isRoomMember(r, boardGameSelfId()) && (r.status === 'playing' || r.status === 'finished'));
+            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames') {
+                enterBoardGameTable(minePlaying.id);
+            }
+        }
+
+        async function sweepIdleBoardRooms(now = Date.now()) {
+            if (!db || !auth || !auth.currentUser) return;
+            const expired = _boardGameRooms.filter((r) => r.status !== 'closed' && isRoomIdleExpired(r, now));
+            for (const room of expired) {
+                try {
+                    const closed = expireIdleBoardRoom(room, now);
+                    if (closed.ok) await deleteDoc(boardGameRoomRef(room.id));
+                } catch (e) {
+                    console.warn('sweepIdleBoardRooms', e);
+                }
+            }
+        }
+
+        function showBoardGameView(view) {
+            _boardGameView = view;
+            const home = document.getElementById('boardgameHomeView');
+            const lobby = document.getElementById('boardgameLobbyView');
+            const play = document.getElementById('boardgamePlayView');
+            if (home) home.classList.toggle('hidden', view !== 'home');
+            if (lobby) lobby.classList.toggle('hidden', view !== 'lobby');
+            if (play) play.classList.toggle('hidden', view !== 'play');
+        }
+
+        function renderBoardGamePanel() {
+            if (_boardGameView === 'play') {
+                const room = currentBoardGameRoom();
+                if (!room || room.status === 'closed') {
+                    _boardGameActiveId = '';
+                    showBoardGameView('lobby');
+                    renderBoardGameLobby();
+                    return;
+                }
+                renderGomokuPlay(room);
+                return;
+            }
+            if (_boardGameView === 'lobby') {
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                return;
+            }
+            showBoardGameView('home');
+        }
+
+        function renderBoardGameLobby() {
+            const box = document.getElementById('boardgameRoomList');
+            if (!box) return;
+            const me = boardGameSelfId();
+            const now = Date.now();
+            const rooms = listVisibleBoardRooms(
+                _boardGameRooms.filter((r) => r.gameType === _boardGameType),
+                now
+            );
+            if (!rooms.length) {
+                box.innerHTML = '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」로 시작하세요.</p>';
+                return;
+            }
+            box.innerHTML = rooms.map((room) => {
+                const seats = `${room.members.length}/${room.maxPlayers}`;
+                const left = remainingSeats(room);
+                const status = boardRoomStatusLabel(room.status);
+                const mine = isRoomMember(room, me);
+                const host = isRoomHost(room, me);
+                const pending = room.joinRequests.find((j) => j.id === me && j.status === 'pending');
+                const rejected = room.joinRequests.find((j) => j.id === me && j.status === 'rejected');
+                let action = '';
+                if (mine && (room.status === 'playing' || room.status === 'finished')) {
+                    action = `<button type="button" class="boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
+                } else if (host && room.status === 'waiting') {
+                    action = `<span class="boardgame-room-meta">방장</span>`;
+                } else if (pending) {
+                    action = `<span class="boardgame-room-meta">승인 대기</span>`;
+                } else if (rejected) {
+                    action = `<span class="boardgame-room-meta">거절됨</span>`;
+                } else if (room.status === 'waiting' && left > 0 && me) {
+                    action = `<button type="button" class="boardgame-primary-btn" data-join="${escapeBoardGameText(room.id)}">참가 신청</button>`;
+                } else if (room.status === 'playing') {
+                    action = `<span class="boardgame-room-meta">대국 중</span>`;
+                }
+                const reqs = host
+                    ? room.joinRequests.filter((j) => j.status === 'pending').map((j) => `
+                        <div class="boardgame-join-req">
+                            <span class="boardgame-room-meta">${escapeBoardGameText(j.name)} 참가 신청</span>
+                            <button type="button" class="boardgame-primary-btn" data-approve="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">승인</button>
+                            <button type="button" class="boardgame-mini-btn" data-reject="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">거절</button>
+                        </div>`).join('')
+                    : '';
+                return `<article class="boardgame-room-card">
+                    <div>
+                        <p class="boardgame-room-title">${escapeBoardGameText(room.hostName)}의 방</p>
+                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left}</p>
+                        <span class="boardgame-room-status${room.status === 'playing' ? ' is-playing' : ''}">${status}</span>
+                    </div>
+                    <div>${action}</div>
+                    ${reqs}
+                </article>`;
+            }).join('');
+            box.querySelectorAll('[data-join]').forEach((btn) => {
+                btn.addEventListener('click', () => { void window.requestJoinBoardGameRoom(btn.getAttribute('data-join')); });
+            });
+            box.querySelectorAll('[data-enter]').forEach((btn) => {
+                btn.addEventListener('click', () => enterBoardGameTable(btn.getAttribute('data-enter')));
+            });
+            box.querySelectorAll('[data-approve]').forEach((btn) => {
+                btn.addEventListener('click', () => { void window.approveBoardGameJoin(btn.getAttribute('data-approve'), btn.getAttribute('data-sid')); });
+            });
+            box.querySelectorAll('[data-reject]').forEach((btn) => {
+                btn.addEventListener('click', () => { void window.rejectBoardGameJoin(btn.getAttribute('data-reject'), btn.getAttribute('data-sid')); });
+            });
+        }
+
+        function memberNameBySeat(room, seat) {
+            const m = (room.members || []).find((row) => row.seat === seat);
+            return m ? m.name : (seat === 'black' ? '흑' : '백');
+        }
+
+        function renderGomokuPlay(room) {
+            showBoardGameView('play');
+            const me = boardGameSelfId();
+            const host = isRoomHost(room, me);
+            const playersEl = document.getElementById('gomokuHudPlayers');
+            const hint = document.getElementById('gomokuTurnHint');
+            const toggleWrap = document.getElementById('gomokuTimerToggleWrap');
+            const toggle = document.getElementById('gomokuTimerToggle');
+            const timerEl = document.getElementById('gomokuHudTimer');
+            const confirmBar = document.getElementById('gomokuConfirmBar');
+            const resultBar = document.getElementById('gomokuResultBar');
+            const resultText = document.getElementById('gomokuResultText');
+            if (playersEl) {
+                playersEl.textContent = `흑 ${memberNameBySeat(room, 'black')}  ·  백 ${memberNameBySeat(room, 'white')}`;
+            }
+            if (toggleWrap) toggleWrap.classList.toggle('hidden', !host);
+            if (toggle) toggle.checked = !!room.timerEnabled;
+            const remain = turnRemainingMs(room, Date.now());
+            if (timerEl) {
+                const show = room.timerEnabled && room.status === 'playing';
+                timerEl.hidden = !show;
+                if (show) {
+                    const sec = Math.ceil(remain / 1000);
+                    timerEl.textContent = `${sec}`;
+                    timerEl.classList.toggle('is-low', sec <= 5);
+                }
+            }
+            const mySeat = roomMemberSeat(room, me);
+            const myColor = gomokuSeatColor(mySeat);
+            const game = room.game || {};
+            if (hint) {
+                if (room.status === 'finished') hint.textContent = '한 판이 끝났습니다.';
+                else if (game.turn === myColor) hint.textContent = '당신 차례입니다. 칸을 고른 뒤 「여기 두기」를 누르세요.';
+                else hint.textContent = `${game.turn === GOMOKU_WHITE ? '백' : '흑'} 차례입니다.`;
+            }
+            if (confirmBar) {
+                const show = !!(_gomokuPending && room.status === 'playing' && game.turn === myColor);
+                confirmBar.classList.toggle('hidden', !show);
+                const confirmText = document.getElementById('gomokuConfirmText');
+                if (show && confirmText && _gomokuPending) {
+                    confirmText.textContent = `(${_gomokuPending.x + 1}, ${_gomokuPending.y + 1})에 둘까요?`;
+                }
+            }
+            if (resultBar && resultText) {
+                const done = room.status === 'finished';
+                resultBar.classList.toggle('hidden', !done);
+                if (done) {
+                    resultText.textContent = gomokuEndText(game, {
+                        blackName: memberNameBySeat(room, 'black'),
+                        whiteName: memberNameBySeat(room, 'white'),
+                    }) || '대국이 끝났습니다.';
+                }
+            }
+            renderGomokuBoard(room);
+            bindGomokuGestures();
+            bindGomokuResize();
+            startGomokuTick();
+            requestAnimationFrame(() => {
+                layoutGomokuBoard();
+                if (_gomokuNeedFit) {
+                    _gomokuNeedFit = false;
+                    window.resetGomokuZoom();
+                } else {
+                    applyGomokuTransform();
+                }
+            });
+        }
+
+        function renderGomokuBoard(room) {
+            const boardEl = document.getElementById('gomokuBoard');
+            if (!boardEl) return;
+            const game = room.game || {};
+            const size = Number(game.size) || GOMOKU_SIZE;
+            const board = Array.isArray(game.board) ? game.board : [];
+            const last = game.lastMove || null;
+            const lines = [];
+            for (let i = 0; i < size; i += 1) {
+                const p = ((i / (size - 1)) * 88 + 6).toFixed(3);
+                lines.push(`<line x1="${p}" y1="6" x2="${p}" y2="94" />`);
+                lines.push(`<line x1="6" y1="${p}" x2="94" y2="${p}" />`);
+            }
+            const stars = [[3, 3], [3, 11], [7, 7], [11, 3], [11, 11]];
+            const starSvg = stars.map(([x, y]) => {
+                const px = ((x / (size - 1)) * 88 + 6).toFixed(3);
+                const py = ((y / (size - 1)) * 88 + 6).toFixed(3);
+                return `<circle cx="${px}" cy="${py}" r="1.1" fill="#5b3310" />`;
+            }).join('');
+            let stones = '';
+            for (let y = 0; y < size; y += 1) {
+                for (let x = 0; x < size; x += 1) {
+                    const v = board[y] && board[y][x];
+                    if (v !== GOMOKU_BLACK && v !== GOMOKU_WHITE) continue;
+                    const px = ((x / (size - 1)) * 88 + 6).toFixed(3);
+                    const py = ((y / (size - 1)) * 88 + 6).toFixed(3);
+                    const fill = v === GOMOKU_BLACK ? '#111827' : '#f8fafc';
+                    const stroke = v === GOMOKU_BLACK ? '#030712' : '#a8a29e';
+                    stones += `<circle cx="${px}" cy="${py}" r="2.55" fill="${fill}" stroke="${stroke}" stroke-width="0.25" />`;
+                }
+            }
+            const pending = _gomokuPending;
+            let ghost = '';
+            if (pending) {
+                const px = ((pending.x / (size - 1)) * 88 + 6).toFixed(3);
+                const py = ((pending.y / (size - 1)) * 88 + 6).toFixed(3);
+                ghost = `<circle cx="${px}" cy="${py}" r="2.55" fill="rgba(245,158,11,0.45)" stroke="#f59e0b" stroke-width="0.3" />`;
+            }
+            boardEl.innerHTML = `<svg class="gomoku-grid-svg" viewBox="0 0 100 100" aria-hidden="true">
+                <g stroke="#5b3310" stroke-width="0.28" fill="none">${lines.join('')}</g>
+                ${starSvg}${stones}${ghost}
+            </svg>` + Array.from({ length: size * size }, (_, i) => {
+                const x = i % size;
+                const y = Math.floor(i / size);
+                const left = ((x / (size - 1)) * 88 + 6);
+                const top = ((y / (size - 1)) * 88 + 6);
+                const isLast = last && last.x === x && last.y === y;
+                const isPend = pending && pending.x === x && pending.y === y;
+                return `<button type="button" class="gomoku-hotspot${isLast ? ' is-last' : ''}${isPend ? ' is-pending' : ''}" style="left:${left}%;top:${top}%" data-x="${x}" data-y="${y}" aria-label="${x + 1}열 ${y + 1}행"></button>`;
+            }).join('');
+            boardEl.querySelectorAll('.gomoku-hotspot').forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    if (_gomokuPanning) return;
+                    e.preventDefault();
+                    pickGomokuPoint(Number(btn.getAttribute('data-x')), Number(btn.getAttribute('data-y')));
+                });
+            });
+        }
+
+        function pickGomokuPoint(x, y) {
+            const room = currentBoardGameRoom();
+            if (!room || room.status !== 'playing') return;
+            const me = boardGameSelfId();
+            const color = gomokuSeatColor(roomMemberSeat(room, me));
+            if (!color || color !== (room.game && room.game.turn)) {
+                void window.customAlert('지금 둘 차례가 아닙니다.');
+                return;
+            }
+            if (room.game && room.game.board && room.game.board[y] && room.game.board[y][x]) {
+                void window.customAlert('이미 돌이 있는 자리입니다.');
+                return;
+            }
+            _gomokuPending = { x, y };
+            renderGomokuPlay(room);
+        }
+
+        function bindGomokuResize() {
+            if (_gomokuResizeBound) return;
+            _gomokuResizeBound = true;
+            const onFit = () => {
+                if (_boardGameView !== 'play') return;
+                layoutGomokuBoard();
+                if (_gomokuView.scale <= 1.05) window.resetGomokuZoom();
+                else applyGomokuTransform();
+            };
+            window.addEventListener('resize', onFit);
+            window.addEventListener('orientationchange', onFit);
+            const vp = document.getElementById('gomokuBoardViewport');
+            if (vp && typeof ResizeObserver === 'function') {
+                new ResizeObserver(onFit).observe(vp);
+            }
+        }
+
+        function layoutGomokuBoard() {
+            const vp = document.getElementById('gomokuBoardViewport');
+            const board = document.getElementById('gomokuBoard');
+            if (!vp || !board) return;
+            if (vp.clientWidth < 40 || vp.clientHeight < 40) return;
+            const box = Math.max(80, Math.min(vp.clientWidth, vp.clientHeight) - 2);
+            board.style.width = `${box}px`;
+            board.style.height = `${box}px`;
+        }
+
+        function applyGomokuTransform() {
+            const world = document.getElementById('gomokuBoardWorld');
+            if (!world) return;
+            world.style.transform = `translate(${_gomokuView.x}px, ${_gomokuView.y}px) scale(${_gomokuView.scale})`;
+            const lab = document.getElementById('gomokuZoomLabel');
+            if (lab) lab.textContent = `${Math.round(_gomokuView.scale * 100)}%`;
+        }
+
+        window.nudgeGomokuZoom = function (delta) {
+            _gomokuView.scale = Math.min(_gomokuView.max, Math.max(_gomokuView.min, _gomokuView.scale + Number(delta || 0)));
+            layoutGomokuBoard();
+            applyGomokuTransform();
+        };
+
+        window.resetGomokuZoom = function () {
+            const vp = document.getElementById('gomokuBoardViewport');
+            _gomokuView.scale = 1;
+            layoutGomokuBoard();
+            const board = document.getElementById('gomokuBoard');
+            if (vp && board) {
+                _gomokuView.x = (vp.clientWidth - board.offsetWidth) / 2;
+                _gomokuView.y = (vp.clientHeight - board.offsetHeight) / 2;
+            } else {
+                _gomokuView.x = 0;
+                _gomokuView.y = 0;
+            }
+            applyGomokuTransform();
+        };
+
+        function bindGomokuGestures() {
+            const vp = document.getElementById('gomokuBoardViewport');
+            if (!vp || _gomokuGesturesBound) return;
+            _gomokuGesturesBound = true;
+            let pointers = new Map();
+            let lastDist = 0;
+            let lastMid = null;
+            let moved = false;
+            vp.addEventListener('pointerdown', (e) => {
+                vp.setPointerCapture(e.pointerId);
+                pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                moved = false;
+                if (pointers.size === 2) {
+                    const pts = [...pointers.values()];
+                    lastDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+                    lastMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+                }
+            });
+            vp.addEventListener('pointermove', (e) => {
+                if (!pointers.has(e.pointerId)) return;
+                const prev = pointers.get(e.pointerId);
+                pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                if (pointers.size === 2) {
+                    const pts = [...pointers.values()];
+                    const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+                    const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+                    if (lastDist > 0) {
+                        const next = Math.min(_gomokuView.max, Math.max(_gomokuView.min, _gomokuView.scale * (dist / lastDist)));
+                        const ratio = next / _gomokuView.scale;
+                        _gomokuView.x = mid.x - (mid.x - _gomokuView.x) * ratio;
+                        _gomokuView.y = mid.y - (mid.y - _gomokuView.y) * ratio;
+                        _gomokuView.scale = next;
+                        applyGomokuTransform();
+                        moved = true;
+                    }
+                    lastDist = dist;
+                    lastMid = mid;
+                    return;
+                }
+                if (pointers.size === 1 && _gomokuView.scale > 1.02) {
+                    const dx = e.clientX - prev.x;
+                    const dy = e.clientY - prev.y;
+                    if (Math.abs(dx) + Math.abs(dy) > 2) {
+                        _gomokuView.x += dx;
+                        _gomokuView.y += dy;
+                        applyGomokuTransform();
+                        moved = true;
+                    }
+                }
+            });
+            const endPtr = (e) => {
+                pointers.delete(e.pointerId);
+                lastDist = 0;
+                lastMid = null;
+                if (moved) {
+                    _gomokuPanning = true;
+                    setTimeout(() => { _gomokuPanning = false; }, 80);
+                }
+            };
+            vp.addEventListener('pointerup', endPtr);
+            vp.addEventListener('pointercancel', endPtr);
+            vp.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const dir = e.deltaY > 0 ? -0.12 : 0.12;
+                const prev = _gomokuView.scale;
+                window.nudgeGomokuZoom(dir);
+                const ratio = _gomokuView.scale / prev;
+                const rect = vp.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                _gomokuView.x = mx - (mx - _gomokuView.x) * ratio;
+                _gomokuView.y = my - (my - _gomokuView.y) * ratio;
+                applyGomokuTransform();
+            }, { passive: false });
+        }
+
+        function startGomokuTick() {
+            if (_gomokuTickTimer) return;
+            _gomokuTickTimer = setInterval(() => {
+                const room = currentBoardGameRoom();
+                if (!room || _boardGameView !== 'play') return;
+                if (room.timerEnabled && room.status === 'playing') {
+                    const timerEl = document.getElementById('gomokuHudTimer');
+                    if (timerEl) {
+                        const sec = Math.ceil(turnRemainingMs(room, Date.now()) / 1000);
+                        timerEl.hidden = false;
+                        timerEl.textContent = `${sec}`;
+                        timerEl.classList.toggle('is-low', sec <= 5);
+                    }
+                    if (isTurnTimedOut(room, Date.now()) && isRoomMember(room, boardGameSelfId())) {
+                        void applyBoardGameTimeout(room.id);
+                    }
+                }
+            }, 250);
+            if (!_boardGameIdleTimer) {
+                _boardGameIdleTimer = setInterval(() => { void sweepIdleBoardRooms(Date.now()); }, 30000);
+            }
+        }
+
+        async function enqueueBoardGameWrite(task) {
+            _boardGameWriteChain = _boardGameWriteChain.then(task, task);
+            return _boardGameWriteChain;
+        }
+
+        async function mutateBoardRoom(roomId, mutator) {
+            if (!db) return null;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                return null;
+            }
+            const ref = boardGameRoomRef(roomId);
+            try {
+                return await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    if (!snap.exists()) throw new Error('expired');
+                    const room = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                    const result = mutator(room);
+                    if (!result || result.ok === false) throw new Error((result && result.error) || 'invalid');
+                    tx.set(ref, boardRoomToDoc(result.room));
+                    return result.room;
+                });
+            } catch (e) {
+                const code = e && e.message;
+                const roomLabel = boardRoomErrorText(code);
+                const moveLabel = gomokuErrorText(code);
+                await window.customAlert(roomLabel !== '처리할 수 없습니다.' ? roomLabel : moveLabel);
+                return null;
+            }
+        }
+
+        function enterBoardGameTable(roomId) {
+            _boardGameActiveId = String(roomId || '');
+            _gomokuPending = null;
+            _gomokuNeedFit = true;
+            showBoardGameView('play');
+            const room = currentBoardGameRoom();
+            if (room) renderGomokuPlay(room);
+        }
+
+        window.openBoardGameLobby = function (gameType) {
+            const def = getBoardGameDef(gameType);
+            if (!def) return;
+            if (window.playerState && window.playerState.isGuest) {
+                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            }
+            _boardGameType = def.id;
+            _boardGameActiveId = '';
+            showBoardGameView('lobby');
+            renderBoardGameLobby();
+        };
+
+        window.backBoardGameHome = function () {
+            _boardGameActiveId = '';
+            _gomokuPending = null;
+            showBoardGameView('home');
+        };
+
+        window.createBoardGameRoom = async function (gameType) {
+            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            const me = boardGameSelfId();
+            if (!me) return window.customAlert('로그인한 학생만 방을 만들 수 있습니다.');
+            const def = getBoardGameDef(gameType || _boardGameType);
+            if (!def || !db) return;
+            const existing = _boardGameRooms.find((r) => r.hostId === me && r.gameType === def.id && r.status === 'waiting');
+            if (existing) {
+                await window.customAlert('이미 만든 대기 방이 있습니다.');
+                return;
+            }
+            const made = createBoardRoom({
+                gameType: def.id,
+                hostId: me,
+                hostName: boardGameSelfName(),
+                now: Date.now(),
+            });
+            if (!made.ok) return window.customAlert(boardRoomErrorText(made.error));
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+            try {
+                await setDoc(boardGameRoomRef(made.room.id), boardRoomToDoc(made.room));
+                _boardGameActiveId = made.room.id;
+                showBoardGameView('lobby');
+            } catch (e) {
+                console.error('createBoardGameRoom', e);
+                await window.customAlert('방을 만들지 못했습니다.');
+            }
+        };
+
+        window.requestJoinBoardGameRoom = async function (roomId) {
+            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            const me = boardGameSelfId();
+            if (!me) return window.customAlert('로그인한 학생만 참가할 수 있습니다.');
+            await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (room) => requestJoinBoardRoom(room, {
+                studentId: me,
+                studentName: boardGameSelfName(),
+                now: Date.now(),
+            })));
+        };
+
+        window.approveBoardGameJoin = async function (roomId, studentId) {
+            await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (room) => approveJoinBoardRoom(room, {
+                hostId: boardGameSelfId(),
+                studentId,
+                now: Date.now(),
+            })));
+        };
+
+        window.rejectBoardGameJoin = async function (roomId, studentId) {
+            await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (room) => rejectJoinBoardRoom(room, {
+                hostId: boardGameSelfId(),
+                studentId,
+                now: Date.now(),
+            })));
+        };
+
+        window.toggleBoardGameTimer = async function (enabled) {
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => setBoardRoomTimer(cur, {
+                hostId: boardGameSelfId(),
+                enabled: !!enabled,
+                now: Date.now(),
+            })));
+        };
+
+        window.cancelGomokuPending = function () {
+            _gomokuPending = null;
+            const room = currentBoardGameRoom();
+            if (room) renderGomokuPlay(room);
+        };
+
+        window.confirmGomokuPending = async function () {
+            const room = currentBoardGameRoom();
+            const pending = _gomokuPending;
+            if (!room || !pending) return;
+            const me = boardGameSelfId();
+            const color = gomokuSeatColor(roomMemberSeat(room, me));
+            const next = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const placed = placeGomokuStone(cur.game, { x: pending.x, y: pending.y, color, now: Date.now() });
+                if (!placed.ok) return { ok: false, error: placed.error };
+                const finished = !!(placed.game.winner || placed.game.endReason === 'draw');
+                return { ok: true, room: applyBoardRoomGame(cur, { game: placed.game, now: Date.now(), finished }) };
+            }));
+            if (next) _gomokuPending = null;
+        };
+
+        async function applyBoardGameTimeout(roomId) {
+            await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (cur) => {
+                if (!isTurnTimedOut(cur, Date.now())) return { ok: true, room: cur };
+                const timed = applyGomokuTimeout(cur.game, { now: Date.now() });
+                if (!timed.ok) return { ok: false, error: timed.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: timed.game, now: Date.now(), finished: true }) };
+            }));
+        }
+
+        window.continueBoardGameRoom = async function () {
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            _gomokuPending = null;
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => continueBoardRoom(cur, {
+                actorId: boardGameSelfId(),
+                now: Date.now(),
+            })));
+        };
+
+        window.endBoardGameRoom = async function () {
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            const ok = await window.customConfirm('이 방을 종료할까요? 목록에서 사라집니다.');
+            if (!ok) return;
+            const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => closeBoardRoom(cur, {
+                actorId: boardGameSelfId(),
+                now: Date.now(),
+            })));
+            if (closed) {
+                try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 목록 필터로도 빠집니다 */ }
+            }
+            _boardGameActiveId = '';
+            _gomokuPending = null;
+            showBoardGameView('lobby');
+            renderBoardGameLobby();
+        };
+
+        window.leaveBoardGameTable = function () {
+            _boardGameActiveId = '';
+            _gomokuPending = null;
+            showBoardGameView('lobby');
+            renderBoardGameLobby();
+        };
 
         let _thinkLocalFocusId = '';
         let _thinkFocusEpoch = 0;
@@ -17766,6 +18470,11 @@ ${subjectLine}
                             const lesson = sanitizeOpenLessonState(snap.data() && snap.data().openLesson);
                             if (window.globalSettings) window.globalSettings.openLesson = lesson;
                             if (classtoolSub === 'openlesson') renderOpenLessonPanel();
+                        });
+
+                        if (unsubscribeBoardRooms) unsubscribeBoardRooms();
+                        unsubscribeBoardRooms = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms'), (snap) => {
+                            applyBoardGameRoomsSnapshot(snap);
                         });
 
                         if(unsubscribeRaid) unsubscribeRaid();

@@ -11186,6 +11186,8 @@ ${subjectLine}
         let _gomokuTickTimer = 0;
         let _gomokuPending = null;
         let _gomokuGesturesBound = false;
+        let _gomokuResizeBound = false;
+        let _gomokuNeedFit = true;
         let _gomokuPanning = false;
         const _gomokuView = { scale: 1, min: 1, max: 3.4, x: 0, y: 0 };
 
@@ -11399,10 +11401,12 @@ ${subjectLine}
             }
             renderGomokuBoard(room);
             bindGomokuGestures();
+            bindGomokuResize();
             startGomokuTick();
             requestAnimationFrame(() => {
                 layoutGomokuBoard();
-                if (_gomokuView.scale === 1 && _gomokuView.x === 0 && _gomokuView.y === 0) {
+                if (_gomokuNeedFit) {
+                    _gomokuNeedFit = false;
                     window.resetGomokuZoom();
                 } else {
                     applyGomokuTransform();
@@ -11486,11 +11490,29 @@ ${subjectLine}
             renderGomokuPlay(room);
         }
 
+        function bindGomokuResize() {
+            if (_gomokuResizeBound) return;
+            _gomokuResizeBound = true;
+            const onFit = () => {
+                if (_boardGameView !== 'play') return;
+                layoutGomokuBoard();
+                if (_gomokuView.scale <= 1.05) window.resetGomokuZoom();
+                else applyGomokuTransform();
+            };
+            window.addEventListener('resize', onFit);
+            window.addEventListener('orientationchange', onFit);
+            const vp = document.getElementById('gomokuBoardViewport');
+            if (vp && typeof ResizeObserver === 'function') {
+                new ResizeObserver(onFit).observe(vp);
+            }
+        }
+
         function layoutGomokuBoard() {
             const vp = document.getElementById('gomokuBoardViewport');
             const board = document.getElementById('gomokuBoard');
             if (!vp || !board) return;
-            const box = Math.max(180, Math.min(vp.clientWidth, vp.clientHeight) - 2);
+            if (vp.clientWidth < 40 || vp.clientHeight < 40) return;
+            const box = Math.max(80, Math.min(vp.clientWidth, vp.clientHeight) - 2);
             board.style.width = `${box}px`;
             board.style.height = `${box}px`;
         }
@@ -11658,6 +11680,7 @@ ${subjectLine}
         function enterBoardGameTable(roomId) {
             _boardGameActiveId = String(roomId || '');
             _gomokuPending = null;
+            _gomokuNeedFit = true;
             showBoardGameView('play');
             const room = currentBoardGameRoom();
             if (room) renderGomokuPlay(room);

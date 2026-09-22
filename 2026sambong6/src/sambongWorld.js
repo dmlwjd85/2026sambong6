@@ -145,6 +145,7 @@ import {
     rpsCanReveal,
     rpsChooseRemainingMs,
     rpsChooseSeconds,
+    rpsRevealWaitMs,
     sanitizeRpsGame,
     sanitizeRpsMove,
     sanitizeRpsPick,
@@ -14654,7 +14655,7 @@ ${subjectLine}
             _rpsGame = next;
             if (window.globalSettings) window.globalSettings.rpsGame = _rpsGame;
             if (!db) return false;
-            _rpsIgnoreRemoteUntil = Date.now() + 1600;
+            _rpsIgnoreRemoteUntil = Date.now() + 8000;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
@@ -14668,6 +14669,7 @@ ${subjectLine}
                     noteRpsChooseReceived(_rpsGame);
                 }
                 await setDoc(getGlobalSettingsDocRef(), { rpsGame: _rpsGame }, { merge: true });
+                _rpsIgnoreRemoteUntil = Date.now() + 2500;
                 return true;
             } catch (e) {
                 console.warn('publishRpsGame', e);
@@ -14822,7 +14824,8 @@ ${subjectLine}
                 _rpsNextTimer = null;
             }
             if (_rpsGame.phase === 'choose' && _rpsGame.sessionId) {
-                const wait = Math.max(80, (_rpsGame.chooseUntil + RPS_REVEAL_GRACE_MS) - Date.now());
+                noteRpsChooseReceived(_rpsGame);
+                const wait = rpsRevealWaitMs(_rpsGame, Date.now(), { receivedAt: _rpsChooseReceivedAt });
                 _rpsRevealTimer = setTimeout(() => { void revealClassRps(); }, wait);
             } else if (_rpsGame.phase === 'reveal' && _rpsGame.aliveIds.length > 1) {
                 _rpsNextTimer = setTimeout(() => { void window.nextRpsRound(); }, RPS_NEXT_ROUND_MS);
@@ -14837,7 +14840,7 @@ ${subjectLine}
             const forceBtn = document.getElementById('rpsForceRevealBtn');
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             if (forceBtn) {
-                forceBtn.classList.toggle('hidden', !(isAdmin && _rpsGame.phase === 'choose' && rpsCanReveal(_rpsGame)));
+                forceBtn.classList.toggle('hidden', !(isAdmin && _rpsGame.phase === 'choose' && rpsCanReveal(_rpsGame, Date.now(), { receivedAt: _rpsChooseReceivedAt })));
             }
             const tally = document.getElementById('rpsTally');
             if (tally && isAdmin && _rpsGame.phase === 'choose') {
@@ -15014,13 +15017,19 @@ ${subjectLine}
             const sessionChanged = remote.sessionId !== _rpsLastSession;
             _rpsLastSession = remote.sessionId;
             if (window.globalSettings) window.globalSettings.rpsGame = remote;
-            if (Date.now() < _rpsIgnoreRemoteUntil && _rpsGame.sessionId && remote.sessionId === _rpsGame.sessionId) {
-                const remoteAhead = remote.updatedAt > _rpsGame.updatedAt && (remote.phase !== _rpsGame.phase || remote.round !== _rpsGame.round);
+            if (Date.now() < _rpsIgnoreRemoteUntil) {
+                const same = !!(_rpsGame.sessionId && remote.sessionId === _rpsGame.sessionId);
+                const remoteAhead = same && remote.updatedAt > _rpsGame.updatedAt && (remote.phase !== _rpsGame.phase || remote.round !== _rpsGame.round);
                 if (!remoteAhead) {
                     renderRpsOverlay();
                     renderRpsToolPanel();
                     return;
                 }
+            }
+            if (_rpsGame.sessionId && remote.sessionId === _rpsGame.sessionId && remote.updatedAt < _rpsGame.updatedAt) {
+                renderRpsOverlay();
+                renderRpsToolPanel();
+                return;
             }
             if (sessionChanged || remote.round !== _rpsGame.round) {
                 if (!(window.playerState && window.playerState.isAdmin && Date.now() < _rpsIgnoreRemoteUntil)) {
@@ -15176,7 +15185,7 @@ ${subjectLine}
             if (!(window.playerState && window.playerState.isAdmin)) return;
             if (_rpsBusy) return;
             if (_rpsGame.phase !== 'choose' || !_rpsGame.sessionId) return;
-            if (!rpsCanReveal(_rpsGame)) return;
+            if (!rpsCanReveal(_rpsGame, Date.now(), { receivedAt: _rpsChooseReceivedAt })) return;
             _rpsBusy = true;
             try {
                 const picks = collectLiveRpsPicks();

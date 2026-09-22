@@ -39,6 +39,23 @@ function uniqueIds(list) {
     return out;
 }
 
+/** Firestore Timestamp·초 단위 값도 밀리초 epoch로 맞춥니다. */
+export function sanitizeEpochMs(raw) {
+    if (raw && typeof raw === 'object' && typeof raw.toMillis === 'function') {
+        return Math.max(0, Math.floor(Number(raw.toMillis()) || 0));
+    }
+    if (raw && typeof raw === 'object' && raw.seconds != null) {
+        const sec = Number(raw.seconds);
+        const nano = Number(raw.nanoseconds) || 0;
+        if (Number.isFinite(sec)) return Math.max(0, Math.floor(sec * 1000 + nano / 1e6));
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    // 10자리면 초 epoch로 보고 밀리초로 바꿉니다.
+    if (n > 1e9 && n < 1e12) return Math.floor(n * 1000);
+    return Math.max(0, Math.floor(n));
+}
+
 export function sanitizeRpsMove(raw) {
     const m = String(raw || '').trim();
     return RPS_MOVES.includes(m) ? m : '';
@@ -97,6 +114,7 @@ export function emptyRpsGame() {
         phase: 'idle',
         round: 0,
         chooseUntil: 0,
+        chooseStartedAt: 0,
         chooseMs: RPS_CHOOSE_MS,
         aliveIds: [],
         winnerId: '',
@@ -146,14 +164,15 @@ export function sanitizeRpsGame(raw) {
         mode,
         phase: active ? phase : 'idle',
         round: active ? round : 0,
-        chooseUntil: active ? Math.max(0, Math.floor(Number(raw.chooseUntil) || 0)) : 0,
+        chooseUntil: active ? sanitizeEpochMs(raw.chooseUntil) : 0,
+        chooseStartedAt: active ? sanitizeEpochMs(raw.chooseStartedAt) : 0,
         chooseMs,
         aliveIds: active ? aliveIds : [],
         winnerId: phase === 'done' ? winnerId : '',
         teacherPick: phase === 'reveal' || phase === 'done' ? (sanitizeRpsMove(raw.teacherPick) || '') : '',
         lastResult: active ? sanitizeRpsLastResult(raw.lastResult) : null,
         history: (Array.isArray(raw.history) ? raw.history : []).map(sanitizeHistoryRow).filter(Boolean).slice(-20),
-        updatedAt: Math.max(0, Math.floor(Number(raw.updatedAt) || 0)),
+        updatedAt: sanitizeEpochMs(raw.updatedAt),
     };
 }
 
@@ -292,6 +311,7 @@ export function startRpsRound({
         phase: 'choose',
         round: rnd,
         chooseMs: ms,
+        chooseStartedAt: now,
         chooseUntil: now + ms,
         aliveIds: ids,
         history,
@@ -307,6 +327,7 @@ export function refreshRpsChooseDeadline(state, now = Date.now()) {
     return sanitizeRpsGame({
         ...g,
         chooseMs: ms,
+        chooseStartedAt: now,
         chooseUntil: now + ms,
         updatedAt: now,
     });
@@ -358,22 +379,61 @@ export function applyRpsReveal({
     return { ok: true, state: next, result: lastResult };
 }
 
+function rpsReceivedAt(opts = {}) {
+    return Math.max(0, Math.floor(Number(opts && opts.receivedAt) || 0));
+}
+
+/**
+ * 이 라운드 선택 시작 시각.
+ * chooseUntil이 있으면 거기서 역산하고, 없으면 chooseStartedAt·updatedAt을 씁니다.
+ */
+export function rpsChooseStartedAt(game) {
+    const g = sanitizeRpsGame(game);
+    const ms = sanitizeRpsChooseMs(g.chooseMs);
+    const fromUntil = g.chooseUntil > ms ? g.chooseUntil - ms : 0;
+    return Math.max(g.chooseStartedAt || 0, g.updatedAt || 0, fromUntil);
+}
+
+/** 손을 고를 수 있는 마감 시각(유예 제외). 낡은 마감은 수신 시각으로 복구합니다. */
+export function rpsChooseDeadlineMs(game, now = Date.now(), opts = {}) {
+    const g = sanitizeRpsGame(game);
+    const ms = sanitizeRpsChooseMs(g.chooseMs);
+    const started = rpsChooseStartedAt(g);
+    const receivedAt = rpsReceivedAt(opts);
+    const wallDeadline = started > 0 ? started + ms : (g.chooseUntil || 0);
+    const wallAgeOk = started > 0 && (now - started) < ms + RPS_REVEAL_GRACE_MS + 2000;
+    if (wallAgeOk) return wallDeadline;
+    if (receivedAt > 0) return receivedAt + ms;
+    return wallDeadline;
+}
+
 /**
  * 남은 선택 시간.
- * receivedAt(이 라운드를 화면에 받은 시각)이 있으면 느린 기기 시계로
- * 카운트가 설정 시간보다 늘어나지 않게 자릅니다.
+ * 서버 마감이 이미 지났거나 비어 있으면, 이 화면이 라운드를 받은 뒤부터
+ * 설정 시간(기본 5초)을 채워 숫자가 5인데 바로 끝나는 일을 막습니다.
+ * 느린 기기 시계로는 설정 시간보다 늘어나지 않게 자릅니다.
  */
 export function rpsChooseRemainingMs(game, now = Date.now(), opts = {}) {
     const g = sanitizeRpsGame(game);
     if (g.phase !== 'choose') return 0;
     const ms = sanitizeRpsChooseMs(g.chooseMs);
-    const wallRemain = g.chooseUntil - now;
-    const receivedAt = Math.max(0, Math.floor(Number(opts && opts.receivedAt) || 0));
+    const deadline = rpsChooseDeadlineMs(g, now, opts);
+    const wallRemain = deadline - now;
+    const receivedAt = rpsReceivedAt(opts);
     if (receivedAt > 0) {
         const localRemain = ms - (now - receivedAt);
+        if (wallRemain <= 0) return Math.max(0, Math.min(localRemain, ms));
         return Math.max(0, Math.min(wallRemain, localRemain, ms));
     }
     return Math.max(0, Math.min(wallRemain, ms));
+}
+
+/** 공개 타이머에 넣을 대기 시간. 낡은 마감이어도 방금 받은 라운드는 약 5초를 지킵니다. */
+export function rpsRevealWaitMs(game, now = Date.now(), opts = {}) {
+    const g = sanitizeRpsGame(game);
+    if (g.phase !== 'choose') return 0;
+    const remain = rpsChooseRemainingMs(g, now, opts);
+    return Math.max(80, remain + RPS_REVEAL_GRACE_MS);
 }
 
 /** 공개 전까지는 남은 시간이 0이어도 손을 받을 수 있습니다(유예 구간). */
@@ -382,8 +442,9 @@ export function rpsCanPick(game) {
     return g.phase === 'choose' && !!g.sessionId;
 }
 
-export function rpsCanReveal(game, now = Date.now()) {
+export function rpsCanReveal(game, now = Date.now(), opts = {}) {
     const g = sanitizeRpsGame(game);
     if (g.phase !== 'choose') return false;
-    return now >= g.chooseUntil + RPS_REVEAL_GRACE_MS;
+    if (rpsChooseRemainingMs(g, now, opts) > 0) return false;
+    return now >= rpsChooseDeadlineMs(g, now, opts) + RPS_REVEAL_GRACE_MS;
 }

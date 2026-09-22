@@ -15,6 +15,8 @@ import {
     rpsCanReveal,
     rpsChooseRemainingMs,
     rpsChooseSeconds,
+    rpsRevealWaitMs,
+    sanitizeEpochMs,
     sanitizeRpsChooseMs,
     sanitizeRpsGame,
     startRpsRound,
@@ -132,7 +134,9 @@ describe('라운드 진행', () => {
         assert.equal(started.phase, 'choose');
         assert.equal(started.chooseMs, 5000);
         assert.equal(started.chooseUntil, 1000 + RPS_CHOOSE_MS);
+        assert.equal(started.chooseStartedAt, 1000);
         assert.equal(rpsChooseRemainingMs(started, 1000), 5000);
+        assert.equal(rpsRevealWaitMs(started, 1000), 5000 + RPS_REVEAL_GRACE_MS);
         assert.equal(rpsCanPick(started), true);
         assert.equal(rpsCanReveal(started, 1000 + RPS_CHOOSE_MS), false);
         assert.equal(rpsCanReveal(started, 1000 + RPS_CHOOSE_MS + RPS_REVEAL_GRACE_MS), true);
@@ -188,6 +192,37 @@ describe('라운드 진행', () => {
         const idle = refreshRpsChooseDeadline(emptyRpsGame(), 2000);
         assert.equal(idle.phase, 'idle');
         assert.equal(idle.chooseUntil, 0);
+    });
+
+    it('마감이 비어 있거나 이미 지났어도 받은 뒤 5초를 채운 다음에만 공개한다', () => {
+        const stale = sanitizeRpsGame({
+            sessionId: 's1',
+            phase: 'choose',
+            aliveIds: ['8', '12'],
+            chooseUntil: 0,
+            chooseMs: 5000,
+            updatedAt: 0,
+            round: 1,
+        });
+        assert.equal(rpsChooseRemainingMs(stale, 9000, { receivedAt: 9000 }), 5000);
+        assert.equal(rpsCanReveal(stale, 9000, { receivedAt: 9000 }), false);
+        assert.equal(rpsRevealWaitMs(stale, 9000, { receivedAt: 9000 }), 5000 + RPS_REVEAL_GRACE_MS);
+        assert.equal(rpsCanReveal(stale, 9000 + RPS_CHOOSE_MS, { receivedAt: 9000 }), false);
+        assert.equal(rpsCanReveal(stale, 9000 + RPS_CHOOSE_MS + RPS_REVEAL_GRACE_MS, { receivedAt: 9000 }), true);
+        const expiredUntil = sanitizeRpsGame({
+            sessionId: 's1',
+            phase: 'choose',
+            aliveIds: ['8', '12'],
+            chooseUntil: 100,
+            chooseStartedAt: 0,
+            chooseMs: 5000,
+            updatedAt: 50,
+            round: 1,
+        });
+        assert.equal(rpsChooseRemainingMs(expiredUntil, 8000, { receivedAt: 8000 }), 5000);
+        assert.equal(rpsCanReveal(expiredUntil, 8100, { receivedAt: 8000 }), false);
+        assert.equal(sanitizeEpochMs({ seconds: 10, nanoseconds: 0 }), 10000);
+        assert.equal(sanitizeEpochMs(1_700_000_000), 1_700_000_000_000);
     });
 
     it('위험한 학번과 빈 값을 버린다', () => {

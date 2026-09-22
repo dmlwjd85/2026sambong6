@@ -11457,7 +11457,11 @@ ${subjectLine}
             if (playersEl) {
                 playersEl.textContent = `흑 ${memberNameBySeat(room, 'black')}  ·  백 ${memberNameBySeat(room, 'white')}`;
             }
-            if (toggleWrap) toggleWrap.classList.toggle('hidden', aiMode || !host);
+            if (toggleWrap) {
+                const hideToggle = aiMode || !host;
+                toggleWrap.classList.toggle('hidden', hideToggle);
+                toggleWrap.hidden = hideToggle;
+            }
             if (toggle) toggle.checked = !!room.timerEnabled;
             const remain = turnRemainingMs(room, Date.now());
             if (timerEl) {

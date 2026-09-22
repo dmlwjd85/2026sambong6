@@ -2041,6 +2041,10 @@
                     <span class="app-tool-icon"><img src="nav/tool-rps.webp" alt="" width="192" height="192"></span>
                     <span>가위바위보</span>
                 </button>
+                <button type="button" class="app-tool-item" data-tool="boardgames" onclick="window.switchClassTool('boardgames')">
+                    <span class="app-tool-icon"><img src="nav/tool-boardgames.svg" alt="" width="192" height="192"></span>
+                    <span>보드게임</span>
+                </button>
                 <button type="button" class="app-tool-item" data-tool="wheel" onclick="window.switchClassTool('wheel')">
                     <span class="app-tool-icon"><img src="nav/tool-wheel.webp" alt="" width="192" height="192"></span>
                     <span>돌림판</span>
@@ -2311,6 +2315,79 @@
                         <button type="button" onclick="window.endClassRps()" class="rps-mini-btn">게임 종료</button>
                     </div>
                     <p id="rpsSetupHint" class="mt-3 text-[10px] text-cyan-200/80 font-bold min-h-[1rem]"></p>
+                </div>
+
+                <!-- 보드게임(오목) — 공통 방 로비 위에 게임을 붙입니다 -->
+                <div class="classtool-pane hidden boardgame-panel" data-tool="boardgames">
+                    <div id="boardgameHomeView" class="boardgame-view">
+                        <div class="boardgame-head">
+                            <div class="w-12 h-12 rounded-lg overflow-hidden border-2 border-amber-400/70 shadow-inner shrink-0">
+                                <img src="nav/tool-boardgames.svg" alt="" width="48" height="48" class="w-full h-full object-cover">
+                            </div>
+                            <div class="min-w-0">
+                                <p class="boardgame-kicker">CLASS BOARD GAMES</p>
+                                <h2 class="boardgame-title">보드게임</h2>
+                            </div>
+                        </div>
+                        <p class="boardgame-lead">방을 만들고 방장이 참가를 승인하면 대국이 시작됩니다. 다음 보드게임도 같은 방을 씁니다.</p>
+                        <div class="boardgame-game-grid">
+                            <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('gomoku')">
+                                <span class="boardgame-game-emoji" aria-hidden="true">⚫⚪</span>
+                                <span class="boardgame-game-name">오목</span>
+                                <span class="boardgame-game-meta">2명 · 15×15 · 자유 오목</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="boardgameLobbyView" class="boardgame-view hidden">
+                        <div class="boardgame-head">
+                            <button type="button" class="boardgame-mini-btn" onclick="window.backBoardGameHome()">← 게임 목록</button>
+                            <div class="min-w-0">
+                                <p class="boardgame-kicker">GOMOKU LOBBY</p>
+                                <h2 class="boardgame-title">오목 방</h2>
+                            </div>
+                            <button type="button" class="boardgame-primary-btn" onclick="void window.createBoardGameRoom('gomoku')">방 만들기</button>
+                        </div>
+                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 10분 동안 아무도 두지 않으면 방이 사라집니다.</p>
+                        <div id="boardgameRoomList" class="boardgame-room-list">방을 불러오는 중…</div>
+                    </div>
+
+                    <div id="boardgamePlayView" class="boardgame-view boardgame-play hidden">
+                        <div class="gomoku-hud">
+                            <button type="button" class="boardgame-mini-btn gomoku-leave-btn" onclick="void window.leaveBoardGameTable()">목록</button>
+                            <div id="gomokuHudPlayers" class="gomoku-hud-players"></div>
+                            <div id="gomokuHudTimer" class="gomoku-hud-timer" hidden></div>
+                            <label id="gomokuTimerToggleWrap" class="gomoku-timer-toggle hidden">
+                                <input type="checkbox" id="gomokuTimerToggle" onchange="void window.toggleBoardGameTimer(this.checked)">
+                                <span>30초 타이머</span>
+                            </label>
+                        </div>
+                        <p id="gomokuTurnHint" class="gomoku-turn-hint">차례를 기다리는 중</p>
+                        <div id="gomokuBoardViewport" class="gomoku-viewport" aria-label="오목판">
+                            <div id="gomokuBoardWorld" class="gomoku-world">
+                                <div id="gomokuBoard" class="gomoku-board" role="grid"></div>
+                            </div>
+                        </div>
+                        <div class="gomoku-zoom-bar">
+                            <button type="button" class="boardgame-mini-btn" onclick="window.nudgeGomokuZoom(-0.25)">−</button>
+                            <span id="gomokuZoomLabel" class="gomoku-zoom-label">100%</span>
+                            <button type="button" class="boardgame-mini-btn" onclick="window.nudgeGomokuZoom(0.25)">+</button>
+                            <button type="button" class="boardgame-mini-btn" onclick="window.resetGomokuZoom()">맞춤</button>
+                            <span class="gomoku-zoom-help">두 손가락으로 확대</span>
+                        </div>
+                        <div id="gomokuConfirmBar" class="gomoku-confirm hidden">
+                            <span id="gomokuConfirmText">이 자리에 둘까요?</span>
+                            <button type="button" class="boardgame-mini-btn" onclick="window.cancelGomokuPending()">취소</button>
+                            <button type="button" class="boardgame-primary-btn" onclick="void window.confirmGomokuPending()">여기 두기</button>
+                        </div>
+                        <div id="gomokuResultBar" class="gomoku-result hidden">
+                            <p id="gomokuResultText" class="gomoku-result-text"></p>
+                            <div class="gomoku-result-actions">
+                                <button type="button" class="boardgame-primary-btn" onclick="void window.continueBoardGameRoom()">다시 두기</button>
+                                <button type="button" class="boardgame-mini-btn" onclick="void window.endBoardGameRoom()">방 종료</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- 사회 수업 연출 (비상계엄) — 마스터 탭에서 이동 -->

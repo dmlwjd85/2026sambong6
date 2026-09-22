@@ -17,6 +17,7 @@ export const CLASS_TOOL_SHARE_IDS = Object.freeze([
     'classboard', // 학급게시판
     'openlesson', // 공개수업
     'rps', // 가위바위보
+    'boardgames', // 보드게임(오목 등)
 ]);
 
 export function isClassToolShareId(toolId) {
@@ -76,7 +77,7 @@ export function classToolShareShouldClose(share, followedSessionId) {
 }
 
 /**
- * 생각게시판·학급게시판 공유는 로그인 학생이 글을 붙일 수 있게 두고,
+ * 생각게시판·학급게시판·가위바위보·보드게임 공유는 로그인 학생이 조작할 수 있게 두고,
  * 손님·TV·다른 도구만 보기 전용으로 잠급니다.
  * 학급게시판의 「함께 보기」는 별도 상태로 작성을 멈춥니다.
  */
@@ -84,6 +85,6 @@ export function classToolShareIsViewOnly(share, { isAdmin, isGuest } = {}) {
     const n = sanitizeClassToolShare(share);
     if (!n.active) return false;
     if (isAdmin) return false;
-    if ((n.toolId === 'padlet' || n.toolId === 'classboard' || n.toolId === 'rps') && !isGuest) return false;
+    if ((n.toolId === 'padlet' || n.toolId === 'classboard' || n.toolId === 'rps' || n.toolId === 'boardgames') && !isGuest) return false;
     return true;
 }

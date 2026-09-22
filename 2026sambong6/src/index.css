@@ -2569,7 +2569,8 @@
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
         .classtool-fs-body > .classtool-pane[data-tool="classboard"],
-        .classtool-fs-body > .classtool-pane[data-tool="openlesson"] {
+        .classtool-fs-body > .classtool-pane[data-tool="openlesson"],
+        .classtool-fs-body > .classtool-pane[data-tool="boardgames"] {
             max-width: none;
             width: 100%;
             margin: 0;
@@ -2581,7 +2582,8 @@
         /* 웹: 양옆은 화면 끝까지, 생각 목록만 위아래로 스크롤합니다. */
         .classtool-fs-body:has(> .classtool-pane[data-tool="padlet"]),
         .classtool-fs-body:has(> .classtool-pane[data-tool="classboard"]),
-        .classtool-fs-body:has(> .classtool-pane[data-tool="openlesson"]) {
+        .classtool-fs-body:has(> .classtool-pane[data-tool="openlesson"]),
+        .classtool-fs-body:has(> .classtool-pane[data-tool="boardgames"]) {
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -3637,7 +3639,9 @@
         body.class-tool-share-view .class-board-keep-input,
         body.class-tool-share-view .class-board-keep-input *,
         body.class-tool-share-view .open-lesson-keep-input,
-        body.class-tool-share-view .open-lesson-keep-input * {
+        body.class-tool-share-view .open-lesson-keep-input *,
+        body.class-tool-share-view .boardgame-panel,
+        body.class-tool-share-view .boardgame-panel * {
             pointer-events: auto;
         }
         body.class-tool-share-view #chalkboardToolbar {
@@ -3659,7 +3663,8 @@
         }
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
         .classtool-fs-body > .classtool-pane[data-tool="classboard"],
-        .classtool-fs-body > .classtool-pane[data-tool="openlesson"] {
+        .classtool-fs-body > .classtool-pane[data-tool="openlesson"],
+        .classtool-fs-body > .classtool-pane[data-tool="boardgames"] {
             margin: 0;
             max-width: none;
             width: 100%;
@@ -5198,4 +5203,278 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .bus-seat.is-admin-edit {
                 min-height: 4.4rem;
             }
+        }
+
+        /* 수업도구 — 보드게임(오목) */
+        .boardgame-panel {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            height: 100%;
+            padding: 0.55rem 0.65rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
+            background:
+                radial-gradient(circle at 12% 0%, rgba(251, 191, 36, 0.18), transparent 42%),
+                linear-gradient(165deg, #1c1410 0%, #0c0a09 55%, #1a120c 100%);
+            color: #fef3c7;
+        }
+        body.classtool-fs-open .boardgame-panel {
+            height: 100%;
+            min-height: 0;
+            overflow: hidden;
+        }
+        .boardgame-view {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1;
+            gap: 0.55rem;
+        }
+        .boardgame-view.hidden { display: none !important; }
+        .boardgame-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.55rem;
+            flex-shrink: 0;
+        }
+        .boardgame-kicker {
+            font-size: 10px;
+            font-weight: 900;
+            letter-spacing: 0.28em;
+            color: #fbbf24;
+        }
+        .boardgame-title {
+            font-family: 'Black Han Sans', sans-serif;
+            font-size: 1.35rem;
+            color: #fffbeb;
+            letter-spacing: 0.04em;
+        }
+        .boardgame-lead {
+            font-size: 11px;
+            line-height: 1.5;
+            color: rgba(254, 243, 199, 0.78);
+            flex-shrink: 0;
+        }
+        .boardgame-game-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.7rem;
+        }
+        @media (min-width: 640px) {
+            .boardgame-game-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        .boardgame-game-card {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.25rem;
+            min-height: 7rem;
+            padding: 1rem 1.1rem;
+            border-radius: 1.1rem;
+            border: 2px solid rgba(251, 191, 36, 0.45);
+            background: linear-gradient(180deg, rgba(120, 53, 15, 0.55), rgba(28, 20, 16, 0.9));
+            color: #fffbeb;
+            text-align: left;
+        }
+        .boardgame-game-card:active { transform: translateY(1px); }
+        .boardgame-game-emoji { font-size: 1.6rem; }
+        .boardgame-game-name { font-size: 1.25rem; font-weight: 900; }
+        .boardgame-game-meta { font-size: 11px; font-weight: 700; color: #fde68a; }
+        .boardgame-mini-btn,
+        .boardgame-primary-btn {
+            min-height: 44px;
+            padding: 0 0.85rem;
+            border-radius: 0.8rem;
+            font-size: 12px;
+            font-weight: 900;
+            border: 1px solid rgba(251, 191, 36, 0.4);
+        }
+        .boardgame-mini-btn {
+            background: rgba(41, 37, 36, 0.85);
+            color: #fef3c7;
+        }
+        .boardgame-primary-btn {
+            background: linear-gradient(180deg, #f59e0b, #b45309);
+            color: #1c1917;
+            border-color: #fde68a;
+        }
+        .boardgame-room-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.55rem;
+            overflow: auto;
+            min-height: 0;
+            padding-bottom: 0.4rem;
+        }
+        .boardgame-room-card {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 0.45rem 0.7rem;
+            padding: 0.75rem 0.85rem;
+            border-radius: 1rem;
+            border: 1px solid rgba(251, 191, 36, 0.28);
+            background: rgba(28, 25, 23, 0.72);
+        }
+        .boardgame-room-title { font-size: 14px; font-weight: 900; color: #fffbeb; }
+        .boardgame-room-meta { font-size: 11px; color: #fde68a; font-weight: 700; }
+        .boardgame-room-status {
+            display: inline-block;
+            margin-top: 0.2rem;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 0.15rem 0.45rem;
+            border-radius: 999px;
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+        }
+        .boardgame-room-status.is-playing { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+        .boardgame-join-req {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            grid-column: 1 / -1;
+        }
+        .boardgame-play {
+            height: 100%;
+        }
+        .gomoku-hud {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 0.65rem;
+            flex-shrink: 0;
+        }
+        .gomoku-hud-players {
+            flex: 1;
+            min-width: 10rem;
+            font-size: 12px;
+            font-weight: 800;
+            color: #fffbeb;
+        }
+        .gomoku-hud-timer {
+            min-width: 3.2rem;
+            text-align: center;
+            font-size: 1.35rem;
+            font-weight: 900;
+            color: #fde68a;
+            font-variant-numeric: tabular-nums;
+        }
+        .gomoku-hud-timer.is-low { color: #fca5a5; }
+        .gomoku-timer-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            font-size: 11px;
+            font-weight: 800;
+            color: #fde68a;
+        }
+        .gomoku-turn-hint {
+            flex-shrink: 0;
+            font-size: 12px;
+            font-weight: 800;
+            color: #fbbf24;
+            min-height: 1.1rem;
+        }
+        .gomoku-viewport {
+            position: relative;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            touch-action: none;
+            border-radius: 0.85rem;
+            border: 2px solid #b45309;
+            background: #3b2412;
+        }
+        .gomoku-world {
+            position: absolute;
+            inset: 0;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+        .gomoku-board {
+            position: relative;
+            width: min(100vw, 100vh);
+            height: min(100vw, 100vh);
+            max-width: 100%;
+            max-height: 100%;
+            margin: 0 auto;
+            background:
+                radial-gradient(circle at 30% 20%, rgba(255, 237, 213, 0.28), transparent 40%),
+                linear-gradient(160deg, #e8b86d 0%, #c9893c 55%, #a16207 100%);
+            box-shadow: inset 0 0 0 8px #8a4b12;
+        }
+        .gomoku-grid-svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .gomoku-hotspot {
+            position: absolute;
+            width: 6.66%;
+            height: 6.66%;
+            transform: translate(-50%, -50%);
+            border: 0;
+            background: transparent;
+            padding: 0;
+            border-radius: 50%;
+        }
+        .gomoku-hotspot.is-pending {
+            box-shadow: 0 0 0 2px #f59e0b, inset 0 0 0 2px rgba(255,255,255,0.7);
+            background: rgba(245, 158, 11, 0.25);
+        }
+        .gomoku-hotspot.is-last {
+            box-shadow: 0 0 0 2px #ef4444;
+        }
+        .gomoku-zoom-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.35rem;
+            flex-shrink: 0;
+        }
+        .gomoku-zoom-label {
+            min-width: 3.2rem;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 900;
+            color: #fde68a;
+        }
+        .gomoku-zoom-help {
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(254, 243, 199, 0.65);
+        }
+        .gomoku-confirm,
+        .gomoku-result {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.45rem 0.2rem;
+            flex-shrink: 0;
+        }
+        .gomoku-confirm.hidden,
+        .gomoku-result.hidden { display: none !important; }
+        .gomoku-result-text {
+            width: 100%;
+            font-size: 15px;
+            font-weight: 900;
+            color: #fde68a;
+        }
+        .gomoku-result-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        #classtoolFullscreen:has(.classtool-pane[data-tool="boardgames"]:not(.hidden)) {
+            background: #0c0a09;
+        }
+        #classtoolFullscreen:has(.classtool-pane[data-tool="boardgames"]:not(.hidden)) .classtool-fs-bar {
+            background: #1c1410;
+            border-bottom-color: #b45309;
+        }
+        #classtoolFullscreen:has(.classtool-pane[data-tool="boardgames"]:not(.hidden)) #classtoolFullscreenTitle {
+            color: #fde68a;
+        }
+        @media (orientation: landscape) and (max-height: 500px) {
+            .boardgame-lead,
+            .gomoku-zoom-help { display: none; }
+            .boardgame-title { font-size: 1.05rem; }
+            .gomoku-hud-timer { font-size: 1.1rem; }
         }

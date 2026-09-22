@@ -2,13 +2,20 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     RPS_CHOOSE_MS,
+    RPS_CHOOSE_SEC,
+    RPS_REVEAL_GRACE_MS,
     applyRpsReveal,
     collectRpsPicksFromStudents,
     emptyRpsGame,
+    refreshRpsChooseDeadline,
     resolveFreeRpsRound,
     resolveTeacherRpsRound,
     rpsBeats,
+    rpsCanPick,
     rpsCanReveal,
+    rpsChooseRemainingMs,
+    rpsChooseSeconds,
+    sanitizeRpsChooseMs,
     sanitizeRpsGame,
     startRpsRound,
 } from './rpsGame.js';
@@ -113,7 +120,9 @@ describe('라운드 진행', () => {
         assert.deepEqual(picks, { 8: 'paper' });
     });
 
-    it('3초 고르기 라운드를 열고, 시간이 지나야 공개한다', () => {
+    it('5초 고르기 라운드를 열고, 시간이 지나야 공개한다', () => {
+        assert.equal(RPS_CHOOSE_MS, 5000);
+        assert.equal(RPS_CHOOSE_SEC, 5);
         const started = startRpsRound({
             mode: 'free',
             aliveIds: ['8', '12', '1'],
@@ -121,13 +130,17 @@ describe('라운드 진행', () => {
             sessionId: 's1',
         });
         assert.equal(started.phase, 'choose');
+        assert.equal(started.chooseMs, 5000);
         assert.equal(started.chooseUntil, 1000 + RPS_CHOOSE_MS);
+        assert.equal(rpsChooseRemainingMs(started, 1000), 5000);
+        assert.equal(rpsCanPick(started), true);
         assert.equal(rpsCanReveal(started, 1000 + RPS_CHOOSE_MS), false);
-        assert.equal(rpsCanReveal(started, 1000 + RPS_CHOOSE_MS + 400), true);
+        assert.equal(rpsCanReveal(started, 1000 + RPS_CHOOSE_MS + RPS_REVEAL_GRACE_MS), true);
+        assert.equal(rpsCanPick(started), true);
         const revealed = applyRpsReveal({
             state: started,
             picks: { 8: 'rock', 12: 'scissors' },
-            now: 5000,
+            now: 7000,
         });
         assert.equal(revealed.ok, true);
         assert.equal(revealed.state.phase, 'done');
@@ -142,12 +155,39 @@ describe('라운드 진행', () => {
                 sessionId: 's2',
             }),
             picks: { 8: 'rock', 12: 'rock', 1: 'scissors' },
-            now: 5000,
+            now: 7000,
         });
         assert.equal(mid.state.phase, 'reveal');
         assert.deepEqual(mid.state.aliveIds, ['8', '12']);
         const again = applyRpsReveal({ state: mid.state, picks: { 8: 'paper' } });
         assert.equal(again.ok, false);
+        assert.equal(rpsCanPick(mid.state), false);
+    });
+
+    it('게시 직전 마감을 다시 잡고, 느린 시계로 카운트가 늘어나지 않는다', () => {
+        const started = startRpsRound({
+            mode: 'free',
+            aliveIds: ['8', '12'],
+            now: 1000,
+            sessionId: 's1',
+        });
+        const armed = refreshRpsChooseDeadline(started, 1800);
+        assert.equal(armed.chooseUntil, 1800 + RPS_CHOOSE_MS);
+        assert.equal(armed.updatedAt, 1800);
+        assert.equal(rpsChooseRemainingMs(started, 1000), 5000);
+        // 시계가 느려도 수신 시각 기준으로 줄어들어, 카운트가 5초에 멈추지 않습니다.
+        assert.equal(rpsChooseRemainingMs(started, 0, { receivedAt: 1 }), 5000);
+        assert.equal(rpsChooseRemainingMs(started, 1000, { receivedAt: 1 }), 4001);
+        // 스냅샷이 1초 늦게 도착하면 교사 마감에 맞춰 4초가 남습니다.
+        assert.equal(rpsChooseRemainingMs(started, 2000, { receivedAt: 2000 }), 4000);
+        assert.equal(sanitizeRpsChooseMs(0), 5000);
+        assert.equal(sanitizeRpsChooseMs(999), 5000);
+        assert.equal(sanitizeRpsChooseMs(8000), 8000);
+        assert.equal(sanitizeRpsChooseMs(99999), 15000);
+        assert.equal(rpsChooseSeconds(), 5);
+        const idle = refreshRpsChooseDeadline(emptyRpsGame(), 2000);
+        assert.equal(idle.phase, 'idle');
+        assert.equal(idle.chooseUntil, 0);
     });
 
     it('위험한 학번과 빈 값을 버린다', () => {
@@ -161,6 +201,7 @@ describe('라운드 진행', () => {
         assert.equal(dirty.mode, 'free');
         assert.deepEqual(dirty.aliveIds, ['8']);
         assert.equal(dirty.teacherPick, '');
+        assert.equal(dirty.chooseMs, 5000);
         assert.equal(emptyRpsGame().phase, 'idle');
     });
 });

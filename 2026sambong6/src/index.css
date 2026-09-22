@@ -5411,8 +5411,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .gomoku-hotspot {
             position: absolute;
-            width: 6.66%;
-            height: 6.66%;
+            width: 4.6%;
+            height: 4.6%;
             transform: translate(-50%, -50%);
             border: 0;
             background: transparent;

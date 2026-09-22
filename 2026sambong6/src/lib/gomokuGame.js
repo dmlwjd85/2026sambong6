@@ -1,5 +1,5 @@
 /**
- * 학급용 자유 오목 (15×15).
+ * 학급용 자유 오목 (20×20).
  * 렌주 금수(장목·3-3·4-4)는 쓰지 않습니다. 초등 6학년 수업에서 규칙이 단순해야 하기 때문입니다.
  *
  * 승패
@@ -8,9 +8,12 @@
  * - 30초 턴 타이머가 켜진 방에서 시간을 넘기면 그 턴 플레이어가 집니다. (패스 없음)
  *
  * 보드게임 공통 방(boardGameRooms.js) 위에 붙는 첫 게임입니다.
+ * 혼자 하기(AI)는 Firestore 방 없이 gomokuAi.js 를 씁니다.
  */
 
-export const GOMOKU_SIZE = 15;
+export const GOMOKU_SIZE = 20;
+export const GOMOKU_SIZE_MIN = 7;
+export const GOMOKU_SIZE_MAX = 20;
 export const GOMOKU_EMPTY = 0;
 export const GOMOKU_BLACK = 1;
 export const GOMOKU_WHITE = 2;
@@ -23,10 +26,27 @@ export const GOMOKU_COLOR_LABEL = Object.freeze({
 
 export const GOMOKU_END_REASONS = Object.freeze(['', 'five', 'draw', 'timeout']);
 
-function clampInt(raw, min, max, fallback = 0) {
+function clampBoardSize(raw, fallback = GOMOKU_SIZE) {
     const n = Math.floor(Number(raw));
-    if (!Number.isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, n));
+    if (!Number.isFinite(n) || n < GOMOKU_SIZE_MIN || n > GOMOKU_SIZE_MAX) return fallback;
+    return n;
+}
+
+/** 진행 중인 15×15 방 문서도 읽히게, cells 길이로 판 크기를 맞춥니다. */
+export function resolveGomokuSize(raw, fallback = GOMOKU_SIZE) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        const fromField = Math.floor(Number(raw.size));
+        if (fromField >= GOMOKU_SIZE_MIN && fromField <= GOMOKU_SIZE_MAX) return fromField;
+        if (Array.isArray(raw.cells) && raw.cells.length) {
+            const n = Math.round(Math.sqrt(raw.cells.length));
+            if (n >= GOMOKU_SIZE_MIN && n <= GOMOKU_SIZE_MAX && n * n === raw.cells.length) return n;
+        }
+        if (Array.isArray(raw.board) && raw.board.length) {
+            const n = raw.board.length;
+            if (n >= GOMOKU_SIZE_MIN && n <= GOMOKU_SIZE_MAX) return n;
+        }
+    }
+    return clampBoardSize(raw, fallback);
 }
 
 function sanitizeEpochMs(raw) {
@@ -40,12 +60,12 @@ function sanitizeEpochMs(raw) {
 }
 
 export function emptyGomokuBoard(size = GOMOKU_SIZE) {
-    const n = clampInt(size, 7, 19, GOMOKU_SIZE);
+    const n = clampBoardSize(size, GOMOKU_SIZE);
     return Array.from({ length: n }, () => Array(n).fill(GOMOKU_EMPTY));
 }
 
 export function flattenGomokuBoard(board, size = GOMOKU_SIZE) {
-    const n = clampInt(size, 7, 19, GOMOKU_SIZE);
+    const n = clampBoardSize(size, GOMOKU_SIZE);
     const out = [];
     for (let y = 0; y < n; y += 1) {
         const row = Array.isArray(board) && Array.isArray(board[y]) ? board[y] : [];
@@ -58,7 +78,7 @@ export function flattenGomokuBoard(board, size = GOMOKU_SIZE) {
 }
 
 export function inflateGomokuBoard(cells, size = GOMOKU_SIZE) {
-    const n = clampInt(size, 7, 19, GOMOKU_SIZE);
+    const n = clampBoardSize(size, GOMOKU_SIZE);
     const out = emptyGomokuBoard(n);
     if (!Array.isArray(cells)) return out;
     for (let i = 0; i < n * n; i += 1) {
@@ -69,7 +89,7 @@ export function inflateGomokuBoard(cells, size = GOMOKU_SIZE) {
 }
 
 export function sanitizeGomokuBoard(raw, size = GOMOKU_SIZE) {
-    const n = clampInt(size, 7, 19, GOMOKU_SIZE);
+    const n = clampBoardSize(size, GOMOKU_SIZE);
     if (Array.isArray(raw) && raw.length === n * n && !Array.isArray(raw[0])) {
         return inflateGomokuBoard(raw, n);
     }
@@ -86,7 +106,7 @@ export function sanitizeGomokuBoard(raw, size = GOMOKU_SIZE) {
 }
 
 export function emptyGomokuGame({ now = 0, size = GOMOKU_SIZE } = {}) {
-    const n = clampInt(size, 7, 19, GOMOKU_SIZE);
+    const n = clampBoardSize(size, GOMOKU_SIZE);
     const t = Math.max(0, Math.floor(Number(now) || 0));
     return {
         size: n,
@@ -113,7 +133,7 @@ function sanitizeLastMove(raw, size) {
 
 export function sanitizeGomokuGame(raw, { now = 0 } = {}) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyGomokuGame({ now });
-    const size = clampInt(raw.size, 7, 19, GOMOKU_SIZE);
+    const size = resolveGomokuSize(raw, GOMOKU_SIZE);
     const turn = raw.turn === GOMOKU_WHITE ? GOMOKU_WHITE : GOMOKU_BLACK;
     const winner = raw.winner === GOMOKU_BLACK || raw.winner === GOMOKU_WHITE ? raw.winner : 0;
     const endReason = GOMOKU_END_REASONS.includes(String(raw.endReason || '')) ? String(raw.endReason || '') : '';

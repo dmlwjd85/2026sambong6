@@ -8,9 +8,14 @@ export const RPS_MODES = Object.freeze(['free', 'teacher']);
 export const RPS_PHASES = Object.freeze(['idle', 'choose', 'reveal', 'done']);
 /** 학급 가위바위보에 참여하는 선생님 자리 */
 export const RPS_TEACHER_ID = 'teacher';
-export const RPS_CHOOSE_MS = 3000;
+/** 학생·선생님이 손을 고를 수 있는 기본 시간 */
+export const RPS_CHOOSE_MS = 5000;
+export const RPS_CHOOSE_SEC = Math.round(RPS_CHOOSE_MS / 1000);
+/** 선택 마감 직후, 늦은 손 기록이 도착할 여유 */
 export const RPS_REVEAL_GRACE_MS = 400;
 export const RPS_NEXT_ROUND_MS = 3500;
+const RPS_CHOOSE_MS_MIN = 1000;
+const RPS_CHOOSE_MS_MAX = 15000;
 export const RPS_MOVE_LABEL = Object.freeze({
     rock: '바위',
     paper: '보',
@@ -37,6 +42,17 @@ function uniqueIds(list) {
 export function sanitizeRpsMove(raw) {
     const m = String(raw || '').trim();
     return RPS_MOVES.includes(m) ? m : '';
+}
+
+/** 선택 제한 시간을 1~15초 안으로 맞춥니다. 없거나 이상하면 기본 5초입니다. */
+export function sanitizeRpsChooseMs(raw) {
+    const n = Math.floor(Number(raw) || 0);
+    if (n < RPS_CHOOSE_MS_MIN) return RPS_CHOOSE_MS;
+    return Math.min(RPS_CHOOSE_MS_MAX, n);
+}
+
+export function rpsChooseSeconds(ms = RPS_CHOOSE_MS) {
+    return Math.max(1, Math.round(sanitizeRpsChooseMs(ms) / 1000));
 }
 
 export function rpsBeats(a, b) {
@@ -81,6 +97,7 @@ export function emptyRpsGame() {
         phase: 'idle',
         round: 0,
         chooseUntil: 0,
+        chooseMs: RPS_CHOOSE_MS,
         aliveIds: [],
         winnerId: '',
         teacherPick: '',
@@ -123,12 +140,14 @@ export function sanitizeRpsGame(raw) {
     const round = Math.max(0, Math.floor(Number(raw.round) || 0));
     const winnerId = cleanId(raw.winnerId);
     const active = !!sessionId && phase !== 'idle';
+    const chooseMs = sanitizeRpsChooseMs(raw.chooseMs);
     return {
         sessionId: active ? sessionId : '',
         mode,
         phase: active ? phase : 'idle',
         round: active ? round : 0,
         chooseUntil: active ? Math.max(0, Math.floor(Number(raw.chooseUntil) || 0)) : 0,
+        chooseMs,
         aliveIds: active ? aliveIds : [],
         winnerId: phase === 'done' ? winnerId : '',
         teacherPick: phase === 'reveal' || phase === 'done' ? (sanitizeRpsMove(raw.teacherPick) || '') : '',
@@ -248,10 +267,12 @@ export function startRpsRound({
     round = 1,
     now = Date.now(),
     history = [],
+    chooseMs = RPS_CHOOSE_MS,
 } = {}) {
     const ids = uniqueIds(aliveIds);
     const sid = String(sessionId || '').trim().slice(0, 80) || createRpsSessionId();
     const rnd = Math.max(1, Math.floor(Number(round) || 1));
+    const ms = sanitizeRpsChooseMs(chooseMs);
     if (ids.length <= 1) {
         return sanitizeRpsGame({
             sessionId: sid,
@@ -260,6 +281,7 @@ export function startRpsRound({
             round: rnd,
             aliveIds: ids,
             winnerId: ids[0] || '',
+            chooseMs: ms,
             history,
             updatedAt: now,
         });
@@ -269,9 +291,23 @@ export function startRpsRound({
         mode: RPS_MODES.includes(mode) ? mode : 'free',
         phase: 'choose',
         round: rnd,
-        chooseUntil: now + RPS_CHOOSE_MS,
+        chooseMs: ms,
+        chooseUntil: now + ms,
         aliveIds: ids,
         history,
+        updatedAt: now,
+    });
+}
+
+/** 게시 직전 마감을 다시 잡아, 확인창·인증 대기 시간이 선택 시간을 깎지 않게 합니다. */
+export function refreshRpsChooseDeadline(state, now = Date.now()) {
+    const g = sanitizeRpsGame(state);
+    if (g.phase !== 'choose' || !g.sessionId) return g;
+    const ms = sanitizeRpsChooseMs(g.chooseMs);
+    return sanitizeRpsGame({
+        ...g,
+        chooseMs: ms,
+        chooseUntil: now + ms,
         updatedAt: now,
     });
 }
@@ -322,10 +358,28 @@ export function applyRpsReveal({
     return { ok: true, state: next, result: lastResult };
 }
 
-export function rpsChooseRemainingMs(game, now = Date.now()) {
+/**
+ * 남은 선택 시간.
+ * receivedAt(이 라운드를 화면에 받은 시각)이 있으면 느린 기기 시계로
+ * 카운트가 설정 시간보다 늘어나지 않게 자릅니다.
+ */
+export function rpsChooseRemainingMs(game, now = Date.now(), opts = {}) {
     const g = sanitizeRpsGame(game);
     if (g.phase !== 'choose') return 0;
-    return Math.max(0, g.chooseUntil - now);
+    const ms = sanitizeRpsChooseMs(g.chooseMs);
+    const wallRemain = g.chooseUntil - now;
+    const receivedAt = Math.max(0, Math.floor(Number(opts && opts.receivedAt) || 0));
+    if (receivedAt > 0) {
+        const localRemain = ms - (now - receivedAt);
+        return Math.max(0, Math.min(wallRemain, localRemain, ms));
+    }
+    return Math.max(0, Math.min(wallRemain, ms));
+}
+
+/** 공개 전까지는 남은 시간이 0이어도 손을 받을 수 있습니다(유예 구간). */
+export function rpsCanPick(game) {
+    const g = sanitizeRpsGame(game);
+    return g.phase === 'choose' && !!g.sessionId;
 }
 
 export function rpsCanReveal(game, now = Date.now()) {

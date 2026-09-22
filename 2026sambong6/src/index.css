@@ -5368,6 +5368,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             font-weight: 800;
             color: #fde68a;
         }
+        .gomoku-timer-toggle.hidden { display: none !important; }
         .gomoku-turn-hint {
             flex-shrink: 0;
             font-size: 12px;
@@ -5387,7 +5388,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .gomoku-world {
             position: absolute;
-            inset: 0;
+            left: 0;
+            top: 0;
             transform-origin: 0 0;
             will-change: transform;
         }
@@ -5398,7 +5400,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             max-width: 100%;
             max-height: 100%;
             aspect-ratio: 1;
-            margin: 0 auto;
+            margin: 0;
             background:
                 radial-gradient(circle at 30% 20%, rgba(255, 237, 213, 0.28), transparent 40%),
                 linear-gradient(160deg, #e8b86d 0%, #c9893c 55%, #a16207 100%);
@@ -5411,8 +5413,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .gomoku-hotspot {
             position: absolute;
-            width: 6.66%;
-            height: 6.66%;
+            width: 4.6%;
+            height: 4.6%;
             transform: translate(-50%, -50%);
             border: 0;
             background: transparent;

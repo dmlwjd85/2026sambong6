@@ -2334,7 +2334,7 @@
                             <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('gomoku')">
                                 <span class="boardgame-game-emoji" aria-hidden="true">⚫⚪</span>
                                 <span class="boardgame-game-name">오목</span>
-                                <span class="boardgame-game-meta">2명 · 15×15 · 자유 오목</span>
+                                <span class="boardgame-game-meta">2명 · 20×20 · 자유 오목 · AI</span>
                             </button>
                         </div>
                     </div>
@@ -2346,9 +2346,10 @@
                                 <p class="boardgame-kicker">GOMOKU LOBBY</p>
                                 <h2 class="boardgame-title">오목 방</h2>
                             </div>
-                            <button type="button" class="boardgame-primary-btn" onclick="void window.createBoardGameRoom('gomoku')">방 만들기</button>
+                            <button type="button" class="boardgame-mini-btn" onclick="void window.createBoardGameRoom('gomoku')">방 만들기</button>
+                            <button type="button" class="boardgame-primary-btn" onclick="void window.startGomokuAiGame()">AI와 두기</button>
                         </div>
-                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 10분 동안 아무도 두지 않으면 방이 사라집니다.</p>
+                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI와 두기」(강함)를 누르세요. 판은 20×20이고, 10분 동안 아무도 두지 않으면 방이 사라집니다.</p>
                         <div id="boardgameRoomList" class="boardgame-room-list">방을 불러오는 중…</div>
                     </div>
 

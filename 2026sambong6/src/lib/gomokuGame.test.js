@@ -25,19 +25,24 @@ function play(game, moves) {
 }
 
 describe('오목 판', () => {
-    it('기본은 15×15 빈 판이고 흑이 먼저 둔다', () => {
+    it('기본은 20×20 빈 판이고 흑이 먼저 둔다', () => {
         const g = emptyGomokuGame({ now: 10 });
         assert.equal(g.size, GOMOKU_SIZE);
         assert.equal(g.turn, GOMOKU_BLACK);
-        assert.equal(g.board.length, 15);
-        assert.equal(g.board[0].length, 15);
-        assert.equal(g.board[7][7], 0);
-        assert.equal(sanitizeGomokuGame({ size: 99, turn: 3, board: 'x' }).size, 19);
+        assert.equal(g.board.length, 20);
+        assert.equal(g.board[0].length, 20);
+        assert.equal(g.board[10][10], 0);
+        assert.equal(sanitizeGomokuGame({ size: 99, turn: 3, board: 'x' }).size, 20);
         assert.equal(sanitizeGomokuGame({ size: 99, turn: 3, board: 'x' }).turn, GOMOKU_BLACK);
         const fromCells = sanitizeGomokuGame({
+            cells: Array.from({ length: 400 }, (_, i) => (i === 10 * 20 + 10 ? GOMOKU_BLACK : 0)),
+        });
+        assert.equal(fromCells.board[10][10], GOMOKU_BLACK);
+        const legacy15 = sanitizeGomokuGame({
             cells: Array.from({ length: 225 }, (_, i) => (i === 7 * 15 + 7 ? GOMOKU_BLACK : 0)),
         });
-        assert.equal(fromCells.board[7][7], GOMOKU_BLACK);
+        assert.equal(legacy15.size, 15);
+        assert.equal(legacy15.board[7][7], GOMOKU_BLACK);
     });
 
     it('이미 있는 자리·차례가 아니면 거절한다', () => {

@@ -48,7 +48,7 @@ describe('보드게임 방 만들기', () => {
         assert.match(room.id, /^bg_/);
         const doc = boardRoomToDoc(room);
         assert.ok(Array.isArray(doc.game.cells));
-        assert.equal(doc.game.cells.length, 225);
+        assert.equal(doc.game.cells.length, 400);
         assert.equal(doc.game.board, undefined);
     });
 

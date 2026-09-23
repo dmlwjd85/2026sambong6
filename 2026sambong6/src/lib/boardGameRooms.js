@@ -327,6 +327,40 @@ export function approveJoinBoardRoom(room, { hostId, studentId, now } = {}) {
     return { ok: true, error: '', room: next };
 }
 
+/** 신청한 학생이 대기 중인 참가 신청을 직접 취소합니다. */
+export function cancelJoinBoardRoom(room, { studentId, now } = {}) {
+    const r = sanitizeBoardRoom(room, now);
+    const t = Math.max(0, Math.floor(Number(now) || Date.now()));
+    const id = cleanId(studentId);
+    if (!id) return { ok: false, error: 'need_login', room: r };
+    if (!r.joinRequests.some((row) => row.id === id && row.status === 'pending')) {
+        return { ok: true, error: '', room: r };
+    }
+    const joinRequests = r.joinRequests.filter((row) => !(row.id === id && row.status === 'pending'));
+    return { ok: true, error: '', room: touchRoom(r, t, { joinRequests }) };
+}
+
+/**
+ * 다른 방에 들어가거나 방을 새로 만들 때 정리할 대상.
+ * 내가 방장으로 열어 둔 대기 방, 다른 방에 넣어 둔 참가 대기만 모읍니다.
+ */
+export function collectBoardRoomVacateActions(rooms, { studentId, exceptRoomId = '' } = {}) {
+    const id = cleanId(studentId);
+    const except = String(exceptRoomId || '').trim();
+    const closeHostIds = [];
+    const cancelJoinIds = [];
+    if (!id) return { closeHostIds, cancelJoinIds };
+    (Array.isArray(rooms) ? rooms : []).forEach((raw) => {
+        const r = sanitizeBoardRoom(raw);
+        if (!r.id || r.id === except || r.status === 'closed') return;
+        if (r.status === 'waiting' && r.hostId === id) closeHostIds.push(r.id);
+        if ((r.joinRequests || []).some((row) => row.id === id && row.status === 'pending')) {
+            cancelJoinIds.push(r.id);
+        }
+    });
+    return { closeHostIds, cancelJoinIds };
+}
+
 export function rejectJoinBoardRoom(room, { hostId, studentId, now } = {}) {
     const r = sanitizeBoardRoom(room, now);
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));

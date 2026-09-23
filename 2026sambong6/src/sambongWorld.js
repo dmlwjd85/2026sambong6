@@ -153,6 +153,7 @@ import {
     startRpsRound,
 } from './lib/rpsGame.js';
 import {
+    applyGomokuForfeit,
     applyGomokuTimeout,
     GOMOKU_BLACK,
     GOMOKU_SIZE,
@@ -165,12 +166,22 @@ import {
 } from './lib/gomokuGame.js';
 import { pickGomokuAiMove } from './lib/gomokuAi.js';
 import {
+    applyBoardGameRecord,
+    boardGameRecordText,
+    gomokuRecordResult,
+    gomokuResultKey,
+    mergeBoardGameRecords,
+    sanitizeBoardGameRecords,
+} from './lib/boardGameRecords.js';
+import {
     applyBoardRoomGame,
     approveJoinBoardRoom,
     boardRoomErrorText,
     boardRoomToDoc,
     boardRoomStatusLabel,
+    cancelJoinBoardRoom,
     closeBoardRoom,
+    collectBoardRoomVacateActions,
     continueBoardRoom,
     createBoardRoom,
     expireIdleBoardRoom,
@@ -602,6 +613,7 @@ async function refreshStudentsCacheFromServer() {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            const prevBoardGameRecords = window.playerState && window.playerState.boardGameRecords;
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -610,6 +622,7 @@ async function refreshStudentsCacheFromServer() {
                 isAdmin: myId === 'gm' || myId === 'gm_a',
                 dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData.dragonBalls),
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData.dragonBallWeekendKey),
+                boardGameRecords: mergeBoardGameRecords(prevBoardGameRecords, myData.boardGameRecords),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
@@ -11192,6 +11205,8 @@ ${subjectLine}
         let _gomokuNeedFit = true;
         let _gomokuPanning = false;
         let _gomokuAiSession = null;
+        let _boardGameVacating = false;
+        let _gomokuLastVp = { w: 0, h: 0 };
         const _gomokuView = { scale: 1, min: 1, max: 4.8, x: 0, y: 0 };
 
         function escapeBoardGameText(s) {
@@ -11227,11 +11242,15 @@ ${subjectLine}
             });
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
+            const me = boardGameSelfId();
+            const mineActive = rows.find((r) => isRoomMember(r, me) && (r.status === 'waiting' || r.status === 'playing' || r.status === 'finished'));
+            if (mineActive) void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
-            const minePlaying = rows.find((r) => isRoomMember(r, boardGameSelfId()) && (r.status === 'playing' || r.status === 'finished'));
+            const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
             if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession) {
                 enterBoardGameTable(minePlaying.id);
             }
+            if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
         }
 
         async function sweepIdleBoardRooms(now = Date.now()) {
@@ -11332,6 +11351,68 @@ ${subjectLine}
             return currentBoardGameRoom();
         }
 
+        function lookupBoardGameRecords(studentId) {
+            const id = String(studentId || '');
+            if (id && id === boardGameSelfId() && window.playerState) {
+                return sanitizeBoardGameRecords(window.playerState.boardGameRecords);
+            }
+            if (id === 'gm') return sanitizeBoardGameRecords(window.gmData && window.gmData.boardGameRecords);
+            if (id === 'gm_a') return sanitizeBoardGameRecords(window.gmaData && window.gmaData.boardGameRecords);
+            const row = (window.allStudentsData || []).find((s) => String(s.id) === id);
+            return sanitizeBoardGameRecords(row && row.boardGameRecords);
+        }
+
+        function myBoardGameRecordText() {
+            return boardGameRecordText(lookupBoardGameRecords(boardGameSelfId()), 'gomoku');
+        }
+
+        function maybeRecordBoardGameResult(room) {
+            if (!room || room.status !== 'finished') return;
+            const me = boardGameSelfId();
+            if (!me || !window.playerState || window.playerState.isGuest) return;
+            const myColor = _gomokuAiSession ? GOMOKU_BLACK : gomokuSeatColor(roomMemberSeat(room, me));
+            const result = gomokuRecordResult(room.game, myColor);
+            if (!result) return;
+            const key = gomokuResultKey(room, room.game);
+            const before = sanitizeBoardGameRecords(window.playerState.boardGameRecords);
+            const after = applyBoardGameRecord(before, { gameType: 'gomoku', result, key });
+            if (before.recentKeys.join('|') === after.recentKeys.join('|')) return;
+            window.playerState.boardGameRecords = after;
+            void saveDataToCloud();
+            const recEl = document.getElementById('boardgameMyRecord');
+            if (recEl) recEl.textContent = `내 오목 전적 ${boardGameRecordText(after)}`;
+        }
+
+        async function vacateOtherBoardRooms(exceptRoomId) {
+            const me = boardGameSelfId();
+            if (!me || _boardGameVacating) return;
+            const { closeHostIds, cancelJoinIds } = collectBoardRoomVacateActions(_boardGameRooms, {
+                studentId: me,
+                exceptRoomId,
+            });
+            if (!closeHostIds.length && !cancelJoinIds.length) return;
+            _boardGameVacating = true;
+            try {
+                for (const id of closeHostIds) {
+                    const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => closeBoardRoom(cur, {
+                        actorId: me,
+                        now: Date.now(),
+                    })));
+                    if (closed) {
+                        try { await deleteDoc(boardGameRoomRef(id)); } catch (_) { /* 목록 필터로도 빠집니다 */ }
+                    }
+                }
+                for (const id of cancelJoinIds) {
+                    await enqueueBoardGameWrite(() => mutateBoardRoom(id, (cur) => cancelJoinBoardRoom(cur, {
+                        studentId: me,
+                        now: Date.now(),
+                    })));
+                }
+            } finally {
+                _boardGameVacating = false;
+            }
+        }
+
         function renderBoardGamePanel() {
             if (_gomokuAiSession) {
                 renderGomokuPlay(gomokuAiRoomView());
@@ -11357,6 +11438,8 @@ ${subjectLine}
         }
 
         function renderBoardGameLobby() {
+            const recEl = document.getElementById('boardgameMyRecord');
+            if (recEl) recEl.textContent = `내 오목 전적 ${myBoardGameRecordText()}`;
             const box = document.getElementById('boardgameRoomList');
             if (!box) return;
             const me = boardGameSelfId();
@@ -11402,7 +11485,7 @@ ${subjectLine}
                 return `<article class="boardgame-room-card">
                     <div>
                         <p class="boardgame-room-title">${escapeBoardGameText(room.hostName)}의 방</p>
-                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left}</p>
+                        <p class="boardgame-room-meta">인원 ${seats} · 남은 자리 ${left} · 방장 ${escapeBoardGameText(boardGameRecordText(lookupBoardGameRecords(room.hostId)))}</p>
                         <span class="boardgame-room-status${room.status === 'playing' ? ' is-playing' : ''}">${status}</span>
                     </div>
                     <div>${action}</div>
@@ -11454,6 +11537,8 @@ ${subjectLine}
             const confirmBar = document.getElementById('gomokuConfirmBar');
             const resultBar = document.getElementById('gomokuResultBar');
             const resultText = document.getElementById('gomokuResultText');
+            const leaveBtn = document.querySelector('.gomoku-leave-btn');
+            if (leaveBtn) leaveBtn.textContent = room.status === 'playing' ? '나가기' : '목록';
             if (playersEl) {
                 playersEl.textContent = `흑 ${memberNameBySeat(room, 'black')}  ·  백 ${memberNameBySeat(room, 'white')}`;
             }
@@ -11488,17 +11573,19 @@ ${subjectLine}
                 confirmBar.classList.toggle('hidden', !show);
                 const confirmText = document.getElementById('gomokuConfirmText');
                 if (show && confirmText && _gomokuPending) {
-                    confirmText.textContent = `(${_gomokuPending.x + 1}, ${_gomokuPending.y + 1})에 둘까요?`;
+                    confirmText.textContent = '여기 둘까요?';
                 }
             }
             if (resultBar && resultText) {
                 const done = room.status === 'finished';
                 resultBar.classList.toggle('hidden', !done);
                 if (done) {
-                    resultText.textContent = gomokuEndText(game, {
+                    const endLine = gomokuEndText(game, {
                         blackName: memberNameBySeat(room, 'black'),
                         whiteName: memberNameBySeat(room, 'white'),
                     }) || '대국이 끝났습니다.';
+                    maybeRecordBoardGameResult(room);
+                    resultText.textContent = `${endLine}  내 전적 ${myBoardGameRecordText()}`;
                 }
             }
             const endBtn = document.querySelector('#gomokuResultBar .gomoku-result-actions .boardgame-mini-btn');
@@ -11508,12 +11595,13 @@ ${subjectLine}
             bindGomokuResize();
             startGomokuTick();
             requestAnimationFrame(() => {
-                layoutGomokuBoard();
                 if (_gomokuNeedFit) {
                     _gomokuNeedFit = false;
+                    layoutGomokuBoard();
                     window.resetGomokuZoom();
                 } else {
                     applyGomokuTransform();
+                    placeGomokuConfirmNearStone(room);
                 }
             });
         }
@@ -11521,6 +11609,10 @@ ${subjectLine}
         function renderGomokuBoard(room) {
             const boardEl = document.getElementById('gomokuBoard');
             if (!boardEl) return;
+            // innerHTML 로 판을 그리기 전에 확인 막대를 빼 두지 않으면 노드가 사라집니다.
+            const parkedConfirm = document.getElementById('gomokuConfirmBar');
+            const playView = document.getElementById('boardgamePlayView');
+            if (parkedConfirm && playView) playView.appendChild(parkedConfirm);
             const game = room.game || {};
             const size = Number(game.size) || GOMOKU_SIZE;
             const board = Array.isArray(game.board) ? game.board : [];
@@ -11575,9 +11667,56 @@ ${subjectLine}
                 btn.addEventListener('click', (e) => {
                     if (_gomokuPanning) return;
                     e.preventDefault();
+                    e.stopPropagation();
                     pickGomokuPoint(Number(btn.getAttribute('data-x')), Number(btn.getAttribute('data-y')));
                 });
             });
+            // 웹 마우스: 교차점 버튼을 못 눌러도 판 클릭으로 칸을 고릅니다.
+            boardEl.onclick = (e) => {
+                if (_gomokuPanning) return;
+                if (e.target && e.target.closest && e.target.closest('.gomoku-confirm, .gomoku-place-pop, button')) return;
+                const size = Number(game.size) || GOMOKU_SIZE;
+                const pt = gomokuPointFromClient(e.clientX, e.clientY, size);
+                if (pt) pickGomokuPoint(pt.x, pt.y);
+            };
+            const confirmBar = document.getElementById('gomokuConfirmBar');
+            if (confirmBar && pending && !confirmBar.classList.contains('hidden')) {
+                boardEl.appendChild(confirmBar);
+                placeGomokuConfirmNearStone(room);
+            }
+        }
+
+        function gomokuPointFromClient(clientX, clientY, size) {
+            const board = document.getElementById('gomokuBoard');
+            if (!board) return null;
+            const n = Math.max(2, Math.floor(Number(size) || GOMOKU_SIZE));
+            const rect = board.getBoundingClientRect();
+            if (rect.width < 8 || rect.height < 8) return null;
+            const relX = (clientX - rect.left) / rect.width;
+            const relY = (clientY - rect.top) / rect.height;
+            const gx = (relX * 100 - 6) / 88;
+            const gy = (relY * 100 - 6) / 88;
+            const x = Math.round(gx * (n - 1));
+            const y = Math.round(gy * (n - 1));
+            if (x < 0 || y < 0 || x >= n || y >= n) return null;
+            return { x, y };
+        }
+
+        function placeGomokuConfirmNearStone(room) {
+            const confirmBar = document.getElementById('gomokuConfirmBar');
+            const pending = _gomokuPending;
+            if (!confirmBar || !pending || confirmBar.classList.contains('hidden')) return;
+            const game = (room && room.game) || {};
+            const size = Number(game.size) || GOMOKU_SIZE;
+            const span = size > 1 ? size - 1 : 1;
+            const left = (pending.x / span) * 88 + 6;
+            const top = (pending.y / span) * 88 + 6;
+            const flip = left > 70;
+            confirmBar.style.left = `${left}%`;
+            confirmBar.style.top = `${top}%`;
+            confirmBar.style.transform = flip ? 'translate(calc(-100% - 8px), -50%)' : 'translate(12px, -50%)';
+            confirmBar.onpointerdown = (e) => e.stopPropagation();
+            confirmBar.onclick = (e) => e.stopPropagation();
         }
 
         function pickGomokuPoint(x, y) {
@@ -11603,9 +11742,19 @@ ${subjectLine}
             _gomokuResizeBound = true;
             const onFit = () => {
                 if (_boardGameView !== 'play') return;
+                const vp = document.getElementById('gomokuBoardViewport');
+                const w = vp ? vp.clientWidth : 0;
+                const h = vp ? vp.clientHeight : 0;
+                const dw = Math.abs((_gomokuLastVp.w || 0) - w);
+                const dh = Math.abs((_gomokuLastVp.h || 0) - h);
+                // 확인 막대가 생겨 1~2px만 변한 경우에는 줌을 다시 맞추지 않습니다.
+                if (_gomokuLastVp.w && dw < 12 && dh < 12) {
+                    applyGomokuTransform();
+                    return;
+                }
+                _gomokuLastVp = { w, h };
                 layoutGomokuBoard();
-                if (_gomokuView.scale <= 1.05) window.resetGomokuZoom();
-                else applyGomokuTransform();
+                applyGomokuTransform();
             };
             window.addEventListener('resize', onFit);
             window.addEventListener('orientationchange', onFit);
@@ -11643,6 +11792,7 @@ ${subjectLine}
             const vp = document.getElementById('gomokuBoardViewport');
             _gomokuView.scale = 1;
             layoutGomokuBoard();
+            if (vp) _gomokuLastVp = { w: vp.clientWidth, h: vp.clientHeight };
             const board = document.getElementById('gomokuBoard');
             if (vp && board) {
                 _gomokuView.x = (vp.clientWidth - board.offsetWidth) / 2;
@@ -11663,7 +11813,10 @@ ${subjectLine}
             let lastMid = null;
             let moved = false;
             vp.addEventListener('pointerdown', (e) => {
-                vp.setPointerCapture(e.pointerId);
+                // 마우스는 캡처하지 않아 칸 클릭이 버튼까지 가게 합니다. 터치는 핀치용으로만 잡습니다.
+                if (e.pointerType === 'touch') {
+                    try { vp.setPointerCapture(e.pointerId); } catch (_) { /* 캡처 불가면 제스처만 약해집니다 */ }
+                }
                 pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
                 moved = false;
                 if (pointers.size === 2) {
@@ -11818,6 +11971,7 @@ ${subjectLine}
             if (window.playerState && window.playerState.isGuest) {
                 return window.customAlert('👀 게스트는 이용할 수 없어요.');
             }
+            void vacateOtherBoardRooms('');
             startGomokuAiSession();
         };
 
@@ -11827,11 +11981,7 @@ ${subjectLine}
             if (!me) return window.customAlert('로그인한 학생만 방을 만들 수 있습니다.');
             const def = getBoardGameDef(gameType || _boardGameType);
             if (!def || !db) return;
-            const existing = _boardGameRooms.find((r) => r.hostId === me && r.gameType === def.id && r.status === 'waiting');
-            if (existing) {
-                await window.customAlert('이미 만든 대기 방이 있습니다.');
-                return;
-            }
+            await vacateOtherBoardRooms('');
             const made = createBoardRoom({
                 gameType: def.id,
                 hostId: me,
@@ -11855,6 +12005,7 @@ ${subjectLine}
             if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
             const me = boardGameSelfId();
             if (!me) return window.customAlert('로그인한 학생만 참가할 수 있습니다.');
+            await vacateOtherBoardRooms(roomId);
             await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (room) => requestJoinBoardRoom(room, {
                 studentId: me,
                 studentName: boardGameSelfName(),
@@ -11985,7 +12136,34 @@ ${subjectLine}
             renderBoardGameLobby();
         };
 
-        window.leaveBoardGameTable = function () {
+        async function forfeitCurrentGomoku() {
+            const me = boardGameSelfId();
+            _gomokuPending = null;
+            if (_gomokuAiSession) {
+                const done = applyGomokuForfeit(_gomokuAiSession.game, { color: GOMOKU_BLACK, now: Date.now() });
+                if (done.ok) _gomokuAiSession.game = done.game;
+                _gomokuAiSession.thinking = false;
+                renderGomokuPlay(gomokuAiRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            const color = gomokuSeatColor(roomMemberSeat(room, me));
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const done = applyGomokuForfeit(cur.game, { color, now: Date.now() });
+                if (!done.ok) return { ok: false, error: done.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
+            }));
+        }
+
+        window.leaveBoardGameTable = async function () {
+            const room = currentGomokuPlayRoom();
+            if (room && room.status === 'playing') {
+                const ok = await window.customConfirm('나가면 패배로 기록됩니다. 나갈까요?');
+                if (!ok) return;
+                await forfeitCurrentGomoku();
+                return;
+            }
             clearGomokuAiSession();
             _boardGameActiveId = '';
             _gomokuPending = null;
@@ -26299,7 +26477,7 @@ ${subjectLine}
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd',
-            'stockInvestments', 'stockInvestDaily', 'catBattle',
+            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',

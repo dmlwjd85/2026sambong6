@@ -6,6 +6,7 @@
  * - 가로·세로·대각선으로 같은 색 돌이 5개 이상 이어지면 승리합니다.
  * - 보드가 가득 차면 무승부입니다.
  * - 30초 턴 타이머가 켜진 방에서 시간을 넘기면 그 턴 플레이어가 집니다. (패스 없음)
+ * - 대국 중 나가면 나간 쪽이 지고, 상대가 이깁니다.
  *
  * 보드게임 공통 방(boardGameRooms.js) 위에 붙는 첫 게임입니다.
  * 혼자 하기(AI)는 Firestore 방 없이 gomokuAi.js 를 씁니다.
@@ -24,7 +25,7 @@ export const GOMOKU_COLOR_LABEL = Object.freeze({
     2: '백',
 });
 
-export const GOMOKU_END_REASONS = Object.freeze(['', 'five', 'draw', 'timeout']);
+export const GOMOKU_END_REASONS = Object.freeze(['', 'five', 'draw', 'timeout', 'forfeit']);
 
 function clampBoardSize(raw, fallback = GOMOKU_SIZE) {
     const n = Math.floor(Number(raw));
@@ -226,6 +227,27 @@ export function placeGomokuStone(game, { x, y, color, now } = {}) {
  * 시간 초과 시 현재 턴 플레이어가 집니다.
  * 학급용으로 패스 없이 바로 패배로 처리해 다음 판을 빨리 시작합니다.
  */
+/**
+ * 대국 중 나가면 나간 색이 지고, 상대가 이깁니다.
+ */
+export function applyGomokuForfeit(game, { color, now } = {}) {
+    const g = sanitizeGomokuGame(game, { now });
+    if (g.winner || g.endReason === 'draw') return { ok: false, error: 'already_over', game: g };
+    const loser = color === GOMOKU_WHITE ? GOMOKU_WHITE : (color === GOMOKU_BLACK ? GOMOKU_BLACK : 0);
+    if (!loser) return { ok: false, error: 'bad_color', game: g };
+    const winner = loser === GOMOKU_BLACK ? GOMOKU_WHITE : GOMOKU_BLACK;
+    return {
+        ok: true,
+        error: '',
+        game: {
+            ...g,
+            winner,
+            endReason: 'forfeit',
+            turnStartedAt: Math.max(0, Math.floor(Number(now) || g.turnStartedAt || 0)),
+        },
+    };
+}
+
 export function applyGomokuTimeout(game, { now } = {}) {
     const g = sanitizeGomokuGame(game, { now });
     if (g.winner || g.endReason === 'draw') return { ok: false, error: 'already_over', game: g };
@@ -281,6 +303,7 @@ export function gomokuEndText(game, { blackName = '흑', whiteName = '백' } = {
     if (g.endReason === 'draw') return '가득 차서 무승부입니다.';
     const winnerName = g.winner === GOMOKU_WHITE ? whiteName : blackName;
     if (g.endReason === 'timeout') return `시간 초과! ${winnerName}의 승리입니다.`;
+    if (g.endReason === 'forfeit') return `기권! ${winnerName}의 승리입니다.`;
     if (g.winner) return `${winnerName}이(가) 다섯 목을 만들었습니다!`;
     return '';
 }

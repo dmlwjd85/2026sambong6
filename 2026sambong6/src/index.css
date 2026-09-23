@@ -5376,6 +5376,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #fbbf24;
             min-height: 1.1rem;
         }
+        .gomoku-rule-note {
+            flex-shrink: 0;
+            margin: 0;
+            font-size: 11px;
+            font-weight: 800;
+            line-height: 1.35;
+            color: #fecaca;
+        }
         .gomoku-viewport {
             position: relative;
             flex: 1;
@@ -5427,6 +5435,11 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .gomoku-hotspot.is-last {
             box-shadow: 0 0 0 2px #ef4444;
+        }
+        .gomoku-hotspot.is-forbidden {
+            background:
+                linear-gradient(to top right, transparent 46%, rgba(220, 38, 38, 0.95) 47%, rgba(220, 38, 38, 0.95) 53%, transparent 54%),
+                linear-gradient(to bottom right, transparent 46%, rgba(220, 38, 38, 0.95) 47%, rgba(220, 38, 38, 0.95) 53%, transparent 54%);
         }
         .gomoku-zoom-bar {
             display: flex;
@@ -5486,6 +5499,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         @media (orientation: landscape) and (max-height: 500px) {
             .boardgame-lead,
+            .gomoku-rule-note,
             .gomoku-zoom-help { display: none; }
             .boardgame-title { font-size: 1.05rem; }
             .gomoku-hud-timer { font-size: 1.1rem; }

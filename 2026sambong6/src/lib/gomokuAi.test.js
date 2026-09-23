@@ -11,6 +11,8 @@ import {
     GOMOKU_SIZE,
     GOMOKU_WHITE,
     emptyGomokuGame,
+    gomokuIsDoubleThree,
+    placeGomokuStone,
 } from './gomokuGame.js';
 
 describe('오목 AI', () => {
@@ -80,6 +82,21 @@ describe('오목 AI', () => {
         const mv = pickGomokuAiMove(g, { color: GOMOKU_WHITE });
         assert.equal(mv.y, 10);
         assert.ok(mv.x === 7 || mv.x === 11);
+    });
+
+    it('흑은 3×3 금수 자리에 두지 않는다', () => {
+        const g = emptyGomokuGame();
+        g.turn = GOMOKU_BLACK;
+        g.board[8][6] = GOMOKU_BLACK;
+        g.board[8][7] = GOMOKU_BLACK;
+        g.board[6][8] = GOMOKU_BLACK;
+        g.board[7][8] = GOMOKU_BLACK;
+        g.board[2][2] = GOMOKU_WHITE;
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_BLACK), true);
+        const mv = pickGomokuAiMove(g, { color: GOMOKU_BLACK });
+        assert.ok(!(mv.x === 8 && mv.y === 8));
+        const placed = placeGomokuStone(g, { x: mv.x, y: mv.y, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(placed.ok, true, placed.error);
     });
 
     it('한 수 계산이 1초를 넘기지 않는다', () => {

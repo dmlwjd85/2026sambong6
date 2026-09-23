@@ -2334,7 +2334,7 @@
                             <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('gomoku')">
                                 <span class="boardgame-game-emoji" aria-hidden="true">⚫⚪</span>
                                 <span class="boardgame-game-name">오목</span>
-                                <span class="boardgame-game-meta">2명 · 20×20 · 자유 오목 · AI</span>
+                                <span class="boardgame-game-meta">2명 · 20×20 · 흑 3×3 금지 · AI</span>
                             </button>
                         </div>
                     </div>
@@ -2349,7 +2349,7 @@
                             <button type="button" class="boardgame-mini-btn" onclick="void window.createBoardGameRoom('gomoku')">방 만들기</button>
                             <button type="button" class="boardgame-primary-btn" onclick="void window.startGomokuAiGame()">AI와 두기</button>
                         </div>
-                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI와 두기」(강함)를 누르세요. 판은 20×20이고, 10분 동안 아무도 두지 않으면 방이 사라집니다.</p>
+                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI와 두기」(강함)를 누르세요. 판은 20×20이고, 10분 동안 아무도 두지 않으면 방이 사라집니다. 흑은 3×3 금지입니다. 열린 3(한 칸 뛴 3 포함)을 동시에 두 개 만들 수 없고, 백은 제한이 없습니다. 다섯 목은 그대로 승리입니다.</p>
                         <div id="boardgameRoomList" class="boardgame-room-list">방을 불러오는 중…</div>
                     </div>
 
@@ -2364,6 +2364,7 @@
                             </label>
                         </div>
                         <p id="gomokuTurnHint" class="gomoku-turn-hint">차례를 기다리는 중</p>
+                        <p class="gomoku-rule-note">흑 3×3 금지 · 빨간 × 자리는 열린 3이 두 개가 되어 둘 수 없습니다.</p>
                         <div id="gomokuBoardViewport" class="gomoku-viewport" aria-label="오목판">
                             <div id="gomokuBoardWorld" class="gomoku-world">
                                 <div id="gomokuBoard" class="gomoku-board" role="grid"></div>

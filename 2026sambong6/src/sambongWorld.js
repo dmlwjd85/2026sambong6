@@ -160,7 +160,9 @@ import {
     emptyGomokuGame,
     gomokuEndText,
     gomokuErrorText,
+    gomokuIsDoubleThree,
     gomokuSeatColor,
+    listGomokuDoubleThreePoints,
     placeGomokuStone,
 } from './lib/gomokuGame.js';
 import { pickGomokuAiMove } from './lib/gomokuAi.js';
@@ -11477,10 +11479,11 @@ ${subjectLine}
             const myColor = gomokuSeatColor(mySeat);
             const game = room.game || {};
             if (hint) {
+                const banHint = game.turn === GOMOKU_BLACK ? ' 빨간 ×는 3×3 금수입니다.' : '';
                 if (room.status === 'finished') hint.textContent = '한 판이 끝났습니다.';
                 else if (aiMode && _gomokuAiSession.thinking) hint.textContent = 'AI가 생각 중입니다…';
-                else if (game.turn === myColor) hint.textContent = '당신 차례입니다. 칸을 고른 뒤 「여기 두기」를 누르세요.';
-                else hint.textContent = `${game.turn === GOMOKU_WHITE ? '백' : '흑'} 차례입니다.`;
+                else if (game.turn === myColor) hint.textContent = `당신 차례입니다. 칸을 고른 뒤 「여기 두기」를 누르세요.${banHint}`;
+                else hint.textContent = `${game.turn === GOMOKU_WHITE ? '백' : '흑'} 차례입니다.${banHint}`;
             }
             if (confirmBar) {
                 const canPlace = room.status === 'playing' && game.turn === myColor && !(aiMode && _gomokuAiSession.thinking);
@@ -11552,6 +11555,8 @@ ${subjectLine}
                 }
             }
             const pending = _gomokuPending;
+            const showBan = room.status === 'playing' && (game.turn === GOMOKU_BLACK) && !game.winner && game.endReason !== 'draw';
+            const banned = showBan ? new Set(listGomokuDoubleThreePoints(board).map((p) => `${p.x},${p.y}`)) : new Set();
             let ghost = '';
             if (pending) {
                 const px = ((pending.x / (size - 1)) * 88 + 6).toFixed(3);
@@ -11568,8 +11573,9 @@ ${subjectLine}
                 const top = ((y / (size - 1)) * 88 + 6);
                 const isLast = last && last.x === x && last.y === y;
                 const isPend = pending && pending.x === x && pending.y === y;
+                const isBan = banned.has(`${x},${y}`);
                 const hot = Math.max(3.2, (88 / span) * 0.9);
-                return `<button type="button" class="gomoku-hotspot${isLast ? ' is-last' : ''}${isPend ? ' is-pending' : ''}" style="left:${left}%;top:${top}%;width:${hot}%;height:${hot}%" data-x="${x}" data-y="${y}" aria-label="${x + 1}열 ${y + 1}행"></button>`;
+                return `<button type="button" class="gomoku-hotspot${isLast ? ' is-last' : ''}${isPend ? ' is-pending' : ''}${isBan ? ' is-forbidden' : ''}" style="left:${left}%;top:${top}%;width:${hot}%;height:${hot}%" data-x="${x}" data-y="${y}" aria-label="${x + 1}열 ${y + 1}행${isBan ? ' 3×3 금수' : ''}"></button>`;
             }).join('');
             boardEl.querySelectorAll('.gomoku-hotspot').forEach((btn) => {
                 btn.addEventListener('click', (e) => {
@@ -11592,6 +11598,10 @@ ${subjectLine}
             }
             if (room.game && room.game.board && room.game.board[y] && room.game.board[y][x]) {
                 void window.customAlert('이미 돌이 있는 자리입니다.');
+                return;
+            }
+            if (room.game && room.game.board && gomokuIsDoubleThree(room.game.board, x, y, color)) {
+                void window.customAlert('3×3 금수입니다. 흑은 열린 3을 두 개 동시에 만들 수 없습니다.');
                 return;
             }
             _gomokuPending = { x, y };

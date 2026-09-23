@@ -9,6 +9,7 @@ import {
     GOMOKU_EMPTY,
     GOMOKU_SIZE,
     GOMOKU_WHITE,
+    gomokuIsDoubleThree,
     inGomokuBoard,
     sanitizeGomokuGame,
 } from './gomokuGame.js';
@@ -180,6 +181,7 @@ function bestCandidateScore(board, color, candidates) {
     let best = -Infinity;
     for (let i = 0; i < candidates.length; i += 1) {
         const c = candidates[i];
+        if (gomokuIsDoubleThree(board, c.x, c.y, color)) continue;
         const s = gomokuPointScore(board, c.x, c.y, color);
         if (s > best) best = s;
     }
@@ -193,9 +195,19 @@ export function pickGomokuAiMove(game, { color } = {}) {
     const g = sanitizeGomokuGame(game);
     const my = color === GOMOKU_BLACK || color === GOMOKU_WHITE ? color : (g.turn || GOMOKU_WHITE);
     const board = g.board;
-    const cands = listGomokuAiCandidates(board, 2);
+    const cands = listGomokuAiCandidates(board, 2).filter((c) => !gomokuIsDoubleThree(board, c.x, c.y, my));
     if (!cands.length) {
         const c = Math.floor((g.size || GOMOKU_SIZE) / 2);
+        if (!gomokuIsDoubleThree(board, c, c, my) && board[c] && board[c][c] === GOMOKU_EMPTY) {
+            return { x: c, y: c, score: 0 };
+        }
+        for (let y = 0; y < board.length; y += 1) {
+            for (let x = 0; x < board.length; x += 1) {
+                if (board[y][x] !== GOMOKU_EMPTY) continue;
+                if (gomokuIsDoubleThree(board, x, y, my)) continue;
+                return { x, y, score: 0 };
+            }
+        }
         return { x: c, y: c, score: 0 };
     }
 
@@ -218,7 +230,8 @@ export function pickGomokuAiMove(game, { color } = {}) {
         if (mv.score >= GOMOKU_AI_SCORE.five) return mv;
         const nextBoard = clonePlace(board, mv.x, mv.y, my);
         const replyCands = listGomokuAiCandidates(nextBoard, 2);
-        const oppBest = bestCandidateScore(nextBoard, opp(my), replyCands);
+        const oppBestRaw = bestCandidateScore(nextBoard, opp(my), replyCands);
+        const oppBest = Number.isFinite(oppBestRaw) ? oppBestRaw : 0;
         if (oppBest >= GOMOKU_AI_SCORE.five * 7) {
             const val = mv.score - GOMOKU_AI_SCORE.five;
             if (val > bestVal) {

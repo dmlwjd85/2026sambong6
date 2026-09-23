@@ -8,7 +8,10 @@ import {
     emptyGomokuGame,
     gomokuBoardFull,
     gomokuHasFive,
+    gomokuIsDoubleThree,
+    gomokuOpenThreeCount,
     gomokuWinnerSeat,
+    listGomokuDoubleThreePoints,
     placeGomokuStone,
     sanitizeGomokuGame,
 } from './gomokuGame.js';
@@ -101,7 +104,7 @@ describe('오목 승패', () => {
         assert.equal(gomokuHasFive(diag.board, 4, 4), true);
     });
 
-    it('여섯 목(장목)도 학급용 자유 오목에서는 승리다', () => {
+    it('여섯 목(장목)도 승리다', () => {
         const board = emptyGomokuGame().board;
         for (let x = 0; x < 6; x += 1) board[8][x] = GOMOKU_WHITE;
         assert.equal(gomokuHasFive(board, 2, 8), true);
@@ -133,5 +136,122 @@ describe('오목 승패', () => {
         assert.equal(r.game.winner, GOMOKU_WHITE);
         const again = applyGomokuTimeout(r.game, { now: 40000 });
         assert.equal(again.ok, false);
+    });
+});
+
+describe('오목 3×3 금수', () => {
+    function boardWith(stones) {
+        const g = emptyGomokuGame();
+        stones.forEach(([x, y, color]) => {
+            g.board[y][x] = color;
+        });
+        return g;
+    }
+
+    it('흑의 열린 3 두 개는 금수이고, 판을 바꾸지 않는다', () => {
+        const g = boardWith([
+            [6, 8, GOMOKU_BLACK], [7, 8, GOMOKU_BLACK],
+            [8, 6, GOMOKU_BLACK], [8, 7, GOMOKU_BLACK],
+        ]);
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_BLACK), true);
+        assert.equal(g.board[8][8], 0);
+        const placed = placeGomokuStone(g, { x: 8, y: 8, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(placed.ok, false);
+        assert.equal(placed.error, 'double_three');
+        assert.equal(placed.game.board[8][8], 0);
+        assert.equal(placed.game.moveCount, 0);
+    });
+
+    it('열린 3 하나만 만드는 수는 둘 수 있다', () => {
+        const g = boardWith([
+            [6, 8, GOMOKU_BLACK], [7, 8, GOMOKU_BLACK],
+            [2, 2, GOMOKU_WHITE],
+        ]);
+        g.turn = GOMOKU_BLACK;
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_BLACK), false);
+        const placed = placeGomokuStone(g, { x: 8, y: 8, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(placed.ok, true);
+        assert.equal(gomokuOpenThreeCount(placed.game.board, 8, 8, GOMOKU_BLACK), 1);
+    });
+
+    it('한 칸 뛴 3도 열린 3으로 센다', () => {
+        const g = boardWith([
+            [5, 8, GOMOKU_BLACK], [6, 8, GOMOKU_BLACK],
+            [8, 6, GOMOKU_BLACK], [8, 7, GOMOKU_BLACK],
+        ]);
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_BLACK), true);
+        const placed = placeGomokuStone(g, { x: 8, y: 8, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(placed.error, 'double_three');
+        const otherGap = boardWith([
+            [6, 8, GOMOKU_BLACK], [9, 8, GOMOKU_BLACK],
+            [8, 6, GOMOKU_BLACK], [8, 7, GOMOKU_BLACK],
+        ]);
+        assert.equal(gomokuIsDoubleThree(otherGap.board, 8, 8, GOMOKU_BLACK), true);
+    });
+
+    it('막힌 3은 3×3에 넣지 않는다', () => {
+        const g = boardWith([
+            [5, 8, GOMOKU_WHITE], [6, 8, GOMOKU_BLACK], [7, 8, GOMOKU_BLACK],
+            [8, 6, GOMOKU_BLACK], [8, 7, GOMOKU_BLACK],
+        ]);
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_BLACK), false);
+    });
+
+    it('4와 3을 동시에 만드는 수는 금수가 아니다', () => {
+        const g = boardWith([
+            [5, 8, GOMOKU_BLACK], [6, 8, GOMOKU_BLACK], [7, 8, GOMOKU_BLACK],
+            [8, 6, GOMOKU_BLACK], [8, 7, GOMOKU_BLACK],
+            [1, 1, GOMOKU_WHITE],
+        ]);
+        g.turn = GOMOKU_BLACK;
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_BLACK), false);
+        const placed = placeGomokuStone(g, { x: 8, y: 8, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(placed.ok, true);
+        assert.equal(placed.game.winner, 0);
+    });
+
+    it('같은 줄의 열린 3 두 개도 금수다', () => {
+        const g = boardWith([
+            [1, 10, GOMOKU_BLACK], [2, 10, GOMOKU_BLACK],
+            [6, 10, GOMOKU_BLACK], [7, 10, GOMOKU_BLACK],
+        ]);
+        assert.equal(gomokuIsDoubleThree(g.board, 4, 10, GOMOKU_BLACK), true);
+    });
+
+    it('백은 3×3을 둬도 된다', () => {
+        const g = boardWith([
+            [6, 8, GOMOKU_WHITE], [7, 8, GOMOKU_WHITE],
+            [8, 6, GOMOKU_WHITE], [8, 7, GOMOKU_WHITE],
+            [0, 0, GOMOKU_BLACK],
+        ]);
+        g.turn = GOMOKU_WHITE;
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_WHITE), false);
+        const placed = placeGomokuStone(g, { x: 8, y: 8, color: GOMOKU_WHITE, now: 1 });
+        assert.equal(placed.ok, true);
+        assert.equal(placed.game.board[8][8], GOMOKU_WHITE);
+    });
+
+    it('다섯 목을 만드는 수는 다른 열린 3이 있어도 승리한다', () => {
+        const g = boardWith([
+            [0, 4, GOMOKU_BLACK], [1, 4, GOMOKU_BLACK], [2, 4, GOMOKU_BLACK], [3, 4, GOMOKU_BLACK],
+            [4, 2, GOMOKU_BLACK], [4, 3, GOMOKU_BLACK],
+            [2, 2, GOMOKU_BLACK], [3, 3, GOMOKU_BLACK],
+            [0, 8, GOMOKU_WHITE],
+        ]);
+        g.turn = GOMOKU_BLACK;
+        const placed = placeGomokuStone(g, { x: 4, y: 4, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(placed.ok, true);
+        assert.equal(placed.game.winner, GOMOKU_BLACK);
+        assert.equal(placed.game.endReason, 'five');
+    });
+
+    it('흑 차례 금수 칸만 골라 표시한다', () => {
+        const g = boardWith([
+            [6, 8, GOMOKU_BLACK], [7, 8, GOMOKU_BLACK],
+            [8, 6, GOMOKU_BLACK], [8, 7, GOMOKU_BLACK],
+        ]);
+        const marks = listGomokuDoubleThreePoints(g.board);
+        assert.ok(marks.some((p) => p.x === 8 && p.y === 8));
+        assert.ok(marks.every((p) => g.board[p.y][p.x] === 0));
     });
 });

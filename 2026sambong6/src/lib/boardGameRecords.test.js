@@ -5,6 +5,7 @@ import {
     boardGameRecordText,
     gomokuRecordResult,
     gomokuResultKey,
+    mergeBoardGameRecords,
     sanitizeBoardGameRecords,
 } from './boardGameRecords.js';
 import { GOMOKU_BLACK, GOMOKU_WHITE, applyGomokuForfeit, emptyGomokuGame } from './gomokuGame.js';
@@ -35,6 +36,16 @@ describe('보드게임 승패 기록', () => {
         draw.endReason = 'draw';
         assert.equal(gomokuRecordResult(draw, GOMOKU_BLACK), 'draw');
         assert.match(gomokuResultKey({ id: 'r1', game: g }), /^r1:/);
+    });
+
+    it('스냅샷과 로컬 전적을 합치면 더 큰 숫자를 남긴다', () => {
+        const merged = mergeBoardGameRecords(
+            { gomoku: { wins: 1, losses: 2, draws: 0 }, recentKeys: ['a'] },
+            { gomoku: { wins: 0, losses: 0, draws: 0 }, recentKeys: [] }
+        );
+        assert.equal(merged.gomoku.wins, 1);
+        assert.equal(merged.gomoku.losses, 2);
+        assert.deepEqual(merged.recentKeys, ['a']);
     });
 });
 

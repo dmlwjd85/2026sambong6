@@ -52,6 +52,27 @@ export function boardGameRecordText(records, gameType = 'gomoku') {
 }
 
 /** 이미 반영한 판이면 그대로 두고, 아니면 승/패/무를 하나 더합니다. */
+/** 방금 로컬에 올린 전적이 스냅샷에 아직 없을 때, 더 큰 숫자와 최근 키를 남깁니다. */
+export function mergeBoardGameRecords(a, b) {
+    const left = sanitizeBoardGameRecords(a);
+    const right = sanitizeBoardGameRecords(b);
+    const seen = new Set();
+    const recentKeys = [];
+    left.recentKeys.concat(right.recentKeys).forEach((k) => {
+        if (!k || seen.has(k)) return;
+        seen.add(k);
+        recentKeys.push(k);
+    });
+    return {
+        gomoku: {
+            wins: Math.max(left.gomoku.wins, right.gomoku.wins),
+            losses: Math.max(left.gomoku.losses, right.gomoku.losses),
+            draws: Math.max(left.gomoku.draws, right.gomoku.draws),
+        },
+        recentKeys: recentKeys.slice(-24),
+    };
+}
+
 export function applyBoardGameRecord(records, { gameType = 'gomoku', result, key } = {}) {
     const next = sanitizeBoardGameRecords(records);
     const k = String(key || '').slice(0, 80);

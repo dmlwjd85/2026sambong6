@@ -303,7 +303,7 @@ export function gomokuEndText(game, { blackName = '흑', whiteName = '백' } = {
     if (g.endReason === 'draw') return '가득 차서 무승부입니다.';
     const winnerName = g.winner === GOMOKU_WHITE ? whiteName : blackName;
     if (g.endReason === 'timeout') return `시간 초과! ${winnerName}의 승리입니다.`;
-    if (g.endReason === 'forfeit') return `상대가 나가서 ${winnerName}의 승리입니다.`;
+    if (g.endReason === 'forfeit') return `기권! ${winnerName}의 승리입니다.`;
     if (g.winner) return `${winnerName}이(가) 다섯 목을 만들었습니다!`;
     return '';
 }

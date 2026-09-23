@@ -170,6 +170,7 @@ import {
     boardGameRecordText,
     gomokuRecordResult,
     gomokuResultKey,
+    mergeBoardGameRecords,
     sanitizeBoardGameRecords,
 } from './lib/boardGameRecords.js';
 import {
@@ -612,6 +613,7 @@ async function refreshStudentsCacheFromServer() {
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            const prevBoardGameRecords = window.playerState && window.playerState.boardGameRecords;
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -620,6 +622,7 @@ async function refreshStudentsCacheFromServer() {
                 isAdmin: myId === 'gm' || myId === 'gm_a',
                 dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData.dragonBalls),
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData.dragonBallWeekendKey),
+                boardGameRecords: mergeBoardGameRecords(prevBoardGameRecords, myData.boardGameRecords),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
@@ -11581,8 +11584,8 @@ ${subjectLine}
                         blackName: memberNameBySeat(room, 'black'),
                         whiteName: memberNameBySeat(room, 'white'),
                     }) || '대국이 끝났습니다.';
-                    resultText.textContent = `${endLine}  내 전적 ${myBoardGameRecordText()}`;
                     maybeRecordBoardGameResult(room);
+                    resultText.textContent = `${endLine}  내 전적 ${myBoardGameRecordText()}`;
                 }
             }
             const endBtn = document.querySelector('#gomokuResultBar .gomoku-result-actions .boardgame-mini-btn');

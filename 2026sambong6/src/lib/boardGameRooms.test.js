@@ -16,6 +16,7 @@ import {
     requestJoinBoardRoom,
     cancelJoinBoardRoom,
     collectBoardRoomVacateActions,
+    pickAnchoredBoardRoom,
     sanitizeBoardRoom,
     setBoardRoomTimer,
     startBoardRoom,
@@ -153,6 +154,37 @@ describe('30초 타이머와 종료 후 흐름', () => {
         const ended = closeBoardRoom(rematch.room, { actorId: '1', now: 1600 });
         assert.equal(ended.ok, true);
         assert.equal(ended.room.status, 'closed');
+    });
+});
+
+describe('끝난 판과 새 방', () => {
+    it('끝난 방이 앞에 있어도 새로 만든 대기실을 남긴다', () => {
+        const finished = makeRoom(1000);
+        finished.id = 'bg_old';
+        finished.status = 'finished';
+        finished.updatedAt = 2000;
+        const created = createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '민준', now: 5000 });
+        created.room.id = 'bg_new';
+        const anchored = pickAnchoredBoardRoom([finished, created.room], '1');
+        assert.equal(anchored && anchored.id, 'bg_new');
+        const actions = collectBoardRoomVacateActions([finished, created.room], {
+            studentId: '1',
+            exceptRoomId: anchored.id,
+        });
+        assert.deepEqual(actions.closeHostIds, []);
+        assert.equal(pickAnchoredBoardRoom([finished], '1'), null);
+    });
+
+    it('진행 중인 판이 있으면 더 최근 대기실보다 그 판을 붙잡는다', () => {
+        const playing = makeRoom(1000);
+        playing.id = 'bg_live';
+        playing.status = 'playing';
+        playing.updatedAt = 2000;
+        const waiting = createBoardRoom({ gameType: 'gomoku', hostId: '1', hostName: '민준', now: 9000 }).room;
+        waiting.id = 'bg_wait';
+        const anchored = pickAnchoredBoardRoom([waiting, playing], '1');
+        assert.equal(anchored && anchored.id, 'bg_live');
+        assert.equal(anchored.status, 'playing');
     });
 });
 

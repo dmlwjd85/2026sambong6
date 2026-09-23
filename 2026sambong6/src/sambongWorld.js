@@ -191,6 +191,7 @@ import {
     isRoomMember,
     isTurnTimedOut,
     listVisibleBoardRooms,
+    pickAnchoredBoardRoom,
     rejectJoinBoardRoom,
     remainingSeats,
     requestJoinBoardRoom,
@@ -6317,6 +6318,7 @@ ${subjectLine}
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            const prevBoardGameRecords = window.playerState && window.playerState.boardGameRecords;
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -6325,6 +6327,7 @@ ${subjectLine}
                 isAdmin: myId === 'gm' || myId === 'gm_a',
                 dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData && myData.dragonBalls),
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData && myData.dragonBallWeekendKey),
+                boardGameRecords: mergeBoardGameRecords(prevBoardGameRecords, myData && myData.boardGameRecords),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
@@ -11243,14 +11246,16 @@ ${subjectLine}
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
-            const mineActive = rows.find((r) => isRoomMember(r, me) && (r.status === 'waiting' || r.status === 'playing' || r.status === 'finished'));
-            if (mineActive) void vacateOtherBoardRooms(mineActive.id);
+            // 끝난 판은 문서 id가 더 앞이라, 그 방을 기준으로 정리하면 새 대기실이 바로 삭제됩니다.
+            const anchored = pickAnchoredBoardRoom(rows, me);
+            if (anchored) void vacateOtherBoardRooms(anchored.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
-            const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
-            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession) {
-                enterBoardGameTable(minePlaying.id);
+            if (anchored && anchored.status === 'playing' && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession) {
+                enterBoardGameTable(anchored.id);
             }
-            if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
+            rows.forEach((room) => {
+                if (room.status === 'finished' && isRoomMember(room, me)) maybeRecordBoardGameResult(room);
+            });
         }
 
         async function sweepIdleBoardRooms(now = Date.now()) {
@@ -23312,6 +23317,13 @@ ${subjectLine}
                         if (serverRpsPick.move && serverRpsPick.at >= localRpsPick.at) {
                             dataToSave.rpsPick = serverRpsPick;
                         }
+                        // 오목 전적은 절대값입니다. 다른 화면·다른 기기의 낡은 승패가 서버 기록을 지우지 않게 합칩니다.
+                        if (dataToSave.boardGameRecords || serverData.boardGameRecords || (window.playerState && window.playerState.boardGameRecords)) {
+                            dataToSave.boardGameRecords = mergeBoardGameRecords(
+                                mergeBoardGameRecords(dataToSave.boardGameRecords, window.playerState && window.playerState.boardGameRecords),
+                                serverData.boardGameRecords,
+                            );
+                        }
                         // 캐시·다른 화면의 빈 보관함이 서버 성구를 지우지 않게 합칩니다.
                         if (opts.replaceDragonBalls) {
                             dataToSave.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
@@ -23360,9 +23372,11 @@ ${subjectLine}
                         };
                         const prevBalls = window.playerState.dragonBalls;
                         const prevKey = window.playerState.dragonBallWeekendKey;
+                        const prevBoardGameRecords = window.playerState.boardGameRecords;
                         window.playerState = { ...serverRestoreData, ...roleFlags };
                         window.playerState.dragonBalls = resolveDragonBallsForSnapshot(prevBalls, serverRestoreData.dragonBalls);
                         window.playerState.dragonBallWeekendKey = resolveDragonBallWeekendKey(prevKey, serverRestoreData.dragonBallWeekendKey);
+                        window.playerState.boardGameRecords = mergeBoardGameRecords(prevBoardGameRecords, serverRestoreData.boardGameRecords);
                         if (typeof updateUI === 'function') updateUI();
                     }
                     if (blockedByStaleSeason2) {
@@ -23414,6 +23428,12 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankNegativeSinceYmd')) {
                     window.playerState.bankNegativeSinceYmd = dataToSave.bankNegativeSinceYmd || '';
+                }
+                if (dataToSave.boardGameRecords) {
+                    window.playerState.boardGameRecords = mergeBoardGameRecords(
+                        window.playerState.boardGameRecords,
+                        dataToSave.boardGameRecords,
+                    );
                 }
                 return true;
             } catch (e) {

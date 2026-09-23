@@ -218,17 +218,31 @@ describe('오목 3×3 금수', () => {
         assert.equal(gomokuIsDoubleThree(g.board, 4, 10, GOMOKU_BLACK), true);
     });
 
-    it('백은 3×3을 둬도 된다', () => {
+    it('백의 열린 3 두 개도 금수다', () => {
         const g = boardWith([
             [6, 8, GOMOKU_WHITE], [7, 8, GOMOKU_WHITE],
             [8, 6, GOMOKU_WHITE], [8, 7, GOMOKU_WHITE],
             [0, 0, GOMOKU_BLACK],
         ]);
         g.turn = GOMOKU_WHITE;
-        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_WHITE), false);
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_WHITE), true);
+        assert.equal(g.board[8][8], 0);
         const placed = placeGomokuStone(g, { x: 8, y: 8, color: GOMOKU_WHITE, now: 1 });
-        assert.equal(placed.ok, true);
-        assert.equal(placed.game.board[8][8], GOMOKU_WHITE);
+        assert.equal(placed.ok, false);
+        assert.equal(placed.error, 'double_three');
+        assert.equal(placed.game.board[8][8], 0);
+        const marks = listGomokuDoubleThreePoints(g.board, GOMOKU_WHITE);
+        assert.ok(marks.some((p) => p.x === 8 && p.y === 8));
+        const win = boardWith([
+            [0, 4, GOMOKU_WHITE], [1, 4, GOMOKU_WHITE], [2, 4, GOMOKU_WHITE], [3, 4, GOMOKU_WHITE],
+            [4, 2, GOMOKU_WHITE], [4, 3, GOMOKU_WHITE],
+            [2, 2, GOMOKU_WHITE], [3, 3, GOMOKU_WHITE],
+            [0, 8, GOMOKU_BLACK],
+        ]);
+        win.turn = GOMOKU_WHITE;
+        const five = placeGomokuStone(win, { x: 4, y: 4, color: GOMOKU_WHITE, now: 2 });
+        assert.equal(five.ok, true);
+        assert.equal(five.game.winner, GOMOKU_WHITE);
     });
 
     it('다섯 목을 만드는 수는 다른 열린 3이 있어도 승리한다', () => {

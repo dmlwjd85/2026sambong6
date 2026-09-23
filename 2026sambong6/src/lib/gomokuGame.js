@@ -1,12 +1,12 @@
 /**
  * 학급용 오목 (20×20).
- * 흑(선)만 3×3 금수입니다. 장목·4-4 금수는 쓰지 않습니다.
+ * 흑과 백 모두 3×3 금수입니다. 장목·4-4 금수는 쓰지 않습니다.
  *
  * 3×3
- * - 흑이 한 수로 열린 3(활삼)을 두 개 이상 만들면 그 자리는 둘 수 없습니다.
+ * - 한 수로 열린 3(활삼)을 두 개 이상 만들면 그 자리는 둘 수 없습니다. 흑·백이 같습니다.
  * - 열린 3은 다음 한 수로 양쪽이 빈 4(직선 4)를 만들 수 있는 3입니다. 한 칸 뛴 3도 포함합니다.
  * - 같은 줄에 열린 3이 두 개여도 금수입니다. 막힌 3, 4(다음 수에 5가 되는 줄)는 세지 않습니다.
- * - 백은 3×3을 둬도 됩니다. 다섯 목(이상)을 만드는 수는 금수보다 우선해 승리입니다.
+ * - 다섯 목(이상)을 만드는 수는 금수보다 우선해 승리입니다.
  *
  * 승패
  * - 가로·세로·대각선으로 같은 색 돌이 5개 이상 이어지면 승리합니다.
@@ -285,18 +285,19 @@ export function gomokuOpenThreeCount(board, x, y, color) {
     return count;
 }
 
-/** 흑이 이 빈 칸에 두면 3×3 금수인지. 다섯 목을 만드는 수는 금수가 아닙니다. */
+/** 이 빈 칸에 두면 3×3 금수인지. 흑·백 모두 해당하고, 다섯 목을 만드는 수는 금수가 아닙니다. */
 export function gomokuIsDoubleThree(board, x, y, color = GOMOKU_BLACK) {
-    if (color !== GOMOKU_BLACK) return false;
+    const stone = color === GOMOKU_WHITE ? GOMOKU_WHITE : (color === GOMOKU_BLACK ? GOMOKU_BLACK : 0);
+    if (!stone) return false;
     const size = Array.isArray(board) ? board.length : 0;
     const px = Math.floor(Number(x));
     const py = Math.floor(Number(y));
     if (!inGomokuBoard(px, py, size) || board[py][px] !== GOMOKU_EMPTY) return false;
-    board[py][px] = GOMOKU_BLACK;
+    board[py][px] = stone;
     let forbidden = false;
     try {
         if (!gomokuHasFive(board, px, py)) {
-            forbidden = gomokuOpenThreeCount(board, px, py, GOMOKU_BLACK) >= 2;
+            forbidden = gomokuOpenThreeCount(board, px, py, stone) >= 2;
         }
     } finally {
         board[py][px] = GOMOKU_EMPTY;
@@ -304,8 +305,9 @@ export function gomokuIsDoubleThree(board, x, y, color = GOMOKU_BLACK) {
     return forbidden;
 }
 
-/** 흑 차례에 판 위에 표시할 3×3 금수 칸. 돌 근처만 봅니다. */
-export function listGomokuDoubleThreePoints(board) {
+/** 지금 둘 색의 3×3 금수 칸. 돌 근처만 봅니다. */
+export function listGomokuDoubleThreePoints(board, color = GOMOKU_BLACK) {
+    const stone = color === GOMOKU_WHITE ? GOMOKU_WHITE : GOMOKU_BLACK;
     const size = Array.isArray(board) ? board.length : 0;
     const out = [];
     if (!size) return out;
@@ -323,7 +325,7 @@ export function listGomokuDoubleThreePoints(board) {
                     const key = ny * size + nx;
                     if (seen.has(key)) continue;
                     seen.add(key);
-                    if (gomokuIsDoubleThree(board, nx, ny, GOMOKU_BLACK)) out.push({ x: nx, y: ny });
+                    if (gomokuIsDoubleThree(board, nx, ny, stone)) out.push({ x: nx, y: ny });
                 }
             }
         }
@@ -356,7 +358,7 @@ export function placeGomokuStone(game, { x, y, color, now } = {}) {
     const board = g.board.map((row) => row.slice());
     board[py][px] = c;
     const five = gomokuHasFive(board, px, py);
-    if (!five && c === GOMOKU_BLACK && gomokuOpenThreeCount(board, px, py, c) >= 2) {
+    if (!five && gomokuOpenThreeCount(board, px, py, c) >= 2) {
         return { ok: false, error: 'double_three', game: g };
     }
     const full = gomokuBoardFull(board);
@@ -411,7 +413,7 @@ export const GOMOKU_ERROR_LABEL = Object.freeze({
     out: '판 밖에 둘 수 없습니다.',
     not_turn: '지금 둘 차례가 아닙니다.',
     occupied: '이미 돌이 있는 자리입니다.',
-    double_three: '3×3 금수입니다. 흑은 열린 3을 두 개 동시에 만들 수 없습니다.',
+    double_three: '3×3 금수입니다. 열린 3을 두 개 동시에 만들 수 없습니다.',
 });
 
 /** Firestore는 중첩 배열을 받지 않으므로 판은 1차원 cells 로 저장합니다. */

@@ -84,6 +84,21 @@ describe('오목 AI', () => {
         assert.ok(mv.x === 7 || mv.x === 11);
     });
 
+    it('백도 3×3 금수 자리에 두지 않는다', () => {
+        const g = emptyGomokuGame();
+        g.turn = GOMOKU_WHITE;
+        g.board[8][6] = GOMOKU_WHITE;
+        g.board[8][7] = GOMOKU_WHITE;
+        g.board[6][8] = GOMOKU_WHITE;
+        g.board[7][8] = GOMOKU_WHITE;
+        g.board[2][2] = GOMOKU_BLACK;
+        assert.equal(gomokuIsDoubleThree(g.board, 8, 8, GOMOKU_WHITE), true);
+        const mv = pickGomokuAiMove(g, { color: GOMOKU_WHITE });
+        assert.ok(!(mv.x === 8 && mv.y === 8));
+        const placed = placeGomokuStone(g, { x: mv.x, y: mv.y, color: GOMOKU_WHITE, now: 1 });
+        assert.equal(placed.ok, true, placed.error);
+    });
+
     it('흑은 3×3 금수 자리에 두지 않는다', () => {
         const g = emptyGomokuGame();
         g.turn = GOMOKU_BLACK;

@@ -4,6 +4,7 @@ import {
     GOMOKU_BLACK,
     GOMOKU_SIZE,
     GOMOKU_WHITE,
+    applyGomokuForfeit,
     applyGomokuTimeout,
     emptyGomokuGame,
     gomokuBoardFull,
@@ -133,5 +134,13 @@ describe('오목 승패', () => {
         assert.equal(r.game.winner, GOMOKU_WHITE);
         const again = applyGomokuTimeout(r.game, { now: 40000 });
         assert.equal(again.ok, false);
+    });
+
+    it('대국 중 나가면 나간 쪽이 진다', () => {
+        const g = emptyGomokuGame({ now: 100 });
+        const r = applyGomokuForfeit(g, { color: GOMOKU_WHITE, now: 200 });
+        assert.equal(r.ok, true);
+        assert.equal(r.game.endReason, 'forfeit');
+        assert.equal(r.game.winner, GOMOKU_BLACK);
     });
 });

@@ -14,6 +14,8 @@ import {
     rejectJoinBoardRoom,
     remainingSeats,
     requestJoinBoardRoom,
+    cancelJoinBoardRoom,
+    collectBoardRoomVacateActions,
     sanitizeBoardRoom,
     setBoardRoomTimer,
     startBoardRoom,
@@ -96,6 +98,19 @@ describe('참가 신청·방장 승인', () => {
         const hostJoin = requestJoinBoardRoom(room, { studentId: '1', studentName: '민준', now: 1100 });
         assert.equal(hostJoin.ok, false);
         assert.equal(hostJoin.error, 'already_in');
+    });
+
+    it('다른 방에 들어가면 내 대기 방과 다른 참가 대기를 정리한다', () => {
+        const mine = makeRoom(1000);
+        const other = createBoardRoom({ gameType: 'gomoku', hostId: '2', hostName: '서연', now: 1100 }).room;
+        const asked = requestJoinBoardRoom(other, { studentId: '1', studentName: '민준', now: 1200 });
+        assert.equal(asked.ok, true);
+        const actions = collectBoardRoomVacateActions([mine, asked.room], { studentId: '1', exceptRoomId: 'bg_other' });
+        assert.deepEqual(actions.closeHostIds, [mine.id]);
+        assert.deepEqual(actions.cancelJoinIds, [asked.room.id]);
+        const cancelled = cancelJoinBoardRoom(asked.room, { studentId: '1', now: 1300 });
+        assert.equal(cancelled.ok, true);
+        assert.equal(cancelled.room.joinRequests.length, 0);
     });
 });
 

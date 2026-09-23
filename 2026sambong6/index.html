@@ -2349,13 +2349,14 @@
                             <button type="button" class="boardgame-mini-btn" onclick="void window.createBoardGameRoom('gomoku')">방 만들기</button>
                             <button type="button" class="boardgame-primary-btn" onclick="void window.startGomokuAiGame()">AI와 두기</button>
                         </div>
-                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI와 두기」(강함)를 누르세요. 판은 20×20이고, 10분 동안 아무도 두지 않으면 방이 사라집니다.</p>
+                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI와 두기」(강함)를 누르세요. 판은 20×20이고, 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.</p>
+                        <p id="boardgameMyRecord" class="boardgame-record">내 오목 전적 0승 0패 0무</p>
                         <div id="boardgameRoomList" class="boardgame-room-list">방을 불러오는 중…</div>
                     </div>
 
                     <div id="boardgamePlayView" class="boardgame-view boardgame-play hidden">
                         <div class="gomoku-hud">
-                            <button type="button" class="boardgame-mini-btn gomoku-leave-btn" onclick="void window.leaveBoardGameTable()">목록</button>
+                            <button type="button" class="boardgame-mini-btn gomoku-leave-btn" onclick="void window.leaveBoardGameTable()">나가기</button>
                             <div id="gomokuHudPlayers" class="gomoku-hud-players"></div>
                             <div id="gomokuHudTimer" class="gomoku-hud-timer" hidden></div>
                             <label id="gomokuTimerToggleWrap" class="gomoku-timer-toggle hidden">
@@ -2374,10 +2375,10 @@
                             <span id="gomokuZoomLabel" class="gomoku-zoom-label">100%</span>
                             <button type="button" class="boardgame-mini-btn" onclick="window.nudgeGomokuZoom(0.25)">+</button>
                             <button type="button" class="boardgame-mini-btn" onclick="window.resetGomokuZoom()">맞춤</button>
-                            <span class="gomoku-zoom-help">두 손가락으로 확대</span>
+                            <span class="gomoku-zoom-help">클릭 또는 두 손가락으로 확대</span>
                         </div>
                         <div id="gomokuConfirmBar" class="gomoku-confirm hidden">
-                            <span id="gomokuConfirmText">이 자리에 둘까요?</span>
+                            <span id="gomokuConfirmText">여기 둘까요?</span>
                             <button type="button" class="boardgame-mini-btn" onclick="window.cancelGomokuPending()">취소</button>
                             <button type="button" class="boardgame-primary-btn" onclick="void window.confirmGomokuPending()">여기 두기</button>
                         </div>

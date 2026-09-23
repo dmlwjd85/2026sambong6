@@ -226,6 +226,24 @@ export function isRoomMember(room, studentId) {
     return sanitizeBoardRoom(room).members.some((m) => m.id === id);
 }
 
+/**
+ * 스냅샷에서 비울 때 남길 방.
+ * 끝난 판은 문서 id가 더 앞이라 find()에 먼저 걸립니다.
+ * 그 방을 기준으로 정리하면 방금 만든 대기실이 닫히고, 로비로 나와도 결과 화면으로 다시 들어갑니다.
+ * 진행 중인 판이 있으면 그중 가장 최근 판을, 없으면 가장 최근 대기실을 고릅니다.
+ */
+export function pickAnchoredBoardRoom(rooms, studentId) {
+    const id = cleanId(studentId);
+    if (!id) return null;
+    const mine = (Array.isArray(rooms) ? rooms : [])
+        .map((raw) => sanitizeBoardRoom(raw))
+        .filter((room) => room.id && (room.status === 'playing' || room.status === 'waiting') && isRoomMember(room, id));
+    const playing = mine.filter((room) => room.status === 'playing');
+    const pool = playing.length ? playing : mine;
+    pool.sort((a, b) => b.updatedAt - a.updatedAt || String(b.id).localeCompare(String(a.id)));
+    return pool[0] || null;
+}
+
 export function roomMemberSeat(room, studentId) {
     const id = cleanId(studentId);
     const m = sanitizeBoardRoom(room).members.find((row) => row.id === id);

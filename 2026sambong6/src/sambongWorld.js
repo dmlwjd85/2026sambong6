@@ -246,6 +246,12 @@ import {
     termMaturityYmd,
 } from './lib/schoolCalendar.js';
 import {
+    bankNoticeStorageKey,
+    buildBankExecutionNotice,
+    dismissBankNotice,
+    isBankNoticeDismissed,
+} from './lib/bankNotice.js';
+import {
     GEAR_ENHANCE_MAX,
     GEAR_ENHANCE_MIN,
     SHIELD_BLOCK_CAP,
@@ -17456,6 +17462,40 @@ ${subjectLine}
             if (okBtn) okBtn.onclick = finish;
         });
 
+        /** 확인과 함께 다시 보지 않기를 저장할 수 있는 안내창 */
+        window.customAlertDismissable = (message, storageKey) => new Promise((resolve) => {
+            if (isBankNoticeDismissed(localStorage, storageKey)) {
+                resolve(false);
+                return;
+            }
+            const d = document.createElement('div');
+            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-6 rounded-3xl border border-amber-500/50 max-w-md w-full text-left space-y-4 shadow-2xl max-h-[85vh] overflow-y-auto">
+                    <h3 class="text-xl font-display text-amber-200 text-center">은행 안내</h3>
+                    <p class="js-bank-notice-body text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed"></p>
+                    <label class="flex items-center gap-2 text-[12px] text-slate-300 font-bold">
+                        <input type="checkbox" class="js-bank-notice-hide rounded border-slate-500">
+                        <span>다시 보지 않기</span>
+                    </label>
+                    <button type="button" class="js-bank-notice-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
+                </div>`;
+            const body = d.querySelector('.js-bank-notice-body');
+            if (body) body.textContent = String(message || '');
+            sambongModalHost().appendChild(d);
+            const okBtn = d.querySelector('.js-bank-notice-ok');
+            const hideBox = d.querySelector('.js-bank-notice-hide');
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                if (hideBox && hideBox.checked) dismissBankNotice(localStorage, storageKey);
+                d.remove();
+                resolve(true);
+            };
+            if (okBtn) okBtn.onclick = finish;
+        });
+
         window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
             d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
@@ -19137,11 +19177,7 @@ ${subjectLine}
                 const loanLife = applyBankLoanLifecycleLocal();
                 if (termRes.changed || loanLife.changed) {
                     if (termRes.msgs.length > 0) {
-                        void window.customAlert(
-                            '🎁 적금 만기!\n\n' +
-                            termRes.msgs.join('\n') +
-                            '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
-                        );
+                        queueBankExecutionNotice(termRes.msgs.map((line) => `적금 만기: ${line}. 지갑으로 들어왔으니 따로 출금하지 않습니다.`));
                     }
                     formatBankLoanLifecycleAlerts(loanLife.msgs);
                     void saveDataToCloud({
@@ -21215,20 +21251,75 @@ ${subjectLine}
             return out;
         }
 
+        function currentBankNoticeKey() {
+            const sid = String((window.playerState && window.playerState.id) || localStorage.getItem('sambong_student_id') || '');
+            return bankNoticeStorageKey(typeof appId !== 'undefined' ? appId : '', sid);
+        }
+
+        function currentBankNoticeTerms() {
+            return sanitizeBankTermDeposits(window.playerState && window.playerState.bankTermDeposits).map((td) => {
+                const elapsed = bankCalendarDaysElapsed(td.startDate);
+                return {
+                    amount: td.amount,
+                    startDate: td.startDate,
+                    matureOn: termMaturityYmd(td.startDate),
+                    daysShow: Math.min(30, elapsed + 1),
+                };
+            });
+        }
+
+        function currentBankNoticeLoan() {
+            const loan = sanitizeBankLoan(window.playerState && window.playerState.bankLoan);
+            if (!loan) return null;
+            return {
+                principal: loan.principal,
+                interest: loan.interest,
+                due: loanDueTotal(loan),
+                dueYmd: loan.dueYmd,
+            };
+        }
+
+        let _bankNoticeExtra = [];
+        let _bankNoticeTimer = null;
+
+        /** 적금·대출 실행 안내. 다시 보지 않기가 있으면 띄우지 않습니다. */
+        function queueBankExecutionNotice(extraLines) {
+            if (!window.playerState || window.playerState.isGuest) return;
+            const key = currentBankNoticeKey();
+            if (isBankNoticeDismissed(localStorage, key)) return;
+            (Array.isArray(extraLines) ? extraLines : []).forEach((line) => {
+                const text = String(line || '').trim();
+                if (text) _bankNoticeExtra.push(text);
+            });
+            if (_bankNoticeTimer) clearTimeout(_bankNoticeTimer);
+            _bankNoticeTimer = setTimeout(() => {
+                _bankNoticeTimer = null;
+                const events = _bankNoticeExtra.splice(0);
+                const message = buildBankExecutionNotice({
+                    unit: getCurrencyUnit(),
+                    rate: Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0,
+                    terms: currentBankNoticeTerms(),
+                    loan: currentBankNoticeLoan(),
+                    events,
+                });
+                void window.customAlertDismissable(message, key);
+            }, 450);
+        }
+
         function formatBankLoanLifecycleAlerts(msgs) {
+            const repayLines = [];
             (msgs || []).forEach((m) => {
                 if (m.kind === 'repay') {
-                    setTimeout(() => {
-                        void window.customAlert(
-                            `🏦 대출 약정 자동이체\n\n원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`
-                        );
-                    }, 80);
+                    repayLines.push(
+                        `대출 약정 자동이체: 원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)} = ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚고 대출을 닫았습니다. 적금은 그대로입니다.`
+                    );
                 } else if (m.kind === 'default_start') {
                     setTimeout(() => {
                         void window.customAlert(creditDefaultBlockMessage(m.untilYmd));
                     }, 140);
                 }
             });
+            if (repayLines.length) queueBankExecutionNotice(repayLines);
         }
 
         /** 일반예금+적금 원금 합 100 B 이상: 마지막 지급일 기준 3일마다 지갑으로 1 B */
@@ -22309,13 +22400,7 @@ ${subjectLine}
                     bankSaveOperationLabel = '보물상자 적금 만기';
                     bankSaveBongLogSource = 'bankTermMaturity';
                     if (termRes.msgs.length > 0) {
-                        setTimeout(() => {
-                            void window.customAlert(
-                                '🎁 적금 만기!\n\n' +
-                                termRes.msgs.join('\n') +
-                                '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
-                            );
-                        }, 80);
+                        queueBankExecutionNotice(termRes.msgs.map((line) => `적금 만기: ${line}. 지갑으로 들어왔으니 따로 출금하지 않습니다.`));
                     }
                 }
                 const loanLife = applyBankLoanLifecycleLocal();
@@ -23120,6 +23205,7 @@ ${subjectLine}
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
                 void window.applyPersonalLunchDeductionIfNeeded();
+                queueBankExecutionNotice([]);
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 상단 패널) */
                 window.switchTab('plaza');
             } catch (e) { 

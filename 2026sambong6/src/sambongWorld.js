@@ -90,6 +90,7 @@ import {
     LOAN_MIN_UNIT,
     applyLoanAction,
     applyLoanLifecycle,
+    bongAfterAccrualWithIntent,
     computeLoanInterest,
     creditDefaultBlockMessage,
     getLoanCalendarFromWorld,
@@ -23177,16 +23178,32 @@ ${subjectLine}
                             dataToSave.creditDefaultUntilYmd = bankAccrued.creditDefaultUntilYmd || '';
                             dataToSave.bankNegativeSinceYmd = bankAccrued.bankNegativeSinceYmd || '';
                             // 만기·자동이체·주기 보너스 뒤에는 낡은 잔액으로 되돌리지 않습니다.
+                            // 다만 점심값처럼 이번 저장이 상한을 두고 증감한 금액은 정산 잔액 위에 남깁니다.
                             if (bankAccrued.changed) {
-                                dataToSave.bong = bankAccrued.bong;
+                                dataToSave.bong = bongAfterAccrualWithIntent(
+                                    bankAccrued.bong,
+                                    normalizeBongValue(Number(dataToSave.bong)),
+                                    normalizeBongValue(Number(serverData.bong) || 0),
+                                    {
+                                        allowDecrease: !!opts.allowBongDecrease,
+                                        maxDecrease: opts.maxBongDecrease,
+                                        maxIncrease: opts.maxBongIncrease,
+                                    },
+                                );
                                 dataToSave.bankRegularSavings = bankAccrued.bankRegularSavings;
                             }
                         }
 
+                        const bankAccrualBaseline = bankAccrued.changed
+                            && !opts.allowBankFieldChanges
+                            && opts.loanAction !== 'take'
+                            && opts.loanAction !== 'repay';
                         const serverBong = Number(
-                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || bankAccrued.changed)
-                                ? dataToSave.bong
-                                : serverData.bong
+                            bankAccrualBaseline
+                                ? bankAccrued.bong
+                                : ((opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || bankAccrued.changed)
+                                    ? dataToSave.bong
+                                    : serverData.bong)
                         );
                         const nextBong = Number(dataToSave.bong);
                         // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.

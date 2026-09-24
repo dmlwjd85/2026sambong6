@@ -392,3 +392,25 @@ export function applyLoanAction(state, action, opts = {}) {
     }
     return { ok: false, reason: 'action', ...next };
 }
+
+/**
+ * 은행 자동 정산이 지갑을 서버 기준으로 덮어쓴 뒤에도,
+ * 이번 저장이 명시한 증감(점심값 차감·상한 있는 환급)은 정산 잔액 위에 남깁니다.
+ * 클라이언트가 들고 있던 그 밖의 잔액 차이는 올리지 않습니다.
+ */
+export function bongAfterAccrualWithIntent(accruedBong, requestedBong, serverBong, caps = {}) {
+    const accrued = Math.floor(Number(accruedBong) || 0);
+    const requested = Math.floor(Number(requestedBong) || 0);
+    const server = Math.floor(Number(serverBong) || 0);
+    const maxDecrease = Math.max(0, Math.floor(Number(caps.maxDecrease) || 0));
+    const maxIncrease = Math.max(0, Math.floor(Number(caps.maxIncrease) || 0));
+    if (caps.allowDecrease && maxDecrease > 0 && requested < server) {
+        const drop = Math.min(maxDecrease, server - requested);
+        return accrued - drop;
+    }
+    if (maxIncrease > 0 && requested > server) {
+        const rise = Math.min(maxIncrease, requested - server);
+        return accrued + rise;
+    }
+    return accrued;
+}

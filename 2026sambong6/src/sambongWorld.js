@@ -238,6 +238,14 @@ import {
     worldSettingsForSeason2,
 } from './lib/season2.js';
 import {
+    holidayLunchRefundAmount,
+    isSchoolHolidayYmd,
+    monthGrid,
+    resolveSchoolHolidays,
+    sanitizeHolidayYmds,
+    termMaturityYmd,
+} from './lib/schoolCalendar.js';
+import {
     GEAR_ENHANCE_MAX,
     GEAR_ENHANCE_MIN,
     SHIELD_BLOCK_CAP,
@@ -1293,6 +1301,7 @@ function redrawPlazaGrantsUi() {
                 vacationPauseBankBonus: src.vacationPauseBankBonus !== false,
                 vacationPauseThermometer: src.vacationPauseThermometer !== false,
                 currencyUnit: sanitizeCurrencyUnit(src.currencyUnit),
+                schoolHolidays: Array.isArray(src.schoolHolidays) ? sanitizeHolidayYmds(src.schoolHolidays) : undefined,
             };
         }
 
@@ -1347,8 +1356,19 @@ function redrawPlazaGrantsUi() {
             return sanitizeWorldSettings(window.globalSettings && window.globalSettings.worldSettings);
         }
 
+        function getSchoolHolidays() {
+            return resolveSchoolHolidays(getWorldSettings());
+        }
+
+        function isSchoolHoliday(d = new Date()) {
+            const ymd = typeof d === 'string' ? d : (
+                `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            );
+            return isSchoolHolidayYmd(ymd, getSchoolHolidays());
+        }
+
         function getBankLoanCalendar() {
-            return getLoanCalendarFromWorld(getWorldSettings());
+            return getLoanCalendarFromWorld(getWorldSettings(), getSchoolHolidays());
         }
 
         function getClassLoanLimit() {
@@ -1791,6 +1811,72 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        let _schoolHolidayDraft = null;
+        let _schoolHolidayDirty = false;
+        let _schoolHolidayMonth = null;
+
+        window.shiftSchoolHolidayMonth = function(delta) {
+            const base = _schoolHolidayMonth ? new Date(_schoolHolidayMonth) : new Date();
+            base.setDate(1);
+            base.setMonth(base.getMonth() + Number(delta || 0));
+            _schoolHolidayMonth = base;
+            window.renderSchoolHolidayCalendar?.();
+        };
+
+        window.toggleSchoolHoliday = function(ymd) {
+            const id = String(ymd || '');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(id)) return;
+            if (!_schoolHolidayDraft) _schoolHolidayDraft = getSchoolHolidays().slice();
+            const set = new Set(_schoolHolidayDraft);
+            if (set.has(id)) set.delete(id);
+            else set.add(id);
+            _schoolHolidayDraft = sanitizeHolidayYmds([...set]);
+            _schoolHolidayDirty = true;
+            window.renderSchoolHolidayCalendar?.();
+        };
+
+        window.renderSchoolHolidayCalendar = function() {
+            const root = document.getElementById('schoolHolidayCalendar');
+            if (!root) return;
+            if (!_schoolHolidayDirty || !_schoolHolidayDraft) {
+                _schoolHolidayDraft = getSchoolHolidays().slice();
+            }
+            if (!_schoolHolidayMonth) {
+                const now = new Date();
+                _schoolHolidayMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            }
+            const cursor = _schoolHolidayMonth;
+            const year = cursor.getFullYear();
+            const month = cursor.getMonth();
+            const cells = monthGrid(year, month);
+            const picked = new Set(_schoolHolidayDraft);
+            const today = getLocalDateStr();
+            const dow = ['일', '월', '화', '수', '목', '금', '토'];
+            const head = dow.map((name, i) => `<div class="text-center font-bold ${i === 0 ? 'text-rose-300' : i === 6 ? 'text-sky-300' : 'text-slate-400'}">${name}</div>`).join('');
+            const body = cells.map((cell) => {
+                if (!cell) return '<div></div>';
+                const on = picked.has(cell.ymd);
+                const weekend = cell.dow === 0 || cell.dow === 6;
+                const isToday = cell.ymd === today;
+                const cls = on
+                    ? 'bg-rose-600 text-white border-rose-300'
+                    : weekend
+                        ? 'bg-slate-800 text-slate-500 border-slate-700'
+                        : 'bg-slate-950 text-slate-100 border-slate-600';
+                const ring = isToday ? ' ring-2 ring-amber-300' : '';
+                return `<button type="button" class="min-h-[36px] rounded-lg border text-[11px] font-black ${cls}${ring}" onclick="window.toggleSchoolHoliday('${cell.ymd}')" aria-pressed="${on ? 'true' : 'false'}">${cell.day}${on ? ' ✓' : ''}</button>`;
+            }).join('');
+            const label = `${year}년 ${month + 1}월`;
+            root.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <button type="button" class="min-h-[36px] px-3 rounded-lg bg-slate-800 text-white font-bold" onclick="window.shiftSchoolHolidayMonth(-1)">이전달</button>
+                    <p class="font-bold text-white">${label}</p>
+                    <button type="button" class="min-h-[36px] px-3 rounded-lg bg-slate-800 text-white font-bold" onclick="window.shiftSchoolHolidayMonth(1)">다음달</button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 mt-2">${head}${body}</div>
+                <p class="text-[9px] text-slate-500 mt-1">빨간 체크가 공휴일입니다. 주말은 원래 점심값을 빼지 않습니다.</p>`;
+        };
+
         window.renderWorldSettingsPanel = function() {
             if (!window.playerState || !window.playerState.isAdmin) return;
             const ws = getWorldSettings();
@@ -1852,6 +1938,7 @@ function redrawPlazaGrantsUi() {
             setVal('wsClassSchoolName', meta.schoolName || '');
             window.renderMyClassesList?.();
             window.renderCurriculumMappingPanel?.();
+            window.renderSchoolHolidayCalendar?.();
             setVal('wsBankInterest', window.globalSettings && window.globalSettings.bankInterestPercent != null
                 ? window.globalSettings.bankInterestPercent : 0);
             setVal('wsBankLoanLimit', sanitizeLoanLimit(window.globalSettings && window.globalSettings.bankLoanLimitPerStudent));
@@ -1924,6 +2011,7 @@ function redrawPlazaGrantsUi() {
                 vacationPauseClassXp: !!(document.getElementById('wsVacationPauseClassXp')?.checked),
                 vacationPauseBankBonus: !!(document.getElementById('wsVacationPauseBankBonus')?.checked),
                 vacationPauseThermometer: !!(document.getElementById('wsVacationPauseThermometer')?.checked),
+                schoolHolidays: sanitizeHolidayYmds(_schoolHolidayDraft || getSchoolHolidays()),
             });
 
             const opsPayload = {
@@ -1950,6 +2038,8 @@ function redrawPlazaGrantsUi() {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), opsPayload, { merge: true });
                 window.globalSettings = { ...window.globalSettings, ...opsPayload };
                 setLocalWorldSettings(worldSettings);
+                _schoolHolidayDirty = false;
+                _schoolHolidayDraft = sanitizeHolidayYmds(worldSettings.schoolHolidays);
 
                 if (window.playerState.isGM) {
                     const displayName = text('wsClassDisplayName') || window.classMeta?.displayName || '우리 반';
@@ -4388,7 +4478,7 @@ function redrawPlazaGrantsUi() {
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
-            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', lunchHolidayRefundYmd: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
             stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
             catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
@@ -21278,6 +21368,11 @@ ${subjectLine}
                         const elapsed = bankCalendarDaysElapsed(td.startDate);
                         // 가입 당일=1일째 … 30일째 만기 (경과 일수+1, 상한 30)
                         const daysShow = Math.min(30, elapsed + 1);
+                        const matureOn = termMaturityYmd(td.startDate);
+                        const todayYmd = getLocalDateStr();
+                        const matureNote = matureOn && todayYmd >= matureOn
+                            ? '오늘 만기입니다. 이 화면을 연 뒤 1분 안에 원금과 이자가 지갑으로 들어옵니다.'
+                            : `${matureOn}에 접속하면 그 즉시 원금과 이자가 지갑으로 들어옵니다.`;
                         const interestPrev = Math.round((Number(td.amount) || 0) * (rate / 100));
                         const sid = String(td.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                         return `<div class="border border-amber-600/35 rounded-xl p-3 bg-slate-900/60 mb-2 text-left">
@@ -21285,8 +21380,8 @@ ${subjectLine}
                                 <div class="min-w-0 flex-1">
                                     <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
                                     <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${formatBongAmount(td.amount)}</span></div>
-                                    <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
-                                    <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${formatBongAmount(interestPrev)} · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
+                                    <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일 · 만기일 <span class="font-bold text-amber-100">${matureOn}</span></div>
+                                    <div class="text-[9px] text-slate-500 mt-0.5">${matureNote} 이자(현재 ${rate}% , 반올림) 약 ${formatBongAmount(interestPrev)}. 만기 이율은 만기 당일 설정을 따릅니다. 지갑으로 들어오므로 따로 출금하지 않습니다.</div>
                                 </div>
                                 <button type="button" onclick="window.earlyWithdrawTermDeposit('${sid}')" class="text-[10px] shrink-0 bg-red-900/50 hover:bg-red-800 text-red-100 px-2 py-1 rounded border border-red-800/80">중도해지</button>
                             </div>
@@ -26474,7 +26569,7 @@ ${subjectLine}
         const STUDENT_GAME_FIELD_KEYS = [
             'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
-            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
+            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'lunchHolidayRefundYmd', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd',
             'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
@@ -26975,6 +27070,7 @@ ${subjectLine}
                 gearEnhance: {},
                 lunchBid: { date: '', amount: 0 },
                 lastLunchDeductDate: '',
+                lunchHolidayRefundYmd: '',
                 questHistory: [],
                 usedRaidPasswords: [],
                 bankRegularSavings: 0,
@@ -27254,10 +27350,30 @@ ${subjectLine}
             const now = new Date();
             if (isVacationAutomationPaused('lunch', now)) return;
             const day = now.getDay();
+            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            // 공휴일로 체크한 날은 점심값을 빼지 않고, 이미 빠진 10봉은 한 번만 되돌립니다.
+            if (isSchoolHoliday(todayYmd)) {
+                if (window.playerState.lunchHolidayRefundYmd === todayYmd) return;
+                const refund = holidayLunchRefundAmount(window.playerState.bongChangeLog, todayYmd, getSchoolHolidays());
+                window.playerState.lunchHolidayRefundYmd = todayYmd;
+                window.playerState.lastLunchDeductDate = todayYmd;
+                if (refund > 0) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refund);
+                    await saveDataToCloud({
+                        operationLabel: '공휴일 점심값 환급',
+                        bongLogSource: 'holidayLunchRefund',
+                        maxBongIncrease: refund,
+                    });
+                    updateUI();
+                    await window.customAlert(`🍱 오늘은 공휴일이라 점심값 ${refund}${getCurrencyUnit()}를 지갑으로 되돌렸습니다.`);
+                } else {
+                    await saveDataToCloud();
+                }
+                return;
+            }
             if (day < 1 || day > 5) return;
             if (now.getHours() < 12) return;
 
-            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             if (window.playerState.lastLunchDeductDate === todayYmd) return;
 
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - 10);

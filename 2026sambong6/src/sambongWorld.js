@@ -524,6 +524,7 @@ import {
     isBusSeatDisabled,
     minBusSeatBid,
     resetBusAssignees,
+    resetBusForNewTrip,
     sanitizeBusSeatPrice,
     sanitizeBusState,
     shuffleBusAssignees,
@@ -20563,9 +20564,11 @@ ${subjectLine}
             const admin = !!(window.playerState && window.playerState.isAdmin);
             const shuffleBtn = document.getElementById('btnBusShuffle');
             const resetBtn = document.getElementById('btnBusReset');
+            const tripResetBtn = document.getElementById('btnBusTripReset');
             const adminBar = document.getElementById('busAdminBar');
             if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
             if (resetBtn) resetBtn.style.display = admin ? 'block' : 'none';
+            if (tripResetBtn) tripResetBtn.style.display = admin ? 'block' : 'none';
             if (adminBar) adminBar.classList.toggle('hidden', !admin);
             const bulkPriceEl = document.getElementById('busBulkPrice');
             if (admin && bulkPriceEl && !window._busSeatAdminDirty) {
@@ -21191,6 +21194,78 @@ ${subjectLine}
                 await window.customAlert('버스 뽑기를 초기화했습니다. 구입한 자리는 그대로입니다.');
             } catch (e) {
                 console.error('masterResetBusSeats', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
+        window.masterResetBusTrip = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 버스 여행을 초기화할 수 있습니다.');
+            }
+            if (window._busSeatAdminDirty) {
+                return window.customAlert('자리 활성·가격을 먼저 저장해 주세요.');
+            }
+            const preview = resetBusForNewTrip(window.busSeatState);
+            const refundCount = preview.refunds.length;
+            const refundSum = preview.refunds.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+            const ok = await window.customConfirm(
+                '다른 여행을 위해 버스 자리를 처음부터 비울까요?\n' +
+                '앉은 이름, 구입, 고정, 비활성, 가격, 구매 기록이 모두 지워집니다.\n' +
+                (refundCount
+                    ? `구입한 ${refundCount}석은 낸 ${formatBongAmount(refundSum)}를 그 학생 지갑으로 돌려줍니다.`
+                    : '돌려줄 구입 봉은 없습니다.')
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk || !db) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                let refunded = [];
+                await runTransaction(db, async (transaction) => {
+                    const busRef = busSeatDocRef();
+                    const snap = await transaction.get(busRef);
+                    const live = sanitizeBusState(snap.exists() ? snap.data() : emptyBusState());
+                    const applied = resetBusForNewTrip(live);
+                    const ownerIds = new Set(applied.refunds.map((row) => String(row.studentId || '')).filter(Boolean));
+                    const sorted = Array.from(ownerIds).sort();
+                    const walletSnaps = {};
+                    for (let i = 0; i < sorted.length; i += 1) {
+                        walletSnaps[sorted[i]] = await transaction.get(studentWalletRef(sorted[i]));
+                    }
+                    const nextWallets = {};
+                    applied.refunds.forEach((row) => {
+                        const id = String(row.studentId || '');
+                        const amt = Math.max(0, Math.floor(Number(row.amount) || 0));
+                        if (!id || amt <= 0) return;
+                        if (nextWallets[id] == null) {
+                            const wsnap = walletSnaps[id];
+                            nextWallets[id] = wsnap && wsnap.exists() ? (Number((wsnap.data() || {}).bong) || 0) : 0;
+                        }
+                        nextWallets[id] += amt;
+                    });
+                    transaction.set(busRef, applied.state);
+                    Object.keys(nextWallets).forEach((id) => {
+                        writeBusSeatWallet(
+                            transaction,
+                            walletSnaps[id],
+                            id,
+                            nextWallets[id],
+                            '버스 여행 초기화 환불',
+                            { source: 'busTripReset' }
+                        );
+                    });
+                    refunded = applied.refunds;
+                });
+                window.busSeatState = emptyBusState();
+                window._busSeatAdminDirty = false;
+                window.renderBusSeats({ force: true });
+                const people = new Set(refunded.map((row) => row.studentId)).size;
+                await window.customAlert(
+                    people
+                        ? `🚌 버스 여행을 초기화했습니다.\n${people}명에게 구입 봉을 지갑으로 돌려주었습니다.`
+                        : '🚌 버스 여행을 초기화했습니다. 자리는 모두 비어 있습니다.'
+                );
+            } catch (e) {
+                console.error('masterResetBusTrip', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
             }
         };

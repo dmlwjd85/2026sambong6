@@ -634,6 +634,26 @@ export function shuffleBusAssignees(state, studentIds, rng = Math.random) {
     };
 }
 
+/**
+ * 다른 여행을 위해 버스 전체를 비웁니다.
+ * 구입자가 낸 봉은 refunds로 돌려주고, 이름·구매·가격·구매 기록은 처음 상태로 되돌립니다.
+ */
+export function resetBusForNewTrip(state) {
+    const board = sanitizeBusState(state);
+    const refunds = [];
+    board.seats.forEach((s) => {
+        if (s.owner && s.paid > 0) {
+            refunds.push({
+                studentId: String(s.owner),
+                amount: s.paid,
+                seatId: s.id,
+                kind: 'tripReset',
+            });
+        }
+    });
+    return { state: emptyBusState(), refunds };
+}
+
 export function resetBusAssignees(state, { keepHidden = true } = {}) {
     const next = sanitizeBusState(state);
     next.seats.forEach((s) => {

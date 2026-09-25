@@ -4,6 +4,7 @@ import {
     CHESS_AI_LEVELS,
     chessAiLevelLabel,
     pickChessAiMove,
+    pickSoftChessMove,
     playChessAiMatch,
     sanitizeChessAiLevel,
 } from './chessAi.js';
@@ -116,7 +117,43 @@ describe('체스 AI', () => {
         assert.equal(typeof choin.from, 'number');
     });
 
-    it('초기 배치 자체 대국에서 고수가 1수보다, 초인이 고수보다 높다', { timeout: 180000 }, () => {
+    it('압도적 수는 항상 두고, 가까운 수는 나눠 고른다', () => {
+        const mate = pickSoftChessMove([
+            { mv: { from: 1, to: 2 }, val: 120000 },
+            { mv: { from: 3, to: 4 }, val: 10 },
+        ], { rng: () => 0.99 });
+        assert.equal(mate.from, 1);
+        const picks = new Set();
+        for (let i = 0; i < 20; i += 1) {
+            const mv = pickSoftChessMove([
+                { mv: { from: 10, to: 20 }, val: 40 },
+                { mv: { from: 11, to: 21 }, val: 38 },
+                { mv: { from: 12, to: 22 }, val: 37 },
+            ], { rng: () => (i + 0.3) / 20 });
+            picks.add(`${mv.from}-${mv.to}`);
+        }
+        assert.ok(picks.size >= 2);
+    });
+
+    it('같은 상대 수열에 초인 응수가 여러 가지다', () => {
+        const start = emptyChessGame();
+        const first = new Set();
+        for (let i = 0; i < 14; i += 1) {
+            const mv = pickChessAiMove(start, { color: CHESS_WHITE, level: 'choin', timeMs: 40, rng: () => (i * 0.07) % 1 });
+            first.add(`${mv.from}-${mv.to}`);
+        }
+        assert.ok(first.size >= 2, String([...first]));
+        const e4 = applyChessMove(start, { from: chessSq(4, 1), to: chessSq(4, 3), color: CHESS_WHITE, now: 1 });
+        assert.equal(e4.ok, true);
+        const replies = new Set();
+        for (let i = 0; i < 14; i += 1) {
+            const mv = pickChessAiMove(e4.game, { color: CHESS_BLACK, level: 'choin', timeMs: 40, rng: () => (i * 0.11) % 1 });
+            replies.add(`${mv.from}-${mv.to}`);
+        }
+        assert.ok(replies.size >= 2, String([...replies]));
+    });
+
+    it('초기 배치 자체 대국에서 고수가 1수보다, 새 초인이 고수·옛초인보다 높다', { timeout: 180000 }, () => {
         const gosuVsPly1 = runColorSwapSeries('gosu', 'ply1', {
             aTime: 70,
             bTime: 8,
@@ -128,6 +165,12 @@ describe('체스 AI', () => {
             bTime: 55,
             varieties: [1, 5],
             maxMoves: 64,
+        });
+        const choinVsOld = runColorSwapSeries('choin', 'choinOld', {
+            aTime: 150,
+            bTime: 120,
+            varieties: [2, 6],
+            maxMoves: 56,
         });
         // eslint-disable-next-line no-console
         console.log('고수 vs 1수', {
@@ -157,7 +200,22 @@ describe('체스 AI', () => {
                 eval: r.whiteEval,
             })),
         });
+        // eslint-disable-next-line no-console
+        console.log('새 초인 vs 옛초인', {
+            games: choinVsOld.games,
+            choin: choinVsOld.aScore,
+            choinOld: choinVsOld.bScore,
+            rows: choinVsOld.rows.map((r) => ({
+                w: r.whiteLevel,
+                b: r.blackLevel,
+                winner: r.winner || 'draw',
+                end: r.endReason,
+                moves: r.moveCount,
+                eval: r.whiteEval,
+            })),
+        });
         assert.ok(gosuVsPly1.aScore > gosuVsPly1.bScore, `고수 ${gosuVsPly1.aScore}점 / 1수 ${gosuVsPly1.bScore}점`);
         assert.ok(choinVsGosu.aScore > choinVsGosu.bScore, `초인 ${choinVsGosu.aScore}점 / 고수 ${choinVsGosu.bScore}점`);
+        assert.ok(choinVsOld.aScore >= choinVsOld.bScore, `새 초인 ${choinVsOld.aScore}점 / 옛초인 ${choinVsOld.bScore}점`);
     });
 });

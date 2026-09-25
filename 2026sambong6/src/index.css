@@ -5528,6 +5528,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             grid-template-rows: minmax(0, 1fr) 1.15rem;
             width: min(94vmin, 100%, 620px);
             height: min(94vmin, 74vh, 620px);
+            min-width: 280px;
+            min-height: 280px;
             max-width: 100%;
             padding: 0.55rem 0.65rem 0.35rem 0.28rem;
             background:

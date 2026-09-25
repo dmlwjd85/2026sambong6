@@ -453,11 +453,14 @@ function pawnTerms(s) {
             mg += sign * bonus;
             eg += sign * (bonus + adv * 8);
         }
-        // 같은 줄 옆 폰이 있으면 연결 보너스를 줍니다.
-        if ((sq & 7) < 7 && typeOf(s.c[sq + 1]) === 1 && isWhite(s.c[sq + 1]) === white) {
-            const sign = white ? 1 : -1;
-            mg += sign * 3;
-            eg += sign * 5;
+        // 옆 파일에 아군 폰이 있으면 연결 보너스를 줍니다.
+        if (file > 0) {
+            const nb = s.c[rank * 8 + file - 1];
+            if (typeOf(nb) === 1 && isWhite(nb) === white) {
+                const sign = white ? 1 : -1;
+                mg += sign * 4;
+                eg += sign * 6;
+            }
         }
     }
     return { mg, eg };
@@ -556,15 +559,15 @@ function bishopPairAndKingEg(s) {
     }
     let mg = 0;
     let eg = 0;
-    if (wb >= 2) { mg += 28; eg += 42; }
-    if (bb >= 2) { mg -= 28; eg -= 42; }
-    // 퀸이 없으면 킹을 가운데로 보냅니다. 퀸이 남은 중반 킹워크는 금지합니다.
-    if (queens === 0 && s.wk >= 0 && s.bk >= 0) {
+    if (wb >= 2) { mg += 32; eg += 46; }
+    if (bb >= 2) { mg -= 32; eg -= 46; }
+    // 퀸이 없고 기물이 거의 없으면 킹을 가운데·상대 킹 쪽으로 보냅니다.
+    if (queens === 0 && s.phase <= 8 && s.wk >= 0 && s.bk >= 0) {
         const wC = Math.abs((s.wk & 7) - 3.5) + Math.abs((s.wk >> 3) - 3.5);
         const bC = Math.abs((s.bk & 7) - 3.5) + Math.abs((s.bk >> 3) - 3.5);
-        eg += (bC - wC) * 10;
+        eg += (bC - wC) * 8;
         const kd = Math.abs((s.wk & 7) - (s.bk & 7)) + Math.abs((s.wk >> 3) - (s.bk >> 3));
-        eg += (14 - kd);
+        eg += (12 - kd);
     }
     return { mg, eg };
 }
@@ -784,10 +787,9 @@ export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
         const prev = found;
         let alpha = -30000;
         let beta = 30000;
-        // 깊이 4부터 aspiration. 실패하면 전체 창으로 다시 봅니다.
-        if (depth >= 4 && Number.isFinite(lastScore)) {
-            alpha = lastScore - 48;
-            beta = lastScore + 48;
+        if (depth >= 4) {
+            alpha = lastScore - 60;
+            beta = lastScore + 60;
         }
         let next = searchRoot(s, depth, alpha, beta);
         if (!s.stop && next.rows.length && (next.val <= alpha || next.val >= beta)) {

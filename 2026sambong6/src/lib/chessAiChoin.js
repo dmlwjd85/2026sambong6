@@ -53,7 +53,7 @@ for (let i = 0; i < Z_PIECE.length; i += 1) Z_PIECE[i] = rnd();
 for (let i = 0; i < 16; i += 1) Z_CASTLE[i] = rnd();
 for (let i = 0; i < 8; i += 1) Z_EP[i] = rnd();
 
-const TT_BITS = 17;
+const TT_BITS = 18;
 const TT_MASK = (1 << TT_BITS) - 1;
 const ttKey = new Uint32Array(1 << TT_BITS);
 const ttDepth = new Int8Array(1 << TT_BITS);
@@ -696,7 +696,7 @@ function fromGame(game) {
         stop: false,
         undo: [],
         killers: [],
-        history: new Int32Array(64 * 64),
+        history: persistHistory,
     };
     if (!Number.isFinite(s.ep) || s.ep < 0 || s.ep > 63) s.ep = -1;
     const cas = String(game.castling || '');
@@ -748,13 +748,26 @@ function searchRoot(s, depth, alpha0, beta0) {
     };
 }
 
+const persistHistory = new Int32Array(64 * 64);
+let persistMoveCount = -1;
+let persistScore = 0;
+
 export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
+    const mc = game.moveCount || 0;
+    // 같은 대국에서는 전치표·히스토리를 이어 더 깊게 봅니다. 새 판이면 비웁니다.
+    if (mc <= persistMoveCount) {
+        ttClear();
+        persistHistory.fill(0);
+        persistScore = 0;
+    } else {
+        for (let i = 0; i < persistHistory.length; i += 1) persistHistory[i] >>= 2;
+    }
+    persistMoveCount = mc;
     const s = fromGame(game);
     s.deadline = Date.now() + Math.max(80, Math.min(4000, Number(timeMs) || 3500));
-    ttClear();
     let found = { rows: [], mv: null, val: -30000, completed: false };
     let doneDepth = 0;
-    let lastScore = 0;
+    let lastScore = persistScore;
     for (let depth = 2; depth <= 14; depth += 1) {
         if (s.deadline - Date.now() < 80) break;
         s.stop = false;
@@ -777,6 +790,7 @@ export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
         }
         if (next.val >= 19000) break;
     }
+    persistScore = lastScore;
     choinSearchStats.depth = doneDepth;
     choinSearchStats.nodes = s.nodes;
     return found;

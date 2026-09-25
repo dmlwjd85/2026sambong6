@@ -1,8 +1,9 @@
 /**
  * 체스 클라이언트 AI.
  * 「고수」는 고정 깊이 3 알파베타와 짧은 정지탐색을 씁니다(한 수 약 1초). 강도는 유지합니다.
- * 「초인」은 오프닝북·가중 무작위·더 깊은 탐색(널무브·LMR·히스토리)을 씁니다(한 수 최대 3초).
- * 「ply1」은 1수 평가, 「choinOld」는 예전 초인으로 검증에만 씁니다.
+ * 「초인」은 배열 판 make/unmake·PeSTO·널무브·LMR·히스토리로 같은 3초 안에 더 깊게 봅니다.
+ * 오프닝북과 가까운 후보 가중 선택은 유지하되, 허용 폭은 좁혀 약화를 막습니다.
+ * 「ply1」은 1수 평가, 「choinOld」는 PR #13 초인으로 검증에만 씁니다.
  */
 
 import {
@@ -18,6 +19,9 @@ import {
     sanitizeChessGame,
 } from './chessGame.js';
 import { pickChessBookMove } from './chessOpenings.js';
+import { choinSearchStats, pickChoinEngineMove, pickSoftChoinMove } from './chessAiChoin.js';
+
+export { choinSearchStats };
 
 export const CHESS_AI_LEVELS = Object.freeze({
     ply1: Object.freeze({ id: 'ply1', label: '한수', timeMs: 80 }),
@@ -577,7 +581,65 @@ export function pickSoftChessMove(rows, { rng = Math.random } = {}) {
     if (best.val >= 90000) return best.mv;
     if (clean.length === 1) return best.mv;
     const gap = best.val - clean[1].val;
-    if (gap >= 80) return best.mv;
+    // 확실한 우위(약 0.4폰)는 항상 두고, 비슷한 수만 좁은 창에서 나눕니다.
+    if (gap >= 40) return best.mv;
+    const pool = clean.filter((r) => best.val - r.val <= 12);
+    if (!pool.length) return best.mv;
+    let sum = 0;
+    const weights = pool.map((r) => {
+        const w = Math.exp((r.val - best.val) / 8);
+        sum += w;
+        return w;
+    });
+    let pick = (typeof rng === 'function' ? rng() : Math.random()) * (sum || 1);
+    for (let i = 0; i < pool.length; i += 1) {
+        pick -= weights[i];
+        if (pick <= 0) return pool[i].mv;
+    }
+    return pool[pool.length - 1].mv;
+}
+
+export const choinOldSearchStats = { depth: 0 };
+
+function pickChoinPr13(game, timeMs, variety, rng) {
+    const moves = listLegalChessMovesTrusted(game);
+    if (!moves.length) return null;
+    const book = pickChessBookMove(game, rng);
+    if (book) return book;
+    const deadline = Date.now() + Math.max(80, Math.min(3000, Number(timeMs) || CHESS_AI_LEVELS.choin.timeMs));
+    const tt = makeTt();
+    const history = makeHistory();
+    let found = searchChoinRoot(game, 3, deadline, tt, history);
+    let rows = found.rows || [];
+    let doneDepth = found.completed === found.total ? 3 : 0;
+    for (let depth = 4; depth <= 5; depth += 1) {
+        if (deadline - Date.now() < 90) break;
+        const next = searchChoinRoot(game, depth, deadline, tt, history);
+        if (next.completed === next.total && next.rows && next.rows.length) {
+            found = next;
+            rows = next.rows;
+            doneDepth = depth;
+        }
+        if (next.val >= 90000) {
+            found = next;
+            rows = next.rows || rows;
+            doneDepth = depth;
+            break;
+        }
+    }
+    choinOldSearchStats.depth = doneDepth;
+    if (!rows.length) return found.mv || pickPly1Move(game, game.turn, variety);
+    // PR #13과 같은 넓은 창을 유지해 비교가 공정하게 합니다.
+    return pickSoftChessMovePr13(rows, rng) || found.mv;
+}
+
+function pickSoftChessMovePr13(rows, rng) {
+    const clean = (rows || []).filter((r) => r && r.mv && Number.isFinite(r.val));
+    if (!clean.length) return (rows && rows[0] && rows[0].mv) || null;
+    const best = clean[0];
+    if (best.val >= 90000) return best.mv;
+    if (clean.length === 1) return best.mv;
+    if (best.val - clean[1].val >= 80) return best.mv;
     const pool = clean.filter((r) => best.val - r.val <= 36);
     if (!pool.length) return best.mv;
     let sum = 0;
@@ -599,26 +661,10 @@ function pickChoinMove(game, timeMs, variety, rng) {
     if (!moves.length) return null;
     const book = pickChessBookMove(game, rng);
     if (book) return book;
-    const deadline = Date.now() + Math.max(80, Math.min(3000, Number(timeMs) || CHESS_AI_LEVELS.choin.timeMs));
-    const tt = makeTt();
-    const history = makeHistory();
-    let found = searchChoinRoot(game, 3, deadline, tt, history);
-    let rows = found.rows || [];
-    for (let depth = 4; depth <= 5; depth += 1) {
-        if (deadline - Date.now() < 90) break;
-        const next = searchChoinRoot(game, depth, deadline, tt, history);
-        if (next.completed === next.total && next.rows && next.rows.length) {
-            found = next;
-            rows = next.rows;
-        }
-        if (next.val >= 90000) {
-            found = next;
-            rows = next.rows || rows;
-            break;
-        }
-    }
-    if (!rows.length) return found.mv || pickPly1Move(game, game.turn, variety);
-    return pickSoftChessMove(rows, { rng }) || found.mv;
+    const found = pickChoinEngineMove(game, { timeMs });
+    const rows = (found && found.rows) || [];
+    if (!rows.length) return (found && found.mv) || pickPly1Move(game, game.turn, variety);
+    return pickSoftChoinMove(rows, rng) || found.mv;
 }
 
 export function pickChessAiMove(game, { color, level, timeMs, variety, rng } = {}) {
@@ -630,7 +676,7 @@ export function pickChessAiMove(game, { color, level, timeMs, variety, rng } = {
     const roll = typeof rng === 'function' ? rng : Math.random;
     let mv;
     if (lv === 'ply1') mv = pickPly1Move(g, my, varN);
-    else if (lv === 'choinOld') mv = pickChoinLegacy(g, timeMs, varN);
+    else if (lv === 'choinOld') mv = pickChoinPr13(g, timeMs, varN, roll);
     else if (lv === 'choin') mv = pickChoinMove(g, timeMs, varN, roll);
     else mv = pickGosuMove(g, timeMs, varN);
     if (!mv) return null;
@@ -642,7 +688,27 @@ function lookupLegal(game, mv) {
     return legal.find((m) => m.from === mv.from && m.to === mv.to && (m.promo || '') === (mv.promo || '')) || null;
 }
 
-/** 한 판을 처음부터 끝까지 두고 결과를 돌려줍니다. */
+function parseUciMove(uci) {
+    const file = (ch) => 'abcdefgh'.indexOf(ch);
+    return {
+        from: file(uci[0]) + (Number(uci[1]) - 1) * 8,
+        to: file(uci[2]) + (Number(uci[3]) - 1) * 8,
+        promo: uci.slice(4, 5) || '',
+    };
+}
+
+/** 오프닝 UCI를 적용한 뒤 대국을 시작합니다. */
+export function chessGameFromUci(uciList, now = 1) {
+    let g = emptyChessGame({ now });
+    (uciList || []).forEach((uci, i) => {
+        const want = parseUciMove(uci);
+        const found = lookupLegal(g, want);
+        if (found) g = applyTrustedChessMove(g, found, now + i);
+    });
+    return g;
+}
+
+/** 한 판을 처음부터(또는 지정 위치에서) 끝까지 두고 결과를 돌려줍니다. */
 export function playChessAiMatch({
     whiteLevel,
     blackLevel,
@@ -651,12 +717,26 @@ export function playChessAiMatch({
     maxMoves = 80,
     now = 1,
     variety = 0,
+    startGame = null,
+    rng,
 } = {}) {
-    let g = emptyChessGame({ now });
+    let g = startGame ? sanitizeChessGame(startGame) : emptyChessGame({ now });
+    let newDepthSum = 0;
+    let newDepthN = 0;
+    let oldDepthSum = 0;
+    let oldDepthN = 0;
     for (let i = 0; i < maxMoves && !isOverTrusted(g); i += 1) {
         const level = g.turn === CHESS_WHITE ? whiteLevel : blackLevel;
         const timeMs = g.turn === CHESS_WHITE ? whiteTime : blackTime;
-        const mv = pickChessAiMove(g, { color: g.turn, level, timeMs, variety });
+        const mv = pickChessAiMove(g, { color: g.turn, level, timeMs, variety, rng });
+        if (level === 'choin' && choinSearchStats.depth) {
+            newDepthSum += choinSearchStats.depth;
+            newDepthN += 1;
+        }
+        if (level === 'choinOld' && choinOldSearchStats.depth) {
+            oldDepthSum += choinOldSearchStats.depth;
+            oldDepthN += 1;
+        }
         if (!mv) break;
         const found = lookupLegal(g, mv);
         if (!found) {
@@ -672,6 +752,8 @@ export function playChessAiMatch({
         endReason: g.endReason || '',
         moveCount: g.moveCount,
         whiteEval: evaluateChess(g, CHESS_WHITE),
+        newDepth: newDepthN ? newDepthSum / newDepthN : 0,
+        oldDepth: oldDepthN ? oldDepthSum / oldDepthN : 0,
     };
 }
 

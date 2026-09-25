@@ -555,7 +555,8 @@ function bishopPairAndKingEg(s) {
     let eg = 0;
     if (wb >= 2) { mg += 28; eg += 42; }
     if (bb >= 2) { mg -= 28; eg -= 42; }
-    if (s.wk >= 0 && s.bk >= 0) {
+    // 엔드게임에서만 킹을 가운데로 끌어 중반 킹워크를 막습니다.
+    if (s.phase <= 10 && s.wk >= 0 && s.bk >= 0) {
         const wC = Math.abs((s.wk & 7) - 3.5) + Math.abs((s.wk >> 3) - 3.5);
         const bC = Math.abs((s.bk & 7) - 3.5) + Math.abs((s.bk >> 3) - 3.5);
         eg += (bC - wC) * 8;
@@ -751,12 +752,8 @@ function searchRoot(s, depth, alpha0, beta0) {
             continue;
         }
         const ext = inCheck(s, s.turn === 0) ? 1 : 0;
-        let val;
-        if (i === 0) val = -search(s, depth - 1 + ext, -beta0, -alpha, 1, true);
-        else {
-            val = -search(s, depth - 1 + ext, -alpha - 1, -alpha, 1, true);
-            if (val > alpha && val < beta0) val = -search(s, depth - 1 + ext, -beta0, -alpha, 1, true);
-        }
+        // 루트는 모든 수를 같은 창으로 봐 실제 점수 차이를 남깁니다. PVS 실패낮음은 최선 수를 가립니다.
+        const val = -search(s, depth - 1 + ext, -beta0, -alpha0, 1, true);
         unmake(s);
         rows.push({ mv: { from: moves[i].from, to: moves[i].to, promo: moves[i].promo || '' }, val });
         if (val > alpha) alpha = val;
@@ -784,9 +781,10 @@ export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
         const prev = found;
         let alpha = -30000;
         let beta = 30000;
-        if (depth >= 4) {
-            alpha = lastScore - 28;
-            beta = lastScore + 28;
+        // 깊이 4부터 aspiration. 실패하면 전체 창으로 다시 봅니다.
+        if (depth >= 4 && Number.isFinite(lastScore)) {
+            alpha = lastScore - 36;
+            beta = lastScore + 36;
         }
         let next = searchRoot(s, depth, alpha, beta);
         if (!s.stop && next.rows.length && (next.val <= alpha || next.val >= beta)) {

@@ -187,6 +187,12 @@ import {
     sanitizeChessAiLevel,
 } from './lib/chessAi.js';
 import {
+    inferChessCapture,
+    playChessBoardFx,
+    chessAttackerType,
+} from './lib/chessFx.js';
+import { chessPieceHtml } from './lib/chessPieces.js';
+import {
     CHESS_BLACK,
     CHESS_WHITE,
     applyChessForfeit,
@@ -194,11 +200,12 @@ import {
     applyChessTimeout,
     chessEndText,
     chessErrorText,
-    chessGlyph,
+    chessFile,
     chessIsInCheck,
     chessIsOver,
     chessPieceColor,
     chessPieceType,
+    chessRank,
     chessSeatColor,
     chessStatusText,
     emptyChessGame,
@@ -11243,7 +11250,10 @@ ${subjectLine}
         let _chessAiReqId = 0;
         let _chessAiHumanColor = CHESS_WHITE;
         let _chessSelected = null;
+        let _chessPending = null;
         let _chessPromo = null;
+        let _chessPrevCells = null;
+        let _chessSeenMoveKey = '';
         let _boardGameVacating = false;
         let _gomokuLastVp = { w: 0, h: 0 };
         const _gomokuView = { scale: 1, min: 1, max: 4.8, x: 0, y: 0 };
@@ -11589,6 +11599,8 @@ ${subjectLine}
             });
             if (wBtn) wBtn.classList.toggle('is-on', _chessAiHumanColor === CHESS_WHITE);
             if (bBtn) bBtn.classList.toggle('is-on', _chessAiHumanColor === CHESS_BLACK);
+            const lobby = document.getElementById('boardgameLobbyView');
+            if (lobby) lobby.classList.toggle('is-chess-theme', chess);
         }
 
         function renderBoardGameLobby() {
@@ -12198,14 +12210,20 @@ ${subjectLine}
             if (_chessAiSession) _chessAiSession.token = (_chessAiSession.token || 0) + 1;
             _chessAiSession = null;
             _chessSelected = null;
+            _chessPending = null;
             _chessPromo = null;
+            _chessPrevCells = null;
+            _chessSeenMoveKey = '';
         }
 
         function startChessAiSession(level) {
             _boardGameActiveId = '';
             _boardGameType = 'chess';
             _chessSelected = null;
+            _chessPending = null;
             _chessPromo = null;
+            _chessPrevCells = null;
+            _chessSeenMoveKey = '';
             _chessAiSession = {
                 game: emptyChessGame({ now: Date.now() }),
                 thinking: false,
@@ -12275,6 +12293,7 @@ ${subjectLine}
             const toggle = document.getElementById('chessTimerToggle');
             const timerEl = document.getElementById('chessHudTimer');
             const promoBar = document.getElementById('chessPromoBar');
+            const confirmBar = document.getElementById('chessConfirmBar');
             const resultBar = document.getElementById('chessResultBar');
             const resultText = document.getElementById('chessResultText');
             const leaveBtn = document.querySelector('.chess-leave-btn');
@@ -12307,8 +12326,12 @@ ${subjectLine}
                 }) || '한 판이 끝났습니다.';
                 else if (aiMode && _chessAiSession.thinking) hint.textContent = `${chessAiLevelLabel(_chessAiSession.level)} AI가 생각 중입니다…`;
                 else if (game.inCheck || chessIsInCheck(game, game.turn)) hint.textContent = chessStatusText(game);
-                else if (game.turn === myColor) hint.textContent = '당신 차례입니다. 말을 고른 뒤 연한 칸을 누르세요.';
+                else if (game.turn === myColor) hint.textContent = '당신 차례입니다. 말을 고른 뒤 칸을 누르고 「여기 두기」를 누르세요.';
                 else hint.textContent = chessStatusText(game);
+            }
+            if (confirmBar) {
+                const canPlace = room.status === 'playing' && game.turn === myColor && !_chessPromo && !(_chessAiSession && _chessAiSession.thinking);
+                confirmBar.classList.toggle('hidden', !(_chessPending && canPlace));
             }
             if (promoBar) promoBar.classList.toggle('hidden', !_chessPromo);
             if (resultBar && resultText) {
@@ -12326,16 +12349,89 @@ ${subjectLine}
             const endBtn = document.querySelector('#chessResultBar .gomoku-result-actions .boardgame-mini-btn');
             if (endBtn) endBtn.textContent = aiMode ? '종료' : '방 종료';
             renderChessBoard(room);
+            maybePlayChessMoveFx(game);
+            requestAnimationFrame(() => placeChessConfirmNearSquare());
+        }
+
+        function maybePlayChessMoveFx(game) {
+            const last = game && game.lastMove;
+            const key = last ? `${last.from}-${last.to}-${last.promo || ''}-${game.moveCount || 0}` : '';
+            if (!key || key === _chessSeenMoveKey) {
+                if (game && game.cells) _chessPrevCells = game.cells.slice();
+                return;
+            }
+            const prev = _chessPrevCells;
+            _chessSeenMoveKey = key;
+            _chessPrevCells = game.cells ? game.cells.slice() : null;
+            if (!prev || !last) return;
+            const cap = inferChessCapture(prev, last);
+            const check = !!(game.inCheck || (game.endReason === 'checkmate'));
+            const mate = game.endReason === 'checkmate';
+            if (!cap.captured && !check && !mate) return;
+            const wrap = document.getElementById('chessBoardWrap');
+            const layer = document.getElementById('chessFxLayer');
+            const fromBtn = document.querySelector(`#chessBoard [data-sq="${last.from}"]`);
+            const toBtn = document.querySelector(`#chessBoard [data-sq="${last.to}"]`);
+            playChessBoardFx(layer, {
+                fromBtn,
+                toBtn,
+                wrapEl: wrap,
+                attackerType: chessAttackerType(cap.attacker),
+                captured: cap.captured,
+                check,
+                mate,
+            });
+        }
+
+        function renderChessCoords(flip) {
+            const ranksEl = document.getElementById('chessRankLabels');
+            const filesEl = document.getElementById('chessFileLabels');
+            const ranks = flip ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
+            const files = flip ? 'hgfedcba' : 'abcdefgh';
+            if (ranksEl) ranksEl.innerHTML = ranks.map((n) => `<span>${n}</span>`).join('');
+            if (filesEl) filesEl.innerHTML = files.split('').map((ch) => `<span>${ch}</span>`).join('');
+        }
+
+        function placeChessConfirmNearSquare() {
+            const bar = document.getElementById('chessConfirmBar');
+            const wrap = document.getElementById('chessBoardWrap');
+            if (!bar || !wrap || !_chessPending || bar.classList.contains('hidden')) return;
+            const dest = wrap.querySelector(`[data-sq="${_chessPending.to}"]`);
+            if (!dest) return;
+            const wr = wrap.getBoundingClientRect();
+            const sq = dest.getBoundingClientRect();
+            const left = sq.right - wr.left + 8;
+            const top = sq.top - wr.top + sq.height / 2;
+            bar.style.left = `${left}px`;
+            bar.style.top = `${top}px`;
+            bar.style.transform = 'translate(0, -50%)';
+            bar.onpointerdown = (e) => e.stopPropagation();
+            requestAnimationFrame(() => {
+                const b = bar.getBoundingClientRect();
+                const v = wrap.getBoundingClientRect();
+                if (!b.width || !v.width) return;
+                let dx = 0;
+                let dy = 0;
+                const pad = 6;
+                if (b.right > v.right - pad) dx -= b.right - (v.right - pad);
+                if (b.left + dx < v.left + pad) dx += (v.left + pad) - (b.left + dx);
+                if (b.bottom > v.bottom - pad) dy -= b.bottom - (v.bottom - pad);
+                if (b.top + dy < v.top + pad) dy += (v.top + pad) - (b.top + dy);
+                if (dx || dy) bar.style.transform = `translate(${dx}px, calc(-50% + ${dy}px))`;
+            });
         }
 
         function renderChessBoard(room) {
             const boardEl = document.getElementById('chessBoard');
             if (!boardEl) return;
+            const wrap = document.getElementById('chessBoardWrap');
+            const parked = document.getElementById('chessConfirmBar');
+            if (parked && wrap) wrap.appendChild(parked);
             const me = boardGameSelfId();
             const myColor = chessSeatColor(roomMemberSeat(room, me));
             const flip = myColor === CHESS_BLACK;
             const game = room.game || emptyChessGame();
-            const legal = (room.status === 'playing' && !_chessPromo && !( _chessAiSession && _chessAiSession.thinking) && game.turn === myColor)
+            const legal = (room.status === 'playing' && !_chessPromo && !(_chessAiSession && _chessAiSession.thinking) && game.turn === myColor)
                 ? listLegalChessMoves(game, myColor)
                 : [];
             const fromSel = _chessSelected;
@@ -12346,6 +12442,7 @@ ${subjectLine}
                 : -1;
             const ranks = flip ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
             const files = flip ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+            renderChessCoords(flip);
             const html = [];
             ranks.forEach((rank) => {
                 files.forEach((file) => {
@@ -12353,16 +12450,19 @@ ${subjectLine}
                     const light = ((file + rank) % 2) === 1;
                     const p = game.cells[sq];
                     const dest = dests.find((m) => m.to === sq);
+                    const pendingTo = _chessPending && _chessPending.to === sq;
                     const cls = [
                         'chess-sq',
                         light ? 'is-light' : 'is-dark',
                         last && (last.from === sq || last.to === sq) ? 'is-last' : '',
                         fromSel === sq ? 'is-selected' : '',
+                        pendingTo ? 'is-pending' : '',
                         checkSq === sq ? 'is-check' : '',
                         dest && dest.capture ? 'is-capture' : '',
                         dest && !dest.capture ? 'is-move' : '',
                     ].filter(Boolean).join(' ');
-                    html.push(`<button type="button" class="${cls}" data-sq="${sq}" aria-label="${sq}">${chessGlyph(p)}</button>`);
+                    const label = `${'abcdefgh'[chessFile(sq)]}${chessRank(sq) + 1}`;
+                    html.push(`<button type="button" class="${cls}" data-sq="${sq}" aria-label="${label}">${chessPieceHtml(p, sq)}</button>`);
                 });
             });
             boardEl.innerHTML = html.join('');
@@ -12378,6 +12478,7 @@ ${subjectLine}
             _gomokuPending = null;
             _gomokuNeedFit = true;
             _chessSelected = null;
+            _chessPending = null;
             _chessPromo = null;
             const room = currentBoardGameRoom();
             if (room && room.gameType === 'chess') _boardGameType = 'chess';
@@ -12447,37 +12548,68 @@ ${subjectLine}
                 const mine = legal.some((m) => m.from === sq);
                 if (!mine) return;
                 _chessSelected = sq;
+                _chessPending = null;
+                renderChessPlay(room);
+                return;
+            }
+            if (legal.some((m) => m.from === sq) && sq !== _chessSelected) {
+                _chessSelected = sq;
+                _chessPending = null;
                 renderChessPlay(room);
                 return;
             }
             const matches = legal.filter((m) => m.from === _chessSelected && m.to === sq);
             if (!matches.length) {
-                if (legal.some((m) => m.from === sq)) {
-                    _chessSelected = sq;
-                    renderChessPlay(room);
-                    return;
-                }
                 _chessSelected = null;
+                _chessPending = null;
+                renderChessPlay(room);
+                return;
+            }
+            _chessPending = { from: _chessSelected, to: sq };
+            renderChessPlay(room);
+        };
+
+        window.cancelChessPending = function () {
+            _chessPending = null;
+            const room = currentChessPlayRoom();
+            if (room) renderChessPlay(room);
+        };
+
+        window.confirmChessPending = async function () {
+            if (!_chessPending) return;
+            const room = currentChessPlayRoom();
+            if (!room) return;
+            const me = boardGameSelfId();
+            const myColor = chessSeatColor(roomMemberSeat(room, me));
+            const legal = listLegalChessMoves(room.game, myColor);
+            const matches = legal.filter((m) => m.from === _chessPending.from && m.to === _chessPending.to);
+            if (!matches.length) {
+                _chessPending = null;
                 renderChessPlay(room);
                 return;
             }
             if (matches.some((m) => m.promo)) {
-                _chessPromo = { from: _chessSelected, to: sq };
+                _chessPromo = { from: _chessPending.from, to: _chessPending.to };
+                _chessPending = null;
                 renderChessPlay(room);
                 return;
             }
-            await commitChessMove(matches[0].from, matches[0].to, '');
+            const { from, to } = _chessPending;
+            _chessPending = null;
+            await commitChessMove(from, to, '');
         };
 
         window.confirmChessPromo = async function (promo) {
             if (!_chessPromo) return;
             const { from, to } = _chessPromo;
             _chessPromo = null;
+            _chessPending = null;
             await commitChessMove(from, to, promo);
         };
 
         async function commitChessMove(from, to, promo) {
             _chessSelected = null;
+            _chessPending = null;
             if (_chessAiSession) {
                 const placed = applyChessMove(_chessAiSession.game, {
                     from, to, promo, color: _chessAiSession.human, now: Date.now(),
@@ -12623,7 +12755,10 @@ ${subjectLine}
         window.continueBoardGameRoom = async function () {
             if (_chessAiSession) {
                 _chessSelected = null;
+                _chessPending = null;
                 _chessPromo = null;
+                _chessPrevCells = null;
+                _chessSeenMoveKey = '';
                 _chessAiSession.thinking = false;
                 _chessAiSession.token = (_chessAiSession.token || 0) + 1;
                 _chessAiSession.game = emptyChessGame({ now: Date.now() });

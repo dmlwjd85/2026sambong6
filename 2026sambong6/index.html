@@ -2415,7 +2415,17 @@
                         </div>
                         <p id="chessTurnHint" class="gomoku-turn-hint">차례를 기다리는 중</p>
                         <div id="chessBoardWrap" class="chess-wrap">
-                            <div id="chessBoard" class="chess-board" role="grid" aria-label="체스판"></div>
+                            <div class="chess-frame">
+                                <div id="chessRankLabels" class="chess-coord chess-coord-ranks" aria-hidden="true"></div>
+                                <div id="chessBoard" class="chess-board" role="grid" aria-label="체스판"></div>
+                                <div id="chessFileLabels" class="chess-coord chess-coord-files" aria-hidden="true"></div>
+                            </div>
+                            <div id="chessFxLayer" class="chess-fx-layer" aria-hidden="true"></div>
+                            <div id="chessConfirmBar" class="chess-confirm hidden">
+                                <span id="chessConfirmText">여기 둘까요?</span>
+                                <button type="button" class="boardgame-mini-btn" onclick="window.cancelChessPending()">취소</button>
+                                <button type="button" class="boardgame-primary-btn chess-confirm-go" onclick="void window.confirmChessPending()">여기 두기</button>
+                            </div>
                         </div>
                         <div id="chessPromoBar" class="chess-promo hidden">
                             <p>마지막 줄입니다. 무엇으로 바꿀까요?</p>

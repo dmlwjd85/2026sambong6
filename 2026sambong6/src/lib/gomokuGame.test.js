@@ -7,6 +7,7 @@ import {
     applyGomokuForfeit,
     applyGomokuTimeout,
     emptyGomokuGame,
+    gomokuIsForbiddenDoubleThree,
     gomokuBoardFull,
     gomokuHasFive,
     gomokuWinnerSeat,
@@ -134,6 +135,23 @@ describe('오목 승패', () => {
         assert.equal(r.game.winner, GOMOKU_WHITE);
         const again = applyGomokuTimeout(r.game, { now: 40000 });
         assert.equal(again.ok, false);
+    });
+
+    it('흑만 3·3을 금하고 백은 허용한다', () => {
+        const g = emptyGomokuGame();
+        // (10,10)에 두면 가로·세로 열린 3이 동시에 생깁니다.
+        g.board[10][8] = GOMOKU_BLACK;
+        g.board[10][9] = GOMOKU_BLACK;
+        g.board[8][10] = GOMOKU_BLACK;
+        g.board[9][10] = GOMOKU_BLACK;
+        assert.equal(gomokuIsForbiddenDoubleThree(g.board, 10, 10, GOMOKU_BLACK), true);
+        assert.equal(gomokuIsForbiddenDoubleThree(g.board, 10, 10, GOMOKU_WHITE), false);
+        const blackTry = placeGomokuStone(g, { x: 10, y: 10, color: GOMOKU_BLACK, now: 1 });
+        assert.equal(blackTry.ok, false);
+        assert.equal(blackTry.error, 'double_three');
+        g.turn = GOMOKU_WHITE;
+        const whiteOk = placeGomokuStone(g, { x: 10, y: 10, color: GOMOKU_WHITE, now: 2 });
+        assert.equal(whiteOk.ok, true);
     });
 
     it('대국 중 나가면 나간 쪽이 진다', () => {

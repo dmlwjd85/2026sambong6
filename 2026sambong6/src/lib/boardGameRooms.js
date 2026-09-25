@@ -13,6 +13,7 @@
  * - 종료(closed) 또는 만료된 방은 목록에 보이지 않습니다.
  */
 
+import { emptyChessGame, chessGameToDoc, sanitizeChessGame } from './chessGame.js';
 import { emptyGomokuGame, gomokuGameToDoc, sanitizeGomokuGame } from './gomokuGame.js';
 
 /** 10분 무활동이면 방을 자동 종료합니다. */
@@ -29,6 +30,13 @@ export const BOARD_GAME_CATALOG = Object.freeze({
     gomoku: Object.freeze({
         id: 'gomoku',
         label: '오목',
+        minPlayers: 2,
+        maxPlayers: 2,
+        timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
+    }),
+    chess: Object.freeze({
+        id: 'chess',
+        label: '체스',
         minPlayers: 2,
         maxPlayers: 2,
         timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
@@ -126,11 +134,13 @@ function uniqueById(list) {
 
 function emptyGameForType(gameType, now) {
     if (gameType === 'gomoku') return emptyGomokuGame({ now });
+    if (gameType === 'chess') return emptyChessGame({ now });
     return null;
 }
 
 function sanitizeGameForType(gameType, raw, now) {
     if (gameType === 'gomoku') return sanitizeGomokuGame(raw, { now });
+    if (gameType === 'chess') return sanitizeChessGame(raw, { now });
     return raw && typeof raw === 'object' ? raw : null;
 }
 
@@ -210,7 +220,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
         id: hid,
         name: room.hostName,
         role: 'host',
-        seat: def.id === 'gomoku' ? 'black' : '',
+        seat: def.id === 'gomoku' ? 'black' : (def.id === 'chess' ? 'white' : ''),
     }];
     return { ok: true, error: '', room };
 }
@@ -300,8 +310,13 @@ export function requestJoinBoardRoom(room, { studentId, studentName, now } = {})
 }
 
 function nextSeatForGame(room) {
-    if (room.gameType !== 'gomoku') return '';
+    if (room.gameType !== 'gomoku' && room.gameType !== 'chess') return '';
     const used = new Set(room.members.map((m) => m.seat).filter(Boolean));
+    if (room.gameType === 'chess') {
+        if (!used.has('black')) return 'black';
+        if (!used.has('white')) return 'white';
+        return '';
+    }
     if (!used.has('white')) return 'white';
     if (!used.has('black')) return 'black';
     return '';
@@ -489,6 +504,8 @@ export function boardRoomErrorText(code) {
 /** Firestore에 넣을 방 문서. 오목 판은 중첩 배열 대신 cells 로 넣습니다. */
 export function boardRoomToDoc(room) {
     const r = sanitizeBoardRoom(room);
-    const game = r.gameType === 'gomoku' ? gomokuGameToDoc(r.game) : r.game;
+    const game = r.gameType === 'gomoku'
+        ? gomokuGameToDoc(r.game)
+        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : r.game);
     return { ...r, game };
 }

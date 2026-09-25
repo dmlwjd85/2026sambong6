@@ -55,9 +55,22 @@ describe('보드게임 방 만들기', () => {
     });
 
     it('알 수 없는 게임은 만들지 않는다', () => {
-        const bad = createBoardRoom({ gameType: 'chess', hostId: '1', hostName: '민준', now: 1 });
+        const bad = createBoardRoom({ gameType: 'xyz', hostId: '1', hostName: '민준', now: 1 });
         assert.equal(bad.ok, false);
         assert.equal(sanitizeBoardRoom({ gameType: 'hack', status: 'nope' }).gameType, 'gomoku');
+    });
+
+    it('체스 방은 방장이 백(선공)으로 들어간다', () => {
+        const created = createBoardRoom({ gameType: 'chess', hostId: '1', hostName: '민준', now: 1 });
+        assert.equal(created.ok, true);
+        assert.equal(created.room.gameType, 'chess');
+        assert.equal(created.room.members[0].seat, 'white');
+        assert.equal(created.room.game.turn, 'w');
+        const asked = requestJoinBoardRoom(created.room, { studentId: '7', studentName: '서연', now: 2 });
+        const approved = approveJoinBoardRoom(asked.room, { hostId: '1', studentId: '7', now: 3 });
+        assert.equal(approved.ok, true);
+        assert.equal(approved.room.members[1].seat, 'black');
+        assert.equal(approved.room.status, 'playing');
     });
 });
 

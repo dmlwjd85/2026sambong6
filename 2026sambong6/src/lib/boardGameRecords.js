@@ -1,11 +1,12 @@
 /**
- * 학생별 보드게임(오목) 승패 기록.
+ * 학생별 보드게임 승패 기록(오목·체스).
  * 학생 문서 `boardGameRecords` 에 두고, 로비·결과 화면에 짧게 보여 줍니다.
  */
 
+import { CHESS_BLACK, CHESS_WHITE, sanitizeChessGame } from './chessGame.js';
 import { GOMOKU_BLACK, GOMOKU_WHITE, sanitizeGomokuGame } from './gomokuGame.js';
 
-export const BOARD_GAME_RECORD_TYPES = Object.freeze(['gomoku']);
+export const BOARD_GAME_RECORD_TYPES = Object.freeze(['gomoku', 'chess']);
 
 export function emptyBoardGameTypeRecord() {
     return { wins: 0, losses: 0, draws: 0 };
@@ -14,6 +15,7 @@ export function emptyBoardGameTypeRecord() {
 export function emptyBoardGameRecords() {
     return {
         gomoku: emptyBoardGameTypeRecord(),
+        chess: emptyBoardGameTypeRecord(),
         recentKeys: [],
     };
 }
@@ -41,6 +43,7 @@ export function sanitizeBoardGameRecords(raw) {
         .slice(-24);
     return {
         gomoku: sanitizeTypeRecord(src.gomoku),
+        chess: sanitizeTypeRecord(src.chess),
         recentKeys,
     };
 }
@@ -69,6 +72,11 @@ export function mergeBoardGameRecords(a, b) {
             losses: Math.max(left.gomoku.losses, right.gomoku.losses),
             draws: Math.max(left.gomoku.draws, right.gomoku.draws),
         },
+        chess: {
+            wins: Math.max(left.chess.wins, right.chess.wins),
+            losses: Math.max(left.chess.losses, right.chess.losses),
+            draws: Math.max(left.chess.draws, right.chess.draws),
+        },
         recentKeys: recentKeys.slice(-24),
     };
 }
@@ -96,6 +104,21 @@ export function gomokuRecordResult(game, myColor) {
     if (g.endReason === 'draw') return 'draw';
     if (!g.winner) return '';
     return g.winner === mine ? 'win' : 'loss';
+}
+
+export function chessRecordResult(game, myColor) {
+    const g = sanitizeChessGame(game);
+    const mine = myColor === CHESS_BLACK || myColor === CHESS_WHITE ? myColor : '';
+    if (!mine) return '';
+    if (['stalemate', 'fifty', 'material', 'threefold'].includes(g.endReason)) return 'draw';
+    if (!g.winner) return '';
+    return g.winner === mine ? 'win' : 'loss';
+}
+
+export function chessResultKey(roomOrId, game) {
+    const id = typeof roomOrId === 'string' ? roomOrId : String((roomOrId && roomOrId.id) || 'local');
+    const g = sanitizeChessGame(game || (roomOrId && roomOrId.game) || {});
+    return `${id}:chess:${g.turnStartedAt}:${g.moveCount}:${g.winner}:${g.endReason || ''}`.slice(0, 80);
 }
 
 export function gomokuResultKey(roomOrId, game) {

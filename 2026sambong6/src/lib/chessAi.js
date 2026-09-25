@@ -1,28 +1,33 @@
 /**
  * 체스 클라이언트 AI.
- * 「고수」는 2수 앞을 보고, 「초인」은 반복 심화·잡기 정지탐색을 씁니다.
- * 턴당 시간 상한을 지키며, 초인은 고수 수를 기본으로 두고 더 좋은 수를 찾습니다.
+ * 「고수」는 고정 깊이 3 알파베타와 짧은 정지탐색을 씁니다(한 수 약 1초).
+ * 「초인」은 반복 심화·전치표·수 정렬로 더 깊게 봅니다(한 수 최대 3초).
+ * 「ply1」은 1수 평가로, 강도 비교 검증에만 씁니다.
  */
 
 import {
     CHESS_BLACK,
     CHESS_WHITE,
     applyChessMove,
-    chessIsOver,
+    applyTrustedChessMove,
     chessPieceColor,
     chessPieceType,
+    chessPositionKey,
     emptyChessGame,
-    listLegalChessMoves,
+    listLegalChessMovesTrusted,
     sanitizeChessGame,
 } from './chessGame.js';
 
 export const CHESS_AI_LEVELS = Object.freeze({
-    gosu: Object.freeze({ id: 'gosu', label: '고수', timeMs: 700 }),
+    ply1: Object.freeze({ id: 'ply1', label: '한수', timeMs: 80 }),
+    gosu: Object.freeze({ id: 'gosu', label: '고수', timeMs: 900, depth: 3 }),
     choin: Object.freeze({ id: 'choin', label: '초인', timeMs: 2600 }),
 });
 
 export function sanitizeChessAiLevel(raw) {
-    return raw === 'choin' ? 'choin' : 'gosu';
+    if (raw === 'choin') return 'choin';
+    if (raw === 'ply1') return 'ply1';
+    return 'gosu';
 }
 
 export function chessAiLevelLabel(level) {
@@ -102,13 +107,26 @@ function pstAt(type, sq, color) {
     return color === CHESS_WHITE ? table[sq] : table[sq ^ 56];
 }
 
+function isDrawReason(endReason) {
+    return ['stalemate', 'fifty', 'material', 'threefold'].includes(endReason);
+}
+
+function isOverTrusted(game) {
+    return !!(game.winner || isDrawReason(game.endReason));
+}
+
 export function evaluateChess(game, me) {
-    const g = sanitizeChessGame(game);
+    const g = game && game.cells ? game : sanitizeChessGame(game);
     if (g.endReason === 'checkmate') {
-        return g.winner === me ? 100000 : -100000;
+        const dist = Math.min(40, g.moveCount || 0);
+        return g.winner === me ? (100000 - dist) : -(100000 - dist);
     }
-    if (['stalemate', 'fifty', 'material', 'threefold'].includes(g.endReason)) return 0;
+    if (isDrawReason(g.endReason)) return 0;
     let score = 0;
+    let enemyK = -1;
+    let myBishops = 0;
+    let theirBishops = 0;
+    const them = me === CHESS_WHITE ? CHESS_BLACK : CHESS_WHITE;
     for (let sq = 0; sq < 64; sq += 1) {
         const p = g.cells[sq];
         if (!p) continue;
@@ -116,15 +134,16 @@ export function evaluateChess(game, me) {
         const type = chessPieceType(p);
         const v = (VAL[type] || 0) + pstAt(type, sq, col);
         score += col === me ? v : -v;
+        if (type === 'b') {
+            if (col === me) myBishops += 1;
+            else theirBishops += 1;
+        }
+        if (type === 'k' && col === them) enemyK = sq;
     }
-    if (g.inCheck && g.turn !== me) score += 18;
-    if (g.inCheck && g.turn === me) score -= 18;
-    let enemyK = -1;
-    const them = me === CHESS_WHITE ? CHESS_BLACK : CHESS_WHITE;
-    for (let sq = 0; sq < 64; sq += 1) {
-        const p = g.cells[sq];
-        if (p && chessPieceType(p) === 'k' && chessPieceColor(p) === them) enemyK = sq;
-    }
+    if (myBishops >= 2) score += 28;
+    if (theirBishops >= 2) score -= 28;
+    if (g.inCheck && g.turn !== me) score += 22;
+    if (g.inCheck && g.turn === me) score -= 22;
     if (enemyK >= 0) {
         const kf = enemyK & 7;
         const kr = enemyK >> 3;
@@ -138,105 +157,161 @@ export function evaluateChess(game, me) {
     return score;
 }
 
-function orderMoves(moves) {
+function evaluateStm(game) {
+    return evaluateChess(game, game.turn);
+}
+
+function varietyJitter(mv, variety) {
+    if (!variety) return 0;
+    return ((mv.from * 13 + mv.to * 7 + (mv.promo ? 3 : 0) + variety) % 7) * 0.01;
+}
+
+function mvvScore(game, mv) {
+    let victim = 0;
+    if (mv.ep) victim = VAL.p;
+    else if (mv.capture) {
+        const hit = game.cells[mv.to];
+        victim = VAL[chessPieceType(hit)] || 0;
+    }
+    if (mv.promo) victim += VAL[mv.promo] || 0;
+    const atk = VAL[chessPieceType(game.cells[mv.from])] || 0;
+    return victim * 16 - atk;
+}
+
+function orderMoves(game, moves, ttMove, killers) {
     return moves.slice().sort((a, b) => {
-        const ap = a.promo === 'q' ? 800 : 0;
-        const bp = b.promo === 'q' ? 800 : 0;
-        const ac = a.capture ? 400 : 0;
-        const bc = b.capture ? 400 : 0;
-        return (bp + bc) - (ap + ac) || a.from - b.from || a.to - b.to;
+        const aTt = ttMove && a.from === ttMove.from && a.to === ttMove.to && (a.promo || '') === (ttMove.promo || '') ? 50000 : 0;
+        const bTt = ttMove && b.from === ttMove.from && b.to === ttMove.to && (b.promo || '') === (ttMove.promo || '') ? 50000 : 0;
+        const aK = killers && killers.some((k) => k && k.from === a.from && k.to === a.to) ? 250 : 0;
+        const bK = killers && killers.some((k) => k && k.from === b.from && k.to === b.to) ? 250 : 0;
+        return (bTt + bK + mvvScore(game, b)) - (aTt + aK + mvvScore(game, a))
+            || a.from - b.from || a.to - b.to;
     });
 }
 
-function pickDefaultPromo(mv) {
-    return mv.promo || (chessNeedsPromo(mv) ? 'q' : '');
+function playMove(game, mv) {
+    return applyTrustedChessMove(game, {
+        ...mv,
+        promo: mv.promo || '',
+    }, game.turnStartedAt);
 }
 
-function chessNeedsPromo(mv) {
-    return !!mv.promo;
+function makeTt() {
+    return new Map();
 }
 
-function playMove(game, mv, now) {
-    return applyChessMove(game, {
-        from: mv.from,
-        to: mv.to,
-        promo: pickDefaultPromo(mv) || mv.promo,
-        color: game.turn,
-        now,
-    });
+function ttGet(tt, key, depth, alpha, beta) {
+    const hit = tt.get(key);
+    if (!hit || hit.depth < depth) return null;
+    if (hit.flag === 'exact') return hit;
+    if (hit.flag === 'alpha' && hit.val <= alpha) return hit;
+    if (hit.flag === 'beta' && hit.val >= beta) return hit;
+    return null;
 }
 
-function quiesce(game, me, alpha, beta, deadline, qdepth) {
-    if (Date.now() >= deadline || qdepth <= 0) return evaluateChess(game, me);
-    let stand = evaluateChess(game, me);
+function ttSet(tt, key, depth, val, flag, mv) {
+    if (tt.size > 24000) {
+        const first = tt.keys().next().value;
+        if (first !== undefined) tt.delete(first);
+    }
+    tt.set(key, { depth, val, flag, mv });
+}
+
+function quiesce(game, alpha, beta, deadline, qdepth) {
+    if (Date.now() >= deadline || qdepth <= 0) return evaluateStm(game);
+    if (isOverTrusted(game)) return evaluateStm(game);
+    let stand = evaluateStm(game);
     if (stand >= beta) return beta;
     if (stand > alpha) alpha = stand;
-    const captures = orderMoves(listLegalChessMoves(game)).filter((m) => m.capture || m.promo);
-    for (let i = 0; i < captures.length && Date.now() < deadline; i += 1) {
-        const r = playMove(game, captures[i], game.turnStartedAt);
-        if (!r.ok) continue;
-        const val = -quiesce(r.game, me, -beta, -alpha, deadline, qdepth - 1);
+    const moves = orderMoves(game, listLegalChessMovesTrusted(game).filter((m) => m.capture || m.promo));
+    for (let i = 0; i < moves.length; i += 1) {
+        if (Date.now() >= deadline) break;
+        const next = playMove(game, moves[i]);
+        const val = -quiesce(next, -beta, -alpha, deadline, qdepth - 1);
         if (val >= beta) return beta;
         if (val > alpha) alpha = val;
     }
     return alpha;
 }
 
-function negamax(game, me, depth, alpha, beta, deadline, useQ) {
-    if (Date.now() >= deadline) return evaluateChess(game, me);
-    if (chessIsOver(game)) return evaluateChess(game, me);
+function negamax(game, depth, alpha, beta, deadline, useQ, qdepth, tt, killers, ply) {
+    if (Date.now() >= deadline) return evaluateStm(game);
+    if (isOverTrusted(game)) return evaluateStm(game);
+    const key = chessPositionKey(game);
+    const cached = ttGet(tt, key, depth, alpha, beta);
+    if (cached) return cached.val;
     if (depth <= 0) {
-        return useQ ? quiesce(game, me, alpha, beta, deadline, 4) : evaluateChess(game, me);
+        const q = useQ ? quiesce(game, alpha, beta, deadline, qdepth) : evaluateStm(game);
+        ttSet(tt, key, 0, q, 'exact', null);
+        return q;
     }
-    const moves = orderMoves(listLegalChessMoves(game));
-    if (!moves.length) return evaluateChess(game, me);
+    const ttHit = tt.get(key);
+    const moves = orderMoves(game, listLegalChessMovesTrusted(game), ttHit && ttHit.mv, killers[ply]);
+    if (!moves.length) return evaluateStm(game);
     let best = -Infinity;
+    let bestMv = moves[0];
+    let flag = 'alpha';
+    const origAlpha = alpha;
     for (let i = 0; i < moves.length; i += 1) {
         if (Date.now() >= deadline) break;
-        const r = playMove(game, moves[i], game.turnStartedAt);
-        if (!r.ok) continue;
-        const val = -negamax(r.game, me, depth - 1, -beta, -alpha, deadline, useQ);
-        if (val > best) best = val;
-        if (val > alpha) alpha = val;
-        if (alpha >= beta) break;
+        const next = playMove(game, moves[i]);
+        const val = -negamax(next, depth - 1, -beta, -alpha, deadline, useQ, qdepth, tt, killers, ply + 1);
+        if (val > best) {
+            best = val;
+            bestMv = moves[i];
+        }
+        if (val > alpha) {
+            alpha = val;
+            flag = 'exact';
+        }
+        if (alpha >= beta) {
+            flag = 'beta';
+            if (!moves[i].capture) {
+                const slot = killers[ply] || (killers[ply] = []);
+                slot.unshift(moves[i]);
+                if (slot.length > 2) slot.length = 2;
+            }
+            break;
+        }
     }
-    return best === -Infinity ? evaluateChess(game, me) : best;
+    if (best === -Infinity) best = evaluateStm(game);
+    if (best <= origAlpha) flag = 'alpha';
+    ttSet(tt, key, depth, best, flag, bestMv);
+    return best;
 }
 
-function searchBest(game, me, depth, deadline, useQ, rootMoves) {
-    const moves = orderMoves(rootMoves || listLegalChessMoves(game));
+function searchBest(game, depth, deadline, useQ, qdepth, tt, variety) {
+    const killers = [];
+    const moves = orderMoves(game, listLegalChessMovesTrusted(game), tt.get(chessPositionKey(game))?.mv);
     let best = moves[0] || null;
     let bestVal = -Infinity;
+    let completed = 0;
     for (let i = 0; i < moves.length; i += 1) {
         if (Date.now() >= deadline) break;
-        const r = playMove(game, moves[i], game.turnStartedAt);
-        if (!r.ok) continue;
-        if (r.game.endReason === 'checkmate' && r.game.winner === me) return { mv: moves[i], val: 200000 };
-        const val = -negamax(r.game, me, depth - 1, -Infinity, Infinity, deadline, useQ);
-        const blended = val + (moves[i].capture ? 2 : 0) + (moves[i].promo === 'q' ? 4 : 0);
+        const next = playMove(game, moves[i]);
+        if (next.endReason === 'checkmate' && next.winner === game.turn) {
+            return { mv: moves[i], val: 200000, completed: moves.length, total: moves.length };
+        }
+        const val = -negamax(next, depth - 1, -Infinity, Infinity, deadline, useQ, qdepth, tt, killers, 1);
+        const blended = val + varietyJitter(moves[i], variety);
         if (blended > bestVal) {
             bestVal = blended;
             best = moves[i];
         }
+        completed += 1;
     }
-    return { mv: best, val: bestVal };
+    return { mv: best, val: bestVal, completed, total: moves.length };
 }
 
-function pickGosuMove(game, me) {
-    const moves = listLegalChessMoves(game, me);
+function pickPly1Move(game, me, variety) {
+    const moves = listLegalChessMovesTrusted(game);
     if (!moves.length) return null;
-    const mate = moves.find((mv) => {
-        const r = playMove(game, mv, game.turnStartedAt);
-        return r.ok && r.game.endReason === 'checkmate' && r.game.winner === me;
-    });
-    if (mate) return mate;
-    // 고수: 한 수 앞 평가(걸어 둔 말·체크를 놓치지 않음). 초인이 더 깊게 봅니다.
     let best = moves[0];
     let bestVal = -Infinity;
     for (let i = 0; i < moves.length; i += 1) {
-        const r = playMove(game, moves[i], game.turnStartedAt);
-        if (!r.ok) continue;
-        const val = -evaluateChess(r.game, me);
+        const next = playMove(game, moves[i]);
+        if (next.endReason === 'checkmate' && next.winner === me) return moves[i];
+        const val = evaluateChess(next, me) + varietyJitter(moves[i], variety);
         if (val > bestVal) {
             bestVal = val;
             best = moves[i];
@@ -245,34 +320,87 @@ function pickGosuMove(game, me) {
     return best;
 }
 
-function pickChoinMove(game, me, timeMs) {
-    const moves = listLegalChessMoves(game, me);
+function pickGosuMove(game, timeMs, variety) {
+    const moves = listLegalChessMovesTrusted(game);
     if (!moves.length) return null;
-    const gosu = pickGosuMove(game, me);
+    const deadline = Date.now() + Math.max(60, Math.min(1000, Number(timeMs) || CHESS_AI_LEVELS.gosu.timeMs));
+    const tt = makeTt();
+    const found = searchBest(game, 3, deadline, true, 2, tt, variety);
+    return found.mv || pickPly1Move(game, game.turn, variety);
+}
+
+function pickChoinMove(game, timeMs, variety) {
+    const moves = listLegalChessMovesTrusted(game);
+    if (!moves.length) return null;
     const deadline = Date.now() + Math.max(80, Math.min(3000, Number(timeMs) || CHESS_AI_LEVELS.choin.timeMs));
-    let best = gosu || moves[0];
-    const gosuPlayed = gosu ? playMove(game, gosu, game.turnStartedAt) : null;
-    let bestVal = gosuPlayed && gosuPlayed.ok ? -evaluateChess(gosuPlayed.game, me) : -Infinity;
-    for (let depth = 2; depth <= 4; depth += 1) {
+    const tt = makeTt();
+    // 고수와 같은 깊이 3을 먼저 끝내 기본 수로 둡니다. 정지탐색은 더 깊게 봅니다.
+    let found = searchBest(game, 3, deadline, true, 5, tt, variety);
+    let best = found.mv || pickPly1Move(game, game.turn, variety);
+    for (let depth = 4; depth <= 5; depth += 1) {
         if (Date.now() >= deadline) break;
-        const found = searchBest(game, me, depth, deadline, true, moves);
-        if (found.mv && found.val > bestVal) {
-            best = found.mv;
-            bestVal = found.val;
+        const next = searchBest(game, depth, deadline, true, 5, tt, variety);
+        if (next.mv && next.completed === next.total) {
+            best = next.mv;
         }
-        if (found.val >= 90000) break;
+        if (next.val >= 90000) {
+            best = next.mv || best;
+            break;
+        }
     }
     return best;
 }
 
-export function pickChessAiMove(game, { color, level, timeMs } = {}) {
+export function pickChessAiMove(game, { color, level, timeMs, variety } = {}) {
     const g = sanitizeChessGame(game);
     const my = color === CHESS_BLACK || color === CHESS_WHITE ? color : g.turn;
     if (g.turn !== my) return null;
     const lv = sanitizeChessAiLevel(level);
-    const mv = lv === 'choin' ? pickChoinMove(g, my, timeMs) : pickGosuMove(g, my);
+    const varN = Math.max(0, Math.floor(Number(variety) || 0));
+    let mv;
+    if (lv === 'ply1') mv = pickPly1Move(g, my, varN);
+    else if (lv === 'choin') mv = pickChoinMove(g, timeMs, varN);
+    else mv = pickGosuMove(g, timeMs, varN);
     if (!mv) return null;
     return { from: mv.from, to: mv.to, promo: mv.promo || '' };
+}
+
+function lookupLegal(game, mv) {
+    const legal = listLegalChessMovesTrusted(game);
+    return legal.find((m) => m.from === mv.from && m.to === mv.to && (m.promo || '') === (mv.promo || '')) || null;
+}
+
+/** 한 판을 처음부터 끝까지 두고 결과를 돌려줍니다. */
+export function playChessAiMatch({
+    whiteLevel,
+    blackLevel,
+    whiteTime,
+    blackTime,
+    maxMoves = 80,
+    now = 1,
+    variety = 0,
+} = {}) {
+    let g = emptyChessGame({ now });
+    for (let i = 0; i < maxMoves && !isOverTrusted(g); i += 1) {
+        const level = g.turn === CHESS_WHITE ? whiteLevel : blackLevel;
+        const timeMs = g.turn === CHESS_WHITE ? whiteTime : blackTime;
+        const mv = pickChessAiMove(g, { color: g.turn, level, timeMs, variety });
+        if (!mv) break;
+        const found = lookupLegal(g, mv);
+        if (!found) {
+            const placed = applyChessMove(g, { ...mv, color: g.turn, now: now + i });
+            if (!placed.ok) break;
+            g = placed.game;
+            continue;
+        }
+        g = applyTrustedChessMove(g, found, now + i);
+    }
+    return {
+        winner: g.winner || '',
+        endReason: g.endReason || '',
+        moveCount: g.moveCount,
+        whiteEval: evaluateChess(g, CHESS_WHITE),
+    };
 }
 
 export function emptyChessAiGame(now = 0) {

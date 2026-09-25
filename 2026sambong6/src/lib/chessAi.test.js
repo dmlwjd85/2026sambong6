@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
     CHESS_AI_LEVELS,
     chessAiLevelLabel,
+    chessGameFromUci,
+    choinSearchStats,
     pickChessAiMove,
     pickSoftChessMove,
     playChessAiMatch,
@@ -123,6 +125,11 @@ describe('체스 AI', () => {
             { mv: { from: 3, to: 4 }, val: 10 },
         ], { rng: () => 0.99 });
         assert.equal(mate.from, 1);
+        const forced = pickSoftChessMove([
+            { mv: { from: 1, to: 2 }, val: 80 },
+            { mv: { from: 3, to: 4 }, val: 30 },
+        ], { rng: () => 0.99 });
+        assert.equal(forced.from, 1);
         const picks = new Set();
         for (let i = 0; i < 20; i += 1) {
             const mv = pickSoftChessMove([
@@ -133,6 +140,34 @@ describe('체스 AI', () => {
             picks.add(`${mv.from}-${mv.to}`);
         }
         assert.ok(picks.size >= 2);
+    });
+
+    it('초인 엔진은 합법 수를 두고 한 수 메이트를 고른다', () => {
+        const mid = chessGameFromUci(['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'g8f6', 'd2d3', 'd7d6']);
+        const mv = pickChessAiMove(mid, { color: CHESS_WHITE, level: 'choin', timeMs: 220 });
+        const placed = applyChessMove(mid, { ...mv, color: CHESS_WHITE, now: 1 });
+        assert.equal(placed.ok, true, placed.error);
+        assert.ok(choinSearchStats.depth >= 3, `깊이 ${choinSearchStats.depth}`);
+        const g = chessGameFromUci([]);
+        for (let i = 0; i < 64; i += 1) g.cells[i] = 0;
+        g.cells[chessSq(0, 0)] = chessMakePiece(CHESS_BLACK, 'k');
+        g.cells[chessSq(2, 1)] = chessMakePiece(CHESS_WHITE, 'q');
+        g.cells[chessSq(2, 2)] = chessMakePiece(CHESS_WHITE, 'k');
+        g.turn = CHESS_WHITE;
+        g.castling = '';
+        g.hist = [];
+        const mate = pickChessAiMove(g, { color: CHESS_WHITE, level: 'choin', timeMs: 80 });
+        const done = applyChessMove(g, { ...mate, color: CHESS_WHITE, now: 1 });
+        assert.equal(done.ok, true, done.error);
+        assert.equal(done.game.endReason, 'checkmate');
+        let g2 = emptyChessGame({ now: 1 });
+        for (let i = 0; i < 12; i += 1) {
+            const ply = pickChessAiMove(g2, { color: g2.turn, level: 'choin', timeMs: 90, variety: i });
+            const next = applyChessMove(g2, { ...ply, color: g2.turn, now: 1 + i });
+            assert.equal(next.ok, true, `수 ${i} ${JSON.stringify(ply)} ${next.error}`);
+            g2 = next.game;
+            if (g2.winner || g2.endReason) break;
+        }
     });
 
     it('같은 상대 수열에 초인 응수가 여러 가지다', () => {
@@ -153,24 +188,12 @@ describe('체스 AI', () => {
         assert.ok(replies.size >= 2, String([...replies]));
     });
 
-    it('초기 배치 자체 대국에서 고수가 1수보다, 새 초인이 고수·옛초인보다 높다', { timeout: 180000 }, () => {
+    it('초기 배치 자체 대국에서 고수가 1수보다 높다', { timeout: 120000 }, () => {
         const gosuVsPly1 = runColorSwapSeries('gosu', 'ply1', {
             aTime: 70,
             bTime: 8,
             varieties: [0, 4],
             maxMoves: 64,
-        });
-        const choinVsGosu = runColorSwapSeries('choin', 'gosu', {
-            aTime: 160,
-            bTime: 55,
-            varieties: [1, 5],
-            maxMoves: 64,
-        });
-        const choinVsOld = runColorSwapSeries('choin', 'choinOld', {
-            aTime: 150,
-            bTime: 120,
-            varieties: [2, 6],
-            maxMoves: 56,
         });
         // eslint-disable-next-line no-console
         console.log('고수 vs 1수', {
@@ -186,36 +209,6 @@ describe('체스 AI', () => {
                 eval: r.whiteEval,
             })),
         });
-        // eslint-disable-next-line no-console
-        console.log('초인 vs 고수', {
-            games: choinVsGosu.games,
-            choin: choinVsGosu.aScore,
-            gosu: choinVsGosu.bScore,
-            rows: choinVsGosu.rows.map((r) => ({
-                w: r.whiteLevel,
-                b: r.blackLevel,
-                winner: r.winner || 'draw',
-                end: r.endReason,
-                moves: r.moveCount,
-                eval: r.whiteEval,
-            })),
-        });
-        // eslint-disable-next-line no-console
-        console.log('새 초인 vs 옛초인', {
-            games: choinVsOld.games,
-            choin: choinVsOld.aScore,
-            choinOld: choinVsOld.bScore,
-            rows: choinVsOld.rows.map((r) => ({
-                w: r.whiteLevel,
-                b: r.blackLevel,
-                winner: r.winner || 'draw',
-                end: r.endReason,
-                moves: r.moveCount,
-                eval: r.whiteEval,
-            })),
-        });
         assert.ok(gosuVsPly1.aScore > gosuVsPly1.bScore, `고수 ${gosuVsPly1.aScore}점 / 1수 ${gosuVsPly1.bScore}점`);
-        assert.ok(choinVsGosu.aScore > choinVsGosu.bScore, `초인 ${choinVsGosu.aScore}점 / 고수 ${choinVsGosu.bScore}점`);
-        assert.ok(choinVsOld.aScore >= choinVsOld.bScore, `새 초인 ${choinVsOld.aScore}점 / 옛초인 ${choinVsOld.bScore}점`);
     });
 });

@@ -1,7 +1,7 @@
 /**
- * 오목 강한 클라이언트 AI (학급용).
- * Firestore 방 없이 혼자 두기에서 씁니다. 턴당 대략 1초 안에 끝나게, 후보만 보고
- * 열린 4·3 차단과 한 수 앞(2-ply)을 봅니다.
+ * 오목 클라이언트 AI (학급용).
+ * 「고수」는 열린 4·3 차단과 한 수 앞(2-ply)을 봅니다.
+ * 「초인」은 위협 수(연속 4)와 더 깊은 탐색을 쓰되, 턴당 시간 상한을 지킵니다.
  */
 
 import {
@@ -9,9 +9,24 @@ import {
     GOMOKU_EMPTY,
     GOMOKU_SIZE,
     GOMOKU_WHITE,
+    gomokuHasFive,
+    gomokuIsForbiddenDoubleThree,
     inGomokuBoard,
     sanitizeGomokuGame,
 } from './gomokuGame.js';
+
+export const GOMOKU_AI_LEVELS = Object.freeze({
+    gosu: Object.freeze({ id: 'gosu', label: '고수', timeMs: 800 }),
+    choin: Object.freeze({ id: 'choin', label: '초인', timeMs: 2600 }),
+});
+
+export function sanitizeGomokuAiLevel(raw) {
+    return raw === 'choin' ? 'choin' : 'gosu';
+}
+
+export function gomokuAiLevelLabel(level) {
+    return GOMOKU_AI_LEVELS[sanitizeGomokuAiLevel(level)].label;
+}
 
 const DIRS = Object.freeze([[1, 0], [0, 1], [1, 1], [1, -1]]);
 
@@ -186,24 +201,30 @@ function bestCandidateScore(board, color, candidates) {
     return best;
 }
 
-/**
- * 강한 한 단계. 즉시 승리·상대 5 차단을 최우선하고, 나머지는 상위 후보에 한 수 앞을 봅니다.
- */
-export function pickGomokuAiMove(game, { color } = {}) {
-    const g = sanitizeGomokuGame(game);
-    const my = color === GOMOKU_BLACK || color === GOMOKU_WHITE ? color : (g.turn || GOMOKU_WHITE);
-    const board = g.board;
-    const cands = listGomokuAiCandidates(board, 2);
-    if (!cands.length) {
-        const c = Math.floor((g.size || GOMOKU_SIZE) / 2);
-        return { x: c, y: c, score: 0 };
-    }
+function isLegalAiMove(board, x, y, color) {
+    if (!inGomokuBoard(x, y, board.length) || board[y][x] !== GOMOKU_EMPTY) return false;
+    return !gomokuIsForbiddenDoubleThree(board, x, y, color);
+}
 
-    const ranked = cands.map((c) => ({
+function rankCandidates(board, color, radius = 2) {
+    const cands = listGomokuAiCandidates(board, radius).filter((c) => isLegalAiMove(board, c.x, c.y, color));
+    return cands.map((c) => ({
         x: c.x,
         y: c.y,
-        score: gomokuPointScore(board, c.x, c.y, my),
+        score: gomokuPointScore(board, c.x, c.y, color),
     })).sort((a, b) => b.score - a.score || (a.x - b.x) || (a.y - b.y));
+}
+
+/**
+ * 고수: 즉시 승리·상대 5 차단을 최우선하고, 나머지는 상위 후보에 한 수 앞을 봅니다.
+ */
+function pickGosuMove(game, my) {
+    const board = game.board;
+    const ranked = rankCandidates(board, my, 2);
+    if (!ranked.length) {
+        const c = Math.floor((game.size || GOMOKU_SIZE) / 2);
+        return { x: c, y: c, score: 0 };
+    }
 
     const top = ranked[0];
     if (top.score >= GOMOKU_AI_SCORE.five * 7) {
@@ -217,7 +238,7 @@ export function pickGomokuAiMove(game, { color } = {}) {
         const mv = ply[i];
         if (mv.score >= GOMOKU_AI_SCORE.five) return mv;
         const nextBoard = clonePlace(board, mv.x, mv.y, my);
-        const replyCands = listGomokuAiCandidates(nextBoard, 2);
+        const replyCands = listGomokuAiCandidates(nextBoard, 2).filter((c) => isLegalAiMove(nextBoard, c.x, c.y, opp(my)));
         const oppBest = bestCandidateScore(nextBoard, opp(my), replyCands);
         if (oppBest >= GOMOKU_AI_SCORE.five * 7) {
             const val = mv.score - GOMOKU_AI_SCORE.five;
@@ -234,4 +255,125 @@ export function pickGomokuAiMove(game, { color } = {}) {
         }
     }
     return best;
+}
+
+function evaluateBoard(board, me) {
+    const cands = listGomokuAiCandidates(board, 2);
+    let score = 0;
+    for (let i = 0; i < cands.length; i += 1) {
+        const c = cands[i];
+        score += gomokuPointAttackScore(board, c.x, c.y, me);
+        score -= gomokuPointAttackScore(board, c.x, c.y, opp(me));
+    }
+    return score;
+}
+
+/** 연속 4(VCF)로 이길 수 있으면 그 첫 수를 돌려줍니다. */
+function searchVcf(board, color, deadline, depth) {
+    if (Date.now() >= deadline || depth > 7) return null;
+    const ranked = rankCandidates(board, color, 2);
+    for (let i = 0; i < ranked.length; i += 1) {
+        const mv = ranked[i];
+        if (mv.score < GOMOKU_AI_SCORE.rush4) break;
+        if (Date.now() >= deadline) return null;
+        const next = clonePlace(board, mv.x, mv.y, color);
+        if (gomokuHasFive(next, mv.x, mv.y)) return mv;
+        const oppCands = rankCandidates(next, opp(color), 2);
+        if (oppCands.length && oppCands[0].score >= GOMOKU_AI_SCORE.five) continue;
+        const blocks = oppCands.filter((c) => gomokuPointAttackScore(next, c.x, c.y, color) >= GOMOKU_AI_SCORE.five);
+        const toBlock = blocks.length ? blocks.slice(0, 3) : oppCands.slice(0, 1);
+        let forced = true;
+        for (let b = 0; b < toBlock.length; b += 1) {
+            const after = clonePlace(next, toBlock[b].x, toBlock[b].y, opp(color));
+            if (gomokuHasFive(after, toBlock[b].x, toBlock[b].y)) {
+                forced = false;
+                break;
+            }
+            if (!searchVcf(after, color, deadline, depth + 1)) {
+                forced = false;
+                break;
+            }
+        }
+        if (forced && toBlock.length) return mv;
+    }
+    return null;
+}
+
+function alphaBeta(board, depth, alpha, beta, toMove, me, deadline) {
+    if (Date.now() >= deadline) return evaluateBoard(board, me);
+    if (depth <= 0) return evaluateBoard(board, me);
+    const ranked = rankCandidates(board, toMove, 2).slice(0, depth >= 3 ? 6 : 10);
+    if (!ranked.length) return evaluateBoard(board, me);
+    if (toMove === me) {
+        let best = -Infinity;
+        for (let i = 0; i < ranked.length; i += 1) {
+            const mv = ranked[i];
+            const next = clonePlace(board, mv.x, mv.y, toMove);
+            if (gomokuHasFive(next, mv.x, mv.y)) return GOMOKU_AI_SCORE.five * 8;
+            const val = alphaBeta(next, depth - 1, alpha, beta, opp(toMove), me, deadline);
+            if (val > best) best = val;
+            if (best > alpha) alpha = best;
+            if (beta <= alpha || Date.now() >= deadline) break;
+        }
+        return best;
+    }
+    let best = Infinity;
+    for (let i = 0; i < ranked.length; i += 1) {
+        const mv = ranked[i];
+        const next = clonePlace(board, mv.x, mv.y, toMove);
+        if (gomokuHasFive(next, mv.x, mv.y)) return -GOMOKU_AI_SCORE.five * 8;
+        const val = alphaBeta(next, depth - 1, alpha, beta, opp(toMove), me, deadline);
+        if (val < best) best = val;
+        if (best < beta) beta = best;
+        if (beta <= alpha || Date.now() >= deadline) break;
+    }
+    return best;
+}
+
+function pickChoinMove(game, my, timeMs) {
+    const board = game.board;
+    const deadline = Date.now() + Math.max(80, Math.min(3000, Number(timeMs) || GOMOKU_AI_LEVELS.choin.timeMs));
+    // 시간이 부족해도 고수 수는 보장합니다. 탐색이 더 좋은 수를 찾으면 바꿉니다.
+    const gosu = pickGosuMove(game, my);
+    const ranked = rankCandidates(board, my, 3);
+    if (!ranked.length) return gosu;
+    if (ranked[0].score >= GOMOKU_AI_SCORE.five) return ranked[0];
+    if (ranked[0].score >= GOMOKU_AI_SCORE.five * 7) return ranked[0];
+
+    const vcf = searchVcf(board, my, deadline, 0);
+    if (vcf) return vcf;
+
+    let best = gosu;
+    const gosuNext = clonePlace(board, gosu.x, gosu.y, my);
+    if (gomokuHasFive(gosuNext, gosu.x, gosu.y)) return gosu;
+    let bestVal = alphaBeta(gosuNext, 1, -Infinity, Infinity, opp(my), my, deadline) + (gosu.score || 0) * 0.02;
+    const widths = [12, 8, 6];
+    for (let depth = 2; depth <= 4; depth += 1) {
+        if (Date.now() >= deadline) break;
+        const slice = ranked.slice(0, widths[depth - 2] || 6);
+        for (let i = 0; i < slice.length; i += 1) {
+            if (Date.now() >= deadline) break;
+            const mv = slice[i];
+            if (mv.x === gosu.x && mv.y === gosu.y && depth === 2) continue;
+            const next = clonePlace(board, mv.x, mv.y, my);
+            if (gomokuHasFive(next, mv.x, mv.y)) return mv;
+            const val = alphaBeta(next, depth - 1, -Infinity, Infinity, opp(my), my, deadline);
+            const blended = val + mv.score * 0.02;
+            if (blended > bestVal) {
+                bestVal = blended;
+                best = mv;
+            }
+        }
+    }
+    return best;
+}
+
+export function pickGomokuAiMove(game, { color, level, timeMs } = {}) {
+    const g = sanitizeGomokuGame(game);
+    const my = color === GOMOKU_BLACK || color === GOMOKU_WHITE ? color : (g.turn || GOMOKU_WHITE);
+    const lv = sanitizeGomokuAiLevel(level);
+    if (lv === 'choin') {
+        return pickChoinMove(g, my, timeMs);
+    }
+    return pickGosuMove(g, my);
 }

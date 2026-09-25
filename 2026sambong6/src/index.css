@@ -5298,6 +5298,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             color: #1c1917;
             border-color: #fde68a;
         }
+        .boardgame-ai-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+        }
         .boardgame-room-list {
             display: flex;
             flex-direction: column;

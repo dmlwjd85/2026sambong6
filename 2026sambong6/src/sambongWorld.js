@@ -164,7 +164,12 @@ import {
     gomokuSeatColor,
     placeGomokuStone,
 } from './lib/gomokuGame.js';
-import { pickGomokuAiMove } from './lib/gomokuAi.js';
+import {
+    GOMOKU_AI_LEVELS,
+    gomokuAiLevelLabel,
+    pickGomokuAiMove,
+    sanitizeGomokuAiLevel,
+} from './lib/gomokuAi.js';
 import {
     applyBoardGameRecord,
     boardGameRecordText,
@@ -11205,6 +11210,8 @@ ${subjectLine}
         let _gomokuNeedFit = true;
         let _gomokuPanning = false;
         let _gomokuAiSession = null;
+        let _gomokuAiWorker = null;
+        let _gomokuAiReqId = 0;
         let _boardGameVacating = false;
         let _gomokuLastVp = { w: 0, h: 0 };
         const _gomokuView = { scale: 1, min: 1, max: 4.8, x: 0, y: 0 };
@@ -11281,6 +11288,7 @@ ${subjectLine}
             if (!s) return null;
             const me = boardGameSelfId();
             const finished = !!(s.game.winner || s.game.endReason === 'draw');
+            const aiLabel = gomokuAiLevelLabel(s.level);
             return {
                 id: 'ai-local',
                 status: finished ? 'finished' : 'playing',
@@ -11288,10 +11296,63 @@ ${subjectLine}
                 timerEnabled: false,
                 members: [
                     { id: me || 'me', name: boardGameSelfName(), seat: 'black', role: 'host' },
-                    { id: 'ai', name: 'AI(강함)', seat: 'white', role: 'player' },
+                    { id: 'ai', name: `AI(${aiLabel})`, seat: 'white', role: 'player' },
                 ],
                 game: s.game,
             };
+        }
+
+        function getGomokuAiWorker() {
+            if (_gomokuAiWorker) return _gomokuAiWorker;
+            if (typeof Worker === 'undefined') return null;
+            try {
+                _gomokuAiWorker = new Worker(new URL('./lib/gomokuAi.worker.js', import.meta.url), { type: 'module' });
+                _gomokuAiWorker.addEventListener('error', (e) => {
+                    console.warn('gomokuAi.worker', e);
+                });
+            } catch (e) {
+                console.warn('gomokuAi.worker 생성 실패, 메인 스레드에서 계산합니다.', e);
+                _gomokuAiWorker = null;
+            }
+            return _gomokuAiWorker;
+        }
+
+        function pickGomokuAiMoveAsync(game, opts) {
+            const worker = getGomokuAiWorker();
+            if (!worker) {
+                return Promise.resolve(pickGomokuAiMove(game, opts));
+            }
+            const reqId = (_gomokuAiReqId += 1);
+            return new Promise((resolve, reject) => {
+                const onMsg = (e) => {
+                    const data = e && e.data ? e.data : {};
+                    if (data.reqId !== reqId) return;
+                    worker.removeEventListener('message', onMsg);
+                    worker.removeEventListener('error', onErr);
+                    if (data.ok) resolve(data.mv);
+                    else reject(new Error(data.error || 'ai_worker'));
+                };
+                const onErr = (err) => {
+                    worker.removeEventListener('message', onMsg);
+                    worker.removeEventListener('error', onErr);
+                    reject(err);
+                };
+                worker.addEventListener('message', onMsg);
+                worker.addEventListener('error', onErr);
+                try {
+                    worker.postMessage({
+                        reqId,
+                        game,
+                        color: opts && opts.color,
+                        level: opts && opts.level,
+                        timeMs: opts && opts.timeMs,
+                    });
+                } catch (err) {
+                    worker.removeEventListener('message', onMsg);
+                    worker.removeEventListener('error', onErr);
+                    reject(err);
+                }
+            });
         }
 
         function clearGomokuAiSession() {
@@ -11301,7 +11362,7 @@ ${subjectLine}
             _gomokuAiSession = null;
         }
 
-        function startGomokuAiSession() {
+        function startGomokuAiSession(level) {
             _boardGameActiveId = '';
             _gomokuPending = null;
             _gomokuNeedFit = true;
@@ -11309,6 +11370,7 @@ ${subjectLine}
                 game: emptyGomokuGame({ now: Date.now() }),
                 thinking: false,
                 token: 0,
+                level: sanitizeGomokuAiLevel(level),
             };
             renderGomokuPlay(gomokuAiRoomView());
         }
@@ -11319,20 +11381,30 @@ ${subjectLine}
             if (!s.game || s.game.winner || s.game.endReason === 'draw') return;
             if (s.game.turn !== GOMOKU_WHITE) return;
             const token = s.token || 0;
+            const level = sanitizeGomokuAiLevel(s.level);
+            const timeMs = GOMOKU_AI_LEVELS[level].timeMs;
             s.thinking = true;
             renderGomokuPlay(gomokuAiRoomView());
             const started = Date.now();
             let mv;
             try {
-                mv = pickGomokuAiMove(s.game, { color: GOMOKU_WHITE });
+                mv = await pickGomokuAiMoveAsync(s.game, { color: GOMOKU_WHITE, level, timeMs });
             } catch (e) {
                 console.warn('pickGomokuAiMove', e);
-                s.thinking = false;
-                renderGomokuPlay(gomokuAiRoomView());
-                return;
+                try {
+                    mv = pickGomokuAiMove(s.game, { color: GOMOKU_WHITE, level, timeMs });
+                } catch (e2) {
+                    console.warn('pickGomokuAiMove fallback', e2);
+                    if (_gomokuAiSession && (_gomokuAiSession.token || 0) === token) {
+                        _gomokuAiSession.thinking = false;
+                        renderGomokuPlay(gomokuAiRoomView());
+                    }
+                    return;
+                }
             }
-            // 계산이 빨라도 한숨 쉬게 해서, 폰에서 대략 0.5초 전후로 느껴지게 합니다.
-            const wait = Math.max(0, 480 - (Date.now() - started));
+            // 고수는 계산이 빨라 한숨 쉬게 하고, 초인은 이미 수 초를 쓰므로 짧게만 기다립니다.
+            const minThink = level === 'choin' ? 220 : 480;
+            const wait = Math.max(0, minThink - (Date.now() - started));
             await new Promise((resolve) => setTimeout(resolve, wait));
             if (!_gomokuAiSession || (_gomokuAiSession.token || 0) !== token) return;
             const placed = placeGomokuStone(_gomokuAiSession.game, {
@@ -11449,7 +11521,7 @@ ${subjectLine}
                 now
             );
             if (!rooms.length) {
-                box.innerHTML = '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI와 두기」로 시작하세요.</p>';
+                box.innerHTML = '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI 고수」「AI 초인」으로 시작하세요.</p>';
                 return;
             }
             box.innerHTML = rooms.map((room) => {
@@ -11563,7 +11635,9 @@ ${subjectLine}
             const game = room.game || {};
             if (hint) {
                 if (room.status === 'finished') hint.textContent = '한 판이 끝났습니다.';
-                else if (aiMode && _gomokuAiSession.thinking) hint.textContent = 'AI가 생각 중입니다…';
+                else if (aiMode && _gomokuAiSession.thinking) {
+                    hint.textContent = `${gomokuAiLevelLabel(_gomokuAiSession.level)} AI가 생각 중입니다…`;
+                }
                 else if (game.turn === myColor) hint.textContent = '당신 차례입니다. 칸을 고른 뒤 「여기 두기」를 누르세요.';
                 else hint.textContent = `${game.turn === GOMOKU_WHITE ? '백' : '흑'} 차례입니다.`;
             }
@@ -11967,12 +12041,12 @@ ${subjectLine}
             showBoardGameView('home');
         };
 
-        window.startGomokuAiGame = function () {
+        window.startGomokuAiGame = function (level) {
             if (window.playerState && window.playerState.isGuest) {
                 return window.customAlert('👀 게스트는 이용할 수 없어요.');
             }
             void vacateOtherBoardRooms('');
-            startGomokuAiSession();
+            startGomokuAiSession(level);
         };
 
         window.createBoardGameRoom = async function (gameType) {

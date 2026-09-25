@@ -1,6 +1,7 @@
 /**
  * 학급용 자유 오목 (20×20).
- * 렌주 금수(장목·3-3·4-4)는 쓰지 않습니다. 초등 6학년 수업에서 규칙이 단순해야 하기 때문입니다.
+ * 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다.
+ * 장목·4-4 금수는 쓰지 않습니다. 초등 6학년 수업에서 규칙이 단순해야 하기 때문입니다.
  *
  * 승패
  * - 가로·세로·대각선으로 같은 색 돌이 5개 이상 이어지면 승리합니다.
@@ -170,6 +171,71 @@ export function countLine(board, x, y, dx, dy, color) {
     return n;
 }
 
+const GOMOKU_LINE_WALL = 3;
+
+function gomokuLineCells(board, x, y, dx, dy, color) {
+    const n = board.length;
+    const cells = [];
+    for (let i = -5; i <= 5; i += 1) {
+        const cx = x + dx * i;
+        const cy = y + dy * i;
+        if (!inGomokuBoard(cx, cy, n)) cells.push(GOMOKU_LINE_WALL);
+        else if (i === 0) cells.push(color);
+        else cells.push(board[cy][cx]);
+    }
+    return cells;
+}
+
+function gomokuLineHasLiveThree(cells, color) {
+    const empty = GOMOKU_EMPTY;
+    const at = (i) => (i < 0 || i >= cells.length ? GOMOKU_LINE_WALL : cells[i]);
+    for (let start = 0; start <= cells.length - 3; start += 1) {
+        if (cells[start] !== color || cells[start + 1] !== color || cells[start + 2] !== color) continue;
+        if (start > 0 && cells[start - 1] === color) continue;
+        if (start + 3 < cells.length && cells[start + 3] === color) continue;
+        if (!(start <= 5 && 5 <= start + 2)) continue;
+        if (at(start - 1) === empty && at(start + 3) === empty) return true;
+    }
+    for (let start = 0; start <= cells.length - 4; start += 1) {
+        const a = cells[start];
+        const b = cells[start + 1];
+        const c = cells[start + 2];
+        const d = cells[start + 3];
+        const jump = (a === color && b === color && c === empty && d === color)
+            || (a === color && b === empty && c === color && d === color);
+        if (!jump) continue;
+        if (start > 0 && cells[start - 1] === color) continue;
+        if (start + 4 < cells.length && cells[start + 4] === color) continue;
+        if (!(start <= 5 && 5 <= start + 3)) continue;
+        if (at(start - 1) === empty && at(start + 4) === empty) return true;
+    }
+    return false;
+}
+
+/** 한 방향이 열린 3(다음 수에 열린 4가 되는 삼)인지 봅니다. */
+export function gomokuIsLiveThreeDir(board, x, y, dx, dy, color) {
+    if (!inGomokuBoard(x, y, board.length)) return false;
+    return gomokuLineHasLiveThree(gomokuLineCells(board, x, y, dx, dy, color), color);
+}
+
+/**
+ * 흑의 3·3 금수. 백은 허용합니다. 그 수가 바로 다섯 목이면 금수가 아닙니다.
+ */
+export function gomokuIsForbiddenDoubleThree(board, x, y, color) {
+    if (color !== GOMOKU_BLACK) return false;
+    if (!board || !inGomokuBoard(x, y, board.length)) return false;
+    if (board[y][x] !== GOMOKU_EMPTY) return false;
+    const next = board.map((row) => row.slice());
+    next[y][x] = color;
+    if (gomokuHasFive(next, x, y)) return false;
+    const dirs = [[1, 0], [0, 1], [1, 1], [1, -1]];
+    let live3 = 0;
+    dirs.forEach(([dx, dy]) => {
+        if (gomokuIsLiveThreeDir(board, x, y, dx, dy, color)) live3 += 1;
+    });
+    return live3 >= 2;
+}
+
 /** 방금 둔 돌 기준으로 5목(이상)인지 봅니다. */
 export function gomokuHasFive(board, x, y) {
     if (!board || !inGomokuBoard(x, y, board.length)) return false;
@@ -201,6 +267,9 @@ export function placeGomokuStone(game, { x, y, color, now } = {}) {
     if (!inGomokuBoard(px, py, g.size)) return { ok: false, error: 'out', game: g };
     if (c !== g.turn) return { ok: false, error: 'not_turn', game: g };
     if (g.board[py][px] !== GOMOKU_EMPTY) return { ok: false, error: 'occupied', game: g };
+    if (gomokuIsForbiddenDoubleThree(g.board, px, py, c)) {
+        return { ok: false, error: 'double_three', game: g };
+    }
     const board = g.board.map((row) => row.slice());
     board[py][px] = c;
     const five = gomokuHasFive(board, px, py);
@@ -277,6 +346,7 @@ export const GOMOKU_ERROR_LABEL = Object.freeze({
     out: '판 밖에 둘 수 없습니다.',
     not_turn: '지금 둘 차례가 아닙니다.',
     occupied: '이미 돌이 있는 자리입니다.',
+    double_three: '흑은 3·3(열린 삼이 두 갈래)을 둘 수 없습니다.',
 });
 
 /** Firestore는 중첩 배열을 받지 않으므로 판은 1차원 cells 로 저장합니다. */

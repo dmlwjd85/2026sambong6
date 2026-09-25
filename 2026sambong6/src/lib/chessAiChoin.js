@@ -546,8 +546,11 @@ function rookFiles(s) {
 function bishopPairAndKingEg(s) {
     let wb = 0;
     let bb = 0;
+    let queens = 0;
     for (let sq = 0; sq < 64; sq += 1) {
-        if (typeOf(s.c[sq]) !== 3) continue;
+        const t = typeOf(s.c[sq]);
+        if (t === 5) queens += 1;
+        if (t !== 3) continue;
         if (isWhite(s.c[sq])) wb += 1;
         else bb += 1;
     }
@@ -555,11 +558,11 @@ function bishopPairAndKingEg(s) {
     let eg = 0;
     if (wb >= 2) { mg += 28; eg += 42; }
     if (bb >= 2) { mg -= 28; eg -= 42; }
-    // 엔드게임에서만 킹을 가운데로 끌어 중반 킹워크를 막습니다.
-    if (s.phase <= 10 && s.wk >= 0 && s.bk >= 0) {
+    // 퀸이 없으면 킹을 가운데로 보냅니다. 퀸이 남은 중반 킹워크는 금지합니다.
+    if (queens === 0 && s.wk >= 0 && s.bk >= 0) {
         const wC = Math.abs((s.wk & 7) - 3.5) + Math.abs((s.wk >> 3) - 3.5);
         const bC = Math.abs((s.bk & 7) - 3.5) + Math.abs((s.bk >> 3) - 3.5);
-        eg += (bC - wC) * 8;
+        eg += (bC - wC) * 10;
         const kd = Math.abs((s.wk & 7) - (s.bk & 7)) + Math.abs((s.wk >> 3) - (s.bk >> 3));
         eg += (14 - kd);
     }
@@ -783,8 +786,8 @@ export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
         let beta = 30000;
         // 깊이 4부터 aspiration. 실패하면 전체 창으로 다시 봅니다.
         if (depth >= 4 && Number.isFinite(lastScore)) {
-            alpha = lastScore - 36;
-            beta = lastScore + 36;
+            alpha = lastScore - 48;
+            beta = lastScore + 48;
         }
         let next = searchRoot(s, depth, alpha, beta);
         if (!s.stop && next.rows.length && (next.val <= alpha || next.val >= beta)) {

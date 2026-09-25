@@ -677,8 +677,8 @@ function pickChoinMove(game, timeMs, variety, rng) {
     const found = pickChoinEngineMove(game, { timeMs });
     const rows = (found && found.rows) || [];
     if (!rows.length) return (found && found.mv) || pickPly1Move(game, game.turn, variety);
-    // 중반 이후에는 항상 최선 수. 오프닝을 막 벗어났을 때만 10cp 동점을 섞습니다.
-    if ((game.moveCount || 0) >= 16) return rows[0].mv;
+    // 북을 벗어나면 최선 수. 초반(12수 미만) 동점(약 10cp)만 아주 조금 섞습니다.
+    if ((game.moveCount || 0) >= 12) return rows[0].mv;
     return pickSoftChoinMove(rows, rng) || found.mv;
 }
 

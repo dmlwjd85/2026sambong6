@@ -9,6 +9,8 @@ import {
 import { CHESS_BLACK, CHESS_WHITE } from '../src/lib/chessGame.js';
 
 const TIME = Math.max(80, Number(process.env.TIME_MS) || 700);
+const NEW_TIME = Math.max(80, Number(process.env.NEW_TIME_MS) || TIME);
+const OLD_TIME = Math.max(80, Number(process.env.OLD_TIME_MS) || TIME);
 const MAX = Math.max(20, Number(process.env.MAX_MOVES) || 120);
 const OPENINGS = [
     { name: '시작', uci: [] },
@@ -38,8 +40,8 @@ for (const open of OPENINGS) {
         const match = playChessAiMatch({
             whiteLevel,
             blackLevel,
-            whiteTime: TIME,
-            blackTime: TIME,
+            whiteTime: newIsWhite ? NEW_TIME : OLD_TIME,
+            blackTime: newIsWhite ? OLD_TIME : NEW_TIME,
             maxMoves: MAX,
             now: 100 + i,
             variety: i,
@@ -83,6 +85,8 @@ const summary = {
     oldDepth: rows.reduce((s, r) => s + r.oldDepth, 0) / games,
     newTimeMs: rows.reduce((s, r) => s + r.newTime, 0) / games,
     oldTimeMs: rows.reduce((s, r) => s + r.oldTime, 0) / games,
+    newThinkMs: NEW_TIME,
+    oldThinkMs: OLD_TIME,
     timeMs: TIME,
     maxMoves: MAX,
 };

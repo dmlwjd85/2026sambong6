@@ -3,18 +3,22 @@ import assert from 'node:assert/strict';
 import {
     applyBoardGameRecord,
     boardGameRecordText,
+    chessRecordResult,
     gomokuRecordResult,
     gomokuResultKey,
     mergeBoardGameRecords,
     sanitizeBoardGameRecords,
 } from './boardGameRecords.js';
+import { CHESS_BLACK, CHESS_WHITE, applyChessForfeit, emptyChessGame } from './chessGame.js';
 import { GOMOKU_BLACK, GOMOKU_WHITE, applyGomokuForfeit, emptyGomokuGame } from './gomokuGame.js';
 
 describe('보드게임 승패 기록', () => {
     it('빈 기록은 0승 0패 0무다', () => {
         const rec = sanitizeBoardGameRecords(null);
         assert.equal(rec.gomoku.wins, 0);
+        assert.equal(rec.chess.wins, 0);
         assert.equal(boardGameRecordText(rec), '0승 0패 0무');
+        assert.equal(boardGameRecordText(rec, 'chess'), '0승 0패 0무');
     });
 
     it('같은 판은 두 번 세지 않는다', () => {
@@ -40,12 +44,24 @@ describe('보드게임 승패 기록', () => {
 
     it('스냅샷과 로컬 전적을 합치면 더 큰 숫자를 남긴다', () => {
         const merged = mergeBoardGameRecords(
-            { gomoku: { wins: 1, losses: 2, draws: 0 }, recentKeys: ['a'] },
+            { gomoku: { wins: 1, losses: 2, draws: 0 }, chess: { wins: 3, losses: 0, draws: 1 }, recentKeys: ['a'] },
             { gomoku: { wins: 0, losses: 0, draws: 0 }, recentKeys: [] }
         );
         assert.equal(merged.gomoku.wins, 1);
         assert.equal(merged.gomoku.losses, 2);
+        assert.equal(merged.chess.wins, 3);
         assert.deepEqual(merged.recentKeys, ['a']);
+    });
+
+    it('체스 전적은 오목과 따로 센다', () => {
+        let rec = applyBoardGameRecord(null, { gameType: 'chess', result: 'win', key: 'c1' });
+        rec = applyBoardGameRecord(rec, { gameType: 'gomoku', result: 'loss', key: 'g1' });
+        assert.equal(rec.chess.wins, 1);
+        assert.equal(rec.gomoku.losses, 1);
+        const g = emptyChessGame();
+        const done = applyChessForfeit(g, { color: CHESS_WHITE, now: 2 });
+        assert.equal(chessRecordResult(done.game, CHESS_WHITE), 'loss');
+        assert.equal(chessRecordResult(done.game, CHESS_BLACK), 'win');
     });
 });
 

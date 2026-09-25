@@ -2336,6 +2336,11 @@
                                 <span class="boardgame-game-name">오목</span>
                                 <span class="boardgame-game-meta">2명 · 20×20 · 흑만 3·3 금지 · AI 고수/초인</span>
                             </button>
+                            <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('chess')">
+                                <span class="boardgame-game-emoji" aria-hidden="true">♟</span>
+                                <span class="boardgame-game-name">체스</span>
+                                <span class="boardgame-game-meta">2명 · 8×8 · 정식 규칙 · AI 고수/초인</span>
+                            </button>
                         </div>
                     </div>
 
@@ -2346,13 +2351,17 @@
                                 <p class="boardgame-kicker">GOMOKU LOBBY</p>
                                 <h2 class="boardgame-title">오목 방</h2>
                             </div>
-                            <button type="button" class="boardgame-mini-btn" onclick="void window.createBoardGameRoom('gomoku')">방 만들기</button>
+                            <button type="button" id="boardgameCreateBtn" class="boardgame-mini-btn" onclick="void window.createBoardGameRoom()">방 만들기</button>
+                            <div class="boardgame-ai-row" role="group" aria-label="AI 색">
+                                <button type="button" id="boardgameAiColorWhite" class="boardgame-mini-btn is-on hidden" onclick="window.setBoardGameAiColor('w')">내가 백</button>
+                                <button type="button" id="boardgameAiColorBlack" class="boardgame-mini-btn hidden" onclick="window.setBoardGameAiColor('b')">내가 흑</button>
+                            </div>
                             <div class="boardgame-ai-row" role="group" aria-label="AI 난이도">
-                                <button type="button" class="boardgame-mini-btn" onclick="void window.startGomokuAiGame('gosu')">AI 고수</button>
-                                <button type="button" class="boardgame-primary-btn" onclick="void window.startGomokuAiGame('choin')">AI 초인</button>
+                                <button type="button" class="boardgame-mini-btn" onclick="void window.startBoardGameAi('gosu')">AI 고수</button>
+                                <button type="button" class="boardgame-primary-btn" onclick="void window.startBoardGameAi('choin')">AI 초인</button>
                             </div>
                         </div>
-                        <p class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.</p>
+                        <p id="boardgameLobbyLead" class="boardgame-lead">방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.</p>
                         <p id="boardgameMyRecord" class="boardgame-record">내 오목 전적 0승 0패 0무</p>
                         <div id="boardgameRoomList" class="boardgame-room-list">방을 불러오는 중…</div>
                     </div>
@@ -2383,10 +2392,42 @@
                         <div id="gomokuConfirmBar" class="gomoku-confirm hidden">
                             <span id="gomokuConfirmText">여기 둘까요?</span>
                             <button type="button" class="boardgame-mini-btn" onclick="window.cancelGomokuPending()">취소</button>
-                            <button type="button" class="boardgame-primary-btn" onclick="void window.confirmGomokuPending()">여기 두기</button>
+                            <button type="button" class="boardgame-primary-btn gomoku-confirm-go" onclick="void window.confirmGomokuPending()">여기 두기</button>
                         </div>
                         <div id="gomokuResultBar" class="gomoku-result hidden">
                             <p id="gomokuResultText" class="gomoku-result-text"></p>
+                            <div class="gomoku-result-actions">
+                                <button type="button" class="boardgame-primary-btn" onclick="void window.continueBoardGameRoom()">다시 두기</button>
+                                <button type="button" class="boardgame-mini-btn" onclick="void window.endBoardGameRoom()">방 종료</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="boardgameChessPlayView" class="boardgame-view boardgame-play hidden">
+                        <div class="chess-hud">
+                            <button type="button" class="boardgame-mini-btn chess-leave-btn" onclick="void window.leaveBoardGameTable()">나가기</button>
+                            <div id="chessHudPlayers" class="chess-hud-players"></div>
+                            <div id="chessHudTimer" class="gomoku-hud-timer" hidden></div>
+                            <label id="chessTimerToggleWrap" class="gomoku-timer-toggle hidden">
+                                <input type="checkbox" id="chessTimerToggle" onchange="void window.toggleBoardGameTimer(this.checked)">
+                                <span>30초 타이머</span>
+                            </label>
+                        </div>
+                        <p id="chessTurnHint" class="gomoku-turn-hint">차례를 기다리는 중</p>
+                        <div id="chessBoardWrap" class="chess-wrap">
+                            <div id="chessBoard" class="chess-board" role="grid" aria-label="체스판"></div>
+                        </div>
+                        <div id="chessPromoBar" class="chess-promo hidden">
+                            <p>마지막 줄입니다. 무엇으로 바꿀까요?</p>
+                            <div class="chess-promo-actions">
+                                <button type="button" class="boardgame-primary-btn" onclick="void window.confirmChessPromo('q')">퀸</button>
+                                <button type="button" class="boardgame-mini-btn" onclick="void window.confirmChessPromo('r')">룩</button>
+                                <button type="button" class="boardgame-mini-btn" onclick="void window.confirmChessPromo('b')">비숍</button>
+                                <button type="button" class="boardgame-mini-btn" onclick="void window.confirmChessPromo('n')">나이트</button>
+                            </div>
+                        </div>
+                        <div id="chessResultBar" class="gomoku-result hidden">
+                            <p id="chessResultText" class="gomoku-result-text"></p>
                             <div class="gomoku-result-actions">
                                 <button type="button" class="boardgame-primary-btn" onclick="void window.continueBoardGameRoom()">다시 두기</button>
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.endBoardGameRoom()">방 종료</button>

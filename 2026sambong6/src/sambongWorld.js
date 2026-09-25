@@ -173,11 +173,37 @@ import {
 import {
     applyBoardGameRecord,
     boardGameRecordText,
+    chessRecordResult,
+    chessResultKey,
     gomokuRecordResult,
     gomokuResultKey,
     mergeBoardGameRecords,
     sanitizeBoardGameRecords,
 } from './lib/boardGameRecords.js';
+import {
+    CHESS_AI_LEVELS,
+    chessAiLevelLabel,
+    pickChessAiMove,
+    sanitizeChessAiLevel,
+} from './lib/chessAi.js';
+import {
+    CHESS_BLACK,
+    CHESS_WHITE,
+    applyChessForfeit,
+    applyChessMove,
+    applyChessTimeout,
+    chessEndText,
+    chessErrorText,
+    chessGlyph,
+    chessIsInCheck,
+    chessIsOver,
+    chessPieceColor,
+    chessPieceType,
+    chessSeatColor,
+    chessStatusText,
+    emptyChessGame,
+    listLegalChessMoves,
+} from './lib/chessGame.js';
 import {
     applyBoardRoomGame,
     approveJoinBoardRoom,
@@ -11212,6 +11238,12 @@ ${subjectLine}
         let _gomokuAiSession = null;
         let _gomokuAiWorker = null;
         let _gomokuAiReqId = 0;
+        let _chessAiSession = null;
+        let _chessAiWorker = null;
+        let _chessAiReqId = 0;
+        let _chessAiHumanColor = CHESS_WHITE;
+        let _chessSelected = null;
+        let _chessPromo = null;
         let _boardGameVacating = false;
         let _gomokuLastVp = { w: 0, h: 0 };
         const _gomokuView = { scale: 1, min: 1, max: 4.8, x: 0, y: 0 };
@@ -11254,7 +11286,7 @@ ${subjectLine}
             if (mineActive) void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
-            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession) {
+            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession) {
                 enterBoardGameTable(minePlaying.id);
             }
             if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
@@ -11273,14 +11305,25 @@ ${subjectLine}
             }
         }
 
+        function activeBoardPlayKind() {
+            if (_chessAiSession) return 'chess';
+            if (_gomokuAiSession) return 'gomoku';
+            const room = currentBoardGameRoom();
+            if (room && room.gameType === 'chess') return 'chess';
+            return _boardGameType === 'chess' ? 'chess' : 'gomoku';
+        }
+
         function showBoardGameView(view) {
-            _boardGameView = view;
+            _boardGameView = view === 'chess-play' ? 'play' : view;
             const home = document.getElementById('boardgameHomeView');
             const lobby = document.getElementById('boardgameLobbyView');
             const play = document.getElementById('boardgamePlayView');
-            if (home) home.classList.toggle('hidden', view !== 'home');
-            if (lobby) lobby.classList.toggle('hidden', view !== 'lobby');
-            if (play) play.classList.toggle('hidden', view !== 'play');
+            const chessPlay = document.getElementById('boardgameChessPlayView');
+            const kind = activeBoardPlayKind();
+            if (home) home.classList.toggle('hidden', _boardGameView !== 'home');
+            if (lobby) lobby.classList.toggle('hidden', _boardGameView !== 'lobby');
+            if (play) play.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'gomoku'));
+            if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
         }
 
         function gomokuAiRoomView() {
@@ -11434,25 +11477,37 @@ ${subjectLine}
             return sanitizeBoardGameRecords(row && row.boardGameRecords);
         }
 
-        function myBoardGameRecordText() {
-            return boardGameRecordText(lookupBoardGameRecords(boardGameSelfId()), 'gomoku');
+        function myBoardGameRecordText(gameType) {
+            const type = gameType || _boardGameType || 'gomoku';
+            return boardGameRecordText(lookupBoardGameRecords(boardGameSelfId()), type);
         }
 
         function maybeRecordBoardGameResult(room) {
             if (!room || room.status !== 'finished') return;
             const me = boardGameSelfId();
             if (!me || !window.playerState || window.playerState.isGuest) return;
-            const myColor = _gomokuAiSession ? GOMOKU_BLACK : gomokuSeatColor(roomMemberSeat(room, me));
-            const result = gomokuRecordResult(room.game, myColor);
+            const type = room.gameType === 'chess' ? 'chess' : 'gomoku';
+            let result = '';
+            let key = '';
+            if (type === 'chess') {
+                const myColor = _chessAiSession
+                    ? _chessAiSession.human
+                    : chessSeatColor(roomMemberSeat(room, me));
+                result = chessRecordResult(room.game, myColor);
+                key = chessResultKey(room, room.game);
+            } else {
+                const myColor = _gomokuAiSession ? GOMOKU_BLACK : gomokuSeatColor(roomMemberSeat(room, me));
+                result = gomokuRecordResult(room.game, myColor);
+                key = gomokuResultKey(room, room.game);
+            }
             if (!result) return;
-            const key = gomokuResultKey(room, room.game);
             const before = sanitizeBoardGameRecords(window.playerState.boardGameRecords);
-            const after = applyBoardGameRecord(before, { gameType: 'gomoku', result, key });
+            const after = applyBoardGameRecord(before, { gameType: type, result, key });
             if (before.recentKeys.join('|') === after.recentKeys.join('|')) return;
             window.playerState.boardGameRecords = after;
             void saveDataToCloud();
             const recEl = document.getElementById('boardgameMyRecord');
-            if (recEl) recEl.textContent = `내 오목 전적 ${boardGameRecordText(after)}`;
+            if (recEl) recEl.textContent = `내 ${type === 'chess' ? '체스' : '오목'} 전적 ${boardGameRecordText(after, type)}`;
         }
 
         async function vacateOtherBoardRooms(exceptRoomId) {
@@ -11486,6 +11541,10 @@ ${subjectLine}
         }
 
         function renderBoardGamePanel() {
+            if (_chessAiSession) {
+                renderChessPlay(chessAiRoomView());
+                return;
+            }
             if (_gomokuAiSession) {
                 renderGomokuPlay(gomokuAiRoomView());
                 return;
@@ -11498,7 +11557,8 @@ ${subjectLine}
                     renderBoardGameLobby();
                     return;
                 }
-                renderGomokuPlay(room);
+                if (room.gameType === 'chess') renderChessPlay(room);
+                else renderGomokuPlay(room);
                 return;
             }
             if (_boardGameView === 'lobby') {
@@ -11509,9 +11569,33 @@ ${subjectLine}
             showBoardGameView('home');
         }
 
+        function syncBoardGameLobbyChrome() {
+            const chess = _boardGameType === 'chess';
+            const kicker = document.querySelector('#boardgameLobbyView .boardgame-kicker');
+            const title = document.querySelector('#boardgameLobbyView .boardgame-title');
+            const lead = document.getElementById('boardgameLobbyLead');
+            if (kicker) kicker.textContent = chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY';
+            if (title) title.textContent = chess ? '체스 방' : '오목 방';
+            if (lead) {
+                lead.textContent = chess
+                    ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.'
+                    : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.';
+            }
+            const wBtn = document.getElementById('boardgameAiColorWhite');
+            const bBtn = document.getElementById('boardgameAiColorBlack');
+            [wBtn, bBtn].forEach((btn) => {
+                if (!btn) return;
+                btn.classList.toggle('hidden', !chess);
+            });
+            if (wBtn) wBtn.classList.toggle('is-on', _chessAiHumanColor === CHESS_WHITE);
+            if (bBtn) bBtn.classList.toggle('is-on', _chessAiHumanColor === CHESS_BLACK);
+        }
+
         function renderBoardGameLobby() {
+            syncBoardGameLobbyChrome();
             const recEl = document.getElementById('boardgameMyRecord');
-            if (recEl) recEl.textContent = `내 오목 전적 ${myBoardGameRecordText()}`;
+            const label = _boardGameType === 'chess' ? '체스' : '오목';
+            if (recEl) recEl.textContent = `내 ${label} 전적 ${myBoardGameRecordText(_boardGameType)}`;
             const box = document.getElementById('boardgameRoomList');
             if (!box) return;
             const me = boardGameSelfId();
@@ -11785,12 +11869,36 @@ ${subjectLine}
             const span = size > 1 ? size - 1 : 1;
             const left = (pending.x / span) * 88 + 6;
             const top = (pending.y / span) * 88 + 6;
-            const flip = left > 70;
+            const flipX = left > 62;
+            const flipY = top > 78;
+            const tx = flipX ? 'calc(-100% - 8px)' : '12px';
+            const ty = flipY ? 'calc(-100% - 6px)' : '-50%';
             confirmBar.style.left = `${left}%`;
             confirmBar.style.top = `${top}%`;
-            confirmBar.style.transform = flip ? 'translate(calc(-100% - 8px), -50%)' : 'translate(12px, -50%)';
+            confirmBar.style.transform = `translate(${tx}, ${ty})`;
             confirmBar.onpointerdown = (e) => e.stopPropagation();
             confirmBar.onclick = (e) => e.stopPropagation();
+            requestAnimationFrame(() => clampGomokuConfirmToViewport());
+        }
+
+        function clampGomokuConfirmToViewport() {
+            const bar = document.getElementById('gomokuConfirmBar');
+            const vp = document.getElementById('gomokuBoardViewport');
+            if (!bar || !vp || bar.classList.contains('hidden')) return;
+            const pad = 6;
+            const b = bar.getBoundingClientRect();
+            const v = vp.getBoundingClientRect();
+            if (!b.width || !v.width) return;
+            let dx = 0;
+            let dy = 0;
+            if (b.right > v.right - pad) dx -= b.right - (v.right - pad);
+            if (b.left + dx < v.left + pad) dx += (v.left + pad) - (b.left + dx);
+            if (b.bottom > v.bottom - pad) dy -= b.bottom - (v.bottom - pad);
+            if (b.top + dy < v.top + pad) dy += (v.top + pad) - (b.top + dy);
+            if (dx || dy) {
+                const cur = bar.style.transform || 'translate(0, 0)';
+                bar.style.transform = `${cur} translate(${dx}px, ${dy}px)`;
+            }
         }
 
         function pickGomokuPoint(x, y) {
@@ -11963,7 +12071,7 @@ ${subjectLine}
                 const room = currentBoardGameRoom();
                 if (!room || _boardGameView !== 'play') return;
                 if (room.timerEnabled && room.status === 'playing') {
-                    const timerEl = document.getElementById('gomokuHudTimer');
+                    const timerEl = document.getElementById(room.gameType === 'chess' ? 'chessHudTimer' : 'gomokuHudTimer');
                     if (timerEl) {
                         const sec = Math.ceil(turnRemainingMs(room, Date.now()) / 1000);
                         timerEl.hidden = false;
@@ -12007,19 +12115,275 @@ ${subjectLine}
                 const code = e && e.message;
                 const roomLabel = boardRoomErrorText(code);
                 const moveLabel = gomokuErrorText(code);
-                await window.customAlert(roomLabel !== '처리할 수 없습니다.' ? roomLabel : moveLabel);
+                const chessLabel = chessErrorText(code);
+                const shown = roomLabel !== '처리할 수 없습니다.'
+                    ? roomLabel
+                    : (moveLabel !== '둘 수 없습니다.' ? moveLabel : chessLabel);
+                await window.customAlert(shown);
                 return null;
             }
         }
 
+        function chessAiRoomView() {
+            const s = _chessAiSession;
+            if (!s) return null;
+            const me = boardGameSelfId();
+            const finished = chessIsOver(s.game);
+            const aiLabel = chessAiLevelLabel(s.level);
+            const humanSeat = s.human === CHESS_BLACK ? 'black' : 'white';
+            const aiSeat = humanSeat === 'white' ? 'black' : 'white';
+            return {
+                id: 'chess-ai-local',
+                gameType: 'chess',
+                status: finished ? 'finished' : 'playing',
+                hostId: me,
+                timerEnabled: false,
+                members: [
+                    { id: me || 'me', name: boardGameSelfName(), seat: humanSeat, role: 'host' },
+                    { id: 'ai', name: `AI(${aiLabel})`, seat: aiSeat, role: 'player' },
+                ],
+                game: s.game,
+            };
+        }
+
+        function getChessAiWorker() {
+            if (_chessAiWorker) return _chessAiWorker;
+            if (typeof Worker === 'undefined') return null;
+            try {
+                _chessAiWorker = new Worker(new URL('./lib/chessAi.worker.js', import.meta.url), { type: 'module' });
+            } catch (e) {
+                console.warn('chessAi.worker 생성 실패, 메인 스레드에서 계산합니다.', e);
+                _chessAiWorker = null;
+            }
+            return _chessAiWorker;
+        }
+
+        function pickChessAiMoveAsync(game, opts) {
+            const worker = getChessAiWorker();
+            if (!worker) return Promise.resolve(pickChessAiMove(game, opts));
+            const reqId = (_chessAiReqId += 1);
+            return new Promise((resolve, reject) => {
+                const onMsg = (e) => {
+                    const data = e && e.data ? e.data : {};
+                    if (data.reqId !== reqId) return;
+                    worker.removeEventListener('message', onMsg);
+                    worker.removeEventListener('error', onErr);
+                    if (data.ok) resolve(data.mv);
+                    else reject(new Error(data.error || 'ai_worker'));
+                };
+                const onErr = (err) => {
+                    worker.removeEventListener('message', onMsg);
+                    worker.removeEventListener('error', onErr);
+                    reject(err);
+                };
+                worker.addEventListener('message', onMsg);
+                worker.addEventListener('error', onErr);
+                try {
+                    worker.postMessage({
+                        reqId,
+                        game,
+                        color: opts && opts.color,
+                        level: opts && opts.level,
+                        timeMs: opts && opts.timeMs,
+                    });
+                } catch (err) {
+                    worker.removeEventListener('message', onMsg);
+                    worker.removeEventListener('error', onErr);
+                    reject(err);
+                }
+            });
+        }
+
+        function clearChessAiSession() {
+            if (_chessAiSession) _chessAiSession.token = (_chessAiSession.token || 0) + 1;
+            _chessAiSession = null;
+            _chessSelected = null;
+            _chessPromo = null;
+        }
+
+        function startChessAiSession(level) {
+            _boardGameActiveId = '';
+            _boardGameType = 'chess';
+            _chessSelected = null;
+            _chessPromo = null;
+            _chessAiSession = {
+                game: emptyChessGame({ now: Date.now() }),
+                thinking: false,
+                token: 0,
+                level: sanitizeChessAiLevel(level),
+                human: _chessAiHumanColor === CHESS_BLACK ? CHESS_BLACK : CHESS_WHITE,
+            };
+            renderChessPlay(chessAiRoomView());
+            if (_chessAiSession.human === CHESS_BLACK) void playChessAiTurn();
+        }
+
+        async function playChessAiTurn() {
+            const s = _chessAiSession;
+            if (!s || s.thinking || chessIsOver(s.game)) return;
+            if (s.game.turn === s.human) return;
+            const token = s.token || 0;
+            const level = sanitizeChessAiLevel(s.level);
+            const timeMs = CHESS_AI_LEVELS[level].timeMs;
+            s.thinking = true;
+            renderChessPlay(chessAiRoomView());
+            const started = Date.now();
+            let mv;
+            try {
+                mv = await pickChessAiMoveAsync(s.game, { color: s.game.turn, level, timeMs });
+            } catch (e) {
+                console.warn('pickChessAiMove', e);
+                mv = pickChessAiMove(s.game, { color: s.game.turn, level, timeMs });
+            }
+            const minThink = level === 'choin' ? 220 : 420;
+            const wait = Math.max(0, minThink - (Date.now() - started));
+            await new Promise((resolve) => setTimeout(resolve, wait));
+            if (!_chessAiSession || (_chessAiSession.token || 0) !== token || !mv) {
+                if (_chessAiSession && (_chessAiSession.token || 0) === token) {
+                    _chessAiSession.thinking = false;
+                    renderChessPlay(chessAiRoomView());
+                }
+                return;
+            }
+            const placed = applyChessMove(_chessAiSession.game, {
+                from: mv.from,
+                to: mv.to,
+                promo: mv.promo || '',
+                color: _chessAiSession.game.turn,
+                now: Date.now(),
+            });
+            if (placed.ok) _chessAiSession.game = placed.game;
+            _chessAiSession.thinking = false;
+            renderChessPlay(chessAiRoomView());
+        }
+
+        function currentChessPlayRoom() {
+            if (_chessAiSession) return chessAiRoomView();
+            const room = currentBoardGameRoom();
+            return room && room.gameType === 'chess' ? room : null;
+        }
+
+        function renderChessPlay(room) {
+            showBoardGameView('play');
+            startGomokuTick();
+            if (!room) return;
+            const me = boardGameSelfId();
+            const aiMode = !!_chessAiSession;
+            const host = !aiMode && isRoomHost(room, me);
+            const playersEl = document.getElementById('chessHudPlayers');
+            const hint = document.getElementById('chessTurnHint');
+            const toggleWrap = document.getElementById('chessTimerToggleWrap');
+            const toggle = document.getElementById('chessTimerToggle');
+            const timerEl = document.getElementById('chessHudTimer');
+            const promoBar = document.getElementById('chessPromoBar');
+            const resultBar = document.getElementById('chessResultBar');
+            const resultText = document.getElementById('chessResultText');
+            const leaveBtn = document.querySelector('.chess-leave-btn');
+            if (leaveBtn) leaveBtn.textContent = room.status === 'playing' ? '나가기' : '목록';
+            if (playersEl) {
+                playersEl.textContent = `백 ${memberNameBySeat(room, 'white')}  ·  흑 ${memberNameBySeat(room, 'black')}`;
+            }
+            if (toggleWrap) {
+                const hideToggle = aiMode || !host;
+                toggleWrap.classList.toggle('hidden', hideToggle);
+                toggleWrap.hidden = hideToggle;
+            }
+            if (toggle) toggle.checked = !!room.timerEnabled;
+            if (timerEl) {
+                const show = !aiMode && room.timerEnabled && room.status === 'playing';
+                timerEl.hidden = !show;
+                if (show) {
+                    const sec = Math.ceil(turnRemainingMs(room, Date.now()) / 1000);
+                    timerEl.textContent = `${sec}`;
+                    timerEl.classList.toggle('is-low', sec <= 5);
+                }
+            }
+            const mySeat = roomMemberSeat(room, me);
+            const myColor = chessSeatColor(mySeat);
+            const game = room.game || emptyChessGame();
+            if (hint) {
+                if (room.status === 'finished' || chessIsOver(game)) hint.textContent = chessEndText(game, {
+                    whiteName: memberNameBySeat(room, 'white'),
+                    blackName: memberNameBySeat(room, 'black'),
+                }) || '한 판이 끝났습니다.';
+                else if (aiMode && _chessAiSession.thinking) hint.textContent = `${chessAiLevelLabel(_chessAiSession.level)} AI가 생각 중입니다…`;
+                else if (game.inCheck || chessIsInCheck(game, game.turn)) hint.textContent = chessStatusText(game);
+                else if (game.turn === myColor) hint.textContent = '당신 차례입니다. 말을 고른 뒤 연한 칸을 누르세요.';
+                else hint.textContent = chessStatusText(game);
+            }
+            if (promoBar) promoBar.classList.toggle('hidden', !_chessPromo);
+            if (resultBar && resultText) {
+                const done = room.status === 'finished' || chessIsOver(game);
+                resultBar.classList.toggle('hidden', !done);
+                if (done) {
+                    maybeRecordBoardGameResult({ ...room, status: 'finished', gameType: 'chess', game });
+                    const endLine = chessEndText(game, {
+                        whiteName: memberNameBySeat(room, 'white'),
+                        blackName: memberNameBySeat(room, 'black'),
+                    }) || '대국이 끝났습니다.';
+                    resultText.textContent = `${endLine}  내 전적 ${myBoardGameRecordText('chess')}`;
+                }
+            }
+            const endBtn = document.querySelector('#chessResultBar .gomoku-result-actions .boardgame-mini-btn');
+            if (endBtn) endBtn.textContent = aiMode ? '종료' : '방 종료';
+            renderChessBoard(room);
+        }
+
+        function renderChessBoard(room) {
+            const boardEl = document.getElementById('chessBoard');
+            if (!boardEl) return;
+            const me = boardGameSelfId();
+            const myColor = chessSeatColor(roomMemberSeat(room, me));
+            const flip = myColor === CHESS_BLACK;
+            const game = room.game || emptyChessGame();
+            const legal = (room.status === 'playing' && !_chessPromo && !( _chessAiSession && _chessAiSession.thinking) && game.turn === myColor)
+                ? listLegalChessMoves(game, myColor)
+                : [];
+            const fromSel = _chessSelected;
+            const dests = fromSel == null ? [] : legal.filter((m) => m.from === fromSel);
+            const last = game.lastMove;
+            const checkSq = (game.inCheck || chessIsInCheck(game, game.turn))
+                ? game.cells.findIndex((p, i) => chessPieceType(p) === 'k' && chessPieceColor(p) === game.turn && i >= 0)
+                : -1;
+            const ranks = flip ? [0, 1, 2, 3, 4, 5, 6, 7] : [7, 6, 5, 4, 3, 2, 1, 0];
+            const files = flip ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
+            const html = [];
+            ranks.forEach((rank) => {
+                files.forEach((file) => {
+                    const sq = rank * 8 + file;
+                    const light = ((file + rank) % 2) === 1;
+                    const p = game.cells[sq];
+                    const dest = dests.find((m) => m.to === sq);
+                    const cls = [
+                        'chess-sq',
+                        light ? 'is-light' : 'is-dark',
+                        last && (last.from === sq || last.to === sq) ? 'is-last' : '',
+                        fromSel === sq ? 'is-selected' : '',
+                        checkSq === sq ? 'is-check' : '',
+                        dest && dest.capture ? 'is-capture' : '',
+                        dest && !dest.capture ? 'is-move' : '',
+                    ].filter(Boolean).join(' ');
+                    html.push(`<button type="button" class="${cls}" data-sq="${sq}" aria-label="${sq}">${chessGlyph(p)}</button>`);
+                });
+            });
+            boardEl.innerHTML = html.join('');
+            boardEl.querySelectorAll('[data-sq]').forEach((btn) => {
+                btn.addEventListener('click', () => window.pickChessSquare(Number(btn.getAttribute('data-sq'))));
+            });
+        }
+
         function enterBoardGameTable(roomId) {
             clearGomokuAiSession();
+            clearChessAiSession();
             _boardGameActiveId = String(roomId || '');
             _gomokuPending = null;
             _gomokuNeedFit = true;
-            showBoardGameView('play');
+            _chessSelected = null;
+            _chessPromo = null;
             const room = currentBoardGameRoom();
-            if (room) renderGomokuPlay(room);
+            if (room && room.gameType === 'chess') _boardGameType = 'chess';
+            showBoardGameView('play');
+            if (room && room.gameType === 'chess') renderChessPlay(room);
+            else if (room) renderGomokuPlay(room);
         }
 
         window.openBoardGameLobby = function (gameType) {
@@ -12036,6 +12400,7 @@ ${subjectLine}
 
         window.backBoardGameHome = function () {
             clearGomokuAiSession();
+            clearChessAiSession();
             _boardGameActiveId = '';
             _gomokuPending = null;
             showBoardGameView('home');
@@ -12048,6 +12413,95 @@ ${subjectLine}
             void vacateOtherBoardRooms('');
             startGomokuAiSession(level);
         };
+
+        window.setBoardGameAiColor = function (color) {
+            _chessAiHumanColor = color === CHESS_BLACK ? CHESS_BLACK : CHESS_WHITE;
+            syncBoardGameLobbyChrome();
+        };
+
+        window.startBoardGameAi = function (level) {
+            if (_boardGameType === 'chess') {
+                if (window.playerState && window.playerState.isGuest) {
+                    return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                }
+                void vacateOtherBoardRooms('');
+                startChessAiSession(level);
+                return;
+            }
+            return window.startGomokuAiGame(level);
+        };
+
+        window.pickChessSquare = async function (sq) {
+            const room = currentChessPlayRoom();
+            if (!room || room.status !== 'playing') return;
+            if (_chessAiSession && _chessAiSession.thinking) return;
+            if (_chessPromo) return;
+            const me = boardGameSelfId();
+            const myColor = chessSeatColor(roomMemberSeat(room, me));
+            const game = room.game;
+            if (!myColor || game.turn !== myColor) {
+                return window.customAlert('지금 둘 차례가 아닙니다.');
+            }
+            const legal = listLegalChessMoves(game, myColor);
+            if (_chessSelected == null) {
+                const mine = legal.some((m) => m.from === sq);
+                if (!mine) return;
+                _chessSelected = sq;
+                renderChessPlay(room);
+                return;
+            }
+            const matches = legal.filter((m) => m.from === _chessSelected && m.to === sq);
+            if (!matches.length) {
+                if (legal.some((m) => m.from === sq)) {
+                    _chessSelected = sq;
+                    renderChessPlay(room);
+                    return;
+                }
+                _chessSelected = null;
+                renderChessPlay(room);
+                return;
+            }
+            if (matches.some((m) => m.promo)) {
+                _chessPromo = { from: _chessSelected, to: sq };
+                renderChessPlay(room);
+                return;
+            }
+            await commitChessMove(matches[0].from, matches[0].to, '');
+        };
+
+        window.confirmChessPromo = async function (promo) {
+            if (!_chessPromo) return;
+            const { from, to } = _chessPromo;
+            _chessPromo = null;
+            await commitChessMove(from, to, promo);
+        };
+
+        async function commitChessMove(from, to, promo) {
+            _chessSelected = null;
+            if (_chessAiSession) {
+                const placed = applyChessMove(_chessAiSession.game, {
+                    from, to, promo, color: _chessAiSession.human, now: Date.now(),
+                });
+                if (!placed.ok) {
+                    await window.customAlert(chessErrorText(placed.error));
+                    renderChessPlay(chessAiRoomView());
+                    return;
+                }
+                _chessAiSession.game = placed.game;
+                renderChessPlay(chessAiRoomView());
+                if (!chessIsOver(placed.game)) void playChessAiTurn();
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            const me = boardGameSelfId();
+            const color = chessSeatColor(roomMemberSeat(room, me));
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const placed = applyChessMove(cur.game, { from, to, promo, color, now: Date.now() });
+                if (!placed.ok) return { ok: false, error: placed.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: placed.game, now: Date.now(), finished: chessIsOver(placed.game) }) };
+            }));
+        }
 
         window.createBoardGameRoom = async function (gameType) {
             if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
@@ -12158,13 +12612,25 @@ ${subjectLine}
         async function applyBoardGameTimeout(roomId) {
             await enqueueBoardGameWrite(() => mutateBoardRoom(roomId, (cur) => {
                 if (!isTurnTimedOut(cur, Date.now())) return { ok: true, room: cur };
-                const timed = applyGomokuTimeout(cur.game, { now: Date.now() });
+                const timed = cur.gameType === 'chess'
+                    ? applyChessTimeout(cur.game, { now: Date.now() })
+                    : applyGomokuTimeout(cur.game, { now: Date.now() });
                 if (!timed.ok) return { ok: false, error: timed.error };
                 return { ok: true, room: applyBoardRoomGame(cur, { game: timed.game, now: Date.now(), finished: true }) };
             }));
         }
 
         window.continueBoardGameRoom = async function () {
+            if (_chessAiSession) {
+                _chessSelected = null;
+                _chessPromo = null;
+                _chessAiSession.thinking = false;
+                _chessAiSession.token = (_chessAiSession.token || 0) + 1;
+                _chessAiSession.game = emptyChessGame({ now: Date.now() });
+                renderChessPlay(chessAiRoomView());
+                if (_chessAiSession.human === CHESS_BLACK) void playChessAiTurn();
+                return;
+            }
             if (_gomokuAiSession) {
                 _gomokuPending = null;
                 _gomokuNeedFit = true;
@@ -12184,6 +12650,14 @@ ${subjectLine}
         };
 
         window.endBoardGameRoom = async function () {
+            if (_chessAiSession) {
+                const ok = await window.customConfirm('AI 대국을 종료할까요?');
+                if (!ok) return;
+                clearChessAiSession();
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                return;
+            }
             if (_gomokuAiSession) {
                 const ok = await window.customConfirm('AI 대국을 종료할까요?');
                 if (!ok) return;
@@ -12213,6 +12687,13 @@ ${subjectLine}
         async function forfeitCurrentGomoku() {
             const me = boardGameSelfId();
             _gomokuPending = null;
+            if (_chessAiSession) {
+                const done = applyChessForfeit(_chessAiSession.game, { color: _chessAiSession.human, now: Date.now() });
+                if (done.ok) _chessAiSession.game = done.game;
+                _chessAiSession.thinking = false;
+                renderChessPlay(chessAiRoomView());
+                return;
+            }
             if (_gomokuAiSession) {
                 const done = applyGomokuForfeit(_gomokuAiSession.game, { color: GOMOKU_BLACK, now: Date.now() });
                 if (done.ok) _gomokuAiSession.game = done.game;
@@ -12222,6 +12703,15 @@ ${subjectLine}
             }
             const room = currentBoardGameRoom();
             if (!room) return;
+            if (room.gameType === 'chess') {
+                const color = chessSeatColor(roomMemberSeat(room, me));
+                await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                    const done = applyChessForfeit(cur.game, { color, now: Date.now() });
+                    if (!done.ok) return { ok: false, error: done.error };
+                    return { ok: true, room: applyBoardRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
+                }));
+                return;
+            }
             const color = gomokuSeatColor(roomMemberSeat(room, me));
             await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
                 const done = applyGomokuForfeit(cur.game, { color, now: Date.now() });
@@ -12231,7 +12721,7 @@ ${subjectLine}
         }
 
         window.leaveBoardGameTable = async function () {
-            const room = currentGomokuPlayRoom();
+            const room = currentChessPlayRoom() || currentGomokuPlayRoom();
             if (room && room.status === 'playing') {
                 const ok = await window.customConfirm('나가면 패배로 기록됩니다. 나갈까요?');
                 if (!ok) return;
@@ -12239,6 +12729,7 @@ ${subjectLine}
                 return;
             }
             clearGomokuAiSession();
+            clearChessAiSession();
             _boardGameActiveId = '';
             _gomokuPending = null;
             showBoardGameView('lobby');

@@ -1,6 +1,6 @@
 /**
- * 초인 전용 빠른 탐색.
- * 배열 판을 제자리에서 두고 되돌리며(make/unmake), 약 3.5초(최대 4초) 안에 더 깊게 봅니다.
+ * PR #14 초인 엔진 고정본. 검증 대국(choinOld)에만 씁니다.
+ * 배열 판을 제자리에서 두고 되돌리며(make/unmake), 같은 3초 안에 더 깊게 봅니다.
  */
 
 const MG_VAL = [0, 82, 337, 365, 477, 1025, 0];
@@ -129,7 +129,7 @@ function xorPiece(s, p, sq) {
     s.hash ^= Z_PIECE[p * 64 + sq];
 }
 
-export const choinSearchStats = {
+export const choinPr14SearchStats = {
     depth: 0,
     nodes: 0,
 };
@@ -453,12 +453,6 @@ function pawnTerms(s) {
             mg += sign * bonus;
             eg += sign * (bonus + adv * 8);
         }
-        // 같은 줄 옆 폰이 있으면 연결 보너스를 줍니다.
-        if ((sq & 7) < 7 && typeOf(s.c[sq + 1]) === 1 && isWhite(s.c[sq + 1]) === white) {
-            const sign = white ? 1 : -1;
-            mg += sign * 3;
-            eg += sign * 5;
-        }
     }
     return { mg, eg };
 }
@@ -543,36 +537,13 @@ function rookFiles(s) {
     return { mg, eg };
 }
 
-function bishopPairAndKingEg(s) {
-    let wb = 0;
-    let bb = 0;
-    for (let sq = 0; sq < 64; sq += 1) {
-        if (typeOf(s.c[sq]) !== 3) continue;
-        if (isWhite(s.c[sq])) wb += 1;
-        else bb += 1;
-    }
-    let mg = 0;
-    let eg = 0;
-    if (wb >= 2) { mg += 28; eg += 42; }
-    if (bb >= 2) { mg -= 28; eg -= 42; }
-    if (s.wk >= 0 && s.bk >= 0) {
-        const wC = Math.abs((s.wk & 7) - 3.5) + Math.abs((s.wk >> 3) - 3.5);
-        const bC = Math.abs((s.bk & 7) - 3.5) + Math.abs((s.bk >> 3) - 3.5);
-        eg += (bC - wC) * 8;
-        const kd = Math.abs((s.wk & 7) - (s.bk & 7)) + Math.abs((s.wk >> 3) - (s.bk >> 3));
-        eg += (14 - kd);
-    }
-    return { mg, eg };
-}
-
 function evaluate(s) {
     const extra = pawnTerms(s);
     const rooks = rookFiles(s);
-    const extra2 = bishopPairAndKingEg(s);
     const mob = mobility(s);
     const shield = kingShield(s, s.wk, true) - kingShield(s, s.bk, false);
-    let mg = s.mg + extra.mg + extra2.mg + rooks.mg + shield + mob * 2;
-    let eg = s.eg + extra.eg + extra2.eg + rooks.eg + mob;
+    let mg = s.mg + extra.mg + rooks.mg + shield + mob * 2;
+    let eg = s.eg + extra.eg + rooks.eg + mob;
     const ph = Math.max(0, Math.min(24, s.phase));
     let score = ((mg * ph) + (eg * (24 - ph))) / 24;
     if (s.turn === 1) score = -score;
@@ -751,12 +722,8 @@ function searchRoot(s, depth, alpha0, beta0) {
             continue;
         }
         const ext = inCheck(s, s.turn === 0) ? 1 : 0;
-        let val;
-        if (i === 0) val = -search(s, depth - 1 + ext, -beta0, -alpha, 1, true);
-        else {
-            val = -search(s, depth - 1 + ext, -alpha - 1, -alpha, 1, true);
-            if (val > alpha && val < beta0) val = -search(s, depth - 1 + ext, -beta0, -alpha, 1, true);
-        }
+        // 루트는 모든 수를 넓게 봐 실제 점수 차이를 남깁니다(근접 가중 선택용).
+        const val = -search(s, depth - 1 + ext, -beta0, -alpha0, 1, true);
         unmake(s);
         rows.push({ mv: { from: moves[i].from, to: moves[i].to, promo: moves[i].promo || '' }, val });
         if (val > alpha) alpha = val;
@@ -771,52 +738,48 @@ function searchRoot(s, depth, alpha0, beta0) {
     };
 }
 
-export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
+export function pickChoinEngineMovePr14(game, { timeMs = 2600 } = {}) {
     const s = fromGame(game);
-    s.deadline = Date.now() + Math.max(80, Math.min(4000, Number(timeMs) || 3500));
+    s.deadline = Date.now() + Math.max(80, Math.min(3000, Number(timeMs) || 2600));
     ttClear();
     let found = { rows: [], mv: null, val: -30000, completed: false };
     let doneDepth = 0;
-    let lastScore = 0;
-    for (let depth = 2; depth <= 14; depth += 1) {
+    for (let depth = 2; depth <= 12; depth += 1) {
         if (s.deadline - Date.now() < 80) break;
         s.stop = false;
         const prev = found;
-        let alpha = -30000;
-        let beta = 30000;
-        if (depth >= 4) {
-            alpha = lastScore - 28;
-            beta = lastScore + 28;
-        }
-        let next = searchRoot(s, depth, alpha, beta);
-        if (!s.stop && next.rows.length && (next.val <= alpha || next.val >= beta)) {
-            s.stop = false;
-            next = searchRoot(s, depth, -30000, 30000);
-        }
+        // 루트는 창을 열어둡니다. 트리 안에서는 널무브·LMR이 줄입니다.
+        const next = searchRoot(s, depth, -30000, 30000);
         if (next.rows && next.rows.length && (next.completed || !prev.rows.length)) {
             found = next;
-            lastScore = next.val;
             if (next.completed) doneDepth = depth;
         }
         if (next.val >= 19000) break;
     }
-    choinSearchStats.depth = doneDepth;
-    choinSearchStats.nodes = s.nodes;
+    choinPr14SearchStats.depth = doneDepth;
+    choinPr14SearchStats.nodes = s.nodes;
     return found;
 }
 
-export function pickSoftChoinMove(rows, rng) {
+export function pickSoftChoinMovePr14(rows, rng) {
     const clean = (rows || []).filter((r) => r && r.mv && Number.isFinite(r.val));
     if (!clean.length) return null;
     const best = clean[0];
     if (best.val >= 18000) return best.mv;
     if (clean.length === 1) return best.mv;
-    // 동점(약 10cp)이 아니면 항상 최선 수. 같은 점수가 많이 쌓이면 실패낮음으로 보고 최선만 둡니다.
-    if (best.val - clean[1].val > 10) return best.mv;
-    const tied = clean.filter((r) => r.val === best.val);
-    if (tied.length >= 3) return best.mv;
-    const pool = clean.filter((r) => best.val - r.val <= 10).slice(0, 2);
-    if (pool.length < 2) return best.mv;
-    const roll = typeof rng === 'function' ? rng() : Math.random();
-    return roll < 0.72 ? pool[0].mv : pool[1].mv;
+    if (best.val - clean[1].val >= 40) return best.mv;
+    const pool = clean.filter((r) => best.val - r.val <= 12);
+    if (!pool.length) return best.mv;
+    let sum = 0;
+    const weights = pool.map((r) => {
+        const w = Math.exp((r.val - best.val) / 8);
+        sum += w;
+        return w;
+    });
+    let pick = (typeof rng === 'function' ? rng() : Math.random()) * (sum || 1);
+    for (let i = 0; i < pool.length; i += 1) {
+        pick -= weights[i];
+        if (pick <= 0) return pool[i].mv;
+    }
+    return pool[pool.length - 1].mv;
 }

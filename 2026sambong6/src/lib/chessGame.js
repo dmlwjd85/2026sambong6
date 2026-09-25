@@ -438,15 +438,26 @@ function kingSafeAfter(cells, castling, ep, color, mv) {
     return king >= 0 && !isSquareAttacked(applied.cells, king, opp(color));
 }
 
-/** 지금 둘 수 있는 합법 수. 자기 킹을 체크에 두는 수는 빠집니다. */
-export function listLegalChessMoves(game, color) {
-    const g = sanitizeChessGame(game);
+function isDrawReason(endReason) {
+    return ['stalemate', 'fifty', 'material', 'threefold'].includes(endReason);
+}
+
+/** sanitize 없이 합법 수를 셉니다. AI 탐색용. */
+export function listLegalChessMovesTrusted(g, color) {
     const side = color === CHESS_BLACK || color === CHESS_WHITE ? color : g.turn;
-    if (g.winner || g.endReason === 'stalemate' || g.endReason === 'fifty' || g.endReason === 'material' || g.endReason === 'threefold') {
-        return [];
-    }
+    if (g.winner || isDrawReason(g.endReason)) return [];
     const pseudo = genPseudo(g.cells, side, g.ep).concat(genCastles(g.cells, side, g.castling));
     return pseudo.filter((mv) => kingSafeAfter(g.cells, g.castling, g.ep, side, mv));
+}
+
+/** 지금 둘 수 있는 합법 수. 자기 킹을 체크에 두는 수는 빠집니다. */
+export function listLegalChessMoves(game, color) {
+    return listLegalChessMovesTrusted(sanitizeChessGame(game), color);
+}
+
+export function chessPositionKey(game) {
+    const g = game && game.cells ? game : sanitizeChessGame(game);
+    return positionKey(g.cells, g.turn, g.castling, g.ep);
 }
 
 export function chessIsInCheck(game, color) {
@@ -481,7 +492,7 @@ export function chessInsufficientMaterial(cells) {
 }
 
 function finishIfNeeded(g) {
-    if (g.winner || ['stalemate', 'fifty', 'material', 'threefold'].includes(g.endReason)) return g;
+    if (g.winner || isDrawReason(g.endReason)) return g;
     if (chessInsufficientMaterial(g.cells)) {
         return { ...g, winner: '', endReason: 'material', inCheck: false };
     }
@@ -493,8 +504,9 @@ function finishIfNeeded(g) {
     if (reps >= 3) {
         return { ...g, winner: '', endReason: 'threefold', inCheck: false };
     }
-    const moves = listLegalChessMoves(g, g.turn);
-    const check = chessIsInCheck(g, g.turn);
+    const moves = listLegalChessMovesTrusted(g, g.turn);
+    const king = findKing(g.cells, g.turn);
+    const check = king >= 0 && isSquareAttacked(g.cells, king, opp(g.turn));
     if (!moves.length) {
         if (check) {
             return { ...g, winner: opp(g.turn), endReason: 'checkmate', inCheck: true };
@@ -502,6 +514,30 @@ function finishIfNeeded(g) {
         return { ...g, winner: '', endReason: 'stalemate', inCheck: false };
     }
     return { ...g, inCheck: check };
+}
+
+/** 이미 합법인 수를 바로 둡니다. AI 탐색용. */
+export function applyTrustedChessMove(game, mv, now = 0) {
+    const t = Math.max(0, Math.floor(Number(now) || 0));
+    const side = game.turn;
+    const applied = applyRaw(game.cells, game.castling, game.ep, mv);
+    const nextTurn = opp(side);
+    const key = positionKey(applied.cells, nextTurn, applied.castling, applied.ep);
+    return finishIfNeeded({
+        ...game,
+        cells: applied.cells,
+        turn: nextTurn,
+        castling: applied.castling,
+        ep: applied.ep,
+        halfmove: applied.reset ? 0 : game.halfmove + 1,
+        fullmove: side === CHESS_BLACK ? game.fullmove + 1 : game.fullmove,
+        lastMove: { from: mv.from, to: mv.to, promo: mv.promo || '' },
+        hist: (game.hist || []).concat(key).slice(-240),
+        turnStartedAt: t,
+        moveCount: (game.moveCount || 0) + 1,
+        winner: '',
+        endReason: '',
+    });
 }
 
 function movesEqual(a, b) {

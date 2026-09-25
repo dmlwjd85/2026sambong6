@@ -1,6 +1,6 @@
 /**
  * 초인용 작은 오프닝북.
- * 백·흑 각각 여러 계열을 무작위로 골라, 같은 수가 매번 반복되지 않게 합니다.
+ * 처음 몇 수만 이론적으로 건전한 주요 라인을 고릅니다. 약한 라인은 넣지 않습니다.
  */
 
 import {
@@ -11,6 +11,20 @@ import {
 } from './chessGame.js';
 
 const LINES = Object.freeze([
+    { name: '이탈리안', side: 'w', uci: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4'] },
+    { name: '루이로페스', side: 'w', uci: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'] },
+    { name: '퀸스갬빗', side: 'w', uci: ['d2d4', 'd7d5', 'c2c4'] },
+    { name: '런던', side: 'w', uci: ['d2d4', 'd7d5', 'g1f3', 'g8f6', 'c1f4'] },
+    { name: '잉글리시', side: 'w', uci: ['c2c4'] },
+    { name: '시실리안', side: 'b', uci: ['e2e4', 'c7c5'] },
+    { name: '프렌치', side: 'b', uci: ['e2e4', 'e7e6'] },
+    { name: '카로칸', side: 'b', uci: ['e2e4', 'c7c6'] },
+    { name: '오픈게임', side: 'b', uci: ['e2e4', 'e7e5'] },
+    { name: '킹즈인디언', side: 'b', uci: ['d2d4', 'g8f6', 'c2c4', 'g7g6'] },
+    { name: 'QGD', side: 'b', uci: ['d2d4', 'd7d5', 'c2c4', 'e7e6'] },
+]);
+
+const LINES_PR14 = Object.freeze([
     { name: '이탈리안', side: 'w', uci: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4'] },
     { name: '루이로페스', side: 'w', uci: ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'] },
     { name: '퀸스갬빗', side: 'w', uci: ['d2d4', 'd7d5', 'c2c4'] },
@@ -35,9 +49,10 @@ function parseUci(uci) {
     return { from: sqOf(uci.slice(0, 2)), to: sqOf(uci.slice(2, 4)), promo: uci.slice(4, 5) || '' };
 }
 
-function buildBook() {
+
+function buildBookFrom(lines) {
     const map = new Map();
-    LINES.forEach((line) => {
+    lines.forEach((line) => {
         let g = emptyChessGame({ now: 1 });
         line.uci.forEach((uci) => {
             const key = chessPositionKey(g);
@@ -55,7 +70,8 @@ function buildBook() {
     return map;
 }
 
-const BOOK = buildBook();
+const BOOK = buildBookFrom(LINES);
+const BOOK_PR14 = buildBookFrom(LINES_PR14);
 
 export function chessOpeningFamilies() {
     const w = new Set(LINES.filter((l) => l.side === 'w').map((l) => l.name));
@@ -67,9 +83,17 @@ export function listChessBookMoves(game) {
     return (BOOK.get(chessPositionKey(game)) || []).slice();
 }
 
-export function pickChessBookMove(game, rng = Math.random) {
-    const list = listChessBookMoves(game);
+function pickFromBook(map, game, rng) {
+    const list = (map.get(chessPositionKey(game)) || []).slice();
     if (!list.length) return null;
     const i = Math.min(list.length - 1, Math.max(0, Math.floor(rng() * list.length)));
     return list[i];
+}
+
+export function pickChessBookMove(game, rng = Math.random) {
+    return pickFromBook(BOOK, game, rng);
+}
+
+export function pickChessBookMovePr14(game, rng = Math.random) {
+    return pickFromBook(BOOK_PR14, game, rng);
 }

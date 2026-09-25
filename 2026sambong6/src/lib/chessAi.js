@@ -1,9 +1,9 @@
 /**
  * 체스 클라이언트 AI.
  * 「고수」는 고정 깊이 3 알파베타와 짧은 정지탐색을 씁니다(한 수 약 1초). 강도는 유지합니다.
- * 「초인」은 배열 판 make/unmake·PeSTO·널무브·LMR·히스토리로 같은 3초 안에 더 깊게 봅니다.
- * 오프닝북과 가까운 후보 가중 선택은 유지하되, 허용 폭은 좁혀 약화를 막습니다.
- * 「ply1」은 1수 평가, 「choinOld」는 PR #13 초인으로 검증에만 씁니다.
+ * 「초인」은 강함이 최우선입니다. 오프닝북(건전한 주요 라인)만 다양하고,
+ * 북을 벗어나면 최선 수를 둡니다. 동점(약 10cp)일 때만 아주 조금만 섞습니다.
+ * 「ply1」은 1수 평가, 「choinOld」는 PR #14 초인으로 검증에만 씁니다.
  */
 
 import {
@@ -18,15 +18,16 @@ import {
     listLegalChessMovesTrusted,
     sanitizeChessGame,
 } from './chessGame.js';
-import { pickChessBookMove } from './chessOpenings.js';
+import { pickChessBookMove, pickChessBookMovePr14 } from './chessOpenings.js';
 import { choinSearchStats, pickChoinEngineMove, pickSoftChoinMove } from './chessAiChoin.js';
+import { choinPr14SearchStats, pickChoinEngineMovePr14, pickSoftChoinMovePr14 } from './chessAiChoinPr14.js';
 
 export { choinSearchStats };
 
 export const CHESS_AI_LEVELS = Object.freeze({
     ply1: Object.freeze({ id: 'ply1', label: '한수', timeMs: 80 }),
     gosu: Object.freeze({ id: 'gosu', label: '고수', timeMs: 900, depth: 3 }),
-    choin: Object.freeze({ id: 'choin', label: '초인', timeMs: 2600 }),
+    choin: Object.freeze({ id: 'choin', label: '초인', timeMs: 3500 }),
     choinOld: Object.freeze({ id: 'choinOld', label: '옛초인', timeMs: 2600 }),
 });
 
@@ -581,9 +582,9 @@ export function pickSoftChessMove(rows, { rng = Math.random } = {}) {
     if (best.val >= 90000) return best.mv;
     if (clean.length === 1) return best.mv;
     const gap = best.val - clean[1].val;
-    // 확실한 우위(약 0.4폰)는 항상 두고, 비슷한 수만 좁은 창에서 나눕니다.
-    if (gap >= 40) return best.mv;
-    const pool = clean.filter((r) => best.val - r.val <= 12);
+    // 동점(약 10cp)이 아니면 항상 최선 수입니다.
+    if (gap > 10) return best.mv;
+    const pool = clean.filter((r) => best.val - r.val <= 10);
     if (!pool.length) return best.mv;
     let sum = 0;
     const weights = pool.map((r) => {
@@ -600,6 +601,18 @@ export function pickSoftChessMove(rows, { rng = Math.random } = {}) {
 }
 
 export const choinOldSearchStats = { depth: 0 };
+
+function pickChoinPr14(game, timeMs, variety, rng) {
+    const moves = listLegalChessMovesTrusted(game);
+    if (!moves.length) return null;
+    const book = pickChessBookMovePr14(game, rng);
+    if (book) return book;
+    const found = pickChoinEngineMovePr14(game, { timeMs });
+    const rows = (found && found.rows) || [];
+    choinOldSearchStats.depth = choinPr14SearchStats.depth;
+    if (!rows.length) return (found && found.mv) || pickPly1Move(game, game.turn, variety);
+    return pickSoftChoinMovePr14(rows, rng) || found.mv;
+}
 
 function pickChoinPr13(game, timeMs, variety, rng) {
     const moves = listLegalChessMovesTrusted(game);
@@ -664,6 +677,8 @@ function pickChoinMove(game, timeMs, variety, rng) {
     const found = pickChoinEngineMove(game, { timeMs });
     const rows = (found && found.rows) || [];
     if (!rows.length) return (found && found.mv) || pickPly1Move(game, game.turn, variety);
+    // 북을 벗어나면 최선 수. 초반(12수 미만) 동점(약 10cp)만 아주 조금 섞습니다.
+    if ((game.moveCount || 0) >= 12) return rows[0].mv;
     return pickSoftChoinMove(rows, rng) || found.mv;
 }
 
@@ -676,7 +691,7 @@ export function pickChessAiMove(game, { color, level, timeMs, variety, rng } = {
     const roll = typeof rng === 'function' ? rng : Math.random;
     let mv;
     if (lv === 'ply1') mv = pickPly1Move(g, my, varN);
-    else if (lv === 'choinOld') mv = pickChoinPr13(g, timeMs, varN, roll);
+    else if (lv === 'choinOld') mv = pickChoinPr14(g, timeMs, varN, roll);
     else if (lv === 'choin') mv = pickChoinMove(g, timeMs, varN, roll);
     else mv = pickGosuMove(g, timeMs, varN);
     if (!mv) return null;
@@ -725,17 +740,31 @@ export function playChessAiMatch({
     let newDepthN = 0;
     let oldDepthSum = 0;
     let oldDepthN = 0;
+    let newTimeSum = 0;
+    let newTimeN = 0;
+    let oldTimeSum = 0;
+    let oldTimeN = 0;
     for (let i = 0; i < maxMoves && !isOverTrusted(g); i += 1) {
         const level = g.turn === CHESS_WHITE ? whiteLevel : blackLevel;
         const timeMs = g.turn === CHESS_WHITE ? whiteTime : blackTime;
+        const t0 = Date.now();
         const mv = pickChessAiMove(g, { color: g.turn, level, timeMs, variety, rng });
-        if (level === 'choin' && choinSearchStats.depth) {
-            newDepthSum += choinSearchStats.depth;
-            newDepthN += 1;
+        const spent = Date.now() - t0;
+        if (level === 'choin') {
+            newTimeSum += spent;
+            newTimeN += 1;
+            if (choinSearchStats.depth) {
+                newDepthSum += choinSearchStats.depth;
+                newDepthN += 1;
+            }
         }
-        if (level === 'choinOld' && choinOldSearchStats.depth) {
-            oldDepthSum += choinOldSearchStats.depth;
-            oldDepthN += 1;
+        if (level === 'choinOld') {
+            oldTimeSum += spent;
+            oldTimeN += 1;
+            if (choinOldSearchStats.depth) {
+                oldDepthSum += choinOldSearchStats.depth;
+                oldDepthN += 1;
+            }
         }
         if (!mv) break;
         const found = lookupLegal(g, mv);
@@ -754,6 +783,8 @@ export function playChessAiMatch({
         whiteEval: evaluateChess(g, CHESS_WHITE),
         newDepth: newDepthN ? newDepthSum / newDepthN : 0,
         oldDepth: oldDepthN ? oldDepthSum / oldDepthN : 0,
+        newTime: newTimeN ? newTimeSum / newTimeN : 0,
+        oldTime: oldTimeN ? oldTimeSum / oldTimeN : 0,
     };
 }
 

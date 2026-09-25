@@ -69,7 +69,7 @@ describe('체스 AI', () => {
         assert.equal(chessAiLevelLabel('gosu'), '고수');
         assert.equal(chessAiLevelLabel('choin'), '초인');
         assert.equal(CHESS_AI_LEVELS.gosu.timeMs <= 1000, true);
-        assert.equal(CHESS_AI_LEVELS.choin.timeMs <= 3000, true);
+        assert.equal(CHESS_AI_LEVELS.choin.timeMs <= 4000, true);
         assert.equal(CHESS_AI_LEVELS.gosu.depth, 3);
     });
 
@@ -107,15 +107,15 @@ describe('체스 AI', () => {
         assert.ok(!(gosu.from === chessSq(7, 4) && gosu.to === chessSq(7, 6)), '고수는 보호된 폰을 퀸으로 잡지 않습니다');
     });
 
-    it('고수 한 수는 1초, 초인 한 수는 3초를 넘기지 않는다', () => {
+    it('고수 한 수는 1초, 초인 한 수는 4초를 넘기지 않는다', () => {
         const g = emptyChessGame();
         const tGosu = Date.now();
         const gosu = pickChessAiMove(g, { color: CHESS_WHITE, level: 'gosu', timeMs: 900 });
         assert.ok(Date.now() - tGosu < 1000);
         assert.equal(typeof gosu.from, 'number');
         const tChoin = Date.now();
-        const choin = pickChessAiMove(g, { color: CHESS_WHITE, level: 'choin', timeMs: 2600 });
-        assert.ok(Date.now() - tChoin < 3000);
+        const choin = pickChessAiMove(g, { color: CHESS_WHITE, level: 'choin', timeMs: 3500 });
+        assert.ok(Date.now() - tChoin < 4000);
         assert.equal(typeof choin.from, 'number');
     });
 
@@ -130,6 +130,11 @@ describe('체스 AI', () => {
             { mv: { from: 3, to: 4 }, val: 30 },
         ], { rng: () => 0.99 });
         assert.equal(forced.from, 1);
+        const near = pickSoftChessMove([
+            { mv: { from: 1, to: 2 }, val: 40 },
+            { mv: { from: 3, to: 4 }, val: 29 },
+        ], { rng: () => 0.99 });
+        assert.equal(near.from, 1);
         const picks = new Set();
         for (let i = 0; i < 20; i += 1) {
             const mv = pickSoftChessMove([

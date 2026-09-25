@@ -1,6 +1,6 @@
 /**
- * 새 초인 vs PR #13 초인 장대국.
- * TIME_MS·MAX_MOVES·GAMES 환경 변수로 조절합니다.
+ * 새 초인 vs PR #14 초인 장대국.
+ * TIME_MS·MAX_MOVES 환경 변수로 조절합니다.
  */
 import {
     chessGameFromUci,
@@ -9,6 +9,8 @@ import {
 import { CHESS_BLACK, CHESS_WHITE } from '../src/lib/chessGame.js';
 
 const TIME = Math.max(80, Number(process.env.TIME_MS) || 700);
+const NEW_TIME = Math.max(80, Number(process.env.NEW_TIME_MS) || TIME);
+const OLD_TIME = Math.max(80, Number(process.env.OLD_TIME_MS) || TIME);
 const MAX = Math.max(20, Number(process.env.MAX_MOVES) || 120);
 const OPENINGS = [
     { name: '시작', uci: [] },
@@ -38,8 +40,8 @@ for (const open of OPENINGS) {
         const match = playChessAiMatch({
             whiteLevel,
             blackLevel,
-            whiteTime: TIME,
-            blackTime: TIME,
+            whiteTime: newIsWhite ? NEW_TIME : OLD_TIME,
+            blackTime: newIsWhite ? OLD_TIME : NEW_TIME,
             maxMoves: MAX,
             now: 100 + i,
             variety: i,
@@ -58,6 +60,8 @@ for (const open of OPENINGS) {
             choin: choinScore,
             newDepth: Number(match.newDepth.toFixed(2)),
             oldDepth: Number(match.oldDepth.toFixed(2)),
+            newTime: Math.round(match.newTime || 0),
+            oldTime: Math.round(match.oldTime || 0),
             sec: Math.round((Date.now() - start) / 1000),
         };
         rows.push(row);
@@ -66,16 +70,23 @@ for (const open of OPENINGS) {
 }
 
 const games = rows.length;
+const wins = rows.filter((r) => r.choin === 1).length;
+const losses = rows.filter((r) => r.choin === 0).length;
+const draws = rows.filter((r) => r.choin === 0.5).length;
 const choin = rows.reduce((s, r) => s + r.choin, 0);
-const newDepth = rows.reduce((s, r) => s + r.newDepth, 0) / games;
-const oldDepth = rows.reduce((s, r) => s + r.oldDepth, 0) / games;
 const summary = {
     games,
-    choin,
-    old: games - choin,
+    win: wins,
+    draw: draws,
+    loss: losses,
+    score: choin,
     rate: choin / games,
-    newDepth,
-    oldDepth,
+    newDepth: rows.reduce((s, r) => s + r.newDepth, 0) / games,
+    oldDepth: rows.reduce((s, r) => s + r.oldDepth, 0) / games,
+    newTimeMs: rows.reduce((s, r) => s + r.newTime, 0) / games,
+    oldTimeMs: rows.reduce((s, r) => s + r.oldTime, 0) / games,
+    newThinkMs: NEW_TIME,
+    oldThinkMs: OLD_TIME,
     timeMs: TIME,
     maxMoves: MAX,
 };

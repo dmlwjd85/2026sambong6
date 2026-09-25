@@ -1,7 +1,6 @@
 /**
- * 초인 전용 빠른 탐색.
- * 배열 판을 제자리에서 두고 되돌리며(make/unmake), 약 3.5초(최대 4초) 안에 더 깊게 봅니다.
- * 탐색 뼈대는 PR #14와 같고, 강함을 위해 시간과 최선 수 선택을 올립니다.
+ * PR #14 초인 엔진 고정본. 검증 대국(choinOld)에만 씁니다.
+ * 배열 판을 제자리에서 두고 되돌리며(make/unmake), 같은 3초 안에 더 깊게 봅니다.
  */
 
 const MG_VAL = [0, 82, 337, 365, 477, 1025, 0];
@@ -53,7 +52,7 @@ for (let i = 0; i < Z_PIECE.length; i += 1) Z_PIECE[i] = rnd();
 for (let i = 0; i < 16; i += 1) Z_CASTLE[i] = rnd();
 for (let i = 0; i < 8; i += 1) Z_EP[i] = rnd();
 
-const TT_BITS = 18;
+const TT_BITS = 17;
 const TT_MASK = (1 << TT_BITS) - 1;
 const ttKey = new Uint32Array(1 << TT_BITS);
 const ttDepth = new Int8Array(1 << TT_BITS);
@@ -130,7 +129,7 @@ function xorPiece(s, p, sq) {
     s.hash ^= Z_PIECE[p * 64 + sq];
 }
 
-export const choinSearchStats = {
+export const choinPr14SearchStats = {
     depth: 0,
     nodes: 0,
 };
@@ -543,17 +542,8 @@ function evaluate(s) {
     const rooks = rookFiles(s);
     const mob = mobility(s);
     const shield = kingShield(s, s.wk, true) - kingShield(s, s.bk, false);
-    let wb = 0;
-    let bb = 0;
-    for (let sq = 0; sq < 64; sq += 1) {
-        if (typeOf(s.c[sq]) !== 3) continue;
-        if (isWhite(s.c[sq])) wb += 1;
-        else bb += 1;
-    }
-    const pairMg = (wb >= 2 ? 30 : 0) - (bb >= 2 ? 30 : 0);
-    const pairEg = (wb >= 2 ? 44 : 0) - (bb >= 2 ? 44 : 0);
-    let mg = s.mg + extra.mg + rooks.mg + shield + mob * 2 + pairMg;
-    let eg = s.eg + extra.eg + rooks.eg + mob + pairEg;
+    let mg = s.mg + extra.mg + rooks.mg + shield + mob * 2;
+    let eg = s.eg + extra.eg + rooks.eg + mob;
     const ph = Math.max(0, Math.min(24, s.phase));
     let score = ((mg * ph) + (eg * (24 - ph))) / 24;
     if (s.turn === 1) score = -score;
@@ -696,7 +686,7 @@ function fromGame(game) {
         stop: false,
         undo: [],
         killers: [],
-        history: persistHistory,
+        history: new Int32Array(64 * 64),
     };
     if (!Number.isFinite(s.ep) || s.ep < 0 || s.ep > 63) s.ep = -1;
     const cas = String(game.castling || '');
@@ -748,66 +738,48 @@ function searchRoot(s, depth, alpha0, beta0) {
     };
 }
 
-const persistHistory = new Int32Array(64 * 64);
-let persistMoveCount = -1;
-let persistScore = 0;
-
-export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
-    const mc = game.moveCount || 0;
-    // 같은 대국에서는 전치표·히스토리를 이어 더 깊게 봅니다. 새 판이면 비웁니다.
-    if (mc <= persistMoveCount) {
-        ttClear();
-        persistHistory.fill(0);
-        persistScore = 0;
-    } else {
-        for (let i = 0; i < persistHistory.length; i += 1) persistHistory[i] >>= 2;
-    }
-    persistMoveCount = mc;
+export function pickChoinEngineMovePr14(game, { timeMs = 2600 } = {}) {
     const s = fromGame(game);
-    s.deadline = Date.now() + Math.max(80, Math.min(4000, Number(timeMs) || 3500));
+    s.deadline = Date.now() + Math.max(80, Math.min(3000, Number(timeMs) || 2600));
+    ttClear();
     let found = { rows: [], mv: null, val: -30000, completed: false };
     let doneDepth = 0;
-    let lastScore = persistScore;
-    for (let depth = 2; depth <= 14; depth += 1) {
+    for (let depth = 2; depth <= 12; depth += 1) {
         if (s.deadline - Date.now() < 80) break;
         s.stop = false;
         const prev = found;
-        // 루트는 전체 창. 깊이 5부터는 넓은 aspiration으로 시간을 아끼고 실패 시 다시 엽니다.
-        let next;
-        if (depth >= 5 && lastScore) {
-            next = searchRoot(s, depth, lastScore - 90, lastScore + 90);
-            if (!s.stop && next.rows.length && (next.val <= lastScore - 90 || next.val >= lastScore + 90)) {
-                s.stop = false;
-                next = searchRoot(s, depth, -30000, 30000);
-            }
-        } else {
-            next = searchRoot(s, depth, -30000, 30000);
-        }
+        // 루트는 창을 열어둡니다. 트리 안에서는 널무브·LMR이 줄입니다.
+        const next = searchRoot(s, depth, -30000, 30000);
         if (next.rows && next.rows.length && (next.completed || !prev.rows.length)) {
             found = next;
-            lastScore = next.val;
             if (next.completed) doneDepth = depth;
         }
         if (next.val >= 19000) break;
     }
-    persistScore = lastScore;
-    choinSearchStats.depth = doneDepth;
-    choinSearchStats.nodes = s.nodes;
+    choinPr14SearchStats.depth = doneDepth;
+    choinPr14SearchStats.nodes = s.nodes;
     return found;
 }
 
-export function pickSoftChoinMove(rows, rng) {
+export function pickSoftChoinMovePr14(rows, rng) {
     const clean = (rows || []).filter((r) => r && r.mv && Number.isFinite(r.val));
     if (!clean.length) return null;
     const best = clean[0];
     if (best.val >= 18000) return best.mv;
     if (clean.length === 1) return best.mv;
-    // 동점(약 10cp)이 아니면 항상 최선 수입니다.
-    if (best.val - clean[1].val > 10) return best.mv;
-    const tied = clean.filter((r) => r.val === best.val);
-    if (tied.length >= 3) return best.mv;
-    const pool = clean.filter((r) => best.val - r.val <= 10).slice(0, 2);
-    if (pool.length < 2) return best.mv;
-    const roll = typeof rng === 'function' ? rng() : Math.random();
-    return roll < 0.78 ? pool[0].mv : pool[1].mv;
+    if (best.val - clean[1].val >= 40) return best.mv;
+    const pool = clean.filter((r) => best.val - r.val <= 12);
+    if (!pool.length) return best.mv;
+    let sum = 0;
+    const weights = pool.map((r) => {
+        const w = Math.exp((r.val - best.val) / 8);
+        sum += w;
+        return w;
+    });
+    let pick = (typeof rng === 'function' ? rng() : Math.random()) * (sum || 1);
+    for (let i = 0; i < pool.length; i += 1) {
+        pick -= weights[i];
+        if (pick <= 0) return pool[i].mv;
+    }
+    return pool[pool.length - 1].mv;
 }

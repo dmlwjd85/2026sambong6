@@ -1,6 +1,7 @@
 /**
  * 초인 전용 빠른 탐색.
  * 배열 판을 제자리에서 두고 되돌리며(make/unmake), 약 3.5초(최대 4초) 안에 더 깊게 봅니다.
+ * 탐색 뼈대는 PR #14와 같고, 강함을 위해 시간과 최선 수 선택을 올립니다.
  */
 
 const MG_VAL = [0, 82, 337, 365, 477, 1025, 0];
@@ -453,15 +454,6 @@ function pawnTerms(s) {
             mg += sign * bonus;
             eg += sign * (bonus + adv * 8);
         }
-        // 옆 파일에 아군 폰이 있으면 연결 보너스를 줍니다.
-        if (file > 0) {
-            const nb = s.c[rank * 8 + file - 1];
-            if (typeOf(nb) === 1 && isWhite(nb) === white) {
-                const sign = white ? 1 : -1;
-                mg += sign * 4;
-                eg += sign * 6;
-            }
-        }
     }
     return { mg, eg };
 }
@@ -546,40 +538,22 @@ function rookFiles(s) {
     return { mg, eg };
 }
 
-function bishopPairAndKingEg(s) {
-    let wb = 0;
-    let bb = 0;
-    let queens = 0;
-    for (let sq = 0; sq < 64; sq += 1) {
-        const t = typeOf(s.c[sq]);
-        if (t === 5) queens += 1;
-        if (t !== 3) continue;
-        if (isWhite(s.c[sq])) wb += 1;
-        else bb += 1;
-    }
-    let mg = 0;
-    let eg = 0;
-    if (wb >= 2) { mg += 32; eg += 46; }
-    if (bb >= 2) { mg -= 32; eg -= 46; }
-    // 퀸이 없고 기물이 거의 없으면 킹을 가운데·상대 킹 쪽으로 보냅니다.
-    if (queens === 0 && s.phase <= 8 && s.wk >= 0 && s.bk >= 0) {
-        const wC = Math.abs((s.wk & 7) - 3.5) + Math.abs((s.wk >> 3) - 3.5);
-        const bC = Math.abs((s.bk & 7) - 3.5) + Math.abs((s.bk >> 3) - 3.5);
-        eg += (bC - wC) * 8;
-        const kd = Math.abs((s.wk & 7) - (s.bk & 7)) + Math.abs((s.wk >> 3) - (s.bk >> 3));
-        eg += (12 - kd);
-    }
-    return { mg, eg };
-}
-
 function evaluate(s) {
     const extra = pawnTerms(s);
     const rooks = rookFiles(s);
-    const extra2 = bishopPairAndKingEg(s);
     const mob = mobility(s);
     const shield = kingShield(s, s.wk, true) - kingShield(s, s.bk, false);
-    let mg = s.mg + extra.mg + extra2.mg + rooks.mg + shield + mob * 2;
-    let eg = s.eg + extra.eg + extra2.eg + rooks.eg + mob;
+    let wb = 0;
+    let bb = 0;
+    for (let sq = 0; sq < 64; sq += 1) {
+        if (typeOf(s.c[sq]) !== 3) continue;
+        if (isWhite(s.c[sq])) wb += 1;
+        else bb += 1;
+    }
+    const pairMg = (wb >= 2 ? 30 : 0) - (bb >= 2 ? 30 : 0);
+    const pairEg = (wb >= 2 ? 44 : 0) - (bb >= 2 ? 44 : 0);
+    let mg = s.mg + extra.mg + rooks.mg + shield + mob * 2 + pairMg;
+    let eg = s.eg + extra.eg + rooks.eg + mob + pairEg;
     const ph = Math.max(0, Math.min(24, s.phase));
     let score = ((mg * ph) + (eg * (24 - ph))) / 24;
     if (s.turn === 1) score = -score;
@@ -758,7 +732,7 @@ function searchRoot(s, depth, alpha0, beta0) {
             continue;
         }
         const ext = inCheck(s, s.turn === 0) ? 1 : 0;
-        // 루트는 모든 수를 같은 창으로 봐 실제 점수 차이를 남깁니다. PVS 실패낮음은 최선 수를 가립니다.
+        // 루트는 모든 수를 넓게 봐 실제 점수 차이를 남깁니다(근접 가중 선택용).
         const val = -search(s, depth - 1 + ext, -beta0, -alpha0, 1, true);
         unmake(s);
         rows.push({ mv: { from: moves[i].from, to: moves[i].to, promo: moves[i].promo || '' }, val });
@@ -785,15 +759,15 @@ export function pickChoinEngineMove(game, { timeMs = 3500 } = {}) {
         if (s.deadline - Date.now() < 80) break;
         s.stop = false;
         const prev = found;
-        let alpha = -30000;
-        let beta = 30000;
-        if (depth >= 4) {
-            alpha = lastScore - 60;
-            beta = lastScore + 60;
-        }
-        let next = searchRoot(s, depth, alpha, beta);
-        if (!s.stop && next.rows.length && (next.val <= alpha || next.val >= beta)) {
-            s.stop = false;
+        // 루트는 전체 창. 깊이 5부터는 넓은 aspiration으로 시간을 아끼고 실패 시 다시 엽니다.
+        let next;
+        if (depth >= 5 && lastScore) {
+            next = searchRoot(s, depth, lastScore - 90, lastScore + 90);
+            if (!s.stop && next.rows.length && (next.val <= lastScore - 90 || next.val >= lastScore + 90)) {
+                s.stop = false;
+                next = searchRoot(s, depth, -30000, 30000);
+            }
+        } else {
             next = searchRoot(s, depth, -30000, 30000);
         }
         if (next.rows && next.rows.length && (next.completed || !prev.rows.length)) {
@@ -814,12 +788,12 @@ export function pickSoftChoinMove(rows, rng) {
     const best = clean[0];
     if (best.val >= 18000) return best.mv;
     if (clean.length === 1) return best.mv;
-    // 동점(약 10cp)이 아니면 항상 최선 수. 같은 점수가 많이 쌓이면 실패낮음으로 보고 최선만 둡니다.
+    // 동점(약 10cp)이 아니면 항상 최선 수입니다.
     if (best.val - clean[1].val > 10) return best.mv;
     const tied = clean.filter((r) => r.val === best.val);
     if (tied.length >= 3) return best.mv;
     const pool = clean.filter((r) => best.val - r.val <= 10).slice(0, 2);
     if (pool.length < 2) return best.mv;
     const roll = typeof rng === 'function' ? rng() : Math.random();
-    return roll < 0.72 ? pool[0].mv : pool[1].mv;
+    return roll < 0.78 ? pool[0].mv : pool[1].mv;
 }

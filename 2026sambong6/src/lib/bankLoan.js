@@ -199,12 +199,15 @@ export function repayLoanFailMessage(reason) {
     return '대출을 갚을 수 없습니다.';
 }
 
-/** 월드 방학·공휴일을 대출 영업일 달력으로 바꿉니다. */
-export function getLoanCalendarFromWorld(worldSettings, holidays = KOREA_2026_FALL_HOLIDAYS) {
+/** 월드 방학·공휴일을 대출 영업일 달력으로 바꿉니다. 학사 달력에 체크한 날을 우선합니다. */
+export function getLoanCalendarFromWorld(worldSettings, holidays) {
     const ws = worldSettings && typeof worldSettings === 'object' ? worldSettings : {};
     const vacationOn = !!ws.vacationEnabled;
+    const list = Array.isArray(holidays)
+        ? holidays
+        : (Array.isArray(ws.schoolHolidays) ? ws.schoolHolidays : KOREA_2026_FALL_HOLIDAYS);
     return {
-        holidays: Array.isArray(holidays) ? holidays : KOREA_2026_FALL_HOLIDAYS,
+        holidays: list,
         vacationStart: vacationOn ? String(ws.vacationStartDate || '') : '',
         vacationEnd: vacationOn ? String(ws.vacationEndDate || '') : '',
     };

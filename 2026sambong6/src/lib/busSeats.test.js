@@ -15,6 +15,7 @@ import {
     isBusSeatDisabled,
     minBusSeatBid,
     resetBusAssignees,
+    resetBusForNewTrip,
     sanitizeBusState,
     shuffleBusAssignees,
 } from './busSeats.js';
@@ -307,6 +308,31 @@ describe('버스 자리 구입·입찰 환불', () => {
         assert.equal(cleared.seats[0].paid, 10);
         const sum = busSeatSummary(cleared);
         assert.equal(sum.owned, 1);
+    });
+
+    it('새 여행 초기화는 구매 봉을 돌려주고 자리를 비운다', () => {
+        const bought = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 4,
+            buyerId: '3',
+            bid: 30,
+            buyerBong: 40,
+            purchaseId: 'trip',
+        });
+        const drawn = shuffleBusAssignees(bought.state, ['3', '6']);
+        drawn.state.seats[8].hidden = true;
+        drawn.state.seats[8].price = 40;
+        const reset = resetBusForNewTrip(drawn.state);
+        assert.equal(reset.refunds.length, 1);
+        assert.equal(reset.refunds[0].studentId, '3');
+        assert.equal(reset.refunds[0].amount, 30);
+        assert.equal(reset.state.purchaseHistory.length, 0);
+        assert.equal(reset.state.seats[4].owner, null);
+        assert.equal(reset.state.seats[4].assignee, null);
+        assert.equal(reset.state.seats[4].paid, 0);
+        assert.equal(reset.state.seats[8].hidden, false);
+        assert.equal(reset.state.seats[8].price, BUS_SEAT_DEFAULT_PRICE);
+        assert.equal(busSeatSummary(reset.state).filled, 0);
     });
 
     it('한 번에 활성·가격을 맞추고 비활성 자리는 낸 봉을 환불한다', () => {

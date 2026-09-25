@@ -269,6 +269,20 @@ import {
     worldSettingsForSeason2,
 } from './lib/season2.js';
 import {
+    holidayLunchRefundAmount,
+    isSchoolHolidayYmd,
+    monthGrid,
+    resolveSchoolHolidays,
+    sanitizeHolidayYmds,
+    termMaturityYmd,
+} from './lib/schoolCalendar.js';
+import {
+    bankNoticeStorageKey,
+    buildBankExecutionNotice,
+    dismissBankNotice,
+    isBankNoticeDismissed,
+} from './lib/bankNotice.js';
+import {
     GEAR_ENHANCE_MAX,
     GEAR_ENHANCE_MIN,
     SHIELD_BLOCK_CAP,
@@ -541,6 +555,7 @@ import {
     isBusSeatDisabled,
     minBusSeatBid,
     resetBusAssignees,
+    resetBusForNewTrip,
     sanitizeBusSeatPrice,
     sanitizeBusState,
     shuffleBusAssignees,
@@ -1324,6 +1339,7 @@ function redrawPlazaGrantsUi() {
                 vacationPauseBankBonus: src.vacationPauseBankBonus !== false,
                 vacationPauseThermometer: src.vacationPauseThermometer !== false,
                 currencyUnit: sanitizeCurrencyUnit(src.currencyUnit),
+                schoolHolidays: Array.isArray(src.schoolHolidays) ? sanitizeHolidayYmds(src.schoolHolidays) : undefined,
             };
         }
 
@@ -1378,8 +1394,19 @@ function redrawPlazaGrantsUi() {
             return sanitizeWorldSettings(window.globalSettings && window.globalSettings.worldSettings);
         }
 
+        function getSchoolHolidays() {
+            return resolveSchoolHolidays(getWorldSettings());
+        }
+
+        function isSchoolHoliday(d = new Date()) {
+            const ymd = typeof d === 'string' ? d : (
+                `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            );
+            return isSchoolHolidayYmd(ymd, getSchoolHolidays());
+        }
+
         function getBankLoanCalendar() {
-            return getLoanCalendarFromWorld(getWorldSettings());
+            return getLoanCalendarFromWorld(getWorldSettings(), getSchoolHolidays());
         }
 
         function getClassLoanLimit() {
@@ -1822,6 +1849,72 @@ function redrawPlazaGrantsUi() {
             }
         };
 
+        let _schoolHolidayDraft = null;
+        let _schoolHolidayDirty = false;
+        let _schoolHolidayMonth = null;
+
+        window.shiftSchoolHolidayMonth = function(delta) {
+            const base = _schoolHolidayMonth ? new Date(_schoolHolidayMonth) : new Date();
+            base.setDate(1);
+            base.setMonth(base.getMonth() + Number(delta || 0));
+            _schoolHolidayMonth = base;
+            window.renderSchoolHolidayCalendar?.();
+        };
+
+        window.toggleSchoolHoliday = function(ymd) {
+            const id = String(ymd || '');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(id)) return;
+            if (!_schoolHolidayDraft) _schoolHolidayDraft = getSchoolHolidays().slice();
+            const set = new Set(_schoolHolidayDraft);
+            if (set.has(id)) set.delete(id);
+            else set.add(id);
+            _schoolHolidayDraft = sanitizeHolidayYmds([...set]);
+            _schoolHolidayDirty = true;
+            window.renderSchoolHolidayCalendar?.();
+        };
+
+        window.renderSchoolHolidayCalendar = function() {
+            const root = document.getElementById('schoolHolidayCalendar');
+            if (!root) return;
+            if (!_schoolHolidayDirty || !_schoolHolidayDraft) {
+                _schoolHolidayDraft = getSchoolHolidays().slice();
+            }
+            if (!_schoolHolidayMonth) {
+                const now = new Date();
+                _schoolHolidayMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            }
+            const cursor = _schoolHolidayMonth;
+            const year = cursor.getFullYear();
+            const month = cursor.getMonth();
+            const cells = monthGrid(year, month);
+            const picked = new Set(_schoolHolidayDraft);
+            const today = getLocalDateStr();
+            const dow = ['일', '월', '화', '수', '목', '금', '토'];
+            const head = dow.map((name, i) => `<div class="text-center font-bold ${i === 0 ? 'text-rose-300' : i === 6 ? 'text-sky-300' : 'text-slate-400'}">${name}</div>`).join('');
+            const body = cells.map((cell) => {
+                if (!cell) return '<div></div>';
+                const on = picked.has(cell.ymd);
+                const weekend = cell.dow === 0 || cell.dow === 6;
+                const isToday = cell.ymd === today;
+                const cls = on
+                    ? 'bg-rose-600 text-white border-rose-300'
+                    : weekend
+                        ? 'bg-slate-800 text-slate-500 border-slate-700'
+                        : 'bg-slate-950 text-slate-100 border-slate-600';
+                const ring = isToday ? ' ring-2 ring-amber-300' : '';
+                return `<button type="button" class="min-h-[36px] rounded-lg border text-[11px] font-black ${cls}${ring}" onclick="window.toggleSchoolHoliday('${cell.ymd}')" aria-pressed="${on ? 'true' : 'false'}">${cell.day}${on ? ' ✓' : ''}</button>`;
+            }).join('');
+            const label = `${year}년 ${month + 1}월`;
+            root.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <button type="button" class="min-h-[36px] px-3 rounded-lg bg-slate-800 text-white font-bold" onclick="window.shiftSchoolHolidayMonth(-1)">이전달</button>
+                    <p class="font-bold text-white">${label}</p>
+                    <button type="button" class="min-h-[36px] px-3 rounded-lg bg-slate-800 text-white font-bold" onclick="window.shiftSchoolHolidayMonth(1)">다음달</button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 mt-2">${head}${body}</div>
+                <p class="text-[9px] text-slate-500 mt-1">빨간 체크가 공휴일입니다. 주말은 원래 점심값을 빼지 않습니다.</p>`;
+        };
+
         window.renderWorldSettingsPanel = function() {
             if (!window.playerState || !window.playerState.isAdmin) return;
             const ws = getWorldSettings();
@@ -1883,6 +1976,7 @@ function redrawPlazaGrantsUi() {
             setVal('wsClassSchoolName', meta.schoolName || '');
             window.renderMyClassesList?.();
             window.renderCurriculumMappingPanel?.();
+            window.renderSchoolHolidayCalendar?.();
             setVal('wsBankInterest', window.globalSettings && window.globalSettings.bankInterestPercent != null
                 ? window.globalSettings.bankInterestPercent : 0);
             setVal('wsBankLoanLimit', sanitizeLoanLimit(window.globalSettings && window.globalSettings.bankLoanLimitPerStudent));
@@ -1955,6 +2049,7 @@ function redrawPlazaGrantsUi() {
                 vacationPauseClassXp: !!(document.getElementById('wsVacationPauseClassXp')?.checked),
                 vacationPauseBankBonus: !!(document.getElementById('wsVacationPauseBankBonus')?.checked),
                 vacationPauseThermometer: !!(document.getElementById('wsVacationPauseThermometer')?.checked),
+                schoolHolidays: sanitizeHolidayYmds(_schoolHolidayDraft || getSchoolHolidays()),
             });
 
             const opsPayload = {
@@ -1981,6 +2076,8 @@ function redrawPlazaGrantsUi() {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), opsPayload, { merge: true });
                 window.globalSettings = { ...window.globalSettings, ...opsPayload };
                 setLocalWorldSettings(worldSettings);
+                _schoolHolidayDirty = false;
+                _schoolHolidayDraft = sanitizeHolidayYmds(worldSettings.schoolHolidays);
 
                 if (window.playerState.isGM) {
                     const displayName = text('wsClassDisplayName') || window.classMeta?.displayName || '우리 반';
@@ -4419,7 +4516,7 @@ function redrawPlazaGrantsUi() {
         window.playerState = { 
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
-            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
+            condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', lunchHolidayRefundYmd: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
             stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
             catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
@@ -17931,6 +18028,40 @@ ${subjectLine}
             if (okBtn) okBtn.onclick = finish;
         });
 
+        /** 확인과 함께 다시 보지 않기를 저장할 수 있는 안내창 */
+        window.customAlertDismissable = (message, storageKey) => new Promise((resolve) => {
+            if (isBankNoticeDismissed(localStorage, storageKey)) {
+                resolve(false);
+                return;
+            }
+            const d = document.createElement('div');
+            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+            d.innerHTML = `
+                <div class="bg-sb-panel p-6 rounded-3xl border border-amber-500/50 max-w-md w-full text-left space-y-4 shadow-2xl max-h-[85vh] overflow-y-auto">
+                    <h3 class="text-xl font-display text-amber-200 text-center">은행 안내</h3>
+                    <p class="js-bank-notice-body text-xs sm:text-sm text-slate-200 whitespace-pre-wrap leading-relaxed"></p>
+                    <label class="flex items-center gap-2 text-[12px] text-slate-300 font-bold">
+                        <input type="checkbox" class="js-bank-notice-hide rounded border-slate-500">
+                        <span>다시 보지 않기</span>
+                    </label>
+                    <button type="button" class="js-bank-notice-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
+                </div>`;
+            const body = d.querySelector('.js-bank-notice-body');
+            if (body) body.textContent = String(message || '');
+            sambongModalHost().appendChild(d);
+            const okBtn = d.querySelector('.js-bank-notice-ok');
+            const hideBox = d.querySelector('.js-bank-notice-hide');
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                if (hideBox && hideBox.checked) dismissBankNotice(localStorage, storageKey);
+                d.remove();
+                resolve(true);
+            };
+            if (okBtn) okBtn.onclick = finish;
+        });
+
         window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
             d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
@@ -19612,11 +19743,7 @@ ${subjectLine}
                 const loanLife = applyBankLoanLifecycleLocal();
                 if (termRes.changed || loanLife.changed) {
                     if (termRes.msgs.length > 0) {
-                        void window.customAlert(
-                            '🎁 적금 만기!\n\n' +
-                            termRes.msgs.join('\n') +
-                            '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
-                        );
+                        queueBankExecutionNotice(termRes.msgs.map((line) => `적금 만기: ${line}. 지갑으로 들어왔으니 따로 출금하지 않습니다.`));
                     }
                     formatBankLoanLifecycleAlerts(loanLife.msgs);
                     void saveDataToCloud({
@@ -21002,9 +21129,11 @@ ${subjectLine}
             const admin = !!(window.playerState && window.playerState.isAdmin);
             const shuffleBtn = document.getElementById('btnBusShuffle');
             const resetBtn = document.getElementById('btnBusReset');
+            const tripResetBtn = document.getElementById('btnBusTripReset');
             const adminBar = document.getElementById('busAdminBar');
             if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
             if (resetBtn) resetBtn.style.display = admin ? 'block' : 'none';
+            if (tripResetBtn) tripResetBtn.style.display = admin ? 'block' : 'none';
             if (adminBar) adminBar.classList.toggle('hidden', !admin);
             const bulkPriceEl = document.getElementById('busBulkPrice');
             if (admin && bulkPriceEl && !window._busSeatAdminDirty) {
@@ -21634,6 +21763,78 @@ ${subjectLine}
             }
         };
 
+        window.masterResetBusTrip = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 버스 여행을 초기화할 수 있습니다.');
+            }
+            if (window._busSeatAdminDirty) {
+                return window.customAlert('자리 활성·가격을 먼저 저장해 주세요.');
+            }
+            const preview = resetBusForNewTrip(window.busSeatState);
+            const refundCount = preview.refunds.length;
+            const refundSum = preview.refunds.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+            const ok = await window.customConfirm(
+                '다른 여행을 위해 버스 자리를 처음부터 비울까요?\n' +
+                '앉은 이름, 구입, 고정, 비활성, 가격, 구매 기록이 모두 지워집니다.\n' +
+                (refundCount
+                    ? `구입한 ${refundCount}석은 낸 ${formatBongAmount(refundSum)}를 그 학생 지갑으로 돌려줍니다.`
+                    : '돌려줄 구입 봉은 없습니다.')
+            );
+            if (!ok) return;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk || !db) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                let refunded = [];
+                await runTransaction(db, async (transaction) => {
+                    const busRef = busSeatDocRef();
+                    const snap = await transaction.get(busRef);
+                    const live = sanitizeBusState(snap.exists() ? snap.data() : emptyBusState());
+                    const applied = resetBusForNewTrip(live);
+                    const ownerIds = new Set(applied.refunds.map((row) => String(row.studentId || '')).filter(Boolean));
+                    const sorted = Array.from(ownerIds).sort();
+                    const walletSnaps = {};
+                    for (let i = 0; i < sorted.length; i += 1) {
+                        walletSnaps[sorted[i]] = await transaction.get(studentWalletRef(sorted[i]));
+                    }
+                    const nextWallets = {};
+                    applied.refunds.forEach((row) => {
+                        const id = String(row.studentId || '');
+                        const amt = Math.max(0, Math.floor(Number(row.amount) || 0));
+                        if (!id || amt <= 0) return;
+                        if (nextWallets[id] == null) {
+                            const wsnap = walletSnaps[id];
+                            nextWallets[id] = wsnap && wsnap.exists() ? (Number((wsnap.data() || {}).bong) || 0) : 0;
+                        }
+                        nextWallets[id] += amt;
+                    });
+                    transaction.set(busRef, applied.state);
+                    Object.keys(nextWallets).forEach((id) => {
+                        writeBusSeatWallet(
+                            transaction,
+                            walletSnaps[id],
+                            id,
+                            nextWallets[id],
+                            '버스 여행 초기화 환불',
+                            { source: 'busTripReset' }
+                        );
+                    });
+                    refunded = applied.refunds;
+                });
+                window.busSeatState = emptyBusState();
+                window._busSeatAdminDirty = false;
+                window.renderBusSeats({ force: true });
+                const people = new Set(refunded.map((row) => row.studentId)).size;
+                await window.customAlert(
+                    people
+                        ? `🚌 버스 여행을 초기화했습니다.\n${people}명에게 구입 봉을 지갑으로 돌려주었습니다.`
+                        : '🚌 버스 여행을 초기화했습니다. 자리는 모두 비어 있습니다.'
+                );
+            } catch (e) {
+                console.error('masterResetBusTrip', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window.visitBank = function() {
             window.switchTab('bank');
         };
@@ -21690,20 +21891,75 @@ ${subjectLine}
             return out;
         }
 
+        function currentBankNoticeKey() {
+            const sid = String((window.playerState && window.playerState.id) || localStorage.getItem('sambong_student_id') || '');
+            return bankNoticeStorageKey(typeof appId !== 'undefined' ? appId : '', sid);
+        }
+
+        function currentBankNoticeTerms() {
+            return sanitizeBankTermDeposits(window.playerState && window.playerState.bankTermDeposits).map((td) => {
+                const elapsed = bankCalendarDaysElapsed(td.startDate);
+                return {
+                    amount: td.amount,
+                    startDate: td.startDate,
+                    matureOn: termMaturityYmd(td.startDate),
+                    daysShow: Math.min(30, elapsed + 1),
+                };
+            });
+        }
+
+        function currentBankNoticeLoan() {
+            const loan = sanitizeBankLoan(window.playerState && window.playerState.bankLoan);
+            if (!loan) return null;
+            return {
+                principal: loan.principal,
+                interest: loan.interest,
+                due: loanDueTotal(loan),
+                dueYmd: loan.dueYmd,
+            };
+        }
+
+        let _bankNoticeExtra = [];
+        let _bankNoticeTimer = null;
+
+        /** 적금·대출 실행 안내. 다시 보지 않기가 있으면 띄우지 않습니다. */
+        function queueBankExecutionNotice(extraLines) {
+            if (!window.playerState || window.playerState.isGuest) return;
+            const key = currentBankNoticeKey();
+            if (isBankNoticeDismissed(localStorage, key)) return;
+            (Array.isArray(extraLines) ? extraLines : []).forEach((line) => {
+                const text = String(line || '').trim();
+                if (text) _bankNoticeExtra.push(text);
+            });
+            if (_bankNoticeTimer) clearTimeout(_bankNoticeTimer);
+            _bankNoticeTimer = setTimeout(() => {
+                _bankNoticeTimer = null;
+                const events = _bankNoticeExtra.splice(0);
+                const message = buildBankExecutionNotice({
+                    unit: getCurrencyUnit(),
+                    rate: Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0,
+                    terms: currentBankNoticeTerms(),
+                    loan: currentBankNoticeLoan(),
+                    events,
+                });
+                void window.customAlertDismissable(message, key);
+            }, 450);
+        }
+
         function formatBankLoanLifecycleAlerts(msgs) {
+            const repayLines = [];
             (msgs || []).forEach((m) => {
                 if (m.kind === 'repay') {
-                    setTimeout(() => {
-                        void window.customAlert(
-                            `🏦 대출 약정 자동이체\n\n원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`
-                        );
-                    }, 80);
+                    repayLines.push(
+                        `대출 약정 자동이체: 원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)} = ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚고 대출을 닫았습니다. 적금은 그대로입니다.`
+                    );
                 } else if (m.kind === 'default_start') {
                     setTimeout(() => {
                         void window.customAlert(creditDefaultBlockMessage(m.untilYmd));
                     }, 140);
                 }
             });
+            if (repayLines.length) queueBankExecutionNotice(repayLines);
         }
 
         /** 일반예금+적금 원금 합 100 B 이상: 마지막 지급일 기준 3일마다 지갑으로 1 B */
@@ -21843,6 +22099,11 @@ ${subjectLine}
                         const elapsed = bankCalendarDaysElapsed(td.startDate);
                         // 가입 당일=1일째 … 30일째 만기 (경과 일수+1, 상한 30)
                         const daysShow = Math.min(30, elapsed + 1);
+                        const matureOn = termMaturityYmd(td.startDate);
+                        const todayYmd = getLocalDateStr();
+                        const matureNote = matureOn && todayYmd >= matureOn
+                            ? '오늘 만기입니다. 이 화면을 연 뒤 1분 안에 원금과 이자가 지갑으로 들어옵니다.'
+                            : `${matureOn}에 접속하면 그 즉시 원금과 이자가 지갑으로 들어옵니다.`;
                         const interestPrev = Math.round((Number(td.amount) || 0) * (rate / 100));
                         const sid = String(td.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                         return `<div class="border border-amber-600/35 rounded-xl p-3 bg-slate-900/60 mb-2 text-left">
@@ -21850,8 +22111,8 @@ ${subjectLine}
                                 <div class="min-w-0 flex-1">
                                     <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
                                     <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${formatBongAmount(td.amount)}</span></div>
-                                    <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
-                                    <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${formatBongAmount(interestPrev)} · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
+                                    <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일 · 만기일 <span class="font-bold text-amber-100">${matureOn}</span></div>
+                                    <div class="text-[9px] text-slate-500 mt-0.5">${matureNote} 이자(현재 ${rate}% , 반올림) 약 ${formatBongAmount(interestPrev)}. 만기 이율은 만기 당일 설정을 따릅니다. 지갑으로 들어오므로 따로 출금하지 않습니다.</div>
                                 </div>
                                 <button type="button" onclick="window.earlyWithdrawTermDeposit('${sid}')" class="text-[10px] shrink-0 bg-red-900/50 hover:bg-red-800 text-red-100 px-2 py-1 rounded border border-red-800/80">중도해지</button>
                             </div>
@@ -22779,13 +23040,7 @@ ${subjectLine}
                     bankSaveOperationLabel = '보물상자 적금 만기';
                     bankSaveBongLogSource = 'bankTermMaturity';
                     if (termRes.msgs.length > 0) {
-                        setTimeout(() => {
-                            void window.customAlert(
-                                '🎁 적금 만기!\n\n' +
-                                termRes.msgs.join('\n') +
-                                '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
-                            );
-                        }, 80);
+                        queueBankExecutionNotice(termRes.msgs.map((line) => `적금 만기: ${line}. 지갑으로 들어왔으니 따로 출금하지 않습니다.`));
                     }
                 }
                 const loanLife = applyBankLoanLifecycleLocal();
@@ -23590,6 +23845,7 @@ ${subjectLine}
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
                 void window.applyPersonalLunchDeductionIfNeeded();
+                queueBankExecutionNotice([]);
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 상단 패널) */
                 window.switchTab('plaza');
             } catch (e) { 
@@ -27039,7 +27295,7 @@ ${subjectLine}
         const STUDENT_GAME_FIELD_KEYS = [
             'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
-            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
+            'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'lunchHolidayRefundYmd', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd',
             'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
@@ -27540,6 +27796,7 @@ ${subjectLine}
                 gearEnhance: {},
                 lunchBid: { date: '', amount: 0 },
                 lastLunchDeductDate: '',
+                lunchHolidayRefundYmd: '',
                 questHistory: [],
                 usedRaidPasswords: [],
                 bankRegularSavings: 0,
@@ -27819,10 +28076,30 @@ ${subjectLine}
             const now = new Date();
             if (isVacationAutomationPaused('lunch', now)) return;
             const day = now.getDay();
+            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            // 공휴일로 체크한 날은 점심값을 빼지 않고, 이미 빠진 10봉은 한 번만 되돌립니다.
+            if (isSchoolHoliday(todayYmd)) {
+                if (window.playerState.lunchHolidayRefundYmd === todayYmd) return;
+                const refund = holidayLunchRefundAmount(window.playerState.bongChangeLog, todayYmd, getSchoolHolidays());
+                window.playerState.lunchHolidayRefundYmd = todayYmd;
+                window.playerState.lastLunchDeductDate = todayYmd;
+                if (refund > 0) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + refund);
+                    await saveDataToCloud({
+                        operationLabel: '공휴일 점심값 환급',
+                        bongLogSource: 'holidayLunchRefund',
+                        maxBongIncrease: refund,
+                    });
+                    updateUI();
+                    await window.customAlert(`🍱 오늘은 공휴일이라 점심값 ${refund}${getCurrencyUnit()}를 지갑으로 되돌렸습니다.`);
+                } else {
+                    await saveDataToCloud();
+                }
+                return;
+            }
             if (day < 1 || day > 5) return;
             if (now.getHours() < 12) return;
 
-            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             if (window.playerState.lastLunchDeductDate === todayYmd) return;
 
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - 10);

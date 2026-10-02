@@ -16,6 +16,7 @@ import {
     getLoanCalendarFromWorld,
     isBankBusinessDay,
     isCreditDefaultOn,
+    bongAfterAccrualWithIntent,
     planTakeLoan,
     sanitizeLoanAmount,
     sanitizeLoanLimit,
@@ -149,5 +150,30 @@ describe('대출 실행·달력', () => {
         });
         assert.equal(blocked.ok, false);
         assert.equal(blocked.reason, 'default');
+    });
+});
+
+describe('정산 뒤 지갑 증감', () => {
+    it('예금 보너스가 붙어도 점심값 10봉은 정산 잔액에서 빠진다', () => {
+        assert.equal(bongAfterAccrualWithIntent(101, 90, 100, {
+            allowDecrease: true,
+            maxDecrease: 10,
+        }), 91);
+    });
+
+    it('상한이 있는 환급은 정산 잔액 위에 올라간다', () => {
+        assert.equal(bongAfterAccrualWithIntent(101, 110, 100, {
+            maxIncrease: 10,
+        }), 111);
+    });
+
+    it('이번 저장이 깎거나 올리지 않으면 정산 잔액만 남긴다', () => {
+        assert.equal(bongAfterAccrualWithIntent(101, 140, 100, {
+            allowDecrease: true,
+            maxDecrease: 10,
+        }), 101);
+        assert.equal(bongAfterAccrualWithIntent(80, 90, 100, {
+            maxIncrease: 0,
+        }), 80);
     });
 });

@@ -23,14 +23,87 @@ export const SEASON2 = {
     season1BongPerUnit: 100,
 };
 
-/** 2026년 2학기 공휴일(주말 제외 휴업) */
-export const KOREA_2026_FALL_HOLIDAYS = [
-    '2026-09-24',
-    '2026-09-25',
-    '2026-10-09',
-    '2026-12-25',
-    '2027-01-01',
+/** 2026년 2학기 공휴일(주말 제외 휴업) — 학사일정 기본값 */
+export const KOREA_2026_FALL_HOLIDAY_ENTRIES = [
+    { date: '2026-09-24', name: '추석' },
+    { date: '2026-09-25', name: '추석' },
+    { date: '2026-10-09', name: '한글날' },
+    { date: '2026-12-25', name: '성탄절' },
+    { date: '2027-01-01', name: '신정' },
 ];
+
+export const KOREA_2026_FALL_HOLIDAYS = KOREA_2026_FALL_HOLIDAY_ENTRIES.map((e) => e.date);
+
+/**
+ * 공휴일 목록 정리. 배열이 없으면 fallback, 빈 배열은 의도적으로 비운 값으로 둡니다.
+ * 항목은 { date, name } 또는 YYYY-MM-DD 문자열을 받습니다.
+ */
+export function sanitizeHolidayEntries(raw, { fallback = KOREA_2026_FALL_HOLIDAY_ENTRIES } = {}) {
+    const src = Array.isArray(raw) ? raw : fallback;
+    const seen = new Set();
+    const out = [];
+    (Array.isArray(src) ? src : []).forEach((item) => {
+        let date = '';
+        let name = '';
+        if (typeof item === 'string') {
+            date = toYmd(item);
+        } else if (item && typeof item === 'object' && !Array.isArray(item)) {
+            date = toYmd(item.date || item.ymd || '');
+            name = String(item.name || item.label || '').trim().slice(0, 20);
+        }
+        if (!date || seen.has(date)) return;
+        seen.add(date);
+        out.push({ date, name });
+    });
+    return out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+export function holidayDatesOf(raw, opts) {
+    return sanitizeHolidayEntries(raw, opts).map((e) => e.date);
+}
+
+/** 학사 달력 한 칸의 종류: holiday | vacation | weekend | school | pad */
+export function academicDayKind(ymd, { holidays = [], vacationStart = '', vacationEnd = '' } = {}) {
+    const id = toYmd(ymd);
+    if (!id) return { kind: 'pad', name: '', ymd: '' };
+    const holidayMap = new Map();
+    sanitizeHolidayEntries(holidays, { fallback: [] }).forEach((h) => holidayMap.set(h.date, h.name || '공휴일'));
+    if (holidayMap.has(id)) {
+        return { kind: 'holiday', name: holidayMap.get(id) || '공휴일', ymd: id };
+    }
+    if (vacationStart && vacationEnd && isYmdInRange(id, vacationStart, vacationEnd)) {
+        return { kind: 'vacation', name: '방학', ymd: id };
+    }
+    const dow = new Date(`${id}T00:00:00`).getDay();
+    if (dow === 0) return { kind: 'weekend', name: '일요일', ymd: id };
+    if (dow === 6) return { kind: 'weekend', name: '토요일', ymd: id };
+    return { kind: 'school', name: '', ymd: id };
+}
+
+/** 한 달 학사 달력(일~토). month는 1~12입니다. */
+export function buildAcademicMonthGrid(year, month, opts = {}) {
+    const y = Math.floor(Number(year));
+    const m = Math.floor(Number(month));
+    if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+        return { year: y || 0, month: m || 0, cells: [] };
+    }
+    const first = new Date(y, m - 1, 1);
+    const startDow = first.getDay();
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startDow; i += 1) {
+        cells.push({ inMonth: false, day: 0, ymd: '', kind: 'pad', name: '' });
+    }
+    for (let d = 1; d <= daysInMonth; d += 1) {
+        const ymd = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const info = academicDayKind(ymd, opts);
+        cells.push({ inMonth: true, day: d, ymd, kind: info.kind, name: info.name });
+    }
+    while (cells.length % 7 !== 0) {
+        cells.push({ inMonth: false, day: 0, ymd: '', kind: 'pad', name: '' });
+    }
+    return { year: y, month: m, cells };
+}
 
 export const DAILY_ALL_CLEAR_XP = 25;
 export const DAILY_ALL_CLEAR_BONG = 5;

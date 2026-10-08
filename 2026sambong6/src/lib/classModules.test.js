@@ -41,9 +41,9 @@ describe('학급 기능 해금', () => {
         assert.equal(classModuleForTab('settings'), null);
     });
 
-    it('새 학급 헌법은 짧게 두고 고칠 수 있게 시작한다', () => {
-        assert.equal(NEW_CLASS_CONSTITUTION_ITEMS[0].type, 'chapter');
-        assert.match(NEW_CLASS_CONSTITUTION_ITEMS.map((x) => x.text).join(' '), /우리 반/);
+    it('새 학급 헌법은 비운 채로 시작한다', () => {
+        assert.equal(Array.isArray(NEW_CLASS_CONSTITUTION_ITEMS), true);
+        assert.equal(NEW_CLASS_CONSTITUTION_ITEMS.length, 0);
     });
 });
 

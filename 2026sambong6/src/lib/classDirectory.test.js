@@ -6,6 +6,7 @@ import {
     canHideManagedClassFromDirectory,
     canResetManagedClass,
     classDirectoryStatusLabel,
+    directoryEntriesForViewer,
     mergeClassDirectory,
     safeManagedClassId,
     sanitizeClassDirectoryEntry,
@@ -74,5 +75,15 @@ describe('학급 관리 목록', () => {
         const ids = merged.map((r) => r.classId).sort();
         assert.deepEqual(ids, ['a', 'b', 'c']);
         assert.equal(merged.find((r) => r.classId === 'a').displayName, '서버이름');
+    });
+
+    it('시드 마스터가 아니면 다른 학급 목록을 숨긴다', () => {
+        const gm = { isGM: true };
+        const live = sanitizeClassDirectoryEntry({ displayName: '우리반' }, 'my-class');
+        const other = sanitizeClassDirectoryEntry({ displayName: '다른반' }, 'other-class');
+        const mine = directoryEntriesForViewer([live, other], gm, 'my-class');
+        assert.deepEqual(mine.map((r) => r.classId), ['my-class']);
+        const seed = directoryEntriesForViewer([live, other], gm, SEED_MASTER_CLASS_ID);
+        assert.deepEqual(seed.map((r) => r.classId).sort(), ['my-class', 'other-class']);
     });
 });

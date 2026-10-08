@@ -652,6 +652,28 @@ export function resetBusAssignees(state, { keepHidden = true } = {}) {
     return next;
 }
 
+/**
+ * 다음 여행을 위한 완전 초기화.
+ * 구입·뽑기·이력을 모두 지우고, 낸 봉은 돌려주지 않습니다.
+ * 자리 활성(hidden)·기본 가격만 남깁니다.
+ */
+export function resetBusForNextTrip(state) {
+    const prev = sanitizeBusState(state);
+    const next = emptyBusState();
+    next.seats.forEach((s, i) => {
+        const src = prev.seats[i];
+        const hidden = !!(src && src.hidden);
+        s.hidden = hidden;
+        s.locked = hidden;
+        s.price = src ? sanitizeBusSeatPrice(src.price, BUS_SEAT_DEFAULT_PRICE) : BUS_SEAT_DEFAULT_PRICE;
+        s.owner = null;
+        s.paid = 0;
+        s.assignee = null;
+    });
+    next.purchaseHistory = [];
+    return next;
+}
+
 export function busSeatSummary(state) {
     const board = sanitizeBusState(state);
     const active = board.seats.filter((s) => !isBusSeatDisabled(s));

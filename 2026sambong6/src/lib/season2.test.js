@@ -16,7 +16,11 @@ import {
     CUSTOM_QUEST_XP_MAX,
     CUSTOM_SHOP_XP_MAX,
     catalogQuestRewards,
+    academicDayKind,
+    buildAcademicMonthGrid,
     countInstructionalWeekdays,
+    holidayDatesOf,
+    sanitizeHolidayEntries,
     estimateSeason2QuestXp,
     expectedXpPace,
     season1SettlementBong,
@@ -42,6 +46,32 @@ describe('시즌 2 학사·경험치 예산', () => {
     it('9월 1일~1월 7일 수업일수는 약 80일이다', () => {
         const days = season2SchoolDaysTotal();
         assert.equal(days, 80);
+    });
+
+    it('공휴일을 학사 달력에 표시하고 빈 목록은 비운 채로 둔다', () => {
+        const cleaned = sanitizeHolidayEntries([
+            { date: '2026-10-09', name: '한글날' },
+            '2026-10-09',
+            { date: 'bad' },
+            { date: '2026-03-01', name: '삼일절' },
+        ], { fallback: [] });
+        assert.deepEqual(cleaned.map((h) => h.date), ['2026-03-01', '2026-10-09']);
+        assert.equal(cleaned.find((h) => h.date === '2026-10-09').name, '한글날');
+        assert.deepEqual(sanitizeHolidayEntries([], { fallback: [] }), []);
+        assert.equal(holidayDatesOf(undefined).includes('2026-10-09'), true);
+        const hangul = academicDayKind('2026-10-09', { holidays: cleaned });
+        assert.equal(hangul.kind, 'holiday');
+        assert.equal(hangul.name, '한글날');
+        const vac = academicDayKind('2026-12-25', {
+            holidays: [],
+            vacationStart: '2026-12-24',
+            vacationEnd: '2027-01-06',
+        });
+        assert.equal(vac.kind, 'vacation');
+        const grid = buildAcademicMonthGrid(2026, 10, { holidays: cleaned });
+        const cell = grid.cells.find((c) => c.ymd === '2026-10-09');
+        assert.equal(cell.kind, 'holiday');
+        assert.equal(grid.cells.filter((c) => c.inMonth).length, 31);
     });
 
     it('성실 퀘스트 경로 XP는 약 2만이다', () => {

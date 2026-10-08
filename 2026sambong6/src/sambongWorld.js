@@ -264,12 +264,15 @@ import {
     buildXpSupervisionIncidents,
     canRefundSkinThisSeason,
     canStartSeason2,
+    buildAcademicMonthGrid,
     catalogQuestRewards,
     estimateSeason2QuestXp,
     expectedXpPace,
     filterLogsSince,
+    KOREA_2026_FALL_HOLIDAY_ENTRIES,
     readShieldStock,
     sanitizeDragonBallRewards,
+    sanitizeHolidayEntries,
     season2SchoolDaysTotal,
     SHIELD_STOCK_DEFAULT,
     season2SupervisionSinceMs,
@@ -302,7 +305,6 @@ import {
 } from './lib/gear.js';
 import {
     CLASS_MODULE_CATALOG,
-    NEW_CLASS_CONSTITUTION_ITEMS,
     classModuleById,
     classModuleForTab,
     hasClassModuleRecord,
@@ -447,6 +449,7 @@ import {
     canHideManagedClassFromDirectory,
     canResetManagedClass,
     classDirectoryStatusLabel,
+    directoryEntriesForViewer,
     mergeClassDirectory,
     safeManagedClassId,
     sanitizeClassDirectoryEntry,
@@ -548,6 +551,7 @@ import {
     isBusSeatDisabled,
     minBusSeatBid,
     resetBusAssignees,
+    resetBusForNextTrip,
     sanitizeBusSeatPrice,
     sanitizeBusState,
     shuffleBusAssignees,
@@ -1256,6 +1260,7 @@ function redrawPlazaGrantsUi() {
             vacationPauseThermometer: true,
             /** 학급 화폐 단위 — 금액 뒤 표기 (예: B, 봉, 미소, 감자) */
             currencyUnit: 'B',
+            holidays: KOREA_2026_FALL_HOLIDAY_ENTRIES.map((h) => ({ ...h })),
         };
 
         function normalizeWorldDateYmd(raw) {
@@ -1331,6 +1336,10 @@ function redrawPlazaGrantsUi() {
                 vacationPauseBankBonus: src.vacationPauseBankBonus !== false,
                 vacationPauseThermometer: src.vacationPauseThermometer !== false,
                 currencyUnit: sanitizeCurrencyUnit(src.currencyUnit),
+                holidays: sanitizeHolidayEntries(
+                    src.holidays,
+                    { fallback: Object.prototype.hasOwnProperty.call(src, 'holidays') ? [] : KOREA_2026_FALL_HOLIDAY_ENTRIES },
+                ),
             };
         }
 
@@ -1866,6 +1875,8 @@ function redrawPlazaGrantsUi() {
             setCheck('wsVacationPauseClassXp', ws.vacationPauseClassXp);
             setCheck('wsVacationPauseBankBonus', ws.vacationPauseBankBonus);
             setCheck('wsVacationPauseThermometer', ws.vacationPauseThermometer);
+            window._holidayDraft = sanitizeHolidayEntries(ws.holidays, { fallback: [] }).map((h) => ({ ...h }));
+            if (typeof window.renderHolidayEditor === 'function') window.renderHolidayEditor();
             const vacStatus = document.getElementById('wsVacationStatus');
             if (vacStatus) {
                 if (!ws.vacationEnabled) {
@@ -1884,6 +1895,8 @@ function redrawPlazaGrantsUi() {
             setVal('wsClassGrade', meta.grade || 6);
             setVal('wsClassHomeroom', meta.homeroom || 1);
             setVal('wsGmaEditStudentId', meta.gmaEditStudentId || '13');
+            const gmaField = document.getElementById('wsGmaEditStudentId')?.closest('label');
+            if (gmaField) gmaField.classList.toggle('hidden', !getStaffMember('gm_a'));
             setVal('wsClassIdReadonly', meta.classId || (typeof appId !== 'undefined' ? appId : ''));
             setVal('wsRaidPassword', (window.globalSettings && window.globalSettings.raidPassword) || '');
             setVal('wsMasterDisplayName', meta.masterDisplayName || getMasterDisplayName());
@@ -1962,6 +1975,7 @@ function redrawPlazaGrantsUi() {
                 vacationPauseClassXp: !!(document.getElementById('wsVacationPauseClassXp')?.checked),
                 vacationPauseBankBonus: !!(document.getElementById('wsVacationPauseBankBonus')?.checked),
                 vacationPauseThermometer: !!(document.getElementById('wsVacationPauseThermometer')?.checked),
+                holidays: sanitizeHolidayEntries(window._holidayDraft, { fallback: [] }),
             });
 
             const opsPayload = {
@@ -1997,7 +2011,7 @@ function redrawPlazaGrantsUi() {
                     const gmaEditStudentId = text('wsGmaEditStudentId') || '13';
                     const masterDisplayName = text('wsMasterDisplayName') || getMasterDisplayName();
                     const schoolName = text('wsClassSchoolName');
-                    const staff = (window.classMeta?.staff || DEFAULT_CLASS_STAFF).map((s) =>
+                    const staff = getClassStaff().map((s) =>
                         String(s.id) === 'gm' ? { ...s, name: masterDisplayName } : s
                     );
                     const classPayload = {
@@ -2048,7 +2062,116 @@ function redrawPlazaGrantsUi() {
                 );
                 if (retry) return window.saveWorldSettingsFromPanel();
             }
-        }; 
+        };
+
+        function holidayEditorState() {
+            if (!Array.isArray(window._holidayDraft)) {
+                window._holidayDraft = sanitizeHolidayEntries(getWorldSettings().holidays, { fallback: [] });
+            }
+            return window._holidayDraft;
+        }
+
+        window.renderHolidayEditor = function() {
+            const list = document.getElementById('wsHolidayList');
+            const cal = document.getElementById('wsAcademicCalendar');
+            const holidays = holidayEditorState();
+            if (list) {
+                if (!holidays.length) {
+                    list.innerHTML = '<p class="text-[10px] text-slate-400">등록된 공휴일이 없습니다. 날짜를 추가하면 달력에 나타납니다.</p>';
+                } else {
+                    list.innerHTML = holidays.map((h, idx) => `
+                        <div class="flex items-center gap-2 rounded-xl border border-rose-400/40 bg-rose-950/30 px-2 py-1.5">
+                            <span class="text-[11px] font-black text-rose-100">${escapeNavClassText(h.date)}</span>
+                            <span class="flex-1 text-[11px] font-bold text-white truncate">${escapeNavClassText(h.name || '공휴일')}</span>
+                            <button type="button" class="shrink-0 text-[10px] font-black text-rose-200 hover:text-white min-h-[32px] px-2" onclick="window.removeWorldHoliday(${idx})">지우기</button>
+                        </div>
+                    `).join('');
+                }
+            }
+            if (cal) {
+                if (window._academicCalYear == null) {
+                    const now = new Date();
+                    window._academicCalYear = now.getFullYear();
+                    window._academicCalMonth = now.getMonth() + 1;
+                }
+                const ws = getWorldSettings();
+                const grid = buildAcademicMonthGrid(window._academicCalYear, window._academicCalMonth, {
+                    holidays,
+                    vacationStart: ws.vacationEnabled ? ws.vacationStartDate : '',
+                    vacationEnd: ws.vacationEnabled ? ws.vacationEndDate : '',
+                });
+                const kindClass = (kind, inMonth) => {
+                    if (!inMonth) return 'text-slate-700';
+                    if (kind === 'holiday') return 'bg-rose-700 text-white font-black';
+                    if (kind === 'vacation') return 'bg-sky-800 text-sky-100 font-bold';
+                    if (kind === 'weekend') return 'text-slate-500';
+                    return 'text-slate-200 bg-slate-800/60';
+                };
+                cal.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <button type="button" class="min-h-[36px] px-2 rounded-lg bg-slate-800 text-white text-[11px] font-black" onclick="window.shiftAcademicCalendar(-1)">‹</button>
+                        <div class="text-[12px] font-black text-emerald-100">${grid.year}년 ${grid.month}월</div>
+                        <button type="button" class="min-h-[36px] px-2 rounded-lg bg-slate-800 text-white text-[11px] font-black" onclick="window.shiftAcademicCalendar(1)">›</button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-slate-400 mb-1">
+                        <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1">
+                        ${grid.cells.map((c) => `
+                            <div class="rounded-lg min-h-[44px] p-1 ${kindClass(c.kind, c.inMonth)}" title="${escapeNavClassText(c.name || '')}">
+                                <div class="text-[11px] leading-none">${c.inMonth ? c.day : ''}</div>
+                                <div class="text-[8px] leading-tight truncate">${c.inMonth && c.kind === 'holiday' ? escapeNavClassText(c.name) : (c.inMonth && c.kind === 'vacation' ? '방학' : '')}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <p class="text-[9px] text-slate-400 mt-2">빨강: 공휴일 · 파랑: 방학 · 흐림: 주말. 「설정 저장」을 눌러 반영하세요.</p>
+                `;
+            }
+        };
+
+        window.addWorldHoliday = function() {
+            const date = String(document.getElementById('wsHolidayDate')?.value || '').trim();
+            const name = String(document.getElementById('wsHolidayName')?.value || '').trim().slice(0, 20);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                return window.customAlert('공휴일 날짜를 선택해 주세요.');
+            }
+            const list = holidayEditorState();
+            const exist = list.find((h) => h.date === date);
+            if (exist) exist.name = name || exist.name || '공휴일';
+            else list.push({ date, name: name || '공휴일' });
+            window._holidayDraft = sanitizeHolidayEntries(list, { fallback: [] });
+            const nameEl = document.getElementById('wsHolidayName');
+            if (nameEl) nameEl.value = '';
+            window.renderHolidayEditor();
+        };
+
+        window.removeWorldHoliday = function(idx) {
+            const list = holidayEditorState();
+            const n = Math.floor(Number(idx));
+            if (!Number.isFinite(n) || n < 0 || n >= list.length) return;
+            list.splice(n, 1);
+            window._holidayDraft = list;
+            window.renderHolidayEditor();
+        };
+
+        window.shiftAcademicCalendar = function(delta) {
+            const d = Math.floor(Number(delta) || 0);
+            if (window._academicCalYear == null) {
+                const now = new Date();
+                window._academicCalYear = now.getFullYear();
+                window._academicCalMonth = now.getMonth() + 1;
+            }
+            window._academicCalMonth += d;
+            while (window._academicCalMonth < 1) {
+                window._academicCalMonth += 12;
+                window._academicCalYear -= 1;
+            }
+            while (window._academicCalMonth > 12) {
+                window._academicCalMonth -= 12;
+                window._academicCalYear += 1;
+            }
+            window.renderHolidayEditor();
+        };
 
         // ==========================================
         // ★ 환경 설정 및 데이터 정의 ★
@@ -2496,7 +2619,6 @@ function redrawPlazaGrantsUi() {
                 roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 24),
                 staff: [
                     { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
-                    { id: 'gm_a', name: '보조 마스터', gender: 'F', role: 'co_teacher', label: '보조', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
                 ],
             };
         }
@@ -2545,7 +2667,7 @@ function redrawPlazaGrantsUi() {
                 names[String(r.id)] = r.name;
                 genders[String(r.id)] = r.gender === 'F' ? 'F' : 'M';
             });
-            (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
+            getClassStaffFromMeta(meta).forEach((s) => {
                 names[String(s.id)] = s.name;
                 genders[String(s.id)] = s.gender === 'F' ? 'F' : 'M';
             });
@@ -2577,9 +2699,37 @@ function redrawPlazaGrantsUi() {
             return String(window.classMeta?.gmaEditStudentId || '1');
         }
 
+        function isSeedClassMeta(meta, classId = appId) {
+            return !!(meta && (meta.isDemoSeed || String(classId) === SEED_CLASS_ID));
+        }
+
+        /** 시드 반만 보조 마스터(gm_a)를 둡니다. 다른 학급 스태프에서 지웁니다. */
+        function getClassStaffFromMeta(meta, classId = appId) {
+            const seed = isSeedClassMeta(meta, classId);
+            const raw = Array.isArray(meta && meta.staff) ? meta.staff.filter((s) => s && s.id) : [];
+            if (seed) return raw.length ? raw : DEFAULT_CLASS_STAFF.map((s) => ({ ...s }));
+            const staff = raw.filter((s) => String(s.id) !== 'gm_a');
+            if (!staff.some((s) => String(s.id) === 'gm')) {
+                staff.unshift({
+                    id: 'gm',
+                    name: String((meta && meta.masterDisplayName) || '담임 선생님').trim().slice(0, 20) || '담임 선생님',
+                    gender: 'M',
+                    role: 'teacher',
+                    label: '담임교사',
+                    optionClass: 'text-sb-gold',
+                    emoji: '👑',
+                });
+            }
+            return staff;
+        }
+
+        function getClassStaff() {
+            const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
+            return getClassStaffFromMeta(meta, appId);
+        }
+
         function getStaffMember(staffId) {
-            const staff = window.classMeta?.staff || DEFAULT_CLASS_STAFF;
-            return staff.find((s) => String(s.id) === String(staffId));
+            return getClassStaff().find((s) => String(s.id) === String(staffId));
         }
 
         /** 학급 설정 masterDisplayName → 없으면 담임(staff gm) 이름 → 기본값 */
@@ -2769,27 +2919,18 @@ function redrawPlazaGrantsUi() {
         function renderLoginRecentClasses() {
             const box = document.getElementById('loginRecentClasses');
             if (!box) return;
-            const recent = getRecentClasses().filter((r) => r.classId !== appId);
-            if (!recent.length) {
-                box.classList.add('hidden');
-                box.innerHTML = '';
-                return;
-            }
-            box.classList.remove('hidden');
-            box.innerHTML = `<div class="text-[9px] text-slate-500 font-bold">최근 학급</div>` + recent.map((r) =>
-                `<button type="button" onclick="window.switchClass('${String(r.classId).replace(/'/g, '')}')" class="w-full text-left px-2 py-1.5 rounded-lg bg-slate-900/70 border border-slate-700 hover:border-cyan-500/50 text-[10px] text-slate-300">
-                    <span class="text-white font-bold">${r.displayName || r.classId}</span>
-                    <span class="text-slate-500 ml-1">${r.inviteCode || r.classId}</span>
-                </button>`
-            ).join('');
+            // 로그인 화면에는 다른 학급 목록을 보여 주지 않습니다.
+            box.classList.add('hidden');
+            box.setAttribute('hidden', '');
+            box.innerHTML = '';
         }
 
         function populateTeacherLoginSelect() {
             const sel = document.getElementById('loginIdTeacher');
             if (!sel) return;
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
-            let html = '<option value="" disabled selected>관리자 계정 선택</option>';
-            (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
+            let html = '<option value="" disabled selected>계정 선택</option>';
+            getClassStaffFromMeta(meta).forEach((s) => {
                 const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
                 html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
             });
@@ -2810,7 +2951,7 @@ function redrawPlazaGrantsUi() {
                 html += `<option value="${sid}"${optClass}>${sid}. ${STUDENT_NAMES[sid] || sid}${labelSuffix}</option>`;
             });
             html += '<option disabled>─── 관리자 ───</option>';
-            (meta.staff || DEFAULT_CLASS_STAFF).forEach((s) => {
+            getClassStaffFromMeta(meta).forEach((s) => {
                 const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
                 html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
             });
@@ -2828,6 +2969,18 @@ function redrawPlazaGrantsUi() {
                     ? buildDefaultClassMeta(appId)
                     : buildBlankClassMeta(appId, data);
                 window.classMeta = { ...base, ...data, classId: appId };
+                // 다른 학급에 남아 있는 시드 보조교사(gm_a)는 목록에서 지웁니다.
+                if (!isSeedClassMeta(window.classMeta, appId)) {
+                    const cleanedStaff = getClassStaffFromMeta(window.classMeta, appId);
+                    const hadCoTeacher = Array.isArray(window.classMeta.staff)
+                        && window.classMeta.staff.some((s) => s && String(s.id) === 'gm_a');
+                    window.classMeta.staff = cleanedStaff;
+                    if (hadCoTeacher) {
+                        try {
+                            await setDoc(classRef, { staff: cleanedStaff, updatedAt: serverTimestamp() }, { merge: true });
+                        } catch (_) { /* ignore */ }
+                    }
+                }
                 // Firestore에 시드 명단이 없는데 빈 학급이면 blank 유지
                 if (!Array.isArray(data.roster) || !data.roster.length) {
                     if (appId !== SEED_CLASS_ID) {
@@ -3247,7 +3400,10 @@ function redrawPlazaGrantsUi() {
             }
             boxes.forEach((el) => { el.innerHTML = '<p class="text-[10px] text-cyan-100">학급 목록을 불러오는 중…</p>'; });
             let serverEntries = [];
-            if (isSeedMasterViewer(window.playerState, appId) && db) {
+            const seedViewer = isSeedMasterViewer(window.playerState, appId);
+            const archivedRow = document.getElementById('showArchivedClassesRow');
+            if (archivedRow) archivedRow.classList.toggle('hidden', !seedViewer);
+            if (seedViewer && db) {
                 try {
                     const snap = await getDocs(collection(db, 'classes'));
                     snap.forEach((d) => serverEntries.push(sanitizeClassDirectoryEntry(d.data(), d.id)));
@@ -3258,14 +3414,19 @@ function redrawPlazaGrantsUi() {
             const current = window.classMeta
                 ? sanitizeClassDirectoryEntry(window.classMeta, appId)
                 : sanitizeClassDirectoryEntry({ displayName: appId }, appId);
+            const recent = seedViewer ? getRecentClasses() : [];
             const merged = sortClassDirectory(
-                mergeClassDirectory(serverEntries, getRecentClasses(), current),
+                mergeClassDirectory(serverEntries, recent, current),
                 appId,
             );
-            const visible = visibleClassDirectory(merged, {
-                includeArchived: _showArchivedClasses,
-                currentClassId: appId,
-            });
+            const visible = directoryEntriesForViewer(
+                visibleClassDirectory(merged, {
+                    includeArchived: _showArchivedClasses,
+                    currentClassId: appId,
+                }),
+                window.playerState,
+                appId,
+            );
             const html = window.renderManagedClassDirectoryHtml(visible);
             boxes.forEach((el) => { el.innerHTML = html; });
         };
@@ -3313,19 +3474,19 @@ function redrawPlazaGrantsUi() {
             if (teacher) teacher.classList.toggle('hidden', !isTeacher);
             if (btnS) {
                 btnS.className = isTeacher
-                    ? 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70'
-                    : 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg text-left';
+                    ? 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 opacity-70'
+                    : 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg';
             }
             if (btnT) {
                 btnT.className = isTeacher
-                    ? 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg text-left'
-                    : 'login-mode-btn min-h-[68px] py-3 px-3 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 text-left opacity-70';
+                    ? 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg'
+                    : 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 opacity-70';
             }
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '초대 코드로 기존 학급에 들어가세요. 새 학급은 원래 마스터가 준 개설 코드가 있을 때만 요청할 수 있습니다.'
-                    : '초대 코드로 학급을 연 뒤 이름을 선택하세요.';
+                    ? '초대 코드로 우리 학급을 연 뒤 마스터 PIN을 넣으세요.'
+                    : '선생님이 알려 준 초대 코드를 넣고 내 이름을 고르세요.';
             }
             if (isTeacher) window.setTeacherSubMode('join');
             if (typeof window.renderClassCreateRequestStatus === 'function') {
@@ -3405,10 +3566,11 @@ function redrawPlazaGrantsUi() {
                     seasonTheme: String(seasonTheme || '우리 반 모험').trim().slice(0, 60) || '우리 반 모험',
                     academicYear: schoolYear,
                     footerCredit: `${derivedWorld} · ${teacherName || '담임 선생님'}`,
+                    holidays: KOREA_2026_FALL_HOLIDAY_ENTRIES.map((h) => ({ ...h })),
                 },
                 applyDefaultTemplatePending: !!applyDefaultTemplate,
                 classModules: newClassModules(),
-                constitutionItems: NEW_CLASS_CONSTITUTION_ITEMS,
+                constitutionItems: [],
                 externalPortals: [],
                 thoughtBoard: emptyThoughtBoard(),
                 classBoard: emptyClassBoard(),
@@ -3922,6 +4084,7 @@ function redrawPlazaGrantsUi() {
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
                     <label class="text-[10px] text-slate-300">학급 표시 이름
                         <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                        <span class="block mt-1 text-[9px] text-amber-200/80">이 학급 마스터가 바꿀 수 있습니다. 명단 저장을 누르세요.</span>
                     </label>
                     <label class="text-[10px] text-slate-300">학급 ID (데이터 경로)
                         <input type="text" value="${appId}" readonly class="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400">
@@ -4029,7 +4192,7 @@ function redrawPlazaGrantsUi() {
                 gmaEditStudentId: window.classMeta?.gmaEditStudentId || getGmaEditStudentId() || '1',
                 isActive: true,
                 roster,
-                staff: window.classMeta?.staff || DEFAULT_CLASS_STAFF,
+                staff: getClassStaff(),
                 updatedAt: serverTimestamp(),
             };
             await setDoc(doc(db, 'classes', appId), payload, { merge: true });
@@ -4199,25 +4362,10 @@ function redrawPlazaGrantsUi() {
             }
             const currentName = (window.classMeta && window.classMeta.displayName) || appId;
             const currentInvite = (window.classMeta && window.classMeta.inviteCode) || appId;
-            const recent = getRecentClasses();
-            const rows = recent.length
-                ? recent.map((r) => {
-                    const isCur = r.classId === appId;
-                    const cur = isCur ? ' · 지금 이 반' : '';
-                    const safeId = String(r.classId).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                    const btnClass = isCur
-                        ? 'nav-class-box is-current w-full text-left px-3 py-2.5 rounded-xl'
-                        : 'nav-class-box w-full text-left px-3 py-2.5 rounded-xl hover:brightness-125';
-                    return `<button type="button" class="${btnClass}" onclick="event.stopPropagation(); window.switchClass('${safeId}')">
-                        <div class="font-black truncate text-[13px] text-white">${escapeNavClassText(r.displayName || r.classId)}${cur}</div>
-                        <div class="text-cyan-100 truncate text-[11px] font-bold">초대 ${escapeNavClassText(r.inviteCode || r.classId)}</div>
-                    </button>`;
-                }).join('')
-                : '<div class="text-white px-2 py-3 text-[12px] font-bold">최근 학급이 없습니다. 아래에서 코드로 들어가 주세요.</div>';
             menu.innerHTML = `
                 <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="min-w-0">
-                        <div id="navClassMenuTitle" class="text-[15px] font-black text-white">학급 고르기</div>
+                        <div id="navClassMenuTitle" class="text-[15px] font-black text-white">이 학급</div>
                         <div class="text-[12px] text-emerald-200 font-black mt-0.5 truncate">지금: ${escapeNavClassText(currentName)}</div>
                         <div class="text-[11px] text-cyan-100 font-bold truncate">초대 ${escapeNavClassText(currentInvite)}</div>
                     </div>
@@ -4225,8 +4373,7 @@ function redrawPlazaGrantsUi() {
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
-                <div class="text-[11px] text-white font-black mb-1.5">최근 학급을 눌러 바꾸기</div>
-                <div class="space-y-1.5 mb-2">${rows}</div>
+                <p class="text-[11px] text-slate-300 font-bold mb-2">다른 학급 목록은 보여 주지 않습니다. 초대 코드로만 들어갑니다.</p>
                 <div class="border-t-2 border-cyan-300 mt-2 pt-2 space-y-1.5">
                     <label for="navSwitchClassCode" class="text-[11px] text-white font-black">초대 코드 또는 학급 ID</label>
                     <input id="navSwitchClassCode" type="text" placeholder="예: ABC123" class="w-full rounded-lg px-3 py-2 text-[13px] font-bold" onclick="event.stopPropagation()">
@@ -6412,9 +6559,9 @@ ${subjectLine}
                 ? window.globalSettings.constitutionItems
                 : null;
             const fallback = (!isSeedDemoClass() && hasClassModuleRecord(window.globalSettings))
-                ? NEW_CLASS_CONSTITUTION_ITEMS
+                ? []
                 : DEFAULT_CONSTITUTION_ITEMS;
-            const source = saved && saved.length > 0 ? saved : fallback;
+            const source = saved ? saved : fallback;
             return source
                 .map((item, idx) => ({
                     id: String(item && item.id ? item.id : `constitution_${idx}_${Date.now().toString(36)}`),
@@ -6444,6 +6591,10 @@ ${subjectLine}
             const list = document.getElementById('constitutionEditList');
             if (!list) return;
             const draft = constitutionEditDraft || getConstitutionItems();
+            if (!draft.length) {
+                list.innerHTML = '<p class="text-[11px] text-amber-900/70 font-bold py-4 text-center">아직 문장이 없습니다. 「문장 추가」로 우리 반 약속을 적어 주세요.</p>';
+                return;
+            }
             list.innerHTML = draft.map((item, idx) => `
                 <div class="rounded-2xl border border-amber-800/20 bg-white/55 p-3">
                     <div class="flex flex-col sm:flex-row gap-2">
@@ -6544,7 +6695,6 @@ ${subjectLine}
         window.saveConstitutionItems = async function() {
             if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('헌법 수정은 마스터만 할 수 있습니다.');
             const constitutionItems = collectConstitutionDraftFromDom();
-            if (constitutionItems.length === 0) return window.customAlert('헌법 문장을 1개 이상 남겨 주세요.');
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
@@ -20190,8 +20340,15 @@ ${subjectLine}
                 staffRow.classList.add('is-visible');
             }
             if (pirateRow) {
-                pirateRow.innerHTML = createCard(gmaData || { id: 'gm_a', xp: 0, bong: 0 }, true, getStaffCardLabel('gm_a'));
-                pirateRow.classList.add('is-visible');
+                if (getStaffMember('gm_a')) {
+                    pirateRow.innerHTML = createCard(gmaData || { id: 'gm_a', xp: 0, bong: 0 }, true, getStaffCardLabel('gm_a'));
+                    pirateRow.classList.add('is-visible');
+                    pirateRow.classList.remove('hidden');
+                } else {
+                    pirateRow.innerHTML = '';
+                    pirateRow.classList.remove('is-visible');
+                    pirateRow.classList.add('hidden');
+                }
             }
 
             const activeIds = getActiveStudentIds();
@@ -21137,9 +21294,11 @@ ${subjectLine}
             const admin = !!(window.playerState && window.playerState.isAdmin);
             const shuffleBtn = document.getElementById('btnBusShuffle');
             const resetBtn = document.getElementById('btnBusReset');
+            const tripResetBtn = document.getElementById('btnBusTripReset');
             const adminBar = document.getElementById('busAdminBar');
             if (shuffleBtn) shuffleBtn.style.display = admin ? 'block' : 'none';
             if (resetBtn) resetBtn.style.display = admin ? 'block' : 'none';
+            if (tripResetBtn) tripResetBtn.style.display = admin ? 'block' : 'none';
             if (adminBar) adminBar.classList.toggle('hidden', !admin);
             const bulkPriceEl = document.getElementById('busBulkPrice');
             if (admin && bulkPriceEl && !window._busSeatAdminDirty) {
@@ -21769,6 +21928,28 @@ ${subjectLine}
             }
         };
 
+        window.masterResetBusForNextTrip = async function () {
+            if (!window.playerState || !window.playerState.isAdmin) {
+                return window.customAlert('마스터만 버스를 초기화할 수 있습니다.');
+            }
+            if (window._busSeatAdminDirty) {
+                return window.customAlert('자리 활성·가격을 먼저 저장해 주세요.');
+            }
+            const ok = await window.customConfirm(
+                '다음 여행을 위해 버스를 완전히 초기화할까요?\n\n구입·뽑기·이력을 모두 지웁니다.\n이미 낸 자리값은 돌려주지 않습니다.\n자리 활성과 기본 가격만 남습니다.'
+            );
+            if (!ok) return;
+            try {
+                await persistBusSeatPatch((live) => resetBusForNextTrip(live));
+                window._busSeatAdminDirty = false;
+                window.renderBusSeats({ force: true });
+                await window.customAlert('버스를 다음 여행용으로 초기화했습니다. 낸 봉은 돌려주지 않았습니다.');
+            } catch (e) {
+                console.error('masterResetBusForNextTrip', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
+
         window.visitBank = function() {
             window.switchTab('bank');
         };
@@ -21870,7 +22051,8 @@ ${subjectLine}
         function canSelectBankTransferTo(sid) {
             const id = String(sid || '');
             if (!id || id === 'guest') return false;
-            if (id === 'gm' || id === 'gm_a') return true;
+            if (id === 'gm') return true;
+            if (id === 'gm_a') return !!getStaffMember('gm_a');
             if (getBankHolderRecord(id)) return true;
             return (getActiveStudentIds() || []).map(String).includes(id);
         }
@@ -22055,7 +22237,10 @@ ${subjectLine}
                 const prev = sel.value;
                 const ids = [];
                 getActiveStudentIds().forEach((id) => { if (id && !ids.includes(id)) ids.push(String(id)); });
-                ['gm', 'gm_a'].forEach((id) => { if (!ids.includes(id)) ids.push(id); });
+                ['gm', 'gm_a'].forEach((id) => {
+                    if (id === 'gm_a' && !getStaffMember('gm_a')) return;
+                    if (!ids.includes(id)) ids.push(id);
+                });
                 const options = ids.filter((id) => id && id !== myId && id !== 'guest');
                 sel.innerHTML = options.map((id) => `<option value="${escapeHofText(id)}">${escapeHofText(bankHolderLabel(id))}</option>`).join('');
                 if (prev && options.includes(prev)) sel.value = prev;

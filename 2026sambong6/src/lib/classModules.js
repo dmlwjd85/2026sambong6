@@ -44,14 +44,8 @@ export function classModuleForTab(tabId) {
     return TAB_CLASS_MODULE[String(tabId || '')] || null;
 }
 
-export const NEW_CLASS_CONSTITUTION_ITEMS = [
-    { id: 'nc1', type: 'chapter', text: '제1장 우리 반 약속' },
-    { id: 'nc1_a1', type: 'clause', text: '제1조 서로를 존중한다. 말과 행동으로 친구의 마음을 다치게 하지 않는다.' },
-    { id: 'nc1_a2', type: 'clause', text: '제2조 정직하게 참여한다. 퀘스트·상점·은행은 있는 그대로 기록한다.' },
-    { id: 'nc1_a3', type: 'clause', text: '제3조 함께 돕는다. 도움이 필요한 친구를 외면하지 않는다.' },
-    { id: 'nc2', type: 'chapter', text: '제2장 고치기' },
-    { id: 'nc2_a1', type: 'clause', text: '제4조 이 헌법은 우리 반에 맞게 선생님이 고칠 수 있다.' },
-];
+/** 새 학급은 헌법을 비운 채로 시작합니다. 마스터가 우리 반 약속을 직접 적습니다. */
+export const NEW_CLASS_CONSTITUTION_ITEMS = [];
 
 export function classModuleById(id) {
     return CLASS_MODULE_CATALOG.find((m) => m.id === String(id || '')) || null;

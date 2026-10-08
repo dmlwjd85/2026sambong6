@@ -134,6 +134,12 @@ describe('대출 실행·달력', () => {
             vacationEndDate: '2027-01-06',
         }, ['2026-10-09']);
         assert.equal(isBankBusinessDay('2026-12-25', on), false);
+        const fromWorld = getLoanCalendarFromWorld({
+            vacationEnabled: false,
+            holidays: [{ date: '2026-10-09', name: '한글날' }],
+        });
+        assert.deepEqual(fromWorld.holidays, ['2026-10-09']);
+        assert.equal(isBankBusinessDay('2026-10-09', fromWorld), false);
     });
 
     it('서버 기준으로만 대출을 실행하고 신용불량 안내를 준다', () => {

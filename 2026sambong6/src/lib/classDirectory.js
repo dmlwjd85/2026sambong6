@@ -94,6 +94,18 @@ export function shouldRotateMasterPinOnReset(targetClassId) {
     return safeManagedClassId(targetClassId) !== SEED_MASTER_CLASS_ID;
 }
 
+/**
+ * 시드 마스터만 다른 학급 목록을 봅니다.
+ * 그 외 마스터·학생은 지금 들어와 있는 반만 남깁니다.
+ */
+export function directoryEntriesForViewer(entries, viewer, currentClassId) {
+    const list = Array.isArray(entries) ? entries.filter((e) => e && e.classId) : [];
+    if (isSeedMasterViewer(viewer, currentClassId)) return list;
+    const cur = String(currentClassId || '');
+    if (!cur) return [];
+    return list.filter((e) => e.classId === cur);
+}
+
 export function mergeClassDirectory(serverEntries, recentEntries, currentEntry) {
     const map = new Map();
     const push = (raw, id) => {

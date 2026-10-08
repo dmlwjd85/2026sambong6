@@ -15,6 +15,7 @@ import {
     isBusSeatDisabled,
     minBusSeatBid,
     resetBusAssignees,
+    resetBusForNextTrip,
     sanitizeBusState,
     shuffleBusAssignees,
 } from './busSeats.js';
@@ -340,6 +341,30 @@ describe('버스 자리 구입·입찰 환불', () => {
             updates: [{ id: 1, hidden: true, price: 12 }],
         });
         assert.equal(again.refunds.length, 0);
+    });
+
+    it('다음 여행 완전 초기화는 구입을 지우고 환불 목록을 만들지 않는다', () => {
+        const bought = applyBusSeatPurchase({
+            state: emptyBusState(),
+            seatId: 3,
+            buyerId: '4',
+            bid: 40,
+            buyerBong: 80,
+            purchaseId: 'buy-trip',
+        });
+        bought.state.seats[5].hidden = true;
+        bought.state.seats[5].price = 7;
+        const next = resetBusForNextTrip(bought.state);
+        assert.equal(next.seats[3].owner, null);
+        assert.equal(next.seats[3].paid, 0);
+        assert.equal(next.seats[3].assignee, null);
+        assert.equal(next.seats[5].hidden, true);
+        assert.equal(next.seats[5].price, 7);
+        assert.equal(next.purchaseHistory.length, 0);
+        const sum = busSeatSummary(next);
+        assert.equal(sum.owned, 0);
+        assert.equal(sum.filled, 0);
+        assert.equal(sum.hidden, 1);
     });
 });
 

@@ -96,6 +96,7 @@ import {
     isCreditDefaultOn,
     loanDueTotal,
     loanFieldsFromLifecycle,
+    loanStillOutstanding,
     planTakeLoan,
     repayLoanFailMessage,
     sanitizeBankLoan,
@@ -8958,7 +8959,8 @@ ${subjectLine}
                 const acted = applyLoanAction({
                     bong: accrued.bong,
                     bankRegularSavings: accrued.bankRegularSavings,
-                    bankLoan: accrued.bankLoan,
+                    // 새 대출은 만기 처리로 비우기 전의 서버 대출을 기준으로 막습니다.
+                    bankLoan: loanAction === 'take' ? serverData.bankLoan : accrued.bankLoan,
                     creditDefaultUntilYmd: accrued.creditDefaultUntilYmd,
                     bankNegativeSinceYmd: accrued.bankNegativeSinceYmd,
                 }, loanAction, {
@@ -8970,7 +8972,20 @@ ${subjectLine}
                     limit: getClassLoanLimit(),
                 });
                 if (!acted.ok) {
-                    return { ...accrued, rejected: true, loanReason: acted.reason };
+                    const keepLoan = loanAction === 'take' && loanStillOutstanding(serverData.bankLoan);
+                    return {
+                        ...accrued,
+                        rejected: true,
+                        loanReason: acted.reason,
+                        // 거절된 대출은 서버에 적힌 약정일을 화면에 그대로 둡니다.
+                        ...(keepLoan ? {
+                            bong: normalizeBongValue(Number(serverData.bong) || 0),
+                            bankRegularSavings: normalizeBongValue(Number(serverData.bankRegularSavings) || 0),
+                            bankLoan: serverData.bankLoan,
+                            creditDefaultUntilYmd: serverData.creditDefaultUntilYmd || '',
+                            bankNegativeSinceYmd: serverData.bankNegativeSinceYmd || '',
+                        } : {}),
+                    };
                 }
                 return {
                     ...accrued,
@@ -22126,21 +22141,26 @@ ${subjectLine}
             const loanStatus = document.getElementById('bankLoanStatus');
             const loanForm = document.getElementById('bankLoanForm');
             const repayBtn = document.getElementById('bankLoanRepayBtn');
-            const loan = sanitizeBankLoan(window.playerState && window.playerState.bankLoan);
+            const rawLoan = window.playerState && window.playerState.bankLoan;
+            const loan = sanitizeBankLoan(rawLoan);
+            const outstanding = loanStillOutstanding(rawLoan);
             const cap = getClassLoanLimit();
             const inDefault = studentIsCreditDefault(window.playerState);
             if (loanStatus) {
                 if (inDefault) {
                     loanStatus.innerHTML = `<span class="text-red-300 font-bold">${playerCreditDefaultMessage().replace(/\n/g, '<br>')}</span>`;
                 } else if (loan) {
-                    loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}`;
+                    loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
+                } else if (outstanding) {
+                    const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
+                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
                 } else if (cap < LOAN_MIN_UNIT) {
                     loanStatus.textContent = '현재 학급에서는 대출이 닫혀 있습니다.';
                 } else {
-                    loanStatus.textContent = `1인 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 최대 ${LOAN_MAX_BUSINESS_DAYS}영업일. 한 번에 하나만 빌릴 수 있습니다.`;
+                    loanStatus.textContent = `1인 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 최대 ${LOAN_MAX_BUSINESS_DAYS}영업일. 갚을 대출이 남아 있으면 다시 빌릴 수 없습니다.`;
                 }
             }
-            if (loanForm) loanForm.classList.toggle('hidden', !!(loan || inDefault || cap < LOAN_MIN_UNIT));
+            if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
             if (repayBtn) repayBtn.classList.toggle('hidden', !loan);
             if (typeof window.previewBankLoan === 'function') window.previewBankLoan({ silent: true });
             if (dailyLine) {
@@ -22202,7 +22222,9 @@ ${subjectLine}
                         const terms = Array.isArray(stu.bankTermDeposits) ? stu.bankTermDeposits : [];
                         const termTotal = normalizeBongValue(terms.reduce((sum, t) => sum + (Number(t && t.amount) || 0), 0));
                         const loanRow = sanitizeBankLoan(stu.bankLoan);
-                        const loanTxt = loanRow ? `${formatBongAmount(loanRow.principal)} / ${loanRow.dueYmd}` : '—';
+                        const loanTxt = loanRow
+                            ? `${formatBongAmount(loanRow.principal)} / ${loanRow.dueYmd}`
+                            : (loanStillOutstanding(stu.bankLoan) ? `상환 전${stu.bankLoan && stu.bankLoan.dueYmd ? ` / ${stu.bankLoan.dueYmd}` : ''}` : '—');
                         const defTxt = studentIsCreditDefault(stu) ? '신용불량' : '';
                         rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
@@ -22725,9 +22747,14 @@ ${subjectLine}
         window.previewBankLoan = function(opts = {}) {
             const preview = document.getElementById('bankLoanPreview');
             if (!preview) return;
-            const loan = sanitizeBankLoan(window.playerState && window.playerState.bankLoan);
+            const rawLoan = window.playerState && window.playerState.bankLoan;
+            const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                preview.textContent = `약정일 ${loan.dueYmd}에 ${formatBongAmount(loanDueTotal(loan))}가 자동이체됩니다.`;
+                preview.textContent = `약정일 ${loan.dueYmd}에 ${formatBongAmount(loanDueTotal(loan))}가 자동이체됩니다. 갚기 전에는 새 대출이 되지 않습니다.`;
+                return;
+            }
+            if (loanStillOutstanding(rawLoan)) {
+                preview.textContent = takeLoanFailMessage('active');
                 return;
             }
             const amtEl = document.getElementById('bankLoanAmountInput');
@@ -23969,6 +23996,7 @@ ${subjectLine}
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
+            let blockedLoanReason = '';
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
             let blockedByStockTrade = false;
@@ -24048,6 +24076,7 @@ ${subjectLine}
                             });
                             if (reconciled.rejected) {
                                 blockedByBankReconcile = true;
+                                blockedLoanReason = String(reconciled.loanReason || '');
                                 serverRestoreData = {
                                     ...serverData,
                                     bong: reconciled.bong,
@@ -24271,7 +24300,11 @@ ${subjectLine}
                         blockedByDuplicateQuest
                             ? '이미 서버에 완료 처리된 퀘스트입니다.\n중복 보상을 막기 위해 저장하지 않았습니다. 새로고침 후 확인해 주세요.'
                             : blockedByBankReconcile
-                            ? '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.'
+                            ? (blockedLoanReason === 'active'
+                                ? takeLoanFailMessage('active')
+                                : blockedLoanReason === 'default'
+                                ? takeLoanFailMessage('default')
+                                : '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.')
                             : blockedByStockTrade
                             ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +

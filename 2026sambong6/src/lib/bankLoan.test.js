@@ -16,6 +16,7 @@ import {
     getLoanCalendarFromWorld,
     isBankBusinessDay,
     isCreditDefaultOn,
+    loanStillOutstanding,
     planTakeLoan,
     sanitizeLoanAmount,
     sanitizeLoanLimit,
@@ -67,6 +68,12 @@ describe('대출 실행', () => {
         assert.equal(ok.loan.principal, 40);
         assert.equal(ok.loan.dueYmd, addBusinessDaysYmd(today, 3, cal));
         assert.equal(planTakeLoan({ ...ok, existingLoan: ok.loan, amount: 10, days: 1, ratePercent: 10, limit: 50, todayYmd: today }).ok, false);
+        assert.equal(planTakeLoan({
+            existingLoan: { principal: 20, dueYmd: '2026-10-20' },
+            amount: 10, days: 1, ratePercent: 10, limit: 50, todayYmd: today,
+        }).reason, 'active');
+        assert.equal(loanStillOutstanding(null), false);
+        assert.equal(loanStillOutstanding({}), false);
         assert.equal(planTakeLoan({ inDefault: true, amount: 10, days: 1, ratePercent: 10, limit: 50, todayYmd: today }).reason, 'default');
         assert.equal(planTakeLoan({ amount: 80, days: 1, ratePercent: 10, limit: 50, todayYmd: today }).reason, 'limit');
         assert.equal(planTakeLoan({ amount: 10, days: 1, ratePercent: 10, limit: 0, todayYmd: today }).reason, 'disabled');
@@ -155,5 +162,58 @@ describe('대출 실행·달력', () => {
         });
         assert.equal(blocked.ok, false);
         assert.equal(blocked.reason, 'default');
+        assert.equal(blocked.bankLoan.dueYmd, taken.bankLoan.dueYmd);
+    });
+
+    it('갚을 대출이 있으면 새 대출로 약정일을 밀지 않는다', () => {
+        const first = applyLoanAction({ bong: 0, bankRegularSavings: 0 }, 'take', {
+            amount: 20, days: 2, ratePercent: 10, limit: 50, todayYmd: '2026-09-15', calendar: cal, nowMs: 1,
+        });
+        const due = first.bankLoan.dueYmd;
+        const again = applyLoanAction({
+            bong: first.bong,
+            bankRegularSavings: 0,
+            bankLoan: first.bankLoan,
+        }, 'take', {
+            amount: 40, days: 5, ratePercent: 10, limit: 50, todayYmd: '2026-09-16', calendar: cal, nowMs: 2,
+        });
+        assert.equal(again.ok, false);
+        assert.equal(again.reason, 'active');
+        assert.equal(again.bankLoan.dueYmd, due);
+        assert.equal(again.bankLoan.principal, 20);
+        assert.equal(again.bong, first.bong);
+
+        const onDue = applyLoanAction({
+            bong: 100,
+            bankRegularSavings: 0,
+            bankLoan: first.bankLoan,
+        }, 'take', {
+            amount: 40, days: 5, ratePercent: 10, limit: 50, todayYmd: due, calendar: cal, nowMs: 3,
+        });
+        assert.equal(onDue.ok, false);
+        assert.equal(onDue.reason, 'active');
+        assert.equal(onDue.bankLoan.dueYmd, due);
+        assert.equal(onDue.bankLoan.id, first.bankLoan.id);
+        assert.equal(onDue.bong, 100);
+
+        const partial = { principal: 20, dueYmd: '2026-10-20' };
+        const broken = applyLoanAction({ bong: 5, bankRegularSavings: 0, bankLoan: partial }, 'take', {
+            amount: 10, days: 1, ratePercent: 10, limit: 50, todayYmd: '2026-09-15', calendar: cal, nowMs: 4,
+        });
+        assert.equal(broken.ok, false);
+        assert.equal(broken.reason, 'active');
+        assert.equal(broken.bankLoan.dueYmd, '2026-10-20');
+        assert.equal(broken.bong, 5);
+
+        const repaid = applyLoanAction({
+            bong: 100,
+            bankRegularSavings: 0,
+            bankLoan: first.bankLoan,
+        }, 'repay', {
+            todayYmd: '2026-09-15', calendar: cal,
+        });
+        assert.equal(repaid.ok, true);
+        assert.equal(repaid.bankLoan, null);
+        assert.ok(repaid.bong < 100);
     });
 });

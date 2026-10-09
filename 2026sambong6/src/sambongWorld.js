@@ -2699,13 +2699,14 @@ function redrawPlazaGrantsUi() {
             return String(window.classMeta?.gmaEditStudentId || '1');
         }
 
-        function isSeedClassMeta(meta, classId = appId) {
-            return !!(meta && (meta.isDemoSeed || String(classId) === SEED_CLASS_ID));
+        function isSeedClassMeta(meta, classId) {
+            const id = classId || (meta && meta.classId) || '';
+            return !!(meta && (meta.isDemoSeed || String(id) === SEED_CLASS_ID));
         }
 
         /** 시드 반만 보조 마스터(gm_a)를 둡니다. 다른 학급 스태프에서 지웁니다. */
-        function getClassStaffFromMeta(meta, classId = appId) {
-            const seed = isSeedClassMeta(meta, classId);
+        function getClassStaffFromMeta(meta, classId) {
+            const seed = isSeedClassMeta(meta, classId || (meta && meta.classId) || '');
             const raw = Array.isArray(meta && meta.staff) ? meta.staff.filter((s) => s && s.id) : [];
             if (seed) return raw.length ? raw : DEFAULT_CLASS_STAFF.map((s) => ({ ...s }));
             const staff = raw.filter((s) => String(s.id) !== 'gm_a');
@@ -2724,8 +2725,20 @@ function redrawPlazaGrantsUi() {
         }
 
         function getClassStaff() {
-            const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
-            return getClassStaffFromMeta(meta, appId);
+            const meta = window.classMeta;
+            // appId 확정 전(첫 화면 그리기)에는 학급 코드를 읽지 않습니다.
+            if (!meta) {
+                return [{
+                    id: 'gm',
+                    name: '담임 선생님',
+                    gender: 'M',
+                    role: 'teacher',
+                    label: '담임교사',
+                    optionClass: 'text-sb-gold',
+                    emoji: '👑',
+                }];
+            }
+            return getClassStaffFromMeta(meta, meta.classId || '');
         }
 
         function getStaffMember(staffId) {

@@ -153,8 +153,35 @@ export function loanStillOutstanding(raw) {
     return false;
 }
 
+function validLoanYmd(raw) {
+    const due = String(raw || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : '';
+}
+
+/**
+ * 정규 대출이 아니어도 갚을 수 있는 기록.
+ * 화면은 「갚은 뒤 다시 신청」이라고 안내하므로, 형식이 깨져도 상환 경로는 남겨 둡니다.
+ * 적혀 있지 않은 이자는 만들지 않습니다.
+ */
+export function readOutstandingLoan(raw) {
+    const clean = sanitizeBankLoan(raw);
+    if (clean) return clean;
+    if (!raw || typeof raw !== 'object' || !loanStillOutstanding(raw)) return null;
+    const principalRaw = Math.floor(Number(raw.principal));
+    const interestRaw = Math.floor(Number(raw.interest));
+    return {
+        id: String(raw.id || '').trim() || 'loan_outstanding',
+        principal: Number.isFinite(principalRaw) && principalRaw > 0 ? principalRaw : 0,
+        interest: Number.isFinite(interestRaw) && interestRaw > 0 ? interestRaw : 0,
+        days: Math.max(0, Math.floor(Number(raw.days)) || 0),
+        startYmd: validLoanYmd(raw.startYmd),
+        dueYmd: validLoanYmd(raw.dueYmd),
+        rateAtStart: Math.max(0, Number(raw.rateAtStart) || 0),
+    };
+}
+
 export function loanDueTotal(loan) {
-    const clean = sanitizeBankLoan(loan);
+    const clean = readOutstandingLoan(loan);
     if (!clean) return 0;
     return clean.principal + clean.interest;
 }
@@ -270,9 +297,9 @@ export function planTakeLoan({
 }
 
 export function planRepayLoan(state) {
-    const loan = sanitizeBankLoan(state && state.bankLoan);
+    const loan = readOutstandingLoan(state && state.bankLoan);
     if (!loan) return { ok: false, reason: 'none' };
-    const due = loanDueTotal(loan);
+    const due = loan.principal + loan.interest;
     const collected = collectLoanRepayment({
         bong: state && state.bong,
         regular: state && state.bankRegularSavings,
@@ -286,10 +313,13 @@ export function planRepayLoan(state) {
  */
 export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     const today = String(todayYmd || '');
-    const loan0 = sanitizeBankLoan(state && state.bankLoan);
+    const rawLoan = state && state.bankLoan;
+    const cleanLoan = sanitizeBankLoan(rawLoan);
+    const loan0 = cleanLoan || readOutstandingLoan(rawLoan);
     let bong = Math.floor(Number(state && state.bong) || 0);
     let regular = Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0));
-    let loan = loan0;
+    // 약정 전에는 서버에 적힌 대출 모양을 유지합니다. 정규 대출만 정리된 값으로 둡니다.
+    let loan = cleanLoan || (loan0 ? rawLoan : null);
     let defaultUntil = String(state && state.creditDefaultUntilYmd || '').trim();
     let negSince = String(state && state.bankNegativeSinceYmd || '').trim();
     if (negSince && !/^\d{4}-\d{2}-\d{2}$/.test(negSince)) negSince = '';
@@ -297,19 +327,19 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     const msgs = [];
     let changed = false;
 
-    if (loan && today && today >= loan.dueYmd) {
-        const due = loanDueTotal(loan);
+    if (loan0 && today && loan0.dueYmd && today >= loan0.dueYmd) {
+        const due = loan0.principal + loan0.interest;
         const paid = collectLoanRepayment({ bong, regular, due });
         bong = paid.bong;
         regular = paid.regular;
         msgs.push({
             kind: 'repay',
-            principal: loan.principal,
-            interest: loan.interest,
+            principal: loan0.principal,
+            interest: loan0.interest,
             due,
             fromWallet: paid.fromWallet,
             fromRegular: paid.fromRegular,
-            dueYmd: loan.dueYmd,
+            dueYmd: loan0.dueYmd,
         });
         loan = null;
         changed = true;

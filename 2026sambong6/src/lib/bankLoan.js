@@ -134,6 +134,25 @@ export function sanitizeBankLoan(raw) {
     };
 }
 
+/**
+ * 갚을 대출 기록이 남아 있는지.
+ * 형식이 깨져 정규 대출로 읽히지 않아도, 원금·이자·약정일·아이디가 있으면 남은 대출로 봅니다.
+ * 빈 값은 대출이 없는 상태입니다.
+ */
+export function loanStillOutstanding(raw) {
+    if (sanitizeBankLoan(raw)) return true;
+    if (!raw || typeof raw !== 'object') return false;
+    const principal = Math.floor(Number(raw.principal));
+    const interest = Math.floor(Number(raw.interest));
+    const due = String(raw.dueYmd || '').trim();
+    const id = String(raw.id || '').trim();
+    if (Number.isFinite(principal) && principal > 0) return true;
+    if (Number.isFinite(interest) && interest > 0) return true;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(due)) return true;
+    if (id) return true;
+    return false;
+}
+
 export function loanDueTotal(loan) {
     const clean = sanitizeBankLoan(loan);
     if (!clean) return 0;
@@ -225,7 +244,7 @@ export function planTakeLoan({
     nowMs,
 } = {}) {
     if (inDefault) return { ok: false, reason: 'default' };
-    if (sanitizeBankLoan(existingLoan)) return { ok: false, reason: 'active' };
+    if (loanStillOutstanding(existingLoan)) return { ok: false, reason: 'active' };
     const cap = sanitizeLoanLimit(limit);
     if (cap < LOAN_MIN_UNIT) return { ok: false, reason: 'disabled' };
     const principal = sanitizeLoanAmount(amount);
@@ -343,13 +362,34 @@ export function loanFieldsFromLifecycle(result) {
     };
 }
 
+/** 거절할 때 약정일과 잔액을 그대로 둡니다. */
+function rejectLoanAction(state, reason) {
+    return {
+        ok: false,
+        reason,
+        changed: false,
+        msgs: [],
+        bong: Math.floor(Number(state && state.bong) || 0),
+        bankRegularSavings: Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0)),
+        bankLoan: state && state.bankLoan ? state.bankLoan : null,
+        creditDefaultUntilYmd: String(state && state.creditDefaultUntilYmd || ''),
+        bankNegativeSinceYmd: String(state && state.bankNegativeSinceYmd || ''),
+    };
+}
+
 /**
  * 만기 자동이체 뒤에 대출 실행/중도상환을 서버 기준으로 적용합니다.
  * 클라이언트가 보낸 bankLoan 객체는 믿지 않습니다.
+ * 갚을 대출이 있으면 새 대출로 약정일을 바꾸지 않습니다.
  */
 export function applyLoanAction(state, action, opts = {}) {
     const today = String(opts.todayYmd || '');
     const calendar = opts.calendar || {};
+    // 약정일 자동이체가 대출을 지운 뒤에 같은 요청으로 다시 빌리면 납부일이 밀립니다.
+    if (action === 'take' && loanStillOutstanding(state && state.bankLoan)) {
+        const reason = isCreditDefaultOn(state, today) ? 'default' : 'active';
+        return rejectLoanAction(state, reason);
+    }
     const life = applyLoanLifecycle(state, today, calendar);
     const next = {
         ...loanFieldsFromLifecycle(life),

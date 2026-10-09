@@ -98,6 +98,7 @@ import {
     loanFieldsFromLifecycle,
     loanStillOutstanding,
     planTakeLoan,
+    readOutstandingLoan,
     repayLoanFailMessage,
     sanitizeBankLoan,
     sanitizeLoanAmount,
@@ -22153,7 +22154,11 @@ ${subjectLine}
                     loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
                 } else if (outstanding) {
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
-                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
+                    const payable = readOutstandingLoan(rawLoan);
+                    const amountLine = payable && (payable.principal > 0 || payable.interest > 0)
+                        ? ` 갚을 금액 ${formatBongAmount(payable.principal + payable.interest)}.`
+                        : '';
+                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '') + amountLine;
                 } else if (cap < LOAN_MIN_UNIT) {
                     loanStatus.textContent = '현재 학급에서는 대출이 닫혀 있습니다.';
                 } else {
@@ -22161,7 +22166,7 @@ ${subjectLine}
                 }
             }
             if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
-            if (repayBtn) repayBtn.classList.toggle('hidden', !loan);
+            if (repayBtn) repayBtn.classList.toggle('hidden', !readOutstandingLoan(rawLoan));
             if (typeof window.previewBankLoan === 'function') window.previewBankLoan({ silent: true });
             if (dailyLine) {
                 const total = getBankTotalDeposits();
@@ -22824,9 +22829,9 @@ ${subjectLine}
         window.repayBankLoan = async function() {
             if (_bankLoanBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const loan = sanitizeBankLoan(window.playerState.bankLoan);
+            const loan = readOutstandingLoan(window.playerState.bankLoan);
             if (!loan) return window.customAlert(repayLoanFailMessage('none'));
-            const due = loanDueTotal(loan);
+            const due = loan.principal + loan.interest;
             const ok = await window.customConfirm(
                 `지금 갚으면 약정 이자 ${formatBongAmount(loan.interest)}가 그대로 포함됩니다.\n합계 ${formatBongAmount(due)}를 지갑→일반예금 순으로 갚을까요?\n모자라면 지갑이 마이너스가 됩니다.`
             );

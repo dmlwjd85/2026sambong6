@@ -9,6 +9,7 @@ import {
     addCalendarDaysYmd,
     applyLoanAction,
     applyLoanLifecycle,
+    readOutstandingLoan,
     collectLoanRepayment,
     computeLoanInterest,
     countBusinessDaysAfter,
@@ -215,5 +216,40 @@ describe('대출 실행·달력', () => {
         assert.equal(repaid.ok, true);
         assert.equal(repaid.bankLoan, null);
         assert.ok(repaid.bong < 100);
+    });
+
+    it('형식이 깨진 대출도 갚기와 약정일 자동이체로 비운다', () => {
+        const partial = { principal: 20, interest: 3, dueYmd: '2026-10-20' };
+        const payable = readOutstandingLoan(partial);
+        assert.equal(payable.principal, 20);
+        assert.equal(payable.interest, 3);
+        const early = applyLoanAction({ bong: 50, bankRegularSavings: 10, bankLoan: partial }, 'repay', {
+            todayYmd: '2026-09-15', calendar: cal,
+        });
+        assert.equal(early.ok, true);
+        assert.equal(early.bankLoan, null);
+        assert.equal(early.bong, 27);
+        assert.equal(early.bankRegularSavings, 10);
+
+        const onDue = applyLoanLifecycle({
+            bong: 5,
+            bankRegularSavings: 30,
+            bankLoan: partial,
+        }, '2026-10-20', cal);
+        assert.equal(onDue.bankLoan, null);
+        assert.equal(onDue.bong, 0);
+        assert.equal(onDue.bankRegularSavings, 12);
+        assert.ok(onDue.msgs.some((m) => m.kind === 'repay' && m.due === 23));
+
+        const idOnly = { id: 'loan_ghost' };
+        const held = applyLoanLifecycle({ bong: 40, bankRegularSavings: 0, bankLoan: idOnly }, '2026-10-20', cal);
+        assert.equal(held.bong, 40);
+        assert.equal(held.bankLoan.id, 'loan_ghost');
+        const cleared = applyLoanAction({ bong: 40, bankRegularSavings: 0, bankLoan: idOnly }, 'repay', {
+            todayYmd: '2026-10-20', calendar: cal,
+        });
+        assert.equal(cleared.ok, true);
+        assert.equal(cleared.bankLoan, null);
+        assert.equal(cleared.bong, 40);
     });
 });

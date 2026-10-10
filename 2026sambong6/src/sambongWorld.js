@@ -23848,18 +23848,13 @@ ${subjectLine}
                 todoBox.innerHTML = dailyQuestList.map(q => {
                 const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                 const act = done ? 'cancelQuest' : 'attemptQuest';
+                const todoIcon = done ? 'fa-check text-cyan-300' : (q.icon || 'fa-star');
+                const todoTitle = escapeHtmlAttr(`${q.name}${q.desc ? ' · ' + q.desc : ''}`);
                 return `
-                <button type="button" class="flex items-center gap-2 p-2.5 rounded-xl border w-full text-left cursor-pointer transition touch-manipulation ${done ? 'border-cyan-400/80 bg-gradient-to-r from-cyan-950/70 to-slate-900/80 shadow-[0_0_12px_rgba(34,211,238,0.15)] ring-1 ring-cyan-500/30' : 'bg-slate-900/60 border-slate-700'}" onclick="window.${act}('${q.id}', ${q.xp}, ${q.bong})">
-                    <div class="w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${done?'border-cyan-400 bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.5)]':'border-slate-500'}">
-                        <i class="fa-solid fa-check text-white text-[10px] ${done?'opacity-100':'opacity-0'}"></i>
-                    </div>
-                    <div class="flex-grow min-w-0">
-                        <div class="text-xs font-bold ${done ? 'text-cyan-100' : q.color} truncate">${done ? '<span class="text-[9px] text-cyan-300 mr-1">완료</span>' : ''}${q.name}</div>
-                    </div>
-                    <div class="shrink-0 bg-slate-800 px-1.5 py-0.5 rounded text-right">
-                        <span class="text-sb-blue text-[9px] font-bold block">+${q.xp}</span>
-                        <span class="text-sb-gold text-[9px] font-bold block">+${formatBongAmount(q.bong)}</span>
-                    </div>
+                <button type="button" title="${todoTitle}" class="quest-tile touch-manipulation ${done ? 'border-cyan-400/80 bg-gradient-to-br from-cyan-950/70 to-slate-900/80 shadow-[0_0_12px_rgba(34,211,238,0.15)] ring-1 ring-cyan-500/30' : 'bg-slate-900/60 border-slate-700'}" onclick="window.${act}('${q.id}', ${q.xp}, ${q.bong})">
+                    <span class="quest-tile-icon ${done ? 'text-cyan-300' : q.color}"><i class="fa-solid ${todoIcon}"></i></span>
+                    <span class="quest-tile-name ${done ? 'text-cyan-100' : q.color}">${q.name}</span>
+                    <span class="quest-tile-pay"><span class="text-sb-blue">+${q.xp}X</span> <span class="text-sb-gold">+${formatBongAmount(q.bong)}</span></span>
                 </button>`;
                 }).join('');
             }
@@ -23905,48 +23900,47 @@ ${subjectLine}
                 document.getElementById(containerId).innerHTML = quests.map(q => {
                     const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                     const unlocked = window.playerState.unlockedQuests && window.playerState.unlockedQuests[q.id];
-                    let cls = "border-slate-700"; 
-                    let act = `window.attemptQuest('${q.id}', ${q.xp}, ${q.bong})`; 
-                    let icn = q.icon ? `<i class="fa-solid ${q.icon} mr-1 text-slate-500"></i>` : '';
-                    
+                    let cls = "border-slate-700";
+                    let act = `window.attemptQuest('${q.id}', ${q.xp}, ${q.bong})`;
+
                     if (done) {
                         cls =
                             q.type === 'daily'
                                 ? 'border-cyan-400/80 bg-gradient-to-br from-cyan-950/50 to-slate-900/80 ring-1 ring-cyan-500/35 shadow-[0_0_12px_rgba(34,211,238,0.12)]'
                                 : 'border-sb-blue bg-slate-800';
-                        icn = `<i class="fa-solid fa-check ${q.type === 'daily' ? 'text-cyan-300' : 'text-sb-blue'} mr-1"></i>`;
                         act = `window.cancelQuest('${q.id}', ${q.xp}, ${q.bong})`;
                     }
                     else if (creditBlocked) {
                         cls = "opacity-50 border-red-800";
                         act = `window.customAlert(${JSON.stringify(playerCreditDefaultMessage())})`;
                     }
-                    else if (q.type === 'locked' && !unlocked) { 
-                        cls = "opacity-50 border-slate-700"; 
-                        act = `window.promptUnlock('${q.id}')`; 
+                    else if (q.type === 'locked' && !unlocked) {
+                        cls = "opacity-50 border-slate-700";
+                        act = `window.promptUnlock('${q.id}')`;
                     }
-                    else if (q.type === 'locked' && unlocked) { 
-                        cls = "border-emerald-500"; 
-                        icn = `<i class="fa-solid fa-unlock text-emerald-400 mr-1"></i>`; 
+                    else if (q.type === 'locked' && unlocked) {
+                        cls = "border-emerald-500";
                     }
                     else if (q.type === 'weekly' && today !== 5 && !window.playerState.isAdmin) { 
                         cls = "opacity-50 border-slate-700"; 
                         act = `window.customAlert('금요일에만 가능합니다!')`; 
                     }
                     
-                    let ext = ''; 
-                    if(q.id === 'q1') ext = `<span class="text-orange-400 text-[9px] ml-1">(🔥${window.playerState.earlyBirdCount||0}/5)</span>`;
+                    let ext = '';
+                    if (q.id === 'q1') ext = `<span class="quest-tile-extra">🔥${window.playerState.earlyBirdCount || 0}/5</span>`;
+                    const tileIcon = done
+                        ? 'fa-check'
+                        : (q.type === 'locked' && unlocked ? 'fa-unlock' : (q.icon || 'fa-star'));
+                    const tileIconColor = done
+                        ? (q.type === 'daily' ? 'text-cyan-300' : 'text-sb-blue')
+                        : (q.type === 'locked' && unlocked ? 'text-emerald-400' : (q.color || 'text-slate-300'));
+                    const tileTitle = escapeHtmlAttr(`${q.name}${q.desc ? ' · ' + q.desc : ''}`);
 
                     return `
-                    <button type="button" onclick="${act}" class="w-full text-left p-3 rounded-xl border bg-slate-800/50 transition flex justify-between items-center touch-manipulation ${cls}">
-                        <div class="flex-grow min-w-0 pr-2">
-                            <div class="font-bold ${done?'text-slate-400':q.color} text-sm truncate">${icn}${q.name}${ext}</div>
-                            <div class="text-[9px] text-slate-400 truncate">${q.desc}</div>
-                        </div>
-                        <div class="shrink-0 bg-slate-900 px-2 py-1 rounded text-right">
-                            <span class="text-sb-blue font-bold text-[10px] block">+${q.xp}X</span>
-                            <span class="text-sb-gold font-bold text-[10px] block">+${formatBongAmount(q.bong)}</span>
-                        </div>
+                    <button type="button" title="${tileTitle}" onclick="${act}" class="quest-tile bg-slate-800/50 touch-manipulation ${cls}">
+                        <span class="quest-tile-icon ${tileIconColor}"><i class="fa-solid ${tileIcon}"></i></span>
+                        <span class="quest-tile-name ${done ? 'text-slate-300' : q.color}">${q.name}${ext}</span>
+                        <span class="quest-tile-pay"><span class="text-sb-blue">+${q.xp}X</span> <span class="text-sb-gold">+${formatBongAmount(q.bong)}</span></span>
                     </button>`;
                 }).join('');
             };

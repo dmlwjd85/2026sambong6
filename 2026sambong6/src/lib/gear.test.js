@@ -144,6 +144,10 @@ describe('방패 방어', () => {
 describe('스킨 미세 능력', () => {
     it('장착 스킨 문구와 가산이 있다', () => {
         assert.match(skinStatLabel('f_ninja'), /발동/);
+        assert.match(skinStatLabel('f_pk_ember'), /발동/);
+        assert.match(skinStatLabel('f_kart_red'), /발동/);
+        assert.match(skinStatLabel('f_block_builder'), /발동/);
+        assert.match(skinStatLabel('f_brawl_hammer'), /발동/);
         const cosm = collectCosmeticBonuses({ equippedSkins: { f_ninja: true, sk_red: true } });
         assert.ok(cosm.weaponProc > 0 && cosm.weaponProc < 0.02);
         assert.match(staffLookStatLabel('staff_zeus'), /발동/);

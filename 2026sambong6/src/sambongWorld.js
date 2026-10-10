@@ -2373,6 +2373,26 @@ function redrawPlazaGrantsUi() {
             { id: 'f_wolf', type: 'face', name: '늑대', desc: '달빛 수호대', price: 320, emoji: '🐺', img: 'chars/face-wolf.webp' },
             { id: 'f_phoenix', type: 'face', name: '봉황', desc: '불꽃의 날개', price: 380, emoji: '🔥', img: 'chars/face-phoenix.webp' },
             { id: 'f_scholar', type: 'face', name: '선비', desc: '지혜의 책', price: 260, emoji: '📜', img: 'chars/face-scholar.webp' },
+            { id: 'f_pk_ember', type: 'face', name: '불꽃령', desc: '포켓몬 스타일 · 동그란 불꽃 정령', price: 300, emoji: '🔥', img: 'chars/face-pk-ember.webp' },
+            { id: 'f_pk_bubble', type: 'face', name: '물방울거북', desc: '포켓몬 스타일 · 물방울을 인 거북', price: 300, emoji: '🐢', img: 'chars/face-pk-bubble.webp' },
+            { id: 'f_pk_leaf', type: 'face', name: '잎새새', desc: '포켓몬 스타일 · 잎사귀 새', price: 300, emoji: '🐦', img: 'chars/face-pk-leaf.webp' },
+            { id: 'f_pk_bolt', type: 'face', name: '번개풍뎅이', desc: '포켓몬 스타일 · 번개 풍뎅이', price: 300, emoji: '⚡', img: 'chars/face-pk-bolt.webp' },
+            { id: 'f_pk_pebble', type: 'face', name: '바위곰', desc: '포켓몬 스타일 · 돌멩이 곰', price: 320, emoji: '🐻', img: 'chars/face-pk-pebble.webp' },
+            { id: 'f_kart_red', type: 'face', name: '질주레드', desc: '카트라이더 스타일 · 빨간 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-red.webp' },
+            { id: 'f_kart_blue', type: 'face', name: '드리프트블루', desc: '카트라이더 스타일 · 파란 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-blue.webp' },
+            { id: 'f_kart_yellow', type: 'face', name: '부스터옐로', desc: '카트라이더 스타일 · 노란 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-yellow.webp' },
+            { id: 'f_kart_pink', type: 'face', name: '코너핑크', desc: '카트라이더 스타일 · 분홍 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-pink.webp' },
+            { id: 'f_kart_green', type: 'face', name: '터보그린', desc: '카트라이더 스타일 · 초록 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-green.webp' },
+            { id: 'f_block_builder', type: 'face', name: '블록빌더', desc: '로블록스 스타일 · 망치 블록 친구', price: 260, emoji: '🧱', img: 'chars/face-block-builder.webp' },
+            { id: 'f_block_knight', type: 'face', name: '블록기사', desc: '로블록스 스타일 · 블록 기사', price: 260, emoji: '🧱', img: 'chars/face-block-knight.webp' },
+            { id: 'f_block_astro', type: 'face', name: '블록우주', desc: '로블록스 스타일 · 블록 우주인', price: 260, emoji: '🧱', img: 'chars/face-block-astro.webp' },
+            { id: 'f_block_ninja', type: 'face', name: '블록닌자', desc: '로블록스 스타일 · 블록 닌자', price: 260, emoji: '🧱', img: 'chars/face-block-ninja.webp' },
+            { id: 'f_block_mage', type: 'face', name: '블록마법', desc: '로블록스 스타일 · 블록 마법사', price: 260, emoji: '🧱', img: 'chars/face-block-mage.webp' },
+            { id: 'f_brawl_hammer', type: 'face', name: '망치파이터', desc: '브롤스타즈 스타일 · 큰 나무 망치', price: 320, emoji: '🔨', img: 'chars/face-brawl-hammer.webp' },
+            { id: 'f_brawl_bloom', type: 'face', name: '꽃잎슈터', desc: '브롤스타즈 스타일 · 꽃 블래스터', price: 320, emoji: '🌸', img: 'chars/face-brawl-bloom.webp' },
+            { id: 'f_brawl_boxer', type: 'face', name: '로봇복서', desc: '브롤스타즈 스타일 · 글러브 로봇', price: 320, emoji: '🥊', img: 'chars/face-brawl-boxer.webp' },
+            { id: 'f_brawl_cannon', type: 'face', name: '대포해적', desc: '브롤스타즈 스타일 · 작은 대포', price: 320, emoji: '💣', img: 'chars/face-brawl-cannon.webp' },
+            { id: 'f_brawl_frost', type: 'face', name: '얼음궁수', desc: '브롤스타즈 스타일 · 얼음 활', price: 320, emoji: '❄️', img: 'chars/face-brawl-frost.webp' },
             { id: 'f_staff_dragon', type: 'face', name: '용', desc: '세계수의 용왕 · Lv.80', price: 2000, minLevel: 80, emoji: '🐉', img: 'chars/staff-dragon.webp' },
             { id: 'f_staff_tiger', type: 'face', name: '호랑이', desc: '산을 지키는 호랑이 · Lv.80', price: 2000, minLevel: 80, emoji: '🐯', img: 'chars/staff-tiger.webp' },
             { id: 'f_staff_hyunmu', type: 'face', name: '현무', desc: '북쪽을 지키는 현무 · Lv.80', price: 2000, minLevel: 80, emoji: '🐢', img: 'chars/staff-hyunmu.webp' },
@@ -24355,7 +24375,7 @@ ${subjectLine}
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
                 void window.applyPersonalLunchDeductionIfNeeded();
-                /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 상단 패널) */
+                /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 

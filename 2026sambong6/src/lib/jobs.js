@@ -337,7 +337,7 @@ export function studentHasJob(jobs, jobSpec, catalog = []) {
     return source.some((owned) => ownedJobMatchesSpec(owned, jobSpec));
 }
 
-/** 같은 직업을 이미 쓰면 빼고, 없으면 그 직업만 장착합니다. 1인 1역이라 다른 직업은 교체됩니다. */
+/** 같은 직업을 이미 쓰면 빼고, 없으면 기존 직업 옆에 하나 더 답니다. 1인 다역입니다. */
 export function toggleJobAssignment(jobs, jobSpec, catalog = []) {
     const list = Array.isArray(jobs) ? jobs.slice() : [];
     if (!jobSpec || (!jobSpec.name && !jobSpec.id)) return list;
@@ -359,6 +359,5 @@ export function toggleJobAssignment(jobs, jobSpec, catalog = []) {
         color: String((jobSpec && jobSpec.color) || 'text-blue-500'),
     };
     if (jobSpec.id != null && jobSpec.id !== '') entry.id = String(jobSpec.id);
-    // 헌법 1인 1역: 새 직업은 기존 직업을 밀어내지 않고 교체합니다.
-    return [entry];
+    return list.concat([entry]);
 }

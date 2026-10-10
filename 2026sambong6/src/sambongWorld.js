@@ -23,6 +23,7 @@ import {
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
     downloadAdminStudentWorkbook,
+    downloadAoaWorkbook,
     downloadAdminStudentJson as exportStudentJsonFile,
     downloadAdminStudentCsv as exportStudentCsvFile,
 } from './lib/adminDataExport.js';
@@ -94,9 +95,12 @@ import {
     creditDefaultBlockMessage,
     getLoanCalendarFromWorld,
     isCreditDefaultOn,
+    isLoanPenaltyActive,
     loanDueTotal,
     loanFieldsFromLifecycle,
+    loanPenaltyBlockMessage,
     loanStillOutstanding,
+    planPartialRepay,
     planTakeLoan,
     repayLoanFailMessage,
     sanitizeBankLoan,
@@ -587,6 +591,23 @@ import {
     studentHasJob,
     toggleJobAssignment,
 } from './lib/jobs.js';
+import {
+    attendanceDimsCard,
+    attendanceMarkForToday,
+    buildAttendanceSheetRows,
+    planAttendanceChange,
+} from './lib/attendanceBlessing.js';
+import {
+    createChecklist,
+    deleteChecklist,
+    sanitizeChecklists,
+    toggleChecklistNumber,
+} from './lib/classChecklist.js';
+import {
+    planPeerPraise,
+    praiseFailMessage,
+    sanitizePraiseBoard,
+} from './lib/peerPraise.js';
 import {
     buildScreenNotice,
     closeScreenNotice,
@@ -1404,10 +1425,13 @@ function redrawPlazaGrantsUi() {
         }
 
         function studentIsCreditDefault(stu, todayYmd = getLocalDateStr()) {
-            return isCreditDefaultOn(stu, todayYmd);
+            return isCreditDefaultOn(stu, todayYmd) || isLoanPenaltyActive(stu, todayYmd);
         }
 
         function playerCreditDefaultMessage() {
+            if (isLoanPenaltyActive(window.playerState, getLocalDateStr())) {
+                return loanPenaltyBlockMessage(window.playerState && window.playerState.loanPenaltyUntilYmd);
+            }
             return creditDefaultBlockMessage(window.playerState && window.playerState.creditDefaultUntilYmd);
         }
 
@@ -2921,6 +2945,8 @@ function redrawPlazaGrantsUi() {
                 navClassEl.title = `학급 ID: ${appId}`;
             }
             if (navBtn && meta) navBtn.classList.remove('hidden');
+            const renameBtn = document.getElementById('navRenameClassBtn');
+            if (renameBtn) renameBtn.classList.toggle('hidden', !(window.playerState && window.playerState.isGM));
             if (teacherHint && meta) {
                 teacherHint.textContent = `현재 학급: ${meta.displayName || appId} (초대 ${meta.inviteCode || '—'})`;
             }
@@ -6542,7 +6568,7 @@ ${subjectLine}
             { id: 'c2_a2', type: 'clause', text: '제4조 (자유권) 모든 학생은 타인에게 해를 끼치지 않는 범위 내에서 자신의 의견을 자유롭게 표현할 권리를 가진다.' },
             { id: 'c2_a3', type: 'clause', text: '제5조 (성장권) 모든 학생은 퀘스트와 학습을 통해 경험치(XP)를 쌓고 성장할 권리를 가지며, 학교는 이를 위한 평등한 기회를 제공해야 한다.' },
             { id: 'c2_a4', type: 'clause', text: '제6조 (납세 및 노동의 의무)' },
-            { id: 'c2_a5', type: 'clause', text: '① 모든 학생은 할당된 직업(1인 1역)을 성실히 수행할 노동의 의무를 진다.' },
+            { id: 'c2_a5', type: 'clause', text: '① 모든 학생은 맡은 직업(1인 다역)을 성실히 수행할 노동의 의무를 진다.' },
             { id: 'c2_a6', type: 'clause', text: "② 모든 학생은 법률이 정하는 바에 따라 공동체 유지 비용인 '봉(Bong)'을 세금으로 납부할 의무를 진다." },
             { id: 'c2_a7', type: 'clause', text: '제7조 (환경 보전의 의무) 모든 학생은 현실의 교실과 메타버스 공간을 청결하게 유지하고 보전해야 할 의무를 가진다.' },
             { id: 'c3', type: 'chapter', text: '제3장 자치 기구와 경제' },
@@ -8920,6 +8946,7 @@ ${subjectLine}
                 bankLoan: serverData.bankLoan,
                 creditDefaultUntilYmd: serverData.creditDefaultUntilYmd,
                 bankNegativeSinceYmd: serverData.bankNegativeSinceYmd,
+                loanPenaltyUntilYmd: serverData.loanPenaltyUntilYmd,
             }, today, getBankLoanCalendar());
             bong = life.bong;
             regular = life.bankRegularSavings;
@@ -8943,6 +8970,7 @@ ${subjectLine}
                 bankLoan: life.bankLoan,
                 creditDefaultUntilYmd: life.creditDefaultUntilYmd || '',
                 bankNegativeSinceYmd: life.bankNegativeSinceYmd || '',
+                loanPenaltyUntilYmd: life.loanPenaltyUntilYmd || '',
                 maturityMsgs,
                 maturityCredit,
                 bonusGranted,
@@ -8955,7 +8983,7 @@ ${subjectLine}
         function reconcileBankStateForSave(serverData, clientData, globalSettings, { isAdmin = false, loanAction = '', loanAmount, loanDays } = {}) {
             const today = getLocalDateStr();
             const accrued = applyServerBankAccrual(serverData, globalSettings, { isAdmin });
-            if (loanAction === 'take' || loanAction === 'repay') {
+            if (loanAction === 'take' || loanAction === 'repay' || loanAction === 'partial') {
                 const acted = applyLoanAction({
                     bong: accrued.bong,
                     bankRegularSavings: accrued.bankRegularSavings,
@@ -8963,6 +8991,7 @@ ${subjectLine}
                     bankLoan: loanAction === 'take' ? serverData.bankLoan : accrued.bankLoan,
                     creditDefaultUntilYmd: accrued.creditDefaultUntilYmd,
                     bankNegativeSinceYmd: accrued.bankNegativeSinceYmd,
+                    loanPenaltyUntilYmd: loanAction === 'take' ? serverData.loanPenaltyUntilYmd : accrued.loanPenaltyUntilYmd,
                 }, loanAction, {
                     todayYmd: today,
                     calendar: getBankLoanCalendar(),
@@ -8984,6 +9013,7 @@ ${subjectLine}
                             bankLoan: serverData.bankLoan,
                             creditDefaultUntilYmd: serverData.creditDefaultUntilYmd || '',
                             bankNegativeSinceYmd: serverData.bankNegativeSinceYmd || '',
+                            loanPenaltyUntilYmd: serverData.loanPenaltyUntilYmd || '',
                         } : {}),
                     };
                 }
@@ -8994,6 +9024,7 @@ ${subjectLine}
                     bankLoan: acted.bankLoan,
                     creditDefaultUntilYmd: acted.creditDefaultUntilYmd || '',
                     bankNegativeSinceYmd: acted.bankNegativeSinceYmd || '',
+                    loanPenaltyUntilYmd: acted.loanPenaltyUntilYmd || '',
                     loanMsgs: acted.msgs,
                     loanChanged: true,
                     changed: true,
@@ -9030,6 +9061,7 @@ ${subjectLine}
                 bankLoan: accrued.bankLoan,
                 creditDefaultUntilYmd: accrued.creditDefaultUntilYmd || '',
                 bankNegativeSinceYmd: accrued.bankNegativeSinceYmd || '',
+                loanPenaltyUntilYmd: accrued.loanPenaltyUntilYmd || '',
                 maturityMsgs: accrued.maturityMsgs,
                 maturityCredit: accrued.maturityCredit,
                 bonusGranted: accrued.bonusGranted,
@@ -20308,9 +20340,13 @@ ${subjectLine}
                 const walletBong = getStudentWalletBong(displayData);
                 const creditOn = studentIsCreditDefault(displayData);
                 const creditStamp = creditOn ? '<div class="credit-default-stamp">신용불량</div>' : '';
+                const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
+                const attendanceDim = attendanceDimsCard(attendanceStatus);
+                const praiseCount = Math.max(0, Math.floor(Number(displayData.praiseCount) || 0));
+                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
 
                 return `
-                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}">
+                <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
                     <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">
@@ -20322,6 +20358,7 @@ ${subjectLine}
                                 <div class="plaza-card-lv text-[8px] font-bold ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             </div>
                             <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
+                            ${praiseBtn}
                             ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
                         ${gmBongSide}
@@ -22046,6 +22083,16 @@ ${subjectLine}
                     setTimeout(() => {
                         void window.customAlert(creditDefaultBlockMessage(m.untilYmd));
                     }, 140);
+                } else if (m.kind === 'penalty_start') {
+                    setTimeout(() => {
+                        void window.customAlert(loanPenaltyBlockMessage(m.untilYmd));
+                    }, 180);
+                } else if (m.kind === 'penalty_half') {
+                    setTimeout(() => {
+                        void window.customAlert(
+                            `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`
+                        );
+                    }, 200);
                 }
             });
         }
@@ -22162,6 +22209,8 @@ ${subjectLine}
             }
             if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
             if (repayBtn) repayBtn.classList.toggle('hidden', !loan);
+            const partialRow = document.getElementById('bankLoanPartialRow');
+            if (partialRow) partialRow.classList.toggle('hidden', !loan);
             if (typeof window.previewBankLoan === 'function') window.previewBankLoan({ silent: true });
             if (dailyLine) {
                 const total = getBankTotalDeposits();
@@ -22847,6 +22896,359 @@ ${subjectLine}
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
+            }
+        };
+
+        window.repayBankLoanPartial = async function() {
+            if (_bankLoanBusy) return;
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const loan = sanitizeBankLoan(window.playerState.bankLoan);
+            if (!loan) return window.customAlert(repayLoanFailMessage('none'));
+            const due = loanDueTotal(loan);
+            const amount = Math.floor(Number((document.getElementById('bankLoanPartialInput') || {}).value) || 0);
+            const plan = planPartialRepay(window.playerState, amount);
+            if (!plan.ok) return window.customAlert(repayLoanFailMessage(plan.reason));
+            const ok = await window.customConfirm(
+                plan.full
+                    ? `남은 ${formatBongAmount(due)}를 모두 갚을까요?`
+                    : `${formatBongAmount(amount)}만 갚을까요?\n갚고 나면 ${formatBongAmount(plan.left)}가 남고, 약정일 ${loan.dueYmd}는 그대로입니다.`
+            );
+            if (!ok) return;
+            _bankLoanBusy = true;
+            setBankLoanButtonsDisabled(true);
+            try {
+                const saved = await saveDataToCloud({
+                    allowBankFieldChanges: true,
+                    allowBongDecrease: true,
+                    loanAction: plan.full ? 'repay' : 'partial',
+                    loanAmount: amount,
+                    operationLabel: '은행 대출 일부 상환',
+                    bongLogSource: 'bankLoanRepay',
+                });
+                if (!saved) return;
+                const input = document.getElementById('bankLoanPartialInput');
+                if (input) input.value = '';
+                updateUI();
+                await window.customAlert(plan.full ? '대출을 모두 갚았습니다.' : `${formatBongAmount(amount)}를 갚았습니다. 남은 빚 ${formatBongAmount(plan.left)}.`);
+            } finally {
+                _bankLoanBusy = false;
+                setBankLoanButtonsDisabled(false);
+            }
+        };
+
+        function classOpsRef(name) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'classOps', name);
+        }
+
+        async function ensureClassOpsLoaded(force) {
+            if (!db) return;
+            if (window._classOpsLoading) return window._classOpsLoading;
+            if (window._classOpsReady && !force) return;
+            window._classOpsLoading = (async () => {
+                try {
+                    const [att, checks, praise] = await Promise.all([
+                        getDoc(classOpsRef('attendance')),
+                        getDoc(classOpsRef('checklists')),
+                        getDoc(classOpsRef('praise')),
+                    ]);
+                    window._attendanceDays = (att.exists() && att.data() && att.data().days) || {};
+                    window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
+                    window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
+                    window._classOpsReady = true;
+                } finally {
+                    window._classOpsLoading = null;
+                }
+            })();
+            return window._classOpsLoading;
+        }
+
+        function rosterStudentsForOps() {
+            return getActiveStudentIds().map((id, index) => ({
+                id: String(id),
+                number: id,
+                name: (typeof STUDENT_NAMES !== 'undefined' && STUDENT_NAMES[id]) || getStudentDisplayLabel(id) || String(id),
+                order: index + 1,
+            }));
+        }
+
+        async function writeStudentReward(sid, xpDelta, bongDelta, extra) {
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
+            const snap = await readStudentDocPreferServer(ref);
+            const stu = snap.exists() ? (snap.data() || {}) : {};
+            const xp = Math.max(0, Math.floor((Number(stu.xp) || 0) + Math.floor(xpDelta || 0)));
+            const bong = normalizeBongValue((Number(stu.bong) || 0) + Number(bongDelta || 0));
+            const payload = { ...(extra || {}), xp, bong };
+            await setDoc(ref, payload, { merge: true });
+            mergeStudentDocIntoPlazaCache(sid, { ...stu, ...payload, id: String(sid) });
+            if (String(localStorage.getItem('sambong_student_id') || '') === String(sid) && window.playerState) {
+                window.playerState.xp = xp;
+                window.playerState.bong = bong;
+                Object.assign(window.playerState, extra || {});
+            }
+            return { xp, bong };
+        }
+
+        window.renderAttendanceBoard = function() {
+            const el = document.getElementById('attendanceBoard');
+            if (!el) return;
+            void ensureClassOpsLoaded().then(() => {
+                if (!document.getElementById('attendanceBoard')) return;
+                const today = getLocalDateStr();
+                const marks = (window._attendanceDays && window._attendanceDays[today]) || {};
+                const admin = !!(window.playerState && window.playerState.isAdmin);
+                const rows = rosterStudentsForOps().map((stu) => {
+                    const cur = String(marks[stu.id] || '');
+                    const btn = (status, label) => {
+                        const on = cur === status;
+                        return `<button type="button" ${admin ? '' : 'disabled'} onclick="void window.setAttendanceMark('${stu.id}','${status}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold min-h-[36px] ${on ? 'bg-amber-500 text-stone-950 border-amber-300' : 'bg-slate-900 text-slate-200 border-slate-600'}">${label}</button>`;
+                    };
+                    return `<div class="flex flex-wrap items-center gap-1 border border-slate-800 rounded-xl px-2 py-1.5">
+                        <span class="w-16 truncate font-bold text-slate-100">${stu.order}. ${escapeHofText(stu.name)}</span>
+                        ${btn('present', '출석')}
+                        ${btn('late', '지각')}
+                        ${btn('early', '조퇴')}
+                        ${btn('absent', '결석')}
+                    </div>`;
+                });
+                el.innerHTML = rows.join('') || '<p class="text-slate-500">명단이 없습니다.</p>';
+            });
+        };
+
+        window.setAttendanceMark = async function(sid, status) {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('담임·보조 교사만 출석을 고를 수 있습니다.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            await ensureClassOpsLoaded();
+            const today = getLocalDateStr();
+            const days = { ...(window._attendanceDays || {}) };
+            const todayMarks = { ...(days[today] || {}) };
+            const plan = planAttendanceChange(todayMarks[sid] || '', status);
+            if (!plan.ok) return;
+            if (plan.status) todayMarks[sid] = plan.status;
+            else delete todayMarks[sid];
+            days[today] = todayMarks;
+            const keys = Object.keys(days).sort();
+            keys.slice(0, Math.max(0, keys.length - 120)).forEach((k) => { delete days[k]; });
+            await writeStudentReward(sid, plan.xpDelta, plan.bongDelta, {
+                attendanceMark: plan.status ? { date: today, status: plan.status } : { date: '', status: '' },
+            });
+            await setDoc(classOpsRef('attendance'), { days }, { merge: true });
+            window._attendanceDays = days;
+            window.renderAttendanceBoard();
+            if (typeof window.renderPlaza === 'function') {
+                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            }
+        };
+
+        window.exportAttendanceXlsx = async function() {
+            await ensureClassOpsLoaded(true);
+            const rows = buildAttendanceSheetRows(window._attendanceDays || {}, rosterStudentsForOps());
+            downloadAoaWorkbook('출석의 축복', rows, `출석의축복_${getLocalDateStr()}.xlsx`);
+        };
+
+        window.renderChecklistBoard = function() {
+            const el = document.getElementById('checklistBoard');
+            const createRow = document.getElementById('checklistCreateRow');
+            if (createRow) createRow.classList.toggle('hidden', !(window.playerState && window.playerState.isAdmin));
+            if (!el) return;
+            void ensureClassOpsLoaded().then(() => {
+                const host = document.getElementById('checklistBoard');
+                if (!host) return;
+                const students = rosterStudentsForOps();
+                const myId = String(localStorage.getItem('sambong_student_id') || '');
+                const admin = !!(window.playerState && window.playerState.isAdmin);
+                const items = sanitizeChecklists(window._checklists || []);
+                if (!items.length) {
+                    host.innerHTML = '<p class="text-slate-500 text-[10px]">아직 체크리스트가 없습니다. 교사가 제목을 달아 만들 수 있습니다.</p>';
+                    return;
+                }
+                host.innerHTML = items.map((item) => {
+                    const cells = students.map((stu) => {
+                        const done = !!item.marks[stu.id];
+                        const can = admin || myId === stu.id;
+                        return `<button type="button" ${can ? '' : 'disabled'} onclick="void window.toggleChecklistCell('${item.id}','${stu.id}')" class="checklist-cell ${done ? 'is-done' : ''}" title="${escapeHofText(stu.name)}">${done ? '✓' : stu.order}</button>`;
+                    }).join('');
+                    const del = admin ? `<button type="button" onclick="void window.removeClassChecklist('${item.id}')" class="text-[10px] text-rose-200 border border-rose-700 rounded-lg px-2 py-1">삭제</button>` : '';
+                    return `<section class="border border-slate-700 rounded-2xl p-2 bg-slate-950/40">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <h4 class="text-cyan-100 font-black text-xs">${escapeHofText(item.title)}</h4>
+                            ${del}
+                        </div>
+                        <div class="checklist-grid">${cells}</div>
+                    </section>`;
+                }).join('');
+            });
+        };
+
+        window.createClassChecklist = async function() {
+            if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('교사만 체크리스트를 만들 수 있습니다.');
+            const title = String((document.getElementById('checklistTitleInput') || {}).value || '');
+            await ensureClassOpsLoaded();
+            const made = createChecklist(window._checklists || [], title, `chk_${Date.now().toString(36)}`);
+            if (!made.ok) return window.customAlert(made.reason === 'title' ? '제목을 입력하세요.' : '체크리스트를 더 만들 수 없습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            await setDoc(classOpsRef('checklists'), { items: made.items }, { merge: true });
+            window._checklists = made.items;
+            const input = document.getElementById('checklistTitleInput');
+            if (input) input.value = '';
+            window.renderChecklistBoard();
+        };
+
+        window.removeClassChecklist = async function(id) {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!await window.customConfirm('이 체크리스트를 삭제할까요?\n이미 준 보상은 되돌리지 않습니다.')) return;
+            await ensureClassOpsLoaded();
+            const next = deleteChecklist(window._checklists || [], id);
+            await setDoc(classOpsRef('checklists'), { items: next.items }, { merge: true });
+            window._checklists = next.items;
+            window.renderChecklistBoard();
+        };
+
+        window.toggleChecklistCell = async function(checklistId, sid) {
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            if (!admin && myId !== String(sid)) return window.customAlert('내 번호만 누를 수 있습니다.');
+            if (!admin && studentIsCreditDefault(window.playerState)) return window.customAlert(playerCreditDefaultMessage());
+            await ensureClassOpsLoaded();
+            const plan = toggleChecklistNumber(window._checklists || [], checklistId, sid);
+            if (!plan.ok) return;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            await writeStudentReward(sid, plan.xpDelta, plan.bongDelta, {});
+            await setDoc(classOpsRef('checklists'), { items: plan.items }, { merge: true });
+            window._checklists = plan.items;
+            window.renderChecklistBoard();
+            if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            updateUI();
+        };
+
+        window.givePeerPraise = async function(toId) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('로그인 후 따봉을 줄 수 있습니다.');
+            const fromId = String(localStorage.getItem('sambong_student_id') || '');
+            if (!fromId) return;
+            if (!window.playerState.isAdmin && studentIsCreditDefault(window.playerState)) {
+                return window.customAlert(playerCreditDefaultMessage());
+            }
+            await ensureClassOpsLoaded();
+            const today = getLocalDateStr();
+            const plan = planPeerPraise(window._praiseBoard, { fromId, toId: String(toId), today });
+            if (!plan.ok) return window.customAlert(praiseFailMessage(plan.reason));
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const praiseRef = classOpsRef('praise');
+            try {
+                const result = await runTransaction(db, async (tx) => {
+                    const praiseSnap = await tx.get(praiseRef);
+                    const fresh = planPeerPraise(praiseSnap.exists() ? praiseSnap.data() : {}, { fromId, toId: String(toId), today });
+                    if (!fresh.ok) return fresh;
+                    const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+                    const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + toId);
+                    const fromSnap = await tx.get(fromRef);
+                    const toSnap = await tx.get(toRef);
+                    const bump = (snap, deltaXp, deltaBong, extra) => {
+                        const data = snap.exists() ? (snap.data() || {}) : {};
+                        const xp = Math.max(0, Math.floor((Number(data.xp) || 0) + deltaXp));
+                        const bong = normalizeBongValue((Number(data.bong) || 0) + deltaBong);
+                        tx.set(snap.ref, { ...extra, xp, bong }, { merge: true });
+                        return { ...data, ...extra, xp, bong };
+                    };
+                    const fromNext = bump(fromSnap, fresh.giver.xp, fresh.giver.bong, {});
+                    const toNext = bump(toSnap, fresh.receiver.xp, fresh.receiver.bong, { praiseCount: fresh.received });
+                    tx.set(praiseRef, fresh.board, { merge: false });
+                    return { ok: true, fresh, fromNext, toNext };
+                });
+                if (!result || !result.ok) return window.customAlert(praiseFailMessage(result && result.reason));
+                window._praiseBoard = result.fresh.board;
+                mergeStudentDocIntoPlazaCache(fromId, { ...result.fromNext, id: fromId });
+                mergeStudentDocIntoPlazaCache(toId, { ...result.toNext, id: String(toId) });
+                if (fromId === String(localStorage.getItem('sambong_student_id') || '') && window.playerState) {
+                    window.playerState.xp = result.fromNext.xp;
+                    window.playerState.bong = result.fromNext.bong;
+                }
+                if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                updateUI();
+                if (result.fresh.fanfare) {
+                    const body = document.getElementById('praiseFanfareBody');
+                    const who = (STUDENT_NAMES && STUDENT_NAMES[String(toId)]) || getStudentDisplayLabel(toId);
+                    if (body) body.textContent = `${who} 학생이 따봉 10개를 모았습니다.\n추가 50XP와 5봉이 들어갔습니다.`;
+                    document.getElementById('praiseFanfareModal')?.classList.remove('hidden');
+                } else {
+                    window.showToast && window.showToast('따봉을 보냈습니다. 나와 친구에게 10XP, 1봉.');
+                }
+            } catch (e) {
+                console.error('givePeerPraise', e);
+                await window.customAlert('따봉을 저장하지 못했습니다.');
+            }
+        };
+
+        window.openClassroomRename = function() {
+            if (!window.playerState || !window.playerState.isGM) return window.customAlert('담임교사만 교실 이름을 바꿀 수 있습니다.');
+            const input = document.getElementById('classroomRenameInput');
+            const current = window.classMeta?.displayName || '';
+            if (input) input.value = current;
+            const field = document.getElementById('wsClassDisplayName');
+            if (field && !field.value) field.value = current;
+            document.getElementById('classroomRenameModal')?.classList.remove('hidden');
+        };
+
+        window.saveClassroomName = async function() {
+            if (!window.playerState || !window.playerState.isGM) return window.customAlert('담임교사만 교실 이름을 바꿀 수 있습니다.');
+            const modalInput = document.getElementById('classroomRenameInput');
+            const settingsInput = document.getElementById('wsClassDisplayName');
+            const raw = (modalInput && document.getElementById('classroomRenameModal') && !document.getElementById('classroomRenameModal').classList.contains('hidden'))
+                ? modalInput.value
+                : ((settingsInput && settingsInput.value) || (modalInput && modalInput.value) || '');
+            const displayName = String(raw || '').trim().slice(0, 40);
+            if (!displayName) return window.customAlert('교실 이름을 입력하세요.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            await setDoc(doc(db, 'classes', appId), {
+                displayName,
+                className: displayName,
+                updatedAt: serverTimestamp(),
+            }, { merge: true });
+            window.classMeta = { ...(window.classMeta || {}), displayName, className: displayName };
+            if (settingsInput) settingsInput.value = displayName;
+            if (modalInput) modalInput.value = displayName;
+            updateClassDisplayLabels();
+            applyWorldBranding();
+            document.getElementById('classroomRenameModal')?.classList.add('hidden');
+            await window.customAlert(`교실 이름을 「${displayName}」(으)로 저장했습니다.`);
+        };
+
+        window.maybeShowLoanMorningNotice = function() {
+            if (!window.playerState || window.playerState.isGuest) return;
+            const loan = sanitizeBankLoan(window.playerState.bankLoan);
+            if (!loan || !loanStillOutstanding(window.playerState.bankLoan)) return;
+            const sid = String(localStorage.getItem('sambong_student_id') || '');
+            const key = `sambongLoanNotice:${appId}:${sid}:${getLocalDateStr()}`;
+            if (localStorage.getItem(key) === '1') return;
+            const modal = document.getElementById('loanMorningModal');
+            const body = document.getElementById('loanMorningBody');
+            if (!modal || !body) return;
+            const due = loanDueTotal(loan);
+            const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
+            body.textContent =
+                `너에게 아직 갚지 않은 대출이 있다.\n` +
+                `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
+                `납기일 ${loan.dueYmd}\n\n` +
+                (penalty
+                    ? '이미 납기일을 넘겼다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있다.'
+                    : '이 날짜가 지나기 전에 갚아라. 일부만 갚을 수도 있다. 미루면 도장이 찍힌다.');
+            modal.classList.remove('hidden');
+        };
+
+        window.dismissLoanMorningNotice = function(goBank) {
+            const sid = String(localStorage.getItem('sambong_student_id') || '');
+            const key = `sambongLoanNotice:${appId}:${sid}:${getLocalDateStr()}`;
+            try { localStorage.setItem(key, '1'); } catch (_) { /* 저장 실패여도 창은 닫습니다. */ }
+            document.getElementById('loanMorningModal')?.classList.add('hidden');
+            if (goBank && typeof window.switchTab === 'function') {
+                window.switchTab('bank');
+                if (typeof window.switchInnerPane === 'function') window.switchInnerPane('bank', 'loan');
             }
         };
 
@@ -23655,6 +24057,9 @@ ${subjectLine}
             renderMusicTimeQueueBar();
             updateLunchInvestLockUI();
             window.updateBankPanel();
+            if (typeof window.renderAttendanceBoard === 'function') window.renderAttendanceBoard();
+            if (typeof window.renderChecklistBoard === 'function') window.renderChecklistBoard();
+            if (typeof window.maybeShowLoanMorningNotice === 'function') window.maybeShowLoanMorningNotice();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) {
                 saveDataToCloud({
@@ -24050,7 +24455,7 @@ ${subjectLine}
                         // 신용불량 중 학생 추가 XP는 막습니다. 교사 광장 지급(isAdmin)은 그대로 둡니다.
                         if (
                             !window.playerState.isAdmin
-                            && isCreditDefaultOn(bankAccrued, todaySave)
+                            && studentIsCreditDefault(bankAccrued, todaySave)
                             && Number.isFinite(serverXp)
                             && Number.isFinite(Number(dataToSave.xp))
                             && Number(dataToSave.xp) > serverXp
@@ -24058,8 +24463,9 @@ ${subjectLine}
                             dataToSave.xp = Math.floor(serverXp);
                         }
 
-                        if (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay') {
-                            if (opts.requireServerBankRegularBalance && opts.loanAction !== 'repay' && opts.loanAction !== 'take') {
+                        const loanSave = opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial';
+                        if (opts.allowBankFieldChanges || loanSave) {
+                            if (opts.requireServerBankRegularBalance && !loanSave) {
                                 const serverReg = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
                                 const maxRegDrop = Math.max(0, Number(opts.maxBankRegularDecrease) || 0);
                                 if (maxRegDrop > 0 && serverReg < maxRegDrop) {
@@ -24086,6 +24492,7 @@ ${subjectLine}
                                     bankLoan: reconciled.bankLoan,
                                     creditDefaultUntilYmd: reconciled.creditDefaultUntilYmd,
                                     bankNegativeSinceYmd: reconciled.bankNegativeSinceYmd,
+                                    loanPenaltyUntilYmd: reconciled.loanPenaltyUntilYmd || '',
                                 };
                                 return;
                             }
@@ -24096,6 +24503,7 @@ ${subjectLine}
                             dataToSave.bankLoan = reconciled.bankLoan;
                             dataToSave.creditDefaultUntilYmd = reconciled.creditDefaultUntilYmd || '';
                             dataToSave.bankNegativeSinceYmd = reconciled.bankNegativeSinceYmd || '';
+                            dataToSave.loanPenaltyUntilYmd = reconciled.loanPenaltyUntilYmd || '';
                         } else {
                             dataToSave.bankRegularSavings = bankAccrued.bankRegularSavings;
                             dataToSave.bankTermDeposits = bankAccrued.bankTermDeposits;
@@ -24103,6 +24511,7 @@ ${subjectLine}
                             dataToSave.bankLoan = bankAccrued.bankLoan;
                             dataToSave.creditDefaultUntilYmd = bankAccrued.creditDefaultUntilYmd || '';
                             dataToSave.bankNegativeSinceYmd = bankAccrued.bankNegativeSinceYmd || '';
+                            dataToSave.loanPenaltyUntilYmd = bankAccrued.loanPenaltyUntilYmd || '';
                             // 만기·자동이체·주기 보너스 뒤에는 낡은 잔액으로 되돌리지 않습니다.
                             if (bankAccrued.changed) {
                                 dataToSave.bong = bankAccrued.bong;
@@ -24111,14 +24520,14 @@ ${subjectLine}
                         }
 
                         const serverBong = Number(
-                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || bankAccrued.changed)
+                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial' || bankAccrued.changed)
                                 ? dataToSave.bong
                                 : serverData.bong
                         );
                         const nextBong = Number(dataToSave.bong);
                         // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.
                         const bongBeforeSpend = Number(
-                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay')
+                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial')
                                 ? bankAccrued.bong
                                 : (bankAccrued.changed ? bankAccrued.bong : serverData.bong)
                         );
@@ -24304,6 +24713,8 @@ ${subjectLine}
                                 ? takeLoanFailMessage('active')
                                 : blockedLoanReason === 'default'
                                 ? takeLoanFailMessage('default')
+                                : blockedLoanReason === 'funds' || blockedLoanReason === 'amount' || blockedLoanReason === 'none'
+                                ? repayLoanFailMessage(blockedLoanReason)
                                 : '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.')
                             : blockedByStockTrade
                             ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
@@ -24345,6 +24756,9 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankNegativeSinceYmd')) {
                     window.playerState.bankNegativeSinceYmd = dataToSave.bankNegativeSinceYmd || '';
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'loanPenaltyUntilYmd')) {
+                    window.playerState.loanPenaltyUntilYmd = dataToSave.loanPenaltyUntilYmd || '';
                 }
                 return true;
             } catch (e) {
@@ -26883,7 +27297,8 @@ ${subjectLine}
             if (had) {
                 if (!await window.customConfirm(`[${job.name}] 직업을 해제할까요?`)) return;
             } else if (curName) {
-                if (!await window.customConfirm(`지금 직업은 [${curName}]입니다.\n[${job.name}](으)로 바꿀까요?\n(1인 1역 · 이전 직업은 해제됩니다)`)) return;
+                const names = current.map((j) => j.name).filter(Boolean).join(', ');
+                if (!await window.customConfirm(`지금 직업: ${names}\n[${job.name}]을(를) 하나 더 달까요?\n(1인 다역 · 기존 직업은 유지됩니다)`)) return;
             } else if (!await window.customConfirm(`[${job.name}] 직업을 선택할까요?`)) {
                 return;
             }
@@ -26938,8 +27353,9 @@ ${subjectLine}
                     const current = resolveStudentJobsFromCatalog(stu.jobs, catalog);
                     const curName = current[0] && current[0].name;
                     const who = STUDENT_NAMES[sid] || sid;
-                    const msg = curName
-                        ? `${who}의 직업 [${curName}]을 [${job.name}](으)로 바꿀까요?\n(1인 1역 · 이전 직업은 해제됩니다)`
+                    const names = current.map((j) => j.name).filter(Boolean).join(', ');
+                    const msg = names
+                        ? `${who}의 직업(${names})에 [${job.name}]을(를) 더 달까요?\n(1인 다역)`
                         : `${who}에게 [${job.name}]을(를) 달까요?`;
                     if (!await window.customConfirm(msg)) return;
                 }
@@ -27407,7 +27823,7 @@ ${subjectLine}
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd',
+            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
             'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
@@ -27914,6 +28330,9 @@ ${subjectLine}
                 bankLoan: null,
                 creditDefaultUntilYmd: '',
                 bankNegativeSinceYmd: '',
+                loanPenaltyUntilYmd: '',
+                attendanceMark: null,
+                praiseCount: 0,
                 dailyAllClearBonusDate: '',
                 stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
                 stockInvestDaily: { date: '', profit: 0, sells: 0 },

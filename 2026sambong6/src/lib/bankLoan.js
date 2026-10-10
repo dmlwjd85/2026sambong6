@@ -112,15 +112,22 @@ export function computeLoanInterest(principal, businessDays, ratePercent) {
     return Math.max(LOAN_MIN_INTEREST, Math.ceil(raw - 1e-9));
 }
 
+/** 이미 빌린 원금은 부분 납입·50% 차감으로 10봉 단위가 깨질 수 있습니다. */
+function sanitizeStoredPrincipal(raw) {
+    const n = Math.floor(Number(raw));
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return n;
+}
+
 export function sanitizeBankLoan(raw) {
     if (!raw || typeof raw !== 'object') return null;
-    const principal = sanitizeLoanAmount(raw.principal);
+    const principal = sanitizeStoredPrincipal(raw.principal);
     const days = sanitizeLoanDays(raw.days);
     const startYmd = String(raw.startYmd || '');
     const dueYmd = String(raw.dueYmd || '');
-    const interest = Math.max(LOAN_MIN_INTEREST, Math.floor(Number(raw.interest) || 0));
+    const interest = Math.max(0, Math.floor(Number(raw.interest) || 0));
     const id = String(raw.id || '').trim();
-    if (!principal || !days || !/^\d{4}-\d{2}-\d{2}$/.test(startYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(dueYmd) || !id) {
+    if ((principal <= 0 && interest <= 0) || !days || !/^\d{4}-\d{2}-\d{2}$/.test(startYmd) || !/^\d{4}-\d{2}-\d{2}$/.test(dueYmd) || !id) {
         return null;
     }
     return {
@@ -165,6 +172,20 @@ export function isCreditDefaultOn(state, todayYmd) {
     return !!(until && today && today < until);
 }
 
+/** 납기를 넘긴 뒤 5영업일 정지 구간입니다. today < until 인 동안 활동이 멈춥니다. */
+export function isLoanPenaltyActive(state, todayYmd) {
+    const until = String(state && state.loanPenaltyUntilYmd || '').trim();
+    const today = String(todayYmd || '');
+    return !!(until && /^\d{4}-\d{2}-\d{2}$/.test(until) && today && today < until);
+}
+
+export function loanPenaltyBlockMessage(untilYmd) {
+    const until = String(untilYmd || '');
+    return until
+        ? `신용불량 도장이 찍혔습니다 (${until} 전).\nMATE 활동이 정지됩니다. 수업 중 경험치 차감은 됩니다.\n대출을 갚으면 도장과 정지가 풀립니다.`
+        : '신용불량 도장이 찍혀 MATE 활동이 정지됩니다.\n수업 중 경험치 차감은 됩니다.';
+}
+
 export function creditDefaultBlockMessage(untilYmd) {
     const until = String(untilYmd || '');
     const last = until ? addCalendarDaysYmd(until, -1) : '';
@@ -204,6 +225,7 @@ export function collectLoanRepayment({ bong, regular, due }) {
 export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
     const cap = sanitizeLoanLimit(limit);
     if (reason === 'default') return '신용불량 기간에는 대출을 받을 수 없습니다.';
+    if (reason === 'penalty') return loanPenaltyBlockMessage();
     if (reason === 'active') return '이미 진행 중인 대출이 있습니다. 갚은 뒤에 다시 신청하세요.';
     if (reason === 'disabled') return '현재 학급에서는 대출이 닫혀 있습니다.';
     if (reason === 'amount') return `대출은 ${LOAN_MIN_UNIT}${unit} 단위이며 최소 ${LOAN_MIN_UNIT}${unit}입니다.`;
@@ -215,7 +237,29 @@ export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
 
 export function repayLoanFailMessage(reason) {
     if (reason === 'none') return '갚을 대출이 없습니다.';
+    if (reason === 'amount') return '갚을 금액을 1봉 이상, 남은 빚 이하로 입력하세요.';
+    if (reason === 'funds') return '지갑과 일반예금이 그 금액보다 적습니다. 있는 만큼만 입력하세요.';
     return '대출을 갚을 수 없습니다.';
+}
+
+/** 이자를 먼저 줄이고, 남으면 원금을 줄입니다. 둘 다 0이면 대출이 끝납니다. */
+export function reduceLoanByPayment(loan, paidAmount) {
+    const clean = sanitizeBankLoan(loan);
+    if (!clean) return null;
+    let cut = Math.max(0, Math.floor(Number(paidAmount) || 0));
+    let interest = clean.interest;
+    let principal = clean.principal;
+    const fromInterest = Math.min(interest, cut);
+    interest -= fromInterest;
+    cut -= fromInterest;
+    principal = Math.max(0, principal - cut);
+    if (principal <= 0 && interest <= 0) return null;
+    return { ...clean, principal, interest };
+}
+
+function penaltySnapshot(state) {
+    const until = String(state && state.loanPenaltyUntilYmd || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(until) ? until : '';
 }
 
 /** 월드 방학·공휴일을 대출 영업일 달력으로 바꿉니다. */
@@ -281,8 +325,38 @@ export function planRepayLoan(state) {
     return { ok: true, loan, due, ...collected };
 }
 
+/** 가진 돈(지갑+일반예금) 안에서만 일부를 갚습니다. 남은 빚 이상이면 전액입니다. */
+export function planPartialRepay(state, amount) {
+    const loan = sanitizeBankLoan(state && state.bankLoan);
+    if (!loan) return { ok: false, reason: 'none' };
+    const due = loanDueTotal(loan);
+    const pay = Math.floor(Number(amount) || 0);
+    if (pay <= 0 || pay > due) return { ok: false, reason: 'amount' };
+    if (pay >= due) {
+        const full = planRepayLoan(state);
+        if (!full.ok) return full;
+        return { ...full, amount: due, left: 0, loan: null, full: true };
+    }
+    const wallet = Math.floor(Number(state && state.bong) || 0);
+    const regular = Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0));
+    if (Math.max(0, wallet) + regular < pay) return { ok: false, reason: 'funds' };
+    const collected = collectLoanRepayment({ bong: wallet, regular, due: pay });
+    return {
+        ok: true,
+        full: false,
+        loan: reduceLoanByPayment(loan, pay),
+        amount: pay,
+        left: due - pay,
+        bong: collected.bong,
+        regular: collected.regular,
+        fromWallet: collected.fromWallet,
+        fromRegular: collected.fromRegular,
+    };
+}
+
 /**
- * 만기 자동이체 + 마이너스 5영업일 → 3일 신용불량.
+ * 납기를 넘기면 5영업일 신용불량 정지, 그 다음 남은 빚의 50%를 걷고 납기를 5영업일 뒤로 돌립니다.
+ * 지갑이 마이너스인 채 5영업일이 지나면 기존처럼 3일 신용불량입니다.
  */
 export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     const today = String(todayYmd || '');
@@ -297,22 +371,37 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     const msgs = [];
     let changed = false;
 
+    let penaltyUntil = penaltySnapshot(state);
+    if (!loan) penaltyUntil = '';
     if (loan && today && today >= loan.dueYmd) {
-        const due = loanDueTotal(loan);
-        const paid = collectLoanRepayment({ bong, regular, due });
-        bong = paid.bong;
-        regular = paid.regular;
-        msgs.push({
-            kind: 'repay',
-            principal: loan.principal,
-            interest: loan.interest,
-            due,
-            fromWallet: paid.fromWallet,
-            fromRegular: paid.fromRegular,
-            dueYmd: loan.dueYmd,
-        });
-        loan = null;
-        changed = true;
+        const inFreeze = !!(penaltyUntil && today < penaltyUntil);
+        const freezeEnded = !!(penaltyUntil && today >= penaltyUntil);
+        if (inFreeze) {
+            // 5영업일 정지 중입니다. 빚과 약정일은 그대로 둡니다.
+        } else if (freezeEnded) {
+            const due = loanDueTotal(loan);
+            const charge = Math.ceil(due / 2);
+            const paid = collectLoanRepayment({ bong, regular, due: charge });
+            bong = paid.bong;
+            regular = paid.regular;
+            const left = reduceLoanByPayment(loan, charge);
+            const nextDue = addBusinessDaysYmd(today, 5, calendar);
+            msgs.push({
+                kind: 'penalty_half',
+                due,
+                charge,
+                fromWallet: paid.fromWallet,
+                fromRegular: paid.fromRegular,
+                nextDue,
+            });
+            loan = left ? { ...left, dueYmd: nextDue, days: 5 } : null;
+            penaltyUntil = '';
+            changed = true;
+        } else {
+            penaltyUntil = addBusinessDaysYmd(today, 5, calendar);
+            msgs.push({ kind: 'penalty_start', untilYmd: penaltyUntil, dueYmd: loan.dueYmd });
+            changed = true;
+        }
     }
 
     if (defaultUntil && today && today >= defaultUntil) {
@@ -349,6 +438,7 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
         bankLoan: loan,
         creditDefaultUntilYmd: defaultUntil || '',
         bankNegativeSinceYmd: negSince || '',
+        loanPenaltyUntilYmd: loan ? (penaltyUntil || '') : '',
     };
 }
 
@@ -359,6 +449,7 @@ export function loanFieldsFromLifecycle(result) {
         bankLoan: result.bankLoan,
         creditDefaultUntilYmd: result.creditDefaultUntilYmd || '',
         bankNegativeSinceYmd: result.bankNegativeSinceYmd || '',
+        loanPenaltyUntilYmd: result.loanPenaltyUntilYmd || '',
     };
 }
 
@@ -374,6 +465,7 @@ function rejectLoanAction(state, reason) {
         bankLoan: state && state.bankLoan ? state.bankLoan : null,
         creditDefaultUntilYmd: String(state && state.creditDefaultUntilYmd || ''),
         bankNegativeSinceYmd: String(state && state.bankNegativeSinceYmd || ''),
+        loanPenaltyUntilYmd: penaltySnapshot(state),
     };
 }
 
@@ -422,6 +514,7 @@ export function applyLoanAction(state, action, opts = {}) {
         next.bong = plan.bong;
         next.bankRegularSavings = plan.regular;
         next.bankLoan = null;
+        next.loanPenaltyUntilYmd = '';
         next.changed = true;
         next.msgs.push({
             kind: 'repay_early',
@@ -432,6 +525,23 @@ export function applyLoanAction(state, action, opts = {}) {
             fromRegular: plan.fromRegular,
         });
         return { ok: true, ...next, due: plan.due };
+    }
+    if (action === 'partial') {
+        const plan = planPartialRepay(next, opts.amount);
+        if (!plan.ok) return { ok: false, reason: plan.reason, ...next };
+        next.bong = plan.bong;
+        next.bankRegularSavings = plan.regular;
+        next.bankLoan = plan.loan;
+        next.loanPenaltyUntilYmd = plan.loan ? next.loanPenaltyUntilYmd : '';
+        next.changed = true;
+        next.msgs.push({
+            kind: 'repay_partial',
+            amount: plan.amount,
+            left: plan.left,
+            fromWallet: plan.fromWallet,
+            fromRegular: plan.fromRegular,
+        });
+        return { ok: true, ...next, due: plan.left, amount: plan.amount };
     }
     return { ok: false, reason: 'action', ...next };
 }

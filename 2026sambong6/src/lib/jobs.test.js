@@ -126,7 +126,7 @@ describe('직업 아이콘·색', () => {
         assert.equal(off.length, 0);
     });
 
-    it('다른 직업을 고르면 기존 직업을 교체하고 한 개만 남긴다', () => {
+    it('다른 직업을 고르면 기존 직업을 유지한 채 하나 더 단다', () => {
         const vac = { id: 'job_vac', name: '블랙홀 마스터', icon: 'fa-wind', color: 'text-teal-400' };
         const flag = { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
         const stacked = [
@@ -134,12 +134,13 @@ describe('직업 아이콘·색', () => {
             { id: 'job4', name: '체력물약 보급관', icon: 'fa-glass-water', color: 'text-sky-400' },
         ];
         const switched = toggleJobAssignment([vac], flag);
-        assert.equal(switched.length, 1);
-        assert.equal(switched[0].id, 'job1');
-        assert.equal(studentHasJobName(switched, '블랙홀 마스터'), false);
-        const replaced = toggleJobAssignment(stacked, flag);
-        assert.equal(replaced.length, 1);
-        assert.equal(replaced[0].name, '길드 마스터');
+        assert.equal(switched.length, 2);
+        assert.equal(switched[0].id, 'job_vac');
+        assert.equal(switched[1].id, 'job1');
+        assert.equal(studentHasJobName(switched, '블랙홀 마스터'), true);
+        const added = toggleJobAssignment(stacked, flag);
+        assert.equal(added.length, 3);
+        assert.equal(added[2].name, '길드 마스터');
         const peeled = toggleJobAssignment(stacked, stacked[0]);
         assert.equal(peeled.length, 1);
         assert.equal(peeled[0].id, 'job4');

@@ -9,6 +9,8 @@ import {
     addCalendarDaysYmd,
     applyLoanAction,
     applyLoanLifecycle,
+    isLoanPenaltyActive,
+    planPartialRepay,
     collectLoanRepayment,
     computeLoanInterest,
     countBusinessDaysAfter,
@@ -16,6 +18,7 @@ import {
     getLoanCalendarFromWorld,
     isBankBusinessDay,
     isCreditDefaultOn,
+    loanDueTotal,
     loanStillOutstanding,
     planTakeLoan,
     sanitizeLoanAmount,
@@ -89,19 +92,27 @@ describe('자동이체·신용불량', () => {
         assert.equal(paid.fromRegular, 5);
     });
 
-    it('약정일이 되면 대출을 지우고 자동이체한다', () => {
+    it('약정일을 넘기면 바로 걷지 않고 5영업일 정지 뒤 절반을 걷는다', () => {
         const loan = planTakeLoan({
             amount: 20, days: 1, ratePercent: 0, limit: 50, todayYmd: '2026-09-14', calendar: cal,
         }).loan;
-        const due = applyLoanLifecycle({
+        const started = applyLoanLifecycle({
             bong: 5,
             bankRegularSavings: 10,
             bankLoan: loan,
         }, loan.dueYmd, cal);
-        assert.equal(due.bankLoan, null);
-        assert.equal(due.bankRegularSavings, 0);
-        assert.ok(due.bong <= 0);
-        assert.ok(due.msgs.some((m) => m.kind === 'repay'));
+        assert.equal(started.bankLoan.dueYmd, loan.dueYmd);
+        assert.equal(started.bankLoan.principal, 20);
+        assert.equal(started.bong, 5);
+        assert.ok(started.loanPenaltyUntilYmd > loan.dueYmd);
+        assert.ok(started.msgs.some((m) => m.kind === 'penalty_start'));
+        const halved = applyLoanLifecycle(started, started.loanPenaltyUntilYmd, cal);
+        assert.equal(halved.loanPenaltyUntilYmd, '');
+        assert.ok(halved.bankLoan);
+        assert.ok(halved.bankLoan.dueYmd > started.loanPenaltyUntilYmd);
+        assert.ok(halved.bankLoan.principal + halved.bankLoan.interest < loan.principal + loan.interest);
+        assert.ok(halved.bong < 5 || halved.bankRegularSavings < 10);
+        assert.ok(halved.msgs.some((m) => m.kind === 'penalty_half'));
     });
 
     it('마이너스 5영업일이 지나면 3일 신용불량이 된다', () => {
@@ -215,5 +226,25 @@ describe('대출 실행·달력', () => {
         assert.equal(repaid.ok, true);
         assert.equal(repaid.bankLoan, null);
         assert.ok(repaid.bong < 100);
+    });
+
+    it('일부만 갚으면 남은 빚과 약정일을 유지한다', () => {
+        const taken = applyLoanAction({ bong: 30, bankRegularSavings: 0 }, 'take', {
+            amount: 20, days: 2, ratePercent: 10, limit: 50, todayYmd: '2026-09-15', calendar: cal, nowMs: 9,
+        });
+        const part = planPartialRepay(taken, 5);
+        assert.equal(part.ok, true);
+        assert.equal(part.left, loanDueTotal(taken.bankLoan) - 5);
+        assert.equal(part.loan.dueYmd, taken.bankLoan.dueYmd);
+        const saved = applyLoanAction(taken, 'partial', {
+            amount: 5, todayYmd: '2026-09-16', calendar: cal,
+        });
+        assert.equal(saved.ok, true);
+        assert.equal(saved.bankLoan.dueYmd, taken.bankLoan.dueYmd);
+        assert.equal(saved.bong, taken.bong - 5);
+        const broke = planPartialRepay({ ...taken, bong: 1, bankRegularSavings: 0 }, 5);
+        assert.equal(broke.reason, 'funds');
+        const overdue = applyLoanLifecycle(saved, saved.bankLoan.dueYmd, cal);
+        assert.equal(isLoanPenaltyActive(overdue, saved.bankLoan.dueYmd), true);
     });
 });

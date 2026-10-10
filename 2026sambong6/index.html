@@ -816,7 +816,7 @@
                         </h3>
                         <p id="dailyQuestProgressHint" class="hidden text-[10px] text-emerald-200/90 font-bold mb-2 px-0.5 leading-snug"></p>
                         <p id="creditDefaultQuestHint" class="hidden text-[10px] text-red-200 font-bold mb-2 px-0.5 leading-snug border border-red-500/50 bg-red-950/40 rounded-lg p-2"></p>
-                        <div id="todoContainer" class="space-y-2"></div>
+                        <div id="todoContainer" class="quest-card-grid"></div>
                         <button type="button" id="studentSurveyBtn" class="hidden mt-3 w-full min-h-[44px] bg-rose-700 hover:bg-rose-600 text-white text-[10px] font-bold rounded-xl" onclick="window.openResearchSurveyLink()">설문 참여하기</button>
                     </div>
                     
@@ -1106,7 +1106,7 @@
             <div class="grid md:grid-cols-2 gap-3">
                 <div class="inner-pane glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="daily">
                     <h3 class="font-bold text-sm text-slate-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-day text-slate-400"></i> 일일 퀘스트</h3>
-                    <div id="dailyQuestContainer" class="space-y-2"></div>
+                    <div id="dailyQuestContainer" class="quest-card-grid"></div>
                     <div class="mt-4 pt-3 border-t border-emerald-700/50">
                         <div class="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
                             <h3 class="text-white font-bold text-xs sm:text-sm leading-tight"><i class="fa-solid fa-table-cells text-emerald-400"></i> 실시간 퀘스트 현황</h3>
@@ -1120,11 +1120,11 @@
                 </div>
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl" data-pane-group="quests" data-pane="weekly">
                     <h3 class="font-bold text-sm text-yellow-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-calendar-week"></i> 주간 퀘스트</h3>
-                    <div id="weeklyQuestContainer" class="space-y-2"></div>
+                    <div id="weeklyQuestContainer" class="quest-card-grid"></div>
                 </div>
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="raid">
                     <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
-                    <div id="specialQuestContainer" class="space-y-2"></div>
+                    <div id="specialQuestContainer" class="quest-card-grid"></div>
                 </div>
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="attendance">
                     <h3 class="font-bold text-sm text-amber-200 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-sun text-amber-300"></i> 출석의 축복</h3>

@@ -7,7 +7,7 @@ export const CLASS_MODULE_CATALOG = [
     { id: 'home', label: '홈·캐릭터', basic: true, hint: '출석·캐릭터·퀘스트 장비가 있는 기본 화면입니다.' },
     { id: 'plaza', label: '광장', basic: true, hint: '학급 친구들을 한눈에 보는 자리입니다.' },
     { id: 'quests', label: '퀘스트', basic: true, hint: '일일·주간 과제를 주고받습니다.' },
-    { id: 'jobs', label: '직업', basic: true, hint: '1인 1역과 주급을 다룹니다.' },
+    { id: 'jobs', label: '직업', basic: true, hint: '1인 다역과 주급을 다룹니다.' },
     { id: 'constitution', label: '헌법', basic: true, hint: '우리 반 약속을 읽고 고칩니다.' },
     { id: 'help', label: '도움말', basic: true, hint: '사용 안내와 개인정보 안내입니다.' },
     { id: 'literature', label: '문학', basic: false, hint: '읽기 기록과 일기를 엽니다. 저학년은 천천히 켜 주세요.' },

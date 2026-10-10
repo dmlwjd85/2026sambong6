@@ -53,6 +53,13 @@ function appendSheet(wb, name, rows) {
     XLSX.utils.book_append_sheet(wb, aoaToSheet(rows), safeSheetName(name));
 }
 
+/** 이미 만든 행을 엑셀 파일로 받습니다. */
+export function downloadAoaWorkbook(sheetName, rows, fileName) {
+    const wb = XLSX.utils.book_new();
+    appendSheet(wb, sheetName, rows);
+    XLSX.writeFile(wb, fileName);
+}
+
 function studentName(ctx, sid) {
     return (ctx.getStudentName && ctx.getStudentName(sid)) || String(sid);
 }

@@ -589,6 +589,40 @@
             border-color: #ef4444 !important;
             box-shadow: 0 0 14px rgba(239, 68, 68, 0.55);
         }
+        .plaza-card.is-attendance-dim {
+            opacity: 0.38;
+            filter: grayscale(0.65);
+        }
+        .praise-btn {
+            margin-top: 0.2rem;
+            min-height: 1.6rem;
+            border-radius: 999px;
+            border: 1px solid #fbbf24;
+            background: #422006;
+            color: #fde68a;
+            font-size: 9px;
+            font-weight: 900;
+            padding: 0 0.4rem;
+        }
+        .checklist-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(2.6rem, 1fr));
+            gap: 0.35rem;
+        }
+        .checklist-cell {
+            min-height: 2.6rem;
+            border-radius: 0.7rem;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-weight: 900;
+            font-size: 12px;
+        }
+        .checklist-cell.is-done {
+            background: #155e75;
+            border-color: #67e8f9;
+            color: #ecfeff;
+        }
         .credit-default-stamp {
             position: absolute;
             z-index: 35;

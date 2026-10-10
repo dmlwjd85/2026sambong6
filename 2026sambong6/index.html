@@ -207,6 +207,7 @@
                         <span class="flex min-w-0 flex-col items-start leading-tight">
                             <span class="text-[9px] font-black text-emerald-100">학급 바꾸기</span>
                             <span id="navClassLabel" class="max-w-full truncate text-[11px] font-black text-white">우리 반</span>
+                            <span id="navRenameClassBtn" class="hidden text-[9px] font-black text-amber-200 underline" onclick="event.stopPropagation(); void window.openClassroomRename()">이름</span>
                         </span>
                         <i class="fa-solid fa-chevron-down text-[10px] text-white/85 shrink-0" aria-hidden="true"></i>
                     </button>
@@ -1072,7 +1073,7 @@
 
         <!-- ★ 3. 퀘스트 탭 ★ -->
         <section id="questsSection" class="hidden space-y-4">
-            <div class="app-sub-dock cols-5 mb-1">
+            <div class="app-sub-dock cols-7 mb-1">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="quests" data-pane="daily" onclick="window.switchInnerPane('quests','daily')">
                     <span class="app-sub-fa"><i class="fa-solid fa-calendar-day"></i></span>
                     <span>일일</span>
@@ -1088,6 +1089,14 @@
                 <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="stats" onclick="window.switchInnerPane('quests','stats')">
                     <span class="app-sub-fa"><i class="fa-solid fa-chart-line"></i></span>
                     <span>통계</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="attendance" onclick="window.switchInnerPane('quests','attendance'); window.renderAttendanceBoard && window.renderAttendanceBoard()">
+                    <span class="app-sub-fa"><i class="fa-solid fa-sun"></i></span>
+                    <span>출석</span>
+                </button>
+                <button type="button" class="app-sub-item inner-pane-btn" data-pane-group="quests" data-pane="checklist" onclick="window.switchInnerPane('quests','checklist'); window.renderChecklistBoard && window.renderChecklistBoard()">
+                    <span class="app-sub-fa"><i class="fa-solid fa-table-cells-large"></i></span>
+                    <span>체크</span>
                 </button>
                 <button type="button" class="app-sub-item inner-pane-btn inner-pane-gm hidden" data-pane-group="quests" data-pane="gm" onclick="window.switchInnerPane('quests','gm')">
                     <span class="app-sub-fa"><i class="fa-solid fa-list-check"></i></span>
@@ -1116,6 +1125,23 @@
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="raid">
                     <h3 class="font-bold text-sm text-purple-400 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-star"></i> 특수 전담 레이드</h3>
                     <div id="specialQuestContainer" class="space-y-2"></div>
+                </div>
+                <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="attendance">
+                    <h3 class="font-bold text-sm text-amber-200 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-sun text-amber-300"></i> 출석의 축복</h3>
+                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">담임·보조 교사가 오늘 상태를 고릅니다. 출석 +8XP +1봉, 지각(오전 9시 이후) -5XP, 조퇴 -5XP, 결석 -10XP. 같은 버튼을 다시 누르면 오늘 기록을 되돌립니다. 조퇴·결석은 광장 카드가 흐려집니다.</p>
+                    <div class="flex flex-wrap gap-2 mb-2">
+                        <button type="button" onclick="void window.exportAttendanceXlsx()" class="bg-emerald-800 hover:bg-emerald-700 text-white text-[10px] font-bold py-2 px-3 rounded-xl min-h-[44px]">엑셀로 출력</button>
+                    </div>
+                    <div id="attendanceBoard" class="space-y-1 text-[10px]"></div>
+                </div>
+                <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="checklist">
+                    <h3 class="font-bold text-sm text-cyan-200 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-table-cells-large text-cyan-300"></i> 체크리스트</h3>
+                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">학급 인원수만큼 번호가 있는 판입니다. 번호를 누르면 제출 완료가 되고 +20XP +2봉이 지급됩니다. 다시 누르면 제출과 보상이 되돌아갑니다. 끝나면 판을 지울 수 있습니다.</p>
+                    <div id="checklistCreateRow" class="hidden flex gap-2 mb-3">
+                        <input id="checklistTitleInput" type="text" maxlength="40" placeholder="체크리스트 제목" class="flex-1 min-w-0 bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]">
+                        <button type="button" onclick="void window.createClassChecklist()" class="shrink-0 bg-cyan-700 hover:bg-cyan-600 text-white font-bold px-3 py-2 rounded-xl text-[10px] min-h-[44px]">만들기</button>
+                    </div>
+                    <div id="checklistBoard" class="space-y-3"></div>
                 </div>
                 <div class="inner-pane hidden glass-panel p-3 rounded-2xl md:col-span-2" data-pane-group="quests" data-pane="stats">
                     <h3 class="font-bold text-sm text-fuchsia-300 mb-2 border-b border-slate-700 pb-2"><i class="fa-solid fa-chart-line"></i> 퀘스트 통계</h3>
@@ -1497,7 +1523,7 @@
         <section id="jobsSection" class="hidden">
             <div class="mb-4">
                 <h2 class="text-xl sm:text-2xl font-display text-sb-gold"><i class="fa-solid fa-briefcase"></i> 직업 목록</h2>
-                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">매주 금요일 오후 3시 이후, 누군가 앱에 접속하면 직업 주급이 자동 지급돼요. 카드를 누르면 확인 후 직업이 바뀝니다(1인 1역). 마스터는 학생을 고른 뒤 카드로 장착·해제합니다.</p>
+                <p class="text-[10px] sm:text-xs text-slate-400 mt-1">매주 금요일 오후 3시 이후, 누군가 앱에 접속하면 직업 주급이 자동 지급돼요. 카드를 누르면 직업이 하나 더 달리거나 벗겨집니다(1인 다역). 마스터는 학생을 고른 뒤 카드로 장착·해제합니다.</p>
             </div>
             <div class="app-sub-dock cols-3 mb-3">
                 <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="jobs" data-pane="list" onclick="window.switchInnerPane('jobs','list')">
@@ -1512,7 +1538,7 @@
             <div class="inner-pane" data-pane-group="jobs" data-pane="list">
             <div id="jobMasterAssignBar" class="hidden mb-3 glass-panel p-3 rounded-xl border border-sky-500/40 bg-slate-900/80">
                 <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-user-check text-sky-300"></i> 학생 직업 장착·해제</h3>
-                <p class="text-[9px] text-slate-300 mb-2 leading-relaxed">학생 이름을 누른 뒤 직업 카드를 누르면 확인 후 그 학생 직업이 바뀌거나 벗겨집니다(1인 1역). 카드에 붙은 이름 옆 ×를 눌러도 바로 해제됩니다.</p>
+                <p class="text-[9px] text-slate-300 mb-2 leading-relaxed">학생 이름을 누른 뒤 직업 카드를 누르면 확인 후 그 학생에게 직업이 더해지거나 벗겨집니다(1인 다역). 카드에 붙은 이름 옆 ×를 눌러도 바로 해제됩니다.</p>
                 <div id="jobMasterStudentChips" class="flex flex-wrap gap-1.5"></div>
             </div>
             <div id="jobGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3"></div>
@@ -1914,6 +1940,10 @@
                             <button type="button" onclick="window.previewBankLoan()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl text-xs">이자 미리보기</button>
                             <button type="button" onclick="void window.takeBankLoan()" class="js-bank-loan-btn bg-rose-700 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-xl text-xs">대출 받기</button>
                         </div>
+                    </div>
+                    <div id="bankLoanPartialRow" class="hidden flex gap-2 flex-wrap items-center">
+                        <input type="number" id="bankLoanPartialInput" min="1" step="1" placeholder="일부 납입" class="w-28 bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold min-h-[44px]">
+                        <button type="button" onclick="void window.repayBankLoanPartial()" class="js-bank-loan-btn bg-rose-800 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-xl text-xs min-h-[44px]">일부 갚기</button>
                     </div>
                     <button type="button" id="bankLoanRepayBtn" onclick="void window.repayBankLoan()" class="js-bank-loan-btn hidden bg-rose-900 hover:bg-rose-800 text-rose-50 font-bold py-2 px-4 rounded-xl text-xs border border-rose-600">지금 갚기 (이자 포함)</button>
                 </div>
@@ -3134,7 +3164,8 @@
                 <div class="grid sm:grid-cols-2 gap-3">
                     <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">학급 표시 이름
                         <input id="wsClassDisplayName" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]" placeholder="예: 6학년 1반">
-                        <span class="block mt-1 text-[9px] text-amber-200/80">이 학급 마스터가 「설정 저장」으로 바꿀 수 있습니다.</span>
+                        <span class="block mt-1 text-[9px] text-amber-200/80">담임교사만 교실 이름을 바꿀 수 있습니다.</span>
+                        <button type="button" onclick="void window.saveClassroomName()" class="mt-2 bg-amber-600 hover:bg-amber-500 text-stone-950 font-black px-3 py-2 rounded-xl text-[10px] min-h-[44px]">교실 이름 저장</button>
                     </label>
                     <label class="text-[10px] text-slate-300 font-bold sm:col-span-2">학교명 (선택)
                         <input id="wsClassSchoolName" type="text" maxlength="40" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs font-bold min-h-[44px]" placeholder="예: ○○초등학교">
@@ -3711,6 +3742,47 @@
         </div>
     </div>
 
+    <div id="classroomRenameModal" class="hidden fixed inset-0 z-[120] bg-slate-950/80 flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-2xl border border-amber-400 bg-slate-900 p-4 space-y-3">
+            <h3 class="text-amber-200 font-black text-sm">교실 이름 바꾸기</h3>
+            <p class="text-[10px] text-slate-400">담임교사만 바꿀 수 있습니다. 학생 화면에 보이는 학급 이름입니다.</p>
+            <input id="classroomRenameInput" type="text" maxlength="40" class="w-full bg-slate-950 border border-amber-500 text-white rounded-xl px-3 py-2 text-sm font-bold min-h-[44px]">
+            <div class="flex gap-2">
+                <button type="button" onclick="void window.saveClassroomName()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black py-2 rounded-xl text-xs min-h-[44px]">저장</button>
+                <button type="button" onclick="document.getElementById('classroomRenameModal').classList.add('hidden')" class="flex-1 bg-slate-700 text-white font-bold py-2 rounded-xl text-xs min-h-[44px]">닫기</button>
+            </div>
+        </div>
+    </div>
+    <div id="loanMorningModal" class="hidden fixed inset-0 z-[130] bg-red-950/80 flex items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-3xl border-4 border-red-500 bg-slate-950 p-4 space-y-3 shadow-[0_0_40px_rgba(239,68,68,0.45)]">
+            <div class="flex items-center gap-3">
+                <svg viewBox="0 0 88 88" class="w-20 h-20 shrink-0" aria-hidden="true">
+                    <circle cx="44" cy="44" r="40" fill="#7f1d1d" stroke="#fecaca" stroke-width="4"/>
+                    <path d="M44 18 L70 66 H18 Z" fill="#fef2f2" stroke="#991b1b" stroke-width="3"/>
+                    <rect x="41" y="32" width="6" height="18" rx="2" fill="#991b1b"/>
+                    <circle cx="44" cy="56" r="3.2" fill="#991b1b"/>
+                </svg>
+                <div>
+                    <p class="text-[10px] font-black tracking-[0.25em] text-red-300">SAMBONG CREDIT NOTICE</p>
+                    <h3 class="text-red-100 font-black text-lg leading-tight">대출 독촉장</h3>
+                </div>
+            </div>
+            <p id="loanMorningBody" class="text-sm text-red-50 leading-relaxed whitespace-pre-wrap font-bold"></p>
+            <p class="text-[11px] text-amber-100 leading-relaxed">납기일을 넘기면 5영업일 동안 광장 카드에 신용불량 도장이 찍히고 MATE 활동이 멈춥니다. 그 다음 남은 빚의 50%가 강제로 빠지고, 나머지는 다시 5영업일 안에 갚아야 합니다. 안 갚으면 같은 일이 반복됩니다.</p>
+            <div class="flex gap-2">
+                <button type="button" onclick="window.dismissLoanMorningNotice(true)" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-black py-2 rounded-xl text-xs min-h-[44px]">은행으로 가서 갚기</button>
+                <button type="button" onclick="window.dismissLoanMorningNotice(false)" class="flex-1 bg-slate-800 text-slate-200 font-bold py-2 rounded-xl text-xs min-h-[44px]">오늘은 알았음</button>
+            </div>
+        </div>
+    </div>
+    <div id="praiseFanfareModal" class="hidden fixed inset-0 z-[125] bg-amber-950/75 flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-3xl border-4 border-amber-300 bg-slate-900 p-5 text-center space-y-2">
+            <p class="text-4xl">🎉🎺</p>
+            <h3 class="text-amber-200 font-black text-xl">빵빠레!</h3>
+            <p id="praiseFanfareBody" class="text-sm text-amber-50 font-bold leading-relaxed"></p>
+            <button type="button" onclick="document.getElementById('praiseFanfareModal').classList.add('hidden')" class="w-full bg-amber-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
+        </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

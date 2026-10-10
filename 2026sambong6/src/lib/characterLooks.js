@@ -92,6 +92,16 @@ export function getCosmeticSlot(skin) {
     return String(skin.type || skin.id || '');
 }
 
+/**
+ * 광장 초상 선택.
+ * 교사는 수호 캐릭터가 기본이고, 상점 얼굴 스킨을 착용하면(수호 모드가 아니면) 그 스킨을 광장에도 씁니다.
+ */
+export function resolvePlazaPortrait({ isStaff, hasFaceSkin, homeLookMode } = {}) {
+    if (hasFaceSkin && (!isStaff || String(homeLookMode || '') !== 'staff')) return 'face';
+    if (isStaff) return 'staff';
+    return 'base';
+}
+
 export function unequipSameSlot(equippedSkins, catalog, incomingSkin) {
     const next = { ...(equippedSkins || {}) };
     const slot = getCosmeticSlot(incomingSkin);

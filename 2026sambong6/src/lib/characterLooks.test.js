@@ -7,6 +7,7 @@ import {
     RANK_LOOKS,
     resolveCharacterBase,
     resolveRankLook,
+    resolvePlazaPortrait,
     resolveStaffLook,
     unequipSameSlot,
 } from './characterLooks.js';
@@ -80,5 +81,19 @@ describe('장식 슬롯', () => {
         assert.equal(next.f_ninja, false);
         assert.equal(next.f_king, false);
         assert.equal(next.sk_red, true);
+    });
+});
+
+describe('광장 초상', () => {
+    it('학생은 상점 얼굴이 있으면 그 스킨을 쓴다', () => {
+        assert.equal(resolvePlazaPortrait({ isStaff: false, hasFaceSkin: true }), 'face');
+        assert.equal(resolvePlazaPortrait({ isStaff: false, hasFaceSkin: false }), 'base');
+    });
+
+    it('교사는 스킨을 착용하면 광장도 그 얼굴이고, 수호 모드면 수호 캐릭터다', () => {
+        assert.equal(resolvePlazaPortrait({ isStaff: true, hasFaceSkin: true, homeLookMode: 'student' }), 'face');
+        assert.equal(resolvePlazaPortrait({ isStaff: true, hasFaceSkin: true, homeLookMode: '' }), 'face');
+        assert.equal(resolvePlazaPortrait({ isStaff: true, hasFaceSkin: true, homeLookMode: 'staff' }), 'staff');
+        assert.equal(resolvePlazaPortrait({ isStaff: true, hasFaceSkin: false, homeLookMode: 'student' }), 'staff');
     });
 });

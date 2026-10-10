@@ -483,6 +483,7 @@ import {
     listCharacterBases,
     listStaffLooks,
     resolveCharacterBase,
+    resolvePlazaPortrait,
     resolveRankLook,
     resolveStaffLook,
     unequipSameSlot,
@@ -2373,26 +2374,26 @@ function redrawPlazaGrantsUi() {
             { id: 'f_wolf', type: 'face', name: '늑대', desc: '달빛 수호대', price: 320, emoji: '🐺', img: 'chars/face-wolf.webp' },
             { id: 'f_phoenix', type: 'face', name: '봉황', desc: '불꽃의 날개', price: 380, emoji: '🔥', img: 'chars/face-phoenix.webp' },
             { id: 'f_scholar', type: 'face', name: '선비', desc: '지혜의 책', price: 260, emoji: '📜', img: 'chars/face-scholar.webp' },
-            { id: 'f_pk_ember', type: 'face', name: '불꽃령', desc: '포켓몬 스타일 · 동그란 불꽃 정령', price: 300, emoji: '🔥', img: 'chars/face-pk-ember.webp' },
-            { id: 'f_pk_bubble', type: 'face', name: '물방울거북', desc: '포켓몬 스타일 · 물방울을 인 거북', price: 300, emoji: '🐢', img: 'chars/face-pk-bubble.webp' },
-            { id: 'f_pk_leaf', type: 'face', name: '잎새새', desc: '포켓몬 스타일 · 잎사귀 새', price: 300, emoji: '🐦', img: 'chars/face-pk-leaf.webp' },
-            { id: 'f_pk_bolt', type: 'face', name: '번개풍뎅이', desc: '포켓몬 스타일 · 번개 풍뎅이', price: 300, emoji: '⚡', img: 'chars/face-pk-bolt.webp' },
-            { id: 'f_pk_pebble', type: 'face', name: '바위곰', desc: '포켓몬 스타일 · 돌멩이 곰', price: 320, emoji: '🐻', img: 'chars/face-pk-pebble.webp' },
-            { id: 'f_kart_red', type: 'face', name: '질주레드', desc: '카트라이더 스타일 · 빨간 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-red.webp' },
-            { id: 'f_kart_blue', type: 'face', name: '드리프트블루', desc: '카트라이더 스타일 · 파란 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-blue.webp' },
-            { id: 'f_kart_yellow', type: 'face', name: '부스터옐로', desc: '카트라이더 스타일 · 노란 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-yellow.webp' },
-            { id: 'f_kart_pink', type: 'face', name: '코너핑크', desc: '카트라이더 스타일 · 분홍 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-pink.webp' },
-            { id: 'f_kart_green', type: 'face', name: '터보그린', desc: '카트라이더 스타일 · 초록 헬멧', price: 280, emoji: '🏎️', img: 'chars/face-kart-green.webp' },
-            { id: 'f_block_builder', type: 'face', name: '블록빌더', desc: '로블록스 스타일 · 망치 블록 친구', price: 260, emoji: '🧱', img: 'chars/face-block-builder.webp' },
-            { id: 'f_block_knight', type: 'face', name: '블록기사', desc: '로블록스 스타일 · 블록 기사', price: 260, emoji: '🧱', img: 'chars/face-block-knight.webp' },
-            { id: 'f_block_astro', type: 'face', name: '블록우주', desc: '로블록스 스타일 · 블록 우주인', price: 260, emoji: '🧱', img: 'chars/face-block-astro.webp' },
-            { id: 'f_block_ninja', type: 'face', name: '블록닌자', desc: '로블록스 스타일 · 블록 닌자', price: 260, emoji: '🧱', img: 'chars/face-block-ninja.webp' },
-            { id: 'f_block_mage', type: 'face', name: '블록마법', desc: '로블록스 스타일 · 블록 마법사', price: 260, emoji: '🧱', img: 'chars/face-block-mage.webp' },
-            { id: 'f_brawl_hammer', type: 'face', name: '망치파이터', desc: '브롤스타즈 스타일 · 큰 나무 망치', price: 320, emoji: '🔨', img: 'chars/face-brawl-hammer.webp' },
-            { id: 'f_brawl_bloom', type: 'face', name: '꽃잎슈터', desc: '브롤스타즈 스타일 · 꽃 블래스터', price: 320, emoji: '🌸', img: 'chars/face-brawl-bloom.webp' },
-            { id: 'f_brawl_boxer', type: 'face', name: '로봇복서', desc: '브롤스타즈 스타일 · 글러브 로봇', price: 320, emoji: '🥊', img: 'chars/face-brawl-boxer.webp' },
-            { id: 'f_brawl_cannon', type: 'face', name: '대포해적', desc: '브롤스타즈 스타일 · 작은 대포', price: 320, emoji: '💣', img: 'chars/face-brawl-cannon.webp' },
-            { id: 'f_brawl_frost', type: 'face', name: '얼음궁수', desc: '브롤스타즈 스타일 · 얼음 활', price: 320, emoji: '❄️', img: 'chars/face-brawl-frost.webp' },
+            { id: 'f_pk_ember', type: 'face', name: '플레어', desc: '포켓몬 스타일', price: 300, emoji: '🔥', img: 'chars/face-pk-ember.webp' },
+            { id: 'f_pk_bubble', type: 'face', name: '아쿠아', desc: '포켓몬 스타일', price: 300, emoji: '🐢', img: 'chars/face-pk-bubble.webp' },
+            { id: 'f_pk_leaf', type: 'face', name: '리프', desc: '포켓몬 스타일', price: 300, emoji: '🐦', img: 'chars/face-pk-leaf.webp' },
+            { id: 'f_pk_bolt', type: 'face', name: '썬더', desc: '포켓몬 스타일', price: 300, emoji: '⚡', img: 'chars/face-pk-bolt.webp' },
+            { id: 'f_pk_pebble', type: 'face', name: '스톤', desc: '포켓몬 스타일', price: 320, emoji: '🐻', img: 'chars/face-pk-pebble.webp' },
+            { id: 'f_kart_red', type: 'face', name: '레드라인', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-red.webp' },
+            { id: 'f_kart_blue', type: 'face', name: '드리프트', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-blue.webp' },
+            { id: 'f_kart_yellow', type: 'face', name: '부스터', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-yellow.webp' },
+            { id: 'f_kart_pink', type: 'face', name: '체리', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-pink.webp' },
+            { id: 'f_kart_green', type: 'face', name: '네온', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-green.webp' },
+            { id: 'f_block_builder', type: 'face', name: '빌더', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-builder.webp' },
+            { id: 'f_block_knight', type: 'face', name: '나이트', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-knight.webp' },
+            { id: 'f_block_astro', type: 'face', name: '파일럿', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-astro.webp' },
+            { id: 'f_block_ninja', type: 'face', name: '섀도', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-ninja.webp' },
+            { id: 'f_block_mage', type: 'face', name: '메이지', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-mage.webp' },
+            { id: 'f_brawl_hammer', type: 'face', name: '해머', desc: '브롤스타즈 스타일', price: 320, emoji: '🔨', img: 'chars/face-brawl-hammer.webp' },
+            { id: 'f_brawl_bloom', type: 'face', name: '블라썸', desc: '브롤스타즈 스타일', price: 320, emoji: '🌸', img: 'chars/face-brawl-bloom.webp' },
+            { id: 'f_brawl_boxer', type: 'face', name: '복서', desc: '브롤스타즈 스타일', price: 320, emoji: '🥊', img: 'chars/face-brawl-boxer.webp' },
+            { id: 'f_brawl_cannon', type: 'face', name: '캐논', desc: '브롤스타즈 스타일', price: 320, emoji: '💣', img: 'chars/face-brawl-cannon.webp' },
+            { id: 'f_brawl_frost', type: 'face', name: '아이스', desc: '브롤스타즈 스타일', price: 320, emoji: '❄️', img: 'chars/face-brawl-frost.webp' },
             { id: 'f_staff_dragon', type: 'face', name: '용', desc: '세계수의 용왕 · Lv.80', price: 2000, minLevel: 80, emoji: '🐉', img: 'chars/staff-dragon.webp' },
             { id: 'f_staff_tiger', type: 'face', name: '호랑이', desc: '산을 지키는 호랑이 · Lv.80', price: 2000, minLevel: 80, emoji: '🐯', img: 'chars/staff-tiger.webp' },
             { id: 'f_staff_hyunmu', type: 'face', name: '현무', desc: '북쪽을 지키는 현무 · Lv.80', price: 2000, minLevel: 80, emoji: '🐢', img: 'chars/staff-hyunmu.webp' },
@@ -2446,18 +2447,21 @@ function redrawPlazaGrantsUi() {
             const drawShield = showShield !== undefined ? !!showShield : !!showWeapon;
             const drawShoes = showShoes !== undefined ? !!showShoes : !!showWeapon;
             let inner = '';
-            if (isStaff) {
+            const faceSkin = SKIN_DATA.find((s) => s.type === 'face' && equipped[s.id]);
+            const portrait = resolvePlazaPortrait({
+                isStaff,
+                hasFaceSkin: !!faceSkin,
+                homeLookMode: row.homeLookMode,
+            });
+            if (portrait === 'face' && faceSkin) {
+                inner = faceSkin.img ? charImgTag(faceSkin.img, portraitClass) : (faceSkin.emoji || '');
+            } else if (portrait === 'staff') {
                 const look = resolveStaffLook(row.staffLookId, studentId);
                 inner = charImgTag(look.img, `char-portrait-staff ${portraitClass}`.trim());
             } else {
-                const faceSkin = SKIN_DATA.find((s) => s.type === 'face' && equipped[s.id]);
-                if (faceSkin) {
-                    inner = faceSkin.img ? charImgTag(faceSkin.img, portraitClass) : (faceSkin.emoji || '');
-                } else {
-                    const gender = STUDENT_GENDERS[String(studentId)] === 'F' ? 'F' : 'M';
-                    const base = resolveCharacterBase(row.baseFaceId, gender);
-                    inner = charImgTag(base.img, portraitClass);
-                }
+                const gender = STUDENT_GENDERS[String(studentId)] === 'F' ? 'F' : 'M';
+                const base = resolveCharacterBase(row.baseFaceId, gender);
+                inner = charImgTag(base.img, portraitClass);
             }
             let rankLayer = '';
             let rankStackClass = '';
@@ -20332,6 +20336,8 @@ ${subjectLine}
                         ? (getStaffMember('gm_a')?.label || '해적두목')
                         : (getStaffMember('gm')?.label || '마스터');
                     const badge = isA ? '해적두목' : '마스터';
+                    const staffAura = applyEquippedAura(displayData, '', '');
+                    const staffAuraClass = `${staffAura.border} ${staffAura.glow}`.trim();
                     return `
                     <div class="plaza-card plaza-staff-card plaza-staff-banner ${themeClass} w-full relative">
                         <span class="plaza-staff-spark" style="top:14%;left:6%"></span>
@@ -20339,7 +20345,7 @@ ${subjectLine}
                         <span class="plaza-staff-spark" style="bottom:18%;left:18%;animation-delay:.8s"></span>
                         <span class="plaza-staff-spark" style="bottom:28%;right:16%;animation-delay:1.15s"></span>
                         <div class="plaza-staff-avatar">
-                            <div class="plaza-staff-face-wrap">
+                            <div class="plaza-staff-face-wrap${staffAuraClass ? ` border-4 rounded-full ${staffAuraClass}` : ''}">
                                 <div class="plaza-staff-ring" aria-hidden="true"></div>
                                 <div class="plaza-card-face plaza-staff-face">
                                     ${buildCharacterAvatarHtml({ studentId: targetId, data: displayData, isStaff: true, showWeapon: true, portraitClass: 'char-portrait-staff' })}
@@ -27543,6 +27549,31 @@ ${subjectLine}
             }
         };
 
+        /** 교사가 스킨을 갈아입으면 스냅샷 전에 광장 카드에도 바로 반영합니다. */
+        function syncOwnCosmeticToPlazaCache() {
+            const sid = localStorage.getItem('sambong_student_id');
+            if (!sid || !window.playerState) return;
+            const patch = {
+                equippedSkins: window.playerState.equippedSkins || {},
+                ownedSkins: window.playerState.ownedSkins || {},
+                homeLookMode: window.playerState.homeLookMode || '',
+                staffLookId: window.playerState.staffLookId || '',
+                baseFaceId: window.playerState.baseFaceId || '',
+            };
+            if (sid === 'gm') {
+                window.gmData = { ...(window.gmData || { id: 'gm' }), ...patch, id: 'gm' };
+                return;
+            }
+            if (sid === 'gm_a') {
+                window.gmaData = { ...(window.gmaData || { id: 'gm_a' }), ...patch, id: 'gm_a' };
+                return;
+            }
+            const list = window.allStudentsData;
+            if (!list) return;
+            const i = list.findIndex((s) => String(s.id) === String(sid));
+            if (i >= 0) list[i] = { ...list[i], ...patch };
+        }
+
         window.handleSkin = async function(skinId, stayOnPage) {
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             const skin = SKIN_DATA.find(s => s.id === skinId);
@@ -27563,6 +27594,7 @@ ${subjectLine}
                 window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
                 window.playerState.equippedSkins[skinId] = !wasOn;
                 if (skin.type === 'face') window.playerState.homeLookMode = 'student';
+                syncOwnCosmeticToPlazaCache();
                 updateUI();
                 saveDataToCloud();
                 if (!stayOnPage) window.switchTab('plaza');
@@ -27575,6 +27607,7 @@ ${subjectLine}
                 if (window.playerState.isAdmin && skin.type === 'face' && window.playerState.equippedSkins[skinId]) {
                     window.playerState.homeLookMode = 'student';
                 }
+                syncOwnCosmeticToPlazaCache();
                 updateUI(); saveDataToCloud();
                 if (!stayOnPage) window.switchTab('plaza');
             } else {
@@ -27587,7 +27620,9 @@ ${subjectLine}
                         window.playerState.ownedSkinInstances[skinId] = `ski_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
                         
                         window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
-                        window.playerState.equippedSkins[skinId] = true; 
+                        window.playerState.equippedSkins[skinId] = true;
+                        if (window.playerState.isAdmin && skin.type === 'face') window.playerState.homeLookMode = 'student';
+                        syncOwnCosmeticToPlazaCache();
                         await window.customAlert(`🎉 획득 완료! 바로 ${kindLabel === '오라' ? '적용' : '내 캐릭터로 사용'}했어요.`); 
                         updateUI();
                         const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price, requireServerBongBalance: true, operationLabel: `${skin.name} ${kindLabel} 구매` });
@@ -27643,7 +27678,7 @@ ${subjectLine}
                 const staffCurrent = resolveStaffLook(window.playerState.staffLookId, sid);
                 const looks = listStaffLooks();
                 staffHtml = `
-                    <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터 (광장 카드)</p>
+                    <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터</p>
                     <div class="grid grid-cols-5 gap-1.5">${looks.map((b) => {
                         const on = b.id === staffCurrent.id && window.playerState.homeLookMode !== 'student';
                         return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}${staffLookStatLabel(b.id) ? ` · ${staffLookStatLabel(b.id)}` : ''}">
@@ -27651,7 +27686,7 @@ ${subjectLine}
                             <span>${b.name}${b.masterOnly ? ' · 전용' : ''}</span>
                         </button>`;
                     }).join('')}</div>
-                    <p class="text-[9px] text-slate-400 mt-1.5 text-center">광장에서는 수호 캐릭터가 보이고, 아래 백성·상점 스킨은 홈에서 학생 화면처럼 살펴볼 수 있습니다.</p>`;
+                    <p class="text-[9px] text-slate-400 mt-1.5 text-center">수호 캐릭터를 고르면 광장에 그 얼굴이 나옵니다. 상점 스킨을 착용하면 광장 카드도 그 스킨으로 바뀝니다.</p>`;
             }
             const rank = getLevelInfo(window.playerState.xp || 0).info;
             const look = resolveRankLook(rank.name);
@@ -27752,6 +27787,7 @@ ${subjectLine}
             SKIN_DATA.forEach((s) => {
                 if (s.type === 'face') window.playerState.equippedSkins[s.id] = false;
             });
+            syncOwnCosmeticToPlazaCache();
             updateUI();
             saveDataToCloud();
         };
@@ -27763,6 +27799,7 @@ ${subjectLine}
             if (look.id !== String(lookId)) return;
             window.playerState.staffLookId = look.id;
             window.playerState.homeLookMode = 'staff';
+            syncOwnCosmeticToPlazaCache();
             updateUI();
             saveDataToCloud();
         };

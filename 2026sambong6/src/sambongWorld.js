@@ -606,7 +606,9 @@ import {
 } from './lib/classChecklist.js';
 import {
     planPeerPraise,
+    praiseCountForToday,
     praiseFailMessage,
+    rollPraiseDay,
     sanitizePraiseBoard,
 } from './lib/peerPraise.js';
 import {
@@ -19935,6 +19937,7 @@ ${subjectLine}
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
             }
+            void maybeRollPraiseAtMidnight();
             void maybeExpireGoldenBell(now);
 
             if (window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin) {
@@ -20237,6 +20240,19 @@ ${subjectLine}
             return `<div class="${cls}" title="${escapeHtmlAttr(msg)}">${escapeConvenienceHtml(msg)}</div>`;
         }
 
+        function plazaPraiseCount(studentId, storedCount) {
+            const today = getLocalDateStr();
+            if (window._classOpsReady) return praiseCountForToday(window._praiseBoard, studentId, today);
+            if (!window._classOpsLoading && typeof db !== 'undefined' && db) {
+                void ensureClassOpsLoaded().then(() => {
+                    if (typeof window.renderPlaza === 'function') {
+                        window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                    }
+                });
+            }
+            return Math.max(0, Math.floor(Number(storedCount) || 0));
+        }
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
@@ -20368,7 +20384,7 @@ ${subjectLine}
                 const creditStamp = creditOn ? '<div class="credit-default-stamp">신용불량</div>' : '';
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
-                const praiseCount = Math.max(0, Math.floor(Number(displayData.praiseCount) || 0));
+                const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
                 const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
 
                 return `
@@ -22981,11 +22997,81 @@ ${subjectLine}
                     window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
                     window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
                     window._classOpsReady = true;
+                    await maybeRollPraiseAtMidnight();
                 } finally {
                     window._classOpsLoading = null;
                 }
             })();
             return window._classOpsLoading;
+        }
+
+        function praiseStudentIdFromDoc(key) {
+            if (key === 'student_gm') return 'gm';
+            if (key === 'student_gm_a') return 'gm_a';
+            return String(key || '').replace(/^student_/, '');
+        }
+
+        function applyPraiseCountLocal(sid, next) {
+            const id = String(sid);
+            if (id === 'gm' && window.gmData) window.gmData.praiseCount = next;
+            else if (id === 'gm_a' && window.gmaData) window.gmaData.praiseCount = next;
+            else {
+                const row = (window.allStudentsData || []).find((s) => String(s.id) === id);
+                if (row) row.praiseCount = next;
+            }
+            if (window.playerState && String(localStorage.getItem('sambong_student_id') || '') === id) {
+                window.playerState.praiseCount = next;
+            }
+        }
+
+        async function syncStoredPraiseCounts(board) {
+            const snaps = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
+            const batch = writeBatch(db);
+            let writes = 0;
+            snaps.forEach((snap) => {
+                const data = snap.data() || {};
+                const sid = praiseStudentIdFromDoc(snap.id);
+                const live = window._praiseBoard || board || {};
+                const next = Math.max(0, Math.floor(Number(live.received && live.received[sid]) || 0));
+                const cur = Math.floor(Number(data.praiseCount) || 0);
+                if (cur !== next) {
+                    batch.set(snap.ref, { praiseCount: next }, { merge: true });
+                    writes += 1;
+                }
+                applyPraiseCountLocal(sid, next);
+            });
+            if (writes) await batch.commit();
+        }
+
+        async function maybeRollPraiseAtMidnight() {
+            if (typeof db === 'undefined' || !db || window._praiseRollRunning || !window._classOpsReady) return;
+            const today = getLocalDateStr();
+            const local = rollPraiseDay(window._praiseBoard, today);
+            if (!local.reset && !local.changed && !window._praiseCountsNeedSync) return;
+            window._praiseRollRunning = true;
+            try {
+                const praiseRef = classOpsRef('praise');
+                const outcome = await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(praiseRef);
+                    const rolled = rollPraiseDay(snap.exists() ? snap.data() : {}, today);
+                    if (!rolled.changed) return { reset: false, board: rolled.board };
+                    tx.set(praiseRef, rolled.board, { merge: false });
+                    return { reset: rolled.reset, board: rolled.board };
+                });
+                window._praiseBoard = outcome.board;
+                if (outcome.reset) window._praiseCountsNeedSync = true;
+                if (window._praiseCountsNeedSync) {
+                    await syncStoredPraiseCounts(outcome.board);
+                    window._praiseCountsNeedSync = false;
+                }
+                if (typeof window.renderPlaza === 'function') {
+                    window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                }
+            } catch (e) {
+                console.error('maybeRollPraiseAtMidnight', e);
+            } finally {
+                window._praiseRollRunning = false;
+            }
         }
 
         function rosterStudentsForOps() {

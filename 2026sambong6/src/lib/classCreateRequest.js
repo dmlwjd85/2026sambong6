@@ -37,7 +37,10 @@ export function isSeedMasterViewer(viewer, classId) {
 }
 
 /** 시드 마스터만 승인 없이 바로 학급을 만들 수 있습니다. */
-export function canCreateClassImmediately(viewer, classId) {
+export function canCreateClassImmediately(viewer, classId, teacherSession) {
+    if (teacherSession && teacherSession.uid && String(teacherSession.email || '').includes('@') && teacherSession.isAnonymous === false) {
+        return true;
+    }
     return isSeedMasterViewer(viewer, classId);
 }
 

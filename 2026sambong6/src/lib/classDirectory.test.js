@@ -85,5 +85,7 @@ describe('학급 관리 목록', () => {
         assert.deepEqual(mine.map((r) => r.classId), ['my-class']);
         const seed = directoryEntriesForViewer([live, other], gm, SEED_MASTER_CLASS_ID);
         assert.deepEqual(seed.map((r) => r.classId).sort(), ['my-class', 'other-class']);
+        const owned = directoryEntriesForViewer([live, other], gm, 'my-class', ['other-class']);
+        assert.deepEqual(owned.map((r) => r.classId).sort(), ['my-class', 'other-class']);
     });
 });

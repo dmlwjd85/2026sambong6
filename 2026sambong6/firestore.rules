@@ -1,16 +1,107 @@
 rules_version = '2';
-// sambong-world-2026 단일 Firestore — 삼봉 월드(artifacts) + ncgame(loginByName, users) 통합 규칙
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: teachers
+// Document ID: Firebase Auth uid (이메일·구글 교사)
+// Fields:
+//   - uid: string (required, == auth.uid, immutable)
+//   - email: string (required, <= 120)
+//   - displayName: string (required, <= 40)
+//   - ownedClassIds: list<string> (optional convenience; 접근 권한의 근거가 아님)
+//   - createdAt / updatedAt: number or timestamp
+//
+// Collection: classAccess
+// Document ID: Firebase Auth uid (학생=익명, 교사=이메일)
+// Fields:
+//   - uid: string (== auth.uid)
+//   - classId: string (1~80, 영숫자·._-)
+//   - inviteCode: string (4~12, 대문자·숫자)
+//   - role: 'student' | 'teacher' | 'guest'
+//   - updatedAt: number or timestamp
+// 생성: inviteCodes/{inviteCode}.classId == classId 이고 학급이 보관이 아닐 때
+//
+// Collection: classes
+// Document ID: classId
+// Fields (기존 학급 메타 + 소유):
+//   - ownerUid: string (교사 uid, 생성 시 필수, 이후 불변. 미설정 문서는 교사가 1회 청구 가능)
+//   - ownerEmail: string
+//   - inviteCode, displayName, roster, staff 등 학급 운영 필드
+// 읽기: 해당 학급 classAccess 또는 ownerUid == auth.uid
+// 목록: ownerUid == 요청자 (교사 자기 학급만)
+//
+// Collection: inviteCodes
+// Document ID: 초대 코드
+// Fields:
+//   - classId: string
+//   - displayName: string (<= 40)
+//   - isActive: bool (optional)
+// 읽기(get): 로그인 사용자만. list 금지(코드 전수 탐색 차단)
+// 쓰기: 해당 학급 소유 교사
+//
+// Collection: artifacts/{classId}/public/**
+// 학급 게임 데이터. 읽기/쓰기: 그 학급 classAccess 또는 소유 교사만.
+// students 문서는 기존 XP/봉 안전 한도를 유지합니다.
+// 문서마다 필드 단위 스키마를 강제하면 기존 31k줄 교실 루프가 깨지므로
+// 학급 범위 분리 + 학생 수치 한도를 우선합니다.
+//
+// 기타(ncgame/picbook): 이 앱 UI에서는 쓰지 않습니다. 공개 읽기를 닫고
+// 자기 uid 또는 로그인 쓰기로 좁힙니다.
+// ===============================================================
+// sambong-world-2026 — 학급 범위 보안 규칙(프로토타입)
 // Firebase 콘솔 → Firestore → 규칙에 붙여넣거나: firebase deploy --only firestore
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // --- 삼봉 월드 (sambongWorld.js) ---
-    function signedIn() {
+    function isAuthenticated() {
       return request.auth != null;
     }
 
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isTeacherAccount() {
+      return isAuthenticated()
+        && request.auth.token.email is string
+        && request.auth.token.email.size() > 3;
+    }
+
+    function validClassId(id) {
+      return id is string && id.size() > 0 && id.size() <= 80;
+    }
+
+    function classDoc(classId) {
+      return /databases/$(database)/documents/classes/$(classId);
+    }
+
+    function accessDoc() {
+      return /databases/$(database)/documents/classAccess/$(request.auth.uid);
+    }
+
+    function inviteDoc(code) {
+      return /databases/$(database)/documents/inviteCodes/$(code);
+    }
+
+    function isTeacherOf(classId) {
+      return isTeacherAccount()
+        && exists(classDoc(classId))
+        && get(classDoc(classId)).data.ownerUid == request.auth.uid;
+    }
+
+    function hasClassAccess(classId) {
+      return isAuthenticated() && validClassId(classId) && (
+        isTeacherOf(classId)
+        || (
+          exists(accessDoc())
+          && get(accessDoc()).data.classId == classId
+        )
+      );
+    }
+
     function studentCreateIsSafe() {
-      return signedIn()
+      return isAuthenticated()
         && request.resource.data.xp is number
         && request.resource.data.bong is number
         && request.resource.data.xp >= 0
@@ -19,8 +110,7 @@ service cloud.firestore {
 
     function studentUpdateIsSafe() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return signedIn()
-        // XP: 하락(마스터 수정·차감) 허용, 1회 저장 상승은 650 이하(비정상 급등 방지)
+      return isAuthenticated()
         && (!changed.hasAny(['xp']) || (
           request.resource.data.xp is number
           && request.resource.data.xp >= 0
@@ -29,114 +119,189 @@ service cloud.firestore {
             || request.resource.data.xp <= resource.data.xp + 650
           )
         ))
-          // 봉은 정상 구매/점심 차감·계좌이체(최대 5000+수수료)·대출 자동이체를 허용하고, 오래 열린 창의 큰 마이너스 덮어쓰기는 차단합니다.
-          && (!changed.hasAny(['bong'])
-            || request.resource.data.bong >= resource.data.bong
-            || (
-              request.resource.data.bong >= -2000
-              && request.resource.data.bong >= resource.data.bong - 5050
-            ));
+        && (!changed.hasAny(['bong'])
+          || request.resource.data.bong >= resource.data.bong
+          || (
+            request.resource.data.bong >= -2000
+            && request.resource.data.bong >= resource.data.bong - 5050
+          ));
     }
 
-    match /artifacts/{appId}/public/data/students/{studentId} {
-      allow read: if true;
-      allow create: if studentCreateIsSafe();
-      allow update: if studentUpdateIsSafe();
+    function isValidClassAccess(data) {
+      return data.keys().hasAll(['uid', 'classId', 'inviteCode', 'role'])
+        && data.uid == request.auth.uid
+        && validClassId(data.classId)
+        && data.inviteCode is string
+        && data.inviteCode.size() >= 4
+        && data.inviteCode.size() <= 12
+        && data.role in ['student', 'teacher', 'guest']
+        && exists(inviteDoc(data.inviteCode))
+        && get(inviteDoc(data.inviteCode)).data.classId == data.classId
+        && (
+          !('isActive' in get(inviteDoc(data.inviteCode)).data)
+          || get(inviteDoc(data.inviteCode)).data.isActive != false
+        );
+    }
+
+    function isValidTeacher(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName'])
+        && data.uid == request.auth.uid
+        && data.email is string
+        && data.email.size() > 3
+        && data.email.size() <= 120
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 40
+        && (!('ownedClassIds' in data) || (
+          data.ownedClassIds is list && data.ownedClassIds.size() <= 40
+        ));
+    }
+
+    function isValidInvite(data) {
+      return data.keys().hasAll(['classId'])
+        && validClassId(data.classId)
+        && (!('displayName' in data) || (
+          data.displayName is string && data.displayName.size() <= 40
+        ));
+    }
+
+    function teacherCanWriteInvite(classId) {
+      return isTeacherAccount() && (
+        isTeacherOf(classId)
+        || (
+          existsAfter(classDoc(classId))
+          && getAfter(classDoc(classId)).data.ownerUid == request.auth.uid
+        )
+      );
+    }
+
+    function isValidClassCreate(data) {
+      return isTeacherAccount()
+        && data.ownerUid == request.auth.uid
+        && validClassId(data.classId)
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 40
+        && data.inviteCode is string
+        && data.inviteCode.size() >= 4
+        && data.inviteCode.size() <= 12
+        && data.isDemoSeed != true;
+    }
+
+    match /teachers/{uid} {
+      allow read: if isOwner(uid) && isTeacherAccount();
+      allow create: if isOwner(uid) && isTeacherAccount() && isValidTeacher(request.resource.data);
+      allow update: if isOwner(uid) && isTeacherAccount()
+        && isValidTeacher(request.resource.data)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email;
       allow delete: if false;
     }
 
-    // 보드게임 방: 로그인(익명 인증)한 학급 화면에서만 만들고 고칩니다.
-    // 학번·방장 권한은 클라이언트 상태 머신(boardGameRooms.js)이 검사합니다.
-    // 익명 Auth에는 학번이 없으므로 규칙에서 명단 대조는 하지 않습니다.
-    match /artifacts/{appId}/public/data/boardGameRooms/{roomId} {
-      allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.gameType is string
-        && request.resource.data.hostId is string
-        && request.resource.data.status is string;
-      allow update: if signedIn();
-      allow delete: if signedIn();
-    }
-
-    match /artifacts/{appId}/public/{document=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+    match /classAccess/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && isValidClassAccess(request.resource.data);
+      allow update: if isOwner(uid) && isValidClassAccess(request.resource.data)
+        && request.resource.data.uid == resource.data.uid;
+      allow delete: if isOwner(uid);
     }
 
     match /classes/{classId} {
-      allow read: if true;
-      allow write: if request.auth != null;
-    }
+      allow get: if hasClassAccess(classId);
+      allow list: if isTeacherAccount() && resource.data.ownerUid == request.auth.uid;
 
-    // 다른 학급 개설 요청(구 최상위 경로). 실제 문서는
-    // artifacts/sambong-class-2026/public/data/classCreateRequests 를 씁니다.
-    match /classCreateRequests/{requestId} {
-      allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.status == 'pending';
-      allow update: if signedIn();
+      allow create: if isValidClassCreate(request.resource.data)
+        && request.resource.data.classId == classId;
+
+      allow update: if isTeacherAccount() && (
+        (
+          isTeacherOf(classId)
+          && request.resource.data.ownerUid == resource.data.ownerUid
+        )
+        || (
+          hasClassAccess(classId)
+          && (!('ownerUid' in resource.data) || resource.data.ownerUid == '')
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['ownerUid', 'ownerEmail', 'claimedAt', 'updatedAt'])
+        )
+      );
+
       allow delete: if false;
     }
 
-    // 초대 코드 → classId O(1) 매핑 (학급별 공유 링크 ?c=CODE)
     match /inviteCodes/{code} {
-      allow read: if true;
-      allow create: if signedIn()
-        && request.resource.data.keys().hasAll(['classId'])
-        && request.resource.data.classId is string
-        && request.resource.data.classId.size() > 0;
-      allow update: if signedIn()
-        && request.resource.data.classId is string
-        && (
-          !('classId' in resource.data)
-          || request.resource.data.classId == resource.data.classId
-        );
+      allow get: if isAuthenticated();
+      allow list: if false;
+      allow create: if isValidInvite(request.resource.data)
+        && teacherCanWriteInvite(request.resource.data.classId);
+      allow update: if isValidInvite(request.resource.data)
+        && teacherCanWriteInvite(request.resource.data.classId)
+        && request.resource.data.classId == resource.data.classId;
       allow delete: if false;
     }
 
-    // --- ncgame ---
+    match /artifacts/{classId}/public/data/students/{studentId} {
+      allow read: if hasClassAccess(classId);
+      allow create: if hasClassAccess(classId) && studentCreateIsSafe();
+      allow update: if hasClassAccess(classId) && studentUpdateIsSafe();
+      allow delete: if false;
+    }
+
+    match /artifacts/{classId}/public/data/boardGameRooms/{roomId} {
+      allow read: if hasClassAccess(classId);
+      allow create: if hasClassAccess(classId)
+        && request.resource.data.gameType is string
+        && request.resource.data.hostId is string
+        && request.resource.data.status is string;
+      allow update: if hasClassAccess(classId);
+      allow delete: if hasClassAccess(classId);
+    }
+
+    match /artifacts/{classId}/public/{document=**} {
+      allow read: if hasClassAccess(classId);
+      allow write: if hasClassAccess(classId);
+    }
+
+    match /classCreateRequests/{requestId} {
+      allow read, write: if false;
+    }
+
     match /loginByName/{name} {
-      allow read: if true;
-      allow create: if request.auth != null
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
         && request.resource.data.uid == request.auth.uid;
       allow update, delete: if false;
     }
 
     match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow create, update: if request.auth != null && request.auth.uid == uid;
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid);
       allow delete: if false;
     }
 
     match /ncgameHofByPack/{packId}/entries/{uid} {
-      allow read: if true;
-      allow create, update: if request.auth != null
-        && request.auth.uid == uid
+      allow read: if isAuthenticated();
+      allow create, update: if isOwner(uid)
         && request.resource.data.uid == uid
         && request.resource.data.packId == packId;
       allow delete: if false;
     }
 
-    // --- PicBook / visual_dictionary ---
-    // 삼봉월드 UI·코드에서는 제거됨. 동일 Firebase를 쓰는 PicBook 앱이 별도 규칙 파일을
-    // 배포하기 전까지는 접근이 끊기지 않도록 규칙만 유지합니다.
     match /picbook_accounts/{accountKey} {
-      allow read, write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
     match /picbook_published_timelines/{bookId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
     match /visual_dictionary/{wordId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
 
     match /visual_dictionary_stories/{storyId} {
-      allow read: if true;
-      allow write: if request.auth != null;
+      allow read, write: if isAuthenticated();
     }
   }
 }

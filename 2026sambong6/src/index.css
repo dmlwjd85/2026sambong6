@@ -5863,3 +5863,29 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .boardgame-title { font-size: 1.05rem; }
             .gomoku-hud-timer { font-size: 1.1rem; }
         }
+
+        /* 접근성·교사 화면: 초점, 대비, 터치 영역 */
+        :focus-visible {
+            outline: 3px solid #fde047;
+            outline-offset: 3px;
+        }
+        #loginOverlay input:focus-visible,
+        #loginOverlay select:focus-visible,
+        #loginOverlay button:focus-visible,
+        #teacherClassHub button:focus-visible,
+        #classAdminSection input:focus-visible,
+        #classAdminSection button:focus-visible {
+            outline: 3px solid #fde047;
+            outline-offset: 2px;
+        }
+        .teacher-account-card input,
+        .teacher-sub-btn,
+        #loginPanelTeacher button,
+        #teacherClassHub button,
+        #classAdminSection button {
+            min-height: 44px;
+        }
+        .login-mode-btn:focus-visible,
+        .teacher-sub-btn:focus-visible {
+            box-shadow: 0 0 0 3px #fde047;
+        }

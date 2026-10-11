@@ -39,6 +39,11 @@ describe('학급 개설 인증 요청', () => {
         assert.deepEqual(classCreateRequestPath('ccr_1'), ['artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', CLASS_CREATE_REQUEST_COLLECTION, 'ccr_1']);
         assert.equal(isSeedMasterViewer({ isGM: true }, SEED_MASTER_CLASS_ID), true);
         assert.equal(canCreateClassImmediately({ isGM: true }, SEED_MASTER_CLASS_ID), true);
+        assert.equal(canCreateClassImmediately({ isGM: false }, 'other-class', {
+            uid: 't1',
+            email: 'teacher@school.kr',
+            isAnonymous: false,
+        }), true);
         assert.equal(canCreateClassImmediately({ isGM: true, isAdmin: true }, 'other-class'), false);
         assert.equal(canCreateClassImmediately({ isGMA: true, isAdmin: true }, SEED_MASTER_CLASS_ID), false);
         assert.equal(canCreateClassImmediately({ isGM: false }, SEED_MASTER_CLASS_ID), false);

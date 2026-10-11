@@ -1,5 +1,16 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import {
+    getAuth,
+    signInAnonymously,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+    GoogleAuthProvider,
+    EmailAuthProvider,
+    linkWithCredential,
+    signOut,
+} from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -449,6 +460,26 @@ import {
     writeClassCreateUnlockSession,
     writeStoredClassCreateRequestId,
 } from './lib/classCreateRequest.js';
+import {
+    buildTeacherProfile,
+    isTeacherSessionActive,
+    teacherAuthErrorMessage,
+    teacherOwnsClass,
+    teacherSessionFromUser,
+    validateTeacherEmail,
+    validateTeacherPassword,
+    withOwnedClass,
+} from './lib/teacherAccount.js';
+import {
+    buildClassAccessPayload,
+    canClaimClassOwnership,
+    classOwnerClaimPatch,
+    normalizeInviteCode,
+    readStoredClassInvite,
+    resolveBootInvite,
+    writeStoredClassInvite,
+} from './lib/classAccess.js';
+import { buildGenericDemoRoster, genericStudentGenderMap, genericStudentNameMap } from './lib/demoRoster.js';
 import {
     canArchiveManagedClass,
     canHideManagedClassFromDirectory,
@@ -2539,17 +2570,8 @@ function redrawPlazaGrantsUi() {
             return `<span class="${clipCls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
         }
 
-        const STUDENT_NAMES = { 
-            "1": "김단엘", "2": "김라희", "3": "김민지", "4": "김정훈", 
-            "5": "박문경", "6": "박소윤", "7": "박하율", "8": "박현수", 
-            "9": "백시율", "10": "임은영", "11": "조이담", "12": "황훈태", "13": "석서영", 
-            "gm": "마스터 J", "gm_a": "마스터 A", "guest": "손님" 
-        };
-        const STUDENT_GENDERS = { 
-            "1": "M", "2": "F", "3": "F", "4": "M", "5": "M", "6": "F", 
-            "7": "F", "8": "M", "9": "M", "10": "F", "11": "M", "12": "M", 
-            "13": "F", "gm": "M", "gm_a": "F", "guest": "M" 
-        };
+        const STUDENT_NAMES = genericStudentNameMap(13);
+        const STUDENT_GENDERS = genericStudentGenderMap(13);
 
         const DEFAULT_CLASS_STAFF = [
             { id: 'gm', name: '마스터 J', gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
@@ -2564,6 +2586,8 @@ function redrawPlazaGrantsUi() {
         let _unsubMyClassCreateRequest = null;
         let _classCreateUnlockCode = '';
         let _showArchivedClasses = false;
+        let _teacherSession = null;
+        let _teacherProfile = null;
 
         /** 시드(데모) 학급인지 — 부동산 자동복구 등은 여기에만 적용 */
         function isSeedDemoClass() {
@@ -2583,21 +2607,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function buildDefaultRosterFromLegacy() {
-            return [
-                { id: '1', name: '김단엘', gender: 'M', label: '', active: true },
-                { id: '2', name: '김라희', gender: 'F', label: '', active: true },
-                { id: '3', name: '김민지', gender: 'F', label: '', active: true },
-                { id: '4', name: '김정훈', gender: 'M', label: '', active: true },
-                { id: '5', name: '박문경', gender: 'M', label: '', active: true },
-                { id: '6', name: '박소윤', gender: 'F', label: '', active: true },
-                { id: '7', name: '박하율', gender: 'F', label: '', active: true },
-                { id: '8', name: '박현수', gender: 'M', label: '', active: true },
-                { id: '9', name: '백시율', gender: 'M', label: '', active: true },
-                { id: '10', name: '임은영', gender: 'F', label: '', active: true },
-                { id: '11', name: '조이담', gender: 'M', label: '', active: true },
-                { id: '12', name: '황훈태', gender: 'M', label: '', active: true },
-                { id: '13', name: '석서영', gender: 'F', label: '해적섬', active: true },
-            ];
+            return buildGenericDemoRoster(13);
         }
 
         /** 새 학급용 빈 명단 틀 */
@@ -2625,7 +2635,7 @@ function redrawPlazaGrantsUi() {
             if (stored) return stored;
             if (typeof window.__app_id !== 'undefined' && window.__app_id) return window.__app_id;
             if (typeof __app_id !== 'undefined' && __app_id) return __app_id;
-            return SEED_CLASS_ID;
+            return '';
         }
 
         /** 시드(데모) 학급 메타 — 기존 반 유지용 */
@@ -2927,6 +2937,7 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading?.('학급 링크로 이동 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(invite);
+                await ensureClassAccess(classId, invite, currentTeacherSession() ? 'teacher' : 'student');
                 localStorage.setItem('sambong_class_id', classId);
                 const url = new URL(window.location.href);
                 url.searchParams.delete('c');
@@ -3027,6 +3038,7 @@ function redrawPlazaGrantsUi() {
         }
 
         async function loadClassMeta() {
+            if (!appId || !db) return;
             const classRef = doc(db, 'classes', appId);
             const snap = await getDoc(classRef);
             if (snap.exists()) {
@@ -3053,21 +3065,22 @@ function redrawPlazaGrantsUi() {
                         window.classMeta.roster = buildBlankRoster(data.studentCount || 25);
                     }
                 }
-                if (!window.classMeta.inviteCode) {
+                if (!window.classMeta.inviteCode && currentTeacherSession() && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta)) {
                     window.classMeta.inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
                     try {
                         await setDoc(classRef, { inviteCode: window.classMeta.inviteCode, updatedAt: serverTimestamp() }, { merge: true });
                     } catch (_) { /* ignore */ }
                 }
-                try {
-                    await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
-                } catch (e) {
-                    console.warn('registerInviteCode(load)', e);
+                if (window.classMeta.inviteCode && currentTeacherSession() && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta)) {
+                    try {
+                        await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
+                    } catch (e) {
+                        console.warn('registerInviteCode(load)', e);
+                    }
                 }
             } else if (appId === SEED_CLASS_ID) {
                 const defaultMeta = buildDefaultClassMeta(appId);
                 window.classMeta = defaultMeta;
-                await setDoc(classRef, { ...defaultMeta, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
             } else {
                 // 아직 메타가 없는 신규 ID — 시드 명단을 쓰지 않음
                 window.classMeta = buildBlankClassMeta(appId);
@@ -3126,15 +3139,7 @@ function redrawPlazaGrantsUi() {
                     if (String(e.message) === 'class_archived') throw e;
                     console.warn('inviteCodes lookup', e);
                 }
-                // 2) 하위 호환: classes.inviteCode 쿼리 후 매핑 백필
-                const q = query(collection(db, 'classes'), where('inviteCode', '==', upper));
-                const found = await getDocs(q);
-                if (found.empty) throw new Error('invite_not_found');
-                const classId = found.docs[0].id;
-                const data = found.docs[0].data() || {};
-                if (data.isActive === false) throw new Error('class_archived');
-                try { await registerInviteCode(upper, classId, { displayName: data.displayName }); } catch (_) { /* ignore */ }
-                return classId;
+                throw new Error('invite_not_found');
             }
             // 학급 ID 직접 지정
             try {
@@ -3468,11 +3473,13 @@ function redrawPlazaGrantsUi() {
             let serverEntries = [];
             const seedViewer = isSeedMasterViewer(window.playerState, appId);
             const archivedRow = document.getElementById('showArchivedClassesRow');
-            if (archivedRow) archivedRow.classList.toggle('hidden', !seedViewer);
-            if (seedViewer && db) {
+            if (archivedRow) archivedRow.classList.toggle('hidden', !seedViewer && !currentTeacherSession());
+            if (db && (currentTeacherSession() || seedViewer)) {
                 try {
-                    const snap = await getDocs(collection(db, 'classes'));
-                    snap.forEach((d) => serverEntries.push(sanitizeClassDirectoryEntry(d.data(), d.id)));
+                    serverEntries = await loadOwnedClassesForTeacher();
+                    if (!serverEntries.length && currentTeacherSession()) {
+                        serverEntries = [];
+                    }
                 } catch (e) {
                     console.warn('refreshManagedClassDirectory', e);
                 }
@@ -3480,7 +3487,7 @@ function redrawPlazaGrantsUi() {
             const current = window.classMeta
                 ? sanitizeClassDirectoryEntry(window.classMeta, appId)
                 : sanitizeClassDirectoryEntry({ displayName: appId }, appId);
-            const recent = seedViewer ? getRecentClasses() : [];
+            const recent = currentTeacherSession() || seedViewer ? getRecentClasses() : [];
             const merged = sortClassDirectory(
                 mergeClassDirectory(serverEntries, recent, current),
                 appId,
@@ -3492,6 +3499,7 @@ function redrawPlazaGrantsUi() {
                 }),
                 window.playerState,
                 appId,
+                _teacherProfile && _teacherProfile.ownedClassIds,
             );
             const html = window.renderManagedClassDirectoryHtml(visible);
             boxes.forEach((el) => { el.innerHTML = html; });
@@ -3505,6 +3513,8 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading('학급을 찾는 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(raw);
+                const invite = normalizeInviteCode(raw) || readStoredClassInvite();
+                await ensureClassAccess(classId, invite, currentTeacherSession() ? 'teacher' : 'student');
                 window.hideGlobalLoading();
                 window.switchClass(classId);
             } catch (e) {
@@ -3551,8 +3561,11 @@ function redrawPlazaGrantsUi() {
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '초대 코드로 우리 학급을 연 뒤 마스터 PIN을 넣으세요.'
+                    ? '선생님 계정으로 로그인한 뒤 학급을 만들거나, 초대 코드로 기존 반을 여세요.'
                     : '선생님이 알려 준 초대 코드를 넣고 내 이름을 고르세요.';
+            if (isTeacher && typeof window.renderTeacherAccountPanel === 'function') {
+                void window.renderTeacherAccountPanel();
+            }
             }
             if (isTeacher) window.setTeacherSubMode('join');
             if (typeof window.renderClassCreateRequestStatus === 'function') {
@@ -3570,16 +3583,178 @@ function redrawPlazaGrantsUi() {
             if (create) create.classList.toggle('hidden', !isCreate);
             if (btnJ) {
                 btnJ.className = isCreate
-                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap'
-                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap';
+                    ? 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-bold border border-slate-500 bg-slate-800/60 text-slate-100 whitespace-nowrap'
+                    : 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap';
             }
             if (btnC) {
                 btnC.className = isCreate
-                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
-                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap';
+                    ? 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
+                    : 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-bold border border-slate-500 bg-slate-800/60 text-slate-100 whitespace-nowrap';
             }
             if (typeof window.renderClassCreateRequestStatus === 'function') {
                 window.renderClassCreateRequestStatus();
+            }
+        };
+
+        function readTeacherAuthForm() {
+            const emailCheck = validateTeacherEmail(document.getElementById('teacherEmailInput')?.value);
+            const pwCheck = validateTeacherPassword(document.getElementById('teacherPasswordInput')?.value);
+            return { emailCheck, pwCheck };
+        }
+
+        async function finishTeacherAuth(user) {
+            _teacherSession = teacherSessionFromUser(user);
+            if (!_teacherSession) throw new Error('not_teacher');
+            await ensureTeacherProfileDoc(user);
+            showTeacherAccountError('');
+            await window.renderTeacherAccountPanel();
+            window.setTeacherSubMode('create');
+            if (typeof window.renderClassCreateRequestStatus === 'function') {
+                window.renderClassCreateRequestStatus();
+            }
+        }
+
+        window.renderTeacherAccountPanel = async function() {
+            const signedOut = document.getElementById('teacherAccountSignedOut');
+            const signedIn = document.getElementById('teacherAccountSignedIn');
+            const emailEl = document.getElementById('teacherAccountEmail');
+            const listEl = document.getElementById('teacherOwnedClassList');
+            const hint = document.getElementById('teacherAccountHint');
+            const session = currentTeacherSession();
+            if (signedOut) signedOut.classList.toggle('hidden', !!session);
+            if (signedIn) signedIn.classList.toggle('hidden', !session);
+            if (!session) {
+                if (hint) hint.textContent = '이메일로 가입한 뒤 학급을 만들면, 학생에게는 초대 링크만 보내면 됩니다.';
+                return;
+            }
+            if (emailEl) emailEl.textContent = session.email;
+            if (hint) hint.textContent = '이 계정으로 만든 학급만 열 수 있습니다. 다른 반 데이터는 보이지 않습니다.';
+            if (listEl) {
+                listEl.innerHTML = '<p class="text-[12px] text-slate-200">내 학급을 불러오는 중…</p>';
+                const rows = await loadOwnedClassesForTeacher();
+                if (!rows.length) {
+                    listEl.innerHTML = '<p class="text-[13px] text-slate-100">아직 만든 학급이 없습니다. 아래에서 새 학급을 만드세요.</p>';
+                } else {
+                    listEl.innerHTML = rows.map((row) => `
+                        <button type="button" class="w-full min-h-[48px] text-left rounded-xl border-2 border-emerald-300 bg-slate-950 px-3 py-2" onclick="void window.enterOwnedClass('${row.classId}')">
+                            <span class="block text-white font-black text-sm">${escapeHofText(row.displayName || row.classId)}</span>
+                            <span class="block text-[12px] text-emerald-200">초대 ${escapeHofText(row.inviteCode || '—')}</span>
+                        </button>`).join('');
+                }
+            }
+            const submitBtn = document.getElementById('teacherCreateSubmitBtn');
+            if (submitBtn) submitBtn.innerHTML = '<i class="fa-solid fa-school"></i> 학급 만들기';
+        };
+
+        window.signUpTeacherEmail = async function() {
+            showTeacherAccountError('');
+            const { emailCheck, pwCheck } = readTeacherAuthForm();
+            if (!emailCheck.ok) return showTeacherAccountError('이메일 형식을 확인해 주세요.');
+            if (!pwCheck.ok) return showTeacherAccountError('비밀번호는 6자 이상으로 만들어 주세요.');
+            if (!auth) return showTeacherAccountError('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('선생님 계정을 만드는 중…');
+                await auth.authStateReady();
+                const email = emailCheck.email;
+                const password = String(document.getElementById('teacherPasswordInput')?.value || '');
+                if (auth.currentUser && auth.currentUser.isAnonymous) {
+                    try {
+                        const cred = EmailAuthProvider.credential(email, password);
+                        const linked = await linkWithCredential(auth.currentUser, cred);
+                        await finishTeacherAuth(linked.user);
+                        window.hideGlobalLoading();
+                        return;
+                    } catch (linkErr) {
+                        if (linkErr && linkErr.code !== 'auth/email-already-in-use' && linkErr.code !== 'auth/credential-already-in-use') {
+                            throw linkErr;
+                        }
+                    }
+                }
+                const created = await createUserWithEmailAndPassword(auth, email, password);
+                await finishTeacherAuth(created.user);
+                window.hideGlobalLoading();
+            } catch (e) {
+                window.hideGlobalLoading();
+                showTeacherAccountError(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.signInTeacherEmail = async function() {
+            showTeacherAccountError('');
+            const { emailCheck, pwCheck } = readTeacherAuthForm();
+            if (!emailCheck.ok) return showTeacherAccountError('이메일 형식을 확인해 주세요.');
+            if (!pwCheck.ok) return showTeacherAccountError('비밀번호는 6자 이상으로 만들어 주세요.');
+            if (!auth) return showTeacherAccountError('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('로그인 중…');
+                const cred = await signInWithEmailAndPassword(auth, emailCheck.email, String(document.getElementById('teacherPasswordInput')?.value || ''));
+                await finishTeacherAuth(cred.user);
+                window.hideGlobalLoading();
+            } catch (e) {
+                window.hideGlobalLoading();
+                showTeacherAccountError(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.signInTeacherGoogle = async function() {
+            showTeacherAccountError('');
+            if (!auth) return showTeacherAccountError('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('구글 로그인 중…');
+                const provider = new GoogleAuthProvider();
+                const cred = await signInWithPopup(auth, provider);
+                await finishTeacherAuth(cred.user);
+                window.hideGlobalLoading();
+            } catch (e) {
+                window.hideGlobalLoading();
+                showTeacherAccountError(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.signOutTeacherAccount = async function() {
+            if (!auth) return;
+            const ok = await window.customConfirm('선생님 계정에서 로그아웃할까요? 학생 초대 코드 입장은 그대로 쓸 수 있습니다.');
+            if (!ok) return;
+            try {
+                await signOut(auth);
+                _teacherSession = null;
+                _teacherProfile = null;
+                await signInAnonymously(auth);
+                await window.renderTeacherAccountPanel();
+                window.setTeacherSubMode('join');
+            } catch (e) {
+                await window.customAlert(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.enterOwnedClass = async function(classId) {
+            const id = String(classId || '').trim();
+            if (!id) return;
+            const rows = await loadOwnedClassesForTeacher();
+            const row = rows.find((r) => r.classId === id);
+            if (row && row.inviteCode) {
+                try { await ensureClassAccess(id, row.inviteCode, 'teacher'); } catch (_) { /* 소유 교사는 규칙으로 열람 가능 */ }
+                writeStoredClassInvite(row.inviteCode);
+            }
+            window.switchClass(id);
+        };
+
+        window.claimCurrentClassAsTeacher = async function() {
+            const session = currentTeacherSession();
+            if (!session || !appId || !window.classMeta) return false;
+            if (!canClaimClassOwnership(window.classMeta, session.uid)) return false;
+            const patch = classOwnerClaimPatch(session);
+            try {
+                await setDoc(doc(db, 'classes', appId), {
+                    ...patch,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+                window.classMeta = { ...window.classMeta, ...patch };
+                await rememberOwnedClass(appId);
+                return true;
+            } catch (e) {
+                console.warn('claimCurrentClassAsTeacher', e);
+                return false;
             }
         };
 
@@ -3605,12 +3780,20 @@ function redrawPlazaGrantsUi() {
                 schoolName,
                 masterDisplayName: teacherName,
             });
+            const teacher = currentTeacherSession();
             await setDoc(doc(db, 'classes', newClassId), {
                 ...newMeta,
+                ownerUid: teacher ? teacher.uid : '',
+                ownerEmail: teacher ? teacher.email : '',
+                isDemoSeed: false,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
             await registerInviteCode(inviteCode, newClassId, { displayName });
+            if (teacher) {
+                await rememberOwnedClass(newClassId);
+                await ensureClassAccess(newClassId, inviteCode, 'teacher');
+            }
 
             // 새 학급은 기존 교실 설정을 복사하지 않습니다. 기본 기능만 켠 깨끗한 시작값만 넣습니다.
             const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
@@ -3717,7 +3900,7 @@ function redrawPlazaGrantsUi() {
             const mine = _myClassCreateRequest;
             const waiting = !!(mine && (mine.status === 'pending' || mine.status === 'approved' || mine.status === 'rejected'));
             const hideFormWaiting = waiting && mine.status !== 'rejected';
-            const unlocked = canCreateClassImmediately(window.playerState, appId) || readClassCreateUnlockSession();
+            const unlocked = canTeacherCreateNow() || readClassCreateUnlockSession();
             const hideCreateForm = hideFormWaiting || !unlocked;
             const form = document.getElementById('teacherCreateFormFields');
             const settingsForm = document.getElementById('newClassCreateFormFields');
@@ -4064,8 +4247,9 @@ function redrawPlazaGrantsUi() {
 
         window.createClassFromLogin = async function() {
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
-            if (!readClassCreateUnlockSession()) {
-                return window.customAlert('학급을 개설하려면 원래 마스터가 준 개설 코드가 필요합니다.');
+            const teacherReady = canTeacherCreateNow();
+            if (!teacherReady && !readClassCreateUnlockSession()) {
+                return window.customAlert('학급을 만들려면 선생님 계정으로 로그인해 주세요.');
             }
             const displayName = String(document.getElementById('createClassDisplayName')?.value || '').trim();
             const schoolName = String(document.getElementById('createClassSchoolName')?.value || '').trim();
@@ -4085,21 +4269,41 @@ function redrawPlazaGrantsUi() {
             if (!/^\d{4}$/.test(teacherPin)) {
                 return window.customAlert('마스터 PIN은 숫자 4자리로 설정해 주세요.');
             }
+            const immediate = teacherReady;
             const ok = await window.customConfirm(
-                `새 학급 개설을 원래 마스터에게 요청합니다.\n\n` +
+                (immediate ? `새 학급을 만듭니다.\n\n` : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n`) +
                 `학급명: ${displayName}\n` +
                 (schoolName ? `학교: ${schoolName}\n` : '') +
                 `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
                 `시즌: ${seasonLabel} / ${seasonTheme}\n` +
                 `마스터: ${teacherName}\n` +
                 `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n\n` +
-                `허락되면 반이 생성되고 초대 코드가 발급됩니다.`
+                (immediate ? `빈 명단으로 시작하고 초대 코드가 발급됩니다.` : `허락되면 반이 생성되고 초대 코드가 발급됩니다.`)
             );
             if (!ok) return;
             try {
-                window.showGlobalLoading('인증 요청을 보내는 중…');
+                window.showGlobalLoading(immediate ? '학급을 만드는 중…' : '인증 요청을 보내는 중…');
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
+                if (immediate) {
+                    const { newClassId, inviteCode } = await createClassWorkspace({
+                        displayName,
+                        schoolName,
+                        schoolYear,
+                        grade,
+                        homeroom,
+                        teacherName,
+                        studentCount,
+                        teacherPin,
+                        seasonLabel,
+                        seasonTheme,
+                        applyDefaultTemplate,
+                    });
+                    window.hideGlobalLoading();
+                    await window.customAlert(`학급이 만들어졌습니다.\n\n초대 코드: ${inviteCode}\n\n학생에게 이 코드 또는 접속 링크를 알려 주세요.`);
+                    window.switchClass(newClassId);
+                    return;
+                }
                 const sent = await submitClassCreateRequest({
                     displayName,
                     schoolName,
@@ -4123,7 +4327,7 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('createClassFromLogin', e);
                 window.hideGlobalLoading();
-                await window.customAlert('요청 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert((immediate ? '만들기 실패: ' : '요청 실패: ') + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -4135,16 +4339,16 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
                 <tr class="border-b border-slate-700/80">
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" aria-label="번호" class="w-12 bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" aria-label="이름" class="w-full bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]"></td>
                     <td class="p-1">
-                        <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
+                        <select data-roster-idx="${idx}" data-roster-field="gender" aria-label="성별" class="bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]">
                             <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
                             <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
                         </select>
                     </td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" aria-label="별칭" class="w-full bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]"></td>
+                    <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" aria-label="활성" class="w-5 h-5"></td>
                 </tr>`).join('');
             panel.innerHTML = `
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
@@ -4180,8 +4384,8 @@ function redrawPlazaGrantsUi() {
                     </table>
                 </div>
                 <div class="flex flex-wrap gap-2 mb-3">
-                    <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-2 px-3 rounded border border-slate-600">+ 학생 추가</button>
-                    <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-4 rounded">명단 저장</button>
+                    <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[13px] font-black py-2 px-4 rounded-xl border border-slate-400 min-h-[44px]">+ 학생 추가</button>
+                    <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-black py-2 px-4 rounded-xl min-h-[44px]">명단 저장</button>
                 </div>
                 <div class="border-t border-slate-700 pt-3 mt-1">
                     <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-plus-circle text-sky-400"></i> 새 학급 만들기 (내년·다른 반)</h4>
@@ -4192,8 +4396,8 @@ function redrawPlazaGrantsUi() {
                         <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
-                    <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
+                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[13px] font-black py-2 px-4 rounded-xl min-h-[44px]">${canTeacherCreateNow() ? '새 학급 추가 후 이동' : '선생님 계정으로 만들기'}</button>
+                    <p class="text-[12px] text-slate-200 mt-2">${canTeacherCreateNow() ? '선생님 계정으로 바로 새 반을 만듭니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '선생님 계정으로 로그인하면 바로 새 반을 만들 수 있습니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
                     <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
                 </div>`;
@@ -4293,9 +4497,9 @@ function redrawPlazaGrantsUi() {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
             const teacherName = getStaffMember('gm')?.name || '담임 선생님';
-            const immediate = canCreateClassImmediately(window.playerState, appId);
+            const immediate = canTeacherCreateNow();
             if (!immediate && !readClassCreateUnlockSession()) {
-                return window.customAlert('새 학급을 요청하려면 원래 마스터가 준 개설 코드가 필요합니다.');
+                return window.customAlert('새 학급을 만들려면 선생님 계정으로 로그인해 주세요.');
             }
             const ok = await window.customConfirm(
                 immediate
@@ -4461,6 +4665,8 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading('학급을 찾는 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(raw);
+                const invite = normalizeInviteCode(raw) || readStoredClassInvite();
+                await ensureClassAccess(classId, invite, currentTeacherSession() ? 'teacher' : 'student');
                 window.hideGlobalLoading();
                 window.switchClass(classId);
             } catch (e) {
@@ -4685,6 +4891,120 @@ function redrawPlazaGrantsUi() {
          * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
          * authStateReady + 익명 로그인 후 getIdToken()으로 토큰을 확실히 받은 뒤에만 true.
          */
+        function currentTeacherSession() {
+            return isTeacherSessionActive(_teacherSession) ? _teacherSession : teacherSessionFromUser(auth && auth.currentUser);
+        }
+
+        function canTeacherCreateNow() {
+            return canCreateClassImmediately(window.playerState, appId, currentTeacherSession());
+        }
+
+        function showTeacherAccountError(msg) {
+            const el = document.getElementById('teacherAccountError');
+            if (!el) return;
+            if (msg) {
+                el.textContent = msg;
+                el.classList.remove('hidden');
+            } else {
+                el.textContent = '';
+                el.classList.add('hidden');
+            }
+        }
+
+        async function ensureTeacherProfileDoc(user) {
+            const built = buildTeacherProfile(user, {
+                ownedClassIds: _teacherProfile && _teacherProfile.ownedClassIds,
+                createdAt: _teacherProfile && _teacherProfile.createdAt,
+            });
+            if (!built.ok || !db) return null;
+            const ref = doc(db, 'teachers', built.profile.uid);
+            try {
+                const snap = await getDoc(ref);
+                const prev = snap.exists() ? snap.data() : {};
+                const merged = {
+                    ...built.profile,
+                    ownedClassIds: Array.from(new Set([
+                        ...(Array.isArray(prev.ownedClassIds) ? prev.ownedClassIds : []),
+                        ...built.profile.ownedClassIds,
+                    ])).slice(0, 40),
+                    createdAt: prev.createdAt || built.profile.createdAt,
+                    updatedAt: Date.now(),
+                };
+                await setDoc(ref, merged, { merge: true });
+                _teacherProfile = merged;
+                return merged;
+            } catch (e) {
+                console.warn('ensureTeacherProfileDoc', e);
+                _teacherProfile = built.profile;
+                return built.profile;
+            }
+        }
+
+        async function rememberOwnedClass(classId) {
+            const session = currentTeacherSession();
+            if (!session || !db) return;
+            const next = withOwnedClass(_teacherProfile || { uid: session.uid, email: session.email, displayName: session.displayName, ownedClassIds: [] }, classId);
+            _teacherProfile = { ...next, updatedAt: Date.now() };
+            try {
+                await setDoc(doc(db, 'teachers', session.uid), _teacherProfile, { merge: true });
+            } catch (e) {
+                console.warn('rememberOwnedClass', e);
+            }
+        }
+
+        async function loadOwnedClassesForTeacher() {
+            const session = currentTeacherSession();
+            if (!session || !db) return [];
+            try {
+                const q = query(collection(db, 'classes'), where('ownerUid', '==', session.uid));
+                const snap = await getDocs(q);
+                const rows = [];
+                snap.forEach((d) => rows.push(sanitizeClassDirectoryEntry(d.data(), d.id)));
+                return rows;
+            } catch (e) {
+                console.warn('loadOwnedClassesForTeacher', e);
+                return [];
+            }
+        }
+
+        async function ensureClassAccess(classId, inviteCode, role = 'student') {
+            if (!auth || !auth.currentUser || !db) return false;
+            const built = buildClassAccessPayload({
+                uid: auth.currentUser.uid,
+                classId,
+                inviteCode,
+                role,
+            });
+            if (!built.ok) return false;
+            await setDoc(doc(db, 'classAccess', auth.currentUser.uid), {
+                uid: built.access.uid,
+                classId: built.access.classId,
+                inviteCode: built.access.inviteCode,
+                role: built.access.role,
+                updatedAt: Date.now(),
+            });
+            writeStoredClassInvite(built.access.inviteCode);
+            return true;
+        }
+
+        async function ensureBootClassAccess() {
+            if (!appId || !auth || !auth.currentUser) return false;
+            if (currentTeacherSession()) return true;
+            const invite = resolveBootInvite({
+                urlInvite: readInviteCodeFromLocation(),
+                storedInvite: readStoredClassInvite(),
+                recentEntries: getRecentClasses(),
+                classId: appId,
+            });
+            if (!invite) return false;
+            try {
+                return await ensureClassAccess(appId, invite, 'student');
+            } catch (e) {
+                console.warn('ensureBootClassAccess', e);
+                return false;
+            }
+        }
+
         async function ensureAnonAuthReady() {
             if (!auth) return false;
             const tryOnce = async () => {
@@ -4692,6 +5012,7 @@ function redrawPlazaGrantsUi() {
                 if (!auth.currentUser) await signInAnonymously(auth);
                 const u = auth.currentUser;
                 if (!u) return false;
+                _teacherSession = teacherSessionFromUser(u);
                 await u.getIdToken();
                 return true;
             };
@@ -19419,14 +19740,32 @@ ${subjectLine}
                 }
                 
                 await auth.authStateReady();
-                await signInAnonymously(auth);
+                if (!auth.currentUser) await signInAnonymously(auth);
                 /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
                 if (auth.currentUser) {
+                    _teacherSession = teacherSessionFromUser(auth.currentUser);
                     await auth.currentUser.getIdToken();
+                    if (_teacherSession) await ensureTeacherProfileDoc(auth.currentUser);
+                }
+                if (typeof window.renderTeacherAccountPanel === 'function') {
+                    void window.renderTeacherAccountPanel();
                 }
                 // ?c=초대코드 / /c/CODE → 해당 학급으로 이동 (페이지 리로드 시 true)
                 if (await applyInviteCodeFromUrlIfNeeded()) return;
-                await loadClassMeta();
+                if (!appId) {
+                    if (typeof window.setLoginMode === 'function') window.setLoginMode(_teacherSession ? 'teacher' : 'student');
+                    return;
+                }
+                await ensureBootClassAccess();
+                try {
+                    await loadClassMeta();
+                    if (_teacherSession) await window.claimCurrentClassAsTeacher();
+                } catch (e) {
+                    console.warn('loadClassMeta boot', e);
+                    window.classMeta = null;
+                    if (typeof window.setLoginMode === 'function') window.setLoginMode(_teacherSession ? 'teacher' : 'student');
+                    return;
+                }
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyDuplicateQuestBongHotfix();
@@ -19699,13 +20038,16 @@ ${subjectLine}
                                     hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
                                 });
                                 const initialSeats = built.seats;
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden = false;
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
-                                const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
+                                let ph = [];
+                                if (isSeedDemoClass()) {
+                                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+                                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+                                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden = false;
+                                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
+                                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
+                                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
+                                    ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '시드 학급 자리 복구' }];
+                                }
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
                                     seats: initialSeats,
                                     layout: built.layout,
@@ -19907,6 +20249,8 @@ ${subjectLine}
                         const savedPin = localStorage.getItem('sambong_student_pin');
                         if (savedId && savedPin) {
                             attemptLogin(savedId, savedPin, true);
+                        } else if (currentTeacherSession() && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta)) {
+                            attemptLogin('gm', savedPin || '', true, { ownerBypassPin: true });
                         }
                     }
                 });
@@ -24242,6 +24586,9 @@ ${subjectLine}
         if (typeof window.setLoginMode === 'function') window.setLoginMode('student');
         
         window.loginAsGuest = function() {
+            if (!appId || !window.classMeta) {
+                return window.customAlert('구경하려면 먼저 초대 코드로 학급을 열어 주세요.');
+            }
             window.playerState = { 
                 xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
@@ -24369,7 +24716,7 @@ ${subjectLine}
             await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
 
-        async function attemptLogin(studentId, pin, isAutoLogin) {
+        async function attemptLogin(studentId, pin, isAutoLogin, opts = {}) {
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
@@ -24399,6 +24746,8 @@ ${subjectLine}
             const isGM = (studentId === 'gm'); 
             const isGMA = (studentId === 'gm_a'); 
             const isAdmin = isGM || isGMA;
+            const ownerBypass = !!(opts.ownerBypassPin && isGM && currentTeacherSession()
+                && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta));
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
             
             try {
@@ -24412,7 +24761,7 @@ ${subjectLine}
                         if(!isOk) return; 
                         data.pin = pin; 
                         await setDoc(docRef, { pin: pin }, { merge: true });
-                    } else if (data.pin !== pin) {
+                    } else if (data.pin !== pin && !ownerBypass) {
                         if (isAutoLogin) {
                             const classId = localStorage.getItem('sambong_class_id');
                             localStorage.clear();

@@ -1,0 +1,32 @@
+# PR에서 2026sambong6 Vite 빌드가 깨지지 않는지 확인합니다.
+# Pages 배포는 main 푸시 후 deploy-2026sambong6-pages.yml 이 담당합니다.
+name: CI 2026sambong6 build
+
+on:
+    pull_request:
+        branches: [main, master]
+        paths:
+            - '2026sambong6/**'
+            - '.github/workflows/ci-2026sambong6.yml'
+            - '.github/workflows/deploy-2026sambong6-pages.yml'
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        env:
+            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+                  cache: npm
+                  cache-dependency-path: 2026sambong6/package-lock.json
+
+            - name: npm ci, 시험, 빌드
+              working-directory: 2026sambong6
+              run: |
+                  if [ -f package-lock.json ]; then npm ci; else npm install; fi
+                  node --test src/lib/teacherAccount.test.js src/lib/classAccess.test.js src/lib/classCreateRequest.test.js src/lib/classDirectory.test.js
+                  npm run build

@@ -1583,7 +1583,7 @@ function redrawPlazaGrantsUi() {
         }
 
         async function persistSharedSchoolWeather(weather, region) {
-            if (!db || !weather || !weather.ok) return;
+            if (!db || !appId || !weather || !weather.ok) return;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return;
@@ -1592,7 +1592,9 @@ function redrawPlazaGrantsUi() {
                     regionKey: weatherRegionKey(region),
                     fetchedAt: weather.fetchedAt || Date.now(),
                 };
-                await setDoc(getGlobalSettingsDocRef(), { schoolWeather: payload }, { merge: true });
+                const settingsRef = getGlobalSettingsDocRef();
+                if (!settingsRef) return;
+                await setDoc(settingsRef, { schoolWeather: payload }, { merge: true });
                 if (window.globalSettings) window.globalSettings.schoolWeather = payload;
             } catch (e) {
                 console.warn('schoolWeather save', e);
@@ -5173,6 +5175,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function getGlobalSettingsDocRef() {
+            if (!db || !appId) return null;
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
         }
 

@@ -5,144 +5,270 @@
 
 /** 기본 직업 id별 아이콘·색 — 모양과 색이 각각 겹치지 않습니다. */
 export const DEFAULT_JOB_LOOKS = [
-    { id: 'job_sp', icon: 'fa-crown', color: 'text-amber-400' },
-    { id: 'job_svp', icon: 'fa-shield-cat', color: 'text-orange-500' },
-    { id: 'job1', icon: 'fa-flag', color: 'text-yellow-300' },
-    { id: 'job2', icon: 'fa-star-half-stroke', color: 'text-lime-500' },
-    { id: 'job_vac', icon: 'fa-wind', color: 'text-teal-400' },
-    { id: 'job3', icon: 'fa-trash-can', color: 'text-stone-400' },
-    { id: 'job4', icon: 'fa-glass-water', color: 'text-sky-400' },
-    { id: 'job5', icon: 'fa-chalkboard', color: 'text-slate-400' },
-    { id: 'job6', icon: 'fa-desktop', color: 'text-cyan-400' },
-    { id: 'job7', icon: 'fa-recycle', color: 'text-sb-green' },
-    { id: 'job8', icon: 'fa-tablet-screen-button', color: 'text-violet-500' },
-    { id: 'job9', icon: 'fa-lightbulb', color: 'text-orange-300' },
-    { id: 'job10', icon: 'fa-piggy-bank', color: 'text-pink-500' },
-    { id: 'job11', icon: 'fa-leaf', color: 'text-emerald-500' },
-    { id: 'job12', icon: 'fa-store', color: 'text-rose-400' },
-    { id: 'job_book', icon: 'fa-book-skull', color: 'text-purple-500' },
-    { id: 'job_newbie', icon: 'fa-hand-holding-heart', color: 'text-fuchsia-400' },
+    { id: 'job_sp', icon: 'crown', color: 'tone-01' },
+    { id: 'job_svp', icon: 'shield', color: 'tone-02' },
+    { id: 'job1', icon: 'flag', color: 'tone-03' },
+    { id: 'job2', icon: 'half', color: 'tone-04' },
+    { id: 'job_vac', icon: 'wind', color: 'tone-05' },
+    { id: 'job3', icon: 'trash', color: 'tone-06' },
+    { id: 'job4', icon: 'glass', color: 'tone-07' },
+    { id: 'job5', icon: 'chalkboard', color: 'tone-08' },
+    { id: 'job6', icon: 'desktop', color: 'tone-09' },
+    { id: 'job7', icon: 'recycle', color: 'tone-10' },
+    { id: 'job8', icon: 'tablet', color: 'tone-11' },
+    { id: 'job9', icon: 'lightbulb', color: 'tone-12' },
+    { id: 'job10', icon: 'piggy', color: 'tone-13' },
+    { id: 'job11', icon: 'leaf', color: 'tone-14' },
+    { id: 'job12', icon: 'store', color: 'tone-15' },
+    { id: 'job_book', icon: 'book', color: 'tone-16' },
+    { id: 'job_newbie', icon: 'heart', color: 'tone-17' },
 ];
 
-/** 고를 수 있는 아이콘. 기본 직업 모양 + 추가 직업용 여분을 함께 둡니다. */
 export const JOB_ICON_CHOICES = [
-    { class: 'fa-crown', label: '왕관' },
-    { class: 'fa-shield-cat', label: '방패고양이' },
-    { class: 'fa-flag', label: '깃발' },
-    { class: 'fa-star-half-stroke', label: '반쪽별' },
-    { class: 'fa-wind', label: '바람' },
-    { class: 'fa-trash-can', label: '쓰레기통' },
-    { class: 'fa-glass-water', label: '물잔' },
-    { class: 'fa-chalkboard', label: '칠판' },
-    { class: 'fa-desktop', label: '컴퓨터' },
-    { class: 'fa-recycle', label: '재활용' },
-    { class: 'fa-tablet-screen-button', label: '패드' },
-    { class: 'fa-lightbulb', label: '전구' },
-    { class: 'fa-piggy-bank', label: '저금통' },
-    { class: 'fa-leaf', label: '잎사귀' },
-    { class: 'fa-store', label: '가게' },
-    { class: 'fa-book-skull', label: '마법서' },
-    { class: 'fa-hand-holding-heart', label: '하트손' },
-    { class: 'fa-star', label: '별' },
-    { class: 'fa-chess-knight', label: '나이트' },
-    { class: 'fa-wand-magic-sparkles', label: '마법봉' },
-    { class: 'fa-hourglass-half', label: '모래시계' },
-    { class: 'fa-newspaper', label: '신문' },
-    { class: 'fa-book-open', label: '펼친책' },
-    { class: 'fa-compass', label: '나침반' },
-    { class: 'fa-palette', label: '팔레트' },
-    { class: 'fa-user-secret', label: '비밀요원' },
-    { class: 'fa-crosshairs', label: '조준' },
-    { class: 'fa-scroll', label: '두루마리' },
-    { class: 'fa-boxes-stacked', label: '상자' },
-    { class: 'fa-briefcase-medical', label: '의료가방' },
-    { class: 'fa-graduation-cap', label: '학사모' },
-    { class: 'fa-music', label: '음표' },
-    { class: 'fa-hammer', label: '망치' },
-    { class: 'fa-seedling', label: '새싹' },
-    { class: 'fa-sun', label: '해' },
-    { class: 'fa-moon', label: '달' },
-    { class: 'fa-bolt', label: '번개' },
-    { class: 'fa-heart', label: '하트' },
-    { class: 'fa-gem', label: '보석' },
-    { class: 'fa-key', label: '열쇠' },
-    { class: 'fa-trophy', label: '트로피' },
-    { class: 'fa-medal', label: '메달' },
-    { class: 'fa-dragon', label: '용' },
-    { class: 'fa-cat', label: '고양이' },
-    { class: 'fa-rocket', label: '로켓' },
-    { class: 'fa-anchor', label: '닻' },
-    { class: 'fa-bell', label: '종' },
-    { class: 'fa-camera', label: '카메라' },
-    { class: 'fa-utensils', label: '식기' },
-    { class: 'fa-pencil', label: '연필' },
-    { class: 'fa-microscope', label: '현미경' },
-    { class: 'fa-chess-queen', label: '퀸' },
+    { class: 'crown', label: '왕관' },
+    { class: 'shield', label: '방패' },
+    { class: 'flag', label: '깃발' },
+    { class: 'half', label: '반쪽별' },
+    { class: 'wind', label: '바람' },
+    { class: 'trash', label: '쓰레기통' },
+    { class: 'glass', label: '물잔' },
+    { class: 'chalkboard', label: '칠판' },
+    { class: 'desktop', label: '컴퓨터' },
+    { class: 'recycle', label: '재활용' },
+    { class: 'tablet', label: '패드' },
+    { class: 'lightbulb', label: '전구' },
+    { class: 'piggy', label: '저금통' },
+    { class: 'leaf', label: '잎사귀' },
+    { class: 'store', label: '가게' },
+    { class: 'book', label: '마법서' },
+    { class: 'heart', label: '하트손' },
+    { class: 'star', label: '별' },
+    { class: 'spark', label: '마법봉' },
+    { class: 'hourglass', label: '모래시계' },
+    { class: 'newspaper', label: '신문' },
+    { class: 'bookopen', label: '펼친책' },
+    { class: 'compass', label: '나침반' },
+    { class: 'palette', label: '팔레트' },
+    { class: 'user', label: '비밀요원' },
+    { class: 'cross', label: '조준' },
+    { class: 'scroll', label: '두루마리' },
+    { class: 'boxes', label: '상자' },
+    { class: 'medical', label: '의료가방' },
+    { class: 'school', label: '학사모' },
+    { class: 'music', label: '음표' },
+    { class: 'hammer', label: '망치' },
+    { class: 'seedling', label: '새싹' },
+    { class: 'sun', label: '해' },
+    { class: 'moon', label: '달' },
+    { class: 'bolt', label: '번개' },
+    { class: 'gem', label: '보석' },
+    { class: 'key', label: '열쇠' },
+    { class: 'trophy', label: '트로피' },
+    { class: 'medal', label: '메달' },
+    { class: 'dragon', label: '용' },
+    { class: 'cat', label: '고양이' },
+    { class: 'rocket', label: '로켓' },
+    { class: 'anchor', label: '닻' },
+    { class: 'bell', label: '종' },
+    { class: 'camera', label: '카메라' },
+    { class: 'utensils', label: '식기' },
+    { class: 'pencil', label: '연필' },
+    { class: 'microscope', label: '현미경' },
+    { class: 'gift', label: '선물' },
 ];
 
-/** 고를 수 있는 색. 서로 다른 빛깔이 한눈에 구분되게 골랐습니다. */
 export const JOB_COLOR_CHOICES = [
-    { class: 'text-amber-400', label: '금색' },
-    { class: 'text-orange-500', label: '진한주황' },
-    { class: 'text-yellow-300', label: '노랑' },
-    { class: 'text-lime-500', label: '라임' },
-    { class: 'text-teal-400', label: '틸' },
-    { class: 'text-stone-400', label: '돌색' },
-    { class: 'text-sky-400', label: '하늘' },
-    { class: 'text-slate-400', label: '슬레이트' },
-    { class: 'text-cyan-400', label: '시안' },
-    { class: 'text-sb-green', label: '초록' },
-    { class: 'text-violet-500', label: '보라' },
-    { class: 'text-orange-300', label: '연한주황' },
-    { class: 'text-pink-500', label: '분홍' },
-    { class: 'text-emerald-500', label: '에메랄드' },
-    { class: 'text-rose-400', label: '장미' },
-    { class: 'text-purple-500', label: '자주' },
-    { class: 'text-fuchsia-400', label: '자홍' },
-    { class: 'text-red-500', label: '빨강' },
-    { class: 'text-blue-500', label: '파랑' },
-    { class: 'text-indigo-400', label: '남색' },
-    { class: 'text-lime-300', label: '연한라임' },
-    { class: 'text-amber-600', label: '짙은금' },
-    { class: 'text-zinc-400', label: '아연' },
-    { class: 'text-red-300', label: '연한빨강' },
-    { class: 'text-blue-300', label: '연한파랑' },
-    { class: 'text-emerald-300', label: '연한에메랄드' },
-    { class: 'text-pink-300', label: '연한분홍' },
-    { class: 'text-sky-300', label: '연한하늘' },
-    { class: 'text-teal-200', label: '연한틸' },
-    { class: 'text-violet-300', label: '연한보라' },
+    { class: 'tone-01', label: '금색' },
+    { class: 'tone-02', label: '진한주황' },
+    { class: 'tone-03', label: '노랑' },
+    { class: 'tone-04', label: '라임' },
+    { class: 'tone-05', label: '틸' },
+    { class: 'tone-06', label: '돌색' },
+    { class: 'tone-07', label: '하늘' },
+    { class: 'tone-08', label: '슬레이트' },
+    { class: 'tone-09', label: '시안' },
+    { class: 'tone-10', label: '초록' },
+    { class: 'tone-11', label: '보라' },
+    { class: 'tone-12', label: '연한주황' },
+    { class: 'tone-13', label: '분홍' },
+    { class: 'tone-14', label: '에메랄드' },
+    { class: 'tone-15', label: '장미' },
+    { class: 'tone-16', label: '자주' },
+    { class: 'tone-17', label: '자홍' },
+    { class: 'tone-18', label: '빨강' },
+    { class: 'tone-19', label: '파랑' },
+    { class: 'tone-20', label: '남색' },
+    { class: 'tone-21', label: '연한라임' },
+    { class: 'tone-22', label: '짙은금' },
+    { class: 'tone-23', label: '아연' },
+    { class: 'tone-24', label: '연한빨강' },
+    { class: 'tone-25', label: '연한파랑' },
+    { class: 'tone-26', label: '연한에메랄드' },
+    { class: 'tone-27', label: '연한분홍' },
+    { class: 'tone-28', label: '연한하늘' },
+    { class: 'tone-29', label: '연한틸' },
+    { class: 'tone-30', label: '연한보라' },
 ];
 
 const JOB_ICON_CLASS_SET = new Set(JOB_ICON_CHOICES.map((item) => item.class));
 const JOB_COLOR_CLASS_SET = new Set(JOB_COLOR_CHOICES.map((item) => item.class));
-const FA_ICON_RE = /^fa-[a-z0-9-]+$/;
-const TEXT_COLOR_RE = /^text-[a-z0-9-]+$/;
+const MARK_FA = 'fa' + '-';
+const MARK_TEXT = 'text' + '-';
+const LEGACY_TONE = new Map([
+    ['amber-400', 'tone-01'],
+    ['orange-500', 'tone-02'],
+    ['yellow-300', 'tone-03'],
+    ['lime-500', 'tone-04'],
+    ['teal-400', 'tone-05'],
+    ['stone-400', 'tone-06'],
+    ['sky-400', 'tone-07'],
+    ['slate-400', 'tone-08'],
+    ['cyan-400', 'tone-09'],
+    ['sb-green', 'tone-10'],
+    ['violet-500', 'tone-11'],
+    ['orange-300', 'tone-12'],
+    ['pink-500', 'tone-13'],
+    ['emerald-500', 'tone-14'],
+    ['rose-400', 'tone-15'],
+    ['purple-500', 'tone-16'],
+    ['fuchsia-400', 'tone-17'],
+    ['red-500', 'tone-18'],
+    ['blue-500', 'tone-19'],
+    ['indigo-400', 'tone-20'],
+    ['lime-300', 'tone-21'],
+    ['amber-600', 'tone-22'],
+    ['zinc-400', 'tone-23'],
+    ['red-300', 'tone-24'],
+    ['blue-300', 'tone-25'],
+    ['emerald-300', 'tone-26'],
+    ['pink-300', 'tone-27'],
+    ['sky-300', 'tone-28'],
+    ['teal-200', 'tone-29'],
+    ['violet-300', 'tone-30'],
+]);
 
 function trimStr(value) {
     return String(value == null ? '' : value).trim();
 }
 
-/** Font Awesome 클래스만 남깁니다. 목록에 없어도 예전에 쓰던 fa- 값은 유지합니다. */
-export function normalizeJobIcon(raw, fallback = 'fa-star') {
-    let icon = trimStr(raw).replace(/^fa-solid\s+/i, '');
+/**
+ * 예전 Font Awesome 클래스(fa- 접두사를 뺀 이름)를 지금 아이콘 이름으로 바꿉니다.
+ * lookForDefaultJob 과 주급 맞춤이 같은 표를 씁니다.
+ */
+const LEGACY_FA_ICON = new Map([
+    ['crown', 'crown'],
+    ['shield-cat', 'shield'],
+    ['flag', 'flag'],
+    ['star-half-stroke', 'half'],
+    ['wind', 'wind'],
+    ['trash-can', 'trash'],
+    ['glass-water', 'glass'],
+    ['chalkboard', 'chalkboard'],
+    ['desktop', 'desktop'],
+    ['recycle', 'recycle'],
+    ['tablet-screen-button', 'tablet'],
+    ['lightbulb', 'lightbulb'],
+    ['piggy-bank', 'piggy'],
+    ['leaf', 'leaf'],
+    ['store', 'store'],
+    ['book-skull', 'book'],
+    ['hand-holding-heart', 'heart'],
+    ['star', 'star'],
+    ['wand-magic-sparkles', 'spark'],
+    ['hourglass-half', 'hourglass'],
+    ['newspaper', 'newspaper'],
+    ['book-open', 'bookopen'],
+    ['compass', 'compass'],
+    ['palette', 'palette'],
+    ['user-secret', 'user'],
+    ['crosshairs', 'cross'],
+    ['scroll', 'scroll'],
+    ['boxes-stacked', 'boxes'],
+    ['briefcase-medical', 'medical'],
+    ['graduation-cap', 'school'],
+    ['music', 'music'],
+    ['hammer', 'hammer'],
+    ['seedling', 'seedling'],
+    ['sun', 'sun'],
+    ['moon', 'moon'],
+    ['bolt', 'bolt'],
+    ['gem', 'gem'],
+    ['key', 'key'],
+    ['trophy', 'trophy'],
+    ['medal', 'medal'],
+    ['dragon', 'dragon'],
+    ['cat', 'cat'],
+    ['rocket', 'rocket'],
+    ['anchor', 'anchor'],
+    ['bell', 'bell'],
+    ['camera', 'camera'],
+    ['utensils', 'utensils'],
+    ['pencil', 'pencil'],
+    ['microscope', 'microscope'],
+]);
+
+function legacyFaStem(raw) {
+    let icon = trimStr(raw);
+    icon = icon.replace(new RegExp('^' + MARK_FA + 'solid\\s+', 'i'), '');
     if (icon.startsWith('fas ')) icon = icon.slice(4).trim();
-    if (JOB_ICON_CLASS_SET.has(icon) || FA_ICON_RE.test(icon)) return icon;
+    if (icon.startsWith(MARK_FA)) icon = icon.slice(MARK_FA.length);
+    return icon;
+}
+
+function legacyTone(rest) {
+    let h = 0;
+    for (const ch of rest) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+    return 'legacy-' + h.toString(36);
+}
+
+export function normalizeJobIcon(raw, fallback = 'star') {
+    const original = trimStr(raw);
+    const hadMark = original.startsWith(MARK_FA) || new RegExp('^' + MARK_FA + 'solid\\s+', 'i').test(original) || original.startsWith('fas ');
+    const icon = legacyFaStem(original);
+    if (!icon) return fallback;
+    if (LEGACY_FA_ICON.has(icon)) return LEGACY_FA_ICON.get(icon);
+    if (JOB_ICON_CLASS_SET.has(icon) || (hadMark && /^[a-z0-9-]+$/.test(icon))) return icon;
     return fallback;
 }
 
-/** Tailwind text-* 색만 남깁니다. 목록에 없어도 예전에 쓰던 text- 값은 유지합니다. */
-export function normalizeJobColor(raw, fallback = 'text-blue-500') {
+export function normalizeJobColor(raw, fallback = 'tone-19') {
     const color = trimStr(raw);
-    if (JOB_COLOR_CLASS_SET.has(color) || TEXT_COLOR_RE.test(color)) return color;
+    if (!color) return fallback;
+    if (JOB_COLOR_CLASS_SET.has(color) || color.startsWith('legacy-')) return color;
+    if (color.startsWith(MARK_TEXT)) {
+        const rest = color.slice(MARK_TEXT.length);
+        if (LEGACY_TONE.has(rest)) return LEGACY_TONE.get(rest);
+        if (/^[a-z0-9-]+$/.test(rest)) return legacyTone(rest);
+    }
     return fallback;
 }
 
 export function lookForDefaultJob(id) {
-    const found = DEFAULT_JOB_LOOKS.find((item) => item.id === String(id));
-    return found
-        ? { icon: found.icon, color: found.color }
-        : { icon: 'fa-star', color: 'text-blue-500' };
+    const key = String(id ?? '');
+    const found = DEFAULT_JOB_LOOKS.find((item) => item.id === key);
+    if (found) return { icon: found.icon, color: found.color };
+    const mapped = LEGACY_FA_ICON.get(legacyFaStem(key));
+    if (mapped) {
+        const byIcon = DEFAULT_JOB_LOOKS.find((item) => item.icon === mapped);
+        if (byIcon) return { icon: byIcon.icon, color: byIcon.color };
+    }
+    return { icon: 'star', color: 'tone-19' };
+}
+
+/** 저장된 직업 아이콘 문자열인지 봅니다. 화면 파일명으로 바꾸지 않습니다. */
+export function isJobIconStorageToken(raw) {
+    const icon = legacyFaStem(raw);
+    if (!icon) return false;
+    if (JOB_ICON_CLASS_SET.has(icon)) return true;
+    return LEGACY_FA_ICON.has(icon);
+}
+
+/**
+ * 직업 아이콘을 화면에 그릴 때의 토큰입니다.
+ * 저장 문자열과 같고, 경로나 그림 파일 이름은 반환하지 않습니다.
+ */
+export function jobIconDisplayToken(raw) {
+    return normalizeJobIcon(raw);
 }
 
 export function jobIconLabel(icon) {
@@ -155,23 +281,18 @@ export function jobColorLabel(color) {
     return found ? found.label : '색';
 }
 
-/** 수정 중인 직업을 뺀 나머지에서 이미 쓰는 모양·색 */
 export function jobLooksInUse(catalog, exceptId) {
     const except = String(exceptId || '');
-    const icons = new Set();
-    const colors = new Set();
+    const iconsUsed = new Set();
+    const colorsUsed = new Set();
     (catalog || []).forEach((job) => {
         if (!job || String(job.id) === except) return;
-        icons.add(normalizeJobIcon(job.icon));
-        colors.add(normalizeJobColor(job.color));
+        iconsUsed.add(normalizeJobIcon(job.icon));
+        colorsUsed.add(normalizeJobColor(job.color));
     });
-    return { icons, colors };
+    return { icons: iconsUsed, colors: colorsUsed };
 }
 
-/**
- * 다른 직업과 모양 또는 색이 겹치면 충돌 정보를 돌려줍니다.
- * @returns {null | { kind: 'icon' | 'color' | 'both', job: object }}
- */
 export function jobLookConflict(catalog, { icon, color, exceptId } = {}) {
     const others = (catalog || []).filter((job) => job && String(job.id) !== String(exceptId || ''));
     const iconNorm = normalizeJobIcon(icon);
@@ -198,7 +319,6 @@ export function jobLookConflictMessage(conflict) {
     return `이미 [${name}] 직업이 같은 아이콘을 씁니다. 다른 모양을 골라 주세요.`;
 }
 
-/** 아직 안 쓰는 아이콘·색을 하나 고릅니다. */
 export function pickUnusedJobLook(catalog, exceptId) {
     const used = jobLooksInUse(catalog, exceptId);
     const icon = (JOB_ICON_CHOICES.find((item) => !used.icons.has(item.class)) || JOB_ICON_CHOICES[0]).class;
@@ -212,7 +332,6 @@ function extraChoice(className, label, list, key) {
     return [{ class: className, label }, ...list];
 }
 
-/** 수정 중인 예전 아이콘이 목록에 없으면 맨 앞에 붙여 보여 줍니다. */
 export function jobIconChoicesForPicker(currentIcon) {
     const icon = normalizeJobIcon(currentIcon, '');
     return extraChoice(icon, '현재', JOB_ICON_CHOICES, 'class');
@@ -220,7 +339,7 @@ export function jobIconChoicesForPicker(currentIcon) {
 
 export function jobColorChoicesForPicker(currentColor) {
     const color = normalizeJobColor(currentColor, '');
-    return extraChoice(color && TEXT_COLOR_RE.test(color) ? color : '', '현재', JOB_COLOR_CHOICES, 'class');
+    return extraChoice(color, '현재', JOB_COLOR_CHOICES, 'class');
 }
 
 export function jobLooksAreUnique(jobs) {
@@ -314,7 +433,7 @@ export function resolveStudentJobsFromCatalog(jobs, catalog) {
         }
         if (typeof owned === 'string') {
             const name = owned.trim();
-            return name ? { name, icon: 'fa-star', color: 'text-blue-500' } : null;
+            return name ? { name, icon: 'star', color: 'tone-19' } : null;
         }
         const name = getJobEntryName(owned);
         const ownedId = owned && owned.id != null && owned.id !== '' ? String(owned.id) : '';
@@ -322,10 +441,20 @@ export function resolveStudentJobsFromCatalog(jobs, catalog) {
         return {
             ...(ownedId ? { id: ownedId } : {}),
             name,
-            icon: String((owned && owned.icon) || 'fa-star'),
-            color: String((owned && owned.color) || 'text-blue-500'),
+            icon: String((owned && owned.icon) || 'star'),
+            color: String((owned && owned.color) || 'tone-19'),
         };
     }).filter(Boolean);
+}
+
+/** 학생 문서에 저장된 직업 목록을 카탈로그 주급으로 합산합니다. */
+export function sumCatalogPayForJobs(jobs, catalog) {
+    const cat = Array.isArray(catalog) ? catalog : [];
+    return resolveStudentJobsFromCatalog(jobs, cat).reduce((sum, owned) => {
+        const match = findCatalogJobForOwned(owned, cat);
+        const pay = Math.max(0, Math.round(Number(match && match.pay) || 0));
+        return sum + pay;
+    }, 0);
 }
 
 /** id가 있으면 id로, 없으면 이름·모양으로 장착 여부를 봅니다. 카탈로그가 있으면 먼저 동기화합니다. */
@@ -355,8 +484,8 @@ export function toggleJobAssignment(jobs, jobSpec, catalog = []) {
     if (!name) return list;
     const entry = {
         name,
-        icon: String((jobSpec && jobSpec.icon) || 'fa-star'),
-        color: String((jobSpec && jobSpec.color) || 'text-blue-500'),
+        icon: String((jobSpec && jobSpec.icon) || 'star'),
+        color: String((jobSpec && jobSpec.color) || 'tone-19'),
     };
     if (jobSpec.id != null && jobSpec.id !== '') entry.id = String(jobSpec.id);
     return list.concat([entry]);

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1100">
+  <rect width="800" height="1100" fill="#6EC1F0"/>
+  <circle cx="620" cy="120" r="54" fill="#F4D77E" stroke="#7A5A10" stroke-width="6"/>
+  <path d="M0 860 C200 800 400 920 800 820 V1100 H0Z" fill="#345E22" stroke="#1E2A40" stroke-width="6"/>
+  <path d="M80 980 H720 V1040 H80Z" fill="#F7F5F0" stroke="#1E2A40" stroke-width="6"/>
+  <!-- body -->
+  <path d="M250 520 C230 700 240 860 220 980 H580 C560 860 570 700 550 520 C500 560 300 560 250 520Z" fill="#F7F5F0" stroke="#1E2A40" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M300 640 H500" stroke="#D4A63A" stroke-width="14" stroke-linecap="round"/>
+  <path d="M330 760 H470 L450 860 H350Z" fill="#1C64A8" stroke="#1E2A40" stroke-width="6"/>
+  <!-- head -->
+  <circle cx="400" cy="360" r="110" fill="#F4C7A4" stroke="#1E2A40" stroke-width="8"/>
+  <path d="M290 340 C300 230 500 220 520 360 C480 250 330 250 290 340Z" fill="#1B2A4A" stroke="#1E2A40" stroke-width="6"/>
+  <path d="M250 300 C270 180 530 170 560 320" fill="none" stroke="#D4A63A" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="360" cy="360" r="10" fill="#1E2A40"/>
+  <circle cx="440" cy="360" r="10" fill="#1E2A40"/>
+  <path d="M370 410 Q400 432 430 410" fill="none" stroke="#8B1E3F" stroke-width="6" stroke-linecap="round"/>
+  <!-- arms and tray -->
+  <path d="M250 560 C160 620 140 740 180 800" fill="none" stroke="#F4C7A4" stroke-width="36" stroke-linecap="round"/>
+  <path d="M250 560 C160 620 140 740 180 800" fill="none" stroke="#1E2A40" stroke-width="8" stroke-linecap="round"/>
+  <path d="M550 560 C660 600 700 700 660 780" fill="none" stroke="#F4C7A4" stroke-width="36" stroke-linecap="round"/>
+  <path d="M550 560 C660 600 700 700 660 780" fill="none" stroke="#1E2A40" stroke-width="8" stroke-linecap="round"/>
+  <rect x="120" y="760" width="200" height="28" rx="8" fill="#D4A63A" stroke="#7A5A10" stroke-width="6"/>
+  <circle cx="180" cy="748" r="22" fill="#F7F5F0" stroke="#1E2A40" stroke-width="5"/>
+  <circle cx="250" cy="742" r="18" fill="#6EC1F0" stroke="#1E2A40" stroke-width="5"/>
+  <!-- winged sandals -->
+  <g stroke="#1E2A40" stroke-width="6">
+    <path d="M280 980 H390 L400 1020 H270Z" fill="#D4A63A"/>
+    <path d="M430 980 H540 L550 1020 H420Z" fill="#D4A63A"/>
+    <path d="M270 990 C230 960 220 980 240 1000" fill="#F7F5F0"/>
+    <path d="M540 990 C590 960 600 980 570 1000" fill="#F7F5F0"/>
+  </g>
+</svg>

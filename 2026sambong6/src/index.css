@@ -26,7 +26,7 @@
         .military-panel {background: linear-gradient(145deg, color-mix(in srgb, var(--secondary-bg) 95%, transparent) 0%, var(--secondary-bg) 100%);box-shadow: var(--shadow-card)}
         .military-input {background: var(--secondary-bg);border: 2px solid color-mix(in srgb, var(--gold-text) 45%, transparent);color: var(--ink-2);border-radius: 0.75rem;padding: 0.5rem}
         .military-input:focus {outline: none;border-color: var(--gold-text);box-shadow: var(--shadow-card)}
-        .military-preset-btn {flex: 1;min-width: 3.5rem;padding: 0.4rem 0.6rem;font-size: 12px;font-weight: 800;letter-spacing: 0.05em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 50%, transparent);border-radius: 0.5rem;transition: background 0.15s, border-color 0.15s}
+        .military-preset-btn {flex: 1;min-width: 3.5rem;padding: 0.4rem 0.6rem;font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.05em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 50%, transparent);border-radius: 0.5rem;transition: background 0.15s, border-color 0.15s}
         .military-preset-btn:hover {background: color-mix(in srgb, var(--laurel) 60%, transparent);border-color: var(--gold-text)}
 
         /* 수업도구 — 원형 돌림판 */
@@ -37,9 +37,9 @@
         .class-wheel-item-row input {background: color-mix(in srgb, var(--navy) 86%, transparent);border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);color: var(--ink-2);border-radius: 0.8rem;padding: 0.55rem 0.7rem;font-weight: 900}
         .class-wheel-input:focus,
         .class-wheel-item-row input:focus {outline: none;border-color: var(--line);box-shadow: var(--shadow-card)}
-        .class-wheel-mini-btn {flex: 1;min-width: 5.2rem;border-radius: 0.8rem;background: color-mix(in srgb, var(--navy) 86%, transparent);border: 1px solid color-mix(in srgb, var(--line) 28%, transparent);color: var(--ink-2);padding: 0.65rem 0.8rem;font-size: 12px;font-weight: 900;box-shadow: var(--shadow-press)}
+        .class-wheel-mini-btn {flex: 1;min-width: 5.2rem;border-radius: 0.8rem;background: color-mix(in srgb, var(--navy) 86%, transparent);border: 1px solid color-mix(in srgb, var(--line) 28%, transparent);color: var(--ink-2);padding: 0.65rem 0.8rem;font-size: calc(12px * var(--type-scale));font-weight: 900;box-shadow: var(--shadow-press)}
         .class-wheel-item-list {max-height: 18rem;overflow-y: auto;display: grid;gap: 0.45rem;padding-right: 0.15rem}
-        .class-wheel-item-row {display: grid;grid-template-columns: 2.1rem minmax(0, 1fr);align-items: center;gap: 0.5rem;color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .class-wheel-item-row {display: grid;grid-template-columns: 2.1rem minmax(0, 1fr);align-items: center;gap: 0.5rem;color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .class-wheel-item-row span {display: inline-flex;align-items: center;justify-content: center;height: 2.1rem;border-radius: 999px;background: color-mix(in srgb, var(--wine) 72%, transparent);border: 1px solid color-mix(in srgb, var(--line) 28%, transparent)}
         .class-wheel-stage {position: relative;min-height: 29rem;display: flex;flex-direction: column;align-items: center;justify-content: center;gap: 1rem;border-radius: 1.4rem;border: 1px solid color-mix(in srgb, var(--line) 22%, transparent);background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--bg) 16%, transparent), transparent 38%),
                 radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--navy) 22%, transparent), color-mix(in srgb, var(--navy) 80%, transparent));overflow: hidden;padding: 1.6rem 1rem 1.25rem}
@@ -48,13 +48,13 @@
         .class-wheel-disc::after {content: "";position: absolute;inset: 0;border-radius: inherit;background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--surface) 32%, transparent), transparent 26%);pointer-events: none}
         .class-wheel-spinning {filter: saturate(1.25) drop-shadow(0 0 22px color-mix(in srgb, var(--line) 45%, transparent))}
         .class-wheel-labels {position: absolute;inset: 0;display: flex;align-items: center;justify-content: center;pointer-events: none;z-index: 2}
-        .class-wheel-label {position: absolute;width: 5.4rem;text-align: center;color: var(--ink-2);text-shadow: none;font-size: 12px;line-height: 1.05;font-weight: 900;word-break: keep-all}
-        .class-wheel-hub {position: absolute;left: 50%;top: 50%;z-index: 5;width: 4.6rem;height: 4.6rem;transform: translate(-50%, -50%);display: flex;align-items: center;justify-content: center;border-radius: 999px;background: radial-gradient(circle at 35% 25%, var(--bg), var(--sky) 45%, var(--secondary-bg));border: 0.28rem solid color-mix(in srgb, var(--line) 90%, transparent);color: white;font-size: 12px;font-weight: 1000;letter-spacing: 0.12em;text-shadow: none;box-shadow: var(--shadow-card)}
+        .class-wheel-label {position: absolute;width: 5.4rem;text-align: center;color: var(--ink-2);text-shadow: none;font-size: calc(12px * var(--type-scale));line-height: 1.05;font-weight: 900;word-break: keep-all}
+        .class-wheel-hub {position: absolute;left: 50%;top: 50%;z-index: 5;width: 4.6rem;height: 4.6rem;transform: translate(-50%, -50%);display: flex;align-items: center;justify-content: center;border-radius: 999px;background: var(--surface);border: 0.28rem solid var(--navy);color: var(--ink);font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.12em;text-shadow: none;box-shadow: var(--shadow-card)}
         .class-wheel-spin-fx {position: absolute;width: 22rem;height: 22rem;max-width: 88vw;max-height: 88vw;border-radius: 999px;border: 2px dashed color-mix(in srgb, var(--gold-text) 55%, transparent);animation: classWheelFx 0.42s linear infinite;pointer-events: none;z-index: 1}
-        .class-wheel-spin-btn {min-width: min(18rem, 90%);border-radius: 999px;padding: 0.95rem 1.3rem;background: linear-gradient(180deg, var(--secondary-bg), var(--sky) 48%, var(--secondary-bg));border: 2px solid color-mix(in srgb, var(--line) 85%, transparent);color: white;font-size: 16px;font-weight: 1000;box-shadow: var(--shadow-card);transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease}
+        .class-wheel-spin-btn {min-width: min(18rem, 90%);border-radius: 999px;padding: 0.95rem 1.3rem;background: var(--surface);border: 2px solid var(--navy);color: var(--ink);font-size: calc(16px * var(--type-scale));font-weight: 900;box-shadow: var(--shadow-card);transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease}
         .class-wheel-spin-btn:active {transform: translateY(0.25rem);box-shadow: var(--shadow-card)}
         .class-wheel-spin-btn:disabled {opacity: 0.62;pointer-events: none}
-        .class-wheel-result {min-height: 2.6rem;display: flex;align-items: center;justify-content: center;width: min(24rem, 100%);border-radius: 1rem;border: 1px solid color-mix(in srgb, var(--line) 32%, transparent);background: color-mix(in srgb, var(--navy) 78%, transparent);color: var(--ink-2);text-align: center;font-size: 12px;font-weight: 900;padding: 0.55rem 0.85rem}
+        .class-wheel-result {min-height: 2.6rem;display: flex;align-items: center;justify-content: center;width: min(24rem, 100%);border-radius: 1rem;border: 2px solid var(--navy);background: var(--surface);color: var(--ink);text-align: center;font-size: calc(16px * var(--type-scale));font-weight: 900;padding: 0.55rem 0.85rem}
         .class-wheel-result-pop {animation: classWheelResultPop 0.65s cubic-bezier(0.2, 1.4, 0.32, 1)}
         @keyframes classWheelFx {
             from {transform: rotate(0deg) scale(0.98);opacity: 0.72}
@@ -70,24 +70,24 @@
         .learning-thermometer-panel {background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--secondary-bg) 18%, transparent), transparent 32%),
                 radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--wine) 18%, transparent), transparent 34%),
                 linear-gradient(180deg, color-mix(in srgb, var(--secondary-bg) 92%, transparent) 0%, color-mix(in srgb, var(--secondary-bg) 96%, transparent) 48%, color-mix(in srgb, var(--secondary-bg) 92%, transparent) 100%)}
-        .learning-thermometer-input {background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);color: var(--ink-2);border-radius: 0.75rem;padding: 0.55rem 0.7rem;font-size: 14px;font-weight: 900;text-align: center}
-        .learning-thermometer-btn {min-height: 2.75rem;border-radius: 0.8rem;padding: 0.65rem 0.8rem;color: white;font-size: 12px;font-weight: 900;border: 1px solid color-mix(in srgb, var(--line) 14%, transparent);box-shadow: var(--shadow-press)}
+        .learning-thermometer-input {background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);color: var(--ink-2);border-radius: 0.75rem;padding: 0.55rem 0.7rem;font-size: calc(14px * var(--type-scale));font-weight: 900;text-align: center}
+        .learning-thermometer-btn {min-height: 2.75rem;border-radius: 0.8rem;padding: 0.65rem 0.8rem;color: var(--ink);background: var(--surface);font-size: calc(12px * var(--type-scale));font-weight: 900;border: 1px solid var(--navy);box-shadow: var(--shadow-press)}
         .learning-thermometer-stage {position: relative;min-height: 26rem;background: linear-gradient(180deg, color-mix(in srgb, var(--secondary-bg) 92%, transparent) 0%, color-mix(in srgb, var(--sky) 45%, transparent) 30%, color-mix(in srgb, var(--navy) 72%, transparent) 50%, color-mix(in srgb, var(--wine) 72%, transparent) 72%, color-mix(in srgb, var(--secondary-bg) 95%, transparent) 100%)}
         .learning-thermometer-heaven,
         .learning-thermometer-hell {height: 3.25rem;display: flex;align-items: center;justify-content: center;gap: 1rem;pointer-events: none;user-select: none}
         .learning-thermometer-heaven {background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 96%, transparent), color-mix(in srgb, var(--secondary-bg) 45%, transparent))}
         .learning-thermometer-hell {background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 45%, transparent), color-mix(in srgb, var(--secondary-bg) 96%, transparent))}
         .learning-thermometer-zero-line {position: absolute;left: 0;right: 0;top: 50%;z-index: 4;border-top: 3px solid color-mix(in srgb, var(--line) 92%, transparent);box-shadow: var(--shadow-press);text-align: center;pointer-events: none}
-        .learning-thermometer-zero-line span {display: inline-flex;transform: translateY(-50%);background: color-mix(in srgb, var(--secondary-bg) 96%, transparent);color: var(--ink-2);border: 2px solid color-mix(in srgb, var(--line) 55%, transparent);border-radius: 999px;min-width: 2.35rem;height: 2.35rem;align-items: center;justify-content: center;font-weight: 900;font-size: 14px;box-shadow: var(--shadow-card)}
+        .learning-thermometer-zero-line span {display: inline-flex;transform: translateY(-50%);background: color-mix(in srgb, var(--secondary-bg) 96%, transparent);color: var(--ink-2);border: 2px solid color-mix(in srgb, var(--line) 55%, transparent);border-radius: 999px;min-width: 2.35rem;height: 2.35rem;align-items: center;justify-content: center;font-weight: 900;font-size: calc(14px * var(--type-scale));box-shadow: var(--shadow-card)}
         .learning-thermometer-students {position: relative;min-height: 19.5rem;display: flex;align-items: flex-start;gap: 0.65rem;padding: 1rem 1rem 1.15rem;z-index: 3;overflow-x: auto;scrollbar-width: none;-ms-overflow-style: none}
         .learning-thermometer-students::-webkit-scrollbar {display: none}
         .learning-thermometer-students::before {content: '';position: absolute;left: 0.75rem;right: 0.75rem;top: var(--lt-zero-y, 50%);border-top: 2px dashed color-mix(in srgb, var(--line) 35%, transparent);z-index: 0;pointer-events: none}
         .learning-thermometer-card {position: relative;z-index: 1;min-width: 4.85rem;width: 4.85rem;display: flex;flex-direction: column;align-items: center;justify-content: flex-start;gap: 0.45rem;border-radius: 1rem;border: 1px solid color-mix(in srgb, var(--line) 18%, transparent);background: color-mix(in srgb, var(--navy) 56%, transparent);backdrop-filter: blur(8px);padding: 0.65rem 0.45rem}
-        .learning-thermometer-name {max-width: 100%;font-size: 12px;font-weight: 900;color: var(--ink-2);text-align: center;line-height: 1.1}
-        .learning-thermometer-value {min-width: 2.75rem;border-radius: 999px;padding: 0.2rem 0.35rem;text-align: center;font-size: 12px;font-weight: 900;border: 1px solid color-mix(in srgb, var(--line) 22%, transparent);background: color-mix(in srgb, var(--navy) 82%, transparent)}
+        .learning-thermometer-name {max-width: 100%;font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2);text-align: center;line-height: 1.1}
+        .learning-thermometer-value {min-width: 2.75rem;border-radius: 999px;padding: 0.2rem 0.35rem;text-align: center;font-size: calc(12px * var(--type-scale));font-weight: 900;border: 1px solid color-mix(in srgb, var(--line) 22%, transparent);background: color-mix(in srgb, var(--navy) 82%, transparent)}
         .learning-thermometer-slider {writing-mode: vertical-rl;direction: rtl;width: 2.1rem;height: 12.5rem;accent-color: var(--sky);cursor: pointer;touch-action: none}
         .learning-thermometer-stepper {width: 100%;display: flex;gap: 0.25rem}
-        .learning-thermometer-stepper button {flex: 1;border-radius: 0.45rem;background: color-mix(in srgb, var(--navy) 85%, transparent);border: 1px solid color-mix(in srgb, var(--line) 16%, transparent);color: white;font-size: 12px;font-weight: 900;line-height: 1.8}
+        .learning-thermometer-stepper button {flex: 1;border-radius: 0.45rem;background: var(--navy);border: 1px solid var(--navy);color: var(--surface);font-size: calc(12px * var(--type-scale));font-weight: 900;line-height: 1.8}
         .learning-thermometer-readonly-track {position: relative;width: 1.75rem;height: 12.5rem;border-radius: 999px;background: color-mix(in srgb, var(--navy) 78%, transparent);border: 1px solid color-mix(in srgb, var(--line) 18%, transparent);overflow: hidden;box-shadow: var(--shadow-card)}
         .learning-thermometer-readonly-fill {position: absolute;left: 0.25rem;right: 0.25rem;border-radius: 999px;background-image: linear-gradient(180deg, var(--tw-gradient-stops));box-shadow: var(--shadow-card)}
         .learning-thermometer-readonly-zero {position: absolute;left: 0;right: 0;top: 50%;border-top: 2px solid color-mix(in srgb, var(--line) 55%, transparent)}
@@ -95,18 +95,18 @@
         /* 스마트폰: 가로 스크롤 없이 2~3줄 격자로 한 화면에서 조절 (슬라이더 오터치 방지) */
         @media (max-width: 767px) {
             .learning-thermometer-panel {padding: 0.55rem !important}
-            .learning-thermometer-panel h2 {font-size: 16px}
+            .learning-thermometer-panel h2 {font-size: calc(16px * var(--type-scale))}
             .learning-thermometer-stage {min-height: 0}
             .learning-thermometer-heaven,
             .learning-thermometer-hell {height: 1.45rem;gap: 0.35rem}
             .learning-thermometer-heaven span:first-child,
-            .learning-thermometer-hell span:last-child {font-size: 14px}
+            .learning-thermometer-hell span:last-child {font-size: calc(14px * var(--type-scale))}
             .learning-thermometer-zero-line {display: none}
             .learning-thermometer-students {display: grid;grid-template-columns: repeat(auto-fill, minmax(3.15rem, 1fr));grid-auto-flow: row;align-items: stretch;gap: 0.32rem;padding: 0.4rem 0.35rem 0.5rem;min-height: 0;overflow-x: hidden;overflow-y: visible}
             .learning-thermometer-students::before {display: none}
             .learning-thermometer-card {min-width: 0;width: auto;padding: 0.32rem 0.18rem 0.38rem;gap: 0.18rem;border-radius: 0.7rem}
-            .learning-thermometer-name {font-size: 12px}
-            .learning-thermometer-value {min-width: 0;width: 100%;font-size: 12px;padding: 0.12rem 0.1rem}
+            .learning-thermometer-name {font-size: calc(12px * var(--type-scale))}
+            .learning-thermometer-value {min-width: 0;width: 100%;font-size: calc(12px * var(--type-scale));padding: 0.12rem 0.1rem}
             .learning-thermometer-readonly-zero {display: none}
             .learning-thermometer-btn {min-height: 2.2rem;padding: 0.35rem 0.45rem}
             .learning-thermometer-input {padding: 0.35rem 0.4rem}
@@ -114,13 +114,13 @@
             .learning-thermometer-slider {display: none}
             .learning-thermometer-readonly-track {width: 100%;height: 0.38rem}
             .learning-thermometer-stepper {flex-direction: column;gap: 0.18rem}
-            .learning-thermometer-stepper button {min-height: 1.85rem;font-size: 14px;line-height: 1}
+            .learning-thermometer-stepper button {min-height: 1.85rem;font-size: calc(14px * var(--type-scale));line-height: 1}
         }
         @media (max-width: 767px) and (min-width: 400px) {
             .learning-thermometer-students {grid-template-columns: repeat(auto-fill, minmax(3.45rem, 1fr))}
         }
 
-        .plaza-learning-thermometer {display: inline-flex;align-items: center;justify-content: center;min-width: 2.15rem;max-width: 2.45rem;height: 1.05rem;padding: 0 0.2rem;border-radius: 999px;border-width: 1px;font-size: 12px;line-height: 1;font-weight: 900;white-space: nowrap;overflow: hidden}
+        .plaza-learning-thermometer {display: inline-flex;align-items: center;justify-content: center;min-width: 2.15rem;max-width: 2.45rem;height: 1.05rem;padding: 0 0.2rem;border-radius: 999px;border-width: 1px;font-size: calc(12px * var(--type-scale));line-height: 1;font-weight: 900;white-space: nowrap;overflow: hidden}
 
         /* 광장 학생 카드 배열: 크게 4명 / 중간 5명 / 작게 6명 (한 줄, 넓은 화면) */
         .plaza-cards {display: grid;width: 100%}
@@ -134,42 +134,42 @@
         .plaza-card-face {overflow: visible}
         .plaza-card.is-credit-default {border-color: var(--wine) !important;box-shadow: var(--shadow-card)}
         .plaza-card.is-attendance-dim {opacity: 0.38;filter: grayscale(0.65)}
-        .praise-btn {margin-top: 0.2rem;min-height: 1.6rem;border-radius: 999px;border: 1px solid var(--gold-text);background: var(--secondary-bg);color: var(--ink-2);font-size: 12px;font-weight: 900;padding: 0 0.4rem}
+        .praise-btn {margin-top: 0.2rem;min-height: 1.6rem;border-radius: 999px;border: 1px solid var(--gold-text);background: var(--secondary-bg);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900;padding: 0 0.4rem}
         .checklist-grid {display: grid;grid-template-columns: repeat(auto-fill, minmax(2.6rem, 1fr));gap: 0.35rem}
-        .checklist-cell {min-height: 2.6rem;border-radius: 0.7rem;border: 1px solid var(--navy);background: var(--secondary-bg);color: var(--ink-2);font-weight: 900;font-size: 12px}
+        .checklist-cell {min-height: 2.6rem;border-radius: 0.7rem;border: 1px solid var(--navy);background: var(--secondary-bg);color: var(--ink-2);font-weight: 900;font-size: calc(12px * var(--type-scale))}
         .checklist-cell.is-done {background: var(--secondary-bg);border-color: var(--line);color: var(--ink-2)}
-        .credit-default-stamp {position: absolute;z-index: 35;top: 42%;left: 50%;transform: translate(-50%, -50%) rotate(-18deg);pointer-events: none;font-size: 12px;font-weight: 900;letter-spacing: 0.08em;color: var(--ink-2);background: color-mix(in srgb, var(--wine) 82%, transparent);border: 2px solid var(--wine);border-radius: 0.35rem;padding: 0.12rem 0.4rem;white-space: nowrap;box-shadow: var(--shadow-card)}
-        .plaza-cards-sm .credit-default-stamp {font-size: 12px;padding: 0.05rem 0.22rem}
+        .credit-default-stamp {position: absolute;z-index: 35;top: 42%;left: 50%;transform: translate(-50%, -50%) rotate(-18deg);pointer-events: none;font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.08em;color: var(--ink-2);background: color-mix(in srgb, var(--wine) 82%, transparent);border: 2px solid var(--wine);border-radius: 0.35rem;padding: 0.12rem 0.4rem;white-space: nowrap;box-shadow: var(--shadow-card)}
+        .plaza-cards-sm .credit-default-stamp {font-size: calc(12px * var(--type-scale));padding: 0.05rem 0.22rem}
         #dashAvatarCard.is-credit-default {border-color: var(--wine) !important;box-shadow: var(--shadow-card)}
-        #dashAvatarCard .credit-default-stamp {font-size: 16px}
+        #dashAvatarCard .credit-default-stamp {font-size: calc(16px * var(--type-scale))}
         /* 파랑=경험치, 금색=봉. 단위 글자는 생략하고 색으로만 구분합니다. */
-        .plaza-card-stats {min-width: 0;max-width: 100%;overflow: hidden}
-        .plaza-stat-xp {color: var(--sky-deep);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: hidden;text-overflow: ellipsis}
-        .plaza-stat-bong {color: var(--gold-text);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: hidden;text-overflow: ellipsis}
+        .plaza-card-stats {min-width: 0;max-width: 100%;overflow: hidden;background: var(--surface);color: var(--ink)}
+        .plaza-stat-xp {color: var(--ink);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: hidden;text-overflow: ellipsis}
+        .plaza-stat-bong {color: var(--ink);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: hidden;text-overflow: ellipsis}
         .plaza-cards-sm .plaza-card {padding: 0.3rem !important;border-radius: 0.65rem !important}
-        .plaza-cards-sm .plaza-card-face {font-size: 20px;margin-bottom: 0.15rem !important}
-        .plaza-cards-sm .plaza-card-lv {font-size: 12px;padding: 0 0.25rem !important}
-        .plaza-cards-sm .plaza-card-name {font-size: 12px}
-        .plaza-card-status {font-size: 12px;font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 82%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent);border-radius: 999px;padding: 0.05rem 0.4rem;margin-top: 0.2rem;max-width: 100%;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;text-align: center;line-height: 1.4}
-        .plaza-cards-sm .plaza-card-status {font-size: 12px;padding: 0 0.28rem}
-        .plaza-cards-md .plaza-card-status {font-size: 12px}
-        .plaza-cards-lg .plaza-card-status {font-size: 12px}
+        .plaza-cards-sm .plaza-card-face {font-size: calc(20px * var(--type-scale));margin-bottom: 0.15rem !important}
+        .plaza-cards-sm .plaza-card-lv {font-size: calc(12px * var(--type-scale));padding: 0 0.25rem !important}
+        .plaza-cards-sm .plaza-card-name {font-size: calc(12px * var(--type-scale))}
+        .plaza-card-status {font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 82%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent);border-radius: 999px;padding: 0.05rem 0.4rem;margin-top: 0.2rem;max-width: 100%;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;text-align: center;line-height: 1.4}
+        .plaza-cards-sm .plaza-card-status {font-size: calc(12px * var(--type-scale));padding: 0 0.28rem}
+        .plaza-cards-md .plaza-card-status {font-size: calc(12px * var(--type-scale))}
+        .plaza-cards-lg .plaza-card-status {font-size: calc(12px * var(--type-scale))}
         .plaza-cards-sm .plaza-card-stats {margin-top: 0.15rem !important}
-        .plaza-cards-sm .plaza-card-stats span {font-size: 12px}
-        .plaza-cards-sm .plaza-learning-thermometer {min-width: 1.6rem;max-width: 2rem;height: 0.9rem;font-size: 12px}
+        .plaza-cards-sm .plaza-card-stats span {font-size: calc(12px * var(--type-scale))}
+        .plaza-cards-sm .plaza-learning-thermometer {min-width: 1.6rem;max-width: 2rem;height: 0.9rem;font-size: calc(12px * var(--type-scale))}
         .plaza-cards-sm .plaza-gm-side {width: 2.7rem;gap: 0.1rem}
-        .plaza-cards-sm .plaza-gm-side .plaza-gm-btn {font-size: 12px;padding: 0.1rem 0 !important}
+        .plaza-cards-sm .plaza-gm-side .plaza-gm-btn {font-size: calc(12px * var(--type-scale));padding: 0.1rem 0 !important}
 
         .plaza-cards-md .plaza-card {padding: 0.4rem !important}
-        .plaza-cards-md .plaza-card-face {font-size: 32px}
-        .plaza-cards-md .plaza-card-name {font-size: 12px}
+        .plaza-cards-md .plaza-card-face {font-size: calc(32px * var(--type-scale))}
+        .plaza-cards-md .plaza-card-name {font-size: calc(12px * var(--type-scale))}
 
         .plaza-cards-lg .plaza-card {padding: 0.55rem !important}
-        .plaza-cards-lg .plaza-card-face {font-size: 32px}
+        .plaza-cards-lg .plaza-card-face {font-size: calc(32px * var(--type-scale))}
         @media (min-width: 640px) {
-            .plaza-cards-lg .plaza-card-face {font-size: 48px}
+            .plaza-cards-lg .plaza-card-face {font-size: calc(48px * var(--type-scale))}
         }
-        .plaza-cards-lg .plaza-card-name {font-size: 12px}
+        .plaza-cards-lg .plaza-card-name {font-size: calc(12px * var(--type-scale))}
 
         /* 스마트폰: 한 줄 2명, 이름·수치를 키워 확대 없이 읽히게 합니다. (자리표 연동 격자는 제외) */
         @media (max-width: 639px) {
@@ -185,25 +185,25 @@
             .plaza-cards-sm .plaza-card {padding: 0.75rem 0.5rem 0.65rem !important;border-radius: 1rem !important}
             .plaza-cards-lg .plaza-card-face,
             .plaza-cards-md .plaza-card-face,
-            .plaza-cards-sm .plaza-card-face {font-size: 48px;margin-bottom: 0.35rem !important}
+            .plaza-cards-sm .plaza-card-face {font-size: calc(48px * var(--type-scale));margin-bottom: 0.35rem !important}
             .plaza-cards-lg .plaza-card-lv,
             .plaza-cards-md .plaza-card-lv,
-            .plaza-cards-sm .plaza-card-lv {font-size: 12px;padding: 0.2rem 0.45rem !important;margin-bottom: 0.12rem !important}
+            .plaza-cards-sm .plaza-card-lv {font-size: calc(12px * var(--type-scale));padding: 0.2rem 0.45rem !important;margin-bottom: 0.12rem !important}
             .plaza-cards-lg .plaza-card-name,
             .plaza-cards-md .plaza-card-name,
-            .plaza-cards-sm .plaza-card-name {font-size: 16px;padding: 0.28rem 0.35rem !important}
+            .plaza-cards-sm .plaza-card-name {font-size: calc(16px * var(--type-scale));padding: 0.28rem 0.35rem !important}
             .plaza-cards-lg .plaza-card-stats span,
             .plaza-cards-md .plaza-card-stats span,
-            .plaza-cards-sm .plaza-card-stats span {font-size: 14px}
+            .plaza-cards-sm .plaza-card-stats span {font-size: calc(14px * var(--type-scale))}
             .plaza-cards-lg .plaza-learning-thermometer,
             .plaza-cards-md .plaza-learning-thermometer,
-            .plaza-cards-sm .plaza-learning-thermometer {min-width: 2.3rem;max-width: 2.8rem;height: 1.2rem;font-size: 12px}
+            .plaza-cards-sm .plaza-learning-thermometer {min-width: 2.3rem;max-width: 2.8rem;height: 1.2rem;font-size: calc(12px * var(--type-scale))}
             .plaza-cards-sm .plaza-gm-side,
             .plaza-cards-md .plaza-gm-side,
             .plaza-cards-lg .plaza-gm-side {width: 3.15rem;gap: 0.14rem}
             .plaza-cards-sm .plaza-gm-side .plaza-gm-btn,
             .plaza-cards-md .plaza-gm-side .plaza-gm-btn,
-            .plaza-cards-lg .plaza-gm-side .plaza-gm-btn {font-size: 12px;padding: 0.22rem 0 !important;min-height: 0}
+            .plaza-cards-lg .plaza-gm-side .plaza-gm-btn {font-size: calc(12px * var(--type-scale));padding: 0.22rem 0 !important;min-height: 0}
             /* 스마트폰: 방패·직업·컨디션·등급이름은 숨기고 얼굴·이름·수치만 남깁니다. */
             .plaza-card-extra {display: none !important}
             .plaza-rank-name {display: none}
@@ -211,29 +211,29 @@
             /* 자리표 연동: 부동산과 같은 열을 유지하고 크게 보이게 함 */
             .plaza-cards.plaza-cards-seating {grid-template-columns: repeat(var(--plaza-seat-cols, 4), minmax(0, 1fr));gap: 0.28rem}
             .plaza-cards-seating .plaza-card {min-height: 0;padding: 0.42rem 0.18rem 0.55rem !important;border-radius: 0.7rem !important;overflow: visible}
-            .plaza-cards-seating .plaza-card-face {font-size: 24px;margin-bottom: 0 !important}
-            .plaza-cards-seating .plaza-card-lv {font-size: 12px;padding: 0 0.2rem !important;margin-bottom: 0.08rem !important}
-            .plaza-cards-seating .plaza-card-name {font-size: 12px;padding: 0.12rem 0.15rem !important}
+            .plaza-cards-seating .plaza-card-face {font-size: calc(24px * var(--type-scale));margin-bottom: 0 !important}
+            .plaza-cards-seating .plaza-card-lv {font-size: calc(12px * var(--type-scale));padding: 0 0.2rem !important;margin-bottom: 0.08rem !important}
+            .plaza-cards-seating .plaza-card-name {font-size: calc(12px * var(--type-scale));padding: 0.12rem 0.15rem !important}
             .plaza-cards-seating .plaza-card-stats {flex-direction: column;align-items: stretch;gap: 0.05rem;padding: 0.12rem 0.14rem !important;margin-top: 0.14rem !important}
             .plaza-cards-seating .plaza-card-stats span,
             .plaza-cards-seating .plaza-stat-xp,
-            .plaza-cards-seating .plaza-stat-bong {font-size: 12px;display: block;width: 100%;max-width: 100%;min-width: 0;text-align: center;white-space: nowrap;overflow: hidden;text-overflow: ellipsis}
-            .plaza-cards-seating .plaza-learning-thermometer {align-self: center;min-width: 0;max-width: 100%;height: 0.78rem;font-size: 12px}
+            .plaza-cards-seating .plaza-stat-bong {font-size: calc(12px * var(--type-scale));display: block;width: 100%;max-width: 100%;min-width: 0;text-align: center;white-space: nowrap;overflow: hidden;text-overflow: ellipsis}
+            .plaza-cards-seating .plaza-learning-thermometer {align-self: center;min-width: 0;max-width: 100%;height: 0.78rem;font-size: calc(12px * var(--type-scale))}
             .plaza-cards-seating .plaza-gm-side,
             .plaza-cards-seating .plaza-gm-controls {display: none}
-            .plaza-cards-seating .plaza-seat {min-height: 3.2rem;font-size: 12px}
+            .plaza-cards-seating .plaza-seat {min-height: 3.2rem;font-size: calc(12px * var(--type-scale))}
             .plaza-cards-seating .plaza-seat-hidden {min-height: 1.8rem}
         }
 
         /* 광장 교실 무대 — 앞쪽 마스터 / 자리표 격자 / 뒤쪽 해적섬 두목 */
         .plaza-classroom {display: flex;flex-direction: column;gap: 0.4rem}
-        .plaza-classroom-board {width: 100%;text-align: center;background: var(--secondary-bg);color: var(--ink-2);font-weight: 800;letter-spacing: 0.28em;font-size: 12px;padding: 0.45rem 0.5rem;border-radius: 0.8rem;border: 2px solid var(--line)}
+        .plaza-classroom-board {width: 100%;text-align: center;background: var(--secondary-bg);color: var(--ink-2);font-weight: 800;letter-spacing: 0.28em;font-size: calc(12px * var(--type-scale));padding: 0.45rem 0.5rem;border-radius: 0.8rem;border: 2px solid var(--line)}
         .plaza-classroom.is-morning .plaza-classroom-board {display: none}
-        .plaza-seat {min-width: 0;min-height: 4.2rem;border-radius: 0.7rem;display: flex;align-items: center;justify-content: center;font-size: 12px;font-weight: 800}
+        .plaza-seat {min-width: 0;min-height: 4.2rem;border-radius: 0.7rem;display: flex;align-items: center;justify-content: center;font-size: calc(12px * var(--type-scale));font-weight: 800}
         .plaza-seat-empty {border: 1px dashed color-mix(in srgb, var(--line) 40%, transparent);background: color-mix(in srgb, var(--navy) 35%, transparent);color: var(--ink-2)}
         .plaza-seat-hidden {border: 1px dashed color-mix(in srgb, var(--navy) 35%, transparent);background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--navy) 20%, transparent) 0 6px, color-mix(in srgb, var(--navy) 25%, transparent) 6px 12px);color: var(--ink-2);min-height: 2.4rem;opacity: 0.75}
         .plaza-unseated {margin-top: 0.1rem;padding: 0.45rem 0.35rem 0.5rem;border-radius: 0.85rem;border: 1px dashed color-mix(in srgb, var(--line) 35%, transparent);background: color-mix(in srgb, var(--navy) 40%, transparent)}
-        .plaza-unseated-label {text-align: center;font-size: 12px;font-weight: 800;color: var(--ink-2);letter-spacing: 0.08em;margin-bottom: 0.35rem}
+        .plaza-unseated-label {text-align: center;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);letter-spacing: 0.08em;margin-bottom: 0.35rem}
         .plaza-unseated-grid {display: grid;grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));gap: 0.3rem}
 
         /* 광장 마스터·해적두목 무대 — 가로로 긴 배너, 학생 카드보다 웅장하게 */
@@ -247,7 +247,7 @@
         .plaza-staff-front .plaza-staff-card {width: min(44rem, 98%);min-height: 8.6rem;padding: 1rem 1.35rem 1rem 1.1rem !important;justify-content: flex-start;align-items: center;gap: 0.85rem;border-width: 3px !important;border-radius: 1.2rem !important;overflow: visible}
         .plaza-staff-front .plaza-staff-avatar {flex-basis: 6.6rem;width: 6.6rem;min-width: 6.6rem}
         .plaza-staff-front .plaza-staff-face-wrap {width: 5.4rem;height: 5.4rem;margin-bottom: 0;overflow: visible}
-        .plaza-staff-front .plaza-staff-face {font-size: 48px}
+        .plaza-staff-front .plaza-staff-face {font-size: calc(48px * var(--type-scale))}
         .plaza-staff-back {margin-top: 0.15rem;margin-bottom: 0;background: radial-gradient(ellipse 80% 120% at 18% 50%, color-mix(in srgb, var(--sky) 22%, transparent), transparent 58%),
                 linear-gradient(90deg, color-mix(in srgb, var(--navy) 50%, transparent) 0%, color-mix(in srgb, var(--navy) 20%, transparent) 55%, color-mix(in srgb, var(--navy) 12%, transparent) 100%)}
         .plaza-staff-back.is-visible {display: flex;justify-content: center}
@@ -271,9 +271,9 @@
                 linear-gradient(105deg, var(--secondary-bg) 0%, var(--secondary-bg) 42%, var(--secondary-bg) 100%) !important;border-color: var(--sky-deep) !important;box-shadow: var(--shadow-card) !important;animation: plaza-staff-pulse-cyan 2.4s ease-in-out infinite alternate}
         .plaza-staff-copy {flex: 1 1 auto;min-width: 0;display: flex;flex-direction: column;align-items: flex-start;justify-content: center;gap: 0.22rem;text-align: left;position: relative;z-index: 1}
         .plaza-staff-copy .plaza-card-status {margin-top: 0.1rem;max-width: 100%}
-        .plaza-staff-status {flex: 1 1 11rem;min-width: 7.5rem;max-width: 100%;align-self: stretch;display: flex;align-items: center;font-size: 16px;font-weight: 800;line-height: 1.45;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 55%, transparent);border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);border-radius: 0.9rem;padding: 0.7rem 0.85rem;white-space: pre-wrap;word-break: keep-all;text-align: left;overflow: visible;text-overflow: unset}
+        .plaza-staff-status {flex: 1 1 11rem;min-width: 7.5rem;max-width: 100%;align-self: stretch;display: flex;align-items: center;font-size: calc(16px * var(--type-scale));font-weight: 800;line-height: 1.45;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 55%, transparent);border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);border-radius: 0.9rem;padding: 0.7rem 0.85rem;white-space: pre-wrap;word-break: keep-all;text-align: left;overflow: visible;text-overflow: unset}
         @media (min-width: 768px) {
-            .plaza-staff-status {font-size: 20px;padding: 0.85rem 1.05rem}
+            .plaza-staff-status {font-size: calc(20px * var(--type-scale));padding: 0.85rem 1.05rem}
         }
         /* 초상+장비를 이름 칸과 분리하되, 장비는 카드 밖으로 조금 나가도 됩니다. */
         .plaza-staff-avatar {flex: 0 0 5.6rem;width: 5.6rem;min-width: 5.6rem;display: flex;align-items: center;justify-content: center;position: relative;z-index: 2;overflow: visible}
@@ -287,22 +287,22 @@
         .plaza-staff-ring {position: absolute;inset: 0;border-radius: 9999px;border: 2px dashed color-mix(in srgb, var(--line) 35%, transparent);animation: plaza-staff-spin 10s linear infinite;pointer-events: none}
         .plaza-staff-card-master .plaza-staff-ring {border-color: color-mix(in srgb, var(--gold-text) 55%, transparent);box-shadow: var(--shadow-card)}
         .plaza-staff-card-pirate .plaza-staff-ring {border-color: color-mix(in srgb, var(--sky-deep) 55%, transparent);box-shadow: var(--shadow-card)}
-        .plaza-staff-face {font-size: 48px;line-height: 1;filter: drop-shadow(0 0 8px color-mix(in srgb, var(--surface) 30%, transparent));animation: plaza-staff-float 2.8s ease-in-out infinite;margin-bottom: 0 !important}
+        .plaza-staff-face {font-size: calc(48px * var(--type-scale));line-height: 1;filter: drop-shadow(0 0 8px color-mix(in srgb, var(--surface) 30%, transparent));animation: plaza-staff-float 2.8s ease-in-out infinite;margin-bottom: 0 !important}
         @media (min-width: 640px) {
-            .plaza-staff-face {font-size: 48px}
-            .plaza-staff-front .plaza-staff-face {font-size: 48px}
+            .plaza-staff-face {font-size: calc(48px * var(--type-scale))}
+            .plaza-staff-front .plaza-staff-face {font-size: calc(48px * var(--type-scale))}
         }
-        .plaza-staff-badge {position: static;align-self: flex-start;font-size: 12px;font-weight: 900;letter-spacing: 0.18em;padding: 0.22rem 0.7rem;border-radius: 9999px;border: 1px solid color-mix(in srgb, var(--line) 25%, transparent);z-index: 5;white-space: nowrap}
+        .plaza-staff-badge {position: static;align-self: flex-start;font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.18em;padding: 0.22rem 0.7rem;border-radius: 9999px;border: 1px solid color-mix(in srgb, var(--line) 25%, transparent);z-index: 5;white-space: nowrap}
         .plaza-staff-card-master .plaza-staff-badge {color: var(--gold-text);background: linear-gradient(90deg, var(--gold-light), var(--gold-light) 55%, var(--gold-light));box-shadow: var(--shadow-card)}
         .plaza-staff-card-pirate .plaza-staff-badge {color: var(--navy);background: linear-gradient(90deg, var(--secondary-bg), var(--sky));box-shadow: var(--shadow-card)}
-        .plaza-staff-role {font-size: 14px;letter-spacing: 0.22em;margin-bottom: 0 !important;text-shadow: none;white-space: nowrap}
+        .plaza-staff-role {font-size: calc(14px * var(--type-scale));letter-spacing: 0.22em;margin-bottom: 0 !important;text-shadow: none;white-space: nowrap}
         .plaza-staff-card-pirate .plaza-staff-role {text-shadow: none}
-        .plaza-staff-name {font-size: 16px;width: auto;max-width: 100%;text-align: left;padding: 0.4rem 0.95rem !important;border-radius: 0.6rem !important;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;box-shadow: var(--shadow-card)}
+        .plaza-staff-name {font-size: calc(16px * var(--type-scale));width: auto;max-width: 100%;text-align: left;padding: 0.4rem 0.95rem !important;border-radius: 0.6rem !important;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;box-shadow: var(--shadow-card)}
         .plaza-staff-card-pirate .plaza-staff-name {box-shadow: var(--shadow-card)}
         @media (min-width: 640px) {
-            .plaza-staff-name {font-size: 20px}
-            .plaza-staff-role {font-size: 16px}
-            .plaza-staff-badge {font-size: 12px}
+            .plaza-staff-name {font-size: calc(20px * var(--type-scale))}
+            .plaza-staff-role {font-size: calc(16px * var(--type-scale))}
+            .plaza-staff-badge {font-size: calc(12px * var(--type-scale))}
         }
         /* 스마트폰: 마스터·담임교사·마스터 J를 한 줄로 두고, 상태 문구는 아래로 내립니다. */
         @media (max-width: 639px) {
@@ -313,10 +313,10 @@
             .plaza-staff-role,
             .plaza-staff-name,
             .plaza-staff-copy .plaza-card-name {white-space: nowrap !important;word-break: keep-all;overflow: visible;text-overflow: clip;display: block !important;-webkit-line-clamp: unset;-webkit-box-orient: unset}
-            .plaza-staff-badge {flex: 0 0 auto;letter-spacing: 0.08em;padding: 0.14rem 0.42rem;font-size: 12px;align-self: center}
-            .plaza-staff-role {flex: 0 0 auto;letter-spacing: 0.04em;font-size: 12px}
-            .plaza-staff-name {flex: 0 0 auto;min-width: 0;width: auto;max-width: none;font-size: 14px;padding: 0.22rem 0.5rem !important}
-            .plaza-staff-status {flex: 1 1 100%;min-width: 100%;max-width: 100%;font-size: 14px;padding: 0.4rem 0.5rem}
+            .plaza-staff-badge {flex: 0 0 auto;letter-spacing: 0.08em;padding: 0.14rem 0.42rem;font-size: calc(12px * var(--type-scale));align-self: center}
+            .plaza-staff-role {flex: 0 0 auto;letter-spacing: 0.04em;font-size: calc(12px * var(--type-scale))}
+            .plaza-staff-name {flex: 0 0 auto;min-width: 0;width: auto;max-width: none;font-size: calc(14px * var(--type-scale));padding: 0.22rem 0.5rem !important}
+            .plaza-staff-status {flex: 1 1 100%;min-width: 100%;max-width: 100%;font-size: calc(14px * var(--type-scale));padding: 0.4rem 0.5rem}
         }
         .plaza-staff-spark {position: absolute;width: 0.35rem;height: 0.35rem;border-radius: 9999px;pointer-events: none;animation: plaza-staff-twinkle 1.6s ease-in-out infinite alternate;z-index: 3}
         .plaza-staff-card-master .plaza-staff-spark {background: var(--gold-light);box-shadow: var(--shadow-card)}
@@ -356,8 +356,8 @@
         .military-timer-clock-frame::after {content: '';position: absolute;width: 1.5rem;height: 1.5rem;border: 3px solid color-mix(in srgb, var(--gold-text) 50%, transparent)}
         .military-timer-clock-frame::before {top: -3px;left: -3px;border-right: none;border-bottom: none}
         .military-timer-clock-frame::after {bottom: -3px;right: -3px;border-left: none;border-top: none}
-        .military-timer-digits {font-size: 48px;line-height: 1;letter-spacing: 0.06em;color: var(--ink-2);text-shadow: none;font-variant-numeric: tabular-nums}
-        .military-timer-stop-btn {padding: 0.5rem 1rem;font-size: 12px;font-weight: 800;letter-spacing: 0.12em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 85%, transparent);border: 2px solid color-mix(in srgb, var(--wine) 50%, transparent);border-radius: 0.5rem}
+        .military-timer-digits {font-size: calc(48px * var(--type-scale));line-height: 1;letter-spacing: 0.06em;color: var(--ink-2);text-shadow: none;font-variant-numeric: tabular-nums}
+        .military-timer-stop-btn {padding: 0.5rem 1rem;font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.12em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 85%, transparent);border: 2px solid color-mix(in srgb, var(--wine) 50%, transparent);border-radius: 0.5rem}
         .military-timer-stop-btn:hover {background: color-mix(in srgb, var(--wine) 90%, transparent)}
         .military-timer-overlay.military-timer-urgent .military-timer-digits {color: var(--ink-2);animation: military-timer-pulse 0.8s ease-in-out infinite;text-shadow: none}
         .military-timer-overlay.military-timer-urgent .military-timer-clock-frame {border-color: color-mix(in srgb, var(--gold-text) 70%, transparent)}
@@ -378,7 +378,7 @@
         .analog-remain {fill: none;stroke: color-mix(in srgb, var(--gold-text) 40%, transparent);stroke-width: 14;transition: stroke-dashoffset 0.2s linear}
         .analog-hand {stroke: var(--ink-2);stroke-width: 3.5;stroke-linecap: round;filter: drop-shadow(0 0 6px color-mix(in srgb, var(--gold-light) 80%, transparent))}
         .analog-center {fill: var(--ink-2)}
-        .analog-digits {font-size: 24px;color: var(--ink-2);letter-spacing: 0.2em;text-shadow: none;font-variant-numeric: tabular-nums}
+        .analog-digits {font-size: calc(24px * var(--type-scale));color: var(--ink-2);letter-spacing: 0.2em;text-shadow: none;font-variant-numeric: tabular-nums}
         .military-timer-urgent .analog-remain {stroke: color-mix(in srgb, var(--danger) 55%, transparent)}
         .military-timer-urgent .analog-hand {stroke: var(--ink-2)}
         .military-timer-urgent .analog-digits,
@@ -407,23 +407,23 @@
         .lottery-panel {background: linear-gradient(145deg, color-mix(in srgb, var(--secondary-bg) 96%, transparent) 0%, var(--secondary-bg) 100%);box-shadow: var(--shadow-card)}
         .lottery-input {background: var(--secondary-bg);border: 2px solid color-mix(in srgb, var(--gold-text) 45%, transparent);color: var(--ink-2);border-radius: 0.75rem;padding: 0.5rem}
         .lottery-input:focus {outline: none;border-color: var(--gold-text);box-shadow: var(--shadow-card)}
-        .lottery-mini-btn {padding: 0.35rem 0.65rem;font-size: 12px;font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 45%, transparent);border-radius: 0.5rem;transition: background 0.15s, border-color 0.15s}
+        .lottery-mini-btn {padding: 0.35rem 0.65rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 45%, transparent);border-radius: 0.5rem;transition: background 0.15s, border-color 0.15s}
         .lottery-mini-btn:hover {background: color-mix(in srgb, var(--wine) 50%, transparent);border-color: var(--gold-text)}
         .lottery-participant-grid {display: grid;grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));gap: 0.4rem}
-        .lottery-participant-chip {display: flex;align-items: center;gap: 0.35rem;padding: 0.35rem 0.5rem;font-size: 12px;font-weight: 700;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 85%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);border-radius: 0.5rem;cursor: pointer;transition: border-color 0.15s, background 0.15s}
+        .lottery-participant-chip {display: flex;align-items: center;gap: 0.35rem;padding: 0.35rem 0.5rem;font-size: calc(12px * var(--type-scale));font-weight: 700;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 85%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);border-radius: 0.5rem;cursor: pointer;transition: border-color 0.15s, background 0.15s}
         .lottery-participant-chip:has(input:checked) {border-color: var(--gold-text);background: color-mix(in srgb, var(--wine) 35%, transparent);box-shadow: var(--shadow-card)}
         .lottery-participant-chip input {accent-color: var(--gold)}
-        .lottery-radio-chip {display: inline-flex;align-items: center;gap: 0.35rem;padding: 0.4rem 0.65rem;font-size: 12px;font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 85%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);border-radius: 9999px;cursor: pointer}
+        .lottery-radio-chip {display: inline-flex;align-items: center;gap: 0.35rem;padding: 0.4rem 0.65rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 85%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);border-radius: 9999px;cursor: pointer}
         .lottery-radio-chip:has(input:checked) {border-color: var(--gold-text);background: color-mix(in srgb, var(--wine) 45%, transparent);color: var(--ink-2)}
         .lottery-radio-chip input {accent-color: var(--gold)}
 
         /* 수업도구 — 판서 모드(전자칠판) */
         .chalk-launch-panel {background: linear-gradient(145deg, color-mix(in srgb, var(--chalk-board) 95%, transparent) 0%, var(--chalk-board) 100%);box-shadow: var(--shadow-card)}
-        .chalk-tool-btn {padding: 0.4rem 0.6rem;font-size: 12px;font-weight: 800;color: var(--chalk-ink);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--navy) 50%, transparent);border-radius: 0.5rem;white-space: nowrap;transition: background 0.15s, border-color 0.15s}
+        .chalk-tool-btn {padding: 0.4rem 0.6rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--chalk-ink);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--navy) 50%, transparent);border-radius: 0.5rem;white-space: nowrap;transition: background 0.15s, border-color 0.15s}
         .chalk-tool-btn:hover {background: color-mix(in srgb, var(--navy) 90%, transparent)}
         .chalk-tool-btn.chalk-active {border-color: var(--marble);color: var(--marble);background: color-mix(in srgb, var(--chalk-board) 45%, transparent);box-shadow: var(--shadow-card)}
         .chalk-tool-danger {border-color: color-mix(in srgb, var(--navy) 60%, transparent);color: var(--marble)}
-        .chalk-select {background: var(--chalk-board);color: var(--chalk-ink);border: 1px solid color-mix(in srgb, var(--navy) 50%, transparent);border-radius: 0.5rem;font-size: 12px;font-weight: 700;padding: 0.35rem 0.4rem}
+        .chalk-select {background: var(--chalk-board);color: var(--chalk-ink);border: 1px solid color-mix(in srgb, var(--navy) 50%, transparent);border-radius: 0.5rem;font-size: calc(12px * var(--type-scale));font-weight: 700;padding: 0.35rem 0.4rem}
         .chalk-swatch {width: 1.4rem;height: 1.4rem;border-radius: 9999px;border: 2px solid color-mix(in srgb, var(--surface) 35%, transparent);cursor: pointer;transition: transform 0.12s, border-color 0.12s}
         .chalk-swatch.chalk-active {border-color: var(--surface);box-shadow: var(--shadow-card);transform: scale(1.12)}
         .chalkboard-frame {border: 10px solid var(--navy);box-shadow: var(--shadow-card)}
@@ -435,12 +435,12 @@
         .chalk-img-wrap {position: absolute;touch-action: none;cursor: move;border: 2px dashed transparent;border-radius: 8px;user-select: none;-webkit-user-select: none}
         .chalk-img-wrap:hover {border-color: color-mix(in srgb, var(--marble) 70%, transparent)}
         .chalk-img-wrap img {width: 100%;height: auto;display: block;pointer-events: none;border-radius: 6px;box-shadow: var(--shadow-card)}
-        .chalk-img-del {position: absolute;top: -10px;right: -10px;width: 22px;height: 22px;border-radius: 9999px;background: var(--navy);color: var(--surface);font-size: 12px;font-weight: 900;line-height: 1;display: flex;align-items: center;justify-content: center;box-shadow: var(--shadow-card)}
+        .chalk-img-del {position: absolute;top: -10px;right: -10px;width: 22px;height: 22px;border-radius: 9999px;background: var(--navy);color: var(--surface);font-size: calc(12px * var(--type-scale));font-weight: 900;line-height: 1;display: flex;align-items: center;justify-content: center;box-shadow: var(--shadow-card)}
         .chalk-img-resize {position: absolute;right: -8px;bottom: -8px;width: 18px;height: 18px;border-radius: 4px;background: var(--marble);border: 2px solid var(--chalk-board);cursor: nwse-resize;touch-action: none}
         /* 판서 페이지 표시 (예: 2/5) */
-        .chalk-page-indicator {min-width: 2.4rem;text-align: center;font-size: 12px;font-weight: 900;letter-spacing: 0.06em;color: var(--marble);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--marble) 40%, transparent);border-radius: 0.5rem;padding: 0.4rem 0.3rem;font-variant-numeric: tabular-nums}
+        .chalk-page-indicator {min-width: 2.4rem;text-align: center;font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.06em;color: var(--marble);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--marble) 40%, transparent);border-radius: 0.5rem;padding: 0.4rem 0.3rem;font-variant-numeric: tabular-nums}
         /* 칠판 내부 알림 토스트 (전체화면 중에도 표시됨) */
-        .chalk-toast {position: absolute;left: 50%;bottom: 28px;transform: translateX(-50%);z-index: 30;padding: 0.6rem 1.2rem;font-size: 14px;font-weight: 800;color: var(--surface);background: color-mix(in srgb, var(--chalk-board) 92%, transparent);border: 1px solid color-mix(in srgb, var(--chalk-ink) 50%, transparent);border-radius: 9999px;box-shadow: var(--shadow-card);white-space: nowrap;pointer-events: none;animation: chalk-toast-in 2.2s ease forwards}
+        .chalk-toast {position: absolute;left: 50%;bottom: 28px;transform: translateX(-50%);z-index: 30;padding: 0.6rem 1.2rem;font-size: calc(14px * var(--type-scale));font-weight: 800;color: var(--surface);background: color-mix(in srgb, var(--chalk-board) 92%, transparent);border: 1px solid color-mix(in srgb, var(--chalk-ink) 50%, transparent);border-radius: 9999px;box-shadow: var(--shadow-card);white-space: nowrap;pointer-events: none;animation: chalk-toast-in 2.2s ease forwards}
         @keyframes chalk-toast-in {
             0% {opacity: 0;transform: translate(-50%, 12px)}
             10%, 80% {opacity: 1;transform: translate(-50%, 0)}
@@ -464,7 +464,7 @@
         @keyframes lottery-drum-spin {
             to {transform: rotate(360deg)}
         }
-        .lottery-spin-name {font-size: 32px;line-height: 1.1;color: var(--ink-2);text-shadow: none;word-break: keep-all}
+        .lottery-spin-name {font-size: calc(32px * var(--type-scale));line-height: 1.1;color: var(--ink-2);text-shadow: none;word-break: keep-all}
         .lottery-spin-name.lottery-reveal-pop {animation: lottery-name-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;color: var(--ink-2);text-shadow: none}
         @keyframes lottery-name-pop {
             0% {transform: scale(0.6);opacity: 0.3}
@@ -476,8 +476,8 @@
         @keyframes lottery-flash-fade {
             to {opacity: 0}
         }
-        .lottery-draw-close-btn {padding: 0.5rem 1rem;font-size: 12px;font-weight: 800;letter-spacing: 0.08em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 2px solid color-mix(in srgb, var(--gold-text) 40%, transparent);border-radius: 0.5rem}
-        .lottery-winner-card {padding: 0.5rem 0.85rem;font-size: 14px;font-weight: 900;color: var(--ink-2);background: linear-gradient(135deg, color-mix(in srgb, var(--wine) 90%, transparent), color-mix(in srgb, var(--marble) 95%, transparent));border: 2px solid var(--gold-text);border-radius: 9999px;box-shadow: var(--shadow-card);animation: lottery-card-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards}
+        .lottery-draw-close-btn {padding: 0.5rem 1rem;font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.08em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 2px solid color-mix(in srgb, var(--gold-text) 40%, transparent);border-radius: 0.5rem}
+        .lottery-winner-card {padding: 0.5rem 0.85rem;font-size: calc(14px * var(--type-scale));font-weight: 900;color: var(--ink-2);background: linear-gradient(135deg, color-mix(in srgb, var(--wine) 90%, transparent), color-mix(in srgb, var(--marble) 95%, transparent));border: 2px solid var(--gold-text);border-radius: 9999px;box-shadow: var(--shadow-card);animation: lottery-card-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards}
         @keyframes lottery-card-in {
             from {transform: scale(0) rotate(-12deg);opacity: 0}
             to {transform: scale(1) rotate(0);opacity: 1}
@@ -493,24 +493,24 @@
         .election-panel {background: linear-gradient(145deg, color-mix(in srgb, var(--secondary-bg) 96%, transparent) 0%, var(--secondary-bg) 100%);box-shadow: var(--shadow-card)}
         .election-input {background: var(--secondary-bg);border: 2px solid color-mix(in srgb, var(--wine) 40%, transparent);color: var(--ink-2);border-radius: 0.75rem;padding: 0.45rem 0.6rem}
         .election-input:focus {outline: none;border-color: var(--wine);box-shadow: var(--shadow-card)}
-        .election-mini-btn {padding: 0.4rem 0.7rem;font-size: 12px;font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--wine) 40%, transparent);border-radius: 0.5rem}
+        .election-mini-btn {padding: 0.4rem 0.7rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 90%, transparent);border: 1px solid color-mix(in srgb, var(--wine) 40%, transparent);border-radius: 0.5rem}
         .election-mini-btn:hover {background: color-mix(in srgb, var(--wine) 45%, transparent);border-color: var(--wine)}
         .election-pos-card {border: 1px solid color-mix(in srgb, var(--wine) 28%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);border-radius: 1rem;padding: 0.75rem}
-        .election-cand-row {display: flex;align-items: center;gap: 0.45rem;padding: 0.35rem 0.5rem;border-radius: 0.5rem;background: color-mix(in srgb, var(--surface) 8%, transparent);font-size: 12px;font-weight: 800;color: var(--ink-2)}
-        .election-num-badge {min-width: 1.6rem;height: 1.6rem;border-radius: 9999px;display: inline-flex;align-items: center;justify-content: center;background: var(--marble);color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .election-cand-row {display: flex;align-items: center;gap: 0.45rem;padding: 0.35rem 0.5rem;border-radius: 0.5rem;background: color-mix(in srgb, var(--surface) 8%, transparent);font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
+        .election-num-badge {min-width: 1.6rem;height: 1.6rem;border-radius: 9999px;display: inline-flex;align-items: center;justify-content: center;background: var(--marble);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .election-overlay {background: radial-gradient(ellipse at center, var(--secondary-bg) 0%, var(--secondary-bg) 72%)}
         .election-overlay-bg {background-image: radial-gradient(circle at 18% 22%, color-mix(in srgb, var(--wine) 16%, transparent) 0%, transparent 42%),
                 radial-gradient(circle at 82% 78%, color-mix(in srgb, var(--gold-light) 10%, transparent) 0%, transparent 40%)}
-        .election-overlay-close {padding: 0.55rem 0.9rem;font-size: 14px;font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--marble) 95%, transparent);border: 2px solid color-mix(in srgb, var(--line) 75%, transparent);border-radius: 9999px;box-shadow: var(--shadow-card)}
+        .election-overlay-close {padding: 0.55rem 0.9rem;font-size: calc(14px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--marble) 95%, transparent);border: 2px solid color-mix(in srgb, var(--line) 75%, transparent);border-radius: 9999px;box-shadow: var(--shadow-card)}
         .election-vote-topics {display: flex;flex-direction: column;gap: 0.7rem;max-width: 46rem;margin-left: auto;margin-right: auto;max-height: min(42vh, 22rem);overflow-y: auto;padding-right: 0.15rem}
         .election-vote-topic {border: 1px solid color-mix(in srgb, var(--wine) 28%, transparent);background: color-mix(in srgb, var(--navy) 45%, transparent);border-radius: 0.9rem;padding: 0.55rem 0.6rem 0.7rem;text-align: left}
-        .election-vote-topic-title {font-size: 12px;font-weight: 900;color: var(--ink-2);margin-bottom: 0.4rem}
+        .election-vote-topic-title {font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2);margin-bottom: 0.4rem}
         .election-vote-cands {display: grid;grid-template-columns: repeat(auto-fit, minmax(7.2rem, 1fr));gap: 0.45rem;max-width: 44rem;margin-left: auto;margin-right: auto}
         .election-vote-cand {border: 1px solid color-mix(in srgb, var(--wine) 38%, transparent);background: color-mix(in srgb, var(--navy) 58%, transparent);border-radius: 0.85rem;padding: 0.55rem 0.4rem}
-        .election-vote-cand-num {display: block;font-size: 20px;font-weight: 900;color: var(--surface);line-height: 1.1}
-        .election-vote-cand-name {display: block;font-size: 14px;font-weight: 800;color: var(--ink-2);margin-top: 0.15rem}
-        .election-vote-dots {min-height: 2rem;font-size: 32px;letter-spacing: 0.45rem;color: var(--surface);font-weight: 900}
-        .election-vote-flash {min-height: 1.5rem;font-size: 16px;font-weight: 800;color: var(--ink-2)}
+        .election-vote-cand-num {display: block;font-size: calc(20px * var(--type-scale));font-weight: 900;color: var(--surface);line-height: 1.1}
+        .election-vote-cand-name {display: block;font-size: calc(14px * var(--type-scale));font-weight: 800;color: var(--ink-2);margin-top: 0.15rem}
+        .election-vote-dots {min-height: 2rem;font-size: calc(32px * var(--type-scale));letter-spacing: 0.45rem;color: var(--surface);font-weight: 900}
+        .election-vote-flash {min-height: 1.5rem;font-size: calc(16px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .election-vote-flash.is-ok {color: var(--ink-2)}
         .election-vote-flash.is-bad {color: var(--ink-2);animation: election-shake 0.35s ease}
         @keyframes election-shake {
@@ -519,11 +519,11 @@
             75% {transform: translateX(6px)}
         }
         .election-keypad {display: grid;grid-template-columns: repeat(3, minmax(4.2rem, 5.5rem));gap: 0.45rem;justify-content: center}
-        .election-key {min-height: 3.2rem;border-radius: 0.85rem;font-size: 20px;font-weight: 900;color: var(--ink-2);background: linear-gradient(180deg, var(--marble) 0%, var(--secondary-bg) 100%);border: 2px solid color-mix(in srgb, var(--line) 35%, transparent);box-shadow: var(--shadow-press)}
+        .election-key {min-height: 3.2rem;border-radius: 0.85rem;font-size: calc(20px * var(--type-scale));font-weight: 900;color: var(--ink-2);background: linear-gradient(180deg, var(--marble) 0%, var(--secondary-bg) 100%);border: 2px solid color-mix(in srgb, var(--line) 35%, transparent);box-shadow: var(--shadow-press)}
         .election-key:active {transform: translateY(2px);box-shadow: var(--shadow-card)}
         .election-count-drum {width: min(100%, 18rem);aspect-ratio: 1;border-radius: 50%;padding: 6px;background: linear-gradient(135deg, var(--gold-light), var(--marble), var(--marble));box-shadow: var(--shadow-card)}
         .election-count-drum-inner {width: 100%;height: 100%;border-radius: 50%;background: linear-gradient(180deg, var(--secondary-bg) 0%, var(--secondary-bg) 100%);border: 3px solid color-mix(in srgb, var(--wine) 35%, transparent);display: flex;flex-direction: column;align-items: center;justify-content: center;padding: 1rem}
-        .election-count-name {font-size: 24px;color: var(--ink-2);text-shadow: none;min-height: 2.6rem}
+        .election-count-name {font-size: calc(24px * var(--type-scale));color: var(--ink-2);text-shadow: none;min-height: 2.6rem}
         .election-count-name.is-reveal {animation: election-reveal-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);color: var(--ink-2)}
         @keyframes election-reveal-pop {
             from {transform: scale(0.6);opacity: 0.2}
@@ -536,15 +536,15 @@
         .election-result-card {border: 1px solid color-mix(in srgb, var(--gold-text) 30%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);border-radius: 1rem;padding: 0.85rem 1rem;text-align: left}
         .election-result-card.is-winner {border-color: var(--gold-text);box-shadow: var(--shadow-card)}
         body.election-overlay-active {overflow: hidden !important}
-        .election-keypad-details {max-width: 22rem;text-align: center;border: 1px dashed color-mix(in srgb, var(--wine) 35%, transparent);border-radius: 0.85rem;padding: 0.5rem 0.7rem 0.75rem;color: var(--ink-2);font-size: 12px;font-weight: 800}
+        .election-keypad-details {max-width: 22rem;text-align: center;border: 1px dashed color-mix(in srgb, var(--wine) 35%, transparent);border-radius: 0.85rem;padding: 0.5rem 0.7rem 0.75rem;color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 800}
         .election-keypad-details summary {cursor: pointer}
         .student-election-picks {display: flex;flex-direction: column;gap: 0.85rem}
         .student-election-topic {text-align: left;border: 1px solid color-mix(in srgb, var(--wine) 28%, transparent);background: color-mix(in srgb, var(--navy) 40%, transparent);border-radius: 0.95rem;padding: 0.65rem 0.7rem 0.8rem}
-        .student-election-topic-title {font-size: 14px;font-weight: 900;color: var(--ink-2);margin-bottom: 0.45rem}
-        .student-election-pick {min-height: 52px;border-radius: 1rem;border: 2px solid color-mix(in srgb, var(--wine) 40%, transparent);background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 55%, transparent) 0%, color-mix(in srgb, var(--secondary-bg) 92%, transparent) 100%);color: var(--ink-2);font-weight: 900;font-size: 16px;padding: 0.7rem 0.9rem;display: flex;align-items: center;gap: 0.7rem;text-align: left}
+        .student-election-topic-title {font-size: calc(14px * var(--type-scale));font-weight: 900;color: var(--ink-2);margin-bottom: 0.45rem}
+        .student-election-pick {min-height: 52px;border-radius: 1rem;border: 2px solid color-mix(in srgb, var(--wine) 40%, transparent);background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 55%, transparent) 0%, color-mix(in srgb, var(--secondary-bg) 92%, transparent) 100%);color: var(--ink-2);font-weight: 900;font-size: calc(16px * var(--type-scale));padding: 0.7rem 0.9rem;display: flex;align-items: center;gap: 0.7rem;text-align: left}
         .student-election-pick.is-selected {border-color: var(--gold-text);box-shadow: var(--shadow-card);background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 55%, transparent) 0%, color-mix(in srgb, var(--secondary-bg) 95%, transparent) 100%)}
-        .student-election-pick-num {min-width: 2.2rem;height: 2.2rem;border-radius: 9999px;display: inline-flex;align-items: center;justify-content: center;background: var(--marble);font-size: 16px}
-        .student-election-dock {position: fixed;right: 0.75rem;bottom: 4.5rem;z-index: 547;padding: 0.7rem 0.95rem;border-radius: 9999px;font-weight: 900;font-size: 14px;color: var(--ink-2);background: linear-gradient(180deg, var(--marble), var(--marble));border: 2px solid color-mix(in srgb, var(--line) 55%, transparent);box-shadow: var(--shadow-card)}
+        .student-election-pick-num {min-width: 2.2rem;height: 2.2rem;border-radius: 9999px;display: inline-flex;align-items: center;justify-content: center;background: var(--marble);font-size: calc(16px * var(--type-scale))}
+        .student-election-dock {position: fixed;right: 0.75rem;bottom: 4.5rem;z-index: 547;padding: 0.7rem 0.95rem;border-radius: 9999px;font-weight: 900;font-size: calc(14px * var(--type-scale));color: var(--ink-2);background: linear-gradient(180deg, var(--marble), var(--marble));border: 2px solid color-mix(in srgb, var(--line) 55%, transparent);box-shadow: var(--shadow-card)}
         .master-election-dock {bottom: 7.2rem}
         body.student-election-active {overflow: hidden !important}
 
@@ -590,7 +590,7 @@
         .rank-badge-guide {width: 2.35rem;height: 2.35rem}
         .rank-badge-dash {width: 1.85rem;height: 1.85rem}
         .rank-badge-plaza {width: 1.15rem;height: 1.15rem}
-        .rank-badge-emoji {display: inline-flex;align-items: center;justify-content: center;font-size: 16px}
+        .rank-badge-emoji {display: inline-flex;align-items: center;justify-content: center;font-size: calc(16px * var(--type-scale))}
 
         /* 학급 고르기 패널: 헤더/탭 독과 별도 쌓임 맥락으로 탭 아이콘 위에 그림 */
         #navClassMenuOverlay {position: fixed;left: 0;right: 0;bottom: 0;
@@ -619,12 +619,12 @@
         #mainTabBar > button.hidden {display: none !important}
         .app-nav-icon {width: 2.35rem;height: 2.35rem;border-radius: 0.8rem;overflow: hidden;background: var(--sky-deep);box-shadow: var(--shadow-card);transition: transform 0.18s ease, box-shadow 0.18s ease}
         .app-nav-icon img {width: 100%;height: 100%;object-fit: cover;display: block}
-        .app-nav-label {font-size: 12px;font-weight: 800;letter-spacing: -0.02em;line-height: 1.1;max-width: 100%;overflow: hidden;text-overflow: ellipsis;white-space: nowrap}
+        .app-nav-label {font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: -0.02em;line-height: 1.1;max-width: 100%;overflow: hidden;text-overflow: ellipsis;white-space: nowrap}
         .app-nav-item.is-active {opacity: 1;color: var(--ink-2);transform: translateY(-3px)}
         .app-nav-item.is-active .app-nav-icon {transform: scale(1.08);box-shadow: var(--shadow-card)}
         @media (min-width: 640px) {
             .app-nav-icon {width: 2.65rem;height: 2.65rem;border-radius: 0.9rem}
-            .app-nav-label {font-size: 12px}
+            .app-nav-label {font-size: calc(12px * var(--type-scale))}
         }
         @media (min-width: 768px) {
             .app-nav-item {color: var(--ink-2);opacity: 0.9}
@@ -649,9 +649,9 @@
             .app-sub-dock.cols-8 {grid-template-columns: repeat(8, minmax(0, 1fr))}
             .app-sub-dock.cols-9 {grid-template-columns: repeat(9, minmax(0, 1fr))}
         }
-        .app-sub-fa {width: 2.5rem;height: 2.5rem;border-radius: 0.85rem;display: flex;align-items: center;justify-content: center;font-size: 16px;background: var(--sky-deep);box-shadow: var(--shadow-card)}
+        .app-sub-fa {width: 2.5rem;height: 2.5rem;border-radius: 0.85rem;display: flex;align-items: center;justify-content: center;font-size: calc(16px * var(--type-scale));background: var(--sky-deep);box-shadow: var(--shadow-card)}
         .inner-pane.hidden {display: none !important}
-        .app-sub-item {display: flex;flex-direction: column;align-items: center;gap: 0.25rem;padding: 0.45rem 0.25rem;border-radius: 1rem;border: 2px solid var(--line);background: var(--secondary-bg);color: var(--ink-2);font-size: 12px;font-weight: 800;min-width: 0;max-width: 100%;transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease}
+        .app-sub-item {display: flex;flex-direction: column;align-items: center;gap: 0.25rem;padding: 0.45rem 0.25rem;border-radius: 1rem;border: 2px solid var(--line);background: var(--secondary-bg);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 800;min-width: 0;max-width: 100%;transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease}
         .app-sub-icon {width: 2.5rem;height: 2.5rem;border-radius: 0.85rem;overflow: hidden;box-shadow: var(--shadow-card)}
         .app-sub-icon img {width: 100%;height: 100%;object-fit: cover;display: block}
         .app-sub-item.is-active {border-color: var(--gold-text);background: var(--marble);color: var(--ink-2);transform: translateY(-2px);box-shadow: var(--shadow-card)}
@@ -661,29 +661,32 @@
         @media (min-width: 640px) {
             .app-tool-grid {grid-template-columns: repeat(5, minmax(0, 1fr))}
         }
-        .app-tool-item {display: flex;flex-direction: column;align-items: center;gap: 0.3rem;padding: 0.55rem 0.2rem 0.5rem;border-radius: 1rem;border: 1px solid color-mix(in srgb, var(--navy) 65%, transparent);background: color-mix(in srgb, var(--navy) 75%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 800;transition: transform 0.15s ease, box-shadow 0.15s ease}
+        .app-tool-item {display: flex;flex-direction: column;align-items: center;gap: 0.3rem;padding: 0.55rem 0.2rem 0.5rem;border-radius: 1rem;border: 1px solid color-mix(in srgb, var(--navy) 65%, transparent);background: color-mix(in srgb, var(--navy) 75%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 800;transition: transform 0.15s ease, box-shadow 0.15s ease}
         .app-tool-icon {width: 3.1rem;height: 3.1rem;border-radius: 1rem;overflow: hidden;box-shadow: var(--shadow-card)}
         .app-tool-icon img {width: 100%;height: 100%;object-fit: cover;display: block}
-        .app-tool-icon-fa {display: flex;align-items: center;justify-content: center;background: linear-gradient(160deg, var(--gold-light), var(--marble));color: var(--ink-2);font-size: 24px}
-        .app-tool-icon-rps {display: flex;align-items: center;justify-content: center;background: linear-gradient(160deg, var(--sky), var(--secondary-bg) 58%, var(--secondary-bg));color: var(--ink-2);font-size: 24px;box-shadow: var(--shadow-press)}
+        .app-tool-icon-fa {display: flex;align-items: center;justify-content: center;background: linear-gradient(160deg, var(--gold-light), var(--marble));color: var(--ink-2);font-size: calc(24px * var(--type-scale))}
+        .app-tool-icon-rps {display: flex;align-items: center;justify-content: center;background: linear-gradient(160deg, var(--sky), var(--secondary-bg) 58%, var(--secondary-bg));color: var(--ink-2);font-size: calc(24px * var(--type-scale));box-shadow: var(--shadow-press)}
         .rps-panel .rps-start-btn {display: flex;flex-direction: column;gap: 0.45rem;min-height: 6.2rem;padding: 0.9rem 0.85rem;text-align: left;border-radius: 1rem;font-weight: 900;color: var(--ink-2);background: linear-gradient(180deg, var(--sky-deep), var(--secondary-bg));border: 2px solid color-mix(in srgb, var(--line) 55%, transparent);box-shadow: var(--shadow-press)}
         .rps-panel .rps-start-btn:active {transform: translateY(2px);box-shadow: var(--shadow-press)}
         .rps-panel .rps-start-btn-teacher:active {box-shadow: var(--shadow-press)}
-        .rps-mini-btn {min-height: 44px;padding: 0.45rem 0.85rem;border-radius: 0.75rem;font-size: 12px;font-weight: 800;color: var(--ink-2);background: var(--secondary-bg);border: 1px solid var(--navy)}
-        .rps-overlay {background: var(--secondary-bg)}
+        .rps-mini-btn {min-height: 44px;padding: 0.45rem 0.85rem;border-radius: 0.75rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: var(--secondary-bg);border: 1px solid var(--navy)}
+        .rps-overlay {background: var(--bg)}
         .rps-overlay.is-in-tool {position: absolute;inset: 0;z-index: 80}
         #rpsOverlay:fullscreen,
-        #rpsOverlay:-webkit-full-screen {background: var(--secondary-bg)}
+        #rpsOverlay:-webkit-full-screen {background: var(--bg)}
         #rpsOverlay > .sambong-custom-modal,
         #rpsOverlay:fullscreen > .sambong-custom-modal,
         #rpsOverlay:-webkit-full-screen > .sambong-custom-modal {position: absolute;inset: 0;z-index: 800}
-        .rps-overlay-bg {background: radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--sky) 28%, transparent), transparent 42%),
-                radial-gradient(circle at 90% 80%, color-mix(in srgb, var(--gold-light) 18%, transparent), transparent 40%)}
-        .rps-overlay-close {min-height: 44px;padding: 0 0.85rem;border-radius: 0.8rem;font-size: 12px;font-weight: 800;color: var(--ink-2);background: var(--secondary-bg);border: 1px solid var(--navy)}
-        .rps-countdown {font-size: 48px;line-height: 1;color: var(--ink-2);text-shadow: none;margin-bottom: 0.4rem}
+        .rps-overlay-bg {background:
+                url("/2026sambong6/olympus/cloud.svg") 8% 12% / 150px no-repeat,
+                url("/2026sambong6/olympus/cloud.svg") 78% 18% / 190px no-repeat,
+                url("/2026sambong6/olympus/laurel.svg") 50% 92% / 72px no-repeat,
+                linear-gradient(180deg, var(--sky) 0%, var(--bg) 46%, var(--marble) 100%)}
+        .rps-overlay-close {min-height: 44px;padding: 0 0.85rem;border-radius: 0.8rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: var(--secondary-bg);border: 1px solid var(--navy)}
+        .rps-countdown {font-size: calc(48px * var(--type-scale));line-height: 1;color: var(--ink-2);text-shadow: none;margin-bottom: 0.4rem}
         .rps-move-row {display: grid;grid-template-columns: repeat(3, minmax(0, 1fr));gap: 0.65rem;max-width: 42rem;margin-left: auto;margin-right: auto}
-        .rps-move-btn {min-height: 6.2rem;border-radius: 1.1rem;display: flex;flex-direction: column;align-items: center;justify-content: center;gap: 0.35rem;font-size: 16px;font-weight: 900;color: var(--ink-2);background: var(--secondary-bg);border: 3px solid var(--line)}
-        .rps-move-btn i {font-size: 32px}
+        .rps-move-btn {min-height: 6.2rem;border-radius: 1.1rem;display: flex;flex-direction: column;align-items: center;justify-content: center;gap: 0.35rem;font-size: calc(16px * var(--type-scale));font-weight: 900;color: var(--ink-2);background: var(--secondary-bg);border: 3px solid var(--line)}
+        .rps-move-btn i {font-size: calc(32px * var(--type-scale))}
         .rps-move-btn.is-selected {background: var(--gold-light);border-color: var(--line);color: var(--ink)}
         .rps-move-btn:disabled {opacity: 0.45}
         .rps-reveal-grid {display: grid;grid-template-columns: repeat(auto-fill, minmax(8.2rem, 1fr));gap: 0.45rem}
@@ -691,17 +694,16 @@
         .rps-reveal-card.is-win {border-color: var(--sky-deep);background: var(--secondary-bg)}
         .rps-reveal-card.is-lose {opacity: 0.55;filter: grayscale(0.4)}
         .rps-reveal-card.is-timeout {border-style: dashed;color: var(--ink-2)}
-        .rps-reveal-move {font-size: 24px;display: block;margin: 0.15rem 0}
-        .rps-reveal-name {display: block;font-size: 12px;font-weight: 900;line-height: 1.25;text-align: center}
-        .rps-reveal-tag {display: block;font-size: 12px;font-weight: 800;color: var(--ink-2)}
-        .rps-dock {position: fixed;right: 0.85rem;bottom: 5.2rem;z-index: 540;min-height: 44px;padding: 0.55rem 0.9rem;border-radius: 999px;font-size: 12px;font-weight: 900;color: var(--navy);background: var(--sky);border: 2px solid var(--line);box-shadow: var(--shadow-card)}
+        .rps-reveal-move {font-size: calc(24px * var(--type-scale));display: block;margin: 0.15rem 0}
+        .rps-reveal-name {display: block;font-size: calc(12px * var(--type-scale));font-weight: 900;line-height: 1.25;text-align: center}
+        .rps-reveal-tag {display: block;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
+        .rps-dock {position: fixed;right: 0.85rem;bottom: 5.2rem;z-index: 540;min-height: 44px;padding: 0.55rem 0.9rem;border-radius: 999px;font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--navy);background: var(--sky);border: 2px solid var(--line);box-shadow: var(--shadow-card)}
         body.rps-overlay-active {overflow: hidden !important}
         .think-board-panel .hidden {display: none !important}
-        .think-board-panel {display: flex;flex-direction: column;height: min(78vh, 46rem);min-height: 22rem;overflow: hidden;padding: 0.85rem 0.9rem 0.7rem;border-radius: 1.15rem;border: 2px solid var(--line);
-            /* 쪽지 팝업과 같은 크림·코르크 밝기로 기본 화면을 맞춥니다. */
+        .think-board-panel {display: flex;flex-direction: column;height: min(78vh, 46rem);min-height: 22rem;overflow: hidden;padding: 0.85rem 0.9rem 0.7rem;border-radius: 1.15rem;border: 3px solid var(--gold-text);
             background:
-                radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--gold-light) 70%, transparent), transparent 38%),
-                linear-gradient(165deg, var(--marble) 0%, var(--marble) 46%, var(--gold-light) 100%) !important;box-shadow: var(--shadow-card)}
+                url("/2026sambong6/olympus/laurel.svg") right 14px top 12px / 42px no-repeat,
+                linear-gradient(180deg, var(--marble) 0%, var(--surface) 100%) !important;box-shadow: var(--shadow-card);color: var(--ink)}
         .classtool-fs-body > .classtool-pane[data-tool="padlet"],
         .classtool-fs-body > .classtool-pane[data-tool="classboard"],
         .classtool-fs-body > .classtool-pane[data-tool="openlesson"],
@@ -730,31 +732,31 @@
         #classtoolFullscreen:fullscreen > .sambong-custom-modal,
         #classtoolFullscreen:-webkit-full-screen > .sambong-custom-modal {position: absolute;inset: 0;z-index: 800}
         .think-board-head {display: flex;flex-wrap: wrap;align-items: center;justify-content: space-between;gap: 0.55rem;margin-bottom: 0.45rem;padding-bottom: 0.45rem;border-bottom: 1px solid color-mix(in srgb, var(--gold-text) 22%, transparent);flex-shrink: 0}
-        .think-board-q {flex-shrink: 0;width: 100%;max-width: none;font-size: 16px;font-weight: 900;color: var(--gold-text);background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold-light) 100%);border: 3px solid var(--line);border-radius: 1rem;padding: 0.7rem 1rem;line-height: 1.45;text-align: center;box-shadow: var(--shadow-card);margin-bottom: 0.55rem}
+        .think-board-q {flex-shrink: 0;width: 100%;max-width: none;font-size: calc(16px * var(--type-scale));font-weight: 900;color: var(--gold-text);background: linear-gradient(180deg, var(--gold-light) 0%, var(--gold-light) 100%);border: 3px solid var(--line);border-radius: 1rem;padding: 0.7rem 1rem;line-height: 1.45;text-align: center;box-shadow: var(--shadow-card);margin-bottom: 0.55rem}
         @media (min-width: 640px) {
-            .think-board-q {font-size: 20px;padding: 0.85rem 1.2rem}
+            .think-board-q {font-size: calc(20px * var(--type-scale));padding: 0.85rem 1.2rem}
         }
-        .think-board-q-label {display: block;font-size: 12px;letter-spacing: 0.18em;font-weight: 900;color: var(--danger);margin-bottom: 0.2rem}
+        .think-board-q-label {display: block;font-size: calc(12px * var(--type-scale));letter-spacing: 0.18em;font-weight: 900;color: var(--danger);margin-bottom: 0.2rem}
         .think-board-q-text {display: block}
         .think-board-admin {display: flex;flex-wrap: wrap;gap: 0.4rem;margin-bottom: 0.55rem;flex-shrink: 0}
-        .think-admin-btn {min-height: 40px;padding: 0.4rem 0.75rem;border-radius: 0.75rem;border: 1px solid var(--gold-text);background: var(--marble);color: var(--danger);font-size: 12px;font-weight: 900}
+        .think-admin-btn {min-height: 40px;padding: 0.4rem 0.75rem;border-radius: 0.75rem;border: 1px solid var(--gold-text);background: var(--marble);color: var(--danger);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .think-admin-btn-on {background: var(--gold-light);border-color: var(--gold-text);color: var(--gold-text)}
         .think-admin-btn-warn {border-color: var(--wine);color: var(--danger);background: var(--marble)}
         .think-q-row {display: flex;flex-wrap: wrap;gap: 0.35rem;width: 100%}
-        .think-q-input {flex: 1 1 12rem;min-height: 40px;border-radius: 0.75rem;border: 1px solid var(--gold-text);background: var(--marble);color: var(--gold-text);padding: 0.4rem 0.7rem;font-weight: 800;font-size: 12px}
+        .think-q-input {flex: 1 1 12rem;min-height: 40px;border-radius: 0.75rem;border: 1px solid var(--gold-text);background: var(--marble);color: var(--gold-text);padding: 0.4rem 0.7rem;font-weight: 800;font-size: calc(12px * var(--type-scale))}
         .think-composer {border: 1px dashed var(--gold-text);border-radius: 1rem;padding: 0.55rem 0.65rem 0.6rem;margin-top: 0.45rem;margin-bottom: 0;background: color-mix(in srgb, var(--marble) 92%, transparent);flex-shrink: 0}
         .think-composer-main {display: grid;grid-template-columns: 1fr;gap: 0.45rem}
         @media (min-width: 768px) {
             .think-composer-main {grid-template-columns: minmax(0, 1fr) auto;align-items: start}
         }
-        .think-text {width: 100%;border-radius: 0.75rem;border: 1px solid var(--gold-text);background: var(--marble);color: var(--ink);padding: 0.55rem 0.7rem;font-size: 14px;font-weight: 700;resize: vertical}
+        .think-text {width: 100%;border-radius: 0.75rem;border: 1px solid var(--gold-text);background: var(--marble);color: var(--ink);padding: 0.55rem 0.7rem;font-size: calc(14px * var(--type-scale));font-weight: 700;resize: vertical}
         .think-draw-wrap {margin-top: 0}
         #thinkDrawCanvas {display: block;width: min(100%, 180px);height: auto;background: var(--marble);border-radius: 0.7rem;border: 2px solid var(--gold-text);touch-action: none;cursor: crosshair}
         .think-draw-tools {display: flex;align-items: center;gap: 0.5rem;margin-top: 0.3rem}
-        .think-mini-btn {min-height: 32px;padding: 0.2rem 0.55rem;border-radius: 0.55rem;border: 1px solid var(--line);background: var(--marble);color: var(--danger);font-size: 12px;font-weight: 800}
+        .think-mini-btn {min-height: 32px;padding: 0.2rem 0.55rem;border-radius: 0.55rem;border: 1px solid var(--line);background: var(--marble);color: var(--danger);font-size: calc(12px * var(--type-scale));font-weight: 800}
         .think-color-dot {width: 1.35rem;height: 1.35rem;border-radius: 999px;border: 2px solid color-mix(in srgb, var(--ink) 80%, transparent)}
         .think-color-dot.is-on {box-shadow: var(--shadow-card)}
-        .think-closed-hint {font-size: 12px;font-weight: 800;color: var(--danger);background: color-mix(in srgb, var(--marble) 95%, transparent);border-radius: 0.8rem;padding: 0.55rem 0.7rem;margin-bottom: 0.45rem;flex-shrink: 0}
+        .think-closed-hint {font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--danger);background: color-mix(in srgb, var(--marble) 95%, transparent);border-radius: 0.8rem;padding: 0.55rem 0.7rem;margin-bottom: 0.45rem;flex-shrink: 0}
         .think-board-stage {flex: 1 1 auto;min-height: 0;overflow: auto;overflow-x: hidden;-webkit-overflow-scrolling: touch;padding-right: 0.1rem;width: 100%}
         body.classtool-fs-open .think-board-stage {overflow-x: hidden;overflow-y: auto;flex: 1 1 auto;min-height: 0;width: 100%}
         .think-board-grid {display: grid;grid-template-columns: repeat(auto-fit, minmax(min(100%, 10.5rem), 1fr));gap: 0.65rem;min-height: 8rem;padding: 0.15rem 0;width: 100%}
@@ -778,17 +780,17 @@
         .think-note-mint {background: var(--secondary-bg);color: var(--laurel)}
         .think-note-sky {background: var(--secondary-bg);color: var(--navy)}
         .think-note-peach {background: var(--gold-light);color: var(--danger)}
-        .think-note-author {font-size: 12px;font-weight: 900;opacity: 0.78}
-        .think-note-excerpt {font-size: 14px;font-weight: 800;line-height: 1.4;margin-top: 0.3rem;display: -webkit-box;-webkit-line-clamp: 5;-webkit-box-orient: vertical;overflow: hidden;word-break: keep-all}
+        .think-note-author {font-size: calc(12px * var(--type-scale));font-weight: 900;opacity: 0.78}
+        .think-note-excerpt {font-size: calc(14px * var(--type-scale));font-weight: 800;line-height: 1.4;margin-top: 0.3rem;display: -webkit-box;-webkit-line-clamp: 5;-webkit-box-orient: vertical;overflow: hidden;word-break: keep-all}
         @media (min-width: 768px) {
-            .think-note-author {font-size: 12px}
-            .think-note-excerpt {font-size: 16px;line-height: 1.45;-webkit-line-clamp: 7}
+            .think-note-author {font-size: calc(12px * var(--type-scale))}
+            .think-note-excerpt {font-size: calc(16px * var(--type-scale));line-height: 1.45;-webkit-line-clamp: 7}
         }
         @media (min-width: 1280px) {
-            .think-note-excerpt {font-size: 20px}
+            .think-note-excerpt {font-size: calc(20px * var(--type-scale))}
         }
-        .think-note-private {position: absolute;top: 0.28rem;right: 0.28rem;font-size: 12px;font-weight: 900;color: var(--gold-text);background: color-mix(in srgb, var(--surface) 82%, transparent);border-radius: 999px;padding: 0.08rem 0.38rem}
-        .think-note-publish {min-height: 28px;padding: 0.12rem 0.45rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);background: color-mix(in srgb, var(--surface) 72%, transparent);color: var(--danger);font-size: 12px;font-weight: 900}
+        .think-note-private {position: absolute;top: 0.28rem;right: 0.28rem;font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--gold-text);background: color-mix(in srgb, var(--surface) 82%, transparent);border-radius: 999px;padding: 0.08rem 0.38rem}
+        .think-note-publish {min-height: 28px;padding: 0.12rem 0.45rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);background: color-mix(in srgb, var(--surface) 72%, transparent);color: var(--danger);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .think-note-thumb {display: block;width: 100%;height: 3.2rem;object-fit: cover;border-radius: 0.4rem;margin-top: 0.3rem}
         @media (min-width: 768px) {
             .think-note-thumb {height: 5.2rem}
@@ -799,17 +801,17 @@
             to {filter: brightness(1.12);box-shadow: var(--shadow-card)}
         }
         .think-board-focus {flex: 1 1 auto;min-height: 0;display: flex;flex-direction: column;gap: 0.6rem}
-        .think-focus-close-btn {min-height: 44px;padding: 0.45rem 1.15rem;border-radius: 0.85rem;border: 2px solid var(--wine);background: var(--marble);color: var(--danger);font-size: 14px;font-weight: 900;align-self: flex-start}
+        .think-focus-close-btn {min-height: 44px;padding: 0.45rem 1.15rem;border-radius: 0.85rem;border: 2px solid var(--wine);background: var(--marble);color: var(--danger);font-size: calc(14px * var(--type-scale));font-weight: 900;align-self: flex-start}
         .think-focus-card {flex: 1 1 auto;width: 100%;border-radius: 1.1rem;padding: 1rem 1.1rem;overflow: auto;box-shadow: var(--shadow-card)}
-        .think-focus-text {font-size: 20px;font-weight: 800;line-height: 1.5;white-space: pre-wrap}
+        .think-focus-text {font-size: calc(20px * var(--type-scale));font-weight: 800;line-height: 1.5;white-space: pre-wrap}
         @media (min-width: 768px) {
             .think-focus-card {padding: 1.35rem 1.6rem}
-            .think-focus-text {font-size: 24px}
+            .think-focus-text {font-size: calc(24px * var(--type-scale))}
         }
         .think-focus-draw {max-width: 100%;width: min(100%, 42rem);border-radius: 0.8rem;background: var(--marble);margin-top: 0.7rem}
-        .think-empathy-btn {min-height: 40px;padding: 0.35rem 0.8rem;border-radius: 999px;border: 1px solid var(--wine);background: var(--marble);color: var(--wine);font-size: 12px;font-weight: 900}
+        .think-empathy-btn {min-height: 40px;padding: 0.35rem 0.8rem;border-radius: 999px;border: 1px solid var(--wine);background: var(--marble);color: var(--wine);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .think-empathy-btn.is-on {background: var(--marble);color: var(--ink-2)}
-        .think-empathy-count {font-size: 12px;font-weight: 900;color: var(--danger)}
+        .think-empathy-count {font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--danger)}
 
         .class-board-panel .hidden {display: none !important}
         .class-board-panel {position: relative;display: flex;flex-direction: column;height: min(78vh, 46rem);min-height: 22rem;overflow: hidden;padding: 0.85rem 0.9rem 0.7rem;border-radius: 1.15rem;border: 2px solid color-mix(in srgb, var(--gold-text) 42%, transparent);background: radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--gold-light) 16%, transparent), transparent 34%),
@@ -819,27 +821,27 @@
             body.classtool-fs-open .class-board-panel {padding: 0.55rem 0.85rem 0.7rem}
         }
         .class-board-head {display: flex;flex-wrap: wrap;align-items: center;justify-content: space-between;gap: 0.55rem;margin-bottom: 0.45rem;padding-bottom: 0.45rem;border-bottom: 1px solid color-mix(in srgb, var(--gold-text) 28%, transparent);flex-shrink: 0}
-        .class-board-page-badge {min-height: 2rem;padding: 0.2rem 0.7rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 900}
-        .class-board-q {flex-shrink: 0;width: 100%;font-size: 16px;font-weight: 900;color: var(--laurel);background: linear-gradient(180deg, var(--gold-light) 0%, var(--laurel) 100%);border: 3px solid var(--line);border-radius: 1rem;padding: 0.7rem 1rem;line-height: 1.45;text-align: center;box-shadow: var(--shadow-card);margin-bottom: 0.45rem}
+        .class-board-page-badge {min-height: 2rem;padding: 0.2rem 0.7rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
+        .class-board-q {flex-shrink: 0;width: 100%;font-size: calc(16px * var(--type-scale));font-weight: 900;color: var(--laurel);background: linear-gradient(180deg, var(--gold-light) 0%, var(--laurel) 100%);border: 3px solid var(--line);border-radius: 1rem;padding: 0.7rem 1rem;line-height: 1.45;text-align: center;box-shadow: var(--shadow-card);margin-bottom: 0.45rem}
         @media (min-width: 640px) {
-            .class-board-q {font-size: 20px;padding: 0.85rem 1.2rem}
+            .class-board-q {font-size: calc(20px * var(--type-scale));padding: 0.85rem 1.2rem}
         }
-        .class-board-q-label {display: block;font-size: 12px;letter-spacing: 0.18em;font-weight: 900;color: var(--laurel);margin-bottom: 0.2rem}
-        .class-board-timer {flex-shrink: 0;text-align: center;font-size: 20px;font-weight: 900;color: var(--ink-2);letter-spacing: 0.08em;margin-bottom: 0.4rem}
+        .class-board-q-label {display: block;font-size: calc(12px * var(--type-scale));letter-spacing: 0.18em;font-weight: 900;color: var(--laurel);margin-bottom: 0.2rem}
+        .class-board-timer {flex-shrink: 0;text-align: center;font-size: calc(20px * var(--type-scale));font-weight: 900;color: var(--ink-2);letter-spacing: 0.08em;margin-bottom: 0.4rem}
         .class-board-timer.is-end {color: var(--ink-2)}
         .class-board-admin {display: flex;flex-wrap: wrap;gap: 0.4rem;margin-bottom: 0.55rem;flex-shrink: 0}
-        .class-board-prompt-input {width: 100%;min-height: 2.6rem;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);background: var(--secondary-bg);color: var(--ink-2);padding: 0.45rem 0.7rem;font-weight: 800;font-size: 14px;resize: vertical}
+        .class-board-prompt-input {width: 100%;min-height: 2.6rem;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);background: var(--secondary-bg);color: var(--ink-2);padding: 0.45rem 0.7rem;font-weight: 800;font-size: calc(14px * var(--type-scale));resize: vertical}
         .class-board-time-row {display: flex;flex-wrap: wrap;gap: 0.35rem;width: 100%;align-items: end}
-        .class-board-time-label {font-size: 12px;font-weight: 900;color: var(--ink-2)}
-        .class-board-time-input {width: 4.2rem;min-height: 40px;display: block;text-align: center;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);background: var(--secondary-bg);color: var(--ink-2);font-weight: 900;font-size: 16px}
-        .class-board-admin-btn {min-height: 40px;padding: 0.4rem 0.75rem;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .class-board-time-label {font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
+        .class-board-time-input {width: 4.2rem;min-height: 40px;display: block;text-align: center;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 40%, transparent);background: var(--secondary-bg);color: var(--ink-2);font-weight: 900;font-size: calc(16px * var(--type-scale))}
+        .class-board-admin-btn {min-height: 40px;padding: 0.4rem 0.75rem;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .class-board-admin-btn-on {background: var(--secondary-bg);border-color: var(--gold-text);color: var(--ink-2)}
         .class-board-admin-btn-warn {border-color: color-mix(in srgb, var(--wine) 50%, transparent);color: var(--ink-2)}
         .class-board-pages {display: flex;flex-wrap: wrap;gap: 0.3rem;width: 100%}
-        .class-board-page-btn {min-height: 34px;padding: 0.2rem 0.65rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent);background: color-mix(in srgb, var(--navy) 65%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .class-board-page-btn {min-height: 34px;padding: 0.2rem 0.65rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent);background: color-mix(in srgb, var(--navy) 65%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .class-board-page-btn.is-view {background: var(--secondary-bg);color: var(--ink-2);border-color: var(--line)}
         .class-board-page-btn.is-submit {box-shadow: var(--shadow-card)}
-        .class-board-hint {font-size: 12px;font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 55%, transparent);border-radius: 0.8rem;padding: 0.55rem 0.7rem;margin-bottom: 0.45rem;flex-shrink: 0}
+        .class-board-hint {font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 55%, transparent);border-radius: 0.8rem;padding: 0.55rem 0.7rem;margin-bottom: 0.45rem;flex-shrink: 0}
         .class-board-stage {position: relative;flex: 1 1 auto;min-height: 0;overflow: auto;overflow-x: hidden;-webkit-overflow-scrolling: touch;width: 100%}
         .class-board-grid {display: flex;flex-wrap: wrap;align-content: flex-start;justify-content: flex-start;gap: 0.85rem 0.9rem;min-height: 8rem;padding: 0.7rem 0.35rem 1.1rem;width: 100%}
         .class-note-slot {width: 7.25rem;height: 7.25rem;flex: 0 0 7.25rem;max-width: 7.25rem;aspect-ratio: 1 / 1;overflow: visible}
@@ -862,35 +864,35 @@
         .class-note-mint {background: var(--secondary-bg);color: var(--laurel)}
         .class-note-sky {background: var(--secondary-bg);color: var(--navy)}
         .class-note-peach {background: var(--gold-light);color: var(--danger)}
-        .class-note-author {font-size: 12px;font-weight: 900;opacity: 0.78}
-        .class-note-excerpt {font-size: 12px;font-weight: 800;line-height: 1.35;margin-top: 0.25rem;display: -webkit-box;-webkit-line-clamp: 5;-webkit-box-orient: vertical;overflow: hidden;word-break: keep-all}
+        .class-note-author {font-size: calc(12px * var(--type-scale));font-weight: 900;opacity: 0.78}
+        .class-note-excerpt {font-size: calc(12px * var(--type-scale));font-weight: 800;line-height: 1.35;margin-top: 0.25rem;display: -webkit-box;-webkit-line-clamp: 5;-webkit-box-orient: vertical;overflow: hidden;word-break: keep-all}
         @media (min-width: 768px) {
-            .class-note-author {font-size: 12px}
-            .class-note-excerpt {font-size: 16px;line-height: 1.4;-webkit-line-clamp: 6}
+            .class-note-author {font-size: calc(12px * var(--type-scale))}
+            .class-note-excerpt {font-size: calc(16px * var(--type-scale));line-height: 1.4;-webkit-line-clamp: 6}
         }
         .class-board-composer {border: 1px dashed color-mix(in srgb, var(--line) 45%, transparent);border-radius: 1rem;padding: 0.55rem 0.65rem 0.6rem;margin-top: 0.45rem;background: color-mix(in srgb, var(--navy) 88%, transparent);flex-shrink: 0}
-        .class-board-text {width: 100%;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);background: var(--secondary-bg);color: var(--ink-2);padding: 0.55rem 0.7rem;font-size: 14px;font-weight: 700;resize: vertical}
+        .class-board-text {width: 100%;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent);background: var(--secondary-bg);color: var(--ink-2);padding: 0.55rem 0.7rem;font-size: calc(14px * var(--type-scale));font-weight: 700;resize: vertical}
         .class-board-color-dot {width: 1.35rem;height: 1.35rem;border-radius: 999px;border: 2px solid color-mix(in srgb, var(--ink) 80%, transparent)}
         .class-board-color-dot.is-on {box-shadow: var(--shadow-card)}
         .class-board-modal {position: absolute;inset: 0;z-index: 8;display: flex;flex-direction: column;align-items: center;justify-content: center;gap: 0.55rem;padding: 0.8rem;background: color-mix(in srgb, var(--navy) 52%, transparent)}
         .class-board-modal.hidden {display: none !important}
         .class-board-modal-card {width: min(22.5rem, 94%);max-width: 22.5rem;min-height: 18rem;max-height: min(34rem, 90%);overflow: auto;border-radius: 0.2rem 1.1rem 0.85rem 0.85rem;padding: 1.05rem 1.25rem 1.2rem;box-shadow: var(--shadow-press)}
-        .class-board-focus-close-btn {min-height: 44px;padding: 0.45rem 1.15rem;margin-bottom: 0.55rem;border-radius: 0.85rem;border: 2px solid var(--gold-text);background: var(--marble);color: var(--laurel);font-size: 14px;font-weight: 900}
-        .class-board-modal-text {font-size: 24px;font-weight: 800;line-height: 1.5;white-space: pre-wrap;word-break: keep-all;overflow-wrap: anywhere;margin-top: 0.45rem}
+        .class-board-focus-close-btn {min-height: 44px;padding: 0.45rem 1.15rem;margin-bottom: 0.55rem;border-radius: 0.85rem;border: 2px solid var(--gold-text);background: var(--marble);color: var(--laurel);font-size: calc(14px * var(--type-scale));font-weight: 900}
+        .class-board-modal-text {font-size: calc(24px * var(--type-scale));font-weight: 800;line-height: 1.5;white-space: pre-wrap;word-break: keep-all;overflow-wrap: anywhere;margin-top: 0.45rem}
         @media (min-width: 768px) {
-            .class-board-modal-text {font-size: 32px}
+            .class-board-modal-text {font-size: calc(32px * var(--type-scale))}
         }
         .class-board-thumbs {display: flex;flex-direction: column;align-items: center;gap: 0.2rem;margin: 0.85rem auto 0;background: transparent;border: 0;cursor: pointer}
         .class-board-thumbs img {width: 4.8rem;height: 4.8rem;display: block;filter: drop-shadow(0 6px 10px color-mix(in srgb, var(--chalk-board) 28%, transparent));transition: transform 0.15s ease}
         .class-board-thumbs:hover img {transform: scale(1.08) rotate(-6deg)}
-        .class-board-thumbs span {font-size: 12px;font-weight: 900}
+        .class-board-thumbs span {font-size: calc(12px * var(--type-scale));font-weight: 900}
         .class-board-thumbs.is-view {cursor: default}
         .class-board-thumbs.is-view:hover img {transform: none}
         .class-board-confirm {position: absolute;inset: 0;z-index: 24;display: flex;align-items: center;justify-content: center;padding: 0.8rem;background: color-mix(in srgb, var(--navy) 72%, transparent)}
         .class-board-confirm.hidden {display: none !important}
         .class-board-confirm-card {width: min(22rem, 94%);border-radius: 1.15rem;padding: 1.15rem 1.2rem 1.2rem;background: var(--secondary-bg);border: 1px solid color-mix(in srgb, var(--wine) 45%, transparent);box-shadow: var(--shadow-card);text-align: center}
-        .class-board-confirm-title {font-size: 20px;font-weight: 900;color: var(--ink-2);margin-bottom: 0.55rem}
-        .class-board-confirm-text {font-size: 14px;font-weight: 700;color: var(--ink-2);line-height: 1.55;white-space: pre-wrap}
+        .class-board-confirm-title {font-size: calc(20px * var(--type-scale));font-weight: 900;color: var(--ink-2);margin-bottom: 0.55rem}
+        .class-board-confirm-text {font-size: calc(14px * var(--type-scale));font-weight: 700;color: var(--ink-2);line-height: 1.55;white-space: pre-wrap}
         .class-board-confirm-actions {display: flex;gap: 0.55rem;margin-top: 0.95rem}
         .class-board-confirm-actions .class-board-admin-btn {flex: 1}
         .class-note-flying {position: fixed;z-index: 90;pointer-events: none;margin: 0;transform-origin: center center;box-shadow: var(--shadow-card)}
@@ -906,33 +908,33 @@
             .class-note-flying {display: none !important}
         }
         .class-board-fanfare {position: fixed;inset: 0;z-index: 820;pointer-events: none;overflow: hidden}
-        .class-board-fanfare-label {position: absolute;left: 50%;top: 38%;transform: translate(-50%, -50%);font-size: 32px;font-weight: 900;color: var(--ink-2);text-shadow: none;white-space: nowrap}
+        .class-board-fanfare-label {position: absolute;left: 50%;top: 38%;transform: translate(-50%, -50%);font-size: calc(32px * var(--type-scale));font-weight: 900;color: var(--ink-2);text-shadow: none;white-space: nowrap}
         .class-board-panel.is-view-together .class-board-composer {display: none !important}
         .open-lesson-panel {position: relative;display: flex;flex-direction: column;height: min(78vh, 46rem);min-height: 22rem;overflow: hidden;padding: 0.7rem 0.8rem 0.65rem;border-radius: 1.15rem;border: 2px solid color-mix(in srgb, var(--gold-text) 42%, transparent);background: radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--gold-light) 16%, transparent), transparent 34%),
                 linear-gradient(165deg, var(--secondary-bg) 0%, var(--secondary-bg) 48%, var(--secondary-bg) 100%)}
         .open-lesson-panel .hidden {display: none !important}
         body.classtool-fs-open .open-lesson-panel {height: 100%;min-height: 0;max-height: none;width: 100%;padding: 0.4rem 0.5rem 0.5rem}
         .open-lesson-head {display: flex;flex-wrap: wrap;align-items: center;justify-content: space-between;gap: 0.5rem;margin-bottom: 0.45rem;flex-shrink: 0}
-        .open-lesson-progress {min-height: 2rem;padding: 0.2rem 0.7rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 900}
-        .open-lesson-admin-btn {min-height: 40px;padding: 0.4rem 0.75rem;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .open-lesson-progress {min-height: 2rem;padding: 0.2rem 0.7rem;border-radius: 999px;border: 1px solid color-mix(in srgb, var(--line) 55%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
+        .open-lesson-admin-btn {min-height: 40px;padding: 0.4rem 0.75rem;border-radius: 0.75rem;border: 1px solid color-mix(in srgb, var(--line) 45%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .open-lesson-picker {display: grid;grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));gap: 0.75rem;overflow: auto;min-height: 0;flex: 1}
         .open-lesson-card {display: flex;flex-direction: column;text-align: left;border-radius: 1rem;overflow: hidden;border: 1px solid color-mix(in srgb, var(--line) 35%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);color: var(--ink-2)}
         .open-lesson-card-cover {display: block;height: 8.4rem;background-size: cover;background-position: center;background-color: var(--secondary-bg)}
-        .open-lesson-card-title {font-size: 14px;font-weight: 900;padding: 0.55rem 0.7rem 0.15rem}
-        .open-lesson-card-meta {font-size: 12px;font-weight: 700;color: var(--ink-2);padding: 0 0.7rem 0.65rem}
-        .open-lesson-empty {color: var(--ink-2);font-size: 12px;font-weight: 700;padding: 1rem}
+        .open-lesson-card-title {font-size: calc(14px * var(--type-scale));font-weight: 900;padding: 0.55rem 0.7rem 0.15rem}
+        .open-lesson-card-meta {font-size: calc(12px * var(--type-scale));font-weight: 700;color: var(--ink-2);padding: 0 0.7rem 0.65rem}
+        .open-lesson-empty {color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 700;padding: 1rem}
         .open-lesson-stage {display: flex;flex-direction: column;flex: 1 1 auto;min-height: 0}
         .open-lesson-canvas {position: relative;flex: 1 1 auto;min-height: 12rem;overflow: hidden;border-radius: 1rem;background: var(--secondary-bg);cursor: pointer}
         .open-lesson-canvas img {width: 100%;height: 100%;object-fit: cover;display: block;pointer-events: none}
-        .open-lesson-caption {position: absolute;left: 0;right: 0;bottom: 0;margin: 0;padding: 2.4rem 1.15rem 1.05rem;background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--navy) 86%, transparent) 42%);color: var(--ink-2);font-size: 16px;font-weight: 800;line-height: 1.45;word-break: keep-all}
+        .open-lesson-caption {position: absolute;left: 0;right: 0;bottom: 0;margin: 0;padding: 2.4rem 1.15rem 1.05rem;background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--navy) 86%, transparent) 42%);color: var(--ink-2);font-size: calc(16px * var(--type-scale));font-weight: 800;line-height: 1.45;word-break: keep-all}
         .open-lesson-text-slide {width: 100%;height: 100%;display: flex;align-items: center;justify-content: center;padding: 1.6rem 1.4rem;background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--gold-light) 16%, transparent), transparent 42%),
                 linear-gradient(180deg, var(--secondary-bg) 0%, var(--secondary-bg) 100%)}
-        .open-lesson-text-slide p {margin: 0;max-width: 42rem;text-align: center;color: var(--ink-2);font-size: 24px;font-weight: 900;line-height: 1.5;word-break: keep-all;white-space: pre-wrap}
-        .open-lesson-hint {flex-shrink: 0;text-align: center;font-size: 12px;font-weight: 800;color: var(--ink-2);padding: 0.4rem 0 0.1rem}
+        .open-lesson-text-slide p {margin: 0;max-width: 42rem;text-align: center;color: var(--ink-2);font-size: calc(24px * var(--type-scale));font-weight: 900;line-height: 1.5;word-break: keep-all;white-space: pre-wrap}
+        .open-lesson-hint {flex-shrink: 0;text-align: center;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);padding: 0.4rem 0 0.1rem}
         .app-tool-item.is-active {border-color: var(--gold-text);color: var(--ink-2);transform: translateY(-2px);box-shadow: var(--shadow-card)}
         .app-tool-item.hidden {display: none !important}
         .app-tool-item.is-locked {position: relative;opacity: 0.78}
-        .app-tool-lock {position: absolute;top: 0.2rem;right: 0.2rem;font-size: 12px;font-weight: 900;color: var(--ink-2);background: color-mix(in srgb, var(--secondary-bg) 92%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 55%, transparent);border-radius: 999px;padding: 0.05rem 0.32rem;line-height: 1.3;pointer-events: none}
+        .app-tool-lock {position: absolute;top: 0.2rem;right: 0.2rem;font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2);background: color-mix(in srgb, var(--secondary-bg) 92%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 55%, transparent);border-radius: 999px;padding: 0.05rem 0.32rem;line-height: 1.3;pointer-events: none}
         .classtool-pane.hidden {display: none !important}
 
         /* 수업도구 전체화면 실행 */
@@ -1000,9 +1002,9 @@
             from {opacity: 0.7;transform: translate3d(-1%, 0, 0)}
             to {opacity: 1;transform: translate3d(1.4%, 0.6%, 0)}
         }
-        #worldMapArea .worldmap-season-seal {position: absolute;top: 0.7rem;left: 0.75rem;z-index: 40;pointer-events: none;font-size: 12px;font-weight: 800;letter-spacing: 0.16em;color: var(--ink-2);background: var(--secondary-bg);border: 2px solid var(--line);border-radius: 999px;padding: 0.28rem 0.7rem;box-shadow: var(--shadow-card)}
+        #worldMapArea .worldmap-season-seal {position: absolute;top: 0.7rem;left: 0.75rem;z-index: 40;pointer-events: none;font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.16em;color: var(--ink-2);background: var(--secondary-bg);border: 2px solid var(--line);border-radius: 999px;padding: 0.28rem 0.7rem;box-shadow: var(--shadow-card)}
         @media (min-width: 640px) {
-            #worldMapArea .worldmap-season-seal {font-size: 12px;top: 0.85rem;left: 0.95rem}
+            #worldMapArea .worldmap-season-seal {font-size: calc(12px * var(--type-scale));top: 0.85rem;left: 0.95rem}
         }
 
         /* 학교 날씨 — 홈 카드 + 월드맵 장면 연동 */
@@ -1057,9 +1059,9 @@
         #worldMapArea .worldmap-pin {z-index: 12;min-width: 4.5rem}
         #worldMapArea .worldmap-pin-tree {min-width: 7.5rem;min-height: 6.5rem;justify-content: flex-end}
         #worldMapArea .worldmap-tree-halo {position: absolute;left: 50%;top: 38%;width: 7.5rem;height: 7.5rem;transform: translate(-50%, -50%);border-radius: 999px;background: radial-gradient(circle, color-mix(in srgb, var(--gold-light) 22%, transparent) 0%, color-mix(in srgb, var(--gold-light) 8%, transparent) 42%, transparent 70%);box-shadow: var(--shadow-card);animation: worldtree-breathe 5s ease-in-out infinite;pointer-events: none}
-        #worldMapArea .worldmap-crest {width: 2.15rem;height: 2.15rem;border-radius: 0.4rem;display: flex;align-items: center;justify-content: center;color: var(--ink-2);font-size: 14px;background: linear-gradient(165deg, var(--secondary-bg) 0%, var(--secondary-bg) 58%, var(--secondary-bg) 100%);border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);box-shadow: var(--shadow-press)}
+        #worldMapArea .worldmap-crest {width: 2.15rem;height: 2.15rem;border-radius: 0.4rem;display: flex;align-items: center;justify-content: center;color: var(--ink-2);font-size: calc(14px * var(--type-scale));background: linear-gradient(165deg, var(--secondary-bg) 0%, var(--secondary-bg) 58%, var(--secondary-bg) 100%);border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);box-shadow: var(--shadow-press)}
         @media (min-width: 640px) {
-            #worldMapArea .worldmap-crest {width: 2.4rem;height: 2.4rem;font-size: 16px}
+            #worldMapArea .worldmap-crest {width: 2.4rem;height: 2.4rem;font-size: calc(16px * var(--type-scale))}
         }
         #worldMapArea .worldmap-crest-quest {color: var(--ink-2);border-color: color-mix(in srgb, var(--line) 70%, transparent)}
         #worldMapArea .worldmap-crest-shop {color: var(--surface);border-color: color-mix(in srgb, var(--line) 65%, transparent)}
@@ -1079,13 +1081,13 @@
         }
 
         /* 양피지 이름표: 이모지 알약 대신 문장 패 */
-        #worldMapArea .worldmap-label {position: relative;z-index: 30;padding: 0.22rem 0.55rem;font-size: 12px;font-weight: 800;letter-spacing: 0.04em;color: var(--ink-2);background: var(--secondary-bg);border: 2px solid var(--gold-text);border-radius: 0.35rem;white-space: nowrap;box-shadow: var(--shadow-card);text-shadow: none}
+        #worldMapArea .worldmap-label {position: relative;z-index: 30;padding: 0.22rem 0.55rem;font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.04em;color: var(--ink-2);background: var(--secondary-bg);border: 2px solid var(--gold-text);border-radius: 0.35rem;white-space: nowrap;box-shadow: var(--shadow-card);text-shadow: none}
         @media (min-width: 640px) {
-            #worldMapArea .worldmap-label {font-size: 12px;padding: 0.26rem 0.65rem}
+            #worldMapArea .worldmap-label {font-size: calc(12px * var(--type-scale));padding: 0.26rem 0.65rem}
         }
-        #worldMapArea .worldmap-label-gold {color: var(--ink-2);border-color: color-mix(in srgb, var(--gold-text) 85%, transparent);font-size: 12px}
+        #worldMapArea .worldmap-label-gold {color: var(--ink-2);border-color: color-mix(in srgb, var(--gold-text) 85%, transparent);font-size: calc(12px * var(--type-scale))}
         @media (min-width: 640px) {
-            #worldMapArea .worldmap-label-gold {font-size: 12px}
+            #worldMapArea .worldmap-label-gold {font-size: calc(12px * var(--type-scale))}
         }
         #worldMapArea .worldmap-label-crimson {color: var(--ink-2);border-color: color-mix(in srgb, var(--wine) 75%, transparent)}
         #worldMapArea .worldmap-label-arcane {color: var(--ink-2);border-color: color-mix(in srgb, var(--sky-deep) 70%, transparent)}
@@ -1103,9 +1105,9 @@
         .hof-library-minimap:hover {filter: brightness(1.06)}
         .hof-library-minimap-inner {padding: 0.85rem 0.95rem 0.95rem}
         .hof-library-minimap-head {display: flex;align-items: flex-start;justify-content: space-between;gap: 0.75rem}
-        .hof-library-minimap-kicker {font-size: 12px;font-weight: 800;letter-spacing: 0.22em;color: var(--ink-2)}
-        .hof-library-minimap-title {color: var(--ink-2);font-size: 16px;font-weight: 900;margin-top: 0.15rem}
-        .hof-library-minimap-enter {flex-shrink: 0;font-size: 12px;font-weight: 800;color: var(--gold-text);background: var(--gold-light);border-radius: 999px;padding: 0.35rem 0.7rem;min-height: 32px;display: inline-flex;align-items: center}
+        .hof-library-minimap-kicker {font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.22em;color: var(--ink-2)}
+        .hof-library-minimap-title {color: var(--ink-2);font-size: calc(16px * var(--type-scale));font-weight: 900;margin-top: 0.15rem}
+        .hof-library-minimap-enter {flex-shrink: 0;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--gold-text);background: var(--gold-light);border-radius: 999px;padding: 0.35rem 0.7rem;min-height: 32px;display: inline-flex;align-items: center}
         .hof-library-floorplan {position: relative;height: 4.6rem;margin: 0.7rem 0 0.65rem;border-radius: 0.7rem;background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--wine) 35%, transparent) 0 12px, color-mix(in srgb, var(--laurel) 20%, transparent) 12px 14px),
                 var(--secondary-bg);border: 1px solid color-mix(in srgb, var(--gold-text) 45%, transparent);overflow: hidden}
         .hof-shelf {position: absolute;
@@ -1128,9 +1130,9 @@
                 var(--marble) 32px 40px)}
         .hof-table {position: absolute;left: 52%;top: 48%;width: 18%;height: 28%;border-radius: 0.2rem;background: var(--marble);border: 1px solid var(--gold-text)}
         .hof-lamp {position: absolute;left: 58%;top: 22%;width: 0.55rem;height: 0.55rem;border-radius: 999px;background: var(--gold-light);box-shadow: var(--shadow-card)}
-        .hof-entrance {position: absolute;left: 48%;bottom: 6%;font-size: 12px;font-weight: 800;letter-spacing: 0.12em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 70%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 45%, transparent);border-radius: 0.25rem;padding: 0.05rem 0.3rem}
+        .hof-entrance {position: absolute;left: 48%;bottom: 6%;font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: 0.12em;color: var(--ink-2);background: color-mix(in srgb, var(--navy) 70%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 45%, transparent);border-radius: 0.25rem;padding: 0.05rem 0.3rem}
         .hof-library-minimap-list {display: flex;flex-direction: column;gap: 0.28rem}
-        .hof-mini-row {display: flex;align-items: center;gap: 0.45rem;font-size: 12px;font-weight: 800;color: var(--ink-2)}
+        .hof-mini-row {display: flex;align-items: center;gap: 0.45rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .hof-mini-rank {width: 1.55rem;color: var(--gold-text);text-align: center}
         .hof-library-modal {background: linear-gradient(180deg, var(--secondary-bg) 0%, var(--secondary-bg) 42%, var(--secondary-bg) 100%);border: 2px solid var(--line);border-radius: 1.35rem;box-shadow: var(--shadow-card)}
         .hof-library-modal-head {display: flex;align-items: flex-start;justify-content: space-between;gap: 0.75rem;padding: 1rem 1.1rem 0.75rem;border-bottom: 1px solid color-mix(in srgb, var(--gold-text) 28%, transparent);background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 35%, transparent), transparent)}
@@ -1141,12 +1143,12 @@
         .hof-library-row.is-legend {border-color: var(--gold-text);background: linear-gradient(90deg, color-mix(in srgb, var(--wine) 62%, transparent), color-mix(in srgb, var(--wine) 55%, transparent));box-shadow: var(--shadow-card)}
         .hof-legend-banner {display: flex;flex-wrap: wrap;gap: 0.65rem;justify-content: center;margin-bottom: 0.35rem}
         .hof-legend-card {min-width: 7.5rem;text-align: center;padding: 0.7rem 0.8rem 0.8rem;border-radius: 0.95rem;border: 2px solid var(--gold-text);background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 55%, transparent), color-mix(in srgb, var(--laurel) 85%, transparent))}
-        .hof-legend-card strong {display: block;color: var(--ink-2);font-size: 16px}
-        .hof-legend-card span {display: block;color: var(--ink-2);font-size: 12px;font-weight: 800;margin-top: 0.15rem}
-        .hof-legend-card em {display: block;color: var(--ink-2);font-style: normal;font-weight: 900;font-size: 12px;margin-top: 0.2rem}
+        .hof-legend-card strong {display: block;color: var(--ink-2);font-size: calc(16px * var(--type-scale))}
+        .hof-legend-card span {display: block;color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 800;margin-top: 0.15rem}
+        .hof-legend-card em {display: block;color: var(--ink-2);font-style: normal;font-weight: 900;font-size: calc(12px * var(--type-scale));margin-top: 0.2rem}
 
         /* 문학 탭: 독서기록장 · 일기 그림 */
-        .lit-pending-badge {display: inline-flex;min-width: 1.1rem;height: 1.1rem;margin-left: 0.15rem;align-items: center;justify-content: center;border-radius: 999px;background: var(--marble);color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .lit-pending-badge {display: inline-flex;min-width: 1.1rem;height: 1.1rem;margin-left: 0.15rem;align-items: center;justify-content: center;border-radius: 999px;background: var(--marble);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .diary-canvas {display: block;height: 10.5rem;border-radius: 0.85rem;background: var(--marble);border: 1px solid var(--gold-text);touch-action: none;cursor: crosshair}
         .diary-review-canvas {display: block;height: 7.5rem;border-radius: 0.75rem;background: var(--marble);border: 1px solid var(--gold-text);pointer-events: none}
         .diary-past-canvas {display: block;width: 9rem;max-width: 100%;height: 4.5rem;border-radius: 0.65rem;background: var(--marble);border: 1px solid var(--gold-text);pointer-events: none}
@@ -1161,11 +1163,11 @@
         .lit-log-card.is-pending {border-color: color-mix(in srgb, var(--gold-text) 55%, transparent)}
         .lit-log-card.is-approved {border-color: color-mix(in srgb, var(--sky-deep) 45%, transparent)}
         .lit-log-card.is-rejected {border-color: color-mix(in srgb, var(--wine) 50%, transparent)}
-        .hof-library-rank {width: 1.7rem;text-align: center;font-weight: 900;color: var(--ink-2);font-size: 16px}
+        .hof-library-rank {width: 1.7rem;text-align: center;font-weight: 900;color: var(--ink-2);font-size: calc(16px * var(--type-scale))}
         .hof-library-name {flex: 1;min-width: 0}
-        .hof-library-name strong {color: var(--ink-2);font-size: 14px;display: block}
-        .hof-library-name span {color: var(--ink-2);font-size: 12px;font-weight: 700}
-        .hof-library-xp {text-align: right;color: var(--ink-2);font-weight: 900;font-size: 14px}
+        .hof-library-name strong {color: var(--ink-2);font-size: calc(14px * var(--type-scale));display: block}
+        .hof-library-name span {color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 700}
+        .hof-library-xp {text-align: right;color: var(--ink-2);font-weight: 900;font-size: calc(14px * var(--type-scale))}
 
 /* v1.1: 태블릿 터치 영역·반응형 보강 */
 button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: manipulation}
@@ -1198,14 +1200,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .plaza-card-core {display: flex;flex-direction: row;align-items: stretch;justify-content: center;width: 100%;gap: 0.2rem}
         .plaza-card-main {position: relative;flex: 1;min-width: 0;display: flex;flex-direction: column;align-items: center;overflow: visible}
         .plaza-gm-side {display: grid;grid-template-columns: 1fr 1fr;align-content: center;gap: 0.15rem;flex: 0 0 auto;width: 3.15rem;z-index: 20}
-        .plaza-gm-btn {width: 100%;font-size: 12px;font-weight: 800;line-height: 1.1;padding: 0.18rem 0;border-radius: 0.28rem;letter-spacing: -0.04em}
+        .plaza-gm-btn {width: 100%;font-size: calc(12px * var(--type-scale));font-weight: 800;line-height: 1.1;padding: 0.18rem 0;border-radius: 0.28rem;letter-spacing: -0.04em}
         .plaza-gm-btn-xp {background: color-mix(in srgb, var(--sky) 14%, transparent);color: var(--ink-2)}
         .plaza-gm-btn-bong {background: color-mix(in srgb, var(--gold-light) 14%, transparent);color: var(--gold-text)}
         .plaza-gm-btn-minus {background: color-mix(in srgb, var(--navy) 85%, transparent);color: var(--ink-2)}
         .plaza-gm-btn-minus:hover {background: var(--marble);color: var(--ink-2)}
         @media (min-width: 640px) {
             .plaza-gm-side {width: 3.55rem}
-            .plaza-gm-btn {font-size: 12px;padding: 0.2rem 0}
+            .plaza-gm-btn {font-size: calc(12px * var(--type-scale));padding: 0.2rem 0}
         }
         /* 초상 옆에 레벨을 두고, 장비는 초상 쪽으로 조금만 당겨 카드 밖으로 나가도 됩니다. */
         .plaza-card-figure {display: flex;flex-direction: row;align-items: flex-end;justify-content: center;gap: 0.28rem;width: 100%;margin-bottom: 0.3rem;overflow: visible}
@@ -1244,13 +1246,13 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .char-weapon img {width: 100%;height: 100%;object-fit: contain;filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--chalk-board) 55%, transparent))}
         .char-shield {position: absolute;right: -30%;top: 18%;width: 60%;height: 60%;display: flex;align-items: center;justify-content: center;pointer-events: none;filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--chalk-board) 55%, transparent));z-index: 32}
         .char-shield img {width: 100%;height: 100%;object-fit: contain}
-        .char-shield-emoji {font-size: 12px;line-height: 1;background: color-mix(in srgb, var(--navy) 82%, transparent);border-radius: 999px;box-shadow: var(--shadow-card);padding: 0.08em}
+        .char-shield-emoji {font-size: calc(12px * var(--type-scale));line-height: 1;background: color-mix(in srgb, var(--navy) 82%, transparent);border-radius: 999px;box-shadow: var(--shadow-card);padding: 0.08em}
         .char-shoes {position: absolute;left: 50%;bottom: -22%;transform: translateX(-50%);width: 66%;height: 48%;display: flex;align-items: center;justify-content: center;pointer-events: none;filter: drop-shadow(0 2px 4px color-mix(in srgb, var(--chalk-board) 55%, transparent));z-index: 33}
         .char-shoes img {width: 100%;height: 100%;object-fit: contain}
-        .char-shoes-emoji {font-size: 12px;line-height: 1;background: color-mix(in srgb, var(--navy) 82%, transparent);border-radius: 999px;box-shadow: var(--shadow-card);padding: 0.08em}
+        .char-shoes-emoji {font-size: calc(12px * var(--type-scale));line-height: 1;background: color-mix(in srgb, var(--navy) 82%, transparent);border-radius: 999px;box-shadow: var(--shadow-card);padding: 0.08em}
         .char-rank-bg {position: absolute;inset: -42%;z-index: 0;pointer-events: none;display: flex;align-items: center;justify-content: center;border-radius: 50%;overflow: hidden;opacity: 1;background: transparent}
         .char-rank-bg img {width: 130%;height: 130%;max-width: none;object-fit: cover;object-position: center}
-        .char-rank-bg-emoji {font-size: 20px;opacity: 0.85;background: transparent}
+        .char-rank-bg-emoji {font-size: calc(20px * var(--type-scale));opacity: 0.85;background: transparent}
         .char-avatar-stack .char-portrait-clip {position: relative;z-index: 1}
         /* 등급마다 원형 테두리 색을 달리 해 한눈에 구별합니다. */
         .char-avatar-has-rank .char-portrait-clip {background: transparent;box-shadow: var(--shadow-card)}
@@ -1266,29 +1268,29 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         }
         .base-face-btn {flex: 1;min-width: 0;border-radius: 0.7rem;border: 1px solid color-mix(in srgb, var(--line) 35%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);padding: 0.28rem}
         .base-face-btn img {width: 100%;aspect-ratio: 1;object-fit: contain;border-radius: 0.5rem;display: block;background: var(--marble)}
-        .base-face-btn span {display: block;font-size: 12px;font-weight: 800;color: var(--ink-2);margin-top: 0.2rem}
+        .base-face-btn span {display: block;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);margin-top: 0.2rem}
         .base-face-btn.is-on {border-color: var(--gold-text);box-shadow: var(--shadow-card)}
         .char-dress-panel {text-align: left}
         .char-dress-rank {display: flex;align-items: center;gap: 0.55rem;margin-top: 0.65rem;padding: 0.4rem 0.5rem;border-radius: 0.7rem;background: color-mix(in srgb, var(--navy) 72%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 35%, transparent)}
         .char-dress-rank-art {width: 2.6rem;height: 2.6rem;flex-shrink: 0;border-radius: 50%;overflow: hidden;background: var(--secondary-bg);box-shadow: var(--shadow-card)}
         .char-dress-rank-art img {width: 124%;height: 124%;max-width: none;object-fit: cover;display: block;margin: -12%}
-        .char-dress-rank-title {font-size: 12px;font-weight: 900;color: var(--ink-2)}
-        .char-dress-rank-hint {font-size: 12px;color: var(--ink-2);font-weight: 700}
+        .char-dress-rank-title {font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
+        .char-dress-rank-hint {font-size: calc(12px * var(--type-scale));color: var(--ink-2);font-weight: 700}
         .char-dress-grid {display: grid;grid-template-columns: repeat(3, minmax(0, 1fr));gap: 0.4rem}
         .char-dress-slot {border-radius: 0.7rem;border: 1px solid color-mix(in srgb, var(--line) 35%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent);padding: 0.3rem 0.25rem 0.35rem;min-width: 0}
         .char-dress-slot.is-on {border-color: var(--gold-text)}
-        .char-dress-slot-label {display: block;font-size: 12px;font-weight: 900;color: var(--ink-2)}
+        .char-dress-slot-label {display: block;font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
         .char-dress-slot-art {display: flex;align-items: center;justify-content: center;height: 2.2rem;margin: 0.15rem 0}
         .char-dress-slot-art img {width: 2rem;height: 2rem;object-fit: contain}
-        .char-dress-empty {color: var(--ink-2);font-size: 20px;font-weight: 900}
-        .char-dress-slot-name {display: block;font-size: 12px;font-weight: 800;color: var(--ink-2);line-height: 1.2}
-        .char-dress-slot-own {display: block;font-size: 12px;color: var(--ink-2);font-weight: 800}
-        .char-dress-shop-btn {width: 100%;margin-top: 0.55rem;min-height: 40px;border-radius: 0.7rem;border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);background: color-mix(in srgb, var(--wine) 65%, transparent);color: var(--ink-2);font-size: 12px;font-weight: 900}
+        .char-dress-empty {color: var(--ink-2);font-size: calc(20px * var(--type-scale));font-weight: 900}
+        .char-dress-slot-name {display: block;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);line-height: 1.2}
+        .char-dress-slot-own {display: block;font-size: calc(12px * var(--type-scale));color: var(--ink-2);font-weight: 800}
+        .char-dress-shop-btn {width: 100%;margin-top: 0.55rem;min-height: 40px;border-radius: 0.7rem;border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);background: color-mix(in srgb, var(--wine) 65%, transparent);color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900}
         .rank-up-celebrate {position: fixed;inset: 0;z-index: 370;display: flex;align-items: center;justify-content: center;pointer-events: none;background: color-mix(in srgb, var(--navy) 35%, transparent)}
         .rank-up-card {min-width: 12rem;max-width: 18rem;text-align: center;padding: 1rem 1.1rem;border-radius: 1.1rem;border: 2px solid var(--gold-text);background: color-mix(in srgb, var(--secondary-bg) 94%, transparent);box-shadow: var(--shadow-card)}
         .rank-up-card img {width: 5.5rem;height: 5.5rem;object-fit: contain;margin: 0 auto 0.4rem;background: var(--marble);border-radius: 0.7rem}
-        .rank-up-title {font-size: 16px;font-weight: 900;color: var(--ink-2)}
-        .rank-up-hint {font-size: 12px;color: var(--ink-2);margin-top: 0.25rem}
+        .rank-up-title {font-size: calc(16px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
+        .rank-up-hint {font-size: calc(12px * var(--type-scale));color: var(--ink-2);margin-top: 0.25rem}
 
         /* 용의 눈 · 레이저 감시 — 어두운 화면에 잘 보이도록 밝고 크게 */
         .class-watch-toggle {margin-left: auto}
@@ -1309,7 +1311,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .class-watch-eye-l {top: 0.6%;left: 0.6%;transform: rotate(-8deg)}
         .class-watch-eye-r {top: 0.6%;right: 0.6%;transform: scaleX(-1) rotate(-8deg)}
         .class-watch-laser {position: absolute;left: 8%;right: 8%;top: 22%;height: 3px;border-radius: 999px;background: linear-gradient(90deg, transparent, var(--gold-light), var(--gold-light), var(--gold-light), transparent);box-shadow: var(--shadow-card);animation: class-watch-scan 3.4s ease-in-out infinite}
-        .class-watch-caption {position: absolute;bottom: 7%;left: 50%;transform: translateX(-50%);font-size: 12px;font-weight: 900;letter-spacing: 0.14em;color: var(--ink-2);text-shadow: none;background: color-mix(in srgb, var(--navy) 55%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent);border-radius: 999px;padding: 0.35rem 0.9rem;white-space: nowrap}
+        .class-watch-caption {position: absolute;bottom: 7%;left: 50%;transform: translateX(-50%);font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.14em;color: var(--ink-2);text-shadow: none;background: color-mix(in srgb, var(--navy) 55%, transparent);border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent);border-radius: 999px;padding: 0.35rem 0.9rem;white-space: nowrap}
         @keyframes class-watch-blink {
             0%, 78%, 100% {opacity: 1;filter: drop-shadow(0 0 10px var(--gold-light)) drop-shadow(0 0 22px color-mix(in srgb, var(--gold) 90%, transparent))}
             82% {opacity: 0.35}
@@ -1379,7 +1381,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .gear-enhance-fx.is-success .gear-enhance-fx-burst {background: radial-gradient(circle, color-mix(in srgb, var(--gold-light) 55%, transparent) 0%, color-mix(in srgb, var(--gold-light) 18%, transparent) 38%, transparent 68%);animation: gearEnhanceBurst 0.9s ease-out forwards;box-shadow: var(--shadow-card)}
         .gear-enhance-fx.is-fail .gear-enhance-fx-burst {background: radial-gradient(circle, color-mix(in srgb, var(--sky) 40%, transparent) 0%, color-mix(in srgb, var(--navy) 20%, transparent) 40%, transparent 70%);animation: gearEnhanceFail 0.85s ease-in forwards}
         .gear-enhance-fx-spark {position: absolute;width: 0.45rem;height: 0.45rem;border-radius: 999px;background: var(--gold-light);box-shadow: var(--shadow-card);animation: gearEnhanceSpark 0.9s ease-out forwards}
-        .gear-enhance-fx-label {position: absolute;left: 50%;top: 50%;transform: translate(-50%, -50%);font-weight: 900;font-size: 20px;letter-spacing: 0.12em;text-shadow: none}
+        .gear-enhance-fx-label {position: absolute;left: 50%;top: 50%;transform: translate(-50%, -50%);font-weight: 900;font-size: calc(20px * var(--type-scale));letter-spacing: 0.12em;text-shadow: none}
         .gear-enhance-fx.is-success .gear-enhance-fx-label {color: var(--ink-2)}
         .gear-enhance-fx.is-fail .gear-enhance-fx-label {color: var(--ink-2)}
         @keyframes gearEnhanceBurst {
@@ -1410,8 +1412,8 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .class-module-unlock-list {display: grid;gap: 10px}
         .class-module-row {display: flex;align-items: flex-start;justify-content: space-between;gap: 12px;padding: 12px 14px;border-radius: 16px;background: color-mix(in srgb, var(--navy) 55%, transparent);border: 1px solid color-mix(in srgb, var(--line) 28%, transparent)}
         .class-module-row.is-locked {background: color-mix(in srgb, var(--navy) 28%, transparent)}
-        .class-module-row h5 {margin: 0 0 4px;font-size: 16px;color: var(--ink-2)}
-        .class-module-row p {margin: 0;font-size: 14px;color: var(--ink-2);line-height: 1.45}
+        .class-module-row h5 {margin: 0 0 4px;font-size: calc(16px * var(--type-scale));color: var(--ink-2)}
+        .class-module-row p {margin: 0;font-size: calc(14px * var(--type-scale));color: var(--ink-2);line-height: 1.45}
         .gm-portal-editor-list {display: grid;gap: 8px;margin-bottom: 10px}
         .gm-portal-editor-row {display: grid;grid-template-columns: 52px 1fr 1.4fr auto;gap: 8px;align-items: center}
         @media (max-width: 720px) {
@@ -1422,14 +1424,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .bus-deck {max-width: 28rem;padding: 0.85rem 0.7rem 1rem;border-radius: 2.4rem 2.4rem 1.1rem 1.1rem;background: linear-gradient(180deg, var(--secondary-bg) 0%, var(--secondary-bg) 18%, var(--secondary-bg) 100%);border: 3px solid var(--gold-text);box-shadow: var(--shadow-card)}
         .bus-deck-front {display: grid;grid-template-columns: 1fr 1fr;gap: 0.4rem;margin-bottom: 0.55rem}
         .bus-deck-cab,
-        .bus-deck-door {display: flex;align-items: center;justify-content: center;gap: 0.35rem;min-height: 2.1rem;border-radius: 0.85rem;font-size: 12px;font-weight: 900;letter-spacing: 0.04em}
+        .bus-deck-door {display: flex;align-items: center;justify-content: center;gap: 0.35rem;min-height: 2.1rem;border-radius: 0.85rem;font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.04em}
         .bus-deck-cab {background: var(--secondary-bg);color: var(--ink-2);border: 1px solid var(--sky-deep)}
         .bus-deck-door {background: var(--secondary-bg);color: var(--ink-2);border: 1px dashed var(--gold-text)}
         .bus-deck-grid {display: grid;grid-template-columns: repeat(5, minmax(0, 1fr));gap: 0.32rem}
-        .bus-deck-rear {margin-top: 0.55rem;text-align: center;font-size: 12px;font-weight: 800;color: var(--ink-2)}
+        .bus-deck-rear {margin-top: 0.55rem;text-align: center;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .bus-seat {min-height: 3.55rem;border-radius: 0.7rem;padding: 0.28rem 0.18rem;text-align: center;border: 1px solid var(--navy);background: var(--secondary-bg);color: var(--ink-2)}
-        .bus-seat-no {display: block;font-size: 12px;font-weight: 800;color: var(--ink-2)}
-        .bus-seat-name {display: block;font-size: 12px;font-weight: 900;line-height: 1.2;word-break: keep-all}
+        .bus-seat-no {display: block;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
+        .bus-seat-name {display: block;font-size: calc(12px * var(--type-scale));font-weight: 900;line-height: 1.2;word-break: keep-all}
         .bus-seat.is-empty {background: var(--secondary-bg)}
         .bus-seat.is-filled {background: var(--secondary-bg);border-color: var(--sky-deep);color: var(--ink-2)}
         .bus-seat.is-owned {background: var(--secondary-bg);border-color: var(--gold-text);color: var(--ink-2)}
@@ -1437,24 +1439,24 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .bus-seat.is-off {opacity: 0.42;filter: grayscale(1);border-style: dashed}
         .bus-seat.is-admin {cursor: pointer}
         .bus-seat.is-buyable {cursor: pointer}
-        .bus-seat-price {display: block;font-size: 12px;font-weight: 800;color: var(--gold-text);margin-top: 2px}
+        .bus-seat-price {display: block;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--gold-text);margin-top: 2px}
         .bus-seat-on {display: flex;align-items: center;justify-content: center;gap: 0.2rem}
-        .bus-admin-price {width: 100%;margin-top: 0.15rem;background: var(--secondary-bg);border: 1px solid var(--sky-deep);color: var(--ink-2);border-radius: 0.35rem;font-size: 12px;font-weight: 800;text-align: center;padding: 0.12rem 0.1rem}
+        .bus-admin-price {width: 100%;margin-top: 0.15rem;background: var(--secondary-bg);border: 1px solid var(--sky-deep);color: var(--ink-2);border-radius: 0.35rem;font-size: calc(12px * var(--type-scale));font-weight: 800;text-align: center;padding: 0.12rem 0.1rem}
         .bus-admin-price:disabled {opacity: 0.35}
-        .bus-admin-more {display: block;width: 100%;margin-top: 0.15rem;font-size: 12px;font-weight: 800;color: var(--ink-2);background: var(--secondary-bg);border: 1px solid var(--navy);border-radius: 0.35rem;padding: 0.1rem 0}
+        .bus-admin-more {display: block;width: 100%;margin-top: 0.15rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: var(--secondary-bg);border: 1px solid var(--navy);border-radius: 0.35rem;padding: 0.1rem 0}
         .bus-seat.is-admin-edit {min-height: 4.7rem}
-        .bus-aisle {min-height: 3.15rem;border-radius: 999px;background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--sky) 18%, transparent) 0 6px, transparent 6px 12px);display: flex;align-items: center;justify-content: center;font-size: 12px;font-weight: 800;color: var(--ink-2);writing-mode: vertical-rl}
+        .bus-aisle {min-height: 3.15rem;border-radius: 999px;background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--sky) 18%, transparent) 0 6px, transparent 6px 12px);display: flex;align-items: center;justify-content: center;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2);writing-mode: vertical-rl}
 
         /* 넓은 웹 화면만 버스를 가로로 눕힙니다. 전화·좁은 화면은 세로 배치를 유지합니다. */
         @media (min-width: 860px) {
             .bus-deck {display: flex;flex-direction: row;align-items: stretch;max-width: min(76rem, 100%);border-radius: 1.2rem 2.2rem 2.2rem 1.2rem;padding: 0.7rem 0.8rem}
             .bus-deck-front {display: flex;flex-direction: column-reverse;gap: 0.35rem;margin-bottom: 0;margin-right: 0.5rem;width: 3.6rem;min-width: 3.6rem}
             .bus-deck-cab,
-            .bus-deck-door {writing-mode: horizontal-tb;text-orientation: mixed;flex: 1 1 0;min-height: 0;min-width: 0;flex-direction: column;gap: 0.2rem;font-size: 12px;letter-spacing: 0;padding: 0.25rem 0.15rem;line-height: 1.25;word-break: keep-all}
+            .bus-deck-door {writing-mode: horizontal-tb;text-orientation: mixed;flex: 1 1 0;min-height: 0;min-width: 0;flex-direction: column;gap: 0.2rem;font-size: calc(12px * var(--type-scale));letter-spacing: 0;padding: 0.25rem 0.15rem;line-height: 1.25;word-break: keep-all}
             .bus-deck-grid {flex: 1 1 auto;grid-template-columns: repeat(11, minmax(0, 1fr));grid-template-rows: repeat(5, minmax(2.5rem, auto));grid-auto-flow: row}
             /* 모바일 앞→가로 왼쪽, 모바일 왼쪽(운전석·창)→가로 아래. auto-flow만 바꾸면 칸이 뒤집힙니다. */
             .bus-deck-grid > * {grid-column: calc(var(--bus-row) + 1);grid-row: calc(5 - var(--bus-col))}
-            .bus-deck-rear {writing-mode: horizontal-tb;text-orientation: mixed;margin-top: 0;margin-left: 0.5rem;display: flex;align-items: center;justify-content: center;width: 3.4rem;min-width: 3.4rem;font-size: 12px;line-height: 1.35;letter-spacing: 0;word-break: keep-all;text-align: center;white-space: pre-line}
+            .bus-deck-rear {writing-mode: horizontal-tb;text-orientation: mixed;margin-top: 0;margin-left: 0.5rem;display: flex;align-items: center;justify-content: center;width: 3.4rem;min-width: 3.4rem;font-size: calc(12px * var(--type-scale));line-height: 1.35;letter-spacing: 0;word-break: keep-all;text-align: center;white-space: pre-line}
             .bus-aisle {writing-mode: horizontal-tb;min-height: 1.35rem;background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--sky) 18%, transparent) 0 6px, transparent 6px 12px)}
             .bus-seat {min-height: 2.5rem}
             .bus-seat.is-admin-edit {min-height: 4.4rem}
@@ -1467,38 +1469,38 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .boardgame-view {display: flex;flex-direction: column;min-height: 0;flex: 1;gap: 0.55rem}
         .boardgame-view.hidden {display: none !important}
         .boardgame-head {display: flex;flex-wrap: wrap;align-items: center;gap: 0.55rem;flex-shrink: 0}
-        .boardgame-kicker {font-size: 12px;font-weight: 900;letter-spacing: 0.28em;color: var(--gold-text)}
-        .boardgame-title {font-family: var(--font-display);;;font-size: 20px;color: var(--ink-2);letter-spacing: 0.04em}
-        .boardgame-lead {font-size: 12px;line-height: 1.5;color: color-mix(in srgb, var(--ink-2) 78%, transparent);flex-shrink: 0}
+        .boardgame-kicker {font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.28em;color: var(--gold-text)}
+        .boardgame-title {font-family: var(--font-display);;;font-size: calc(20px * var(--type-scale));color: var(--ink-2);letter-spacing: 0.04em}
+        .boardgame-lead {font-size: calc(12px * var(--type-scale));line-height: 1.5;color: color-mix(in srgb, var(--ink-2) 78%, transparent);flex-shrink: 0}
         .boardgame-game-grid {display: grid;grid-template-columns: 1fr;gap: 0.7rem}
         @media (min-width: 640px) {
             .boardgame-game-grid {grid-template-columns: repeat(2, minmax(0, 1fr))}
         }
         .boardgame-game-card {display: flex;flex-direction: column;align-items: flex-start;gap: 0.25rem;min-height: 7rem;padding: 1rem 1.1rem;border-radius: 1.1rem;border: 2px solid color-mix(in srgb, var(--gold-text) 45%, transparent);background: linear-gradient(180deg, color-mix(in srgb, var(--wine) 55%, transparent), color-mix(in srgb, var(--navy) 90%, transparent));color: var(--ink-2);text-align: left}
         .boardgame-game-card:active {transform: translateY(1px)}
-        .boardgame-game-emoji {font-size: 24px}
-        .boardgame-game-name {font-size: 20px;font-weight: 900}
-        .boardgame-game-meta {font-size: 12px;font-weight: 700;color: var(--ink-2)}
+        .boardgame-game-emoji {font-size: calc(24px * var(--type-scale))}
+        .boardgame-game-name {font-size: calc(20px * var(--type-scale));font-weight: 900}
+        .boardgame-game-meta {font-size: calc(12px * var(--type-scale));font-weight: 700;color: var(--ink-2)}
         .boardgame-mini-btn,
-        .boardgame-primary-btn {min-height: 44px;padding: 0 0.85rem;border-radius: 0.8rem;font-size: 12px;font-weight: 900;border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent)}
+        .boardgame-primary-btn {min-height: 44px;padding: 0 0.85rem;border-radius: 0.8rem;font-size: calc(12px * var(--type-scale));font-weight: 900;border: 1px solid color-mix(in srgb, var(--gold-text) 40%, transparent)}
         .boardgame-mini-btn {background: color-mix(in srgb, var(--navy) 85%, transparent);color: var(--ink-2)}
         .boardgame-primary-btn {background: linear-gradient(180deg, var(--gold-light), var(--marble));color: var(--ink);border-color: var(--line)}
         .boardgame-ai-row {display: flex;flex-wrap: wrap;align-items: center;gap: 0.4rem}
         .boardgame-room-list {display: flex;flex-direction: column;gap: 0.55rem;overflow: auto;min-height: 0;padding-bottom: 0.4rem}
         .boardgame-room-card {display: grid;grid-template-columns: 1fr auto;gap: 0.45rem 0.7rem;padding: 0.75rem 0.85rem;border-radius: 1rem;border: 1px solid color-mix(in srgb, var(--gold-text) 28%, transparent);background: color-mix(in srgb, var(--navy) 72%, transparent)}
-        .boardgame-room-title {font-size: 14px;font-weight: 900;color: var(--ink-2)}
-        .boardgame-room-meta {font-size: 12px;color: var(--ink-2);font-weight: 700}
-        .boardgame-room-status {display: inline-block;margin-top: 0.2rem;font-size: 12px;font-weight: 900;padding: 0.15rem 0.45rem;border-radius: 999px;background: color-mix(in srgb, var(--gold-light) 20%, transparent);color: var(--gold-text)}
+        .boardgame-room-title {font-size: calc(14px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
+        .boardgame-room-meta {font-size: calc(12px * var(--type-scale));color: var(--ink-2);font-weight: 700}
+        .boardgame-room-status {display: inline-block;margin-top: 0.2rem;font-size: calc(12px * var(--type-scale));font-weight: 900;padding: 0.15rem 0.45rem;border-radius: 999px;background: color-mix(in srgb, var(--gold-light) 20%, transparent);color: var(--gold-text)}
         .boardgame-room-status.is-playing {background: color-mix(in srgb, var(--sky-deep) 20%, transparent);color: var(--surface)}
         .boardgame-join-req {display: flex;flex-wrap: wrap;gap: 0.35rem;grid-column: 1 / -1}
         .boardgame-play {height: 100%}
         .gomoku-hud {display: flex;flex-wrap: wrap;align-items: center;gap: 0.4rem 0.65rem;flex-shrink: 0}
-        .gomoku-hud-players {flex: 1;min-width: 10rem;font-size: 12px;font-weight: 800;color: var(--ink-2)}
-        .gomoku-hud-timer {min-width: 3.2rem;text-align: center;font-size: 20px;font-weight: 900;color: var(--ink-2);font-variant-numeric: tabular-nums}
+        .gomoku-hud-players {flex: 1;min-width: 10rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
+        .gomoku-hud-timer {min-width: 3.2rem;text-align: center;font-size: calc(20px * var(--type-scale));font-weight: 900;color: var(--ink-2);font-variant-numeric: tabular-nums}
         .gomoku-hud-timer.is-low {color: var(--gold-light)}
-        .gomoku-timer-toggle {display: flex;align-items: center;gap: 0.35rem;font-size: 12px;font-weight: 800;color: var(--ink-2)}
+        .gomoku-timer-toggle {display: flex;align-items: center;gap: 0.35rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .gomoku-timer-toggle.hidden {display: none !important}
-        .gomoku-turn-hint {flex-shrink: 0;font-size: 12px;font-weight: 800;color: var(--gold-light);min-height: 1.1rem}
+        .gomoku-turn-hint {flex-shrink: 0;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--gold-light);min-height: 1.1rem}
         .gomoku-viewport {position: relative;flex: 1;min-height: 0;overflow: hidden;touch-action: none;border-radius: 0.85rem;border: 2px solid var(--gold-deep);background: var(--ink)}
         .gomoku-world {position: absolute;left: 0;top: 0;transform-origin: 0 0;will-change: transform}
         .gomoku-board {position: relative;width: 100%;height: 100%;max-width: 100%;max-height: 100%;aspect-ratio: 1;margin: 0;background: radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--marble) 28%, transparent), transparent 40%),
@@ -1508,9 +1510,9 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .gomoku-hotspot.is-pending {box-shadow: var(--shadow-card);background: color-mix(in srgb, var(--gold-light) 25%, transparent)}
         .gomoku-hotspot.is-last {box-shadow: var(--shadow-card)}
         .gomoku-zoom-bar {display: flex;flex-wrap: wrap;align-items: center;gap: 0.35rem;flex-shrink: 0}
-        .gomoku-zoom-label {min-width: 3.2rem;text-align: center;font-size: 12px;font-weight: 900;color: var(--ink-2)}
-        .gomoku-zoom-help {font-size: 12px;font-weight: 700;color: color-mix(in srgb, var(--ink-2) 65%, transparent)}
-        .boardgame-record {margin: 0 0 0.55rem;font-size: 12px;font-weight: 800;color: var(--ink-2)}
+        .gomoku-zoom-label {min-width: 3.2rem;text-align: center;font-size: calc(12px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
+        .gomoku-zoom-help {font-size: calc(12px * var(--type-scale));font-weight: 700;color: color-mix(in srgb, var(--ink-2) 65%, transparent)}
+        .boardgame-record {margin: 0 0 0.55rem;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .gomoku-confirm {position: absolute;z-index: 6;display: flex;flex-direction: row;flex-wrap: nowrap;align-items: center;gap: 0.28rem;padding: 0.28rem 0.35rem;width: max-content;min-width: 0;max-width: none;white-space: nowrap;background: color-mix(in srgb, var(--ink) 94%, transparent);border: 1px solid var(--gold-light);border-radius: 0.55rem;box-shadow: var(--shadow-card);pointer-events: auto}
         .gomoku-confirm #gomokuConfirmText,
         .gomoku-confirm .boardgame-mini-btn,
@@ -1518,14 +1520,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .gomoku-confirm .gomoku-confirm-go {white-space: nowrap;flex-shrink: 0}
         .gomoku-confirm .boardgame-mini-btn,
         .gomoku-confirm .gomoku-confirm-go {min-height: 36px;padding: 0 0.62rem}
-        .gomoku-confirm #gomokuConfirmText {font-size: 12px;font-weight: 800;color: var(--ink-2)}
+        .gomoku-confirm #gomokuConfirmText {font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .boardgame-mini-btn.is-on {border-color: var(--line);background: color-mix(in srgb, var(--gold-light) 35%, transparent);color: var(--ink-2)}
         .chess-hud {display: flex;flex-wrap: wrap;align-items: center;gap: 0.4rem 0.7rem;flex-shrink: 0}
-        .chess-hud-players {font-size: 14px;font-weight: 800;color: var(--ink-2)}
+        .chess-hud-players {font-size: calc(14px * var(--type-scale));font-weight: 800;color: var(--ink-2)}
         .chess-wrap {position: relative;flex: 1;min-height: 0;display: flex;align-items: center;justify-content: center;padding: 0.35rem}
         .chess-frame {display: grid;grid-template-columns: 1.15rem minmax(0, 1fr);grid-template-rows: minmax(0, 1fr) 1.15rem;width: min(94vmin, 100%, 620px);height: min(94vmin, 74vh, 620px);min-width: 280px;min-height: 280px;max-width: 100%;padding: 0.55rem 0.65rem 0.35rem 0.28rem;background: radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--marble) 28%, transparent), transparent 36%),
                 linear-gradient(145deg, var(--gold-deep) 0%, var(--ink) 42%, var(--ink) 100%);border: 3px solid var(--gold-light);box-shadow: var(--shadow-card)}
-        .chess-coord {display: grid;color: var(--ink-2);font-size: 12px;font-weight: 900;letter-spacing: 0.04em;text-shadow: none}
+        .chess-coord {display: grid;color: var(--ink-2);font-size: calc(12px * var(--type-scale));font-weight: 900;letter-spacing: 0.04em;text-shadow: none}
         .chess-coord-ranks {grid-column: 1;grid-row: 1;grid-template-rows: repeat(8, 1fr);align-items: center;justify-items: center}
         .chess-coord-files {grid-column: 2;grid-row: 2;grid-template-columns: repeat(8, 1fr);align-items: center;justify-items: center}
         .chess-board {grid-column: 2;grid-row: 1;width: 100%;height: 100%;display: grid;grid-template-columns: repeat(8, 1fr);grid-template-rows: repeat(8, 1fr);border: 2px solid var(--ink);box-shadow: var(--shadow-card)}
@@ -1549,7 +1551,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .chess-confirm .chess-confirm-go {white-space: nowrap;flex-shrink: 0}
         .chess-confirm .boardgame-mini-btn,
         .chess-confirm .chess-confirm-go {min-height: 36px;padding: 0 0.62rem}
-        .chess-confirm #chessConfirmText {font-size: 12px;font-weight: 800}
+        .chess-confirm #chessConfirmText {font-size: calc(12px * var(--type-scale));font-weight: 800}
         .chess-fx-layer {position: absolute;inset: 0;pointer-events: none;z-index: 7;overflow: hidden}
         .chess-fx-burst {position: absolute;width: 8px;height: 8px;margin: -4px 0 0 -4px}
         .chess-fx-burst i {position: absolute;width: 7px;height: 7px;border-radius: 50%;background: var(--gold-light);animation: chess-burst 0.62s ease-out forwards}
@@ -1598,7 +1600,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .gomoku-result {display: flex;flex-wrap: wrap;align-items: center;gap: 0.45rem;padding: 0.45rem 0.2rem;flex-shrink: 0}
         .gomoku-confirm.hidden,
         .gomoku-result.hidden {display: none !important}
-        .gomoku-result-text {width: 100%;font-size: 16px;font-weight: 900;color: var(--ink-2)}
+        .gomoku-result-text {width: 100%;font-size: calc(16px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
         .gomoku-result-actions {display: flex;flex-wrap: wrap;gap: 0.4rem}
         #classtoolFullscreen:has(.classtool-pane[data-tool="boardgames"]:not(.hidden)) {background: var(--secondary-bg)}
         #classtoolFullscreen:has(.classtool-pane[data-tool="boardgames"]:not(.hidden)) .classtool-fs-bar {background: var(--secondary-bg);border-bottom-color: var(--gold-text)}
@@ -1608,7 +1610,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
             #classtoolFullscreen:has(.classtool-pane[data-tool="boardgames"]:not(.hidden)) .classtool-fs-bar .js-classtool-share-btn {display: none}
             .boardgame-play .gomoku-zoom-help {display: none}
             .gomoku-hud {gap: 0.25rem 0.4rem}
-            .gomoku-turn-hint {font-size: 12px}
+            .gomoku-turn-hint {font-size: calc(12px * var(--type-scale))}
         }
         .quest-card-grid {display: grid;grid-template-columns: repeat(2, minmax(0, 1fr));gap: 0.4rem}
         @media (min-width: 640px) {
@@ -1622,15 +1624,15 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
             #dailyQuestBoard table {width: 100%;max-width: 100%;min-width: 0;table-layout: fixed}
             #dailyQuestBoard th, #dailyQuestBoard td {overflow: hidden;text-overflow: ellipsis;white-space: nowrap}
         }
-        .quest-tile-icon {font-size: 16px;line-height: 1}
-        .quest-tile-name {width: 100%;font-size: 12px;font-weight: 800;display: -webkit-box;-webkit-line-clamp: 2;-webkit-box-orient: vertical;overflow: hidden}
-        .quest-tile-extra {display: block;font-size: 12px;font-weight: 800;color: var(--danger)}
-        .quest-tile-pay {font-size: 12px;font-weight: 800;letter-spacing: -0.01em}
+        .quest-tile-icon {font-size: calc(16px * var(--type-scale));line-height: 1}
+        .quest-tile-name {width: 100%;font-size: calc(12px * var(--type-scale));font-weight: 800;display: -webkit-box;-webkit-line-clamp: 2;-webkit-box-orient: vertical;overflow: hidden}
+        .quest-tile-extra {display: block;font-size: calc(12px * var(--type-scale));font-weight: 800;color: var(--danger)}
+        .quest-tile-pay {font-size: calc(12px * var(--type-scale));font-weight: 800;letter-spacing: -0.01em}
         @media (orientation: landscape) and (max-height: 500px) {
             .boardgame-lead,
             .gomoku-zoom-help {display: none}
-            .boardgame-title {font-size: 16px}
-            .gomoku-hud-timer {font-size: 16px}
+            .boardgame-title {font-size: calc(16px * var(--type-scale))}
+            .gomoku-hud-timer {font-size: calc(16px * var(--type-scale))}
         }
 
         /* 로그인 오버레이는 flex와 hidden이 같이 있어도 화면에서 사라집니다. */
@@ -1638,7 +1640,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         #loginOverlay.hidden,
         #globalLoadingOverlay.hidden {display: none !important;opacity: 0 !important;visibility: hidden !important;pointer-events: none !important}
 
-        .guest-demo-banner {display: none;position: sticky;top: 3.5rem;z-index: 45;margin: 0;padding: 0.45rem 0.8rem;text-align: center;font-size: 14px;font-weight: 800;color: var(--ink-2);background: var(--marble);border-bottom: 2px solid var(--line)}
+        .guest-demo-banner {display: none;position: sticky;top: 3.5rem;z-index: 45;margin: 0;padding: 0.45rem 0.8rem;text-align: center;font-size: calc(14px * var(--type-scale));font-weight: 800;color: var(--ink-2);background: var(--marble);border-bottom: 2px solid var(--line)}
         body.is-guest #guestDemoBanner {display: block !important}
         body.is-guest .js-guest-write,
         body.is-guest .guest-write-hidden,
@@ -1648,10 +1650,10 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         body.is-guest .plaza-gm-controls {display: none !important}
 
         .notice-inbox-panel {position: fixed;top: 3.6rem;right: 0.6rem;z-index: 460;width: min(22rem, calc(100vw - 1.2rem));max-height: min(70vh, 28rem);overflow: auto;padding: 0.75rem;border-radius: 1rem;border: 2px solid var(--line);background: var(--secondary-bg);color: var(--ink-2);box-shadow: var(--shadow-card)}
-        .notice-inbox-panel h3 {font-size: 16px;font-weight: 900;color: var(--ink-2)}
+        .notice-inbox-panel h3 {font-size: calc(16px * var(--type-scale));font-weight: 900;color: var(--ink-2)}
         .notice-inbox-item {margin-top: 0.55rem;padding: 0.55rem 0.65rem;border-radius: 0.75rem;background: var(--secondary-bg);border: 1px solid var(--navy)}
-        .notice-inbox-item strong {display: block;color: var(--ink-2);font-size: 14px}
-        .notice-inbox-item p {margin-top: 0.25rem;white-space: pre-wrap;color: var(--ink-2);font-size: 14px;line-height: 1.45}
+        .notice-inbox-item strong {display: block;color: var(--ink-2);font-size: calc(14px * var(--type-scale))}
+        .notice-inbox-item p {margin-top: 0.25rem;white-space: pre-wrap;color: var(--ink-2);font-size: calc(14px * var(--type-scale));line-height: 1.45}
 
         /* 교실 TV: 멀리서도 이름·수치·안내가 읽히게 글자와 대비를 올립니다. */
         @media (min-width: 1200px) {
@@ -1659,20 +1661,20 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
             .plaza-cards-sm .plaza-card-name,
             .plaza-cards-md .plaza-card-name,
             .plaza-cards-lg .plaza-card-name,
-            .plaza-cards-seating .plaza-card-name {font-size: 16px;color: var(--ink-2) !important;background: var(--secondary-bg) !important;line-height: 1.35;padding: 0.28rem 0.35rem !important}
+            .plaza-cards-seating .plaza-card-name {font-size: calc(16px * var(--type-scale));color: var(--ink-2) !important;background: var(--secondary-bg) !important;line-height: 1.35;padding: 0.28rem 0.35rem !important}
             .plaza-cards-sm .plaza-card-stats span,
             .plaza-cards-md .plaza-card-stats span,
             .plaza-cards-lg .plaza-card-stats span,
-            .plaza-cards.plaza-cards-seating .plaza-card-stats span {font-size: 14px}
+            .plaza-cards.plaza-cards-seating .plaza-card-stats span {font-size: calc(14px * var(--type-scale))}
             .plaza-cards.plaza-cards-seating .plaza-card-status,
-            .plaza-card-status {font-size: 14px;color: var(--ink-2) !important;background: var(--secondary-bg) !important;border-color: var(--gold-text) !important}
-            .plaza-classroom-board {font-size: 20px;letter-spacing: 0.16em;color: var(--ink-2);background: var(--secondary-bg)}
-            .plaza-stat-xp {color: var(--sky-deep)}
-            .plaza-stat-bong {color: var(--ink-2)}
-            body.classtool-fs-open .class-board-q {font-size: 32px;color: var(--ink)}
+            .plaza-card-status {font-size: calc(14px * var(--type-scale));color: var(--ink-2) !important;background: var(--secondary-bg) !important;border-color: var(--gold-text) !important}
+            .plaza-classroom-board {font-size: calc(20px * var(--type-scale));letter-spacing: 0.16em;color: var(--ink-2);background: var(--secondary-bg)}
+            .plaza-stat-xp {color: var(--ink)}
+            .plaza-stat-bong {color: var(--ink)}
+            body.classtool-fs-open .class-board-q {font-size: calc(32px * var(--type-scale));color: var(--ink)}
             body.classtool-fs-open .class-board-page-badge,
-            body.classtool-fs-open .class-board-timer {font-size: 20px;color: var(--ink-2)}
-            body.classtool-fs-open .think-focus-text {font-size: 32px;color: var(--ink)}
+            body.classtool-fs-open .class-board-timer {font-size: calc(20px * var(--type-scale));color: var(--ink-2)}
+            body.classtool-fs-open .think-focus-text {font-size: calc(32px * var(--type-scale));color: var(--ink)}
             body.classtool-fs-open .open-lesson-slide,
-            body.classtool-fs-open .open-lesson-body {font-size: 32px;color: var(--ink)}
+            body.classtool-fs-open .open-lesson-body {font-size: calc(32px * var(--type-scale));color: var(--ink)}
         }

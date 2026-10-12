@@ -178,12 +178,10 @@ import {
     gomokuSeatColor,
     placeGomokuStone,
 } from './lib/gomokuGame.js';
-import {
-    GOMOKU_AI_LEVELS,
-    gomokuAiLevelLabel,
-    pickGomokuAiMove,
-    sanitizeGomokuAiLevel,
-} from './lib/gomokuAi.js';
+let GOMOKU_AI_LEVELS = { gosu: { id: 'gosu', label: '고수', timeMs: 800 }, choin: { id: 'choin', label: '초인', timeMs: 2600 } };
+let gomokuAiLevelLabel = (level) => (level === 'choin' ? '초인' : '고수');
+let pickGomokuAiMove = () => null;
+let sanitizeGomokuAiLevel = (raw) => (raw === 'choin' ? 'choin' : 'gosu');
 import {
     applyBoardGameRecord,
     boardGameRecordText,
@@ -194,12 +192,34 @@ import {
     mergeBoardGameRecords,
     sanitizeBoardGameRecords,
 } from './lib/boardGameRecords.js';
-import {
-    CHESS_AI_LEVELS,
-    chessAiLevelLabel,
-    pickChessAiMove,
-    sanitizeChessAiLevel,
-} from './lib/chessAi.js';
+let CHESS_AI_LEVELS = {
+    ply1: { id: 'ply1', label: '한수', timeMs: 80 },
+    gosu: { id: 'gosu', label: '고수', timeMs: 900 },
+    choin: { id: 'choin', label: '초인', timeMs: 3500 },
+    choinOld: { id: 'choinOld', label: '옛초인', timeMs: 2600 },
+};
+let chessAiLevelLabel = (level) => (level === 'choin' ? '초인' : level === 'ply1' ? '한수' : '고수');
+let pickChessAiMove = () => null;
+let sanitizeChessAiLevel = (raw) => (raw === 'choin' || raw === 'choinOld' || raw === 'ply1' ? raw : 'gosu');
+let _boardAiReady = null;
+function ensureBoardAi() {
+    if (!_boardAiReady) {
+        _boardAiReady = Promise.all([
+            import('./lib/gomokuAi.js'),
+            import('./lib/chessAi.js'),
+        ]).then(([g, c]) => {
+            GOMOKU_AI_LEVELS = g.GOMOKU_AI_LEVELS;
+            gomokuAiLevelLabel = g.gomokuAiLevelLabel;
+            pickGomokuAiMove = g.pickGomokuAiMove;
+            sanitizeGomokuAiLevel = g.sanitizeGomokuAiLevel;
+            CHESS_AI_LEVELS = c.CHESS_AI_LEVELS;
+            chessAiLevelLabel = c.chessAiLevelLabel;
+            pickChessAiMove = c.pickChessAiMove;
+            sanitizeChessAiLevel = c.sanitizeChessAiLevel;
+        });
+    }
+    return _boardAiReady;
+}
 import {
     inferChessCapture,
     playChessBoardFx,
@@ -350,13 +370,11 @@ import {
     applyStockSellFromServer,
     canBuyStock,
     canSellStock,
-    extractYahooChartJson,
     formatChangePct,
     formatIndexPrice,
     getStockMarket,
     isKoreanStockSession,
     MARKET_REFRESH_MS,
-    parseYahooChart,
     sanitizeStockInvestDaily,
     sanitizeStockInvestments,
     settleStockPosition,
@@ -364,8 +382,6 @@ import {
     stockInvestRoom,
     summarizeStudentStockInvest,
     TICKER_MARKETS,
-    yahooChartProxyUrl,
-    yahooChartUrl,
 } from './lib/stockMarket.js';
 import {
     canSettleShopGroupBuy,
@@ -1738,7 +1754,7 @@ function redrawPlazaGrantsUi() {
             if (meta) {
                 const ok = _marketQuotes.kospi || _marketQuotes.kosdaq || _marketQuotes.nasdaq;
                 if (!ok) {
-                    meta.textContent = '지수를 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
+                    meta.textContent = '지금 시세를 불러올 수 없습니다. 저장된 시세가 있으면 그것을 보여 줍니다.';
                 } else if (isKoreanStockSession()) {
                     meta.textContent = '코스피·코스닥은 장중 1시간마다 갱신 · 은행에서 투자할 수 있습니다.';
                 } else {
@@ -1748,23 +1764,8 @@ function redrawPlazaGrantsUi() {
             if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
         }
 
-        async function fetchOneMarketQuote(market) {
-            const urls = [yahooChartUrl(market.symbol), yahooChartProxyUrl(market.symbol)];
-            for (const url of urls) {
-                try {
-                    const res = await fetch(url);
-                    if (!res.ok) continue;
-                    const text = await res.text();
-                    let json = extractYahooChartJson(text);
-                    if (!json) {
-                        try { json = JSON.parse(text); } catch (e) { json = null; }
-                    }
-                    const q = parseYahooChart(json, market.id);
-                    if (q) return q;
-                } catch (e) {
-                    console.warn('market quote', market.id, e);
-                }
-            }
+        async function fetchOneMarketQuote() {
+            /* 야후 차트는 브라우저 CORS로 막혀 콘솔 오류만 남으므로 요청하지 않습니다. */
             return null;
         }
 
@@ -2295,7 +2296,7 @@ function redrawPlazaGrantsUi() {
                 const click = have ? `onclick="window.equipGear('${g.id}')"` : '';
                 const cursor = have ? 'cursor-pointer hover:scale-105' : 'cursor-default';
                 const art = g.img
-                    ? `<img src="${g.img}" alt="${g.name}">`
+                    ? `<img loading="lazy" decoding="async" src="${g.img}" alt="${g.name}">`
                     : `<span>${g.emoji || ''}</span>`;
                 const enhanceBtn = canEnhance
                     ? `<button type="button" onclick="event.stopPropagation(); void window.enhanceGear('${g.id}')" class="oly-btn oly-btn-primary oly-btn-sm mt-0.5 w-full">강화 ${rate}%</button>`
@@ -2416,13 +2417,13 @@ function redrawPlazaGrantsUi() {
 
         function charImgTag(src, extraClass = '') {
             // 흰 네모 모서리를 원으로 자르고, 안쪽 흰 테두리는 클립 안에서 확대해 가립니다.
-            return `<span class="char-portrait-clip ${extraClass}"><img src="${src}" alt="" class="char-portrait" draggable="false"></span>`;
+            return `<span class="char-portrait-clip ${extraClass}"><img loading="lazy" decoding="async" src="${src}" alt="" class="char-portrait" draggable="false"></span>`;
         }
 
         function cosmeticMarkHtml(skin) {
             if (skin.img) {
                 // 무기 등 투명 PNG를 초상 프레임 위에 겹칩니다.
-                return `<span class="char-sticker-layer ${skin.overlayClass || ''} pointer-events-none z-20"><img src="${skin.img}" alt=""></span>`;
+                return `<span class="char-sticker-layer ${skin.overlayClass || ''} pointer-events-none z-20"><img loading="lazy" decoding="async" src="${skin.img}" alt=""></span>`;
             }
             return `<span class="absolute ${skin.overlayClass || ''} z-20 pointer-events-none">${skin.emoji || ''}</span>`;
         }
@@ -2430,7 +2431,7 @@ function redrawPlazaGrantsUi() {
         function weaponMarkHtml(wp, enhanceLevel) {
             const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (wp.img) {
-                return `<span class="char-weapon pointer-events-none z-30 ${cutout}"><img src="${wp.img}" alt=""></span>`;
+                return `<span class="char-weapon pointer-events-none z-30 ${cutout}"><img loading="lazy" decoding="async" src="${wp.img}" alt=""></span>`;
             }
             return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-12 z-30 drop-shadow-md pointer-events-none ${cutout}">${wp.emoji || ''}</span>`;
         }
@@ -2438,7 +2439,7 @@ function redrawPlazaGrantsUi() {
         function shieldMarkHtml(sh, enhanceLevel) {
             const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (sh && sh.img) {
-                return `<span class="char-shield pointer-events-none z-30 ${cutout}"><img src="${sh.img}" alt=""></span>`;
+                return `<span class="char-shield pointer-events-none z-30 ${cutout}"><img loading="lazy" decoding="async" src="${sh.img}" alt=""></span>`;
             }
             return `<span class="char-shield char-shield-emoji pointer-events-none z-30 ${cutout}">${(sh && sh.emoji) || ''}</span>`;
         }
@@ -2446,7 +2447,7 @@ function redrawPlazaGrantsUi() {
         function shoeMarkHtml(shoes, enhanceLevel) {
             const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (shoes && shoes.img) {
-                return `<span class="char-shoes pointer-events-none z-30 ${cutout}"><img src="${shoes.img}" alt=""></span>`;
+                return `<span class="char-shoes pointer-events-none z-30 ${cutout}"><img loading="lazy" decoding="async" src="${shoes.img}" alt=""></span>`;
             }
             return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30 ${cutout}">${(shoes && shoes.emoji) || ''}</span>`;
         }
@@ -2480,7 +2481,7 @@ function redrawPlazaGrantsUi() {
                 const lv = getLevelInfo(row.xp || 0);
                 const ring = (lv.info && lv.info.ring) || '';
                 if (lv.info && lv.info.img) {
-                    rankLayer = `<span class="char-rank-bg" aria-hidden="true"><img src="${lv.info.img}" alt=""></span>`;
+                    rankLayer = `<span class="char-rank-bg" aria-hidden="true"><img loading="lazy" decoding="async" src="${lv.info.img}" alt=""></span>`;
                     rankStackClass = ` char-avatar-has-rank${ring ? ` char-rank-${ring}` : ''}`;
                 } else if (lv.info && lv.info.prop) {
                     rankLayer = `<span class="char-rank-bg char-rank-bg-emoji" aria-hidden="true">${lv.info.prop}</span>`;
@@ -2543,7 +2544,7 @@ function redrawPlazaGrantsUi() {
             const ring = (info && info.ring) ? ` char-rank-${info.ring}` : '';
             const clipCls = `rank-badge-clip ${extraClass}${ring}`.trim();
             if (info && info.img) {
-                return `<span class="${clipCls}"><img src="${info.img}" alt="${name}" class="rank-badge" /></span>`;
+                return `<span class="${clipCls}"><img loading="lazy" decoding="async" src="${info.img}" alt="${name}" class="rank-badge" /></span>`;
             }
             return `<span class="${clipCls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
         }
@@ -6373,17 +6374,17 @@ function redrawPlazaGrantsUi() {
                 .seok-bday-card{position:relative;z-index:2;max-width:56rem;width:min(96vw,56rem);text-align:center;border-radius:2rem;
                     border:3px solid color-mix(in srgb, var(--gold) 65%, transparent);background:color-mix(in srgb, var(--chalk-board) 88%, transparent);backdrop-filter:blur(12px);
                     padding:2rem 1.75rem 1.5rem;box-shadow:0 0 80px color-mix(in srgb, var(--gold-light) 45%, transparent);animation:seokBdayPop .55s ease-out}
-                .seok-bday-eyebrow{font-family: var(--font-body);;font-size: 16px;letter-spacing:.28em;color:var(--line);margin-bottom:.35rem}
-                .seok-bday-title{font-family: var(--font-body);;font-size: 32px;line-height:1.2;font-weight:400;color:var(--gold-light);animation:seokBdayShine 1.6s ease-in-out infinite}
-                .seok-bday-cake{font-size: 48px;line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.5rem 0 .75rem}
-                .seok-bday-msg{font-family: var(--font-body);;font-size: 24px;line-height:1.45;color:var(--marble);font-weight:700;margin-bottom:1rem}
+                .seok-bday-eyebrow{font-family: var(--font-body);;font-size: calc(16px * var(--type-scale));letter-spacing:.28em;color:var(--line);margin-bottom:.35rem}
+                .seok-bday-title{font-family: var(--font-body);;font-size: calc(32px * var(--type-scale));line-height:1.2;font-weight:400;color:var(--gold-light);animation:seokBdayShine 1.6s ease-in-out infinite}
+                .seok-bday-cake{font-size: calc(48px * var(--type-scale));line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.5rem 0 .75rem}
+                .seok-bday-msg{font-family: var(--font-body);;font-size: calc(24px * var(--type-scale));line-height:1.45;color:var(--marble);font-weight:700;margin-bottom:1rem}
                 .seok-bday-msg .hi{color:var(--gold-light)}
                 .seok-bday-lyric{font-family: var(--font-body);;min-height:4.2rem;display:flex;align-items:center;justify-content:center;
-                    font-size: 32px;font-weight:400;color:var(--surface);line-height:1.25;
+                    font-size: calc(32px * var(--type-scale));font-weight:400;color:var(--surface);line-height:1.25;
                     text-shadow:0 0 22px color-mix(in srgb, var(--gold-light) 95%, transparent);animation:seokBdayLyricIn .35s ease-out}
-                .seok-bday-lyric.is-countdown{font-size: 48px;color:var(--gold-light);text-shadow:0 0 28px color-mix(in srgb, var(--gold) 95%, transparent)}
-                .seok-bday-hint{font-family: var(--font-body);;font-size: 16px;color:var(--line);margin:.85rem 0 1rem}
-                .seok-bday-close{font-family: var(--font-body);;font-size: 16px;padding:1rem 1.25rem!important}
+                .seok-bday-lyric.is-countdown{font-size: calc(48px * var(--type-scale));color:var(--gold-light);text-shadow:0 0 28px color-mix(in srgb, var(--gold) 95%, transparent)}
+                .seok-bday-hint{font-family: var(--font-body);;font-size: calc(16px * var(--type-scale));color:var(--line);margin:.85rem 0 1rem}
+                .seok-bday-close{font-family: var(--font-body);;font-size: calc(16px * var(--type-scale));padding:1rem 1.25rem!important}
                 .seok-bday-confetti{position:absolute;top:-12px;width:12px;height:16px;border-radius:2px;z-index:1;
                     animation-name:seokBdayConfettiFall;animation-timing-function:linear;animation-fill-mode:forwards;pointer-events:none}
                 @media (max-width:640px){
@@ -11856,7 +11857,8 @@ ${subjectLine}
             return _gomokuAiWorker;
         }
 
-        function pickGomokuAiMoveAsync(game, opts) {
+        async function pickGomokuAiMoveAsync(game, opts) {
+            await ensureBoardAi();
             const worker = getGomokuAiWorker();
             if (!worker) {
                 return Promise.resolve(pickGomokuAiMove(game, opts));
@@ -11915,6 +11917,7 @@ ${subjectLine}
         }
 
         async function playGomokuAiTurn() {
+            await ensureBoardAi();
             const s = _gomokuAiSession;
             if (!s || s.thinking) return;
             if (!s.game || s.game.winner || s.game.endReason === 'draw') return;
@@ -12037,6 +12040,7 @@ ${subjectLine}
         }
 
         function renderBoardGamePanel() {
+            void ensureBoardAi();
             if (_chessAiSession) {
                 renderChessPlay(chessAiRoomView());
                 return;
@@ -12656,7 +12660,8 @@ ${subjectLine}
             return _chessAiWorker;
         }
 
-        function pickChessAiMoveAsync(game, opts) {
+        async function pickChessAiMoveAsync(game, opts) {
+            await ensureBoardAi();
             const worker = getChessAiWorker();
             if (!worker) return Promise.resolve(pickChessAiMove(game, opts));
             const reqId = (_chessAiReqId += 1);
@@ -12722,6 +12727,7 @@ ${subjectLine}
         }
 
         async function playChessAiTurn() {
+            await ensureBoardAi();
             const s = _chessAiSession;
             if (!s || s.thinking || chessIsOver(s.game)) return;
             if (s.game.turn === s.human) return;
@@ -13541,7 +13547,7 @@ ${subjectLine}
                             <p class="think-note-author">${escapeHtmlAttr(focusPost.name || getStudentDisplayLabel(focusPost.studentId))}</p>
                             ${qLine ? `<p class="text-12 font-black opacity-70 mt-1">Q. ${escapeHtmlAttr(qLine.text)}</p>` : ''}
                             ${focusPost.text ? `<p class="think-focus-text mt-2">${escapeHtmlAttr(focusPost.text)}</p>` : ''}
-                            ${focusPost.drawing ? `<img src="${focusPost.drawing}" alt="" class="think-focus-draw">` : ''}
+                            ${focusPost.drawing ? `<img loading="lazy" decoding="async" src="${focusPost.drawing}" alt="" class="think-focus-draw">` : ''}
                         </div>
                         <div class="flex flex-wrap items-center gap-2 think-keep-input">
                             <button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-empathy-btn ${mine ? 'is-on' : ''}" onclick="void window.toggleThinkPostEmpathy('${focusPost.id}')">공감하기</button>
@@ -13570,7 +13576,7 @@ ${subjectLine}
                             ${privateMark}
                             <p class="think-note-author">${escapeHtmlAttr(p.name || getStudentDisplayLabel(p.studentId))}</p>
                             <p class="think-note-excerpt">${escapeHtmlAttr(thoughtPostExcerpt(p, 90))}</p>
-                            ${p.drawing ? `<img src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
+                            ${p.drawing ? `<img loading="lazy" decoding="async" src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
                             <div class="mt-1 flex items-center justify-between gap-1 think-keep-input" onclick="event.stopPropagation();">
                                 <button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-empathy-btn ${mine ? 'is-on' : ''}" onclick="event.stopPropagation(); void window.toggleThinkPostEmpathy('${p.id}')">공감</button>
                                 ${publishBtn}
@@ -14121,7 +14127,7 @@ ${subjectLine}
                             <p class="class-note-author">${escapeHtmlAttr(focusNote.name || getStudentDisplayLabel(focusNote.studentId))}</p>
                             <p class="class-board-modal-text">${escapeHtmlAttr(focusNote.text)}</p>
                             <button type="button" class="oly-btn oly-btn-secondary oly-btn-md class-board-thumbs ${thumbsCls} class-board-keep-input" ${thumbsClick} title="따봉 +${CLASS_BOARD_CHEER_XP}XP +${CLASS_BOARD_CHEER_BONG}봉">
-                                <img src="nav/thumbs-up.svg" alt="따봉" width="72" height="72">
+                                <img loading="lazy" decoding="async" src="nav/thumbs-up.svg" alt="따봉" width="72" height="72">
                                 <span>따봉 · ${CLASS_BOARD_CHEER_XP}XP · ${CLASS_BOARD_CHEER_BONG}봉</span>
                             </button>
                         </div>`;
@@ -14425,7 +14431,7 @@ ${subjectLine}
                 } else if (slide.kind === 'text') {
                     canvas.innerHTML = `<div class="open-lesson-text-slide"><p>${escapeHtmlAttr(slide.text).replace(/\n/g, '<br>')}</p></div>`;
                 } else {
-                    const img = slide.image ? `<img src="${escapeHtmlAttr(slide.image)}" alt="">` : '';
+                    const img = slide.image ? `<img loading="lazy" decoding="async" src="${escapeHtmlAttr(slide.image)}" alt="">` : '';
                     const cap = slide.caption ? `<p class="open-lesson-caption">${escapeHtmlAttr(slide.caption)}</p>` : '';
                     canvas.innerHTML = `${img}${cap}`;
                 }
@@ -18171,7 +18177,7 @@ ${subjectLine}
             wrap.style.top = opts.top || (48 + offset) + 'px';
             wrap.style.width = opts.width || '32%';
             wrap.innerHTML = `
-                <img src="${src}" alt="첨부 이미지" draggable="false">
+                <img loading="lazy" decoding="async" src="${src}" alt="첨부 이미지" draggable="false">
                 <button type="button" class="oly-btn oly-btn-secondary oly-btn-md chalk-img-del" title="이미지 삭제">✕</button>
                 <div class="chalk-img-resize" title="드래그하여 크기 조절"></div>`;
             frame.insertBefore(wrap, canvas);
@@ -18449,7 +18455,8 @@ ${subjectLine}
             }
         };
 
-        window.setChalkboardFontFamily = function(family) {
+        window.setChalkboardFontFamily = function() {
+            const family = 'Gaegu, cursive';
             const textEl = document.getElementById('chalkboardText');
             if (!textEl) return;
             if (chalkSelectionInBoard()) {
@@ -18467,7 +18474,7 @@ ${subjectLine}
         window.setChalkboardFontSize = function(px) {
             const textEl = document.getElementById('chalkboardText');
             if (!textEl) return;
-            const size = Math.max(10, parseInt(px, 10) || 40);
+            const size = Math.max(18, parseInt(px, 10) || 40);
             if (chalkSelectionInBoard()) {
                 // execCommand fontSize는 1~7 단계만 지원 → 7로 찍은 뒤 실제 px로 치환
                 document.execCommand('styleWithCSS', false, true);
@@ -19548,7 +19555,34 @@ ${subjectLine}
             renderJobLookPicker();
         }
 
+        function labelIconButtons(root) {
+            const labels = {
+                xmark: '닫기', eye: '보기', 'eye-slash': '숨기기', bell: '알림',
+                'right-from-bracket': '로그아웃', 'chevron-down': '펼치기',
+                'chevron-left': '이전', 'chevron-right': '다음', plus: '추가', minus: '빼기',
+            };
+            const scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll('button').forEach((btn) => {
+                if ((btn.getAttribute('aria-label') || '').trim()) return;
+                if ((btn.innerText || '').replace(/\s+/g, '')) return;
+                const title = (btn.getAttribute('title') || '').trim();
+                const key = btn.querySelector('[data-oly]')?.getAttribute('data-oly') || '';
+                btn.setAttribute('aria-label', title || labels[key] || '버튼');
+            });
+        }
+
         function initDynamicContent() {
+            labelIconButtons(document);
+            if (!window._olyLabelObserver && typeof MutationObserver !== 'undefined') {
+                window._olyLabelObserver = new MutationObserver((records) => {
+                    records.forEach((rec) => {
+                        rec.addedNodes.forEach((node) => {
+                            if (node.nodeType === 1) labelIconButtons(node);
+                        });
+                    });
+                });
+                window._olyLabelObserver.observe(document.body, { childList: true, subtree: true });
+            }
             renderJobGrid();
 
             renderShopCatalog();
@@ -19556,7 +19590,7 @@ ${subjectLine}
             
             document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn  p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
-                    <div class=" w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-20 sm:text-24 shrink-0 overflow-hidden border ">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
+                    <div class=" w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-20 sm:text-24 shrink-0 overflow-hidden border ">${skin.img ? `<img loading="lazy" decoding="async" src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
                         <div class="font-bold text-14 sm:text-16 truncate ">${skin.name}</div>
                         <div class="text-12 sm:text-12  truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
@@ -20936,7 +20970,7 @@ ${subjectLine}
                     }
                 }
                 if (status) status.textContent = '엑셀 파일 생성 중…';
-                const result = downloadAdminStudentWorkbook({
+                const result = await downloadAdminStudentWorkbook({
                     selectedIds,
                     ctx: buildAdminExportContext(window.allStudentsData || []),
                     fileName: buildAdminExportFileName('xlsx'),
@@ -23431,7 +23465,7 @@ ${subjectLine}
         window.exportAttendanceXlsx = async function() {
             await ensureClassOpsLoaded(true);
             const rows = buildAttendanceSheetRows(window._attendanceDays || {}, rosterStudentsForOps());
-            downloadAoaWorkbook('출석의 축복', rows, `출석의축복_${getLocalDateStr()}.xlsx`);
+            await downloadAoaWorkbook('출석의 축복', rows, `출석의축복_${getLocalDateStr()}.xlsx`);
         };
 
         window.renderChecklistBoard = function() {
@@ -28041,7 +28075,7 @@ ${subjectLine}
                     ? `onclick="window.handleSkin('${s.id}', true)"`
                     : `onclick="window.openSkinShop()"`;
                 return `<button type="button" ${click} class="oly-btn oly-btn-secondary oly-btn-md char-dress-slot ${on ? 'is-on' : ''} ${have ? '' : 'opacity-60'}" title="${s.name}">
-                    <span class="char-dress-slot-art">${s.img ? `<img src="${s.img}" alt="">` : s.emoji}</span>
+                    <span class="char-dress-slot-art">${s.img ? `<img loading="lazy" decoding="async" src="${s.img}" alt="">` : s.emoji}</span>
                     <span class="char-dress-slot-name">${s.name}</span>
                     <span class="char-dress-slot-own">${on ? '사용 중' : have ? (owned[s.id] ? '보유' : '살펴보기') : `${s.price}`}${skinStatLabel(s.id) ? ` · ${skinStatLabel(s.id)}` : ''}</span>
                 </button>`;
@@ -28056,7 +28090,7 @@ ${subjectLine}
                 <div class="flex flex-wrap gap-1.5 justify-center">${studentBases.map((b) => {
                     const on = baseOn(b);
                     return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="oly-btn oly-btn-secondary oly-btn-md base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
-                        <img src="${b.img}" alt="${b.name}">
+                        <img loading="lazy" decoding="async" src="${b.img}" alt="${b.name}">
                         <span>${b.gender === 'F' ? '여 · ' : window.playerState.isAdmin ? '남 · ' : ''}${b.name}</span>
                     </button>`;
                 }).join('')}</div>`;
@@ -28069,7 +28103,7 @@ ${subjectLine}
                     <div class="grid grid-cols-5 gap-1.5">${looks.map((b) => {
                         const on = b.id === staffCurrent.id && window.playerState.homeLookMode !== 'student';
                         return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="oly-btn oly-btn-secondary oly-btn-md base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}${staffLookStatLabel(b.id) ? ` · ${staffLookStatLabel(b.id)}` : ''}">
-                            <img src="${b.img}" alt="${b.name}">
+                            <img loading="lazy" decoding="async" src="${b.img}" alt="${b.name}">
                             <span>${b.name}${b.masterOnly ? ' · 전용' : ''}</span>
                         </button>`;
                     }).join('')}</div>
@@ -28082,7 +28116,7 @@ ${subjectLine}
                 ${staffHtml}
                 ${studentBaseHtml}
                 <div class="char-dress-rank">
-                    ${rank.img ? `<span class="char-dress-rank-art${rank.ring ? ` char-rank-${rank.ring}` : ''}"><img src="${rank.img}" alt=""></span>` : ''}
+                    ${rank.img ? `<span class="char-dress-rank-art${rank.ring ? ` char-rank-${rank.ring}` : ''}"><img loading="lazy" decoding="async" src="${rank.img}" alt=""></span>` : ''}
                     <div>
                         <p class="char-dress-rank-title">등급 · ${rank.name}</p>
                         <p class="char-dress-rank-hint">${look.hint}</p>
@@ -28094,15 +28128,15 @@ ${subjectLine}
                 <p class="text-12  font-bold mt-2 mb-1">장비</p>
                 <div class="flex flex-wrap gap-1.5 justify-center">
                     <div class="char-dress-slot ${wp ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img loading="lazy" decoding="async" src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${wp ? wp.name : '무기 미장착'}</span>
                     </div>
                     <div class="char-dress-slot ${shEq ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${shEq ? (shEq.img ? `<img src="${shEq.img}" alt="">` : shEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${shEq ? (shEq.img ? `<img loading="lazy" decoding="async" src="${shEq.img}" alt="">` : shEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${shEq ? shEq.name : '방패 미장착'}</span>
                     </div>
                     <div class="char-dress-slot ${shoeEq ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${shoeEq ? (shoeEq.img ? `<img src="${shoeEq.img}" alt="">` : shoeEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${shoeEq ? (shoeEq.img ? `<img loading="lazy" decoding="async" src="${shoeEq.img}" alt="">` : shoeEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${shoeEq ? shoeEq.name : '신발 미장착'}</span>
                     </div>
                 </div>
@@ -28128,7 +28162,7 @@ ${subjectLine}
             box.innerHTML = have.map((s) => {
                 const on = !!equipped[s.id];
                 const mine = !!owned[s.id];
-                const art = s.img ? `<img src="${s.img}" alt="" class="w-full h-full object-contain">` : `<span class="text-24">${s.emoji || ''}</span>`;
+                const art = s.img ? `<img loading="lazy" decoding="async" src="${s.img}" alt="" class="w-full h-full object-contain">` : `<span class="text-24">${s.emoji || ''}</span>`;
                 const sub = on ? '사용 중' : (mine ? '보유' : '살펴보기');
                 return `<button type="button" onclick="window.handleSkin('${s.id}', true)" class="oly-btn oly-btn-reward oly-btn-md ${on ? ' ' : ' '}">
                     <div class="w-full aspect-square rounded-lg overflow-hidden  mb-1">${art}</div>
@@ -28150,7 +28184,7 @@ ${subjectLine}
             host.classList.remove('hidden');
             host.innerHTML = `
                 <div class="rank-up-card">
-                    ${rank && rank.img ? `<img src="${rank.img}" alt="">` : ''}
+                    ${rank && rank.img ? `<img loading="lazy" decoding="async" src="${rank.img}" alt="">` : ''}
                     <p class="rank-up-title">${rank && rank.name ? rank.name : '레벨업'} 달성!</p>
                     <p class="rank-up-hint">${(look && look.hint) || ''}</p>
                 </div>`;
@@ -31086,12 +31120,12 @@ ${subjectLine}
             }
         };
 
-        window.downloadQuizBankTemplate = function() {
+        window.downloadQuizBankTemplate = async function() {
             if (!window.playerState || !window.playerState.isAdmin) {
                 return window.customAlert('선생님만 엑셀 서식을 받을 수 있습니다.');
             }
             try {
-                const result = downloadQuizBankTemplateFile();
+                const result = await downloadQuizBankTemplateFile();
                 window.customAlert(`엑셀 서식을 내려받았습니다.\n파일: ${result.fileName}\n「문제은행」 시트에 작성한 뒤 올려 주세요.`);
             } catch (e) {
                 console.error('downloadQuizBankTemplate', e);
@@ -31119,9 +31153,9 @@ ${subjectLine}
                 const name = String(file.name || '');
                 let parsed;
                 if (/\.csv$/i.test(name)) {
-                    parsed = parseQuizBankWorkbook(await file.text(), { name });
+                    parsed = await parseQuizBankWorkbook(await file.text(), { name });
                 } else {
-                    parsed = parseQuizBankWorkbook(await file.arrayBuffer(), { name });
+                    parsed = await parseQuizBankWorkbook(await file.arrayBuffer(), { name });
                 }
                 if (!parsed.questions.length) {
                     const msg = (parsed.errors && parsed.errors.length) ? parsed.errors.slice(0, 5).join('\n') : '유효한 문항이 없습니다.';

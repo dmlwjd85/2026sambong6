@@ -2,7 +2,8 @@
 <html lang="ko" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="MATE는 학급 메타버스입니다. 퀘스트, 광장, 상점, 수업 도구로 우리 반 모험을 합니다.">
             <title id="docTitle">MATE</title>
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -20,10 +21,19 @@
         };
         const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
         const manifestUrl = URL.createObjectURL(manifestBlob);
-        document.write(`<link rel="manifest" href="${manifestUrl}">`);
+        const manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        manifestLink.href = manifestUrl;
+        document.head.appendChild(manifestLink);
     </script>
     <link rel="stylesheet" href="fonts/fonts.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&display=swap">
+    <link rel="preload" href="fonts/Cinzel-Bold.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="fonts/gowun.css" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="fonts/gowun.css">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&display=swap">
+    </noscript>
 </head>
 <body class="antialiased   bg-theme-plaza relative" id="mainBody">
     <img class="oly-cloud oly-cloud-left" src="olympus/cloud.svg" alt="">
@@ -318,7 +328,7 @@
     <div id="navClassMenu" class="hidden" role="dialog" aria-labelledby="navClassMenuTitle" aria-modal="true"></div>
 
     <!--  퀴즈 레이드 모달 (전체 화면)  -->
-    <div id="raidBattleModal" class="hidden fixed inset-0 z-[200]  bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300"><p class="oly-empty">퀴즈 레이드가 시작되면 문제와 남은 횟수가 여기에 나타납니다.</p>
+    <div id="raidBattleModal" class="hidden fixed inset-0 z-[200]  bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsIDI1NSwgMjU1LCAwLjA1KSIvPjwvc3ZnPg==')] flex flex-col transition-all duration-300">
         <button id="btnGiveUpRaid" onclick="window.giveUpRaid()" class="oly-btn oly-btn-danger oly-btn-sm absolute top-4 left-4 transition z-50 flex items-center gap-1">
             <svg class="oly-icon" data-oly="person-running" viewBox="0 0 24 24" aria-hidden="true"></svg> 포기하기
         </button>
@@ -365,7 +375,7 @@
     </div>
 
     <!--  마스터 스피드 퀴즈 모달 (선착순 정답 1명 보상)  -->
-    <div id="masterQuizModal" class="hidden fixed inset-0 z-[262]  backdrop-blur-sm flex items-center justify-center px-3 py-6 transition-all duration-300"><p class="oly-empty">마스터가 스피드 퀴즈를 열면 문제가 여기에 나타납니다.</p>
+    <div id="masterQuizModal" class="hidden fixed inset-0 z-[262]  backdrop-blur-sm flex items-center justify-center px-3 py-6 transition-all duration-300">
         <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-lg w-full border-t-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <div class="flex items-start justify-between gap-2 mb-3">
                 <h3 class="text-20 sm:text-24 font-display  pr-6"><svg class="oly-icon" data-oly="bolt" viewBox="0 0 24 24" aria-hidden="true"></svg> 마스터 스피드 퀴즈</h3>
@@ -386,7 +396,7 @@
             스피드 퀴즈 다시 열기
         </button>
     </div>
-    <div id="shopGroupBuyModal" class="hidden fixed inset-0 z-[263]  backdrop-blur-sm flex items-center justify-center px-3 py-6"><p class="oly-empty">진행 중인 공동구매가 없으면 이 창에는 안내만 보입니다.</p>
+    <div id="shopGroupBuyModal" class="hidden fixed inset-0 z-[263]  backdrop-blur-sm flex items-center justify-center px-3 py-6">
         <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-md w-full border-t-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex items-start justify-between gap-2 mb-2">
                 <h3 id="shopGroupBuyModalTitle" class="text-20 font-display  pr-4"><svg class="oly-icon" data-oly="people-group" viewBox="0 0 24 24" aria-hidden="true"></svg> 공동구매</h3>
@@ -519,7 +529,7 @@
             <!-- 학교 지역 날씨 — 네이버 당진시 석문면(15270320)을 기준으로 홈에 표시 -->
             <div id="schoolWeatherCard" class="school-weather-card glass-panel p-2.5 sm:p-3 rounded-2xl border   shadow-sm">
                 <div class="flex items-stretch gap-2">
-                    <img id="schoolWeatherArt" class="school-weather-art" src="weather/scene-cloudy.webp" alt="날씨">
+                    <img id="schoolWeatherArt" class="school-weather-art" src="weather/scene-cloudy.webp" alt="날씨" loading="lazy" decoding="async">
                     <div class="min-w-0 flex-1 flex flex-col justify-center">
                         <div class="flex items-baseline gap-1.5">
                             <span id="schoolWeatherTemp" class="font-display text-24 sm:text-24  tracking-wide">--°</span>
@@ -612,7 +622,7 @@
             <div id="worldMapArea" class="night-sky worldmap-realm w-full h-[400px] sm:h-[480px] xl:h-[540px] rounded-3xl overflow-hidden relative mb-4">
                 <picture class="worldmap-atlas">
                     <source srcset="olympus/world-1280.webp 1280w, olympus/world-2560.webp 2560w, olympus/world-3840.webp 3840w" sizes="100vw">
-                    <img class="worldmap-atlas" src="olympus/world-2560.webp" alt="" aria-hidden="true">
+                    <img class="worldmap-atlas" src="olympus/world-2560.webp" alt="" aria-hidden="true" loading="lazy" decoding="async">
                 </picture>
                 <div id="worldmapWeatherLayer" class="worldmap-weather-layer" aria-hidden="true"></div>
                 <div class="worldmap-vignette" aria-hidden="true"></div>
@@ -830,17 +840,17 @@
                             <h3 class="font-bold text-14  mb-1 min-w-[300px]"><svg class="oly-icon" data-oly="ranking-star" viewBox="0 0 24 24" aria-hidden="true"></svg> 레벨 및 등급 안내</h3>
                             <p class="text-12  mb-3 leading-snug min-w-[300px]">경험치가 오르면 캐릭터 뒤에 <span class=" font-bold">원형 등급 그림</span>이 비치고, <span class=" font-bold">테두리 색</span>으로 등급을 구별합니다. 캐릭터와 등급 그림의 네모난 흰·검은 배경은 보이지 않습니다.</p>
                             <div class="flex items-center justify-between text-12 sm:text-12 min-w-[300px]">
-                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-saenaegi mb-1"><img src="ranks/rank-saenaegi.webp" alt="새내기" class="rank-badge" /></span><span class=" font-bold">새내기</span><span class="text-12 ">은빛 테두리</span><span class="text-12 ">~1,499</span></div>
+                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-saenaegi mb-1"><img src="ranks/rank-saenaegi.webp" alt="새내기" class="rank-badge" loading="lazy" decoding="async" /></span><span class=" font-bold">새내기</span><span class="text-12 ">은빛 테두리</span><span class="text-12 ">~1,499</span></div>
                                 <div class="h-px  flex-1 mx-1"></div>
-                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-chobo mb-1"><img src="ranks/rank-chobo.webp" alt="초보" class="rank-badge" /></span><span class=" font-bold">초보</span><span class="text-12 ">초록 테두리</span><span class="text-12 ">1,500~</span></div>
+                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-chobo mb-1"><img src="ranks/rank-chobo.webp" alt="초보" class="rank-badge" loading="lazy" decoding="async" /></span><span class=" font-bold">초보</span><span class="text-12 ">초록 테두리</span><span class="text-12 ">1,500~</span></div>
                                 <div class="h-px  flex-1 mx-1"></div>
-                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-jungsu mb-1"><img src="ranks/rank-jungsu.webp" alt="중수" class="rank-badge" /></span><span class=" font-bold">중수</span><span class="text-12 ">하늘 테두리</span><span class="text-12 ">4,500~</span></div>
+                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-jungsu mb-1"><img src="ranks/rank-jungsu.webp" alt="중수" class="rank-badge" loading="lazy" decoding="async" /></span><span class=" font-bold">중수</span><span class="text-12 ">하늘 테두리</span><span class="text-12 ">4,500~</span></div>
                                 <div class="h-px  flex-1 mx-1"></div>
-                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-gosu mb-1"><img src="ranks/rank-gosu.webp" alt="고수" class="rank-badge" /></span><span class=" font-bold">고수</span><span class="text-12 ">금색 테두리</span><span class="text-12 ">10,000~</span></div>
+                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-gosu mb-1"><img src="ranks/rank-gosu.webp" alt="고수" class="rank-badge" loading="lazy" decoding="async" /></span><span class=" font-bold">고수</span><span class="text-12 ">금색 테두리</span><span class="text-12 ">10,000~</span></div>
                                 <div class="h-px  flex-1 mx-1"></div>
-                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-guardian mb-1"><img src="ranks/rank-guardian.webp" alt="수호자" class="rank-badge" /></span><span class=" font-bold">수호자</span><span class="text-12 ">보라 테두리</span><span class="text-12 ">22,000~</span></div>
+                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-guardian mb-1"><img src="ranks/rank-guardian.webp" alt="수호자" class="rank-badge" loading="lazy" decoding="async" /></span><span class=" font-bold">수호자</span><span class="text-12 ">보라 테두리</span><span class="text-12 ">22,000~</span></div>
                                 <div class="h-px  flex-1 mx-1"></div>
-                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-legend mb-1"><img src="ranks/rank-legend.webp" alt="전설" class="rank-badge" /></span><span class=" font-bold">전설</span><span class="text-12 ">붉은 테두리</span><span class="text-12 ">40,000~</span></div>
+                                <div class="flex flex-col items-center"><span class="rank-badge-clip rank-badge-guide char-rank-legend mb-1"><img src="ranks/rank-legend.webp" alt="전설" class="rank-badge" loading="lazy" decoding="async" /></span><span class=" font-bold">전설</span><span class="text-12 ">붉은 테두리</span><span class="text-12 ">40,000~</span></div>
                             </div>
                         </div>
                     </div>
@@ -1426,7 +1436,7 @@
             <figure class="oly-card">
                 <picture>
                     <source srcset="olympus/shopkeeper-480.webp 480w, olympus/shopkeeper-960.webp 960w, olympus/shopkeeper-1440.webp 1440w, olympus/shopkeeper-3840.webp 3840w" sizes="280px">
-                    <img class="oly-shopkeeper" src="olympus/shopkeeper-960.webp" alt="">
+                    <img class="oly-shopkeeper" src="olympus/shopkeeper-960.webp" alt="" loading="lazy" decoding="async">
                 </picture>
                 <figcaption class="worldmap-label">상점</figcaption>
             </figure>
@@ -2123,7 +2133,7 @@
                     <span>가위바위보</span>
                 </button>
                 <button type="button" class="oly-btn oly-btn-secondary oly-btn-md app-tool-item" data-tool="boardgames" onclick="window.switchClassTool('boardgames')">
-                    <span class="app-tool-icon"><img src="nav/tool-boardgames.svg" alt="" width="192" height="192"></span>
+                    <span class="app-tool-icon"><img src="nav/tool-boardgames.svg" alt="" width="192" height="192" loading="lazy" decoding="async"></span>
                     <span>보드게임</span>
                 </button>
                 <button type="button" class="oly-btn oly-btn-secondary oly-btn-md app-tool-item" data-tool="wheel" onclick="window.switchClassTool('wheel')">
@@ -2403,7 +2413,7 @@
                     <div id="boardgameHomeView" class="boardgame-view">
                         <div class="boardgame-head">
                             <div class="w-12 h-12 rounded-lg overflow-hidden border-2  shadow-inner shrink-0">
-                                <img src="nav/tool-boardgames.svg" alt="" width="48" height="48" class="w-full h-full object-cover">
+                                <img src="nav/tool-boardgames.svg" alt="" width="48" height="48" class="w-full h-full object-cover" loading="lazy" decoding="async">
                             </div>
                             <div class="min-w-0">
                                 <p class="boardgame-kicker">CLASS BOARD GAMES</p>
@@ -3455,8 +3465,8 @@
                 <h3 class=" font-bold text-14"><svg class="oly-icon" data-oly="copyright" viewBox="0 0 24 24" aria-hidden="true"></svg> 출처 및 라이선스</h3>
                 <ul class="text-12  leading-relaxed list-disc pl-4 space-y-1">
                     <li>앱 UI·로직: MATE 프로젝트 (교육용)</li>
-                    <li>글꼴: Google Fonts — Black Han Sans, Do Hyeon, Gaegu, Jua, Nanum Pen Script, Noto Sans KR</li>
-                    <li>아이콘: Font Awesome 6 (CDN, Font Awesome Free)</li>
+                    <li>글꼴: Cinzel(로고, OFL), 고운바탕(제목, OFL), Pretendard(본문, OFL). 칠판만 Gaegu(OFL).</li>
+                    <li>아이콘: 앱에 포함한 자체 SVG. 외부 아이콘 글꼴은 쓰지 않습니다.</li>
                     <li>백엔드: Google Firebase (Firestore 등)</li>
                 </ul>
             </div>
@@ -3499,8 +3509,8 @@
     <!-- 수업 중 마스터 감시(용의 눈·레이저) -->
     <div id="classWatchOverlay" class="hidden class-watch-overlay" aria-hidden="true">
         <div class="class-watch-eyes">
-            <img class="class-watch-eye class-watch-eye-l" src="/2026sambong6/chars/dragon-eye.webp" alt="">
-            <img class="class-watch-eye class-watch-eye-r" src="/2026sambong6/chars/dragon-eye.webp" alt="">
+            <img class="class-watch-eye class-watch-eye-l" src="/2026sambong6/chars/dragon-eye.webp" alt="" loading="lazy" decoding="async">
+            <img class="class-watch-eye class-watch-eye-r" src="/2026sambong6/chars/dragon-eye.webp" alt="" loading="lazy" decoding="async">
         </div>
         <div class="class-watch-laser"></div>
         <div class="class-watch-caption">세계수의 용이 교실을 지켜보고 있다</div>
@@ -3539,12 +3549,7 @@
                 <button type="button" id="chalkModeShape" onclick="window.setChalkboardMode('shape')" class="oly-btn oly-btn-secondary oly-btn-md chalk-tool-btn" title="도형을 손으로 그린 뒤 마지막 위치에서 2초간 누르고 있으면 반듯한 도형으로 정렬됩니다"> 도형</button>
             </div>
             <select id="chalkFontFamily" onchange="window.setChalkboardFontFamily(this.value)" class="chalk-select" title="글꼴 (드래그 선택 시 그 부분만, 선택 없으면 전체)">
-                <option value="'Gaegu', cursive" selected>분필 손글씨</option>
-                <option value="'Nanum Pen Script', cursive">펜글씨</option>
-                <option value="'Jua', sans-serif">동글동글(주아)</option>
-                <option value="'Do Hyeon', sans-serif">또박또박(도현)</option>
-                <option value="'Black Han Sans', sans-serif">굵은 제목</option>
-                <option value="'Noto Sans KR', sans-serif">고딕체</option>
+                <option value="Gaegu, cursive" selected>분필 손글씨</option>
             </select>
             <select id="chalkFontSize" onchange="window.setChalkboardFontSize(this.value)" class="chalk-select" title="글자 크기">
                 <option value="24">24px</option>
@@ -3588,14 +3593,14 @@
         </div>
         <div class="flex-1 min-h-0 p-2 sm:p-3">
             <div id="chalkboardFrame" class="chalkboard-frame chalkboard-green w-full h-full relative overflow-hidden rounded-lg">
-                <div id="chalkboardText" contenteditable="true" spellcheck="false" class="chalkboard-text absolute inset-0 p-5 sm:p-8 overflow-y-auto outline-none" style="font-size: 48px; color:var(--bg); font-family: Gaegu, cursive;;"></div>
+                <div id="chalkboardText" contenteditable="true" spellcheck="false" class="chalkboard-text absolute inset-0 p-5 sm:p-8 overflow-y-auto outline-none" style="font-size: calc(48px * var(--type-scale)); color:var(--chalk-ink); font-family: Gaegu, cursive;"></div>
                 <canvas id="chalkboardCanvas" class="absolute inset-0" style="pointer-events:none"></canvas>
             </div>
         </div>
     </div>
 
     <!--  수업도구: 제비 뽑기 연출 전체 화면  -->
-    <div id="lotteryDrawOverlay" class="hidden fixed inset-0 z-[565] lottery-draw-overlay flex items-center justify-center p-4 overflow-hidden" aria-live="polite"><p class="oly-empty">제비뽑기를 시작하면 이름이 여기에 나타납니다.</p>
+    <div id="lotteryDrawOverlay" class="hidden fixed inset-0 z-[565] lottery-draw-overlay flex items-center justify-center p-4 overflow-hidden" aria-live="polite">
         <div id="lotteryConfettiLayer" class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true"></div>
         <div class="absolute inset-0 lottery-draw-bg pointer-events-none" aria-hidden="true"></div>
         <button type="button" onclick="window.closeLotteryDrawOverlay()" class="oly-btn oly-btn-secondary oly-btn-md absolute top-4 right-4 z-30 lottery-draw-close-btn">
@@ -3615,7 +3620,7 @@
     </div>
 
     <!--  수업도구: 학급 투표 전체 화면  -->
-    <div id="electionOverlay" class="hidden fixed inset-0 z-[566] election-overlay flex items-center justify-center p-3 sm:p-6 overflow-y-auto" aria-live="polite"><p class="oly-empty">투표가 시작되면 안건과 선택지가 여기에 나타납니다.</p>
+    <div id="electionOverlay" class="hidden fixed inset-0 z-[566] election-overlay flex items-center justify-center p-3 sm:p-6 overflow-y-auto" aria-live="polite">
         <div id="electionConfettiLayer" class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true"></div>
         <div class="absolute inset-0 election-overlay-bg pointer-events-none" aria-hidden="true"></div>
         <button type="button" onclick="window.closeElectionOverlay()" class="oly-btn oly-btn-secondary oly-btn-md absolute top-3 right-3 z-30 election-overlay-close">
@@ -3699,7 +3704,7 @@
     </button>
 
     <!--  수업도구: 가위바위보 전체 화면  -->
-    <div id="rpsOverlay" class="hidden fixed inset-0 z-[568] rps-overlay flex items-center justify-center p-3 sm:p-6 overflow-y-auto" aria-live="polite"><p class="oly-empty">가위바위보를 시작하면 선택 버튼이 여기에 나타납니다.</p>
+    <div id="rpsOverlay" class="hidden fixed inset-0 z-[568] rps-overlay flex items-center justify-center p-3 sm:p-6 overflow-y-auto" aria-live="polite">
         <div class="absolute inset-0 rps-overlay-bg pointer-events-none" aria-hidden="true"></div>
         <button type="button" id="rpsOverlayCloseBtn" onclick="window.closeRpsOverlay()" class="oly-btn oly-btn-secondary oly-btn-md absolute top-3 right-3 z-30 rps-overlay-close hidden">
             <svg class="oly-icon" data-oly="xmark" viewBox="0 0 24 24" aria-hidden="true"></svg>닫기
@@ -3735,7 +3740,7 @@
     <button type="button" id="rpsDock" onclick="window.resumeClassRps()" class="oly-btn oly-btn-secondary oly-btn-md hidden rps-dock"> 가위바위보</button>
 
     <!--  수업도구: 전술 카운트다운 전체 화면  -->
-    <div id="classTimerOverlay" class="hidden fixed inset-0 z-[560] military-timer-overlay flex items-center justify-center p-4" aria-live="polite"><p class="oly-empty">타이머를 시작하면 남은 시간이 여기에 크게 나타납니다.</p>
+    <div id="classTimerOverlay" class="hidden fixed inset-0 z-[560] military-timer-overlay flex items-center justify-center p-4" aria-live="polite">
         <div class="absolute inset-0 military-timer-camo pointer-events-none" aria-hidden="true"></div>
         <div class="absolute inset-0 military-timer-scanlines pointer-events-none" aria-hidden="true"></div>
         <button type="button" onclick="window.stopClassTimer()" class="oly-btn oly-btn-secondary oly-btn-md absolute top-4 right-4 z-20 military-timer-stop-btn">
@@ -3791,7 +3796,7 @@
             </div>
         </div>
     </div>
-    <div id="loanMorningModal" class="hidden fixed inset-0 z-[130]  flex items-center justify-center p-4"><p class="oly-empty">갚을 대출이 있으면 독촉 내용이 여기에 나타납니다.</p>
+    <div id="loanMorningModal" class="hidden fixed inset-0 z-[130]  flex items-center justify-center p-4">
         <div class="w-full max-w-md rounded-3xl border-4   p-4 space-y-3 shadow-[0_0_40px_color-mix(in srgb, var(--gold-deep) 45%, transparent)]">
             <div class="flex items-center gap-3">
                 <svg viewBox="0 0 88 88" class="w-20 h-20 shrink-0" aria-hidden="true">
@@ -3813,7 +3818,7 @@
             </div>
         </div>
     </div>
-    <div id="praiseFanfareModal" class="hidden fixed inset-0 z-[125]  flex items-center justify-center p-4"><p class="oly-empty">칭찬이 도착하면 이유가 여기에 나타납니다.</p>
+    <div id="praiseFanfareModal" class="hidden fixed inset-0 z-[125]  flex items-center justify-center p-4">
         <div class="w-full max-w-sm rounded-3xl border-4   p-5 text-center space-y-2">
             <p class="text-48"></p>
             <h3 class=" font-black text-24">빵빠레!</h3>

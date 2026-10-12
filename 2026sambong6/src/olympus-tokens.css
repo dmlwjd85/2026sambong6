@@ -42,6 +42,7 @@
     --wheel-6: var(--sky-deep);
     --wheel-7: var(--marble);
     --wheel-8: var(--gold);
+    --type-scale: 1;
     --font-body: Pretendard, sans-serif;
     --font-display: "Gowun Batang", Pretendard, serif;
     --font-logo: Cinzel, "Gowun Batang", serif;
@@ -53,6 +54,10 @@
     --meander-h: 6px;
     --max-w: 1200px;
     --wheel-label-r: -6.2rem;
+}
+
+@media (min-width: 1920px) {
+    :root { --type-scale: 1.5; }
 }
 
 @media (min-width: 1600px) {

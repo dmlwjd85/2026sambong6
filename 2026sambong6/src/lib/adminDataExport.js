@@ -2,7 +2,10 @@
  * 마스터 탭 — 학생 데이터 선택 엑셀(XLSX) 내보내기
  * SheetJS(xlsx)로 워크북을 만들고 브라우저에서 다운로드합니다.
  */
-import * as XLSX from 'xlsx';
+async function loadXlsx() {
+    const mod = await import('xlsx');
+    return mod.default && mod.default.utils ? mod.default : mod;
+}
 
 /** 시트 선택 옵션 (UI 체크박스와 동일 id) */
 export const ADMIN_EXPORT_SHEET_OPTIONS = [
@@ -45,18 +48,19 @@ function safeSheetName(name) {
     return cleaned.slice(0, 31);
 }
 
-function aoaToSheet(rows) {
+function aoaToSheet(XLSX, rows) {
     return XLSX.utils.aoa_to_sheet(rows.length ? rows : [['(데이터 없음)']]);
 }
 
-function appendSheet(wb, name, rows) {
-    XLSX.utils.book_append_sheet(wb, aoaToSheet(rows), safeSheetName(name));
+function appendSheet(XLSX, wb, name, rows) {
+    XLSX.utils.book_append_sheet(wb, aoaToSheet(XLSX, rows), safeSheetName(name));
 }
 
 /** 이미 만든 행을 엑셀 파일로 받습니다. */
-export function downloadAoaWorkbook(sheetName, rows, fileName) {
+export async function downloadAoaWorkbook(sheetName, rows, fileName) {
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
-    appendSheet(wb, sheetName, rows);
+    appendSheet(XLSX, wb, sheetName, rows);
     XLSX.writeFile(wb, fileName);
 }
 
@@ -449,7 +453,8 @@ function buildLottoBetRows(ctx) {
  * @param {object} opts.ctx — students, getActiveStudentIds, getStudentName, catalogs 등
  * @param {string} [opts.fileName]
  */
-export function downloadAdminStudentWorkbook({ selectedIds, ctx, fileName }) {
+export async function downloadAdminStudentWorkbook({ selectedIds, ctx, fileName }) {
+    const XLSX = await loadXlsx();
     const selected = new Set((selectedIds || []).map(String));
     if (!selected.size) throw new Error('선택된 항목이 없습니다.');
 
@@ -458,7 +463,7 @@ export function downloadAdminStudentWorkbook({ selectedIds, ctx, fileName }) {
 
     const add = (id, sheetName, rows) => {
         if (!selected.has(id)) return;
-        appendSheet(wb, sheetName, rows);
+        appendSheet(XLSX, wb, sheetName, rows);
         sheetCount += 1;
     };
 
@@ -467,15 +472,15 @@ export function downloadAdminStudentWorkbook({ selectedIds, ctx, fileName }) {
     add('xpLog', '경험치변동기록', buildXpLogRows(ctx));
     if (selected.has('xpDaily')) {
         const xpAgg = buildDailyAggregateRows(ctx, 'xpChangeLog', 'XP');
-        appendSheet(wb, '경험치_일별_학생', xpAgg.perStudent);
-        appendSheet(wb, '경험치_일별_학급', xpAgg.classRows);
+        appendSheet(XLSX, wb, '경험치_일별_학생', xpAgg.perStudent);
+        appendSheet(XLSX, wb, '경험치_일별_학급', xpAgg.classRows);
         sheetCount += 2;
     }
     add('bongLog', '봉변동기록', buildBongLogRows(ctx));
     if (selected.has('bongDaily')) {
         const bongAgg = buildDailyAggregateRows(ctx, 'bongChangeLog', '봉');
-        appendSheet(wb, '봉_일별_학생', bongAgg.perStudent);
-        appendSheet(wb, '봉_일별_학급', bongAgg.classRows);
+        appendSheet(XLSX, wb, '봉_일별_학생', bongAgg.perStudent);
+        appendSheet(XLSX, wb, '봉_일별_학급', bongAgg.classRows);
         sheetCount += 2;
     }
     add('jobs', '직업', buildJobsRows(ctx));

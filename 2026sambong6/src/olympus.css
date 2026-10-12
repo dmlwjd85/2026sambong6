@@ -4,7 +4,7 @@ html, body {
     background: var(--bg);
     color: var(--ink);
     font-family: var(--font-body);;;;
-    font-size: 16px;
+    font-size: calc(16px * var(--type-scale));
     font-weight: 500;
     line-height: 1.5;
 }
@@ -25,13 +25,13 @@ h2, .font-display, .oly-title {
 
 h3, h4, h5, h6 { color: var(--navy); font-weight: 700; line-height: 1.5; }
 
-.text-12 { font-size: 12px; line-height: 1.5; }
-.text-14 { font-size: 14px; line-height: 1.5; }
-.text-16 { font-size: 16px; line-height: 1.5; }
-.text-20 { font-size: 20px; line-height: 1.5; }
-.text-24 { font-size: 24px; line-height: 1.5; }
-.text-32 { font-size: 32px; line-height: 1.5; font-family: var(--font-display);;;; }
-.text-48 { font-size: 48px; line-height: 1.5; font-family: var(--font-display);;;; }
+.text-12 { font-size: calc(12px * var(--type-scale)); line-height: 1.5; }
+.text-14 { font-size: calc(14px * var(--type-scale)); line-height: 1.5; }
+.text-16 { font-size: calc(16px * var(--type-scale)); line-height: 1.5; }
+.text-20 { font-size: calc(20px * var(--type-scale)); line-height: 1.5; }
+.text-24 { font-size: calc(24px * var(--type-scale)); line-height: 1.5; }
+.text-32 { font-size: calc(32px * var(--type-scale)); line-height: 1.5; font-family: var(--font-display);;;; }
+.text-48 { font-size: calc(48px * var(--type-scale)); line-height: 1.5; font-family: var(--font-display);;;; }
 
 .oly-ink { color: var(--ink); }
 .oly-muted { color: var(--ink-2); }
@@ -91,12 +91,12 @@ h3, h4, h5, h6 { color: var(--navy); font-weight: 700; line-height: 1.5; }
     cursor: pointer;
     text-decoration: none;
 }
-.oly-btn-sm { min-height: 36px; padding: 4px 12px; font-size: 14px; }
-.oly-btn-md { min-height: 44px; padding: 8px 16px; font-size: 16px; }
+.oly-btn-sm { min-height: 36px; padding: 4px 12px; font-size: calc(14px * var(--type-scale)); }
+.oly-btn-md { min-height: 44px; padding: 8px 16px; font-size: calc(16px * var(--type-scale)); }
 .oly-btn-lg {
     min-height: 48px;
     padding: 12px 20px;
-    font-size: 16px;
+    font-size: calc(16px * var(--type-scale));
     box-shadow: var(--shadow-press);
 }
 .oly-btn-lg:active { transform: translateY(2px); }
@@ -116,7 +116,7 @@ select, textarea {
     border: 2px solid var(--navy);
     border-radius: 14px;
     min-height: 44px;
-    font-size: 16px;
+    font-size: calc(16px * var(--type-scale));
     font-family: var(--font-body);;;;
     line-height: 1.5;
 }
@@ -131,8 +131,19 @@ nav.fixed.top-0 #navWorldBrand,
 nav.fixed.top-0 #navClassLabel,
 nav.fixed.top-0 button,
 nav.fixed.top-0 span { color: var(--surface); }
-#navWorldBrand { font-family: var(--font-logo);;;; font-size: 32px; letter-spacing: 0.08em; }
-#navClassLabel { font-size: 16px; font-weight: 700; }
+#navWorldBrand { font-family: var(--font-logo);;;; font-size: calc(32px * var(--type-scale)); letter-spacing: 0.08em; }
+#navClassLabel {
+    display: block;
+    max-width: 7.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: calc(16px * var(--type-scale));
+    font-weight: 700;
+}
+@media (min-width: 640px) {
+    #navClassLabel { max-width: 14rem; }
+}
 .oly-pediment { display: block; width: 100%; height: 28px; }
 
 #appNavDock {
@@ -142,7 +153,7 @@ nav.fixed.top-0 span { color: var(--surface); }
 }
 .app-nav-item, .app-sub-item {
     color: var(--ink);
-    font-size: 12px;
+    font-size: calc(12px * var(--type-scale));
     font-weight: 700;
     min-height: 44px;
     border-radius: 14px;
@@ -174,18 +185,19 @@ nav.fixed.top-0 span { color: var(--surface); }
 #loginOverlay { background: var(--bg); }
 #loginStack { transition: opacity 100ms linear; }
 #loginOverlay.is-leaving #loginStack { opacity: 0; visibility: hidden; }
-#appShell { opacity: 0; }
-body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
+#appShell { display: none; }
+body.oly-app-in #appShell { display: block; }
 
 
 .oly-empty {
     margin: 12px 0;
-    padding: 12px 16px;
+    padding: 48px 16px 16px;
     border-radius: 14px;
-    background: var(--secondary-bg);
+    background: var(--surface) url("/2026sambong6/olympus/cloud.svg") center 8px / 40px 24px no-repeat;
     color: var(--ink);
-    font-size: 16px;
+    font-size: calc(16px * var(--type-scale));
     line-height: 1.5;
+    border: 2px solid var(--gold-text);
 }
 
 #worldMapArea { background: var(--sky); }
@@ -198,7 +210,7 @@ body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
     object-fit: cover;
 }
 .worldmap-label {
-    font-size: 14px;
+    font-size: calc(14px * var(--type-scale));
     line-height: 1.5;
     font-weight: 700;
     color: var(--ink);
@@ -210,7 +222,7 @@ body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
 .worldmap-vignette, .worldmap-mist, .star, .worldmap-season-seal { display: none; }
 
 .oly-shopkeeper { width: min(100%, 280px); height: auto; display: block; }
-.oly-adult summary { font-size: 16px; font-weight: 700; color: var(--navy); cursor: pointer; min-height: 44px; }
+.oly-adult summary { font-size: calc(16px * var(--type-scale)); font-weight: 700; color: var(--navy); cursor: pointer; min-height: 44px; }
 
 .class-wheel-stage {
     overflow: visible;
@@ -231,7 +243,7 @@ body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
     background: var(--marble);
 }
 .class-wheel-label {
-    font-size: 12px;
+    font-size: calc(12px * var(--type-scale));
     color: var(--ink);
     background: var(--surface);
     border-radius: 999px;
@@ -279,23 +291,23 @@ body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
 
 :focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
 
-#dashBong, #dashXp, #seasonTimerDisplay { font-size: 32px; font-weight: 700; color: var(--ink); }
+#dashBong, #dashXp, #seasonTimerDisplay { font-size: calc(32px * var(--type-scale)); font-weight: 700; color: var(--ink); }
 #homeHero #todoContainer > :nth-child(n + 4) { display: none; }
 
 @media (min-width: 1600px) {
-    body { font-size: 24px; }
-    h1, h2, .font-display, .oly-title, #loginWorldTitle { font-size: 48px; }
-    h3 { font-size: 32px; }
-    #dashBong, #dashXp, #seasonTimerDisplay { font-size: 48px; }
+    body { font-size: calc(24px * var(--type-scale)); }
+    h1, h2, .font-display, .oly-title, #loginWorldTitle { font-size: calc(48px * var(--type-scale)); }
+    h3 { font-size: calc(32px * var(--type-scale)); }
+    #dashBong, #dashXp, #seasonTimerDisplay { font-size: calc(48px * var(--type-scale)); }
     .app-nav-icon { width: 64px; height: 64px; }
     .app-nav-icon .oly-icon, .oly-icon { width: 48px; height: 48px; }
-    .app-nav-label, .app-nav-item { font-size: 20px; }
+    .app-nav-label, .app-nav-item { font-size: calc(20px * var(--type-scale)); }
     #swipeWrapper { padding-left: 5vw; padding-right: 5vw; max-width: none; }
 }
 
 #chalkboardText, .chalkboard-text {
     color: var(--chalk-ink);
-    font-size: 48px;
+    font-size: calc(48px * var(--type-scale));
 }
 .chalkboard-board, #chalkboardBoard, .chalk-surface {
     background: var(--chalk-board);
@@ -376,4 +388,107 @@ body.is-guest .js-admin-entry { display: none !important; }
 .quest-tile.oly-btn {
     width: 100%;
     min-width: 0;
+}
+
+.glass-panel:not(.think-board-panel):not(.class-wheel-panel),
+.oly-card {
+    background-image: url("/2026sambong6/olympus/laurel.svg") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 8px bottom 8px !important;
+    background-size: 22px 22px !important;
+}
+
+#appVersionCorner {
+    color: var(--surface) !important;
+    background: var(--navy) !important;
+    border-radius: 8px;
+    padding: 2px 8px;
+}
+body:has(#chalkboardOverlay:not(.hidden)) #appVersionCorner { display: none !important; }
+
+.plaza-card-stats,
+.plaza-stat-xp,
+.plaza-stat-bong {
+    background-color: var(--surface);
+    color: var(--ink) !important;
+}
+
+#chalkboardOverlay {
+    background: var(--marble) !important;
+    box-shadow: inset 0 0 0 12px var(--gold-deep), inset 0 0 0 16px var(--gold-light);
+}
+#chalkboardToolbar {
+    background: var(--marble);
+    color: var(--ink);
+    border-bottom: 2px solid var(--gold-text);
+}
+#chalkboardFrame,
+.chalkboard-frame {
+    border: 8px solid var(--gold-deep);
+    box-shadow: 0 0 0 3px var(--gold-light);
+    background: var(--chalk-board);
+}
+#chalkboardText,
+.chalkboard-text {
+    color: var(--chalk-ink) !important;
+    font-family: Gaegu, cursive;
+}
+
+.think-board-head { padding-right: 3.2rem; }
+
+@media (min-width: 640px) {
+    .sm\:text-12 { font-size: calc(12px * var(--type-scale)); line-height: 1.5; }
+    .sm\:text-14 { font-size: calc(14px * var(--type-scale)); line-height: 1.5; }
+    .sm\:text-16 { font-size: calc(16px * var(--type-scale)); line-height: 1.5; }
+    .sm\:text-20 { font-size: calc(20px * var(--type-scale)); line-height: 1.5; }
+    .sm\:text-24 { font-size: calc(24px * var(--type-scale)); line-height: 1.5; }
+    .sm\:text-32 { font-size: calc(32px * var(--type-scale)); line-height: 1.5; }
+    .sm\:text-48 { font-size: calc(48px * var(--type-scale)); line-height: 1.5; }
+}
+@media (min-width: 1024px) {
+    .lg\:text-48 { font-size: calc(48px * var(--type-scale)); line-height: 1.5; }
+}
+
+.app-tool-item,
+.military-preset-btn,
+.class-wheel-mini-btn,
+.class-wheel-input,
+.class-wheel-item-row input,
+.rps-panel .rps-start-btn,
+.plaza-card-status,
+.plaza-staff-status {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+    border-color: var(--navy) !important;
+}
+.military-timer-digits,
+.military-timer-overlay.military-timer-complete .military-timer-digits,
+.military-timer-overlay.military-timer-urgent .military-timer-digits {
+    color: var(--ink) !important;
+}
+.military-timer-clock-frame { background: var(--surface) !important; }
+#rpsOverlay .relative.z-20 {
+    background: var(--surface);
+    color: var(--ink);
+    border: 3px solid var(--gold-text);
+    border-radius: 24px;
+    padding: 1rem 1rem 1.2rem;
+}
+.rps-countdown { color: var(--ink); background: transparent; }
+.rps-overlay-bg {
+    background:
+        url("/2026sambong6/olympus/arena.svg") center / cover no-repeat,
+        var(--sky) !important;
+}
+#chalkboardOverlay {
+    background:
+        url("/2026sambong6/olympus/gold-corner.svg") left 10px top 10px / 56px 56px no-repeat,
+        url("/2026sambong6/olympus/gold-corner-tr.svg") right 10px top 10px / 56px 56px no-repeat,
+        url("/2026sambong6/olympus/gold-corner-bl.svg") left 10px bottom 10px / 56px 56px no-repeat,
+        url("/2026sambong6/olympus/gold-corner-br.svg") right 10px bottom 10px / 56px 56px no-repeat,
+        var(--marble) !important;
+}
+
+@media (min-width: 1920px) {
+    .class-wheel-result { font-size: calc(48px * var(--type-scale)); }
 }

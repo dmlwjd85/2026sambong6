@@ -11,11 +11,12 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            --type-scale: 1;
             background: var(--chalk-board);
             color: var(--line);
             font-family: var(--font-body);;
             font-weight: 700;
-            font-size: 20px;
+            font-size: calc(20px * var(--type-scale));
             text-align: center;
             padding: 1.5rem;
         }

@@ -143,9 +143,9 @@
         #dashAvatarCard.is-credit-default {border-color: var(--wine) !important;box-shadow: var(--shadow-card)}
         #dashAvatarCard .credit-default-stamp {font-size: calc(16px * var(--type-scale))}
         /* 파랑=경험치, 금색=봉. 단위 글자는 생략하고 색으로만 구분합니다. */
-        .plaza-card-stats {min-width: 0;max-width: 100%;overflow: hidden;background: var(--surface);color: var(--ink)}
-        .plaza-stat-xp {color: var(--ink);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: hidden;text-overflow: ellipsis}
-        .plaza-stat-bong {color: var(--ink);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: hidden;text-overflow: ellipsis}
+        .plaza-card-stats {min-width: 0;max-width: 100%;overflow: visible;background: var(--surface);color: var(--ink);flex-wrap: wrap}
+        .plaza-stat-xp {color: var(--ink);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: visible;text-overflow: clip;white-space: normal}
+        .plaza-stat-bong {color: var(--ink);font-variant-numeric: tabular-nums;font-weight: 900;text-shadow: none;min-width: 0;overflow: visible;text-overflow: clip;white-space: normal}
         .plaza-cards-sm .plaza-card {padding: 0.3rem !important;border-radius: 0.65rem !important}
         .plaza-cards-sm .plaza-card-face {font-size: calc(20px * var(--type-scale));margin-bottom: 0.15rem !important}
         .plaza-cards-sm .plaza-card-lv {font-size: calc(12px * var(--type-scale));padding: 0 0.25rem !important}
@@ -217,7 +217,7 @@
             .plaza-cards-seating .plaza-card-stats {flex-direction: column;align-items: stretch;gap: 0.05rem;padding: 0.12rem 0.14rem !important;margin-top: 0.14rem !important}
             .plaza-cards-seating .plaza-card-stats span,
             .plaza-cards-seating .plaza-stat-xp,
-            .plaza-cards-seating .plaza-stat-bong {font-size: calc(12px * var(--type-scale));display: block;width: 100%;max-width: 100%;min-width: 0;text-align: center;white-space: nowrap;overflow: hidden;text-overflow: ellipsis}
+            .plaza-cards-seating .plaza-stat-bong {font-size: calc(12px * var(--type-scale));display: block;width: 100%;max-width: 100%;min-width: 0;text-align: center;white-space: normal;overflow: visible;text-overflow: clip}
             .plaza-cards-seating .plaza-learning-thermometer {align-self: center;min-width: 0;max-width: 100%;height: 0.78rem;font-size: calc(12px * var(--type-scale))}
             .plaza-cards-seating .plaza-gm-side,
             .plaza-cards-seating .plaza-gm-controls {display: none}
@@ -1346,12 +1346,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {touch-action: ma
         .gm-job-color-btn:disabled {opacity: 0.32;cursor: not-allowed;transform: none}
         .gm-job-color-btn .gm-job-color-swatch {width: 1.15rem;height: 1.15rem;border-radius: 999px;background: currentColor;box-shadow: var(--shadow-card)}
 
-        /* 확인·이체·구매 창은 용의 눈보다 위에 두어 버튼이 눌리게 합니다 */
-        .sambong-custom-modal {z-index: 800}
+        /* 확인·이체·구매 창은 용의 눈보다 위에 두어 버튼이 눌리게 합니다. 바탕과 카드는 불투명합니다. */
+        .sambong-custom-modal {z-index: 800;background: var(--navy)}
+        .sambong-custom-modal > div {background: var(--surface);color: var(--ink);border: 2px solid var(--navy);opacity: 1}
+        #screenNoticePopup {background: var(--navy)}
 
         /* 원격 화면 공지 팝업 — TV·학생 화면 공통 */
-        #screenNoticePopup {z-index: 690}
-        #screenNoticePopup .screen-notice-card {width: min(52rem, 100%);max-height: min(86vh, 44rem);overflow-y: auto;background: linear-gradient(165deg, var(--sky) 0%, var(--sky-deep) 48%, var(--sky-deep) 100%);border: 3px solid color-mix(in srgb, var(--sky-deep) 55%, transparent);box-shadow: var(--shadow-card)}
+        #screenNoticePopup {z-index: 690;background: var(--navy)}
+        #screenNoticePopup .screen-notice-card {width: min(52rem, 100%);max-height: min(86vh, 44rem);overflow-y: auto;background: var(--surface);color: var(--ink);border: 3px solid var(--navy);box-shadow: var(--shadow-card)}
         #screenNoticePopup         .screen-notice-body {white-space: pre-wrap;word-break: break-word}
         /* 장비 1~5강: 실루엣을 4방향 1px만 칠합니다. 겹드롭섀도·맥박은 광장을 느리게 해서 빼 둡니다. */
         .gear-enhance-cutout {overflow: visible}

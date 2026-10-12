@@ -1,6 +1,7 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { browserLocalPersistence, getAuth, onAuthStateChanged, setPersistence, signInAnonymously, signOut } from 'firebase/auth';
+import { browserLocalPersistence, connectAuthEmulator, getAuth, onAuthStateChanged, setPersistence, signInAnonymously, signOut } from 'firebase/auth';
 import {
+    connectFirestoreEmulator,
     getFirestore,
     doc,
     setDoc,
@@ -19720,6 +19721,10 @@ ${subjectLine}
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app); 
                 db = getFirestore(app);
+                if (import.meta.env.VITE_USE_FIREBASE_EMULATOR === '1') {
+                    connectAuthEmulator(auth, 'http://127.0.0.1:9199', { disableWarnings: true });
+                    connectFirestoreEmulator(db, '127.0.0.1', 8181);
+                }
                 await setPersistence(auth, browserLocalPersistence);
                 await auth.authStateReady();
                 if (window._guestDemoActive) {
@@ -29052,7 +29057,7 @@ ${subjectLine}
         };
 
         window.checkAndDistributeSalary = async function() {
-            if (isGuestSession() || !window._worldEntered) return;
+            if (isGuestSession()) return;
             if (!db || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
             const day = now.getDay();
@@ -29078,18 +29083,9 @@ ${subjectLine}
                     if (last === wId) return null;
 
                     let count = 0;
+                    const catalog = getJobCatalog();
                     for (const stu of stuList) {
-                        let pay = 0;
-                        if (stu.jobs) {
-                            const catalog = getJobCatalog();
-                            resolveStudentJobsFromCatalog(stu.jobs, catalog).forEach((j) => {
-                                const ji = catalog.find((jd) =>
-                                    (jd.id && j.id && String(jd.id) === String(j.id))
-                                    || jd.name === j.name
-                                    || (jd.icon === j.icon && jd.color === j.color));
-                                if (ji) pay += ji.pay;
-                            });
-                        }
+                        const pay = stu.jobs ? sumCatalogPayForJobs(stu.jobs, catalog) : 0;
                         if (pay > 0) {
                             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
                             transaction.set(ref, { bong: increment(pay) }, { merge: true });

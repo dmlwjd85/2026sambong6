@@ -173,4 +173,42 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
 });
 
-if (hasSavedLogin()) void ensureApp();
+function classReadyOnBoot() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        if ((params.get('class') || params.get('classId') || '').trim()) return true;
+    } catch (_) { /* 주소가 없으면 저장값만 봅니다. */ }
+    return !!localStorage.getItem('sambong_class_id');
+}
+
+/** 예전 sw.js(mate-cache-v1)가 남은 기기는 등록과 그 캐시를 지웁니다. */
+async function retireMateServiceWorker() {
+    const retiredKey = 'mate_sw_retired';
+    try {
+        let removed = false;
+        if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map(async (reg) => {
+                const worker = reg.active || reg.waiting || reg.installing;
+                const script = worker && worker.scriptURL ? worker.scriptURL : '';
+                if (!script.endsWith('/sw.js')) return;
+                removed = true;
+                await reg.unregister();
+            }));
+        }
+        if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.filter((key) => key === 'mate-cache-v1').map(async (key) => {
+                removed = true;
+                await caches.delete(key);
+            }));
+        }
+        if (removed && navigator.serviceWorker && navigator.serviceWorker.controller && sessionStorage.getItem(retiredKey) !== '1') {
+            sessionStorage.setItem(retiredKey, '1');
+            location.reload();
+        }
+    } catch (_) { /* 등록이 없어도 로그인은 계속합니다. */ }
+}
+
+void retireMateServiceWorker();
+if (hasSavedLogin() || classReadyOnBoot()) void ensureApp();

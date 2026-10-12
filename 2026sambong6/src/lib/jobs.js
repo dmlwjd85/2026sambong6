@@ -151,6 +151,70 @@ function trimStr(value) {
     return String(value == null ? '' : value).trim();
 }
 
+/**
+ * 예전 Font Awesome 클래스(fa- 접두사를 뺀 이름)를 지금 아이콘 이름으로 바꿉니다.
+ * lookForDefaultJob 과 주급 맞춤이 같은 표를 씁니다.
+ */
+const LEGACY_FA_ICON = new Map([
+    ['crown', 'crown'],
+    ['shield-cat', 'shield'],
+    ['flag', 'flag'],
+    ['star-half-stroke', 'half'],
+    ['wind', 'wind'],
+    ['trash-can', 'trash'],
+    ['glass-water', 'glass'],
+    ['chalkboard', 'chalkboard'],
+    ['desktop', 'desktop'],
+    ['recycle', 'recycle'],
+    ['tablet-screen-button', 'tablet'],
+    ['lightbulb', 'lightbulb'],
+    ['piggy-bank', 'piggy'],
+    ['leaf', 'leaf'],
+    ['store', 'store'],
+    ['book-skull', 'book'],
+    ['hand-holding-heart', 'heart'],
+    ['star', 'star'],
+    ['wand-magic-sparkles', 'spark'],
+    ['hourglass-half', 'hourglass'],
+    ['newspaper', 'newspaper'],
+    ['book-open', 'bookopen'],
+    ['compass', 'compass'],
+    ['palette', 'palette'],
+    ['user-secret', 'user'],
+    ['crosshairs', 'cross'],
+    ['scroll', 'scroll'],
+    ['boxes-stacked', 'boxes'],
+    ['briefcase-medical', 'medical'],
+    ['graduation-cap', 'school'],
+    ['music', 'music'],
+    ['hammer', 'hammer'],
+    ['seedling', 'seedling'],
+    ['sun', 'sun'],
+    ['moon', 'moon'],
+    ['bolt', 'bolt'],
+    ['gem', 'gem'],
+    ['key', 'key'],
+    ['trophy', 'trophy'],
+    ['medal', 'medal'],
+    ['dragon', 'dragon'],
+    ['cat', 'cat'],
+    ['rocket', 'rocket'],
+    ['anchor', 'anchor'],
+    ['bell', 'bell'],
+    ['camera', 'camera'],
+    ['utensils', 'utensils'],
+    ['pencil', 'pencil'],
+    ['microscope', 'microscope'],
+]);
+
+function legacyFaStem(raw) {
+    let icon = trimStr(raw);
+    icon = icon.replace(new RegExp('^' + MARK_FA + 'solid\\s+', 'i'), '');
+    if (icon.startsWith('fas ')) icon = icon.slice(4).trim();
+    if (icon.startsWith(MARK_FA)) icon = icon.slice(MARK_FA.length);
+    return icon;
+}
+
 function legacyTone(rest) {
     let h = 0;
     for (const ch of rest) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
@@ -158,12 +222,11 @@ function legacyTone(rest) {
 }
 
 export function normalizeJobIcon(raw, fallback = 'star') {
-    let icon = trimStr(raw);
-    icon = icon.replace(new RegExp('^' + MARK_FA + 'solid\\s+', 'i'), '');
-    if (icon.startsWith('fas ')) icon = icon.slice(4).trim();
-    const hadMark = icon.startsWith(MARK_FA);
-    if (hadMark) icon = icon.slice(MARK_FA.length);
+    const original = trimStr(raw);
+    const hadMark = original.startsWith(MARK_FA) || new RegExp('^' + MARK_FA + 'solid\\s+', 'i').test(original) || original.startsWith('fas ');
+    const icon = legacyFaStem(original);
     if (!icon) return fallback;
+    if (LEGACY_FA_ICON.has(icon)) return LEGACY_FA_ICON.get(icon);
     if (JOB_ICON_CLASS_SET.has(icon) || (hadMark && /^[a-z0-9-]+$/.test(icon))) return icon;
     return fallback;
 }
@@ -181,10 +244,15 @@ export function normalizeJobColor(raw, fallback = 'tone-19') {
 }
 
 export function lookForDefaultJob(id) {
-    const found = DEFAULT_JOB_LOOKS.find((item) => item.id === String(id));
-    return found
-        ? { icon: found.icon, color: found.color }
-        : { icon: 'star', color: 'tone-19' };
+    const key = String(id ?? '');
+    const found = DEFAULT_JOB_LOOKS.find((item) => item.id === key);
+    if (found) return { icon: found.icon, color: found.color };
+    const mapped = LEGACY_FA_ICON.get(legacyFaStem(key));
+    if (mapped) {
+        const byIcon = DEFAULT_JOB_LOOKS.find((item) => item.icon === mapped);
+        if (byIcon) return { icon: byIcon.icon, color: byIcon.color };
+    }
+    return { icon: 'star', color: 'tone-19' };
 }
 
 export function jobIconLabel(icon) {

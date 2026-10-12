@@ -21,6 +21,38 @@ import {
     toggleJobAssignment,
 } from './jobs.js';
 
+function mainNormalizeIcon(raw) {
+    let icon = String(raw ?? '').trim().replace(/^fa-solid\s+/i, '');
+    if (icon.startsWith('fas ')) icon = icon.slice(4).trim();
+    if (/^fa-[a-z0-9-]+$/.test(icon)) return icon;
+    return 'fa-star';
+}
+
+function mainNormalizeColor(raw) {
+    const color = String(raw ?? '').trim();
+    if (/^text-[a-z0-9-]+$/.test(color)) return color;
+    return 'text-blue-500';
+}
+
+/** main의 직업 맞춤과 같은 순서입니다. id, 이름, 그다음 아이콘·색입니다. */
+function mainSalaryPay(jobs, catalog) {
+    return (Array.isArray(jobs) ? jobs : []).reduce((sum, owned) => {
+        if (!owned) return sum;
+        const ownedId = owned.id != null && owned.id !== '' ? String(owned.id) : '';
+        let match = ownedId ? catalog.find((job) => String(job.id) === ownedId) : null;
+        const name = String(owned.name || '').trim();
+        if (!match && name) match = catalog.find((job) => String(job.name || '').trim() === name) || null;
+        if (!match && owned.icon) {
+            const icon = mainNormalizeIcon(owned.icon);
+            const color = mainNormalizeColor(owned.color);
+            match = catalog.find((job) =>
+                mainNormalizeIcon(job.icon) === icon && mainNormalizeColor(job.color) === color) || null;
+        }
+        return sum + Math.max(0, Math.round(Number(match && match.pay) || 0));
+    }, 0);
+}
+
+
 describe('직업 아이콘·색', () => {
     it('기본 직업은 모양과 색이 각각 겹치지 않는다', () => {
         assert.equal(DEFAULT_JOB_LOOKS.length, 17);
@@ -161,6 +193,53 @@ describe('직업 아이콘·색', () => {
         }]);
         assert.equal(byLook[0].id, 'job12');
         assert.equal(byLook[0].name, '가게 지킴이');
+    });
+
+    it('id 없이 아이콘·색만 남은 옛 직업 68가지는 main과 같은 주급이다', () => {
+        const mainJobs = [
+            { id: 'job_sp', name: '학생회 연합대장', pay: 15, icon: 'fa-crown', color: 'text-amber-400' },
+            { id: 'job_svp', name: '학생회 부대장', pay: 12, icon: 'fa-shield-cat', color: 'text-orange-500' },
+            { id: 'job1', name: '길드 마스터', pay: 12, icon: 'fa-flag', color: 'text-yellow-300' },
+            { id: 'job2', name: '길드 매니저', pay: 10, icon: 'fa-star-half-stroke', color: 'text-lime-500' },
+            { id: 'job_vac', name: '블랙홀 마스터', pay: 8, icon: 'fa-wind', color: 'text-teal-400' },
+            { id: 'job3', name: '심연의 청소부', pay: 7, icon: 'fa-trash-can', color: 'text-stone-400' },
+            { id: 'job4', name: '체력물약 보급관', pay: 6, icon: 'fa-glass-water', color: 'text-sky-400' },
+            { id: 'job5', name: '역사 기록관', pay: 5, icon: 'fa-chalkboard', color: 'text-slate-400' },
+            { id: 'job6', name: '시스템 매니저', pay: 6, icon: 'fa-desktop', color: 'text-cyan-400' },
+            { id: 'job7', name: '자원 연금술사', pay: 7, icon: 'fa-recycle', color: 'text-sb-green' },
+            { id: 'job8', name: '마나 충전소', pay: 6, icon: 'fa-tablet-screen-button', color: 'text-violet-500' },
+            { id: 'job9', name: '빛의 파수꾼', pay: 5, icon: 'fa-lightbulb', color: 'text-orange-300' },
+            { id: 'job10', name: '삼봉은행', pay: 6, icon: 'fa-piggy-bank', color: 'text-pink-500' },
+            { id: 'job11', name: '생명의 수호자', pay: 5, icon: 'fa-leaf', color: 'text-emerald-500' },
+            { id: 'job12', name: '편의점 매니저', pay: 6, icon: 'fa-store', color: 'text-rose-400' },
+            { id: 'job_book', name: '마법서 관리관', pay: 6, icon: 'fa-book-skull', color: 'text-purple-500' },
+            { id: 'job_newbie', name: '뉴비 매니저', pay: 6, icon: 'fa-hand-holding-heart', color: 'text-fuchsia-400' },
+        ];
+        const branchCatalog = mainJobs.map((job) => ({
+            id: job.id,
+            name: job.name,
+            pay: job.pay,
+            ...lookForDefaultJob(job.id),
+        }));
+        const cases = [];
+        mainJobs.forEach((job) => {
+            cases.push({ id: job.id });
+            cases.push({ name: job.name });
+            cases.push({ icon: job.icon, color: job.color });
+            cases.push({ id: job.id, name: job.name, icon: job.icon, color: job.color });
+        });
+        assert.equal(cases.length, 68);
+        cases.forEach((owned) => {
+            const expected = mainSalaryPay([owned], mainJobs);
+            const actual = sumCatalogPayForJobs([owned], branchCatalog);
+            assert.equal(actual, expected, JSON.stringify(owned));
+            assert.ok(expected > 0, JSON.stringify(owned));
+        });
+        assert.equal(sumCatalogPayForJobs(
+            [{ icon: 'fa-shield-cat', color: 'text-orange-500' }],
+            branchCatalog,
+        ), 12);
+        assert.deepEqual(lookForDefaultJob('fa-shield-cat'), lookForDefaultJob('job_svp'));
     });
 
     it('주급은 넘겨준 직업 목록의 카탈로그 금액만 합산한다', () => {

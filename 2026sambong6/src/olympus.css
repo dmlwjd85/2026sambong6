@@ -126,6 +126,29 @@ nav.fixed.top-0 {
     color: var(--surface);
     border: 0;
     min-height: var(--header-h);
+    height: auto;
+}
+.app-topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.45rem 0.6rem;
+    min-height: 3.5rem;
+    height: auto;
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
+}
+.app-topbar-cluster {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+@media (max-width: 480px) {
+    #swipeWrapper { padding-top: 8.75rem; }
+    #playerNameDisplay { max-width: 9rem; }
 }
 nav.fixed.top-0 #navWorldBrand,
 nav.fixed.top-0 #navClassLabel,

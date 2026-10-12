@@ -55,6 +55,8 @@
 
 `public/sw.js`와 `navigator.serviceWorker.register`는 이 PR에 없습니다. #29에 있던 캐시 이름은 `mate-cache-v1`이고, 범위는 페이지 경로 `/2026sambong6/`입니다. 운영 Pages는 `main`만 배포하므로 그 파일은 아직 운영에 없습니다. 미리보기나 로컬 빌드를 연 기기는 등록돼 있을 수 있습니다.
 
+앱 시작(`src/main.jsx`의 `retireMateServiceWorker`)은 스크립트가 `/sw.js`로 끝나는 등록을 해제하고 `mate-cache-v1` 캐시를 지웁니다. 그 워커가 아직 페이지를 잡고 있으면 한 번 새로고침합니다. 아래 콘솔 코드는 그 자동 해제가 닿지 않은 기기를 위한 수동 절차입니다.
+
 그 기기에서 등록과 캐시를 지우는 킬 스위치입니다. `https://dmlwjd85.github.io/2026sambong6/`를 연 뒤 개발자 도구 콘솔에 붙여 넣습니다. 서버에 올리는 코드가 아닙니다.
 
 ```javascript

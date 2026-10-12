@@ -1,4 +1,5 @@
-/** 직접 그린 올림푸스 아이콘. 색은 currentColor 와 CSS 변수만 씁니다. */
+/** 직접 그린 올림푸스 아이콘. 색은 currentColor 와 CSS 변수만 씁니다. set41 은 그림 파일로만 바꿉니다. */
+import { paintedIconSources } from './lib/paintedIcons.js';
 
 const HAND = {
     home: '<path class="f" d="M4 11 12 4l8 7"/><path class="s" d="M6 10.5V20h12V10.5"/><path class="g" d="M10 20v-5h4v5"/>',
@@ -72,7 +73,18 @@ function svgInner(name) {
     return HAND[name] || autoIcon(name);
 }
 
+function paintedMarkup(name, extraClass = '') {
+    const base = import.meta.env.BASE_URL || '/2026sambong6/';
+    const sources = paintedIconSources(name, base);
+    if (!sources) return '';
+    const cls = ['oly-icon', extraClass].filter(Boolean).join(' ');
+    const srcset = [96, 192, 288].map((size) => `${sources.webp[size]} ${size}w`).join(', ');
+    return `<picture class="${cls}" data-oly="${sources.id}" data-oly-svg="${sources.svg24}"><source type="image/webp" srcset="${srcset}" sizes="48px"><img src="${sources.webp[96]}" alt="" width="96" height="96" loading="lazy" decoding="async"></picture>`;
+}
+
 export function iconSvg(name, extraClass = '') {
+    const painted = paintedMarkup(name, extraClass);
+    if (painted) return painted;
     const id = canonIconName(name);
     const cls = ['oly-icon', extraClass].filter(Boolean).join(' ');
     return `<svg class="${cls}" data-oly="${id}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${svgInner(id)}</svg>`;
@@ -80,7 +92,20 @@ export function iconSvg(name, extraClass = '') {
 
 export function paintIcon(node) {
     if (!node || node.dataset.olyReady === '1') return;
-    const name = canonIconName(node.getAttribute('data-oly') || 'mark');
+    const raw = node.getAttribute('data-oly') || 'mark';
+    const painted = paintedMarkup(raw, '');
+    if (painted && node.tagName === 'svg') {
+        const holder = document.createElement('template');
+        holder.innerHTML = painted;
+        const picture = holder.content.firstElementChild;
+        const prev = (node.getAttribute('class') || '').split(/\s+/).filter((item) => item && item !== 'oly-icon');
+        prev.forEach((item) => picture.classList.add(item));
+        picture.dataset.olyReady = '1';
+        node.replaceWith(picture);
+        return;
+    }
+    if (node.tagName !== 'svg') return;
+    const name = canonIconName(raw);
     node.setAttribute('viewBox', '0 0 24 24');
     node.setAttribute('aria-hidden', 'true');
     node.setAttribute('focusable', 'false');

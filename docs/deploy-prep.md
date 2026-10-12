@@ -2,7 +2,7 @@
 
 이 문서는 조사와 절차만 적습니다. Firestore 읽기·쓰기, `npm run deploy:firestore`, 머지, GitHub Pages 배포, `git revert` 실행은 하지 않았습니다.
 
-비교 기준은 현재 `main`(`43768747109836e8efaed97f3c9c0740ae6ca4dd`)과 PR #29 헤드(`cursor/olympus-theme-7ab3`, PR #27 `cursor/guest-demo-ui-salary-f1ad`를 포함)입니다. 아이콘 시안 PR #30(`cursor/olympus-icon-drafts`, `2026sambong6/icon-drafts/`)은 넣지 않았습니다.
+비교 기준은 현재 `main`(`43768747109836e8efaed97f3c9c0740ae6ca4dd`)과 PR #29 헤드(`cursor/olympus-theme-7ab3`, PR #27 `cursor/guest-demo-ui-salary-f1ad`를 포함)입니다. PR #30의 아이콘 시안 폴더 전체는 넣지 않았습니다. 확정본 `set41`의 webp 96·192·288과 svg24만 화면 표시용으로 넣었습니다. 512 원본은 없습니다.
 
 화면만 옮긴 브랜치는 `cursor/olympus-ui-only`입니다. `firestore.rules`는 `main`과 같습니다. `salaryPaidWeek` 트랜잭션과 `src/lib/weeklySalary.js`, 규칙 테스트, `public/sw.js`는 이 브랜치에 없습니다.
 
@@ -191,4 +191,6 @@ await writeFile(`mate-read-backup-${classId}.json`, JSON.stringify(backup, null,
 
 올림푸스 색·글자·버튼·아이콘, 로그인 최소 문서, Firebase·앱 모듈 동적 import, 글꼴 preload, 로그인 유지, 구경 화면의 로컬 데모와 쓰기 가드, 알림함의 브라우저 저장입니다.
 
-들어가지 않은 것: `firestore.rules`, `salaryPaidWeek`, `weeklySalary.js`, 규칙 테스트, 서비스 워커, PR #30 아이콘 시안.
+들어가지 않은 것: `firestore.rules`, `salaryPaidWeek`, `weeklySalary.js`, 규칙 테스트, 서비스 워커, 아이콘 512 원본과 `icon-drafts/` 시안 폴더.
+
+set41 그림은 `public/icons/set41/`에 있고, 앱이 열린 뒤에 `loading="lazy"`로만 받습니다. 로그인 첫 문서는 이 그림을 불러오지 않습니다. 직업 문서의 `icon` 문자열은 그대로이며, 화면에서만 직업 토큰과 앱 아이콘을 구분합니다.

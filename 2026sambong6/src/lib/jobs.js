@@ -255,6 +255,22 @@ export function lookForDefaultJob(id) {
     return { icon: 'star', color: 'tone-19' };
 }
 
+/** 저장된 직업 아이콘 문자열인지 봅니다. 화면 파일명으로 바꾸지 않습니다. */
+export function isJobIconStorageToken(raw) {
+    const icon = legacyFaStem(raw);
+    if (!icon) return false;
+    if (JOB_ICON_CLASS_SET.has(icon)) return true;
+    return LEGACY_FA_ICON.has(icon);
+}
+
+/**
+ * 직업 아이콘을 화면에 그릴 때의 토큰입니다.
+ * 저장 문자열과 같고, 경로나 그림 파일 이름은 반환하지 않습니다.
+ */
+export function jobIconDisplayToken(raw) {
+    return normalizeJobIcon(raw);
+}
+
 export function jobIconLabel(icon) {
     const found = JOB_ICON_CHOICES.find((item) => item.class === normalizeJobIcon(icon));
     return found ? found.label : '아이콘';

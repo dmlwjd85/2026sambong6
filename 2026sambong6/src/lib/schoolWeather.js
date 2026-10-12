@@ -19,12 +19,12 @@ export const DEFAULT_WEATHER_REGION = Object.freeze({
 export const WEATHER_SCENES = Object.freeze(['sunny', 'cloudy', 'rain', 'snow', 'storm', 'night']);
 
 const SCENE_META = Object.freeze({
-    sunny: { label: '맑음', emoji: '☀️', img: 'weather/scene-sunny.webp' },
-    cloudy: { label: '흐림', emoji: '☁️', img: 'weather/scene-cloudy.webp' },
-    rain: { label: '비', emoji: '🌧️', img: 'weather/scene-rain.webp' },
-    snow: { label: '눈', emoji: '❄️', img: 'weather/scene-snow.webp' },
-    storm: { label: '뇌우', emoji: '⛈️', img: 'weather/scene-storm.webp' },
-    night: { label: '밤', emoji: '🌙', img: 'weather/scene-night.webp' },
+    sunny: { label: '맑음', emoji: '', img: 'weather/scene-sunny.webp' },
+    cloudy: { label: '흐림', emoji: '', img: 'weather/scene-cloudy.webp' },
+    rain: { label: '비', emoji: '', img: 'weather/scene-rain.webp' },
+    snow: { label: '눈', emoji: '', img: 'weather/scene-snow.webp' },
+    storm: { label: '뇌우', emoji: '', img: 'weather/scene-storm.webp' },
+    night: { label: '밤', emoji: '', img: 'weather/scene-night.webp' },
 });
 
 export function weatherSceneMeta(scene) {

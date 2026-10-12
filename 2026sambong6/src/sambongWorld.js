@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { browserLocalPersistence, getAuth, onAuthStateChanged, setPersistence, signInAnonymously, signOut } from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -57,6 +57,14 @@ import {
     updateQuizBankItem,
 } from './lib/quizBank.js';
 import { withRetry, isLikelyNetworkError, isRetryableWriteError } from './lib/withRetry.js';
+import {
+    buildGuestDemoClassMeta,
+    buildGuestDemoStudents,
+    buildGuestDemoTeacher,
+    buildGuestPlayerState,
+    guestMayWrite,
+} from './lib/guestDemo.js';
+import { loadNoticeInbox, markAllRead, noticeInboxStorageKey, pushNotice, serializeNoticeInbox, unreadCount } from './lib/noticeInbox.js';
 import {
     computeResearchStats,
     researchStatsToCsv,
@@ -169,12 +177,10 @@ import {
     gomokuSeatColor,
     placeGomokuStone,
 } from './lib/gomokuGame.js';
-import {
-    GOMOKU_AI_LEVELS,
-    gomokuAiLevelLabel,
-    pickGomokuAiMove,
-    sanitizeGomokuAiLevel,
-} from './lib/gomokuAi.js';
+let GOMOKU_AI_LEVELS = { gosu: { id: 'gosu', label: '고수', timeMs: 800 }, choin: { id: 'choin', label: '초인', timeMs: 2600 } };
+let gomokuAiLevelLabel = (level) => (level === 'choin' ? '초인' : '고수');
+let pickGomokuAiMove = () => null;
+let sanitizeGomokuAiLevel = (raw) => (raw === 'choin' ? 'choin' : 'gosu');
 import {
     applyBoardGameRecord,
     boardGameRecordText,
@@ -185,12 +191,34 @@ import {
     mergeBoardGameRecords,
     sanitizeBoardGameRecords,
 } from './lib/boardGameRecords.js';
-import {
-    CHESS_AI_LEVELS,
-    chessAiLevelLabel,
-    pickChessAiMove,
-    sanitizeChessAiLevel,
-} from './lib/chessAi.js';
+let CHESS_AI_LEVELS = {
+    ply1: { id: 'ply1', label: '한수', timeMs: 80 },
+    gosu: { id: 'gosu', label: '고수', timeMs: 900 },
+    choin: { id: 'choin', label: '초인', timeMs: 3500 },
+    choinOld: { id: 'choinOld', label: '옛초인', timeMs: 2600 },
+};
+let chessAiLevelLabel = (level) => (level === 'choin' ? '초인' : level === 'ply1' ? '한수' : '고수');
+let pickChessAiMove = () => null;
+let sanitizeChessAiLevel = (raw) => (raw === 'choin' || raw === 'choinOld' || raw === 'ply1' ? raw : 'gosu');
+let _boardAiReady = null;
+function ensureBoardAi() {
+    if (!_boardAiReady) {
+        _boardAiReady = Promise.all([
+            import('./lib/gomokuAi.js'),
+            import('./lib/chessAi.js'),
+        ]).then(([g, c]) => {
+            GOMOKU_AI_LEVELS = g.GOMOKU_AI_LEVELS;
+            gomokuAiLevelLabel = g.gomokuAiLevelLabel;
+            pickGomokuAiMove = g.pickGomokuAiMove;
+            sanitizeGomokuAiLevel = g.sanitizeGomokuAiLevel;
+            CHESS_AI_LEVELS = c.CHESS_AI_LEVELS;
+            chessAiLevelLabel = c.chessAiLevelLabel;
+            pickChessAiMove = c.pickChessAiMove;
+            sanitizeChessAiLevel = c.sanitizeChessAiLevel;
+        });
+    }
+    return _boardAiReady;
+}
 import {
     inferChessCapture,
     playChessBoardFx,
@@ -341,13 +369,11 @@ import {
     applyStockSellFromServer,
     canBuyStock,
     canSellStock,
-    extractYahooChartJson,
     formatChangePct,
     formatIndexPrice,
     getStockMarket,
     isKoreanStockSession,
     MARKET_REFRESH_MS,
-    parseYahooChart,
     sanitizeStockInvestDaily,
     sanitizeStockInvestments,
     settleStockPosition,
@@ -355,8 +381,6 @@ import {
     stockInvestRoom,
     summarizeStudentStockInvest,
     TICKER_MARKETS,
-    yahooChartProxyUrl,
-    yahooChartUrl,
 } from './lib/stockMarket.js';
 import {
     canSettleShopGroupBuy,
@@ -589,6 +613,7 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
     resolveStudentJobsFromCatalog,
+    sumCatalogPayForJobs,
     studentHasJob,
     toggleJobAssignment,
 } from './lib/jobs.js';
@@ -743,7 +768,7 @@ function redrawPlazaGrantsUi() {
 }
 
 // ==========================================
-        // ★ 웹 오디오 API 효과음 로직 ★
+        //  웹 오디오 API 효과음 로직 
         // ==========================================
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -927,7 +952,7 @@ function redrawPlazaGrantsUi() {
             const playing = isMartialLawSirenPlaying();
             const label = playing ? '사이렌 끄기' : '사이렌 켜기';
             const opacity = playing ? '' : ' opacity-60';
-            return `<button id="martialLawMuteBtn" type="button" onclick="window.toggleMartialLawSiren()" class="rounded-full border border-red-300/50 bg-red-900/60 px-4 py-2 text-xs font-black text-red-100${opacity}">${label}</button>`;
+            return `<button id="martialLawMuteBtn" type="button" onclick="window.toggleMartialLawSiren()" class="oly-btn oly-btn-danger oly-btn-md ${opacity}">${label}</button>`;
         }
 
         const MARTIAL_LAW_STUDENT_LOCK_MSG = '여러분은 아무것도 할 수 없습니다.';
@@ -955,7 +980,7 @@ function redrawPlazaGrantsUi() {
                     blocker = document.createElement('div');
                     blocker.id = 'martialLawBlocker';
                     blocker.setAttribute('aria-hidden', 'true');
-                    blocker.className = 'fixed inset-0 z-[490] bg-black/50';
+                    blocker.className = 'fixed inset-0 z-[490] ';
                     document.body.appendChild(blocker);
                 }
                 blocker.classList.remove('hidden');
@@ -1012,10 +1037,10 @@ function redrawPlazaGrantsUi() {
 
         function getMartialLawSealHtml() {
             return `
-                <div class="mx-auto mb-6 flex h-32 w-32 sm:h-40 sm:w-40 items-center justify-center rounded-full border-[10px] border-white/80 bg-gradient-to-br from-slate-100 via-white to-slate-300 shadow-2xl">
-                    <div class="text-center text-slate-950">
-                        <i class="fa-solid fa-landmark text-5xl sm:text-6xl mb-2"></i>
-                        <div class="text-[10px] sm:text-xs font-black tracking-[0.28em]">정부</div>
+                <div class="mx-auto mb-6 flex h-32 w-32 sm:h-40 sm:w-40 items-center justify-center rounded-full border-[10px]  bg-gradient-to-br    shadow-2xl">
+                    <div class="text-center ">
+                        <svg class="oly-icon" data-oly="landmark" viewBox="0 0 24 24" aria-hidden="true"></svg>
+                        <div class="text-12 sm:text-12 font-black tracking-[0.28em]">정부</div>
                     </div>
                 </div>`;
         }
@@ -1030,46 +1055,46 @@ function redrawPlazaGrantsUi() {
                 const isFirst = idx === 0;
                 const isLast = idx === MARTIAL_LAW_PROCLAMATION.length - 1;
                 const adminNav = readOnly
-                    ? `<p class="text-sm sm:text-lg font-black text-red-900 text-center w-full">${MARTIAL_LAW_STUDENT_LOCK_MSG}</p>`
-                    : `<button type="button" onclick="window.prevMartialLawProclamation()" ${isFirst ? 'disabled' : ''} class="rounded-full border border-slate-900 bg-slate-900 px-4 py-2 text-[10px] sm:text-xs font-black text-white disabled:opacity-25 disabled:pointer-events-none">이전 포고문</button>
-                                        <div class="text-xs sm:text-lg font-black text-red-900">마스터 포고령</div>
+                    ? `<p class="text-14 sm:text-20 font-black  text-center w-full">${MARTIAL_LAW_STUDENT_LOCK_MSG}</p>`
+                    : `<button type="button" onclick="window.prevMartialLawProclamation()" ${isFirst ? 'disabled' : ''} class="oly-btn oly-btn-secondary oly-btn-md disabled:opacity-25 disabled:pointer-events-none">이전 포고문</button>
+                                        <div class="text-12 sm:text-20 font-black ">마스터 포고령</div>
                                         ${isLast
-                                            ? '<button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-red-800 bg-red-800 px-4 py-2 text-[10px] sm:text-xs font-black text-white">포고 종료</button>'
-                                            : '<button type="button" onclick="window.nextMartialLawProclamation()" class="rounded-full border border-red-800 bg-red-800 px-4 py-2 text-[10px] sm:text-xs font-black text-white">다음 포고문</button>'}`;
+                                            ? '<button type="button" onclick="window.closeMartialLawLesson()" class="oly-btn oly-btn-danger oly-btn-md">포고 종료</button>'
+                                            : '<button type="button" onclick="window.nextMartialLawProclamation()" class="oly-btn oly-btn-danger oly-btn-md">다음 포고문</button>'}`;
                 const topClose = readOnly
                     ? ''
-                    : '<button type="button" onclick="window.closeMartialLawLesson()" class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>';
+                    : '<button type="button" onclick="window.closeMartialLawLesson()" class="oly-btn oly-btn-secondary oly-btn-md">종료</button>';
                 modal.innerHTML = `
-                    <div class="fixed inset-0 z-[500] bg-slate-950 text-white overflow-hidden">
-                        <div class="h-screen bg-[radial-gradient(circle_at_top,_rgba(248,113,113,0.22),transparent_34%),linear-gradient(135deg,#020617,#111827_45%,#450a0a)] px-3 py-3 sm:px-8 sm:py-5">
+                    <div class="fixed inset-0 z-[500]   overflow-hidden">
+                        <div class="h-screen bg-[radial-gradient(circle_at_top,_color-mix(in srgb, var(--gold) 22%, transparent),transparent_34%),linear-gradient(135deg,var(--chalk-board),var(--navy)_45%,var(--chalk-board))] px-3 py-3 sm:px-8 sm:py-5">
                             <div class="mx-auto flex h-full max-w-6xl flex-col">
                                 <div class="mb-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
                                     <div>
-                                        <p class="text-[10px] sm:text-xs font-black tracking-[0.38em] text-red-200">EMERGENCY DECREE</p>
-                                        <h2 class="font-display text-3xl sm:text-5xl text-white">비상계엄 포고문</h2>
+                                        <p class="text-12 sm:text-12 font-black tracking-[0.38em] ">EMERGENCY DECREE</p>
+                                        <h2 class="font-display text-32 sm:text-48 ">비상계엄 포고문</h2>
                                     </div>
                                     <div class="flex gap-2">
                                         ${getMartialLawSirenControlsHtml()}
                                         ${topClose}
                                     </div>
                                 </div>
-                                <div class="relative min-h-0 flex-1 rounded-[1.75rem] border-[8px] border-stone-900 bg-stone-100 p-4 sm:p-6 text-slate-950 shadow-2xl flex flex-col overflow-hidden">
-                                    <div class="absolute inset-3 border-4 border-double border-slate-900/70 pointer-events-none"></div>
-                                    <div class="absolute -right-8 -bottom-8 h-36 w-36 rounded-full border-[10px] border-red-800/25 text-red-900/20 flex items-center justify-center rotate-[-18deg] text-6xl">
-                                        <i class="fa-solid fa-landmark"></i>
+                                <div class="relative min-h-0 flex-1 rounded-[1.75rem] border-[8px]   p-4 sm:p-6  shadow-2xl flex flex-col overflow-hidden">
+                                    <div class="absolute inset-3 border-4 border-double  pointer-events-none"></div>
+                                    <div class="absolute -right-8 -bottom-8 h-36 w-36 rounded-full border-[10px]   flex items-center justify-center rotate-[-18deg] text-48">
+                                        <svg class="oly-icon" data-oly="landmark" viewBox="0 0 24 24" aria-hidden="true"></svg>
                                     </div>
-                                    <div class="relative z-10 mb-3 border-b-4 border-slate-900 pb-2 text-center shrink-0">
-                                        <div class="mx-auto mb-2 flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-full border-4 border-slate-900 bg-white shadow">
-                                            <i class="fa-solid fa-landmark text-2xl sm:text-3xl text-slate-950"></i>
+                                    <div class="relative z-10 mb-3 border-b-4  pb-2 text-center shrink-0">
+                                        <div class="mx-auto mb-2 flex h-14 w-14 sm:h-20 sm:w-20 items-center justify-center rounded-full border-4   shadow">
+                                            <svg class="oly-icon" data-oly="landmark" viewBox="0 0 24 24" aria-hidden="true"></svg>
                                         </div>
-                                        <div class="font-display text-3xl sm:text-5xl text-slate-950">포 고 문</div>
-                                        <div class="mt-0.5 text-[10px] sm:text-sm font-black tracking-[0.26em] text-slate-600">제 ${idx + 1} / ${MARTIAL_LAW_PROCLAMATION.length} 호</div>
+                                        <div class="font-display text-32 sm:text-48 ">포 고 문</div>
+                                        <div class="mt-0.5 text-12 sm:text-14 font-black tracking-[0.26em] ">제 ${idx + 1} / ${MARTIAL_LAW_PROCLAMATION.length} 호</div>
                                     </div>
                                     <div class="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center text-center px-4 sm:px-12 pb-2">
-                                        <div class="mb-5 inline-flex items-center justify-center rounded-full bg-slate-950 px-6 py-2.5 text-2xl sm:text-4xl font-black text-white shadow-xl">
+                                        <div class="mb-5 inline-flex items-center justify-center rounded-full  px-6 py-2.5 text-24 sm:text-48 font-black  shadow-xl">
                                             ${item.title}
                                         </div>
-                                        <div class="max-w-5xl whitespace-pre-line text-3xl sm:text-6xl lg:text-7xl font-black leading-[1.12] tracking-tight text-slate-950 break-keep">
+                                        <div class="max-w-5xl whitespace-pre-line text-32 sm:text-48 lg:text-48 font-black leading-[1.12] tracking-tight  break-keep">
                                             ${item.text}
                                         </div>
                                     </div>
@@ -1084,31 +1109,35 @@ function redrawPlazaGrantsUi() {
             }
 
             modal.innerHTML = `
-                <div class="fixed inset-0 z-[500] flex items-center justify-center overflow-hidden bg-black text-white">
-                    <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(248,113,113,0.28),transparent_31%),linear-gradient(135deg,#020617,#450a0a_48%,#111827)]"></div>
-                    <div class="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(45deg,rgba(255,255,255,0.12)_0_2px,transparent_2px_18px)]"></div>
+                <div class="fixed inset-0 z-[500] flex items-center justify-center overflow-hidden  ">
+                    <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_color-mix(in srgb, var(--gold) 28%, transparent),transparent_31%),linear-gradient(135deg,var(--chalk-board),var(--wine)_48%,var(--chalk-board))]"></div>
+                    <div class="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(45deg,color-mix(in srgb, var(--surface) 12%, transparent)_0_2px,transparent_2px_18px)]"></div>
                     <div class="relative z-10 w-full px-5 text-center">
-                        <div class="mx-auto max-w-5xl rounded-[2.5rem] border-4 border-red-200/80 bg-black/55 px-5 py-10 sm:px-12 sm:py-14 shadow-[0_0_80px_rgba(239,68,68,0.45)]">
+                        <div class="mx-auto max-w-5xl rounded-[2.5rem] border-4   px-5 py-10 sm:px-12 sm:py-14 shadow-[0_0_80px_color-mix(in srgb, var(--gold-deep) 45%, transparent)]">
                             ${getMartialLawSealHtml()}
-                            <p class="mb-3 text-sm sm:text-xl font-black tracking-[0.5em] text-red-200">국가 비상 상황</p>
-                            <h2 class="font-display text-6xl sm:text-8xl lg:text-9xl text-red-100 drop-shadow-[0_0_22px_rgba(248,113,113,0.9)]">비상계엄 선포</h2>
-                            <p class="mt-8 text-lg sm:text-3xl font-black text-slate-100">(본 수업은 픽션이며 실존 인물과는 전혀 관련이 없습니다.)</p>
+                            <p class="mb-3 text-14 sm:text-24 font-black tracking-[0.5em] ">국가 비상 상황</p>
+                            <h2 class="font-display text-48 sm:text-48 lg:text-48  drop-shadow-[0_0_22px_color-mix(in srgb, var(--gold) 90%, transparent)]">비상계엄 선포</h2>
+                            <p class="mt-8 text-20 sm:text-32 font-black ">(본 수업은 픽션이며 실존 인물과는 전혀 관련이 없습니다.)</p>
                         </div>
                     </div>
                     ${getMartialLawSirenControlsHtml() ? `<div class="absolute left-4 top-4 z-20">${getMartialLawSirenControlsHtml()}</div>` : ''}
                     ${readOnly
-                        ? `<p class="absolute bottom-4 left-0 right-0 z-20 text-center text-base sm:text-xl font-black text-red-200 px-4">${MARTIAL_LAW_STUDENT_LOCK_MSG}</p>`
-                        : '<button type="button" onclick="window.showMartialLawProclamation()" class="absolute bottom-4 right-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] sm:text-xs font-black text-white hover:bg-white/20">다음단계</button>'}
+                        ? `<p class="absolute bottom-4 left-0 right-0 z-20 text-center text-16 sm:text-24 font-black  px-4">${MARTIAL_LAW_STUDENT_LOCK_MSG}</p>`
+                        : '<button type="button" onclick="window.showMartialLawProclamation()" class="oly-btn oly-btn-secondary oly-btn-md absolute bottom-4 right-4 z-20">다음단계</button>'}
                     ${readOnly
                         ? ''
-                        : '<button type="button" onclick="window.closeMartialLawLesson()" class="absolute right-4 top-4 z-20 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">종료</button>'}
+                        : '<button type="button" onclick="window.closeMartialLawLesson()" class="oly-btn oly-btn-secondary oly-btn-md absolute right-4 top-4 z-20">종료</button>'}
                 </div>`;
         }
 
         window.syncMartialLawModal = function() {
             const st = window.martialLawState;
-            const loginOverlay = document.getElementById('loginOverlay');
-            const onLoginScreen = loginOverlay && !loginOverlay.classList.contains('hidden');
+            if (!window._worldEntered || isGuestSession()) {
+                hideMartialLawModal();
+                window.stopMartialLawSiren();
+                _martialLawSirenSessionId = null;
+                return;
+            }
 
             if (!st || !st.isActive || st.step === 'closed') {
                 hideMartialLawModal();
@@ -1121,16 +1150,14 @@ function redrawPlazaGrantsUi() {
                 hideMartialLawModal();
                 return;
             }
-            if (!window.playerState) {
-                window.playerState = { isGuest: false, isGM: false, isGMA: false, isAdmin: false };
-            }
+            if (!window.playerState) return;
 
             const idx = Math.max(0, Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, Number(st.proclamationIndex) || 0));
             window._martialLawProclamationIndex = idx;
             const step = st.step === 'proclamation' ? 'proclamation' : 'declaration';
             const readOnly = !window.playerState.isAdmin;
 
-            if (readOnly || onLoginScreen) {
+            if (readOnly) {
                 applyMartialLawBodyLock(true);
             } else {
                 applyMartialLawBodyLock(false);
@@ -1188,7 +1215,7 @@ function redrawPlazaGrantsUi() {
         };
 
         // ==========================================
-        // ★ 월드 설정 / 시즌 타이머 ★
+        //  월드 설정 / 시즌 타이머 
         // ==========================================
         const APP_VERSION = 'v1.47';
         window.APP_VERSION = APP_VERSION;
@@ -1379,7 +1406,9 @@ function redrawPlazaGrantsUi() {
 
         /** 현재 학급 화폐 단위 (설정 탭에서 변경) */
         function getCurrencyUnit() {
-            return getWorldSettings().currencyUnit || DEFAULT_WORLD_SETTINGS.currencyUnit;
+            const unit = String(getWorldSettings().currencyUnit || DEFAULT_WORLD_SETTINGS.currencyUnit || '').trim();
+            if (!unit || unit === 'B' || unit === 'b') return '봉';
+            return unit;
         }
         window.getCurrencyUnit = getCurrencyUnit;
 
@@ -1458,20 +1487,19 @@ function redrawPlazaGrantsUi() {
             const loginTitle = document.getElementById('loginWorldTitle');
             if (loginTitle) loginTitle.textContent = ws.worldName || ws.worldNameEn || 'MATE';
             const loginSub = document.getElementById('loginSeasonSubtitle');
-            if (loginSub) {
-                const emoji = ws.seasonNature === 'winter' ? '❄️'
-                    : ws.seasonNature === 'fall' ? '🍂'
-                        : ws.seasonNature === 'spring' ? '🌸'
-                            : '🌊';
-                loginSub.textContent = `${emoji} ${seasonLine}`;
-            }
+            if (loginSub) loginSub.textContent = seasonLine;
             const navBrand = document.getElementById('navWorldBrand');
             if (navBrand) {
                 const brand = String(ws.worldName || ws.worldNameEn || 'MATE').trim();
                 navBrand.textContent = brand || 'MATE';
             }
             const navBadge = document.getElementById('navSeasonBadge');
-            if (navBadge) navBadge.textContent = ws.navBadge || `S${ws.seasonNumber}`;
+            if (navBadge) navBadge.textContent = '';
+            const navClassLabel = document.getElementById('navClassLabel');
+            if (navClassLabel) {
+                const classBit = className || '우리 반';
+                navClassLabel.textContent = `${classBit} · ${ws.seasonLabel || ''}`;
+            }
             const seasonLabel = document.getElementById('seasonTimerLabel');
             if (seasonLabel) seasonLabel.textContent = `${ws.seasonLabel} 종료까지`;
             const footer = document.getElementById('footerCreditText');
@@ -1520,12 +1548,8 @@ function redrawPlazaGrantsUi() {
 
             if (diff <= 0) {
                 timerEl.innerText = '시즌 종료!';
-                timerEl.classList.remove('text-cyan-400', 'text-emerald-400');
-                timerEl.classList.add('text-sb-red');
                 return;
             }
-            timerEl.classList.remove('text-sb-red');
-            timerEl.classList.add('text-cyan-400');
             const d = Math.floor(diff / (1000 * 60 * 60 * 24));
             const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
             const m = Math.floor((diff / 1000 / 60) % 60);
@@ -1718,18 +1742,18 @@ function redrawPlazaGrantsUi() {
                 if (!q) {
                     priceEl.textContent = '—';
                     chEl.textContent = '—';
-                    chEl.className = 'text-[10px] font-black flat';
+                    chEl.className = 'text-12 font-black flat';
                     return;
                 }
                 priceEl.textContent = formatIndexPrice(q.price);
                 const pct = Number(q.changePct) || 0;
                 chEl.textContent = formatChangePct(pct);
-                chEl.className = 'text-[10px] font-black ' + (pct > 0.0001 ? 'up' : pct < -0.0001 ? 'down' : 'flat');
+                chEl.className = 'text-12 font-black ' + (pct > 0.0001 ? 'up' : pct < -0.0001 ? 'down' : 'flat');
             });
             if (meta) {
                 const ok = _marketQuotes.kospi || _marketQuotes.kosdaq || _marketQuotes.nasdaq;
                 if (!ok) {
-                    meta.textContent = '지수를 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
+                    meta.textContent = '지금 시세를 불러올 수 없습니다. 저장된 시세가 있으면 그것을 보여 줍니다.';
                 } else if (isKoreanStockSession()) {
                     meta.textContent = '코스피·코스닥은 장중 1시간마다 갱신 · 은행에서 투자할 수 있습니다.';
                 } else {
@@ -1739,23 +1763,8 @@ function redrawPlazaGrantsUi() {
             if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
         }
 
-        async function fetchOneMarketQuote(market) {
-            const urls = [yahooChartUrl(market.symbol), yahooChartProxyUrl(market.symbol)];
-            for (const url of urls) {
-                try {
-                    const res = await fetch(url);
-                    if (!res.ok) continue;
-                    const text = await res.text();
-                    let json = extractYahooChartJson(text);
-                    if (!json) {
-                        try { json = JSON.parse(text); } catch (e) { json = null; }
-                    }
-                    const q = parseYahooChart(json, market.id);
-                    if (q) return q;
-                } catch (e) {
-                    console.warn('market quote', market.id, e);
-                }
-            }
+        async function fetchOneMarketQuote() {
+            /* 야후 차트는 브라우저 CORS로 막혀 콘솔 오류만 남으므로 요청하지 않습니다. */
             return null;
         }
 
@@ -1822,24 +1831,24 @@ function redrawPlazaGrantsUi() {
             const box = document.getElementById('schoolWeatherSearchResults');
             const q = String(inp && inp.value || '').trim();
             if (!q) return window.customAlert('지역명을 입력해 주세요. 예: 석문면, 종로구');
-            if (box) box.innerHTML = '<p class="text-[10px] text-slate-400">검색 중…</p>';
+            if (box) box.innerHTML = '<p class="text-12 ">검색 중…</p>';
             try {
                 const res = await fetch(openMeteoGeocodeUrl(q));
                 if (!res.ok) throw new Error('geocode http ' + res.status);
                 const json = await res.json();
                 _weatherSearchHits = parseGeocodeResults(json);
                 if (!_weatherSearchHits.length) {
-                    if (box) box.innerHTML = '<p class="text-[10px] text-amber-200">해당하는 지역을 찾지 못했습니다. 시·군·구·읍면 이름으로 다시 검색해 보세요.</p>';
+                    if (box) box.innerHTML = '<p class="text-12 ">해당하는 지역을 찾지 못했습니다. 시·군·구·읍면 이름으로 다시 검색해 보세요.</p>';
                     return;
                 }
                 if (box) {
                     box.innerHTML = _weatherSearchHits.map((hit, i) => (
-                        `<button type="button" class="w-full text-left min-h-[36px] px-2 py-1.5 rounded-lg bg-slate-950 border border-sky-500/30 text-[10px] font-bold text-sky-100 hover:bg-sky-900" onclick="void window.pickSchoolWeatherRegion(${i})">${escapeHofText(hit.label)}${hit.country ? ` <span class="text-slate-500 font-normal">${escapeHofText(hit.country)}</span>` : ''}</button>`
+                        `<button type="button" class="oly-btn oly-btn-primary oly-btn-sm w-full" onclick="void window.pickSchoolWeatherRegion(${i})">${escapeHofText(hit.label)}${hit.country ? ` <span class=" font-normal">${escapeHofText(hit.country)}</span>` : ''}</button>`
                     )).join('');
                 }
             } catch (e) {
                 console.warn('weather geocode', e);
-                if (box) box.innerHTML = '<p class="text-[10px] text-rose-200">검색에 실패했습니다. 네트워크를 확인해 주세요.</p>';
+                if (box) box.innerHTML = '<p class="text-12 ">검색에 실패했습니다. 네트워크를 확인해 주세요.</p>';
             }
         };
 
@@ -1909,13 +1918,13 @@ function redrawPlazaGrantsUi() {
             if (vacStatus) {
                 if (!ws.vacationEnabled) {
                     vacStatus.textContent = '방학 모드 꺼짐 — 자동 지급·차감이 평소처럼 동작합니다.';
-                    vacStatus.className = 'text-[10px] font-bold text-slate-400 min-h-[1rem]';
+                    vacStatus.className = 'text-12 font-bold  min-h-[1rem]';
                 } else if (isWorldVacationDay()) {
-                    vacStatus.textContent = `🏖️ 지금 ${ws.vacationLabel || '방학'} 기간입니다 (${ws.vacationStartDate} ~ ${ws.vacationEndDate}). 선택한 자동 처리가 멈춰 있습니다.`;
-                    vacStatus.className = 'text-[10px] font-bold text-sky-300 min-h-[1rem]';
+                    vacStatus.textContent = ` 지금 ${ws.vacationLabel || '방학'} 기간입니다 (${ws.vacationStartDate} ~ ${ws.vacationEndDate}). 선택한 자동 처리가 멈춰 있습니다.`;
+                    vacStatus.className = 'text-12 font-bold  min-h-[1rem]';
                 } else {
                     vacStatus.textContent = `방학 예정/종료: ${ws.vacationLabel || '방학'} ${ws.vacationStartDate} ~ ${ws.vacationEndDate} (오늘은 방학 기간 밖)`;
-                    vacStatus.className = 'text-[10px] font-bold text-slate-400 min-h-[1rem]';
+                    vacStatus.className = 'text-12 font-bold  min-h-[1rem]';
                 }
             }
             setVal('wsClassDisplayName', meta.displayName || '');
@@ -2078,8 +2087,8 @@ function redrawPlazaGrantsUi() {
                         ? `"[공지] ${opsPayload.announcement}"`
                         : '"(등록된 공지가 없습니다)"';
                 }
-                if (status) status.textContent = '✅ 설정을 저장했습니다.';
-                await window.customAlert('✅ 월드 설정을 저장했습니다.');
+                if (status) status.textContent = ' 설정을 저장했습니다.';
+                await window.customAlert(' 월드 설정을 저장했습니다.');
             } catch (e) {
                 console.error('saveWorldSettingsFromPanel', e);
                 if (status) status.textContent = '저장 실패';
@@ -2105,13 +2114,13 @@ function redrawPlazaGrantsUi() {
             const holidays = holidayEditorState();
             if (list) {
                 if (!holidays.length) {
-                    list.innerHTML = '<p class="text-[10px] text-slate-400">등록된 공휴일이 없습니다. 날짜를 추가하면 달력에 나타납니다.</p>';
+                    list.innerHTML = '<p class="text-12 ">등록된 공휴일이 없습니다. 날짜를 추가하면 달력에 나타납니다.</p>';
                 } else {
                     list.innerHTML = holidays.map((h, idx) => `
-                        <div class="flex items-center gap-2 rounded-xl border border-rose-400/40 bg-rose-950/30 px-2 py-1.5">
-                            <span class="text-[11px] font-black text-rose-100">${escapeNavClassText(h.date)}</span>
-                            <span class="flex-1 text-[11px] font-bold text-white truncate">${escapeNavClassText(h.name || '공휴일')}</span>
-                            <button type="button" class="shrink-0 text-[10px] font-black text-rose-200 hover:text-white min-h-[32px] px-2" onclick="window.removeWorldHoliday(${idx})">지우기</button>
+                        <div class="flex items-center gap-2 rounded-xl border   px-2 py-1.5">
+                            <span class="text-12 font-black ">${escapeNavClassText(h.date)}</span>
+                            <span class="flex-1 text-12 font-bold  truncate">${escapeNavClassText(h.name || '공휴일')}</span>
+                            <button type="button" class="oly-btn oly-btn-danger oly-btn-sm shrink-0" onclick="window.removeWorldHoliday(${idx})">지우기</button>
                         </div>
                     `).join('');
                 }
@@ -2129,30 +2138,30 @@ function redrawPlazaGrantsUi() {
                     vacationEnd: ws.vacationEnabled ? ws.vacationEndDate : '',
                 });
                 const kindClass = (kind, inMonth) => {
-                    if (!inMonth) return 'text-slate-700';
-                    if (kind === 'holiday') return 'bg-rose-700 text-white font-black';
-                    if (kind === 'vacation') return 'bg-sky-800 text-sky-100 font-bold';
-                    if (kind === 'weekend') return 'text-slate-500';
-                    return 'text-slate-200 bg-slate-800/60';
+                    if (!inMonth) return '';
+                    if (kind === 'holiday') return '  font-black';
+                    if (kind === 'vacation') return '  font-bold';
+                    if (kind === 'weekend') return '';
+                    return ' ';
                 };
                 cal.innerHTML = `
                     <div class="flex items-center justify-between mb-2">
-                        <button type="button" class="min-h-[36px] px-2 rounded-lg bg-slate-800 text-white text-[11px] font-black" onclick="window.shiftAcademicCalendar(-1)">‹</button>
-                        <div class="text-[12px] font-black text-emerald-100">${grid.year}년 ${grid.month}월</div>
-                        <button type="button" class="min-h-[36px] px-2 rounded-lg bg-slate-800 text-white text-[11px] font-black" onclick="window.shiftAcademicCalendar(1)">›</button>
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-sm" onclick="window.shiftAcademicCalendar(-1)">‹</button>
+                        <div class="text-14 font-black ">${grid.year}년 ${grid.month}월</div>
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-sm" onclick="window.shiftAcademicCalendar(1)">›</button>
                     </div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[9px] font-bold text-slate-400 mb-1">
+                    <div class="grid grid-cols-7 gap-1 text-center text-12 font-bold  mb-1">
                         <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
                     </div>
                     <div class="grid grid-cols-7 gap-1">
                         ${grid.cells.map((c) => `
                             <div class="rounded-lg min-h-[44px] p-1 ${kindClass(c.kind, c.inMonth)}" title="${escapeNavClassText(c.name || '')}">
-                                <div class="text-[11px] leading-none">${c.inMonth ? c.day : ''}</div>
-                                <div class="text-[8px] leading-tight truncate">${c.inMonth && c.kind === 'holiday' ? escapeNavClassText(c.name) : (c.inMonth && c.kind === 'vacation' ? '방학' : '')}</div>
+                                <div class="text-12 leading-none">${c.inMonth ? c.day : ''}</div>
+                                <div class="text-12 leading-tight truncate">${c.inMonth && c.kind === 'holiday' ? escapeNavClassText(c.name) : (c.inMonth && c.kind === 'vacation' ? '방학' : '')}</div>
                             </div>
                         `).join('')}
                     </div>
-                    <p class="text-[9px] text-slate-400 mt-2">빨강: 공휴일 · 파랑: 방학 · 흐림: 주말. 「설정 저장」을 눌러 반영하세요.</p>
+                    <p class="text-12  mt-2">빨강: 공휴일 · 파랑: 방학 · 흐림: 주말. 「설정 저장」을 눌러 반영하세요.</p>
                 `;
             }
         };
@@ -2202,7 +2211,7 @@ function redrawPlazaGrantsUi() {
         };
 
         // ==========================================
-        // ★ 환경 설정 및 데이터 정의 ★
+        //  환경 설정 및 데이터 정의 
         // ==========================================
         const BASE_BOSS_HP = 500;
         const RAID_REWARD = { xp: 120, bong: 20 };
@@ -2212,34 +2221,34 @@ function redrawPlazaGrantsUi() {
         const RAID_SUCCESS_REWARD_BONG = 10;
 
         const EMOTIONS = [
-            { id: 'e1', icon: '😄', label: '기쁨', color: 'text-yellow-400' }, { id: 'e2', icon: '😊', label: '평온', color: 'text-emerald-400' },
-            { id: 'e3', icon: '😢', label: '슬픔', color: 'text-blue-400' }, { id: 'e4', icon: '😡', label: '화남', color: 'text-red-400' },
-            { id: 'e5', icon: '🥱', label: '피곤', color: 'text-slate-400' }, { id: 'e6', icon: '🤒', label: '아픔', color: 'text-purple-400' }
+            { id: 'e1', icon: '', label: '기쁨', color: '' }, { id: 'e2', icon: '', label: '평온', color: '' },
+            { id: 'e3', icon: '', label: '슬픔', color: '' }, { id: 'e4', icon: '', label: '화남', color: '' },
+            { id: 'e5', icon: '', label: '피곤', color: '' }, { id: 'e6', icon: '', label: '아픔', color: '' }
         ];
         
         const BODY_STATES = [
-            { val: 1, label: '방전', icon: 'fa-battery-empty', color: 'text-red-500' }, { val: 2, label: '피로', icon: 'fa-battery-quarter', color: 'text-orange-400' },
-            { val: 3, label: '보통', icon: 'fa-battery-half', color: 'text-yellow-400' }, { val: 4, label: '쌩쌩', icon: 'fa-battery-three-quarters', color: 'text-green-400' },
-            { val: 5, label: '최상', icon: 'fa-battery-full', color: 'text-emerald-500' }
+            { val: 1, label: '방전', icon: 'battery-empty', color: '' }, { val: 2, label: '피로', icon: 'battery-quarter', color: '' },
+            { val: 3, label: '보통', icon: 'battery-half', color: '' }, { val: 4, label: '쌩쌩', icon: 'battery-three-quarters', color: '' },
+            { val: 5, label: '최상', icon: 'battery-full', color: '' }
         ];
 
         const WEAPON_DATA = WEAPON_GEAR.map((w) => ({
             ...w,
             bonus: w.raidBonus,
-            border: w.id === 'wp1' ? 'border-amber-700' : w.id === 'wp2' ? 'border-slate-500' : w.id === 'wp3' ? 'border-blue-400' : w.id === 'wp4' ? 'border-purple-500' : 'border-red-500',
-            bg: w.id === 'wp1' ? 'bg-amber-900/40' : w.id === 'wp2' ? 'bg-slate-700/40' : w.id === 'wp3' ? 'bg-blue-900/40' : w.id === 'wp4' ? 'bg-purple-900/40' : 'bg-red-900/40',
+            border: w.id === 'wp1' ? '' : w.id === 'wp2' ? '' : w.id === 'wp3' ? '' : w.id === 'wp4' ? '' : '',
+            bg: w.id === 'wp1' ? '' : w.id === 'wp2' ? '' : w.id === 'wp3' ? '' : w.id === 'wp4' ? '' : '',
         }));
 
         const SHIELD_DATA = SHIELD_GEAR.map((g) => ({
             ...g,
-            border: g.id === 'sh1' ? 'border-amber-800' : g.id === 'sh2' ? 'border-yellow-700' : g.id === 'sh3' ? 'border-slate-400' : g.id === 'sh4' ? 'border-indigo-400' : 'border-rose-400',
-            bg: g.id === 'sh1' ? 'bg-stone-900/50' : g.id === 'sh2' ? 'bg-yellow-950/40' : g.id === 'sh3' ? 'bg-slate-800/50' : g.id === 'sh4' ? 'bg-indigo-950/40' : 'bg-rose-950/40',
+            border: g.id === 'sh1' ? '' : g.id === 'sh2' ? '' : g.id === 'sh3' ? '' : g.id === 'sh4' ? '' : '',
+            bg: g.id === 'sh1' ? '' : g.id === 'sh2' ? '' : g.id === 'sh3' ? '' : g.id === 'sh4' ? '' : '',
         }));
 
         const SHOE_DATA = SHOE_GEAR.map((g) => ({
             ...g,
-            border: g.id === 'shoe1' ? 'border-lime-800' : g.id === 'shoe2' ? 'border-amber-600' : g.id === 'shoe3' ? 'border-sky-500' : g.id === 'shoe4' ? 'border-cyan-400' : 'border-yellow-300',
-            bg: g.id === 'shoe1' ? 'bg-lime-950/40' : g.id === 'shoe2' ? 'bg-amber-950/40' : g.id === 'shoe3' ? 'bg-sky-950/40' : g.id === 'shoe4' ? 'bg-cyan-950/40' : 'bg-yellow-950/40',
+            border: g.id === 'shoe1' ? '' : g.id === 'shoe2' ? '' : g.id === 'shoe3' ? '' : g.id === 'shoe4' ? '' : '',
+            bg: g.id === 'shoe1' ? '' : g.id === 'shoe2' ? '' : g.id === 'shoe3' ? '' : g.id === 'shoe4' ? '' : '',
         }));
 
         /** 마스터는 무기·방패·신발을 종류당 10개 보유한 것으로 맞춰 강화를 연습할 수 있습니다. */
@@ -2278,30 +2287,30 @@ function redrawPlazaGrantsUi() {
                 const rate = Math.round(enhanceSuccessChance(lv) * 100);
                 const borderCls =
                     !have
-                        ? 'opacity-40 border-slate-700 bg-slate-900/50'
+                        ? 'opacity-40  '
                         : isEquipped
-                          ? 'border-sb-gold bg-yellow-900/40 ring-2 ring-sb-gold scale-105'
+                          ? '  ring-2  scale-105'
                           : `${g.border} ${g.bg}`;
                 const enhanceCls = have ? `gear-enhance-cutout ${gearEnhanceRingClass(lv)}` : '';
                 const click = have ? `onclick="window.equipGear('${g.id}')"` : '';
                 const cursor = have ? 'cursor-pointer hover:scale-105' : 'cursor-default';
                 const art = g.img
-                    ? `<img src="${g.img}" alt="${g.name}">`
+                    ? `<img loading="lazy" decoding="async" src="${g.img}" alt="${g.name}">`
                     : `<span>${g.emoji || ''}</span>`;
                 const enhanceBtn = canEnhance
-                    ? `<button type="button" onclick="event.stopPropagation(); void window.enhanceGear('${g.id}')" class="mt-0.5 w-full bg-violet-800/80 hover:bg-violet-700 text-violet-50 text-[7px] font-black py-0.5 rounded border border-violet-400/50">강화 ${rate}%</button>`
+                    ? `<button type="button" onclick="event.stopPropagation(); void window.enhanceGear('${g.id}')" class="oly-btn oly-btn-primary oly-btn-sm mt-0.5 w-full">강화 ${rate}%</button>`
                     : '';
                 return `
                     <div data-gear-id="${g.id}" ${click} class="${cursor} border-2 rounded-xl p-1.5 sm:p-2 flex flex-col items-center justify-center min-w-0 transition transform ${borderCls} relative">
-                        ${isEquipped ? '<div class="absolute -top-1 -right-0.5 bg-sb-gold text-slate-900 text-[7px] font-black px-0.5 rounded z-10">E</div>' : ''}
-                        ${have ? `<div class="absolute -top-1 left-0 bg-slate-950 text-violet-200 text-[7px] font-black px-0.5 rounded z-10 border border-violet-500/40">${lv}단계</div>` : ''}
-                        <div class="text-lg sm:text-2xl mb-0.5 leading-none weapon-slot-art ${enhanceCls}">${art}</div>
-                        <div class="text-[8px] sm:text-[9px] font-bold text-white text-center leading-tight line-clamp-2">${g.name}</div>
-                        <div class="text-[8px] text-amber-200/90 mt-0.5 font-bold">${have ? `×${isMaster ? Math.max(n, 1) : n}` : '미보유'}</div>
+                        ${isEquipped ? '<div class="absolute -top-1 -right-0.5   text-12 font-black px-0.5 rounded z-10">E</div>' : ''}
+                        ${have ? `<div class="absolute -top-1 left-0   text-12 font-black px-0.5 rounded z-10 border ">${lv}단계</div>` : ''}
+                        <div class="text-20 sm:text-24 mb-0.5 leading-none weapon-slot-art ${enhanceCls}">${art}</div>
+                        <div class="text-12 sm:text-12 font-bold  text-center leading-tight line-clamp-2">${g.name}</div>
+                        <div class="text-12  mt-0.5 font-bold">${have ? `×${isMaster ? Math.max(n, 1) : n}` : '미보유'}</div>
                         ${
                             have
-                                ? `<div class="text-[7px] text-emerald-400 font-bold text-center leading-tight">${gearStatLine(g)}</div>`
-                                : '<div class="text-[7px] text-slate-600">미보유</div>'
+                                ? `<div class="text-12  font-bold text-center leading-tight">${gearStatLine(g)}</div>`
+                                : '<div class="text-12 ">미보유</div>'
                         }
                         ${enhanceBtn}
                     </div>`;
@@ -2338,82 +2347,82 @@ function redrawPlazaGrantsUi() {
         ];
 
         const QUEST_DATA = [
-            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '8:40 전 등교', xp: 8, bong: 1, icon: 'fa-sun', color: 'text-yellow-200', tags: ['#자기관리'] },
-            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 38, bong: 4, icon: 'fa-hands-holding-child', color: 'text-pink-300', tags: ['#협력'] },
-            { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 16, bong: 3, icon: 'fa-dumbbell', color: 'text-blue-300', tags: ['#자기관리'] },
-            { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 16, bong: 3, icon: 'fa-person-snowboarding', color: 'text-emerald-300', tags: ['#자기관리'] },
-            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 16, bong: 3, icon: 'fa-child-reaching', color: 'text-orange-300', tags: ['#자기관리'] },
-            { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 16, bong: 2, icon: 'fa-utensils', color: 'text-orange-300', tags: ['#자기관리'] },
-            { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 22, bong: 2, icon: 'fa-broom', color: 'text-teal-300', tags: ['#자기관리', '#협력'] },
-            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 8, bong: 1, icon: 'fa-tooth', color: 'text-cyan-200', tags: ['#자기관리'] },
-            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 20, bong: 3, icon: 'fa-gauge-high', color: 'text-emerald-400', tags: ['#자기관리'] },
-            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 20, bong: 3, icon: 'fa-fire', color: 'text-orange-400', tags: ['#자기관리'] },
-            { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 40, bong: 2, icon: 'fa-calendar-check', color: 'text-white', tags: ['#자기관리'] },
-            { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 40, bong: 3, icon: 'fa-flask', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 40, bong: 3, icon: 'fa-hammer', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 40, bong: 3, icon: 'fa-language', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 40, bong: 3, icon: 'fa-music', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 40, bong: 3, icon: 'fa-masks-theater', color: 'text-purple-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 40, bong: 3, icon: 'fa-person-chalkboard', color: 'text-amber-300', tags: ['#교과연계', '#협력'] },
-            { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 80, bong: 8, icon: 'fa-scroll', color: 'text-red-300', tags: ['#교과연계', '#자기관리'] }
+            { id: 'q1', type: 'daily', name: '출석의 축복', desc: '8:40 전 등교', xp: 8, bong: 1, icon: 'sun', color: '', tags: ['#자기관리'] },
+            { id: 'q4', type: 'daily', name: '뉴비 도우미', desc: '라온반/친구 지원', xp: 38, bong: 4, icon: 'hands-holding-child', color: '', tags: ['#협력'] },
+            { id: 'q6', type: 'daily', name: '다리 근력', desc: '스쿼트 50회', xp: 16, bong: 3, icon: 'dumbbell', color: '', tags: ['#자기관리'] },
+            { id: 'q7', type: 'daily', name: '밸런스 강화', desc: '밸런스 보드 30초', xp: 16, bong: 3, icon: 'person-snowboarding', color: '', tags: ['#자기관리'] },
+            { id: 'q10', type: 'daily', name: '팔 근력', desc: '팔굽혀펴기 20회', xp: 16, bong: 3, icon: 'child-reaching', color: '', tags: ['#자기관리'] },
+            { id: 'q8', type: 'daily', name: '잔반 제로', desc: '급식 다 먹기', xp: 16, bong: 2, icon: 'utensils', color: '', tags: ['#자기관리'] },
+            { id: 'q9', type: 'daily', name: '클린 스위퍼', desc: '쓰레기 줍기(3개)', xp: 22, bong: 2, icon: 'broom', color: '', tags: ['#자기관리', '#협력'] },
+            { id: 'q_tooth', type: 'daily', name: '양치하기', desc: '아침·저녁 양치', xp: 8, bong: 1, icon: 'tooth', color: '', tags: ['#자기관리'] },
+            { id: 'q_bb_adv', type: 'daily', name: '밸런스 보드 (고급)', desc: '고급 코스 1세트', xp: 20, bong: 3, icon: 'gauge-high', color: '', tags: ['#자기관리'] },
+            { id: 'q_bb_sq', type: 'daily', name: '밸런스 + 스쿼트', desc: '밸런스 보드 후 스쿼트 20회', xp: 20, bong: 3, icon: 'fire', color: '', tags: ['#자기관리'] },
+            { id: 'q2', type: 'weekly', name: '연속 등교 보너스', desc: '일주일 무단결석 X', xp: 40, bong: 2, icon: 'calendar-check', color: '', tags: ['#자기관리'] },
+            { id: 'q_sci', type: 'locked', name: '던전 레이드(과학)', desc: '과학 전담 완벽 공략', xp: 40, bong: 3, icon: 'flask', color: '', tags: ['#교과연계', '#협력'] },
+            { id: 'q_prac', type: 'locked', name: '던전 레이드(실과)', desc: '실과 전담 완벽 공략', xp: 40, bong: 3, icon: 'hammer', color: '', tags: ['#교과연계', '#협력'] },
+            { id: 'q_eng', type: 'locked', name: '던전 레이드(영어)', desc: '영어 전담 완벽 공략', xp: 40, bong: 3, icon: 'language', color: '', tags: ['#교과연계', '#협력'] },
+            { id: 'q_dan', type: 'locked', name: '던전 레이드(단소)', desc: '단소 시간 완벽 공략', xp: 40, bong: 3, icon: 'music', color: '', tags: ['#교과연계', '#협력'] },
+            { id: 'q_the', type: 'locked', name: '던전 레이드(연극)', desc: '연극 시간 완벽 공략', xp: 40, bong: 3, icon: 'masks-theater', color: '', tags: ['#교과연계', '#협력'] },
+            { id: 'q_teacher', type: 'locked', name: '일일교사 레이드', desc: '담임·전담 교사 시간 완벽 공략', xp: 40, bong: 3, icon: 'person-chalkboard', color: '', tags: ['#교과연계', '#협력'] },
+            { id: 'q5', type: 'locked', name: '보스전 (평가)', desc: '평가 성적 향상', xp: 80, bong: 8, icon: 'scroll', color: '', tags: ['#교과연계', '#자기관리'] }
         ];
 
         const SKIN_DATA = [
-            { id: 'f_ninja', type: 'face', name: '닌자', desc: '어둠의 암살자', price: 200, emoji: '🥷', img: 'chars/face-ninja.webp' },
-            { id: 'f_fairy', type: 'face', name: '요정', desc: '숲의 신비', price: 250, emoji: '🧚‍♀️', img: 'chars/face-fairy.webp' },
-            { id: 'f_astroM', type: 'face', name: '우주탐험가', desc: '미지의 세계', price: 250, emoji: '👨‍🚀', img: 'chars/face-astro.webp' },
-            { id: 'f_vamp', type: 'face', name: '뱀파이어', desc: '밤의 지배자', price: 300, emoji: '🧛‍♂️', img: 'chars/face-vamp.webp' },
-            { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '🧜‍♀️', img: 'chars/face-mer.webp' },
-            { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '🤴', img: 'chars/face-king.webp' },
-            { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '👸', img: 'chars/face-queen.webp' },
-            { id: 'f_knight', type: 'face', name: '기사', desc: '방패의 수호자', price: 280, emoji: '🛡️', img: 'chars/face-knight.webp' },
-            { id: 'f_mage', type: 'face', name: '마법사', desc: '별의 주문', price: 280, emoji: '🧙', img: 'chars/face-mage.webp' },
-            { id: 'f_archer', type: 'face', name: '궁수', desc: '숲의 명사수', price: 260, emoji: '🏹', img: 'chars/face-archer.webp' },
-            { id: 'f_pirate', type: 'face', name: '해적', desc: '바다의 모험가', price: 300, emoji: '🏴‍☠️', img: 'chars/face-pirate.webp' },
-            { id: 'f_dokkaebi', type: 'face', name: '도깨비', desc: '방망이의 장난', price: 320, emoji: '👺', img: 'chars/face-dokkaebi.webp' },
-            { id: 'f_robot', type: 'face', name: '로봇', desc: '미래의 친구', price: 300, emoji: '🤖', img: 'chars/face-robot.webp' },
-            { id: 'f_chef', type: 'face', name: '요리사', desc: '맛의 연금술', price: 240, emoji: '👨‍🍳', img: 'chars/face-chef.webp' },
-            { id: 'f_wolf', type: 'face', name: '늑대', desc: '달빛 수호대', price: 320, emoji: '🐺', img: 'chars/face-wolf.webp' },
-            { id: 'f_phoenix', type: 'face', name: '봉황', desc: '불꽃의 날개', price: 380, emoji: '🔥', img: 'chars/face-phoenix.webp' },
-            { id: 'f_scholar', type: 'face', name: '선비', desc: '지혜의 책', price: 260, emoji: '📜', img: 'chars/face-scholar.webp' },
-            { id: 'f_pk_ember', type: 'face', name: '플레어', desc: '포켓몬 스타일', price: 300, emoji: '🔥', img: 'chars/face-pk-ember.webp' },
-            { id: 'f_pk_bubble', type: 'face', name: '아쿠아', desc: '포켓몬 스타일', price: 300, emoji: '🐢', img: 'chars/face-pk-bubble.webp' },
-            { id: 'f_pk_leaf', type: 'face', name: '리프', desc: '포켓몬 스타일', price: 300, emoji: '🐦', img: 'chars/face-pk-leaf.webp' },
-            { id: 'f_pk_bolt', type: 'face', name: '썬더', desc: '포켓몬 스타일', price: 300, emoji: '⚡', img: 'chars/face-pk-bolt.webp' },
-            { id: 'f_pk_pebble', type: 'face', name: '스톤', desc: '포켓몬 스타일', price: 320, emoji: '🐻', img: 'chars/face-pk-pebble.webp' },
-            { id: 'f_kart_red', type: 'face', name: '레드라인', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-red.webp' },
-            { id: 'f_kart_blue', type: 'face', name: '드리프트', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-blue.webp' },
-            { id: 'f_kart_yellow', type: 'face', name: '부스터', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-yellow.webp' },
-            { id: 'f_kart_pink', type: 'face', name: '체리', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-pink.webp' },
-            { id: 'f_kart_green', type: 'face', name: '네온', desc: '카트라이더 스타일', price: 280, emoji: '🏎️', img: 'chars/face-kart-green.webp' },
-            { id: 'f_block_builder', type: 'face', name: '빌더', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-builder.webp' },
-            { id: 'f_block_knight', type: 'face', name: '나이트', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-knight.webp' },
-            { id: 'f_block_astro', type: 'face', name: '파일럿', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-astro.webp' },
-            { id: 'f_block_ninja', type: 'face', name: '섀도', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-ninja.webp' },
-            { id: 'f_block_mage', type: 'face', name: '메이지', desc: '로블록스 스타일', price: 260, emoji: '🧱', img: 'chars/face-block-mage.webp' },
-            { id: 'f_brawl_hammer', type: 'face', name: '해머', desc: '브롤스타즈 스타일', price: 320, emoji: '🔨', img: 'chars/face-brawl-hammer.webp' },
-            { id: 'f_brawl_bloom', type: 'face', name: '블라썸', desc: '브롤스타즈 스타일', price: 320, emoji: '🌸', img: 'chars/face-brawl-bloom.webp' },
-            { id: 'f_brawl_boxer', type: 'face', name: '복서', desc: '브롤스타즈 스타일', price: 320, emoji: '🥊', img: 'chars/face-brawl-boxer.webp' },
-            { id: 'f_brawl_cannon', type: 'face', name: '캐논', desc: '브롤스타즈 스타일', price: 320, emoji: '💣', img: 'chars/face-brawl-cannon.webp' },
-            { id: 'f_brawl_frost', type: 'face', name: '아이스', desc: '브롤스타즈 스타일', price: 320, emoji: '❄️', img: 'chars/face-brawl-frost.webp' },
-            { id: 'f_staff_dragon', type: 'face', name: '용', desc: '세계수의 용왕 · Lv.80', price: 2000, minLevel: 80, emoji: '🐉', img: 'chars/staff-dragon.webp' },
-            { id: 'f_staff_tiger', type: 'face', name: '호랑이', desc: '산을 지키는 호랑이 · Lv.80', price: 2000, minLevel: 80, emoji: '🐯', img: 'chars/staff-tiger.webp' },
-            { id: 'f_staff_hyunmu', type: 'face', name: '현무', desc: '북쪽을 지키는 현무 · Lv.80', price: 2000, minLevel: 80, emoji: '🐢', img: 'chars/staff-hyunmu.webp' },
-            { id: 'f_staff_haetae', type: 'face', name: '해태', desc: '정의를 지키는 해태 · Lv.80', price: 2000, minLevel: 80, emoji: '🦁', img: 'chars/staff-haetae.webp' },
-            { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 100, emoji: '🔴', border: 'border-red-500', glow: 'shadow-[0_0_15px_rgba(239,68,68,0.7)]' },
-            { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '🟡', border: 'border-yellow-400', glow: 'shadow-[0_0_15px_rgba(250,204,21,0.7)]' },
-            { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '🔵', border: 'border-blue-500', glow: 'shadow-[0_0_15px_rgba(59,130,246,0.7)]' }
+            { id: 'f_ninja', type: 'face', name: '닌자', desc: '어둠의 암살자', price: 200, emoji: '', img: 'chars/face-ninja.webp' },
+            { id: 'f_fairy', type: 'face', name: '요정', desc: '숲의 신비', price: 250, emoji: '', img: 'chars/face-fairy.webp' },
+            { id: 'f_astroM', type: 'face', name: '우주탐험가', desc: '미지의 세계', price: 250, emoji: '', img: 'chars/face-astro.webp' },
+            { id: 'f_vamp', type: 'face', name: '뱀파이어', desc: '밤의 지배자', price: 300, emoji: '', img: 'chars/face-vamp.webp' },
+            { id: 'f_mer', type: 'face', name: '인어', desc: '심해의 여왕', price: 300, emoji: '', img: 'chars/face-mer.webp' },
+            { id: 'f_king', type: 'face', name: '국왕', desc: '왕국 통치자', price: 400, emoji: '', img: 'chars/face-king.webp' },
+            { id: 'f_queen', type: 'face', name: '여왕', desc: '우아한 통치자', price: 400, emoji: '', img: 'chars/face-queen.webp' },
+            { id: 'f_knight', type: 'face', name: '기사', desc: '방패의 수호자', price: 280, emoji: '', img: 'chars/face-knight.webp' },
+            { id: 'f_mage', type: 'face', name: '마법사', desc: '별의 주문', price: 280, emoji: '', img: 'chars/face-mage.webp' },
+            { id: 'f_archer', type: 'face', name: '궁수', desc: '숲의 명사수', price: 260, emoji: '', img: 'chars/face-archer.webp' },
+            { id: 'f_pirate', type: 'face', name: '해적', desc: '바다의 모험가', price: 300, emoji: '', img: 'chars/face-pirate.webp' },
+            { id: 'f_dokkaebi', type: 'face', name: '도깨비', desc: '방망이의 장난', price: 320, emoji: '', img: 'chars/face-dokkaebi.webp' },
+            { id: 'f_robot', type: 'face', name: '로봇', desc: '미래의 친구', price: 300, emoji: '', img: 'chars/face-robot.webp' },
+            { id: 'f_chef', type: 'face', name: '요리사', desc: '맛의 연금술', price: 240, emoji: '', img: 'chars/face-chef.webp' },
+            { id: 'f_wolf', type: 'face', name: '늑대', desc: '달빛 수호대', price: 320, emoji: '', img: 'chars/face-wolf.webp' },
+            { id: 'f_phoenix', type: 'face', name: '봉황', desc: '불꽃의 날개', price: 380, emoji: '', img: 'chars/face-phoenix.webp' },
+            { id: 'f_scholar', type: 'face', name: '선비', desc: '지혜의 책', price: 260, emoji: '', img: 'chars/face-scholar.webp' },
+            { id: 'f_pk_ember', type: 'face', name: '플레어', desc: '포켓몬 스타일', price: 300, emoji: '', img: 'chars/face-pk-ember.webp' },
+            { id: 'f_pk_bubble', type: 'face', name: '아쿠아', desc: '포켓몬 스타일', price: 300, emoji: '', img: 'chars/face-pk-bubble.webp' },
+            { id: 'f_pk_leaf', type: 'face', name: '리프', desc: '포켓몬 스타일', price: 300, emoji: '', img: 'chars/face-pk-leaf.webp' },
+            { id: 'f_pk_bolt', type: 'face', name: '썬더', desc: '포켓몬 스타일', price: 300, emoji: '', img: 'chars/face-pk-bolt.webp' },
+            { id: 'f_pk_pebble', type: 'face', name: '스톤', desc: '포켓몬 스타일', price: 320, emoji: '', img: 'chars/face-pk-pebble.webp' },
+            { id: 'f_kart_red', type: 'face', name: '레드라인', desc: '카트라이더 스타일', price: 280, emoji: '', img: 'chars/face-kart-red.webp' },
+            { id: 'f_kart_blue', type: 'face', name: '드리프트', desc: '카트라이더 스타일', price: 280, emoji: '', img: 'chars/face-kart-blue.webp' },
+            { id: 'f_kart_yellow', type: 'face', name: '부스터', desc: '카트라이더 스타일', price: 280, emoji: '', img: 'chars/face-kart-yellow.webp' },
+            { id: 'f_kart_pink', type: 'face', name: '체리', desc: '카트라이더 스타일', price: 280, emoji: '', img: 'chars/face-kart-pink.webp' },
+            { id: 'f_kart_green', type: 'face', name: '네온', desc: '카트라이더 스타일', price: 280, emoji: '', img: 'chars/face-kart-green.webp' },
+            { id: 'f_block_builder', type: 'face', name: '빌더', desc: '로블록스 스타일', price: 260, emoji: '', img: 'chars/face-block-builder.webp' },
+            { id: 'f_block_knight', type: 'face', name: '나이트', desc: '로블록스 스타일', price: 260, emoji: '', img: 'chars/face-block-knight.webp' },
+            { id: 'f_block_astro', type: 'face', name: '파일럿', desc: '로블록스 스타일', price: 260, emoji: '', img: 'chars/face-block-astro.webp' },
+            { id: 'f_block_ninja', type: 'face', name: '섀도', desc: '로블록스 스타일', price: 260, emoji: '', img: 'chars/face-block-ninja.webp' },
+            { id: 'f_block_mage', type: 'face', name: '메이지', desc: '로블록스 스타일', price: 260, emoji: '', img: 'chars/face-block-mage.webp' },
+            { id: 'f_brawl_hammer', type: 'face', name: '해머', desc: '브롤스타즈 스타일', price: 320, emoji: '', img: 'chars/face-brawl-hammer.webp' },
+            { id: 'f_brawl_bloom', type: 'face', name: '블라썸', desc: '브롤스타즈 스타일', price: 320, emoji: '', img: 'chars/face-brawl-bloom.webp' },
+            { id: 'f_brawl_boxer', type: 'face', name: '복서', desc: '브롤스타즈 스타일', price: 320, emoji: '', img: 'chars/face-brawl-boxer.webp' },
+            { id: 'f_brawl_cannon', type: 'face', name: '캐논', desc: '브롤스타즈 스타일', price: 320, emoji: '', img: 'chars/face-brawl-cannon.webp' },
+            { id: 'f_brawl_frost', type: 'face', name: '아이스', desc: '브롤스타즈 스타일', price: 320, emoji: '', img: 'chars/face-brawl-frost.webp' },
+            { id: 'f_staff_dragon', type: 'face', name: '용', desc: '세계수의 용왕 · Lv.80', price: 2000, minLevel: 80, emoji: '', img: 'chars/staff-dragon.webp' },
+            { id: 'f_staff_tiger', type: 'face', name: '호랑이', desc: '산을 지키는 호랑이 · Lv.80', price: 2000, minLevel: 80, emoji: '', img: 'chars/staff-tiger.webp' },
+            { id: 'f_staff_hyunmu', type: 'face', name: '현무', desc: '북쪽을 지키는 현무 · Lv.80', price: 2000, minLevel: 80, emoji: '', img: 'chars/staff-hyunmu.webp' },
+            { id: 'f_staff_haetae', type: 'face', name: '해태', desc: '정의를 지키는 해태 · Lv.80', price: 2000, minLevel: 80, emoji: '', img: 'chars/staff-haetae.webp' },
+            { id: 'sk_red', type: 'aura', name: '레드 오라', desc: '열정 테두리', price: 100, emoji: '', border: '', glow: 'shadow-[0_0_15px_color-mix(in srgb, var(--gold-deep) 70%, transparent)]' },
+            { id: 'sk_yel', type: 'aura', name: '옐로우 오라', desc: '빛 테두리', price: 100, emoji: '', border: '', glow: 'shadow-[0_0_15px_color-mix(in srgb, var(--gold) 70%, transparent)]' },
+            { id: 'sk_blu', type: 'aura', name: '블루 오라', desc: '바다 테두리', price: 100, emoji: '', border: '', glow: 'shadow-[0_0_15px_color-mix(in srgb, var(--sky) 70%, transparent)]' }
         ];
 
         function charImgTag(src, extraClass = '') {
             // 흰 네모 모서리를 원으로 자르고, 안쪽 흰 테두리는 클립 안에서 확대해 가립니다.
-            return `<span class="char-portrait-clip ${extraClass}"><img src="${src}" alt="" class="char-portrait" draggable="false"></span>`;
+            return `<span class="char-portrait-clip ${extraClass}"><img loading="lazy" decoding="async" src="${src}" alt="" class="char-portrait" draggable="false"></span>`;
         }
 
         function cosmeticMarkHtml(skin) {
             if (skin.img) {
                 // 무기 등 투명 PNG를 초상 프레임 위에 겹칩니다.
-                return `<span class="char-sticker-layer ${skin.overlayClass || ''} pointer-events-none z-20"><img src="${skin.img}" alt=""></span>`;
+                return `<span class="char-sticker-layer ${skin.overlayClass || ''} pointer-events-none z-20"><img loading="lazy" decoding="async" src="${skin.img}" alt=""></span>`;
             }
             return `<span class="absolute ${skin.overlayClass || ''} z-20 pointer-events-none">${skin.emoji || ''}</span>`;
         }
@@ -2421,15 +2430,15 @@ function redrawPlazaGrantsUi() {
         function weaponMarkHtml(wp, enhanceLevel) {
             const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (wp.img) {
-                return `<span class="char-weapon pointer-events-none z-30 ${cutout}"><img src="${wp.img}" alt=""></span>`;
+                return `<span class="char-weapon pointer-events-none z-30 ${cutout}"><img loading="lazy" decoding="async" src="${wp.img}" alt=""></span>`;
             }
-            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-[0.8em] z-30 drop-shadow-md pointer-events-none ${cutout}">${wp.emoji || ''}</span>`;
+            return `<span class="absolute top-1/2 -translate-y-1/2 -left-8 text-12 z-30 drop-shadow-md pointer-events-none ${cutout}">${wp.emoji || ''}</span>`;
         }
 
         function shieldMarkHtml(sh, enhanceLevel) {
             const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (sh && sh.img) {
-                return `<span class="char-shield pointer-events-none z-30 ${cutout}"><img src="${sh.img}" alt=""></span>`;
+                return `<span class="char-shield pointer-events-none z-30 ${cutout}"><img loading="lazy" decoding="async" src="${sh.img}" alt=""></span>`;
             }
             return `<span class="char-shield char-shield-emoji pointer-events-none z-30 ${cutout}">${(sh && sh.emoji) || ''}</span>`;
         }
@@ -2437,7 +2446,7 @@ function redrawPlazaGrantsUi() {
         function shoeMarkHtml(shoes, enhanceLevel) {
             const cutout = `gear-enhance-cutout ${gearEnhanceRingClass(enhanceLevel)}`;
             if (shoes && shoes.img) {
-                return `<span class="char-shoes pointer-events-none z-30 ${cutout}"><img src="${shoes.img}" alt=""></span>`;
+                return `<span class="char-shoes pointer-events-none z-30 ${cutout}"><img loading="lazy" decoding="async" src="${shoes.img}" alt=""></span>`;
             }
             return `<span class="char-shoes char-shoes-emoji pointer-events-none z-30 ${cutout}">${(shoes && shoes.emoji) || ''}</span>`;
         }
@@ -2471,7 +2480,7 @@ function redrawPlazaGrantsUi() {
                 const lv = getLevelInfo(row.xp || 0);
                 const ring = (lv.info && lv.info.ring) || '';
                 if (lv.info && lv.info.img) {
-                    rankLayer = `<span class="char-rank-bg" aria-hidden="true"><img src="${lv.info.img}" alt=""></span>`;
+                    rankLayer = `<span class="char-rank-bg" aria-hidden="true"><img loading="lazy" decoding="async" src="${lv.info.img}" alt=""></span>`;
                     rankStackClass = ` char-avatar-has-rank${ring ? ` char-rank-${ring}` : ''}`;
                 } else if (lv.info && lv.info.prop) {
                     rankLayer = `<span class="char-rank-bg char-rank-bg-emoji" aria-hidden="true">${lv.info.prop}</span>`;
@@ -2508,25 +2517,25 @@ function redrawPlazaGrantsUi() {
         }
 
         const SHOP_DATA = [
-            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100${getCurrencyUnit()} 행운! (1인 1일 3회)', price: 50, icon: 'fa-box-open', iconColor: 'text-yellow-400', isConsumable: true },
-            { id: 'item_xp_pack', name: '경험치 팩', desc: `20B로 즉시 ${XP_PACK_GAIN} XP (1인 1일 ${XP_PACK_DAILY_LIMIT}회)`, price: 20, icon: 'fa-bolt', iconColor: 'text-amber-400', isConsumable: true },
-            { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'fa-dice-six', iconColor: 'text-emerald-400', isConsumable: true },
-            { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'fa-ticket', iconColor: 'text-lime-300', isConsumable: true },
-            { id: 'item_shield', name: '절대 방패', desc: '경험치 차감만 방어(내구100, 봉 무관)', price: 50, icon: 'fa-shield-halved', iconColor: 'text-indigo-400', isConsumable: true },
-            { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기 (구매 시 곡명 입력)', price: 15, icon: 'fa-music', iconColor: 'text-pink-400' },
-            { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'fa-dice', iconColor: 'text-purple-400' },
-            { id: 's_movie', name: '영화시간', desc: '다같이 영화 시청', price: 400, icon: 'fa-film', iconColor: 'text-blue-400' },
-            { id: 's4', name: '체육시간', desc: '다같이 뛰놀기', price: 500, icon: 'fa-volleyball', iconColor: 'text-orange-400' },
-            { id: 's7', name: '레전더리 타임', desc: '학급 전체 자유시간', price: 2000, icon: 'fa-crown', iconColor: 'text-sb-red' }
+            { id: 'item_random', name: '랜덤 박스', desc: '50B로 0~100${getCurrencyUnit()} 행운! (1인 1일 3회)', price: 50, icon: 'box-open', iconColor: '', isConsumable: true },
+            { id: 'item_xp_pack', name: '경험치 팩', desc: `20B로 즉시 ${XP_PACK_GAIN} XP (1인 1일 ${XP_PACK_DAILY_LIMIT}회)`, price: 20, icon: 'bolt', iconColor: '', isConsumable: true },
+            { id: 'item_mystery_dice', name: '미스테리 박스(주사위)', desc: '1~6 숫자에 투자! 맞추면 5배 (1인 1일 3회)', price: 0, icon: 'dice-six', iconColor: '', isConsumable: true },
+            { id: 'item_lotto', name: '삼봉 로또 복권', desc: '1~30 중 3개 선택! 금요일 점심 추첨, 당첨금 40% 세금', price: 10, icon: 'ticket', iconColor: '', isConsumable: true },
+            { id: 'item_shield', name: '절대 방패', desc: '경험치 차감만 방어(내구100, 봉 무관)', price: 50, icon: 'shield-halved', iconColor: '', isConsumable: true },
+            { id: 's1', name: '뮤직 타임', desc: '신청곡 틀기 (구매 시 곡명 입력)', price: 15, icon: 'music', iconColor: '' },
+            { id: 's2', name: '보드게임시간', desc: '삼삼오오 게임', price: 300, icon: 'dice', iconColor: '' },
+            { id: 's_movie', name: '영화시간', desc: '다같이 영화 시청', price: 400, icon: 'film', iconColor: '' },
+            { id: 's4', name: '체육시간', desc: '다같이 뛰놀기', price: 500, icon: 'volleyball', iconColor: '' },
+            { id: 's7', name: '레전더리 타임', desc: '학급 전체 자유시간', price: 2000, icon: 'crown', iconColor: '' }
         ];
 
         const LEVEL_DATA = [
-            { max: 1499, name: '새내기', prop: '🥚', img: 'ranks/rank-saenaegi.webp', ring: 'saenaegi', borderColor: 'border-slate-300', bgColor: 'bg-slate-800', textColor: 'text-slate-100', anim: 'avatar-bounce' },
-            { max: 4499, name: '초보', prop: '🐣', img: 'ranks/rank-chobo.webp', ring: 'chobo', borderColor: 'border-sb-green', bgColor: 'bg-green-800', textColor: 'text-sb-green', anim: 'avatar-bounce' },
-            { max: 9999, name: '중수', prop: '🐥', img: 'ranks/rank-jungsu.webp', ring: 'jungsu', borderColor: 'border-sky-400', bgColor: 'bg-sky-800', textColor: 'text-sky-300', anim: 'avatar-bounce' },
-            { max: 21999, name: '고수', prop: '🦅', img: 'ranks/rank-gosu.webp', ring: 'gosu', borderColor: 'border-yellow-400', bgColor: 'bg-yellow-800', textColor: 'text-yellow-300', anim: 'avatar-flex' },
-            { max: 39999, name: '수호자', prop: '☄️', img: 'ranks/rank-guardian.webp', ring: 'guardian', borderColor: 'border-fuchsia-400', bgColor: 'bg-fuchsia-800', textColor: 'text-fuchsia-200', anim: 'avatar-float' },
-            { max: Infinity, name: '전설', prop: '🐦‍🔥', img: 'ranks/rank-legend.webp', ring: 'legend', borderColor: 'border-sb-red', bgColor: 'bg-rose-800', textColor: 'text-sb-red', anim: 'avatar-legend' }
+            { max: 1499, name: '새내기', prop: '', img: 'ranks/rank-saenaegi.webp', ring: 'saenaegi', borderColor: '', bgColor: '', textColor: '', anim: 'avatar-bounce' },
+            { max: 4499, name: '초보', prop: '', img: 'ranks/rank-chobo.webp', ring: 'chobo', borderColor: '', bgColor: '', textColor: '', anim: 'avatar-bounce' },
+            { max: 9999, name: '중수', prop: '', img: 'ranks/rank-jungsu.webp', ring: 'jungsu', borderColor: '', bgColor: '', textColor: '', anim: 'avatar-bounce' },
+            { max: 21999, name: '고수', prop: '', img: 'ranks/rank-gosu.webp', ring: 'gosu', borderColor: '', bgColor: '', textColor: '', anim: 'avatar-flex' },
+            { max: 39999, name: '수호자', prop: '', img: 'ranks/rank-guardian.webp', ring: 'guardian', borderColor: '', bgColor: '', textColor: '', anim: 'avatar-float' },
+            { max: Infinity, name: '전설', prop: '', img: 'ranks/rank-legend.webp', ring: 'legend', borderColor: '', bgColor: '', textColor: '', anim: 'avatar-legend' }
         ];
 
         function rankBadgeHtml(info, extraClass = '') {
@@ -2534,7 +2543,7 @@ function redrawPlazaGrantsUi() {
             const ring = (info && info.ring) ? ` char-rank-${info.ring}` : '';
             const clipCls = `rank-badge-clip ${extraClass}${ring}`.trim();
             if (info && info.img) {
-                return `<span class="${clipCls}"><img src="${info.img}" alt="${name}" class="rank-badge" /></span>`;
+                return `<span class="${clipCls}"><img loading="lazy" decoding="async" src="${info.img}" alt="${name}" class="rank-badge" /></span>`;
             }
             return `<span class="${clipCls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
         }
@@ -2552,8 +2561,8 @@ function redrawPlazaGrantsUi() {
         };
 
         const DEFAULT_CLASS_STAFF = [
-            { id: 'gm', name: '마스터 J', gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
-            { id: 'gm_a', name: '마스터 A', gender: 'F', role: 'co_teacher', label: '보조 마스터', optionClass: 'text-cyan-400', emoji: '🏴‍☠️' },
+            { id: 'gm', name: '마스터 J', gender: 'M', role: 'teacher', label: '담임교사', optionClass: '', emoji: '' },
+            { id: 'gm_a', name: '마스터 A', gender: 'F', role: 'co_teacher', label: '보조 마스터', optionClass: '', emoji: '' },
         ];
 
         const SEED_CLASS_ID = SEED_MASTER_CLASS_ID;
@@ -2669,7 +2678,7 @@ function redrawPlazaGrantsUi() {
                 isDemoSeed: false,
                 roster: buildBlankRoster(opts.studentCount != null ? opts.studentCount : 24),
                 staff: [
-                    { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
+                    { id: 'gm', name: teacherName, gender: 'M', role: 'teacher', label: '담임교사', optionClass: '', emoji: '' },
                 ],
             };
         }
@@ -2768,8 +2777,8 @@ function redrawPlazaGrantsUi() {
                     gender: 'M',
                     role: 'teacher',
                     label: '담임교사',
-                    optionClass: 'text-sb-gold',
-                    emoji: '👑',
+                    optionClass: '',
+                    emoji: '',
                 });
             }
             return staff;
@@ -2785,8 +2794,8 @@ function redrawPlazaGrantsUi() {
                     gender: 'M',
                     role: 'teacher',
                     label: '담임교사',
-                    optionClass: 'text-sb-gold',
-                    emoji: '👑',
+                    optionClass: '',
+                    emoji: '',
                 }];
             }
             return getClassStaffFromMeta(meta, meta.classId || '');
@@ -2954,6 +2963,11 @@ function redrawPlazaGrantsUi() {
 
         function updateClassDisplayLabels() {
             const meta = window.classMeta;
+            if (meta && meta.isGuestDemo) {
+                const navOnly = document.getElementById('navClassLabel');
+                if (navOnly) navOnly.textContent = meta.displayName || '데모 반';
+                return;
+            }
             const labelEl = document.getElementById('loginClassLabel');
             const codeEl = document.getElementById('loginClassCode');
             const navClassEl = document.getElementById('navClassLabel');
@@ -2998,7 +3012,7 @@ function redrawPlazaGrantsUi() {
             let html = '<option value="" disabled selected>계정 선택</option>';
             getClassStaffFromMeta(meta).forEach((s) => {
                 const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
-                html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
+                html += `<option value="${s.id}"${optClass}>${s.emoji || ''} ${s.name} (${s.label || '관리자'})</option>`;
             });
             sel.innerHTML = html;
         }
@@ -3013,13 +3027,13 @@ function redrawPlazaGrantsUi() {
             getActiveStudentIds().forEach((sid) => {
                 const rosterEntry = (meta.roster || []).find((r) => String(r.id) === sid);
                 const labelSuffix = rosterEntry && rosterEntry.label ? ` (${rosterEntry.label})` : '';
-                const optClass = rosterEntry && rosterEntry.label ? ' class="text-cyan-300"' : '';
+                const optClass = rosterEntry && rosterEntry.label ? ' class=""' : '';
                 html += `<option value="${sid}"${optClass}>${sid}. ${STUDENT_NAMES[sid] || sid}${labelSuffix}</option>`;
             });
             html += '<option disabled>─── 관리자 ───</option>';
             getClassStaffFromMeta(meta).forEach((s) => {
                 const optClass = s.optionClass ? ` class="${s.optionClass}"` : '';
-                html += `<option value="${s.id}"${optClass}>${s.emoji || '👑'} ${s.name} (${s.label || '관리자'})</option>`;
+                html += `<option value="${s.id}"${optClass}>${s.emoji || ''} ${s.name} (${s.label || '관리자'})</option>`;
             });
             sel.innerHTML = html;
             if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
@@ -3029,6 +3043,7 @@ function redrawPlazaGrantsUi() {
         async function loadClassMeta() {
             const classRef = doc(db, 'classes', appId);
             const snap = await getDoc(classRef);
+            if (window._guestDemoActive) return;
             if (snap.exists()) {
                 const data = snap.data() || {};
                 const base = (data.isDemoSeed || appId === SEED_CLASS_ID)
@@ -3182,7 +3197,7 @@ function redrawPlazaGrantsUi() {
             const name = window.classMeta?.displayName || appId;
             const code = window.classMeta?.inviteCode || '';
             const ok = await window.customConfirm(
-                `⚠️ 이 학급만 보관(비활성)합니다.\n\n` +
+                ` 이 학급만 보관(비활성)합니다.\n\n` +
                 `학급: ${name}\n` +
                 `초대 코드: ${code || '(없음)'}\n\n` +
                 `· 학생·설정 데이터는 서버에 남습니다.\n` +
@@ -3214,7 +3229,7 @@ function redrawPlazaGrantsUi() {
                     }, { merge: true });
                 }
                 window.hideGlobalLoading();
-                await window.customAlert('✅ 이 학급을 보관했습니다.\n다른 기기의 학생은 초대 코드로 입장할 수 없습니다.');
+                await window.customAlert(' 이 학급을 보관했습니다.\n다른 기기의 학생은 초대 코드로 입장할 수 없습니다.');
                 await window.leaveCurrentClass({ skipConfirm: true });
             } catch (e) {
                 window.hideGlobalLoading();
@@ -3286,7 +3301,7 @@ function redrawPlazaGrantsUi() {
             }
             const rotatePin = shouldRotateMasterPinOnReset(id);
             const ok0 = await window.customConfirm(
-                '⚠️ 이 학급을 초기화합니다.\n\n' +
+                ' 이 학급을 초기화합니다.\n\n' +
                 `학급 ID: ${id}\n\n` +
                 '학생 XP·봉·아이템이 비워집니다.\n' +
                 (rotatePin
@@ -3309,7 +3324,7 @@ function redrawPlazaGrantsUi() {
                 const pinLine = rotatePin && result.newPin
                     ? `\n새 마스터 PIN: ${result.newPin}\n(학생은 예전 PIN으로 마스터 로그인을 할 수 없습니다.)`
                     : '';
-                await window.customAlert(`✅ 「${result.displayName}」 학급을 초기화했습니다.${pinLine}`);
+                await window.customAlert(` 「${result.displayName}」 학급을 초기화했습니다.${pinLine}`);
                 void window.refreshManagedClassDirectory();
             } catch (e) {
                 window.hideGlobalLoading();
@@ -3336,7 +3351,7 @@ function redrawPlazaGrantsUi() {
                 }
             } catch (_) { /* ignore */ }
             const ok = await window.customConfirm(
-                `⚠️ 이 학급을 삭제(보관)합니다.\n\n` +
+                ` 이 학급을 삭제(보관)합니다.\n\n` +
                 `학급: ${displayName}\n` +
                 `학급 ID: ${id}\n\n` +
                 '초대 코드로는 더 이상 들어올 수 없습니다.\n' +
@@ -3366,7 +3381,7 @@ function redrawPlazaGrantsUi() {
                     }, { merge: true });
                 }
                 window.hideGlobalLoading();
-                await window.customAlert(`✅ 「${displayName}」 학급을 보관했습니다.\n학생이 마스터로 남아 있으면 이어서 「초기화」를 눌러 주세요.`);
+                await window.customAlert(` 「${displayName}」 학급을 보관했습니다.\n학생이 마스터로 남아 있으면 이어서 「초기화」를 눌러 주세요.`);
                 if (id === appId) {
                     await window.leaveCurrentClass({ skipConfirm: true });
                     return;
@@ -3428,8 +3443,8 @@ function redrawPlazaGrantsUi() {
             const list = Array.isArray(entries) ? entries : [];
             if (!list.length) {
                 return _showArchivedClasses
-                    ? '<p class="text-[10px] text-white">목록이 비었습니다. 숨긴 학급은 초대 코드로 다시 열 수 있습니다.</p>'
-                    : '<p class="text-[10px] text-white">운영 중인 학급이 없습니다. 보관된 반은 위 체크를 켜면 보입니다.</p>';
+                    ? '<p class="text-12 ">목록이 비었습니다. 숨긴 학급은 초대 코드로 다시 열 수 있습니다.</p>'
+                    : '<p class="text-12 ">운영 중인 학급이 없습니다. 보관된 반은 위 체크를 켜면 보입니다.</p>';
             }
             return list.map((row) => {
                 const id = safeManagedClassId(row.classId);
@@ -3441,14 +3456,14 @@ function redrawPlazaGrantsUi() {
                 const canHide = canHideManagedClassFromDirectory(window.playerState, appId, id);
                 const name = escapeNavClassText(row.displayName || id);
                 const code = escapeNavClassText(row.inviteCode || '—');
-                return `<div class="rounded-xl border-2 ${cur ? 'border-emerald-300 bg-emerald-900' : 'border-cyan-300 bg-slate-950'} p-2.5 space-y-1.5">
-                    <div class="text-xs font-black text-white truncate">${name}${cur ? ' · 지금 이 반' : ''}</div>
-                    <div class="text-[10px] text-cyan-100 font-bold">초대 ${code} · ${escapeNavClassText(status)} · ${escapeNavClassText(id)}</div>
+                return `<div class="rounded-xl border-2 ${cur ? ' ' : ' '} p-2.5 space-y-1.5">
+                    <div class="text-12 font-black  truncate">${name}${cur ? ' · 지금 이 반' : ''}</div>
+                    <div class="text-12  font-bold">초대 ${code} · ${escapeNavClassText(status)} · ${escapeNavClassText(id)}</div>
                     <div class="flex flex-wrap gap-1.5">
-                        <button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); window.openManagedClass('${id}')">열람</button>
-                        ${canReset ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.resetManagedClass('${id}')">초기화</button>` : ''}
-                        ${canArchive ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-red-700 hover:bg-red-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.archiveManagedClass('${id}')">삭제</button>` : ''}
-                        ${canHide ? `<button type="button" class="min-h-[36px] px-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-black text-[10px]" onclick="event.stopPropagation(); void window.hideManagedClassFromDirectory('${id}')">목록에서 지우기</button>` : ''}
+                        <button type="button" class="oly-btn oly-btn-primary oly-btn-sm" onclick="event.stopPropagation(); window.openManagedClass('${id}')">열람</button>
+                        ${canReset ? `<button type="button" class="oly-btn oly-btn-reward oly-btn-sm" onclick="event.stopPropagation(); void window.resetManagedClass('${id}')">초기화</button>` : ''}
+                        ${canArchive ? `<button type="button" class="oly-btn oly-btn-danger oly-btn-sm" onclick="event.stopPropagation(); void window.archiveManagedClass('${id}')">삭제</button>` : ''}
+                        ${canHide ? `<button type="button" class="oly-btn oly-btn-secondary oly-btn-sm" onclick="event.stopPropagation(); void window.hideManagedClassFromDirectory('${id}')">목록에서 지우기</button>` : ''}
                     </div>
                 </div>`;
             }).join('');
@@ -3461,10 +3476,10 @@ function redrawPlazaGrantsUi() {
                 el.checked = _showArchivedClasses;
             });
             if (!window.playerState?.isGM) {
-                boxes.forEach((el) => { el.innerHTML = '<p class="text-[10px] text-white">마스터로 로그인하면 학급 목록이 나타납니다.</p>'; });
+                boxes.forEach((el) => { el.innerHTML = '<p class="text-12 ">마스터로 로그인하면 학급 목록이 나타납니다.</p>'; });
                 return;
             }
-            boxes.forEach((el) => { el.innerHTML = '<p class="text-[10px] text-cyan-100">학급 목록을 불러오는 중…</p>'; });
+            boxes.forEach((el) => { el.innerHTML = '<p class="text-12 ">학급 목록을 불러오는 중…</p>'; });
             let serverEntries = [];
             const seedViewer = isSeedMasterViewer(window.playerState, appId);
             const archivedRow = document.getElementById('showArchivedClassesRow');
@@ -3540,13 +3555,13 @@ function redrawPlazaGrantsUi() {
             if (teacher) teacher.classList.toggle('hidden', !isTeacher);
             if (btnS) {
                 btnS.className = isTeacher
-                    ? 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 opacity-70'
-                    : 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-black border-2 border-cyan-400 bg-cyan-900/40 text-cyan-100 shadow-lg';
+                    ? 'oly-btn oly-btn-secondary oly-btn-md login-mode-btn'
+                    : 'oly-btn oly-btn-primary oly-btn-md login-mode-btn';
             }
             if (btnT) {
                 btnT.className = isTeacher
-                    ? 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-black border-2 border-amber-400 bg-amber-900/40 text-amber-100 shadow-lg'
-                    : 'login-mode-btn min-h-[72px] py-3 px-2 rounded-2xl text-sm font-bold border border-slate-600 bg-slate-800/60 text-slate-300 opacity-70';
+                    ? 'oly-btn oly-btn-primary oly-btn-md login-mode-btn'
+                    : 'oly-btn oly-btn-secondary oly-btn-md login-mode-btn';
             }
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
@@ -3570,13 +3585,13 @@ function redrawPlazaGrantsUi() {
             if (create) create.classList.toggle('hidden', !isCreate);
             if (btnJ) {
                 btnJ.className = isCreate
-                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap'
-                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap';
+                    ? 'oly-btn oly-btn-secondary oly-btn-md teacher-sub-btn'
+                    : 'oly-btn oly-btn-primary oly-btn-md teacher-sub-btn';
             }
             if (btnC) {
                 btnC.className = isCreate
-                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
-                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap';
+                    ? 'oly-btn oly-btn-primary oly-btn-md teacher-sub-btn'
+                    : 'oly-btn oly-btn-secondary oly-btn-md teacher-sub-btn';
             }
             if (typeof window.renderClassCreateRequestStatus === 'function') {
                 window.renderClassCreateRequestStatus();
@@ -3687,29 +3702,29 @@ function redrawPlazaGrantsUi() {
 
         function renderClassCreateRequestHtml(req) {
             if (!req) {
-                return '<p class="text-[10px] text-slate-400">원래 마스터가 허락하면 반이 만들어집니다.</p>';
+                return '<p class="text-12 ">원래 마스터가 허락하면 반이 만들어집니다.</p>';
             }
             const label = classCreateRequestStatusLabel(req.status);
             const title = escapeHofText(req.displayName || '새 학급');
             if (req.status === 'approved' && req.newClassId) {
                 const code = escapeHofText(req.inviteCode || '—');
                 return `<div class="space-y-2">
-                    <p class="text-[11px] font-black text-emerald-200">허락되었습니다. ${title}</p>
-                    <p class="text-[10px] text-slate-300">초대 코드: <span class="font-black tracking-widest text-emerald-200">${code}</span></p>
-                    <button type="button" onclick="void window.enterApprovedClass()" class="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl text-xs">이 반으로 이동</button>
+                    <p class="text-12 font-black ">허락되었습니다. ${title}</p>
+                    <p class="text-12 ">초대 코드: <span class="font-black tracking-widest ">${code}</span></p>
+                    <button type="button" onclick="void window.enterApprovedClass()" class="oly-btn oly-btn-primary oly-btn-md w-full">이 반으로 이동</button>
                 </div>`;
             }
             if (req.status === 'rejected') {
                 const reason = escapeHofText(req.rejectReason || '이유가 적혀 있지 않습니다.');
                 return `<div class="space-y-2">
-                    <p class="text-[11px] font-black text-rose-200">거절되었습니다. ${title}</p>
-                    <p class="text-[10px] text-slate-300">${reason}</p>
-                    <button type="button" onclick="window.resetClassCreateRequest()" class="w-full min-h-[40px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-[10px]">다시 요청하기</button>
+                    <p class="text-12 font-black ">거절되었습니다. ${title}</p>
+                    <p class="text-12 ">${reason}</p>
+                    <button type="button" onclick="window.resetClassCreateRequest()" class="oly-btn oly-btn-secondary oly-btn-md w-full">다시 요청하기</button>
                 </div>`;
             }
             return `<div class="space-y-1">
-                <p class="text-[11px] font-black text-amber-200">${label} · ${title}</p>
-                <p class="text-[10px] text-slate-400">삼봉초 원래 마스터가 허락하면 반이 만들어집니다. 이 화면을 닫아도 요청은 유지됩니다.</p>
+                <p class="text-12 font-black ">${label} · ${title}</p>
+                <p class="text-12 ">삼봉초 원래 마스터가 허락하면 반이 만들어집니다. 이 화면을 닫아도 요청은 유지됩니다.</p>
             </div>`;
         }
 
@@ -3789,18 +3804,18 @@ function redrawPlazaGrantsUi() {
             const pending = pendingClassCreateRequests(_classCreateRequests);
             const rows = pending.length
                 ? pending.map((r) => `
-                    <div class="rounded-xl border border-amber-500/30 bg-slate-950/70 p-2 space-y-1">
-                        <p class="text-[11px] font-black text-amber-100">${escapeHofText(r.displayName)}</p>
-                        <p class="text-[10px] text-slate-300">${escapeHofText(r.schoolName || '')} ${r.schoolYear}학년도 ${r.grade}학년 ${r.homeroom}반 · ${escapeHofText(r.teacherName)}</p>
+                    <div class="rounded-xl border   p-2 space-y-1">
+                        <p class="text-12 font-black ">${escapeHofText(r.displayName)}</p>
+                        <p class="text-12 ">${escapeHofText(r.schoolName || '')} ${r.schoolYear}학년도 ${r.grade}학년 ${r.homeroom}반 · ${escapeHofText(r.teacherName)}</p>
                         <div class="flex gap-2 pt-1">
-                            <button type="button" onclick="void window.approveClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px]">허락</button>
-                            <button type="button" onclick="void window.rejectClassCreateRequest('${escapeHofText(r.id)}')" class="flex-1 min-h-[36px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg text-[10px]">거절</button>
+                            <button type="button" onclick="void window.approveClassCreateRequest('${escapeHofText(r.id)}')" class="oly-btn oly-btn-primary oly-btn-sm flex-1">허락</button>
+                            <button type="button" onclick="void window.rejectClassCreateRequest('${escapeHofText(r.id)}')" class="oly-btn oly-btn-secondary oly-btn-sm flex-1">거절</button>
                         </div>
                     </div>`).join('')
-                : '<p class="text-[10px] text-slate-200">대기 중인 요청이 없습니다.</p>';
-            return `<div class="rounded-xl border-2 border-amber-300 bg-amber-950/50 p-3 space-y-2">
-                <h4 class="text-white font-black text-xs"><i class="fa-solid fa-envelope-open-text text-amber-300"></i> 학급 개설 요청 ${pending.length ? `<span class="text-amber-200">(${pending.length})</span>` : ''}</h4>
-                <p class="text-[10px] text-amber-50">다른 선생님이 보낸 요청입니다. 여기서 허락하거나 거절하세요.</p>
+                : '<p class="text-12 ">대기 중인 요청이 없습니다.</p>';
+            return `<div class="rounded-xl border-2   p-3 space-y-2">
+                <h4 class=" font-black text-12"><svg class="oly-icon" data-oly="envelope-open-text" viewBox="0 0 24 24" aria-hidden="true"></svg> 학급 개설 요청 ${pending.length ? `<span class="">(${pending.length})</span>` : ''}</h4>
+                <p class="text-12 ">다른 선생님이 보낸 요청입니다. 여기서 허락하거나 거절하세요.</p>
                 <div class="space-y-2">${rows}</div>
             </div>`;
         };
@@ -3816,13 +3831,13 @@ function redrawPlazaGrantsUi() {
         window.renderClassCreateUnlockAdminHtml = function() {
             if (!isSeedMasterViewer(window.playerState, appId)) return '';
             const code = escapeHofText(_classCreateUnlockCode || '만드는 중…');
-            return `<div class="rounded-xl border-2 border-sky-300 bg-slate-950 p-3 space-y-2">
-                <h4 class="text-white font-black text-xs"><i class="fa-solid fa-key text-sky-300"></i> 학급 개설 코드</h4>
-                <p class="text-[10px] text-slate-200">이 코드를 아는 선생님만 로그인 화면에서 「새 학급 만들기」 요청을 보낼 수 있습니다. 학생에게는 알려 주지 마세요.</p>
-                <p class="text-lg font-black tracking-[0.35em] text-sky-200 text-center">${code}</p>
+            return `<div class="rounded-xl border-2   p-3 space-y-2">
+                <h4 class=" font-black text-12"><svg class="oly-icon" data-oly="key" viewBox="0 0 24 24" aria-hidden="true"></svg> 학급 개설 코드</h4>
+                <p class="text-12 ">이 코드를 아는 선생님만 로그인 화면에서 「새 학급 만들기」 요청을 보낼 수 있습니다. 학생에게는 알려 주지 마세요.</p>
+                <p class="text-20 font-black tracking-[0.35em]  text-center">${code}</p>
                 <div class="flex flex-wrap gap-1.5">
-                    <button type="button" onclick="void window.copyClassCreateUnlockCode()" class="min-h-[36px] px-3 rounded-lg bg-sky-700 hover:bg-sky-600 text-white font-black text-[10px]">복사</button>
-                    <button type="button" onclick="void window.regenerateClassCreateUnlockCode()" class="min-h-[36px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px]">새로 만들기</button>
+                    <button type="button" onclick="void window.copyClassCreateUnlockCode()" class="oly-btn oly-btn-primary oly-btn-sm">복사</button>
+                    <button type="button" onclick="void window.regenerateClassCreateUnlockCode()" class="oly-btn oly-btn-secondary oly-btn-sm">새로 만들기</button>
                 </div>
             </div>`;
         };
@@ -4134,68 +4149,68 @@ function redrawPlazaGrantsUi() {
             if (!panel || !window.playerState?.isGM) return;
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
-                <tr class="border-b border-slate-700/80">
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                <tr class="border-b ">
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10  border  rounded px-1 py-0.5 text-12 "></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full  border  rounded px-1 py-0.5 text-12 "></td>
                     <td class="p-1">
-                        <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
+                        <select data-roster-idx="${idx}" data-roster-field="gender" class=" border  rounded px-1 py-0.5 text-12 ">
                             <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
                             <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
                         </select>
                     </td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full  border  rounded px-1 py-0.5 text-12 "></td>
                     <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
                 </tr>`).join('');
             panel.innerHTML = `
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
-                    <label class="text-[10px] text-slate-300">학급 표시 이름
-                        <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
-                        <span class="block mt-1 text-[9px] text-amber-200/80">이 학급 마스터가 바꿀 수 있습니다. 명단 저장을 누르세요.</span>
+                    <label class="text-12 ">학급 표시 이름
+                        <input id="classMetaDisplayName" type="text" value="${meta.displayName || ''}" class="mt-1 w-full  border  rounded px-2 py-1 text-12 ">
+                        <span class="block mt-1 text-12 ">이 학급 마스터가 바꿀 수 있습니다. 명단 저장을 누르세요.</span>
                     </label>
-                    <label class="text-[10px] text-slate-300">학급 ID (데이터 경로)
-                        <input type="text" value="${appId}" readonly class="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-slate-400">
+                    <label class="text-12 ">학급 ID (데이터 경로)
+                        <input type="text" value="${appId}" readonly class="mt-1 w-full  border  rounded px-2 py-1 text-12 ">
                     </label>
-                    <label class="text-[10px] text-slate-300">학년도
-                        <input id="classMetaSchoolYear" type="number" min="2020" max="2100" value="${meta.schoolYear || 2026}" class="mt-1 w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                    <label class="text-12 ">학년도
+                        <input id="classMetaSchoolYear" type="number" min="2020" max="2100" value="${meta.schoolYear || 2026}" class="mt-1 w-full  border  rounded px-2 py-1 text-12 ">
                     </label>
-                    <label class="text-[10px] text-slate-300">학년 · 반
+                    <label class="text-12 ">학년 · 반
                         <div class="mt-1 flex gap-2">
-                            <input id="classMetaGrade" type="number" min="1" max="6" value="${meta.grade || 6}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
-                            <input id="classMetaHomeroom" type="number" min="1" max="20" value="${meta.homeroom || 1}" class="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white">
+                            <input id="classMetaGrade" type="number" min="1" max="6" value="${meta.grade || 6}" class="w-16  border  rounded px-2 py-1 text-12 ">
+                            <input id="classMetaHomeroom" type="number" min="1" max="20" value="${meta.homeroom || 1}" class="w-16  border  rounded px-2 py-1 text-12 ">
                         </div>
                     </label>
                 </div>
-                <p class="text-[9px] text-slate-500 mb-2">
-                    초대 코드: <span class="text-emerald-300 font-bold tracking-widest">${meta.inviteCode || '(저장 후 생성)'}</span>
-                    <button type="button" onclick="window.copyTeacherInviteCode()" class="ml-1 text-[9px] text-sky-300 underline">복사</button>
+                <p class="text-12  mb-2">
+                    초대 코드: <span class=" font-bold tracking-widest">${meta.inviteCode || '(저장 후 생성)'}</span>
+                    <button type="button" onclick="window.copyTeacherInviteCode()" class="oly-btn oly-btn-secondary oly-btn-md ml-1 underline">복사</button>
                     · GMA 편집 학번: ${meta.gmaEditStudentId || '1'}
                 </p>
-                <p class="text-[9px] text-slate-500 mb-2 break-all">공유 링크: <span class="text-sky-300/90">${getClassShareUrl(appId)}</span>
-                    <button type="button" onclick="window.copyTeacherClassLink()" class="ml-1 text-[9px] text-sky-300 underline">복사</button>
+                <p class="text-12  mb-2 break-all">공유 링크: <span class="">${getClassShareUrl(appId)}</span>
+                    <button type="button" onclick="window.copyTeacherClassLink()" class="oly-btn oly-btn-secondary oly-btn-md ml-1 underline">복사</button>
                 </p>
-                <div class="overflow-x-auto max-h-[240px] overflow-y-auto rounded border border-slate-700 mb-3">
-                    <table class="w-full text-[10px]">
-                        <thead><tr class="text-slate-400 border-b border-slate-700"><th class="p-1">번호</th><th class="p-1">이름</th><th class="p-1">성별</th><th class="p-1">별칭</th><th class="p-1">활성</th></tr></thead>
+                <div class="overflow-x-auto max-h-[240px] overflow-y-auto rounded border  mb-3">
+                    <table class="w-full text-12">
+                        <thead><tr class=" border-b "><th class="p-1">번호</th><th class="p-1">이름</th><th class="p-1">성별</th><th class="p-1">별칭</th><th class="p-1">활성</th></tr></thead>
                         <tbody id="classRosterEditorBody">${rosterRows}</tbody>
                     </table>
                 </div>
                 <div class="flex flex-wrap gap-2 mb-3">
-                    <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-2 px-3 rounded border border-slate-600">+ 학생 추가</button>
-                    <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-4 rounded">명단 저장</button>
+                    <button type="button" onclick="window.addClassRosterRow()" class="oly-btn oly-btn-secondary oly-btn-md">+ 학생 추가</button>
+                    <button type="button" onclick="window.saveClassMeta()" class="oly-btn oly-btn-primary oly-btn-md">명단 저장</button>
                 </div>
-                <div class="border-t border-slate-700 pt-3 mt-1">
-                    <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-plus-circle text-sky-400"></i> 새 학급 만들기 (내년·다른 반)</h4>
+                <div class="border-t  pt-3 mt-1">
+                    <h4 class=" font-bold text-12 mb-2"><svg class="oly-icon" data-oly="plus-circle" viewBox="0 0 24 24" aria-hidden="true"></svg> 새 학급 만들기 (내년·다른 반)</h4>
                     <div id="newClassCreateFormFields">
                     <div class="grid sm:grid-cols-2 gap-2 mb-2">
-                        <input id="newClassDisplayName" type="text" placeholder="예: 2027학년도 6학년 1반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
-                        <input id="newClassSchoolYear" type="number" placeholder="학년도 (2027)" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
-                        <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
-                        <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
+                        <input id="newClassDisplayName" type="text" placeholder="예: 2027학년도 6학년 1반" class=" border  rounded px-2 py-1.5 text-12 ">
+                        <input id="newClassSchoolYear" type="number" placeholder="학년도 (2027)" class=" border  rounded px-2 py-1.5 text-12 ">
+                        <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class=" border  rounded px-2 py-1.5 text-12 ">
+                        <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class=" border  rounded px-2 py-1.5 text-12 ">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
-                    <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
+                    <button type="button" onclick="window.createNewClass()" class="oly-btn oly-btn-primary oly-btn-md">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
+                    <p class="text-12  mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
-                    <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
+                    <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border  "></div>
                 </div>`;
             bindSeedMasterClassCreateWatch();
             window.renderClassCreateRequestStatus();
@@ -4276,7 +4291,7 @@ function redrawPlazaGrantsUi() {
             updateClassDisplayLabels();
             window.renderClassAdminPanel();
             window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
-            await window.customAlert('✅ 학급 명단이 저장되었습니다.');
+            await window.customAlert(' 학급 명단이 저장되었습니다.');
         };
 
         window.createNewClass = async function() {
@@ -4319,7 +4334,7 @@ function redrawPlazaGrantsUi() {
                         copySettingsFromCurrent: false,
                     });
                     window.hideGlobalLoading();
-                    await window.customAlert(`✅ 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
+                    await window.customAlert(` 새 학급이 생성되었습니다!\n\n초대 코드: ${inviteCode}\n학급 ID: ${newClassId}\n\n명단을 수정한 뒤 학생에게 초대 코드를 알려 주세요.`);
                     window.switchClass(newClassId);
                     return;
                 }
@@ -4431,21 +4446,21 @@ function redrawPlazaGrantsUi() {
             menu.innerHTML = `
                 <div class="flex items-start justify-between gap-2 mb-2">
                     <div class="min-w-0">
-                        <div id="navClassMenuTitle" class="text-[15px] font-black text-white">이 학급</div>
-                        <div class="text-[12px] text-emerald-200 font-black mt-0.5 truncate">지금: ${escapeNavClassText(currentName)}</div>
-                        <div class="text-[11px] text-cyan-100 font-bold truncate">초대 ${escapeNavClassText(currentInvite)}</div>
+                        <div id="navClassMenuTitle" class="text-14 font-black ">이 학급</div>
+                        <div class="text-14  font-black mt-0.5 truncate">지금: ${escapeNavClassText(currentName)}</div>
+                        <div class="text-12  font-bold truncate">초대 ${escapeNavClassText(currentInvite)}</div>
                     </div>
-                    <button type="button" class="shrink-0 w-8 h-8 rounded-lg bg-slate-950 text-white border-2 border-cyan-300 hover:bg-slate-800" onclick="event.stopPropagation(); window.closeNavClassMenu()" aria-label="닫기">
-                        <i class="fa-solid fa-xmark"></i>
+                    <button type="button" class="oly-btn oly-btn-secondary oly-btn-md shrink-0 w-8 h-8" onclick="event.stopPropagation(); window.closeNavClassMenu()" aria-label="닫기">
+                        <svg class="oly-icon" data-oly="xmark" viewBox="0 0 24 24" aria-hidden="true"></svg>
                     </button>
                 </div>
-                <p class="text-[11px] text-slate-300 font-bold mb-2">다른 학급 목록은 보여 주지 않습니다. 초대 코드로만 들어갑니다.</p>
-                <div class="border-t-2 border-cyan-300 mt-2 pt-2 space-y-1.5">
-                    <label for="navSwitchClassCode" class="text-[11px] text-white font-black">초대 코드 또는 학급 ID</label>
-                    <input id="navSwitchClassCode" type="text" placeholder="예: ABC123" class="w-full rounded-lg px-3 py-2 text-[13px] font-bold" onclick="event.stopPropagation()">
-                    <button type="button" class="w-full min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2 rounded-xl border-2 border-emerald-200" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 들어가기</button>
-                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl bg-slate-950 border-2 border-amber-300 text-amber-200 font-bold text-[12px]" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
-                    <button type="button" class="w-full text-left px-3 py-2 rounded-xl bg-slate-950 border-2 border-cyan-300 text-cyan-100 font-bold text-[12px]" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
+                <p class="text-12  font-bold mb-2">다른 학급 목록은 보여 주지 않습니다. 초대 코드로만 들어갑니다.</p>
+                <div class="border-t-2  mt-2 pt-2 space-y-1.5">
+                    <label for="navSwitchClassCode" class="text-12  font-black">초대 코드 또는 학급 ID</label>
+                    <input id="navSwitchClassCode" type="text" placeholder="예: ABC123" class="w-full rounded-lg px-3 py-2 text-14 font-bold" onclick="event.stopPropagation()">
+                    <button type="button" class="oly-btn oly-btn-primary oly-btn-md w-full" onclick="event.stopPropagation(); void window.applyNavClassSwitch()">이 학급으로 들어가기</button>
+                    <button type="button" class="oly-btn oly-btn-reward oly-btn-md w-full" onclick="event.stopPropagation(); void window.leaveCurrentClass()">이 기기에서 학급 나가기</button>
+                    <button type="button" class="oly-btn oly-btn-secondary oly-btn-md w-full" onclick="event.stopPropagation(); void window.logout()">다른 계정으로 다시 로그인</button>
                 </div>`;
             setNavClassMenuOpen(true);
             // 같은 클릭 이벤트로 바로 닫히지 않도록 한 틱 무시
@@ -4502,7 +4517,7 @@ function redrawPlazaGrantsUi() {
             window.closeNavClassMenu();
         });
 
-        /** 유니코드 주사위 면(⚀~⚅) — 미스테리 박스 UI용 */
+        /** 유니코드 주사위 면(~) — 미스테리 박스 UI용 */
         const DICE_UNICODE_FACES = ['\u2680','\u2681','\u2682','\u2683','\u2684','\u2685'];
 
         /** 석서영(학번 13) 부동산 복구용 자리 인덱스(0부터). 8번 자리 = 인덱스 7. — 시드 학급·기본 4×4 전용 */
@@ -4676,6 +4691,11 @@ function redrawPlazaGrantsUi() {
         let unsubscribeOpenLesson = null;
         let unsubscribeBusSeats = null;
         let unsubscribeBoardRooms = null;
+        let unsubscribeEstate = null;
+        let _noticeInbox = [];
+        let _deferredNotices = [];
+        window._worldEntered = false;
+        window._guestDemoActive = false;
         let _classBoardDocReady = false;
         let _openLessonDocReady = false;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
@@ -4685,7 +4705,12 @@ function redrawPlazaGrantsUi() {
          * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
          * authStateReady + 익명 로그인 후 getIdToken()으로 토큰을 확실히 받은 뒤에만 true.
          */
+        function isGuestSession() {
+            return !guestMayWrite(window.playerState, window._guestDemoActive);
+        }
+
         async function ensureAnonAuthReady() {
+            if (isGuestSession()) return false;
             if (!auth) return false;
             const tryOnce = async () => {
                 await auth.authStateReady();
@@ -4705,6 +4730,226 @@ function redrawPlazaGrantsUi() {
                 console.warn('ensureAnonAuthReady 최종 실패', e);
                 return false;
             }
+        }
+
+        function stopClassRealtime() {
+            [
+                unsubscribeGlobal,
+                unsubscribeSettings,
+                unsubscribeRaid,
+                unsubscribeDragonBall,
+                unsubscribeGoldenBell,
+                unsubscribeMasterQuiz,
+                unsubscribeShopGroupBuy,
+                unsubscribeConvenienceOrders,
+                unsubscribeStudentBackups,
+                unsubscribeClassBoard,
+                unsubscribeOpenLesson,
+                unsubscribeBusSeats,
+                unsubscribeBoardRooms,
+                unsubscribeEstate,
+                unsubscribeMartialLaw,
+                window._unsubQuizBank,
+                window._unsubRaidDraft,
+                window._unsubGbDraft,
+            ].forEach((unsub) => {
+                if (typeof unsub === 'function') {
+                    try { unsub(); } catch (_) { /* ignore */ }
+                }
+            });
+            unsubscribeGlobal = null;
+            unsubscribeSettings = null;
+            unsubscribeRaid = null;
+            unsubscribeDragonBall = null;
+            unsubscribeGoldenBell = null;
+            unsubscribeMasterQuiz = null;
+            unsubscribeShopGroupBuy = null;
+            unsubscribeConvenienceOrders = null;
+            unsubscribeStudentBackups = null;
+            unsubscribeClassBoard = null;
+            unsubscribeOpenLesson = null;
+            unsubscribeBusSeats = null;
+            unsubscribeBoardRooms = null;
+            unsubscribeEstate = null;
+            unsubscribeMartialLaw = null;
+            window._unsubQuizBank = null;
+            window._unsubRaidDraft = null;
+            window._unsubGbDraft = null;
+        }
+
+        function dismissLoginOverlay() {
+            const el = document.getElementById('loginOverlay');
+            document.documentElement.classList.remove('boot-resume');
+            const sk = document.getElementById('bootSkeleton');
+            if (sk) sk.hidden = true;
+            if (!el || el.classList.contains('is-leaving') || el.classList.contains('is-dismissed')) return;
+            el.classList.add('is-leaving');
+            document.body.classList.add('oly-app');
+            setTimeout(() => {
+                el.classList.add('is-dismissed', 'hidden');
+                el.style.display = 'none';
+                el.style.pointerEvents = 'none';
+                el.setAttribute('aria-hidden', 'true');
+                document.body.classList.add('oly-app-in');
+            }, 100);
+        }
+        window.dismissLoginOverlay = dismissLoginOverlay;
+
+        function clearStrayOverlays() {
+            document.querySelectorAll('.sambong-custom-modal').forEach((el) => el.remove());
+            hideScreenNoticePopup();
+            hideClassBellPopup();
+            if (typeof hideMartialLawModal === 'function') hideMartialLawModal();
+            ['electionOverlay', 'studentElectionOverlay', 'rpsOverlay', 'masterQuizModal', 'raidBattleModal'].forEach((id) => {
+                const node = document.getElementById(id);
+                if (node) node.classList.add('hidden');
+            });
+            document.body.classList.remove('martial-law-student-lock', 'student-election-active');
+        }
+
+        function escapeNoticeText(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function renderNoticeInbox() {
+            const btn = document.getElementById('noticeInboxBtn');
+            const badge = document.getElementById('noticeInboxBadge');
+            const panel = document.getElementById('noticeInboxPanel');
+            const show = !!window._worldEntered && !isGuestSession();
+            if (btn) btn.classList.toggle('hidden', !show);
+            const unread = unreadCount(_noticeInbox);
+            if (badge) {
+                badge.textContent = String(unread);
+                badge.classList.toggle('hidden', unread <= 0);
+            }
+            if (!panel) return;
+            if (!show) {
+                panel.classList.add('hidden');
+                return;
+            }
+            if (panel.classList.contains('hidden')) return;
+            const rows = _noticeInbox.length
+                ? _noticeInbox.map((row) => `
+                    <article class="notice-inbox-item">
+                        <strong>${escapeNoticeText(row.title)}</strong>
+                        <p>${escapeNoticeText(row.body)}</p>
+                    </article>`).join('')
+                : '<p class="text-14  mt-2">새 알림이 없습니다.</p>';
+            panel.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <h3>알림함</h3>
+                    <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.toggleNoticeInbox(false)">닫기</button>
+                </div>
+                ${rows}`;
+        }
+
+        function currentNoticeInboxKey() {
+            const sid = localStorage.getItem('sambong_student_id') || '';
+            return noticeInboxStorageKey(typeof appId !== 'undefined' ? appId : '', sid);
+        }
+
+        function persistNoticeInbox() {
+            if (!window._worldEntered || isGuestSession()) return;
+            try {
+                localStorage.setItem(currentNoticeInboxKey(), serializeNoticeInbox(_noticeInbox));
+            } catch (_) { /* 저장 공간이 없어도 이번 화면의 알림함은 유지합니다. */ }
+        }
+
+        function restoreNoticeInbox() {
+            if (isGuestSession()) return;
+            try {
+                _noticeInbox = loadNoticeInbox(localStorage.getItem(currentNoticeInboxKey()));
+            } catch (_) {
+                _noticeInbox = [];
+            }
+        }
+
+        function rememberNotice(title, body, key) {
+            const notice = { title, body, key: key || '', at: Date.now() };
+            if (!window._worldEntered || isGuestSession()) {
+                if (notice.key && _deferredNotices.some((row) => row.key === notice.key)) return;
+                if (!String(body || '').trim()) return;
+                _deferredNotices.push(notice);
+                return;
+            }
+            _noticeInbox = pushNotice(_noticeInbox, notice);
+            persistNoticeInbox();
+            renderNoticeInbox();
+        }
+
+        function flushDeferredNotices() {
+            if (!window._worldEntered || isGuestSession()) {
+                _deferredNotices = [];
+                return;
+            }
+            const batch = _deferredNotices.splice(0);
+            batch.forEach((notice) => {
+                _noticeInbox = pushNotice(_noticeInbox, notice);
+            });
+            persistNoticeInbox();
+            renderNoticeInbox();
+        }
+
+        function enterWorld() {
+            clearStrayOverlays();
+            window._worldEntered = true;
+            restoreNoticeInbox();
+            const heldNotice = window._deferredScreenNotice;
+            if (heldNotice && heldNotice.active && heldNotice.text && !isGuestSession()) {
+                rememberNotice(heldNotice.title || '공지', heldNotice.text, `screen:${heldNotice.id || heldNotice.text}`);
+                if (typeof writeDismissedScreenNoticeId === 'function') writeDismissedScreenNoticeId(heldNotice.id);
+            }
+            window._deferredScreenNotice = null;
+            flushDeferredNotices();
+            if (typeof syncStudentElectionUi === 'function') syncStudentElectionUi();
+            if (window.globalSettings && window.globalSettings.rpsGame && typeof applyRemoteRpsGame === 'function') {
+                applyRemoteRpsGame(window.globalSettings.rpsGame);
+            }
+            if (typeof window.syncMartialLawModal === 'function') window.syncMartialLawModal();
+        }
+
+        window.toggleNoticeInbox = function(forceOpen) {
+            const panel = document.getElementById('noticeInboxPanel');
+            const btn = document.getElementById('noticeInboxBtn');
+            if (!panel || isGuestSession() || !window._worldEntered) return;
+            const open = typeof forceOpen === 'boolean' ? forceOpen : panel.classList.contains('hidden');
+            panel.classList.toggle('hidden', !open);
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) {
+                _noticeInbox = markAllRead(_noticeInbox);
+                persistNoticeInbox();
+                renderNoticeInbox();
+                panel.classList.remove('hidden');
+            }
+        };
+
+        const GUEST_WRITE_RE = /window\.(attemptQuest|cancelQuest|buyItem|submitLunchBid|submitReadingLog|saveReadingTeacherNote|givePeerPraise|depositBank|withdrawBank|withdrawBankAll|transferBong|openTermDeposit|takeBankLoan|repayBankLoan|previewBankLoan|buyBusSeat|purchaseBus|buyEstate|setBaseFace|saveStatusMessage|submitDiary|saveDiary|buyLotto|joinShopGroupBuy|openShopGroupBuyModal|orderConvenience|equipSkin|enhanceGear|submitRaidAnswer|submitRaidShortAnswer|submitMasterQuizAnswer|quickReward|changeMyPassword|studentPickElection|toggleJob|toggleStudentJob|promptUnlock|placeWorldCup|investStock|sellStock)/;
+
+        function maskGuestWriteControls(root) {
+            if (!isGuestSession()) return;
+            const scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll('button, [onclick]').forEach((el) => {
+                if (el.closest('#appNavDock, #loginOverlay, nav.fixed.top-0, #noticeInboxPanel')) return;
+                const oc = el.getAttribute('onclick') || '';
+                if (GUEST_WRITE_RE.test(oc)) el.classList.add('guest-write-hidden');
+            });
+        }
+
+        function watchGuestWriteControls() {
+            if (window._guestWriteObserver) return;
+            let frame = 0;
+            window._guestWriteObserver = new MutationObserver(() => {
+                if (!isGuestSession()) return;
+                if (frame) return;
+                frame = requestAnimationFrame(() => {
+                    frame = 0;
+                    maskGuestWriteControls(document);
+                });
+            });
+            window._guestWriteObserver.observe(document.body, { childList: true, subtree: true });
         }
 
         /** 전역 로딩 스피너 / 에러 표시 */
@@ -4743,7 +4988,7 @@ function redrawPlazaGrantsUi() {
             if (!el) {
                 el = document.createElement('div');
                 el.id = 'appToast';
-                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] max-w-[90vw] px-4 py-2.5 rounded-xl bg-emerald-700 text-white text-sm font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
+                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[450] max-w-[90vw] px-4 py-2.5 rounded-xl   text-14 font-bold shadow-xl opacity-0 transition-opacity duration-200 pointer-events-none';
                 document.body.appendChild(el);
             }
             el.textContent = message || '';
@@ -5039,8 +5284,8 @@ function redrawPlazaGrantsUi() {
                     desc: String(q.desc || ''),
                     xp: Math.min(CUSTOM_QUEST_XP_MAX, Math.max(0, Math.floor(Number(q.xp) || 0))),
                     bong: normalizeQuestBongReward(Number(q.bong) || 0),
-                    icon: q.icon || 'fa-star',
-                    color: q.color || 'text-emerald-300',
+                    icon: q.icon || 'star',
+                    color: q.color || '',
                     custom: true,
                 }));
         }
@@ -5137,7 +5382,7 @@ function redrawPlazaGrantsUi() {
         }
 
         // ==========================================
-        // ★ 뮤직 타임 신청곡 큐 (학급 공용) ★
+        //  뮤직 타임 신청곡 큐 (학급 공용) 
         // ==========================================
         const MUSIC_TIME_SHOP_ID = 's1';
         const MUSIC_TIME_SONG_MAX_LEN = 80;
@@ -5205,14 +5450,14 @@ function redrawPlazaGrantsUi() {
             const count = queue.length;
             el.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div class="text-[9px] text-slate-500">
-                        <i class="fa-solid fa-music text-pink-400 mr-1"></i>
+                    <div class="text-12 ">
+                        <svg class="oly-icon" data-oly="music" viewBox="0 0 24 24" aria-hidden="true"></svg>
                         뮤직 타임 신청곡은 구매 시 입력되며, 아래에서 대기 목록을 볼 수 있어요.
                     </div>
                     <button type="button" onclick="window.openMusicTimeQueuePanel()"
-                        class="shrink-0 bg-pink-900/70 hover:bg-pink-800 text-pink-100 font-bold py-2 px-3 rounded-xl text-[10px] border border-pink-500/50">
-                        <i class="fa-solid fa-list-music"></i> 신청곡 리스트 보기
-                        ${count > 0 ? `<span class="ml-1 bg-pink-500 text-white px-1.5 py-0.5 rounded-full text-[9px]">${count}</span>` : ''}
+                        class="oly-btn oly-btn-secondary oly-btn-md shrink-0">
+                        <svg class="oly-icon" data-oly="list-music" viewBox="0 0 24 24" aria-hidden="true"></svg> 신청곡 리스트 보기
+                        ${count > 0 ? `<span class="ml-1   px-1.5 py-0.5 rounded-full text-12">${count}</span>` : ''}
                     </button>
                 </div>`;
         }
@@ -5222,17 +5467,17 @@ function redrawPlazaGrantsUi() {
             if (modal) return modal;
             modal = document.createElement('div');
             modal.id = 'musicTimeQueueModal';
-            modal.className = 'hidden fixed inset-0 z-[270] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6';
+            modal.className = 'hidden fixed inset-0 z-[270]  backdrop-blur-sm flex items-center justify-center px-3 py-6';
             modal.innerHTML = `
-                <div class="w-full max-w-md bg-slate-900 border border-pink-500/50 rounded-2xl shadow-2xl p-4 max-h-[85vh] flex flex-col">
-                    <div class="flex items-center justify-between gap-3 mb-3 border-b border-slate-700 pb-3 shrink-0">
-                        <h3 class="text-lg font-display text-pink-100"><i class="fa-solid fa-music text-pink-300"></i> 뮤직 타임 신청곡</h3>
-                        <button type="button" onclick="window.closeMusicTimeQueuePanel()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+                <div class="w-full max-w-md  border  rounded-2xl shadow-2xl p-4 max-h-[85vh] flex flex-col">
+                    <div class="flex items-center justify-between gap-3 mb-3 border-b  pb-3 shrink-0">
+                        <h3 class="text-20 font-display "><svg class="oly-icon" data-oly="music" viewBox="0 0 24 24" aria-hidden="true"></svg> 뮤직 타임 신청곡</h3>
+                        <button type="button" onclick="window.closeMusicTimeQueuePanel()" class="oly-btn oly-btn-secondary oly-btn-md">닫기</button>
                     </div>
                     <div class="shrink-0 mb-3">
                         <a href="https://music.youtube.com/" target="_blank" rel="noopener noreferrer"
-                            class="flex items-center justify-center gap-2 w-full bg-red-900/60 hover:bg-red-800 text-red-100 font-bold py-2.5 px-3 rounded-xl text-[10px] border border-red-500/50 transition">
-                            <i class="fa-brands fa-youtube text-red-300"></i> 유튜브 뮤직 바로가기 ↗
+                            class="flex items-center justify-center gap-2 w-full    font-bold py-2.5 px-3 rounded-xl text-12 border  transition">
+                            <svg class="oly-icon" data-oly="youtube" viewBox="0 0 24 24" aria-hidden="true"></svg> 유튜브 뮤직 바로가기 
                         </a>
                     </div>
                     <div id="musicTimeQueueModalBody" class="overflow-y-auto scrollbar-hide pr-1 flex-1"></div>
@@ -5500,7 +5745,7 @@ function redrawPlazaGrantsUi() {
             const prevLabel = btn ? btn.innerHTML : '';
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 재생';
+                btn.innerHTML = '<svg class="oly-icon" data-oly="spinner" viewBox="0 0 24 24" aria-hidden="true"></svg> 재생';
             }
 
             // 클릭 제스처에서 고정 이름 창을 우리 브리지로 확보(이미 떠 있으면 그 창을 재사용)
@@ -5508,7 +5753,7 @@ function redrawPlazaGrantsUi() {
             if (!claimed) {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
+                    btn.innerHTML = prevLabel || '<svg class="oly-icon" data-oly="play" viewBox="0 0 24 24" aria-hidden="true"></svg> 재생';
                 }
                 return await window.customAlert(
                     '팝업이 차단되어 유튜브 뮤직을 열 수 없습니다.\n브라우저에서 팝업을 허용한 뒤 다시 눌러 주세요.'
@@ -5529,7 +5774,7 @@ function redrawPlazaGrantsUi() {
 
                 if (!videoId) {
                     await window.customAlert(
-                        `검색 결과를 열었습니다.\n\n🎵 ${song}\n\n첫 곡을 눌러 재생해 주세요.`
+                        `검색 결과를 열었습니다.\n\n ${song}\n\n첫 곡을 눌러 재생해 주세요.`
                     );
                 }
             } catch (e) {
@@ -5537,7 +5782,7 @@ function redrawPlazaGrantsUi() {
             } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerHTML = prevLabel || '<i class="fa-solid fa-play"></i> 재생';
+                    btn.innerHTML = prevLabel || '<svg class="oly-icon" data-oly="play" viewBox="0 0 24 24" aria-hidden="true"></svg> 재생';
                 }
             }
         };
@@ -5548,31 +5793,31 @@ function redrawPlazaGrantsUi() {
             const queue = getMusicTimeQueue().slice().sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
             const isGM = !!(window.playerState && window.playerState.isGM);
             if (!queue.length) {
-                body.innerHTML = '<div class="text-[10px] text-slate-500 text-center py-10 border border-dashed border-slate-700 rounded-xl">대기 중인 신청곡이 없습니다.</div>';
+                body.innerHTML = '<div class="text-12  text-center py-10 border border-dashed  rounded-xl">대기 중인 신청곡이 없습니다.</div>';
                 return;
             }
             prefetchMusicTimePlayUrls(queue.map((row) => row.song));
             body.innerHTML = `
-                <div class="text-[9px] text-slate-400 mb-3">총 ${queue.length}곡 · 「재생」은 같은 유튜브 뮤직 창에서 이어서 열립니다.</div>
+                <div class="text-12  mb-3">총 ${queue.length}곡 · 「재생」은 같은 유튜브 뮤직 창에서 이어서 열립니다.</div>
                 <div class="space-y-2">
                     ${queue.map((row, idx) => `
-                        <div class="rounded-xl border border-slate-700/80 bg-slate-950/60 px-3 py-2">
+                        <div class="rounded-xl border   px-3 py-2">
                             <div class="flex items-start justify-between gap-2">
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-[9px] text-pink-300/80 font-bold mb-0.5">#${idx + 1} · ${escapeConvenienceHtml(row.studentName)} <span class="text-slate-500 font-normal">(${escapeConvenienceHtml(row.studentId)}번)</span></div>
-                                    <div class="text-sm text-white font-bold break-words">🎵 ${escapeConvenienceHtml(row.song)}</div>
-                                    <div class="text-[9px] text-slate-500 mt-1">${formatMusicTimeAt(row.at)}</div>
+                                    <div class="text-12  font-bold mb-0.5">#${idx + 1} · ${escapeConvenienceHtml(row.studentName)} <span class=" font-normal">(${escapeConvenienceHtml(row.studentId)}번)</span></div>
+                                    <div class="text-14  font-bold break-words"> ${escapeConvenienceHtml(row.song)}</div>
+                                    <div class="text-12  mt-1">${formatMusicTimeAt(row.at)}</div>
                                 </div>
                                 <div class="shrink-0 flex flex-col gap-1">
-                                    <button type="button" data-music-play-id="${escapeHtmlAttr(row.id)}" onclick="window.playMusicTimeRequest('${escapeHtmlAttr(row.id)}')" class="bg-pink-800 hover:bg-pink-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-pink-500/70">
-                                        <i class="fa-solid fa-play"></i> 재생
+                                    <button type="button" data-music-play-id="${escapeHtmlAttr(row.id)}" onclick="window.playMusicTimeRequest('${escapeHtmlAttr(row.id)}')" class="oly-btn oly-btn-secondary oly-btn-sm">
+                                        <svg class="oly-icon" data-oly="play" viewBox="0 0 24 24" aria-hidden="true"></svg> 재생
                                     </button>
-                                    ${isGM ? `<button type="button" onclick="window.completeMusicTimeRequestAdmin('${escapeHtmlAttr(row.id)}')" class="bg-emerald-800 hover:bg-emerald-700 text-white text-[9px] font-bold py-1.5 px-2 rounded-lg border border-emerald-600">재생완료</button>` : ''}
+                                    ${isGM ? `<button type="button" onclick="window.completeMusicTimeRequestAdmin('${escapeHtmlAttr(row.id)}')" class="oly-btn oly-btn-primary oly-btn-sm">재생완료</button>` : ''}
                                 </div>
                             </div>
                         </div>`).join('')}
                 </div>
-                <p class="text-[9px] text-slate-500 mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 첫 검색 곡을 같은 창에 이어서 재생합니다.${isGM ? ` ${getMasterDisplayName()}만 「재생완료」로 목록에서 제거할 수 있습니다.` : ''}</p>`;
+                <p class="text-12  mt-3 leading-relaxed">「재생」을 누르면 유튜브 뮤직에서 첫 검색 곡을 같은 창에 이어서 재생합니다.${isGM ? ` ${getMasterDisplayName()}만 「재생완료」로 목록에서 제거할 수 있습니다.` : ''}</p>`;
         }
 
         window.openMusicTimeQueuePanel = function() {
@@ -5653,11 +5898,10 @@ function redrawPlazaGrantsUi() {
             markSeenMusicTimeRequestIds(fresh.map((row) => row.id));
             if (fresh.length === 1) {
                 const row = fresh[0];
-                void window.customAlert(
-                    `🎵 뮤직 타임 신청곡\n\n` +
-                    `- 신청: ${row.studentName} (${row.studentId}번)\n` +
-                    `- 곡: ${row.song}\n\n` +
-                    `상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`
+                rememberNotice(
+                    '뮤직 타임',
+                    `신청: ${row.studentName} (${row.studentId}번)\n곡: ${row.song}\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`,
+                    `music:${row.id}`,
                 );
                 return;
             }
@@ -5666,12 +5910,14 @@ function redrawPlazaGrantsUi() {
                 .sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0))
                 .map((row, idx) => `${idx + 1}. ${row.studentName} · ${row.song}`)
                 .join('\n');
-            void window.customAlert(
-                `🎵 뮤직 타임 신청곡 ${fresh.length}건\n\n${lines}\n\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`
+            rememberNotice(
+                '뮤직 타임',
+                `신청곡 ${fresh.length}건\n${lines}\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`,
+                `music:${fresh.map((row) => row.id).join(',')}`,
             );
         }
 
-        // ★ 주간 시간표 (마스터 탭 · Firestore globalSettings.classTimetable) ★
+        //  주간 시간표 (마스터 탭 · Firestore globalSettings.classTimetable) 
         const CLASS_TIMETABLE_DAYS = [
             { key: 'mon', label: '월' },
             { key: 'tue', label: '화' },
@@ -5742,7 +5988,7 @@ function redrawPlazaGrantsUi() {
             syncClassBellToggleUi();
             const tt = getClassTimetable();
             const headerCells = CLASS_TIMETABLE_DAYS.map((d) =>
-                `<th class="p-1.5 text-center text-violet-200 min-w-[72px]">${d.label}</th>`
+                `<th class="p-1.5 text-center  min-w-[72px]">${d.label}</th>`
             ).join('');
             const periodRows = CLASS_TIMETABLE_PERIODS.map((period) => {
                 const cells = CLASS_TIMETABLE_DAYS.map((d) => {
@@ -5750,24 +5996,24 @@ function redrawPlazaGrantsUi() {
                     if (canEdit) {
                         return `<td class="p-1">
                             <input type="text" data-tt-day="${d.key}" data-tt-period="${period.id}" value="${escapeHtmlAttr(val)}" maxlength="30"
-                                class="w-full min-w-[64px] bg-slate-950 border border-slate-700 text-white px-1.5 py-1 rounded text-[10px] font-bold focus:outline-none focus:border-violet-500"
+                                class="w-full min-w-[64px]  border   px-1.5 py-1 rounded text-12 font-bold focus:outline-none "
                                 placeholder="과목" />
                         </td>`;
                     }
-                    return `<td class="p-1.5 text-center text-[10px] font-bold text-white">${val ? escapeConvenienceHtml(val) : '<span class="text-slate-600">—</span>'}</td>`;
+                    return `<td class="p-1.5 text-center text-12 font-bold ">${val ? escapeConvenienceHtml(val) : '<span class="">—</span>'}</td>`;
                 }).join('');
-                return `<tr class="border-b border-slate-800">
-                    <td class="p-1.5 text-[9px] text-slate-400 whitespace-nowrap font-bold">${period.label}<br><span class="text-[8px] text-slate-500">${period.start}~${period.end}</span></td>
+                return `<tr class="border-b ">
+                    <td class="p-1.5 text-12  whitespace-nowrap font-bold">${period.label}<br><span class="text-12 ">${period.start}~${period.end}</span></td>
                     ${cells}
                 </tr>`;
             }).join('');
-            const lunchRow = `<tr class="border-b border-slate-800 bg-slate-950/40">
-                <td class="p-1.5 text-[9px] text-amber-400/90 whitespace-nowrap font-bold">${CLASS_TIMETABLE_LUNCH.label}<br><span class="text-[8px] text-slate-500">${CLASS_TIMETABLE_LUNCH.start}~${CLASS_TIMETABLE_LUNCH.end}</span></td>
-                ${CLASS_TIMETABLE_DAYS.map(() => '<td class="p-1 text-center text-[8px] text-slate-600">—</td>').join('')}
+            const lunchRow = `<tr class="border-b  ">
+                <td class="p-1.5 text-12  whitespace-nowrap font-bold">${CLASS_TIMETABLE_LUNCH.label}<br><span class="text-12 ">${CLASS_TIMETABLE_LUNCH.start}~${CLASS_TIMETABLE_LUNCH.end}</span></td>
+                ${CLASS_TIMETABLE_DAYS.map(() => '<td class="p-1 text-center text-12 ">—</td>').join('')}
             </tr>`;
             grid.innerHTML = `
-                <table class="w-full text-left min-w-[480px] border border-slate-700/80 rounded-lg overflow-hidden">
-                    <thead class="bg-slate-800 text-slate-400 text-[9px]">
+                <table class="w-full text-left min-w-[480px] border  rounded-lg overflow-hidden">
+                    <thead class="  text-12">
                         <tr><th class="p-1.5 w-20">교시</th>${headerCells}</tr>
                     </thead>
                     <tbody>${periodRows}${lunchRow}</tbody>
@@ -5795,8 +6041,8 @@ function redrawPlazaGrantsUi() {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), payload, { merge: true });
                 if (!window.globalSettings) window.globalSettings = {};
                 window.globalSettings.classTimetable = payload.classTimetable;
-                if (statusEl) statusEl.textContent = '✅ 시간표가 저장되었습니다.';
-                await window.customAlert('✅ 주간 시간표가 저장되었습니다.');
+                if (statusEl) statusEl.textContent = ' 시간표가 저장되었습니다.';
+                await window.customAlert(' 주간 시간표가 저장되었습니다.');
             } catch (e) {
                 console.error('saveClassTimetableFromAdmin', e);
                 if (statusEl) statusEl.textContent = '저장 실패';
@@ -5805,6 +6051,7 @@ function redrawPlazaGrantsUi() {
         };
 
         function checkClassStartReminders(now = new Date()) {
+            if (!window._worldEntered || isGuestSession()) return;
             if (!window.playerState || !window.playerState.isAdmin) return;
             const dayKey = getClassTimetableDayKeyFromDate(now);
             if (!CLASS_TIMETABLE_DAYS.some((d) => d.key === dayKey)) return;
@@ -5829,11 +6076,10 @@ function redrawPlazaGrantsUi() {
                 }
                 // 수업 종을 켠 기기는 시작·종료 팝업이 이 알림을 대신합니다.
                 if (getClassBellEnabled()) continue;
-                void window.customAlert(
-                    `🔔 수업 준비 알림\n\n` +
-                    `${period.label} (${period.start}~${period.end})\n` +
-                    `${subjectLine}\n\n` +
-                    `수업 시작 시간입니다. 준비해 주세요!`
+                rememberNotice(
+                    '수업 준비',
+                    `${period.label} (${period.start}~${period.end})\n${subjectLine}\n수업 시작 시간입니다. 준비해 주세요!`,
+                    alertKey,
                 );
             }
         }
@@ -5872,22 +6118,22 @@ function redrawPlazaGrantsUi() {
         }
 
         function showClassBellPopup(event, now = new Date()) {
-            if (!event) return;
+            if (!event || !window._worldEntered || isGuestSession()) return;
             hideClassBellPopup();
             const d = document.createElement('div');
             d.id = 'classBellPopup';
-            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+            d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center  px-4';
             const isEnd = event.kind === 'end';
             const title = event.headline || classBellAnnounceText(event) || (isEnd ? '수업 종료' : '수업 시작');
             const subject = classBellSubjectLine(now, event.periodId);
-            const icon = isEnd ? '🔔' : '🎵';
+            const icon = isEnd ? '' : '';
             d.innerHTML = `
-                <div class="bg-sb-panel p-6 rounded-3xl border border-amber-400/50 max-w-sm w-full text-center space-y-3 shadow-2xl">
-                    <p class="text-3xl leading-none">${icon}</p>
-                    <h3 class="text-xl font-display text-amber-100">${escapeHofText(title)}</h3>
-                    <p class="text-xs text-slate-300">${escapeHofText(subject)}</p>
-                    <p class="text-[10px] text-slate-500">종소리와 함께 10초 뒤 사라집니다</p>
-                    <button type="button" class="js-class-bell-ok bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
+                <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-3 shadow-2xl">
+                    <p class="text-32 leading-none">${icon}</p>
+                    <h3 class="text-24 font-display ">${escapeHofText(title)}</h3>
+                    <p class="text-12 ">${escapeHofText(subject)}</p>
+                    <p class="text-12 ">종소리와 함께 10초 뒤 사라집니다</p>
+                    <button type="button" class="oly-btn oly-btn-reward oly-btn-lg js-class-bell-ok w-full">확인</button>
                 </div>`;
             document.body.appendChild(d);
             const ok = d.querySelector('.js-class-bell-ok');
@@ -5909,6 +6155,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function checkClassBells(now = new Date()) {
+            if (!window._worldEntered || isGuestSession()) return;
             if (!getClassBellEnabled()) return;
             if (typeof isWorldVacationDay === 'function' && isWorldVacationDay(now)) return;
             const event = matchClassBell(now);
@@ -5953,7 +6200,7 @@ function redrawPlazaGrantsUi() {
         };
 
         // ==========================================
-        // ★ 생일 축하 파티 (이름·날짜 설정 가능) ★
+        //  생일 축하 파티 (이름·날짜 설정 가능) 
         // ==========================================
         const DEFAULT_SEED_BIRTHDAY_CELEBRATIONS = [
             { id: 'bday_seok', name: '석서영', nickname: '서영', month: 7, day: 10, periodId: 6, enabled: true },
@@ -6052,7 +6299,7 @@ function redrawPlazaGrantsUi() {
                 { at: 2.90, text: '생일 축하합니다~' },
                 { at: 5.80, text: `사랑하는 ${nick}~` },
                 { at: 9.10, text: '생일 축하합니다!' },
-                { at: 12.10, text: '🍦 아이스크림 케이크 파티 GO!' },
+                { at: 12.10, text: ' 아이스크림 케이크 파티 GO!' },
             ];
             return { melody, lyrics, durationSec: 13.2 };
         }
@@ -6097,7 +6344,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function spawnBirthdayConfetti(root, count = 55) {
-            const colors = ['#f472b6', '#fbbf24', '#34d399', '#60a5fa', '#c084fc', '#fb7185', '#fde68a'];
+            const colors = ['var(--gold-light)', 'var(--gold)', 'var(--sky)', 'var(--sky)', 'var(--sky)', 'var(--gold)', 'var(--gold-light)'];
             for (let i = 0; i < count; i++) {
                 const p = document.createElement('span');
                 p.className = 'seok-bday-confetti';
@@ -6119,27 +6366,27 @@ function redrawPlazaGrantsUi() {
             }
             style.textContent = `
                 @keyframes seokBdayPop { 0%{transform:scale(.72);opacity:0} 60%{transform:scale(1.04);opacity:1} 100%{transform:scale(1)} }
-                @keyframes seokBdayShine { 0%,100%{filter:drop-shadow(0 0 10px rgba(251,191,36,.45))} 50%{filter:drop-shadow(0 0 28px rgba(244,114,182,.9))} }
+                @keyframes seokBdayShine { 0%,100%{filter:drop-shadow(0 0 10px color-mix(in srgb, var(--gold) 45%, transparent))} 50%{filter:drop-shadow(0 0 28px color-mix(in srgb, var(--gold-light) 90%, transparent))} }
                 @keyframes seokBdayConfettiFall { 0%{transform:translateY(-10vh) rotate(0deg);opacity:1} 100%{transform:translateY(110vh) rotate(720deg);opacity:0} }
                 @keyframes seokBdayCakeBounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-14px)} }
                 @keyframes seokBdayLyricIn { 0%{opacity:0;transform:translateY(14px) scale(.92)} 100%{opacity:1;transform:translateY(0) scale(1)} }
                 .seok-bday-overlay{position:fixed;inset:0;z-index:420;display:flex;align-items:center;justify-content:center;padding:.75rem;
-                    background:radial-gradient(circle at 50% 18%,rgba(251,191,36,.42),transparent 42%),
-                    linear-gradient(160deg,#831843 0%,#4c1d95 45%,#0f172a 100%);overflow:hidden}
+                    background:radial-gradient(circle at 50% 18%,color-mix(in srgb, var(--gold) 42%, transparent),transparent 42%),
+                    linear-gradient(160deg,var(--wine) 0%,var(--ink-2) 45%,var(--chalk-board) 100%);overflow:hidden}
                 .seok-bday-card{position:relative;z-index:2;max-width:56rem;width:min(96vw,56rem);text-align:center;border-radius:2rem;
-                    border:3px solid rgba(251,191,36,.65);background:rgba(15,23,42,.88);backdrop-filter:blur(12px);
-                    padding:2rem 1.75rem 1.5rem;box-shadow:0 0 80px rgba(244,114,182,.45);animation:seokBdayPop .55s ease-out}
-                .seok-bday-eyebrow{font-family:'Jua',sans-serif;font-size:clamp(1rem,2.4vw,1.35rem);letter-spacing:.28em;color:#f9a8d4;margin-bottom:.35rem}
-                .seok-bday-title{font-family:'Jua',sans-serif;font-size:clamp(2.4rem,6.5vw,4.2rem);line-height:1.2;font-weight:400;color:#fde68a;animation:seokBdayShine 1.6s ease-in-out infinite}
-                .seok-bday-cake{font-size:clamp(4rem,10vw,6.5rem);line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.5rem 0 .75rem}
-                .seok-bday-msg{font-family:'Gaegu',cursive;font-size:clamp(1.45rem,3.6vw,2.15rem);line-height:1.45;color:#fce7f3;font-weight:700;margin-bottom:1rem}
-                .seok-bday-msg .hi{color:#fde68a}
-                .seok-bday-lyric{font-family:'Jua',sans-serif;min-height:4.2rem;display:flex;align-items:center;justify-content:center;
-                    font-size:clamp(1.9rem,5.2vw,3.1rem);font-weight:400;color:#fff;line-height:1.25;
-                    text-shadow:0 0 22px rgba(244,114,182,.95);animation:seokBdayLyricIn .35s ease-out}
-                .seok-bday-lyric.is-countdown{font-size:clamp(2.6rem,8vw,4.8rem);color:#fde68a;text-shadow:0 0 28px rgba(251,191,36,.95)}
-                .seok-bday-hint{font-family:'Gaegu',cursive;font-size:clamp(1.1rem,2.5vw,1.45rem);color:#cbd5e1;margin:.85rem 0 1rem}
-                .seok-bday-close{font-family:'Jua',sans-serif;font-size:clamp(1.05rem,2.4vw,1.35rem)!important;padding:1rem 1.25rem!important}
+                    border:3px solid color-mix(in srgb, var(--gold) 65%, transparent);background:color-mix(in srgb, var(--chalk-board) 88%, transparent);backdrop-filter:blur(12px);
+                    padding:2rem 1.75rem 1.5rem;box-shadow:0 0 80px color-mix(in srgb, var(--gold-light) 45%, transparent);animation:seokBdayPop .55s ease-out}
+                .seok-bday-eyebrow{font-family: var(--font-body);;font-size: calc(16px * var(--type-scale));letter-spacing:.28em;color:var(--line);margin-bottom:.35rem}
+                .seok-bday-title{font-family: var(--font-body);;font-size: calc(32px * var(--type-scale));line-height:1.2;font-weight:400;color:var(--gold-light);animation:seokBdayShine 1.6s ease-in-out infinite}
+                .seok-bday-cake{font-size: calc(48px * var(--type-scale));line-height:1;animation:seokBdayCakeBounce 1.1s ease-in-out infinite;margin:.5rem 0 .75rem}
+                .seok-bday-msg{font-family: var(--font-body);;font-size: calc(24px * var(--type-scale));line-height:1.45;color:var(--marble);font-weight:700;margin-bottom:1rem}
+                .seok-bday-msg .hi{color:var(--gold-light)}
+                .seok-bday-lyric{font-family: var(--font-body);;min-height:4.2rem;display:flex;align-items:center;justify-content:center;
+                    font-size: calc(32px * var(--type-scale));font-weight:400;color:var(--surface);line-height:1.25;
+                    text-shadow:0 0 22px color-mix(in srgb, var(--gold-light) 95%, transparent);animation:seokBdayLyricIn .35s ease-out}
+                .seok-bday-lyric.is-countdown{font-size: calc(48px * var(--type-scale));color:var(--gold-light);text-shadow:0 0 28px color-mix(in srgb, var(--gold) 95%, transparent)}
+                .seok-bday-hint{font-family: var(--font-body);;font-size: calc(16px * var(--type-scale));color:var(--line);margin:.85rem 0 1rem}
+                .seok-bday-close{font-family: var(--font-body);;font-size: calc(16px * var(--type-scale));padding:1rem 1.25rem!important}
                 .seok-bday-confetti{position:absolute;top:-12px;width:12px;height:16px;border-radius:2px;z-index:1;
                     animation-name:seokBdayConfettiFall;animation-timing-function:linear;animation-fill-mode:forwards;pointer-events:none}
                 @media (max-width:640px){
@@ -6154,21 +6401,21 @@ function redrawPlazaGrantsUi() {
             const safeName = escapeConvenienceHtml ? escapeConvenienceHtml(name) : String(name).replace(/</g, '&lt;');
             return new Promise((resolve) => {
                 const d = document.createElement('div');
-                d.className = 'fixed inset-0 z-[310] flex items-center justify-center bg-black/85 px-4';
+                d.className = 'fixed inset-0 z-[310] flex items-center justify-center  px-4';
                 d.innerHTML = `
-                    <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-8 sm:p-10 rounded-3xl border-2 border-pink-400/50 max-w-xl w-full text-center space-y-5 shadow-2xl">
-                        <div class="text-6xl sm:text-7xl">🎂🎉🍦</div>
-                        <h3 class="text-3xl sm:text-4xl font-display text-pink-100" style="font-family:'Jua',sans-serif">${period.label} 수업 준비</h3>
-                        <p class="text-lg sm:text-xl text-slate-100 whitespace-pre-wrap leading-relaxed" style="font-family:'Gaegu',cursive;font-weight:700">${period.label} (${period.start}~${period.end})
+                    <div class="bg-gradient-to-b   p-8 sm:p-10 rounded-3xl border-2  max-w-xl w-full text-center space-y-5 shadow-2xl">
+                        <div class="text-48 sm:text-48"></div>
+                        <h3 class="text-32 sm:text-48 font-display " style="font-family: var(--font-body);">${period.label} 수업 준비</h3>
+                        <p class="text-20 sm:text-24  whitespace-pre-wrap leading-relaxed" style="font-family: var(--font-body);;font-weight:700">${period.label} (${period.start}~${period.end})
 ${subjectLine}
 
-오늘은 <span class="text-amber-300 font-black">${safeName}</span> 생일!
+오늘은 <span class=" font-black">${safeName}</span> 생일!
 아이스크림 케이크와 함께
-생일 파티를 준비해요 🎈</p>
-                        <button type="button" class="js-bday-class-start w-full bg-gradient-to-r from-pink-600 to-amber-500 hover:from-pink-500 hover:to-amber-400 text-white font-black py-4 px-6 rounded-full text-xl sm:text-2xl shadow-lg border border-amber-200/40" style="font-family:'Jua',sans-serif">
-                            수업시작 🎂
+생일 파티를 준비해요 </p>
+                        <button type="button" class="oly-btn oly-btn-reward oly-btn-lg js-bday-class-start w-full" style="font-family: var(--font-body);">
+                            수업시작 
                         </button>
-                        <button type="button" class="js-bday-class-later w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-3 px-6 rounded-full text-base">
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-lg js-bday-class-later w-full">
                             나중에
                         </button>
                     </div>`;
@@ -6224,16 +6471,16 @@ ${subjectLine}
                 <div class="seok-bday-card">
                     <p class="seok-bday-eyebrow">SPECIAL BIRTHDAY CLASS</p>
                     <h2 class="seok-bday-title">${escapeConvenienceHtml(name)} 생일 축하합니다!</h2>
-                    <div class="seok-bday-cake" aria-hidden="true">🍦🎂✨</div>
+                    <div class="seok-bday-cake" aria-hidden="true"></div>
                     <p class="seok-bday-msg">
                         ${escapeConvenienceHtml(periodLabel)} 수업을 열며<br>
                         <span class="hi">${escapeConvenienceHtml(nick)}</span>의 특별한 하루를 함께 축하해요!<br>
                         아이스크림 케이크를 나눠 먹고<br>
-                        신나는 생일 파티를 시작합시다 🎉
+                        신나는 생일 파티를 시작합시다 
                     </p>
                     <div id="birthdayPartyLyric" class="seok-bday-lyric is-countdown">다함께 노래 불러요~</div>
                     <p class="seok-bday-hint">크게 손뼉 치며 준비하세요!</p>
-                    <button type="button" class="js-bday-close seok-bday-close w-full bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-full border border-white/15">
+                    <button type="button" class="oly-btn oly-btn-secondary oly-btn-md js-bday-close seok-bday-close w-full">
                         파티 마무리 · 수업 시작!
                     </button>
                 </div>`;
@@ -6294,7 +6541,7 @@ ${subjectLine}
             }, melodyOffsetMs));
 
             _birthdayPartyTimers.push(setTimeout(() => {
-                setLyricText(`🥳 ${nick}, 생일 정말 축하해!`, false);
+                setLyricText(` ${nick}, 생일 정말 축하해!`, false);
                 spawnBirthdayConfetti(overlay, 40);
             }, melodyOffsetMs + Math.round(durationSec * 1000)));
         };
@@ -6351,49 +6598,49 @@ ${subjectLine}
             const list = getBirthdayCelebrations();
             const rows = list.length
                 ? list.map((c) => `
-                    <div class="flex flex-wrap items-center gap-2 rounded-xl border border-pink-500/30 bg-slate-950/60 p-2.5" data-bday-id="${escapeHtmlAttr(c.id)}">
+                    <div class="flex flex-wrap items-center gap-2 rounded-xl border   p-2.5" data-bday-id="${escapeHtmlAttr(c.id)}">
                         <div class="flex-1 min-w-[8rem]">
-                            <div class="text-pink-100 font-black text-xs">${escapeConvenienceHtml(c.name)}
-                                <span class="text-slate-500 font-bold">(${escapeConvenienceHtml(c.nickname)})</span>
+                            <div class=" font-black text-12">${escapeConvenienceHtml(c.name)}
+                                <span class=" font-bold">(${escapeConvenienceHtml(c.nickname)})</span>
                             </div>
-                            <div class="text-[9px] text-slate-400 font-bold mt-0.5">${c.month}월 ${c.day}일 · ${c.periodId}교시 알림 ${c.enabled ? 'ON' : 'OFF'}</div>
+                            <div class="text-12  font-bold mt-0.5">${c.month}월 ${c.day}일 · ${c.periodId}교시 알림 ${c.enabled ? 'ON' : 'OFF'}</div>
                         </div>
-                        <button type="button" onclick="void window.previewBirthdayParty('${escapeHtmlAttr(c.id)}')" class="min-h-[40px] bg-pink-700 hover:bg-pink-600 text-white text-[9px] font-bold px-2.5 py-1.5 rounded-lg">파티 시작</button>
-                        <button type="button" onclick="void window.editBirthdayCelebration('${escapeHtmlAttr(c.id)}')" class="min-h-[40px] bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-bold px-2.5 py-1.5 rounded-lg">수정</button>
-                        <button type="button" onclick="void window.deleteBirthdayCelebration('${escapeHtmlAttr(c.id)}')" class="min-h-[40px] bg-red-950/70 hover:bg-red-900 text-red-200 text-[9px] font-bold px-2.5 py-1.5 rounded-lg border border-red-800/50">삭제</button>
+                        <button type="button" onclick="void window.previewBirthdayParty('${escapeHtmlAttr(c.id)}')" class="oly-btn oly-btn-secondary oly-btn-sm">파티 시작</button>
+                        <button type="button" onclick="void window.editBirthdayCelebration('${escapeHtmlAttr(c.id)}')" class="oly-btn oly-btn-secondary oly-btn-sm">수정</button>
+                        <button type="button" onclick="void window.deleteBirthdayCelebration('${escapeHtmlAttr(c.id)}')" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>
                     </div>`).join('')
-                : '<p class="text-[10px] text-slate-500 font-bold text-center py-3">아직 등록된 생일이 없습니다. 아래에서 추가하세요.</p>';
+                : '<p class="text-12  font-bold text-center py-3">아직 등록된 생일이 없습니다. 아래에서 추가하세요.</p>';
 
             box.innerHTML = `
                 <div class="space-y-2 mb-3">${rows}</div>
-                <div class="rounded-xl border border-pink-500/40 bg-slate-950/50 p-3 space-y-2">
-                    <p class="text-[10px] text-pink-200 font-black">생일 추가 / 수정</p>
+                <div class="rounded-xl border   p-3 space-y-2">
+                    <p class="text-12  font-black">생일 추가 / 수정</p>
                     <input type="hidden" id="bdayEditId" value="">
                     <div class="grid grid-cols-2 gap-2">
-                        <label class="text-[9px] text-slate-400 font-bold col-span-2">이름
-                            <input id="bdayNameInput" type="text" maxlength="20" placeholder="예: 석서영" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        <label class="text-12  font-bold col-span-2">이름
+                            <input id="bdayNameInput" type="text" maxlength="20" placeholder="예: 석서영" class="mt-1 w-full  border   px-2 py-2 rounded-lg text-12 font-bold min-h-[40px]">
                         </label>
-                        <label class="text-[9px] text-slate-400 font-bold col-span-2">호칭(노래·멘트용, 비우면 이름 사용)
-                            <input id="bdayNickInput" type="text" maxlength="20" placeholder="예: 서영" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        <label class="text-12  font-bold col-span-2">호칭(노래·멘트용, 비우면 이름 사용)
+                            <input id="bdayNickInput" type="text" maxlength="20" placeholder="예: 서영" class="mt-1 w-full  border   px-2 py-2 rounded-lg text-12 font-bold min-h-[40px]">
                         </label>
-                        <label class="text-[9px] text-slate-400 font-bold">월
-                            <input id="bdayMonthInput" type="number" min="1" max="12" value="1" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        <label class="text-12  font-bold">월
+                            <input id="bdayMonthInput" type="number" min="1" max="12" value="1" class="mt-1 w-full  border   px-2 py-2 rounded-lg text-12 font-bold min-h-[40px]">
                         </label>
-                        <label class="text-[9px] text-slate-400 font-bold">일
-                            <input id="bdayDayInput" type="number" min="1" max="31" value="1" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        <label class="text-12  font-bold">일
+                            <input id="bdayDayInput" type="number" min="1" max="31" value="1" class="mt-1 w-full  border   px-2 py-2 rounded-lg text-12 font-bold min-h-[40px]">
                         </label>
-                        <label class="text-[9px] text-slate-400 font-bold col-span-2">알림 교시
-                            <select id="bdayPeriodInput" class="mt-1 w-full bg-slate-900 border border-slate-700 text-white px-2 py-2 rounded-lg text-xs font-bold min-h-[40px]">
+                        <label class="text-12  font-bold col-span-2">알림 교시
+                            <select id="bdayPeriodInput" class="mt-1 w-full  border   px-2 py-2 rounded-lg text-12 font-bold min-h-[40px]">
                                 <option value="1">1교시</option><option value="2">2교시</option><option value="3">3교시</option>
                                 <option value="4">4교시</option><option value="5">5교시</option><option value="6" selected>6교시</option>
                             </select>
                         </label>
                     </div>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" onclick="void window.saveBirthdayCelebrationFromForm()" class="flex-1 min-h-[44px] bg-gradient-to-r from-pink-700 to-amber-600 hover:from-pink-600 hover:to-amber-500 text-white font-black text-[10px] px-3 py-2 rounded-xl border border-amber-300/40">저장(추가/수정)</button>
-                        <button type="button" onclick="window.clearBirthdayCelebrationForm()" class="min-h-[44px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-[10px] px-3 py-2 rounded-xl border border-slate-600">입력 비우기</button>
+                        <button type="button" onclick="void window.saveBirthdayCelebrationFromForm()" class="oly-btn oly-btn-reward oly-btn-md flex-1">저장(추가/수정)</button>
+                        <button type="button" onclick="window.clearBirthdayCelebrationForm()" class="oly-btn oly-btn-secondary oly-btn-md">입력 비우기</button>
                     </div>
-                    <p class="text-[8px] text-slate-500 leading-relaxed">해당 날짜·교시 시작 알림에서 「수업시작」을 누르면 파티가 열립니다. 「파티 시작」으로 지금 바로 연출할 수도 있습니다.</p>
+                    <p class="text-12  leading-relaxed">해당 날짜·교시 시작 알림에서 「수업시작」을 누르면 파티가 열립니다. 「파티 시작」으로 지금 바로 연출할 수도 있습니다.</p>
                 </div>`;
         };
 
@@ -6646,11 +6893,11 @@ ${subjectLine}
                 if (item.type === 'chapter') {
                     const close = openArticle ? '</div></article>' : '';
                     openArticle = true;
-                    return `${close}<article><h3 class="text-xl font-black text-amber-900 border-b-2 border-amber-800/30 pb-2 mb-3">${safeText}</h3><div class="space-y-3 text-sm sm:text-base font-medium">`;
+                    return `${close}<article><h3 class="text-24 font-black  border-b-2  pb-2 mb-3">${safeText}</h3><div class="space-y-3 text-14 sm:text-16 font-medium">`;
                 }
                 return `<p>${safeText}</p>`;
             }).join('') + (openArticle ? '</div></article>' : '');
-            container.innerHTML = html || '<div class="text-center text-amber-900/60 font-bold text-sm py-8">등록된 헌법 조문이 없습니다.</div>';
+            container.innerHTML = html || '<div class="text-center  font-bold text-14 py-8">등록된 헌법 조문이 없습니다.</div>';
         }
 
         function renderConstitutionEditList() {
@@ -6658,21 +6905,21 @@ ${subjectLine}
             if (!list) return;
             const draft = constitutionEditDraft || getConstitutionItems();
             if (!draft.length) {
-                list.innerHTML = '<p class="text-[11px] text-amber-900/70 font-bold py-4 text-center">아직 문장이 없습니다. 「문장 추가」로 우리 반 약속을 적어 주세요.</p>';
+                list.innerHTML = '<p class="text-12  font-bold py-4 text-center">아직 문장이 없습니다. 「문장 추가」로 우리 반 약속을 적어 주세요.</p>';
                 return;
             }
             list.innerHTML = draft.map((item, idx) => `
-                <div class="rounded-2xl border border-amber-800/20 bg-white/55 p-3">
+                <div class="rounded-2xl border   p-3">
                     <div class="flex flex-col sm:flex-row gap-2">
-                        <select id="constitution_type_${idx}" class="bg-stone-100 border border-amber-800/25 text-stone-900 px-2 py-2 rounded-xl text-xs font-black sm:w-28">
+                        <select id="constitution_type_${idx}" class=" border   px-2 py-2 rounded-xl text-12 font-black sm:w-28">
                             <option value="chapter" ${item.type === 'chapter' ? 'selected' : ''}>장 제목</option>
                             <option value="clause" ${item.type !== 'chapter' ? 'selected' : ''}>문장</option>
                         </select>
-                        <textarea id="constitution_text_${idx}" rows="2" class="flex-1 bg-stone-50 border border-amber-800/25 text-stone-900 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold leading-relaxed">${escapeConstitutionHtml(item.text)}</textarea>
+                        <textarea id="constitution_text_${idx}" rows="2" class="flex-1  border   px-3 py-2 rounded-xl text-12 sm:text-14 font-bold leading-relaxed">${escapeConstitutionHtml(item.text)}</textarea>
                         <div class="grid grid-cols-3 sm:grid-cols-1 gap-1 sm:w-16">
-                            <button type="button" onclick="window.moveConstitutionItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 disabled:opacity-30 disabled:pointer-events-none text-white font-black py-2 px-2 rounded-lg text-[10px]">위</button>
-                            <button type="button" onclick="window.moveConstitutionItem(${idx}, 1)" ${idx === draft.length - 1 ? 'disabled' : ''} class="bg-stone-700 hover:bg-stone-600 disabled:opacity-30 disabled:pointer-events-none text-white font-black py-2 px-2 rounded-lg text-[10px]">아래</button>
-                            <button type="button" onclick="window.deleteConstitutionItem(${idx})" class="bg-red-800 hover:bg-red-700 text-white font-black py-2 px-2 rounded-lg text-[10px]">삭제</button>
+                            <button type="button" onclick="window.moveConstitutionItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="oly-btn oly-btn-secondary oly-btn-sm disabled:opacity-30 disabled:pointer-events-none">위</button>
+                            <button type="button" onclick="window.moveConstitutionItem(${idx}, 1)" ${idx === draft.length - 1 ? 'disabled' : ''} class="oly-btn oly-btn-secondary oly-btn-sm disabled:opacity-30 disabled:pointer-events-none">아래</button>
+                            <button type="button" onclick="window.deleteConstitutionItem(${idx})" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>
                         </div>
                     </div>
                 </div>
@@ -6767,7 +7014,7 @@ ${subjectLine}
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { constitutionItems }, { merge: true });
                 window.globalSettings.constitutionItems = constitutionItems;
                 window.cancelConstitutionEditor();
-                await window.customAlert('✅ 헌법이 저장되었습니다.');
+                await window.customAlert(' 헌법이 저장되었습니다.');
             } catch (e) {
                 console.error(e);
                 await window.customAlert('저장 중 오류가 발생했습니다.');
@@ -6819,28 +7066,30 @@ ${subjectLine}
 
         function buildShopCardHtml(shop) {
             const safeName = String(shop.name).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const icon = shop.icon || (shop.isConsumable ? 'fa-bolt' : 'fa-ticket');
-            const iconColor = shop.iconColor || (shop.isConsumable ? 'text-amber-300' : 'text-cyan-300');
+            const icon = shop.icon || (shop.isConsumable ? 'bolt' : 'ticket');
+            const iconColor = shop.iconColor || (shop.isConsumable ? '' : '');
             const groupBuyBtn =
                 shop.id === 'item_mystery_dice' || shop.id === LOTTO_SHOP_ID
                     ? ''
-                    : `<button type="button" class="flex-1 min-w-[4.5rem] bg-cyan-900/80 hover:bg-cyan-800 text-cyan-100 text-[10px] font-bold py-2 px-2 rounded-lg border border-cyan-600" onclick="event.stopPropagation();window.openShopGroupBuyModal('${shop.id}')">공동구매</button>`;
+                    : `<button type="button" class="oly-btn oly-btn-primary oly-btn-sm flex-1 min-w-[4.5rem]" onclick="event.stopPropagation();window.openShopGroupBuyModal('${shop.id}')">공동구매</button>`;
             return `
-                <div id="shop-btn-${shop.id}" class="shop-btn bg-slate-800/80 p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
+                <div id="shop-btn-${shop.id}" class="shop-btn  p-3 rounded-xl border-2 flex flex-col gap-2 unaffordable">
                     <div class="flex items-center gap-3">
-                        <div class="bg-slate-900 w-10 h-10 rounded-full flex items-center justify-center ${iconColor} shadow-inner shrink-0">
-                            <i class="fa-solid ${icon}"></i>
+                        <div class=" w-10 h-10 rounded-full flex items-center justify-center ${iconColor} shadow-inner shrink-0">
+                            <svg class="oly-icon" data-oly="${icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                         </div>
                         <div class="flex-grow min-w-0">
-                            <div class="font-bold text-sm">${shop.name}</div>
-                            <div class="text-[10px] text-slate-400">${shop.desc}</div>
+                            <div class="font-bold text-14">${shop.name}</div>
+                            <div class="text-12 ">${shop.desc}</div>
                         </div>
-                        <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${formatBongAmount(shop.price)}</div>
+                        <div id="shop-price-${shop.id}" class="  px-3 py-1 rounded border  text-12 font-bold shrink-0">${formatBongAmount(shop.price)}</div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
+                    ${window.playerState && window.playerState.isGuest
+                        ? '<p class="text-12 ">구경 중에는 구매할 수 없습니다.</p>'
+                        : `<div class="flex flex-wrap gap-2">
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-sm flex-1 min-w-[4.5rem]" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
                         ${groupBuyBtn}
-                    </div>
+                    </div>`}
                 </div>`;
         }
 
@@ -6888,7 +7137,7 @@ ${subjectLine}
         /** UI — 부족 화폐 안내 */
         function formatInsufficientBongAlert(shortfall) {
             const need = formatBongAmount(Math.max(0, Number(shortfall) || 0));
-            return `❌ 돈이 부족해요. ${need}가 더 필요해요.`;
+            return ` 돈이 부족해요. ${need}가 더 필요해요.`;
         }
 
         /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
@@ -6994,13 +7243,13 @@ ${subjectLine}
 
         function buildSupervisionIncidentHtml(inc) {
             const detailHtml = Array.isArray(inc.details) && inc.details.length
-                ? `<ul class="list-disc list-inside ml-2 mt-0.5 text-[8px] sm:text-[9px] text-slate-400 space-y-0.5">${inc.details.map((d) =>
-                    `<li><span class="text-slate-500">${escapeConvenienceHtml(d.dateLabel)}</span> · ${escapeConvenienceHtml(d.action)}</li>`
+                ? `<ul class="list-disc list-inside ml-2 mt-0.5 text-12 sm:text-12  space-y-0.5">${inc.details.map((d) =>
+                    `<li><span class="">${escapeConvenienceHtml(d.dateLabel)}</span> · ${escapeConvenienceHtml(d.action)}</li>`
                 ).join('')}</ul>`
                 : '';
-            return `<li class="text-amber-100/90">
-                <span class="text-amber-300/90 font-bold">${escapeConvenienceHtml(inc.dateLabel)}</span>
-                <span class="text-amber-200"> ${escapeConvenienceHtml(inc.category)}</span> —
+            return `<li class="">
+                <span class=" font-bold">${escapeConvenienceHtml(inc.dateLabel)}</span>
+                <span class=""> ${escapeConvenienceHtml(inc.category)}</span> —
                 ${escapeConvenienceHtml(inc.action)}
                 ${detailHtml}
             </li>`;
@@ -7187,25 +7436,25 @@ ${subjectLine}
             if (!report.alertCount) {
                 el.innerHTML = `
                     <div class="flex items-center gap-2 mb-1">
-                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-building-columns text-emerald-400"></i> 삼봉 금융감독 시스템</h3>
-                        <span class="text-[9px] text-emerald-300 font-bold">이상 없음</span>
+                        <h3 class=" font-bold text-14"><svg class="oly-icon" data-oly="building-columns" viewBox="0 0 24 24" aria-hidden="true"></svg> 삼봉 금융감독 시스템</h3>
+                        <span class="text-12  font-bold">이상 없음</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">학급 ${getCurrencyUnit()} 거래를 실시간 감시합니다. ${criteriaText} 시 경고·기록됩니다.</p>`;
+                    <p class="text-12  leading-relaxed">학급 ${getCurrencyUnit()} 거래를 실시간 감시합니다. ${criteriaText} 시 경고·기록됩니다.</p>`;
                 return;
             }
             const rowsHtml = report.alerts.map((a) => `
-                <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
-                    <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
-                    <div class="text-amber-200/90 mt-0.5">보유 ${formatBongAmount(a.totalBong)} · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
+                <div class="rounded-lg border   px-2 py-1.5 text-12 sm:text-12">
+                    <div class="font-bold ">${escapeConvenienceHtml(a.name)} <span class="">(${escapeConvenienceHtml(a.sid)}번)</span></div>
+                    <div class=" mt-0.5">보유 ${formatBongAmount(a.totalBong)} · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
                     <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
                 <div class="flex flex-wrap items-center gap-2 mb-2">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-building-columns text-amber-400"></i> 삼봉 금융감독 시스템</h3>
-                    <span class="text-[9px] bg-amber-900/60 text-amber-100 px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 감독 대상</span>
-                    <button type="button" onclick="window.renderSamBongFinancialSupervisionPanel(window.allStudentsData)" class="ml-auto text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded border border-slate-600">새로고침</button>
+                    <h3 class=" font-bold text-14"><svg class="oly-icon" data-oly="building-columns" viewBox="0 0 24 24" aria-hidden="true"></svg> 삼봉 금융감독 시스템</h3>
+                    <span class="text-12   px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 감독 대상</span>
+                    <button type="button" onclick="window.renderSamBongFinancialSupervisionPanel(window.allStudentsData)" class="oly-btn oly-btn-secondary oly-btn-sm ml-auto">새로고침</button>
                 </div>
-                <p class="text-[9px] text-slate-500 mb-2 leading-relaxed">비정상 보유·과다 획득·대량 환불 등 의심 거래를 날짜·행위와 함께 표시합니다. 당사자에게도 경고 알림이 전달됩니다.</p>
+                <p class="text-12  mb-2 leading-relaxed">비정상 보유·과다 획득·대량 환불 등 의심 거래를 날짜·행위와 함께 표시합니다. 당사자에게도 경고 알림이 전달됩니다.</p>
                 <div class="space-y-2 max-h-52 overflow-y-auto scrollbar-hide">${rowsHtml}</div>`;
         }
 
@@ -7246,24 +7495,24 @@ ${subjectLine}
             if (!report.alertCount) {
                 el.innerHTML = `
                     <div class="flex items-center gap-2 mb-1">
-                        <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-sky-400"></i> 경험치 감시 시스템</h3>
-                        <span class="text-[9px] text-emerald-300 font-bold">이상 없음</span>
+                        <h3 class=" font-bold text-14"><svg class="oly-icon" data-oly="shield-halved" viewBox="0 0 24 24" aria-hidden="true"></svg> 경험치 감시 시스템</h3>
+                        <span class="text-12  font-bold">이상 없음</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">시즌 2 이후 XP 로그만 감시합니다. 오늘 예상 페이스 ${report.pace.toLocaleString()} XP. ${criteriaText} 시 경고됩니다.</p>`;
+                    <p class="text-12  leading-relaxed">시즌 2 이후 XP 로그만 감시합니다. 오늘 예상 페이스 ${report.pace.toLocaleString()} XP. ${criteriaText} 시 경고됩니다.</p>`;
                 return;
             }
             const rowsHtml = report.alerts.map((a) => `
-                <div class="rounded-lg border border-sky-600/40 bg-sky-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
-                    <div class="font-bold text-sky-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span> · ${a.xp.toLocaleString()} XP</div>
+                <div class="rounded-lg border   px-2 py-1.5 text-12 sm:text-12">
+                    <div class="font-bold ">${escapeConvenienceHtml(a.name)} <span class="">(${escapeConvenienceHtml(a.sid)}번)</span> · ${a.xp.toLocaleString()} XP</div>
                     <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
                 <div class="flex flex-wrap items-center gap-2 mb-2">
-                    <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-shield-halved text-sky-300"></i> 경험치 감시 시스템</h3>
-                    <span class="text-[9px] bg-sky-900/60 text-sky-100 px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 감독 대상</span>
-                    <button type="button" onclick="window.renderXpSupervisionPanel(window.allStudentsData)" class="ml-auto text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded border border-slate-600">새로고침</button>
+                    <h3 class=" font-bold text-14"><svg class="oly-icon" data-oly="shield-halved" viewBox="0 0 24 24" aria-hidden="true"></svg> 경험치 감시 시스템</h3>
+                    <span class="text-12   px-2 py-0.5 rounded-full font-bold">${report.alertCount}명 감독 대상</span>
+                    <button type="button" onclick="window.renderXpSupervisionPanel(window.allStudentsData)" class="oly-btn oly-btn-secondary oly-btn-sm ml-auto">새로고침</button>
                 </div>
-                <p class="text-[9px] text-slate-500 mb-2 leading-relaxed">비정상 급등·과다 일일 획득을 날짜·행위와 함께 표시합니다. 당사자에게도 경고가 갑니다.</p>
+                <p class="text-12  mb-2 leading-relaxed">비정상 급등·과다 일일 획득을 날짜·행위와 함께 표시합니다. 당사자에게도 경고가 갑니다.</p>
                 <div class="space-y-2 max-h-52 overflow-y-auto scrollbar-hide">${rowsHtml}</div>`;
         }
         window.renderXpSupervisionPanel = renderXpSupervisionPanel;
@@ -7285,11 +7534,12 @@ ${subjectLine}
             _xpSupervisionStudentAlertRunning = true;
             try {
                 const lines = newOnes.map((inc) => `· ${buildSupervisionIncidentSummaryLine(inc)}`).join('\n');
-                await window.customAlert(
-                    '⚠️ 경험치 감시 경고\n\n' +
+                rememberNotice(
+                    '경험치 감시',
                     '허용되지 않은 방법으로 경험치가 급증한 것으로 보입니다.\n' +
                     `${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
-                    '[감지 내역]\n' + lines
+                    '[감지 내역]\n' + lines,
+                    `xp-watch:${newOnes.map((inc) => inc.id).join(',')}`,
                 );
                 newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
                 localStorage.setItem(storageKey, JSON.stringify(seen));
@@ -7330,13 +7580,14 @@ ${subjectLine}
                     }
                     return block;
                 }).join('\n\n');
-                await window.customAlert(
-                    '⚠️ 삼봉 금융감독 경고\n\n' +
-                    '비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n' +
+                rememberNotice(
+                    '금융감독',
+                    `비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n` +
                     `허용되지 않은 방법으로 획득·환불한 경우 ${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
                     '[감지 내역]\n' +
                     lines +
-                    `\n\n정상 활동이라면 ${getMasterDisplayName()}에게 문의하세요.`
+                    `\n\n정상 활동이라면 ${getMasterDisplayName()}에게 문의하세요.`,
+                    `bong-watch:${newOnes.map((inc) => inc.id).join(',')}`,
                 );
                 newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
                 localStorage.setItem(storageKey, JSON.stringify(seen));
@@ -7602,7 +7853,7 @@ ${subjectLine}
             const winnerText = winners.length
                 ? winners.map((w) => `${w.name || w.studentId}: +${formatBongAmount(w.payoutB || 0)}`).join('\n')
                 : `당첨자 없음\n${formatBongAmount(poolB)}는 다음 회차로 이월됩니다.`;
-            return `🎟️ 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(lastDraw.numbers)}\n` +
+            return ` 삼봉 로또 추첨 결과\n번호: ${formatLottoNumbers(lastDraw.numbers)}\n` +
                 `누적: ${formatBongAmount(poolB)} / 세금(40%): ${formatBongAmount(taxB)}\n\n${winnerText}`;
         }
 
@@ -7614,9 +7865,7 @@ ${subjectLine}
             if (!seenKey) return;
             if (localStorage.getItem(seenKey) === '1') return;
             localStorage.setItem(seenKey, '1');
-            setTimeout(() => {
-                void window.customAlert(buildLottoResultMessage(lastDraw));
-            }, 250);
+            rememberNotice('로또', buildLottoResultMessage(lastDraw), seenKey);
         }
 
         function getSanitizedLottoState(raw) {
@@ -7674,44 +7923,44 @@ ${subjectLine}
             const myRows = mine.slice(-6).reverse().map((t) => {
                 const d = t.at ? new Date(t.at) : null;
                 const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '';
-                return `<div class="flex justify-between gap-2 border-b border-slate-800/70 pb-1">
-                    <span class="text-lime-200 font-bold">${formatLottoNumbers(t.numbers)}</span>
-                    <span class="text-slate-500 shrink-0">${ds} · ${formatBongAmount(t.price || price)}</span>
+                return `<div class="flex justify-between gap-2 border-b  pb-1">
+                    <span class=" font-bold">${formatLottoNumbers(t.numbers)}</span>
+                    <span class=" shrink-0">${ds} · ${formatBongAmount(t.price || price)}</span>
                 </div>`;
             }).join('');
             const last = state.lastDraw;
             const lastHtml = last
-                ? `<div class="mt-2 rounded-lg bg-slate-950/60 border border-slate-700 px-2 py-1.5">
-                    <div class="text-[10px] text-slate-400 font-bold">최근 추첨: <span class="text-lime-200">${formatLottoNumbers(last.numbers)}</span></div>
-                    <div class="text-[9px] text-slate-500">총 ${formatBongAmount(last.poolB || 0)} · 세금 ${formatBongAmount(last.taxB || 0)} · 지급 ${formatBongAmount(last.payoutPoolB || 0)}</div>
-                    <div class="text-[9px] text-slate-400">${last.winners && last.winners.length ? `당첨: ${last.winners.map((w) => escapeConstitutionHtml(w.name || w.studentId)).join(', ')}` : '당첨자 없음 · 당첨금 이월'}</div>
+                ? `<div class="mt-2 rounded-lg  border  px-2 py-1.5">
+                    <div class="text-12  font-bold">최근 추첨: <span class="">${formatLottoNumbers(last.numbers)}</span></div>
+                    <div class="text-12 ">총 ${formatBongAmount(last.poolB || 0)} · 세금 ${formatBongAmount(last.taxB || 0)} · 지급 ${formatBongAmount(last.payoutPoolB || 0)}</div>
+                    <div class="text-12 ">${last.winners && last.winners.length ? `당첨: ${last.winners.map((w) => escapeConstitutionHtml(w.name || w.studentId)).join(', ')}` : '당첨자 없음 · 당첨금 이월'}</div>
                 </div>`
                 : '';
             const adminBtn = window.playerState.isGM
-                ? `<button type="button" onclick="window.drawLottoAdmin()" class="mt-2 w-full sm:w-auto bg-lime-700 hover:bg-lime-600 text-white font-bold py-2 px-4 rounded-xl text-[10px]"><i class="fa-solid fa-wand-magic-sparkles"></i> 로또 추첨</button>`
+                ? `<button type="button" onclick="window.drawLottoAdmin()" class="oly-btn oly-btn-secondary oly-btn-md mt-2 w-full sm:w-auto"><svg class="oly-icon" data-oly="wand-magic-sparkles" viewBox="0 0 24 24" aria-hidden="true"></svg> 로또 추첨</button>`
                 : '';
             el.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
-                        <h4 class="text-lime-300 font-black text-xs"><i class="fa-solid fa-ticket"></i> 삼봉 로또</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed">1~30 중 3개를 고릅니다. ${getLottoPurchaseWindowText()} · 가격 ${formatBongAmount(price)} · 당첨 시 세금 40% 제외 후 지급</p>
+                        <h4 class=" font-black text-12"><svg class="oly-icon" data-oly="ticket" viewBox="0 0 24 24" aria-hidden="true"></svg> 삼봉 로또</h4>
+                        <p class="text-12  leading-relaxed">1~30 중 3개를 고릅니다. ${getLottoPurchaseWindowText()} · 가격 ${formatBongAmount(price)} · 당첨 시 세금 40% 제외 후 지급</p>
                     </div>
-                    <div class="text-right text-[10px] text-slate-300 shrink-0">
-                        <div>누적: <span class="text-sb-gold font-black">${formatBongAmount(activePool || 0)}</span></div>
+                    <div class="text-right text-12  shrink-0">
+                        <div>누적: <span class=" font-black">${formatBongAmount(activePool || 0)}</span></div>
                         <div>이번 회차 티켓: ${ticketCount}장</div>
                     </div>
                 </div>
                 ${adminBtn}
                 ${lastHtml}
-                <div class="mt-3 pt-2 border-t border-slate-700/70">
-                    <div class="text-[10px] text-slate-500 font-bold mb-1">내 최근 구매 이력</div>
-                    <div class="space-y-1">${myRows || '<div class="text-[9px] text-slate-600">아직 구매한 복권이 없습니다.</div>'}</div>
+                <div class="mt-3 pt-2 border-t ">
+                    <div class="text-12  font-bold mb-1">내 최근 구매 이력</div>
+                    <div class="space-y-1">${myRows || '<div class="text-12 ">아직 구매한 복권이 없습니다.</div>'}</div>
                 </div>`;
             el.classList.remove('hidden');
         }
 
         // ==========================================
-        // ★ 월드컵 승부예측 (대한민국 32강 진출) ★
+        //  월드컵 승부예측 (대한민국 32강 진출) 
         // ==========================================
         const WORLD_CUP_MATCH = {
             id: 'kr_r32_2026',
@@ -7767,18 +8016,18 @@ ${subjectLine}
         function formatWorldCupBetStatusHtml(bet) {
             if (!bet) return '';
             if (bet.status === 'won') {
-                return `<span class="text-emerald-300">적중 +${formatBongAmount(bet.payout || 0)}</span>`;
+                return `<span class="">적중 +${formatBongAmount(bet.payout || 0)}</span>`;
             }
-            if (bet.status === 'lost') return '<span class="text-slate-500">미적중</span>';
-            if (bet.status === 'cancelled') return '<span class="text-slate-400">취소·환불</span>';
-            return '<span class="text-amber-300">대기</span>';
+            if (bet.status === 'lost') return '<span class="">미적중</span>';
+            if (bet.status === 'cancelled') return '<span class="">취소·환불</span>';
+            return '<span class="">대기</span>';
         }
 
         /** 승무패 · 언오버 · 선제골 항목별로 베팅 내역 HTML 생성 */
         function buildWorldCupBetHistoryGroupedHtml(bets, { showStudent = false, emptyText = '베팅 내역이 없습니다.' } = {}) {
             const list = Array.isArray(bets) ? bets : [];
             if (!list.length) {
-                return `<div class="text-[9px] text-slate-600 py-2 text-center border border-dashed border-slate-700 rounded-lg">${emptyText}</div>`;
+                return `<div class="text-12  py-2 text-center border border-dashed  rounded-lg">${emptyText}</div>`;
             }
             const grouped = { r32: [] };
             list.forEach((bet) => {
@@ -7792,29 +8041,29 @@ ${subjectLine}
                 if (!rows.length) return '';
                 const summary = getWorldCupBetHistorySummary(rows);
                 const rowHtml = rows.map((b) => buildWorldCupBetRowHtml(b, { showStudent })).join('');
-                return `<div class="rounded-lg border border-slate-700/80 bg-slate-950/40 p-2 mb-2">
-                    <div class="text-[10px] font-bold text-red-200 mb-1.5 flex flex-wrap items-center justify-between gap-1">
+                return `<div class="rounded-lg border   p-2 mb-2">
+                    <div class="text-12 font-bold  mb-1.5 flex flex-wrap items-center justify-between gap-1">
                         <span>${WORLD_CUP_MARKET_LABELS[market]}</span>
-                        <span class="text-[9px] text-slate-500 font-normal">${rows.length}건 · 대기 ${summary.pending} · ${formatBongAmount(summary.totalStake)}</span>
+                        <span class="text-12  font-normal">${rows.length}건 · 대기 ${summary.pending} · ${formatBongAmount(summary.totalStake)}</span>
                     </div>
                     <div class="space-y-1">${rowHtml}</div>
                 </div>`;
             }).filter(Boolean);
-            return sections.join('') || `<div class="text-[9px] text-slate-600 py-2 text-center border border-dashed border-slate-700 rounded-lg">${emptyText}</div>`;
+            return sections.join('') || `<div class="text-12  py-2 text-center border border-dashed  rounded-lg">${emptyText}</div>`;
         }
 
         function buildWorldCupBetRowHtml(bet, { showStudent = false } = {}) {
             if (!bet) return '';
             const studentPart = showStudent
-                ? `<span class="text-sky-200 font-bold shrink-0">${escapeConvenienceHtml(bet.studentName || bet.studentId || '?')} <span class="text-slate-500 font-normal">(${escapeConvenienceHtml(bet.studentId)}번)</span></span>`
+                ? `<span class=" font-bold shrink-0">${escapeConvenienceHtml(bet.studentName || bet.studentId || '?')} <span class=" font-normal">(${escapeConvenienceHtml(bet.studentId)}번)</span></span>`
                 : '';
-            return `<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-slate-800/70 pb-1">
-                <div class="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px]">
+            return `<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b  pb-1">
+                <div class="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-12 sm:text-12">
                     ${studentPart}
-                    <span class="text-slate-500 shrink-0">${formatWorldCupBetTime(bet.at)}</span>
-                    <span class="text-red-100">${WORLD_CUP_MARKET_LABELS[bet.market] || bet.market} · ${escapeConvenienceHtml(getWorldCupPickLabel(bet.market, bet.pick))} · ${formatBongAmount(bet.stake || 0)} × ${Number(bet.odds || 0).toFixed(2)}</span>
+                    <span class=" shrink-0">${formatWorldCupBetTime(bet.at)}</span>
+                    <span class="">${WORLD_CUP_MARKET_LABELS[bet.market] || bet.market} · ${escapeConvenienceHtml(getWorldCupPickLabel(bet.market, bet.pick))} · ${formatBongAmount(bet.stake || 0)} × ${Number(bet.odds || 0).toFixed(2)}</span>
                 </div>
-                <span class="shrink-0 text-[9px] sm:text-[10px]">${formatWorldCupBetStatusHtml(bet)}</span>
+                <span class="shrink-0 text-12 sm:text-12">${formatWorldCupBetStatusHtml(bet)}</span>
             </div>`;
         }
 
@@ -7941,9 +8190,9 @@ ${subjectLine}
             const probPct = Math.round(entry.prob * 100);
             return `
                 <button type="button" ${disabled ? 'disabled' : ''} onclick="window.placeWorldCupBet('${market}', '${pick}')"
-                    class="text-left rounded-lg border border-red-500/30 bg-slate-950/70 px-2 py-1.5 hover:bg-red-950/40 transition ${disabled ? 'opacity-50 cursor-not-allowed' : ''}">
-                    <div class="text-[10px] text-white font-bold">${entry.label}</div>
-                    <div class="text-[9px] text-red-200/80">분석 ${probPct}% · 배당 ${entry.odds.toFixed(2)}x</div>
+                    class="oly-btn oly-btn-danger oly-btn-sm transition ${disabled ? 'opacity-50 cursor-not-allowed' : ''}">
+                    <div class="text-12  font-bold">${entry.label}</div>
+                    <div class="text-12 ">분석 ${probPct}% · 배당 ${entry.odds.toFixed(2)}x</div>
                 </button>`;
         }
 
@@ -7960,71 +8209,71 @@ ${subjectLine}
             const statusText = state.settled
                 ? '정산 완료'
                 : (state.bettingOpen ? '베팅 접수 중' : '베팅 마감');
-            const statusClass = state.settled ? 'text-emerald-300' : (state.bettingOpen ? 'text-red-300' : 'text-amber-300');
+            const statusClass = state.settled ? '' : (state.bettingOpen ? '' : '');
             const myBets = getMyWorldCupBets().slice().reverse();
             const myBetRows = buildWorldCupBetHistoryGroupedHtml(myBets, { emptyText: '아직 베팅한 내역이 없습니다.' });
             const classBets = getAllClassWorldCupBets();
             const classSummary = getWorldCupBetHistorySummary(classBets);
             const classBetPreview = buildWorldCupBetHistoryGroupedHtml(classBets.slice(0, 30), { showStudent: true, emptyText: '아직 학급 베팅 내역이 없습니다.' });
             const classHistoryHtml = `
-                <div class="mt-3 pt-2 border-t border-slate-700/70">
+                <div class="mt-3 pt-2 border-t ">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-1">
                         <div>
-                            <div class="text-[10px] text-slate-300 font-bold">학급 베팅 내역</div>
-                            <div class="text-[9px] text-slate-500">총 ${classSummary.count}건 · 대기 ${classSummary.pending} · 적중 ${classSummary.won} · 누적 ${formatBongAmount(classSummary.totalStake)}</div>
+                            <div class="text-12  font-bold">학급 베팅 내역</div>
+                            <div class="text-12 ">총 ${classSummary.count}건 · 대기 ${classSummary.pending} · 적중 ${classSummary.won} · 누적 ${formatBongAmount(classSummary.totalStake)}</div>
                         </div>
-                        <button type="button" onclick="window.openWorldCupBetHistoryPanel()" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 font-bold py-1.5 px-3 rounded-lg text-[9px]">전체 보기</button>
+                        <button type="button" onclick="window.openWorldCupBetHistoryPanel()" class="oly-btn oly-btn-secondary oly-btn-sm shrink-0">전체 보기</button>
                     </div>
                     <div class="max-h-52 overflow-y-auto scrollbar-hide pr-1">
                         ${classBetPreview}
                     </div>
                 </div>`;
             const resultHtml = state.settled && state.result
-                ? `<div class="mt-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 px-2 py-1.5 text-[10px] text-emerald-100">
+                ? `<div class="mt-2 rounded-lg  border  px-2 py-1.5 text-12 ">
                     <div class="font-bold mb-1">경기 결과</div>
                     <div>32강 진출: ${getWorldCupPickLabel('r32', state.result.r32)}</div>
-                    ${state.lastSim ? `<div class="text-slate-300 mt-0.5">삼봉FC 모의 ${escapeConvenienceHtml(state.lastSim.teamAName || '레드')} ${Number(state.lastSim.sa)||0} : ${Number(state.lastSim.sb)||0} ${escapeConvenienceHtml(state.lastSim.teamBName || '블루')}</div>` : ''}
+                    ${state.lastSim ? `<div class=" mt-0.5">삼봉FC 모의 ${escapeConvenienceHtml(state.lastSim.teamAName || '레드')} ${Number(state.lastSim.sa)||0} : ${Number(state.lastSim.sb)||0} ${escapeConvenienceHtml(state.lastSim.teamBName || '블루')}</div>` : ''}
                 </div>`
-                : (state.lastSim ? `<div class="mt-2 rounded-lg bg-slate-950/50 border border-slate-600 px-2 py-1.5 text-[10px] text-slate-300">최근 모의경기 ${escapeConvenienceHtml(state.lastSim.teamAName || '레드')} ${Number(state.lastSim.sa)||0} : ${Number(state.lastSim.sb)||0} ${escapeConvenienceHtml(state.lastSim.teamBName || '블루')}</div>` : '');
+                : (state.lastSim ? `<div class="mt-2 rounded-lg  border  px-2 py-1.5 text-12 ">최근 모의경기 ${escapeConvenienceHtml(state.lastSim.teamAName || '레드')} ${Number(state.lastSim.sa)||0} : ${Number(state.lastSim.sb)||0} ${escapeConvenienceHtml(state.lastSim.teamBName || '블루')}</div>` : '');
             const adminR32Options = buildWorldCupAdminResultOptionsHtml('r32', state);
             const adminHtml = window.playerState.isGM ? `
-                <div class="mt-3 pt-3 border-t border-red-500/30 rounded-xl bg-red-950/20 p-2">
-                    <div class="text-[10px] text-red-200 font-bold mb-2"><i class="fa-solid fa-flag-checkered"></i> 마스터 · 승부예측 관리</div>
-                    <p class="text-[9px] text-slate-400 mb-2 leading-relaxed">정산은 <a href="${SAMBONG_FC_URL}" target="_blank" rel="noopener" class="text-amber-300 underline">삼봉FC 모의경기</a>가 끝나면 자동으로 이뤄집니다. 아래는 수동 백업입니다.</p>
+                <div class="mt-3 pt-3 border-t  rounded-xl  p-2">
+                    <div class="text-12  font-bold mb-2"><svg class="oly-icon" data-oly="flag-checkered" viewBox="0 0 24 24" aria-hidden="true"></svg> 마스터 · 승부예측 관리</div>
+                    <p class="text-12  mb-2 leading-relaxed">정산은 <a href="${SAMBONG_FC_URL}" target="_blank" rel="noopener" class=" underline">삼봉FC 모의경기</a>가 끝나면 자동으로 이뤄집니다. 아래는 수동 백업입니다.</p>
                     <div class="mb-2">
-                        <label class="text-[9px] text-slate-400">32강 진출 결과
-                            <select id="wcAdminR32" onchange="window.updateWorldCupAdminResultDraft('r32', this.value)" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-xs font-bold">
+                        <label class="text-12 ">32강 진출 결과
+                            <select id="wcAdminR32" onchange="window.updateWorldCupAdminResultDraft('r32', this.value)" class="mt-1 w-full  border   px-2 py-1 rounded text-12 font-bold">
                                 ${adminR32Options}
                             </select>
                         </label>
                     </div>
                     <div class="flex flex-col sm:flex-row gap-2 flex-wrap">
-                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(false)" class="flex-1 min-w-[7rem] bg-amber-800 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 마감</button>
-                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(true)" class="flex-1 min-w-[7rem] bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">베팅 재개</button>
-                        <button type="button" onclick="window.cancelAllWorldCupBetsAdmin()" class="flex-1 min-w-[7rem] bg-rose-900 hover:bg-rose-800 text-white font-bold py-2 px-3 rounded-xl text-[10px]">전체 취소·환불</button>
-                        <button type="button" onclick="window.settleWorldCupBetAdmin()" class="flex-1 min-w-[7rem] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl text-[10px]">수동 정산·지급</button>
-                        ${state.settled ? `<button type="button" onclick="window.openNextSimWorldCupRoundAdmin()" class="flex-1 min-w-[7rem] bg-sky-800 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded-xl text-[10px]">다음 모의경기 베팅 열기</button>` : ''}
+                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(false)" class="oly-btn oly-btn-reward oly-btn-md flex-1 min-w-[7rem]">베팅 마감</button>
+                        <button type="button" onclick="window.toggleWorldCupBettingAdmin(true)" class="oly-btn oly-btn-secondary oly-btn-md flex-1 min-w-[7rem]">베팅 재개</button>
+                        <button type="button" onclick="window.cancelAllWorldCupBetsAdmin()" class="oly-btn oly-btn-danger oly-btn-md flex-1 min-w-[7rem]">전체 취소·환불</button>
+                        <button type="button" onclick="window.settleWorldCupBetAdmin()" class="oly-btn oly-btn-primary oly-btn-md flex-1 min-w-[7rem]">수동 정산·지급</button>
+                        ${state.settled ? `<button type="button" onclick="window.openNextSimWorldCupRoundAdmin()" class="oly-btn oly-btn-primary oly-btn-md flex-1 min-w-[7rem]">다음 모의경기 베팅 열기</button>` : ''}
                     </div>
                 </div>` : '';
             el.innerHTML = `
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div>
-                        <h4 class="text-red-300 font-black text-xs"><i class="fa-solid fa-futbol"></i> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
-                        <p class="text-[9px] text-slate-400 leading-relaxed mt-1">${getCurrencyUnit()}으로 한국(레드) 승·상대(블루) 승 중 1건만 베팅 (최대 ${formatBongAmount(WORLD_CUP_MAX_STAKE)}). 베팅은 여기서, 경기는 <a href="${SAMBONG_FC_URL}" target="_blank" rel="noopener" class="text-amber-300 underline">삼봉FC 모의경기</a>로 돌리면 점수대로 자동 지급됩니다. 배당은 북메이커 마진이 적용되어 <span class="text-amber-300/90">장기적으로는 무조건 손해</span>입니다 — 재미로만!</p>
+                        <h4 class=" font-black text-12"><svg class="oly-icon" data-oly="futbol" viewBox="0 0 24 24" aria-hidden="true"></svg> 월드컵 승부예측 · ${WORLD_CUP_MATCH.title}</h4>
+                        <p class="text-12  leading-relaxed mt-1">${getCurrencyUnit()}으로 한국(레드) 승·상대(블루) 승 중 1건만 베팅 (최대 ${formatBongAmount(WORLD_CUP_MAX_STAKE)}). 베팅은 여기서, 경기는 <a href="${SAMBONG_FC_URL}" target="_blank" rel="noopener" class=" underline">삼봉FC 모의경기</a>로 돌리면 점수대로 자동 지급됩니다. 배당은 북메이커 마진이 적용되어 <span class="">장기적으로는 무조건 손해</span>입니다 — 재미로만!</p>
                     </div>
-                    <div class="text-right text-[10px] shrink-0 ${statusClass} font-bold">${statusText}</div>
+                    <div class="text-right text-12 shrink-0 ${statusClass} font-bold">${statusText}</div>
                 </div>
                 ${resultHtml}
                 <div class="mt-3">
-                    <div class="text-[10px] text-red-200 font-bold mb-1">모의 월드컵 승패 <span class="text-slate-500 font-normal">(한국 38% · 상대 62%)</span></div>
+                    <div class="text-12  font-bold mb-1">모의 월드컵 승패 <span class=" font-normal">(한국 38% · 상대 62%)</span></div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                         ${buildWorldCupBetButton('r32', 'advance', !canBet || hasPendingWorldCupBetOnMarket('r32'))}
                         ${buildWorldCupBetButton('r32', 'eliminate', !canBet || hasPendingWorldCupBetOnMarket('r32'))}
                     </div>
                 </div>
                 ${adminHtml}
-                <div class="mt-3 pt-2 border-t border-slate-700/70">
-                    <div class="text-[10px] text-slate-500 font-bold mb-1">내 베팅 내역</div>
+                <div class="mt-3 pt-2 border-t ">
+                    <div class="text-12  font-bold mb-1">내 베팅 내역</div>
                     <div class="max-h-44 overflow-y-auto scrollbar-hide pr-1">${myBetRows}</div>
                 </div>
                 ${classHistoryHtml}`;
@@ -8036,12 +8285,12 @@ ${subjectLine}
             if (modal) return modal;
             modal = document.createElement('div');
             modal.id = 'worldCupBetHistoryModal';
-            modal.className = 'hidden fixed inset-0 z-[270] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6';
+            modal.className = 'hidden fixed inset-0 z-[270]  backdrop-blur-sm flex items-center justify-center px-3 py-6';
             modal.innerHTML = `
-                <div class="w-full max-w-lg bg-slate-900 border border-red-500/50 rounded-2xl shadow-2xl p-4 max-h-[85vh] flex flex-col">
-                    <div class="flex items-center justify-between gap-3 mb-3 border-b border-slate-700 pb-3 shrink-0">
-                        <h3 class="text-lg font-display text-red-100"><i class="fa-solid fa-list text-red-300"></i> 학급 승부예측 내역</h3>
-                        <button type="button" onclick="window.closeWorldCupBetHistoryPanel()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+                <div class="w-full max-w-lg  border  rounded-2xl shadow-2xl p-4 max-h-[85vh] flex flex-col">
+                    <div class="flex items-center justify-between gap-3 mb-3 border-b  pb-3 shrink-0">
+                        <h3 class="text-20 font-display "><svg class="oly-icon" data-oly="list" viewBox="0 0 24 24" aria-hidden="true"></svg> 학급 승부예측 내역</h3>
+                        <button type="button" onclick="window.closeWorldCupBetHistoryPanel()" class="oly-btn oly-btn-secondary oly-btn-md">닫기</button>
                     </div>
                     <div id="worldCupBetHistoryModalBody" class="overflow-y-auto scrollbar-hide pr-1 flex-1"></div>
                 </div>`;
@@ -8055,7 +8304,7 @@ ${subjectLine}
             const classBets = getAllClassWorldCupBets();
             const summary = getWorldCupBetHistorySummary(classBets);
             body.innerHTML = `
-                <div class="text-[10px] text-slate-400 mb-3 rounded-lg bg-slate-950/70 border border-slate-700 px-2 py-1.5">
+                <div class="text-12  mb-3 rounded-lg  border  px-2 py-1.5">
                     ${WORLD_CUP_MATCH.title} · 총 ${summary.count}건 · 대기 ${summary.pending} · 적중 ${summary.won} · 베팅 합계 ${formatBongAmount(summary.totalStake)}
                 </div>
                 ${buildWorldCupBetHistoryGroupedHtml(classBets, { showStudent: true })}`;
@@ -8063,7 +8312,7 @@ ${subjectLine}
 
         window.openWorldCupBetHistoryPanel = function() {
             if (!window.playerState || window.playerState.isGuest) {
-                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                return window.customAlert(' 게스트는 이용할 수 없어요.');
             }
             const modal = ensureWorldCupBetHistoryModal();
             renderWorldCupBetHistoryModalBody();
@@ -8076,7 +8325,7 @@ ${subjectLine}
         };
 
         window.placeWorldCupBet = async function(market, pick) {
-            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isGuest) return await window.customAlert(' 게스트는 이용할 수 없어요.');
             if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
             const entry = getWorldCupOddsEntry(market, pick);
             if (!entry) return await window.customAlert('선택한 베팅 항목을 찾을 수 없습니다.');
@@ -8174,7 +8423,7 @@ ${subjectLine}
                 playSfx('bong', true);
                 updateUI();
                 renderWorldCupBetPanel();
-                await window.customAlert(`✅ 베팅 접수 완료!\n${entry.label} · ${formatBongAmount(stake)} × ${entry.odds.toFixed(2)}배`);
+                await window.customAlert(` 베팅 접수 완료!\n${entry.label} · ${formatBongAmount(stake)} × ${entry.odds.toFixed(2)}배`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -8208,7 +8457,7 @@ ${subjectLine}
                 await setDoc(getGlobalSettingsDocRef(), { worldCupBet: next }, { merge: true });
                 window.globalSettings.worldCupBet = next;
                 renderWorldCupBetPanel();
-                await window.customAlert(open ? '✅ 승부예측 베팅 접수를 재개했습니다.' : '⏸️ 승부예측 베팅 접수를 마감했습니다.');
+                await window.customAlert(open ? ' 승부예측 베팅 접수를 재개했습니다.' : ' 승부예측 베팅 접수를 마감했습니다.');
             } catch (e) {
                 console.error('toggleWorldCupBettingAdmin', e);
                 await window.customAlert('설정 저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -8282,7 +8531,7 @@ ${subjectLine}
                 updateUI();
                 renderWorldCupBetPanel();
                 await window.customAlert(
-                    `✅ 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${formatBongAmount(totalPayout)}`
+                    ` 승부예측 정산 완료!\n적중 ${winnerCount}건 · 총 지급 ${formatBongAmount(totalPayout)}`
                 );
             } catch (e) {
                 console.error('settleWorldCupBetAdmin', e);
@@ -8314,7 +8563,7 @@ ${subjectLine}
                 await setDoc(getGlobalSettingsDocRef(), { worldCupBet: next }, { merge: true });
                 window.globalSettings.worldCupBet = next;
                 renderWorldCupBetPanel();
-                await window.customAlert('✅ 다음 모의경기 베팅을 열었습니다. 학생들이 메이트에서 걸고, 삼봉FC에서 경기를 돌리면 됩니다.');
+                await window.customAlert(' 다음 모의경기 베팅을 열었습니다. 학생들이 메이트에서 걸고, 삼봉FC에서 경기를 돌리면 됩니다.');
             } catch (e) {
                 console.error('openNextSimWorldCupRoundAdmin', e);
                 await window.customAlert('설정 저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -8619,7 +8868,7 @@ ${subjectLine}
                 renderWorldCupBetPanel();
                 await window.customAlert(
                     result.cancelled > 0
-                        ? `✅ ${result.cancelled}건 취소 · ${result.students}명에게 ${formatBongAmount(result.refunded)} 환불했습니다.`
+                        ? ` ${result.cancelled}건 취소 · ${result.students}명에게 ${formatBongAmount(result.refunded)} 환불했습니다.`
                         : '취소할 대기 베팅이 없습니다.'
                 );
             } catch (e) {
@@ -9358,7 +9607,7 @@ ${subjectLine}
 
 
         // ==========================================
-        // ★ 탭 이동 및 월드맵 기능 ★
+        //  탭 이동 및 월드맵 기능 
         // ==========================================
         /** 하단 앱 독 + 경제 하위 섹션(shop/bank/estate) — 스와이프는 보이는 탭만 */
         const TABS = ['dashboard', 'plaza', 'quests', 'literature', 'jobs', 'economy', 'lunch', 'challenge', 'constitution', 'classtools', 'admin', 'settings', 'help', 'shop', 'bank', 'estate', 'goldenbell'];
@@ -9507,12 +9756,12 @@ ${subjectLine}
         };
 
         const PORTAL_TONE_UI = {
-            lime: { border: 'border-lime-400/50', bg: 'bg-lime-950/25 hover:bg-lime-900/45', name: 'text-lime-200', icon: 'text-lime-300', wrap: 'bg-lime-500/20' },
-            cyan: { border: 'border-cyan-400/50', bg: 'bg-cyan-950/25 hover:bg-cyan-900/45', name: 'text-cyan-200', icon: 'text-cyan-300', wrap: 'bg-blue-800/80 border border-cyan-300' },
-            red: { border: 'border-red-400/50', bg: 'bg-red-950/20 hover:bg-red-900/35', name: 'text-red-200', icon: 'text-red-300', wrap: 'bg-gradient-to-br from-red-400 via-white to-yellow-300' },
-            amber: { border: 'border-amber-300/60', bg: 'bg-amber-950/25 hover:bg-amber-900/45', name: 'text-amber-100', icon: 'text-amber-200', wrap: 'bg-amber-400/20 border border-amber-200/60' },
-            fuchsia: { border: 'border-fuchsia-300/60', bg: 'bg-fuchsia-950/25 hover:bg-fuchsia-900/45', name: 'text-fuchsia-100', icon: 'text-fuchsia-200', wrap: 'bg-fuchsia-400/20 border border-fuchsia-200/60' },
-            sky: { border: 'border-sky-400/50', bg: 'bg-sky-950/25 hover:bg-sky-900/45', name: 'text-sky-200', icon: 'text-sky-300', wrap: 'bg-sky-500/20' },
+            lime: { border: '', bg: ' ', name: '', icon: '', wrap: '' },
+            cyan: { border: '', bg: ' ', name: '', icon: '', wrap: ' border ' },
+            red: { border: '', bg: ' ', name: '', icon: '', wrap: 'bg-gradient-to-br   ' },
+            amber: { border: '', bg: ' ', name: '', icon: '', wrap: ' border ' },
+            fuchsia: { border: '', bg: ' ', name: '', icon: '', wrap: ' border ' },
+            sky: { border: '', bg: ' ', name: '', icon: '', wrap: '' },
         };
 
         function lockedClassModuleMessage(moduleId) {
@@ -9526,7 +9775,7 @@ ${subjectLine}
             if (!box) return;
             const list = currentExternalPortals();
             if (!list.length) {
-                box.innerHTML = '<p class="text-[11px] text-slate-400 text-center py-6 leading-relaxed">이 학급에 등록된 외부 세계 링크가 없습니다.<br>선생님이 설정 → 기능에서 주소를 넣을 수 있어요.</p>';
+                box.innerHTML = '<p class="text-12  text-center py-6 leading-relaxed">이 학급에 등록된 외부 세계 링크가 없습니다.<br>선생님이 설정 → 기능에서 주소를 넣을 수 있어요.</p>';
                 return;
             }
             box.innerHTML = list.map((row) => {
@@ -9534,14 +9783,14 @@ ${subjectLine}
                 const name = escapeHtmlAttr(row.name);
                 const desc = escapeHtmlAttr(row.desc || '새 창으로 이동합니다');
                 const url = escapeHtmlAttr(row.url);
-                const emoji = escapeHtmlAttr(row.emoji || '🌐');
+                const emoji = escapeHtmlAttr(row.emoji || '');
                 return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="group rounded-2xl border ${tone.border} ${tone.bg} p-4 flex items-center gap-3 transition">
-                    <div class="w-12 h-12 rounded-2xl ${tone.wrap} flex items-center justify-center text-3xl group-hover:scale-110 transition">${emoji}</div>
+                    <div class="w-12 h-12 rounded-2xl ${tone.wrap} flex items-center justify-center text-32 group-hover:scale-110 transition">${emoji}</div>
                     <div class="flex-1 min-w-0">
-                        <div class="${tone.name} font-black text-sm">${name}</div>
-                        <div class="text-[10px] text-slate-400">${desc}</div>
+                        <div class="${tone.name} font-black text-14">${name}</div>
+                        <div class="text-12 ">${desc}</div>
                     </div>
-                    <i class="fa-solid fa-arrow-up-right-from-square ${tone.icon}"></i>
+                    <svg class="oly-icon" data-oly="${tone.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                 </a>`;
             }).join('');
         }
@@ -9550,7 +9799,7 @@ ${subjectLine}
             const box = document.getElementById('classModuleUnlockList');
             if (!box) return;
             if (isSeedDemoClass()) {
-                box.innerHTML = '<p class="text-[11px] text-emerald-200 leading-relaxed">이 교실(기존 삼봉 교실)은 모든 기능이 이미 열려 있습니다. 새 학급을 만들면 기본 기능만 켜진 채로 시작합니다.</p>';
+                box.innerHTML = '<p class="text-12  leading-relaxed">이 교실(기존 삼봉 교실)은 모든 기능이 이미 열려 있습니다. 새 학급을 만들면 기본 기능만 켜진 채로 시작합니다.</p>';
                 return;
             }
             const unlockable = CLASS_MODULE_CATALOG.filter((m) => !m.basic);
@@ -9559,8 +9808,8 @@ ${subjectLine}
                 const hint = escapeHtmlAttr(m.hint);
                 const label = escapeHtmlAttr(m.label);
                 const btn = on
-                    ? '<span class="shrink-0 text-[10px] font-black text-emerald-300 px-2 py-1 rounded-lg border border-emerald-400/40">켜짐</span>'
-                    : `<button type="button" onclick="void window.unlockClassModuleNow('${m.id}')" class="shrink-0 min-h-[40px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black">해금</button>`;
+                    ? '<span class="shrink-0 text-12 font-black  px-2 py-1 rounded-lg border ">켜짐</span>'
+                    : `<button type="button" onclick="void window.unlockClassModuleNow('${m.id}')" class="oly-btn oly-btn-primary oly-btn-md shrink-0">해금</button>`;
                 return `<div class="class-module-row ${on ? '' : 'is-locked'}">
                     <div><h5>${label}</h5><p>${hint}</p></div>
                     ${btn}
@@ -9572,24 +9821,24 @@ ${subjectLine}
             const box = document.getElementById('gmExternalPortalEditor');
             if (!box) return;
             if (isSeedDemoClass()) {
-                box.innerHTML = '<p class="text-[11px] text-slate-300 leading-relaxed">기존 삼봉 교실의 기본 외부 세계 링크는 그대로 둡니다. 새 학급에서는 링크가 비어 있고, 그 반에서만 따로 넣을 수 있습니다.</p>';
+                box.innerHTML = '<p class="text-12  leading-relaxed">기존 삼봉 교실의 기본 외부 세계 링크는 그대로 둡니다. 새 학급에서는 링크가 비어 있고, 그 반에서만 따로 넣을 수 있습니다.</p>';
                 return;
             }
             const list = currentExternalPortals();
             const rows = list.map((row, idx) => `
                 <div class="gm-portal-editor-row">
-                    <input data-portal-field="emoji" value="${escapeHtmlAttr(row.emoji || '🌐')}" maxlength="8" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-center text-sm">
-                    <input data-portal-field="name" value="${escapeHtmlAttr(row.name)}" maxlength="24" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-xs font-bold" placeholder="이름">
-                    <input data-portal-field="url" value="${escapeHtmlAttr(row.url)}" maxlength="300" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-[10px]" placeholder="https://">
-                    <button type="button" onclick="this.closest('.gm-portal-editor-row').remove()" class="min-h-[40px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">삭제</button>
+                    <input data-portal-field="emoji" value="${escapeHtmlAttr(row.emoji || '')}" maxlength="8" class=" border   rounded-lg px-2 py-2 text-center text-14">
+                    <input data-portal-field="name" value="${escapeHtmlAttr(row.name)}" maxlength="24" class=" border   rounded-lg px-2 py-2 text-12 font-bold" placeholder="이름">
+                    <input data-portal-field="url" value="${escapeHtmlAttr(row.url)}" maxlength="300" class=" border   rounded-lg px-2 py-2 text-12" placeholder="https://">
+                    <button type="button" onclick="this.closest('.gm-portal-editor-row').remove()" class="oly-btn oly-btn-secondary oly-btn-md">삭제</button>
                 </div>`).join('');
             box.innerHTML = `
-                <div class="gm-portal-editor-list">${rows || '<p class="text-[10px] text-slate-500">아직 링크가 없습니다.</p>'}</div>
+                <div class="gm-portal-editor-list">${rows || '<p class="text-12 ">아직 링크가 없습니다.</p>'}</div>
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" onclick="window.addExternalPortalEditorRow()" class="min-h-[40px] px-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">링크 추가</button>
-                    <button type="button" onclick="void window.saveExternalPortalsFromEditor()" class="min-h-[40px] px-3 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white text-[10px] font-black">링크 저장</button>
+                    <button type="button" onclick="window.addExternalPortalEditorRow()" class="oly-btn oly-btn-secondary oly-btn-md">링크 추가</button>
+                    <button type="button" onclick="void window.saveExternalPortalsFromEditor()" class="oly-btn oly-btn-primary oly-btn-md">링크 저장</button>
                 </div>
-                <p class="text-[9px] text-slate-500 mt-2">http 또는 https 주소만 저장됩니다. 이전 교실 링크는 자동으로 가져오지 않습니다.</p>`;
+                <p class="text-12  mt-2">http 또는 https 주소만 저장됩니다. 이전 교실 링크는 자동으로 가져오지 않습니다.</p>`;
         }
 
         window.addExternalPortalEditorRow = function() {
@@ -9603,10 +9852,10 @@ ${subjectLine}
             const row = document.createElement('div');
             row.className = 'gm-portal-editor-row';
             row.innerHTML = `
-                <input data-portal-field="emoji" value="🌐" maxlength="8" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-center text-sm">
-                <input data-portal-field="name" value="" maxlength="24" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-xs font-bold" placeholder="이름">
-                <input data-portal-field="url" value="" maxlength="300" class="bg-slate-950 border border-slate-600 text-white rounded-lg px-2 py-2 text-[10px]" placeholder="https://">
-                <button type="button" onclick="this.closest('.gm-portal-editor-row').remove()" class="min-h-[40px] px-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-bold">삭제</button>`;
+                <input data-portal-field="emoji" value="" maxlength="8" class=" border   rounded-lg px-2 py-2 text-center text-14">
+                <input data-portal-field="name" value="" maxlength="24" class=" border   rounded-lg px-2 py-2 text-12 font-bold" placeholder="이름">
+                <input data-portal-field="url" value="" maxlength="300" class=" border   rounded-lg px-2 py-2 text-12" placeholder="https://">
+                <button type="button" onclick="this.closest('.gm-portal-editor-row').remove()" class="oly-btn oly-btn-secondary oly-btn-md">삭제</button>`;
             list.appendChild(row);
         };
 
@@ -9682,6 +9931,7 @@ ${subjectLine}
          * @param {string} [subOrOpts] 경제/도전 서브 또는 생략
          */
         window.switchTab = function(tabId, subOrOpts) {
+            if (isGuestSession() && (tabId === 'admin' || tabId === 'settings')) return;
             if (isMartialLawLockingStudent()) return;
             // 레거시 딥링크 별칭
             if (tabId === 'goldenbell') {
@@ -9718,7 +9968,7 @@ ${subjectLine}
                 
                 const btn = document.getElementById('tab-' + t);
                 if(btn) { 
-                    btn.classList.remove('is-active', 'border-sb-gold', 'text-sb-gold', 'text-orange-400', 'border-orange-400', 'text-yellow-400', 'border-yellow-400', 'text-teal-400', 'border-teal-400', 'text-sky-400', 'border-sky-400', 'text-amber-300', 'border-amber-300', 'text-lime-400', 'border-lime-500', 'text-pink-400', 'border-pink-500', 'text-violet-300', 'border-violet-400', 'text-cyan-300', 'border-cyan-400', 'bg-slate-800/50'); 
+                    btn.classList.remove('is-active'); 
                     btn.removeAttribute('aria-current');
                 }
             });
@@ -9732,7 +9982,11 @@ ${subjectLine}
                 activeBtn.setAttribute('aria-current', 'page');
             }
 
-            document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
+            const keepBody = ['martial-law-student-lock', 'student-election-active', 'class-timer-active', 'classtool-fs-open', 'class-tool-share-view', 'lottery-draw-active', 'election-overlay-active', 'rps-overlay-active', 'overflow-hidden', 'is-guest', 'is-guest-demo', 'oly-app', 'oly-app-in'];
+            const preserved = keepBody.filter((name) => document.body.classList.contains(name));
+            document.body.className = ['antialiased', 'oly-app', `bg-theme-${tabId}`, ...preserved].join(' ');
+            if (isGuestSession()) document.body.classList.add('is-guest');
+            if (window._guestDemoActive) document.body.classList.add('is-guest-demo');
             if (window.updateBankPanel) window.updateBankPanel();
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderAdminExportPanel === 'function') {
                 window.renderAdminExportPanel();
@@ -9802,13 +10056,13 @@ ${subjectLine}
             if(window.playerState.isAdmin) {
                 window.switchTab('admin');
             } else {
-                window.customAlert(`🌳 [세계수]\n${getMasterDisplayName()}의 성역입니다.\n성장한 자들만이 이곳의 비밀을 풀 수 있습니다.`);
+                window.customAlert(` [세계수]\n${getMasterDisplayName()}의 성역입니다.\n성장한 자들만이 이곳의 비밀을 풀 수 있습니다.`);
             }
         };
 
         window.visitPirateIsland = function() {
             const label = getPirateIslandLabel();
-            window.customAlert(`🌊 [${label}]\n${getCoMasterDisplayName()}의 구역입니다!\n함께 모험을 떠나는 공간입니다.`);
+            window.customAlert(` [${label}]\n${getCoMasterDisplayName()}의 구역입니다!\n함께 모험을 떠나는 공간입니다.`);
         };
 
         function escapeHofText(s) {
@@ -9828,13 +10082,13 @@ ${subjectLine}
             const rows = getSeason1HallRows();
             const top = rows.filter((r) => r.season1Xp > 0).slice(0, 3);
             if (!top.length) {
-                el.innerHTML = '<p class="text-[10px] text-amber-100/80">시즌 1 기록이 있으면 여기에 순위가 보입니다. 눌러서 도서관에 들어가 보세요.</p>';
+                el.innerHTML = '<p class="text-12 ">시즌 1 기록이 있으면 여기에 순위가 보입니다. 눌러서 도서관에 들어가 보세요.</p>';
                 return;
             }
             el.innerHTML = top.map((r) => {
-                const medal = r.isLegend ? '👑' : (r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank));
-                const legend = r.isLegend ? '<span class="text-amber-300">전설</span>' : '';
-                return `<div class="hof-mini-row"><span class="hof-mini-rank">${medal}</span><span class="truncate">${escapeHofText(r.name)}</span>${legend}<span class="ml-auto text-amber-200">${r.season1Xp.toLocaleString()} XP</span></div>`;
+                const medal = r.isLegend ? '' : (r.rank === 1 ? '' : r.rank === 2 ? '' : r.rank === 3 ? '' : String(r.rank));
+                const legend = r.isLegend ? '<span class="">전설</span>' : '';
+                return `<div class="hof-mini-row"><span class="hof-mini-rank">${medal}</span><span class="truncate">${escapeHofText(r.name)}</span>${legend}<span class="ml-auto ">${r.season1Xp.toLocaleString()} XP</span></div>`;
             }).join('');
         }
 
@@ -9845,19 +10099,19 @@ ${subjectLine}
             const rows = getSeason1HallRows();
             const myId = String(localStorage.getItem('sambong_student_id') || '');
             if (!rows.length) {
-                body.innerHTML = '<p class="text-[11px] text-amber-100/80 px-1 py-6 text-center">아직 학생 기록이 없습니다.</p>';
+                body.innerHTML = '<p class="text-12  px-1 py-6 text-center">아직 학생 기록이 없습니다.</p>';
                 return;
             }
             const hasXp = rows.some((r) => r.season1Xp > 0);
             if (!hasXp) {
-                body.innerHTML = '<p class="text-[11px] text-amber-100/80 px-1 py-6 text-center leading-relaxed">시즌 1 정산 기록이 아직 없습니다.<br>시즌 2가 시작되면 당시 경험치가 여기에 남습니다.</p>';
+                body.innerHTML = '<p class="text-12  px-1 py-6 text-center leading-relaxed">시즌 1 정산 기록이 아직 없습니다.<br>시즌 2가 시작되면 당시 경험치가 여기에 남습니다.</p>';
                 return;
             }
             const legends = rows.filter((r) => r.isLegend);
             const legendHtml = legends.length
                 ? `<div class="hof-legend-banner">${legends.map((r) => `
                     <div class="hof-legend-card">
-                        <div class="text-3xl mb-1">👑</div>
+                        <div class="text-32 mb-1"></div>
                         <strong>${escapeHofText(r.name)}</strong>
                         <span>시즌 1 · Lv.${calculateExactLevel(r.season1Xp)} 전설</span>
                         <em>${r.season1Xp.toLocaleString()} XP</em>
@@ -9868,16 +10122,16 @@ ${subjectLine}
                 const lvInfo = getLevelInfo(r.season1Xp);
                 const me = String(r.id) === myId;
                 const top = r.rank <= 3 && r.season1Xp > 0;
-                const medal = r.isLegend ? '👑' : (r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : String(r.rank));
+                const medal = r.isLegend ? '' : (r.rank === 1 ? '' : r.rank === 2 ? '' : r.rank === 3 ? '' : String(r.rank));
                 const bongLine = r.season1BongReward > 0 ? ` · 정산 ${formatBongAmount(r.season1BongReward)}` : '';
-                const legendMark = r.isLegend ? ' <span class="text-amber-300">전설</span>' : '';
+                const legendMark = r.isLegend ? ' <span class="">전설</span>' : '';
                 return `<div class="hof-library-row${me ? ' is-me' : ''}${top ? ' is-top' : ''}${r.isLegend ? ' is-legend' : ''}">
                     <div class="hof-library-rank">${medal}</div>
                     <div class="hof-library-name">
-                        <strong>${escapeHofText(r.name)}${legendMark}${me ? ' <span class="text-amber-300">나</span>' : ''}</strong>
+                        <strong>${escapeHofText(r.name)}${legendMark}${me ? ' <span class="">나</span>' : ''}</strong>
                         <span>시즌 1 · Lv.${lv} ${escapeHofText((lvInfo.info && lvInfo.info.name) || '')}${bongLine}</span>
                     </div>
-                    <div class="hof-library-xp">${r.season1Xp.toLocaleString()}<div class="text-[9px] font-bold text-amber-200/80">XP</div></div>
+                    <div class="hof-library-xp">${r.season1Xp.toLocaleString()}<div class="text-12 font-bold ">XP</div></div>
                 </div>`;
             }).join('');
         };
@@ -9897,7 +10151,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 문학: 독서기록장 · 일기장 ★
+        //  문학: 독서기록장 · 일기장 
         // ==========================================
         let _readingLogs = [];
         let _diaries = [];
@@ -9907,7 +10161,7 @@ ${subjectLine}
         let _readingStars = 3;
         let _diaryWeather = 'sunny';
         let _diaryMood = 'calm';
-        let _diaryInk = '#1e293b';
+        let _diaryInk = 'var(--ink)';
         let _diaryStrokes = [];
         let _diaryStroke = null;
         let _diaryCanvasReady = false;
@@ -10069,7 +10323,6 @@ ${subjectLine}
             if (!chip) return;
             const n = diaryBodyLength(el ? el.value : '');
             chip.textContent = `${n} / ${LITERATURE_DIARY_MAX}자`;
-            chip.classList.toggle('text-amber-300', n >= LITERATURE_DIARY_MAX);
         }
 
         function setDiaryAutoSaveHint(text) {
@@ -10134,12 +10387,12 @@ ${subjectLine}
             const ctx = canvas.getContext('2d');
             const w = canvas.width;
             const h = canvas.height;
-            ctx.fillStyle = '#fffbeb';
+            ctx.fillStyle = resolvePaint('', '--ink');
             ctx.fillRect(0, 0, w, h);
             (strokes || []).forEach((s) => {
                 const pts = s.pts || [];
                 if (pts.length < 4) return;
-                ctx.strokeStyle = s.color || '#1e293b';
+                ctx.strokeStyle = resolvePaint(s.color, '--ink');
                 ctx.lineWidth = Math.max(1, Number(s.width) || 3);
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
@@ -10190,7 +10443,7 @@ ${subjectLine}
         }
 
         window.setDiaryInk = function(color) {
-            _diaryInk = String(color || '#1e293b');
+            _diaryInk = String(color || 'var(--ink)');
             document.querySelectorAll('.diary-ink').forEach((btn) => {
                 btn.classList.toggle('is-on', btn.getAttribute('data-color') === _diaryInk);
             });
@@ -10212,7 +10465,7 @@ ${subjectLine}
             const wrap = document.getElementById('readingStars');
             if (!wrap) return;
             wrap.innerHTML = [1, 2, 3, 4, 5].map((i) => (
-                `<button type="button" class="min-h-[36px] px-1 text-lg ${i <= _readingStars ? 'text-amber-300' : 'text-slate-600'}" onclick="window.setReadingStars(${i})" aria-label="${i}점">★</button>`
+                `<button type="button" class="oly-btn oly-btn-reward oly-btn-sm ${i <= _readingStars ? '' : ''}" onclick="window.setReadingStars(${i})" aria-label="${i}점"></button>`
             )).join('');
         };
 
@@ -10285,21 +10538,21 @@ ${subjectLine}
             }
             const list = document.getElementById('readingLogMine');
             if (list) {
-                if (!targetId && admin) list.innerHTML = '<p class="text-slate-500">학생을 고르면 누적 기록이 나타납니다.</p>';
-                else if (!mine.length) list.innerHTML = '<p class="text-slate-500">아직 제출한 기록이 없습니다.</p>';
+                if (!targetId && admin) list.innerHTML = '<p class="">학생을 고르면 누적 기록이 나타납니다.</p>';
+                else if (!mine.length) list.innerHTML = '<p class="">아직 제출한 기록이 없습니다.</p>';
                 else {
                     list.innerHTML = mine.map((l) => (
                         `<div class="lit-log-card is-${escapeHofText(l.status)}">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(l.title)}</strong><span>${escapeHofText(readingLogStatusLabel(l.status))}</span></div>
-                            <div class="text-[10px] text-slate-400">${escapeHofText(l.date)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)}${l.genre ? ` · ${escapeHofText(l.genre)}` : ''} · ★${l.stars}</div>
-                            ${l.quote ? `<p class="mt-1 text-amber-100">“${escapeHofText(l.quote)}”</p>` : ''}
-                            <p class="mt-1 text-slate-200 whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
-                            ${l.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(l.teacherNote)}</p>` : ''}
-                            ${l.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${l.rewardXp} XP · +${l.rewardBong}봉</p>` : ''}
-                            ${admin ? `<label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디
-                                <input id="readingPastNote_${escapeHofText(l.id)}" type="text" maxlength="120" value="${escapeHofText(l.teacherNote || '')}" class="mt-1 w-full bg-slate-950 border border-amber-500/40 text-white px-2 py-1.5 rounded-lg text-xs">
+                            <div class="text-12 ">${escapeHofText(l.date)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)}${l.genre ? ` · ${escapeHofText(l.genre)}` : ''} · ${l.stars}</div>
+                            ${l.quote ? `<p class="mt-1 ">“${escapeHofText(l.quote)}”</p>` : ''}
+                            <p class="mt-1  whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
+                            ${l.teacherNote ? `<p class="mt-1 ">선생님: ${escapeHofText(l.teacherNote)}</p>` : ''}
+                            ${l.status === 'approved' ? `<p class="mt-1 ">+${l.rewardXp} XP · +${l.rewardBong}봉</p>` : ''}
+                            ${admin ? `<label class="block mt-2 text-12  font-bold">한마디
+                                <input id="readingPastNote_${escapeHofText(l.id)}" type="text" maxlength="120" value="${escapeHofText(l.teacherNote || '')}" class="mt-1 w-full  border   px-2 py-1.5 rounded-lg text-12">
                             </label>
-                            <button type="button" class="mt-1 min-h-[36px] px-3 bg-amber-700 hover:bg-amber-600 text-white font-black rounded-lg text-[10px]" onclick="void window.saveReadingTeacherNoteById('${escapeHofText(l.id)}')">한마디 저장</button>` : ''}
+                            <button type="button" class="oly-btn oly-btn-reward oly-btn-sm mt-1" onclick="void window.saveReadingTeacherNoteById('${escapeHofText(l.id)}')">한마디 저장</button>` : ''}
                         </div>`
                     )).join('');
                 }
@@ -10401,12 +10654,12 @@ ${subjectLine}
             }
             if (weatherWrap) {
                 weatherWrap.innerHTML = DIARY_WEATHER.map((w) => (
-                    `<button type="button" class="min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryWeather === w.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }" ${locked ? 'disabled' : `onclick="window.setDiaryWeather('${w.id}')"`}>${w.emoji} ${w.label}</button>`
+                    `<button type="button" class="oly-btn oly-btn-primary oly-btn-sm ${ _diaryWeather === w.id ? ' ' : ' ' }" ${locked ? 'disabled' : `onclick="window.setDiaryWeather('${w.id}')"`}>${w.emoji} ${w.label}</button>`
                 )).join('');
             }
             if (moodWrap) {
                 moodWrap.innerHTML = DIARY_MOODS.map((m) => (
-                    `<button type="button" class="min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryMood === m.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }" ${locked ? 'disabled' : `onclick="window.setDiaryMood('${m.id}')"`}>${m.emoji} ${m.label}</button>`
+                    `<button type="button" class="oly-btn oly-btn-primary oly-btn-sm ${ _diaryMood === m.id ? ' ' : ' ' }" ${locked ? 'disabled' : `onclick="window.setDiaryMood('${m.id}')"`}>${m.emoji} ${m.label}</button>`
                 )).join('');
             }
             paintDiaryStrokes(document.getElementById('diaryCanvas'), _diaryStrokes);
@@ -10417,7 +10670,7 @@ ${subjectLine}
                 const rows = visible
                     .filter((d) => String(d.studentId) === targetId)
                     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
-                if (!rows.length) past.innerHTML = '<p class="text-slate-500">아직 일기가 없습니다.</p>';
+                if (!rows.length) past.innerHTML = '<p class="">아직 일기가 없습니다.</p>';
                 else {
                     past.innerHTML = rows.map((d) => {
                         const w = weatherMeta(d.weather);
@@ -10425,14 +10678,14 @@ ${subjectLine}
                         const hasDraw = diaryHasDrawing(d);
                         return `<div class="lit-log-card is-${escapeHofText(d.status || 'pending')}">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(d.date)} · ${w.emoji} ${w.label} · ${m.emoji} ${m.label}</strong><span>${escapeHofText(diaryStatusLabel(d.status))}</span></div>
-                            <p class="mt-1 whitespace-pre-wrap text-slate-200">${escapeHofText(d.body)}</p>
+                            <p class="mt-1 whitespace-pre-wrap ">${escapeHofText(d.body)}</p>
                             ${hasDraw ? `<canvas class="diary-past-canvas mt-2" width="360" height="180" data-diary-past-preview="${escapeHofText(d.id)}" aria-label="일기 그림 미리보기"></canvas>` : ''}
-                            ${d.teacherNote ? `<p class="mt-1 text-amber-200">선생님: ${escapeHofText(d.teacherNote)}</p>` : ''}
-                            ${d.status === 'approved' ? `<p class="mt-1 text-emerald-300">+${d.rewardXp} XP · +${d.rewardBong}봉</p>` : ''}
-                            ${admin ? `<label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디
-                                <input id="diaryPastNote_${escapeHofText(d.id)}" type="text" maxlength="120" value="${escapeHofText(d.teacherNote || '')}" class="mt-1 w-full bg-slate-950 border border-amber-500/40 text-white px-2 py-1.5 rounded-lg text-xs">
+                            ${d.teacherNote ? `<p class="mt-1 ">선생님: ${escapeHofText(d.teacherNote)}</p>` : ''}
+                            ${d.status === 'approved' ? `<p class="mt-1 ">+${d.rewardXp} XP · +${d.rewardBong}봉</p>` : ''}
+                            ${admin ? `<label class="block mt-2 text-12  font-bold">한마디
+                                <input id="diaryPastNote_${escapeHofText(d.id)}" type="text" maxlength="120" value="${escapeHofText(d.teacherNote || '')}" class="mt-1 w-full  border   px-2 py-1.5 rounded-lg text-12">
                             </label>
-                            <button type="button" class="mt-1 min-h-[36px] px-3 bg-amber-700 hover:bg-amber-600 text-white font-black rounded-lg text-[10px]" onclick="void window.saveDiaryTeacherNoteById('${escapeHofText(d.id)}')">한마디 저장</button>` : ''}
+                            <button type="button" class="oly-btn oly-btn-reward oly-btn-sm mt-1" onclick="void window.saveDiaryTeacherNoteById('${escapeHofText(d.id)}')">한마디 저장</button>` : ''}
                         </div>`;
                     }).join('');
                     past.querySelectorAll('[data-diary-past-preview]').forEach((canvas) => {
@@ -10456,7 +10709,7 @@ ${subjectLine}
             weatherWrap.querySelectorAll('button').forEach((btn, i) => {
                 const w = DIARY_WEATHER[i];
                 if (!w) return;
-                btn.className = `min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryWeather === w.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }`;
+                btn.className = `oly-btn ${_diaryWeather === w.id ? 'oly-btn-primary' : 'oly-btn-secondary'} oly-btn-sm`;
             });
         };
         window.setDiaryMood = function(id) {
@@ -10470,7 +10723,7 @@ ${subjectLine}
             moodWrap.querySelectorAll('button').forEach((btn, i) => {
                 const m = DIARY_MOODS[i];
                 if (!m) return;
-                btn.className = `min-h-[36px] px-2 rounded-lg text-[11px] font-bold ${ _diaryMood === m.id ? 'bg-sky-700 text-white' : 'bg-slate-800 text-slate-300' }`;
+                btn.className = `oly-btn ${_diaryMood === m.id ? 'oly-btn-primary' : 'oly-btn-secondary'} oly-btn-sm`;
             });
         };
 
@@ -10483,20 +10736,20 @@ ${subjectLine}
             syncLiteraturePendingBadge();
             if (box) {
                 if (!pending.length) {
-                    box.innerHTML = '<p class="text-slate-400 text-[11px]">확인할 독서기록이 없습니다.</p>';
+                    box.innerHTML = '<p class=" text-12">확인할 독서기록이 없습니다.</p>';
                 } else {
                     box.innerHTML = pending.map((l) => (
                         `<div class="lit-log-card is-pending">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(STUDENT_NAMES[l.studentId] || l.studentId)}</strong><span>${escapeHofText(l.date)}</span></div>
-                            <div class="text-[10px] text-slate-400">${escapeHofText(l.title)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)} · ${escapeHofText(l.genre)} · ★${l.stars}</div>
-                            ${l.quote ? `<p class="mt-1 text-amber-100">“${escapeHofText(l.quote)}”</p>` : ''}
+                            <div class="text-12 ">${escapeHofText(l.title)} · ${escapeHofText(l.author)} · ${escapeHofText(l.publisher)} · ${escapeHofText(l.genre)} · ${l.stars}</div>
+                            ${l.quote ? `<p class="mt-1 ">“${escapeHofText(l.quote)}”</p>` : ''}
                             <p class="mt-1 whitespace-pre-wrap">${escapeHofText(l.thought)}</p>
-                            <label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디 (선택)
-                                <input id="reviewNote_${escapeHofText(l.id)}" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-1.5 rounded-lg text-xs">
+                            <label class="block mt-2 text-12  font-bold">한마디 (선택)
+                                <input id="reviewNote_${escapeHofText(l.id)}" type="text" maxlength="120" class="mt-1 w-full  border   px-2 py-1.5 rounded-lg text-12">
                             </label>
                             <div class="flex gap-2 mt-2">
-                                <button type="button" class="flex-1 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs" onclick="void window.reviewReadingLog('${escapeHofText(l.id)}','approve')">확인 · 보상</button>
-                                <button type="button" class="flex-1 min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs" onclick="void window.reviewReadingLog('${escapeHofText(l.id)}','reject')">다시 쓰기</button>
+                                <button type="button" class="oly-btn oly-btn-primary oly-btn-md flex-1" onclick="void window.reviewReadingLog('${escapeHofText(l.id)}','approve')">확인 · 보상</button>
+                                <button type="button" class="oly-btn oly-btn-secondary oly-btn-md flex-1" onclick="void window.reviewReadingLog('${escapeHofText(l.id)}','reject')">다시 쓰기</button>
                             </div>
                         </div>`
                     )).join('');
@@ -10504,7 +10757,7 @@ ${subjectLine}
             }
             if (diaryBox) {
                 if (!pendingDiary.length) {
-                    diaryBox.innerHTML = '<p class="text-slate-400 text-[11px]">확인할 일기가 없습니다.</p>';
+                    diaryBox.innerHTML = '<p class=" text-12">확인할 일기가 없습니다.</p>';
                 } else {
                     diaryBox.innerHTML = pendingDiary.map((d) => {
                         const w = weatherMeta(d.weather);
@@ -10512,15 +10765,15 @@ ${subjectLine}
                         const hasDraw = diaryHasDrawing(d);
                         return `<div class="lit-log-card is-pending">
                             <div class="flex justify-between gap-2"><strong>${escapeHofText(STUDENT_NAMES[d.studentId] || d.studentId)}</strong><span>${escapeHofText(d.date)}</span></div>
-                            <div class="text-[10px] text-slate-400">${w.emoji} ${w.label} · ${m.emoji} ${m.label}${hasDraw ? ' · 그림 있음' : ''}</div>
+                            <div class="text-12 ">${w.emoji} ${w.label} · ${m.emoji} ${m.label}${hasDraw ? ' · 그림 있음' : ''}</div>
                             <p class="mt-1 whitespace-pre-wrap">${escapeHofText(d.body)}</p>
                             ${hasDraw ? `<canvas class="diary-review-canvas mt-2 w-full" width="360" height="180" data-diary-preview="${escapeHofText(d.id)}" aria-hidden="true"></canvas>` : ''}
-                            <label class="block mt-2 text-[10px] text-slate-400 font-bold">한마디 (선택)
-                                <input id="diaryReviewNote_${escapeHofText(d.id)}" type="text" maxlength="120" class="mt-1 w-full bg-slate-950 border border-slate-600 text-white px-2 py-1.5 rounded-lg text-xs">
+                            <label class="block mt-2 text-12  font-bold">한마디 (선택)
+                                <input id="diaryReviewNote_${escapeHofText(d.id)}" type="text" maxlength="120" class="mt-1 w-full  border   px-2 py-1.5 rounded-lg text-12">
                             </label>
                             <div class="flex gap-2 mt-2">
-                                <button type="button" class="flex-1 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs" onclick="void window.reviewDiaryEntry('${escapeHofText(d.id)}','approve')">확인 · 보상</button>
-                                <button type="button" class="flex-1 min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl text-xs" onclick="void window.reviewDiaryEntry('${escapeHofText(d.id)}','reject')">다시 쓰기</button>
+                                <button type="button" class="oly-btn oly-btn-primary oly-btn-md flex-1" onclick="void window.reviewDiaryEntry('${escapeHofText(d.id)}','approve')">확인 · 보상</button>
+                                <button type="button" class="oly-btn oly-btn-secondary oly-btn-md flex-1" onclick="void window.reviewDiaryEntry('${escapeHofText(d.id)}','reject')">다시 쓰기</button>
                             </div>
                         </div>`;
                     }).join('');
@@ -11047,7 +11300,7 @@ ${subjectLine}
         }
 
         // ==========================================
-        // ★ 수업도구: 학습 온도계 ★
+        //  수업도구: 학습 온도계 
         // ==========================================
         const LEARNING_THERMOMETER_DEFAULT_MIN = -20;
         const LEARNING_THERMOMETER_DEFAULT_MAX = 20;
@@ -11182,12 +11435,12 @@ ${subjectLine}
                 const chalkBtn = btn.classList.contains('chalk-tool-btn');
                 if (share.active) {
                     btn.innerHTML = chalkBtn
-                        ? '📺 같이 보기'
-                        : '<i class="fa-solid fa-tower-broadcast"></i> 같이 보기 중';
+                        ? ' 같이 보기'
+                        : '<svg class="oly-icon" data-oly="tower-broadcast" viewBox="0 0 24 24" aria-hidden="true"></svg> 같이 보기 중';
                 } else {
                     btn.innerHTML = chalkBtn
-                        ? '📺 띄우기'
-                        : '<i class="fa-solid fa-up-right-from-square"></i> 학생 화면에 띄우기';
+                        ? ' 띄우기'
+                        : '<svg class="oly-icon" data-oly="up-right-from-square" viewBox="0 0 24 24" aria-hidden="true"></svg> 학생 화면에 띄우기';
                 }
             });
             document.querySelectorAll('#classtoolFullscreen .js-class-watch-toggle').forEach((btn) => {
@@ -11606,7 +11859,8 @@ ${subjectLine}
             return _gomokuAiWorker;
         }
 
-        function pickGomokuAiMoveAsync(game, opts) {
+        async function pickGomokuAiMoveAsync(game, opts) {
+            await ensureBoardAi();
             const worker = getGomokuAiWorker();
             if (!worker) {
                 return Promise.resolve(pickGomokuAiMove(game, opts));
@@ -11665,6 +11919,7 @@ ${subjectLine}
         }
 
         async function playGomokuAiTurn() {
+            await ensureBoardAi();
             const s = _gomokuAiSession;
             if (!s || s.thinking) return;
             if (!s.game || s.game.winner || s.game.endReason === 'draw') return;
@@ -11787,6 +12042,7 @@ ${subjectLine}
         }
 
         function renderBoardGamePanel() {
+            void ensureBoardAi();
             if (_chessAiSession) {
                 renderChessPlay(chessAiRoomView());
                 return;
@@ -11866,7 +12122,7 @@ ${subjectLine}
                 const rejected = room.joinRequests.find((j) => j.id === me && j.status === 'rejected');
                 let action = '';
                 if (mine && (room.status === 'playing' || room.status === 'finished')) {
-                    action = `<button type="button" class="boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
+                    action = `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
                 } else if (host && room.status === 'waiting') {
                     action = `<span class="boardgame-room-meta">방장</span>`;
                 } else if (pending) {
@@ -11874,7 +12130,7 @@ ${subjectLine}
                 } else if (rejected) {
                     action = `<span class="boardgame-room-meta">거절됨</span>`;
                 } else if (room.status === 'waiting' && left > 0 && me) {
-                    action = `<button type="button" class="boardgame-primary-btn" data-join="${escapeBoardGameText(room.id)}">참가 신청</button>`;
+                    action = `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md boardgame-primary-btn" data-join="${escapeBoardGameText(room.id)}">참가 신청</button>`;
                 } else if (room.status === 'playing') {
                     action = `<span class="boardgame-room-meta">대국 중</span>`;
                 }
@@ -11882,8 +12138,8 @@ ${subjectLine}
                     ? room.joinRequests.filter((j) => j.status === 'pending').map((j) => `
                         <div class="boardgame-join-req">
                             <span class="boardgame-room-meta">${escapeBoardGameText(j.name)} 참가 신청</span>
-                            <button type="button" class="boardgame-primary-btn" data-approve="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">승인</button>
-                            <button type="button" class="boardgame-mini-btn" data-reject="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">거절</button>
+                            <button type="button" class="oly-btn oly-btn-secondary oly-btn-md boardgame-primary-btn" data-approve="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">승인</button>
+                            <button type="button" class="oly-btn oly-btn-secondary oly-btn-md boardgame-mini-btn" data-reject="${escapeBoardGameText(room.id)}" data-sid="${escapeBoardGameText(j.id)}">거절</button>
                         </div>`).join('')
                     : '';
                 return `<article class="boardgame-room-card">
@@ -12035,7 +12291,7 @@ ${subjectLine}
             const starSvg = stars.map(([x, y]) => {
                 const px = ((x / (size - 1)) * 88 + 6).toFixed(3);
                 const py = ((y / (size - 1)) * 88 + 6).toFixed(3);
-                return `<circle cx="${px}" cy="${py}" r="1.1" fill="#5b3310" />`;
+                return `<circle cx="${px}" cy="${py}" r="1.1" fill="var(--gold-text)" />`;
             }).join('');
             let stones = '';
             for (let y = 0; y < size; y += 1) {
@@ -12044,8 +12300,8 @@ ${subjectLine}
                     if (v !== GOMOKU_BLACK && v !== GOMOKU_WHITE) continue;
                     const px = ((x / (size - 1)) * 88 + 6).toFixed(3);
                     const py = ((y / (size - 1)) * 88 + 6).toFixed(3);
-                    const fill = v === GOMOKU_BLACK ? '#111827' : '#f8fafc';
-                    const stroke = v === GOMOKU_BLACK ? '#030712' : '#a8a29e';
+                    const fill = v === GOMOKU_BLACK ? 'var(--chalk-board)' : 'var(--bg)';
+                    const stroke = v === GOMOKU_BLACK ? 'var(--chalk-board)' : 'var(--gold-light)';
                     stones += `<circle cx="${px}" cy="${py}" r="${stoneR}" fill="${fill}" stroke="${stroke}" stroke-width="0.25" />`;
                 }
             }
@@ -12054,10 +12310,10 @@ ${subjectLine}
             if (pending) {
                 const px = ((pending.x / (size - 1)) * 88 + 6).toFixed(3);
                 const py = ((pending.y / (size - 1)) * 88 + 6).toFixed(3);
-                ghost = `<circle cx="${px}" cy="${py}" r="${stoneR}" fill="rgba(245,158,11,0.45)" stroke="#f59e0b" stroke-width="0.3" />`;
+                ghost = `<circle cx="${px}" cy="${py}" r="${stoneR}" fill="color-mix(in srgb, var(--gold) 45%, transparent)" stroke="var(--gold)" stroke-width="0.3" />`;
             }
             boardEl.innerHTML = `<svg class="gomoku-grid-svg" viewBox="0 0 100 100" aria-hidden="true">
-                <g stroke="#5b3310" stroke-width="0.28" fill="none">${lines.join('')}</g>
+                <g stroke="var(--gold-text)" stroke-width="0.28" fill="none">${lines.join('')}</g>
                 ${starSvg}${stones}${ghost}
             </svg>` + Array.from({ length: size * size }, (_, i) => {
                 const x = i % size;
@@ -12067,7 +12323,7 @@ ${subjectLine}
                 const isLast = last && last.x === x && last.y === y;
                 const isPend = pending && pending.x === x && pending.y === y;
                 const hot = Math.max(3.2, (88 / span) * 0.9);
-                return `<button type="button" class="gomoku-hotspot${isLast ? ' is-last' : ''}${isPend ? ' is-pending' : ''}" style="left:${left}%;top:${top}%;width:${hot}%;height:${hot}%" data-x="${x}" data-y="${y}" aria-label="${x + 1}열 ${y + 1}행"></button>`;
+                return `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md gomoku-hotspot ${isLast ? ' is-last' : ''} ${isPend ? ' is-pending' : ''}" style="left:${left}%;top:${top}%;width:${hot}%;height:${hot}%" data-x="${x}" data-y="${y}" aria-label="${x + 1}열 ${y + 1}행"></button>`;
             }).join('');
             boardEl.querySelectorAll('.gomoku-hotspot').forEach((btn) => {
                 btn.addEventListener('click', (e) => {
@@ -12406,7 +12662,8 @@ ${subjectLine}
             return _chessAiWorker;
         }
 
-        function pickChessAiMoveAsync(game, opts) {
+        async function pickChessAiMoveAsync(game, opts) {
+            await ensureBoardAi();
             const worker = getChessAiWorker();
             if (!worker) return Promise.resolve(pickChessAiMove(game, opts));
             const reqId = (_chessAiReqId += 1);
@@ -12472,6 +12729,7 @@ ${subjectLine}
         }
 
         async function playChessAiTurn() {
+            await ensureBoardAi();
             const s = _chessAiSession;
             if (!s || s.thinking || chessIsOver(s.game)) return;
             if (s.game.turn === s.human) return;
@@ -12698,7 +12956,7 @@ ${subjectLine}
                         dest && !dest.capture ? 'is-move' : '',
                     ].filter(Boolean).join(' ');
                     const label = `${'abcdefgh'[chessFile(sq)]}${chessRank(sq) + 1}`;
-                    html.push(`<button type="button" class="${cls}" data-sq="${sq}" aria-label="${label}">${chessPieceHtml(p, sq)}</button>`);
+                    html.push(`<button type="button" class="oly-btn oly-btn-secondary oly-btn-md ${cls}" data-sq="${sq}" aria-label="${label}">${chessPieceHtml(p, sq)}</button>`);
                 });
             });
             boardEl.innerHTML = html.join('');
@@ -12727,7 +12985,7 @@ ${subjectLine}
             const def = getBoardGameDef(gameType);
             if (!def) return;
             if (window.playerState && window.playerState.isGuest) {
-                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                return window.customAlert(' 게스트는 이용할 수 없어요.');
             }
             _boardGameType = def.id;
             _boardGameActiveId = '';
@@ -12745,7 +13003,7 @@ ${subjectLine}
 
         window.startGomokuAiGame = function (level) {
             if (window.playerState && window.playerState.isGuest) {
-                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                return window.customAlert(' 게스트는 이용할 수 없어요.');
             }
             void vacateOtherBoardRooms('');
             startGomokuAiSession(level);
@@ -12759,7 +13017,7 @@ ${subjectLine}
         window.startBoardGameAi = function (level) {
             if (_boardGameType === 'chess') {
                 if (window.playerState && window.playerState.isGuest) {
-                    return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                    return window.customAlert(' 게스트는 이용할 수 없어요.');
                 }
                 void vacateOtherBoardRooms('');
                 startChessAiSession(level);
@@ -12872,7 +13130,7 @@ ${subjectLine}
         }
 
         window.createBoardGameRoom = async function (gameType) {
-            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState && window.playerState.isGuest) return window.customAlert(' 게스트는 이용할 수 없어요.');
             const me = boardGameSelfId();
             if (!me) return window.customAlert('로그인한 학생만 방을 만들 수 있습니다.');
             const def = getBoardGameDef(gameType || _boardGameType);
@@ -12898,7 +13156,7 @@ ${subjectLine}
         };
 
         window.requestJoinBoardGameRoom = async function (roomId) {
-            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState && window.playerState.isGuest) return window.customAlert(' 게스트는 이용할 수 없어요.');
             const me = boardGameSelfId();
             if (!me) return window.customAlert('로그인한 학생만 참가할 수 있습니다.');
             await vacateOtherBoardRooms(roomId);
@@ -13132,9 +13390,9 @@ ${subjectLine}
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
             if (!_thinkDrawBound) {
-                ctx.fillStyle = '#fffbeb';
+                ctx.fillStyle = resolvePaint('', '--ink');
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.strokeStyle = '#1c1917';
+                ctx.strokeStyle = resolvePaint('', '--ink');
                 ctx.lineWidth = 3.2;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
@@ -13184,7 +13442,7 @@ ${subjectLine}
             const canvas = document.getElementById('thinkDrawCanvas');
             if (!canvas) return;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#fffbeb';
+            ctx.fillStyle = resolvePaint('', '--ink');
             ctx.fillRect(0, 0, canvas.width, canvas.height);
         };
 
@@ -13251,7 +13509,7 @@ ${subjectLine}
             const colorRow = document.getElementById('thinkColorRow');
             if (colorRow && canCompose) {
                 colorRow.innerHTML = THINK_NOTE_COLORS.map((c) => (
-                    `<button type="button" class="think-color-dot think-note-${c} ${_thinkNoteColor === c ? 'is-on' : ''}" onclick="window.setThinkNoteColor('${c}')" title="${c}"></button>`
+                    `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-color-dot think-note- ${c} ${_thinkNoteColor === c ? 'is-on' : ''}" onclick="window.setThinkNoteColor('${c}')" title="${c}"></button>`
                 )).join('');
             }
             if (canCompose) initThinkDrawCanvas();
@@ -13278,23 +13536,23 @@ ${subjectLine}
                     const mine = board.empathy[myId] === focusPost.id;
                     const qLine = board.questions.find((row) => row.id === focusPost.questionId);
                     const publishBtn = (!follower && isAdmin)
-                        ? `<button type="button" class="think-admin-btn think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${focusPost.id}', ${focusPost.isPublic ? 'false' : 'true'})">${focusPost.isPublic ? '이 글 숨기기' : '이 글 공개'}</button>`
+                        ? `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-admin-btn think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${focusPost.id}', ${focusPost.isPublic ? 'false' : 'true'})">${focusPost.isPublic ? '이 글 숨기기' : '이 글 공개'}</button>`
                         : '';
                     // 닫기는 공유 화면·TV에서도 교사가 눌러야 하므로 관리자면 항상 둡니다.
                     const closeBtn = (follower && !isAdmin)
                         ? ''
-                        : `<button type="button" class="think-focus-close-btn think-keep-input" onclick="event.stopPropagation(); void window.closeThinkFocus()">닫기</button>`;
+                        : `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-focus-close-btn think-keep-input" onclick="event.stopPropagation(); void window.closeThinkFocus()">닫기</button>`;
                     focusEl.innerHTML = `
                         ${closeBtn}
                         <div class="think-focus-card think-note-${focusPost.color} ${glowIds.has(focusPost.id) ? 'think-note-glow' : ''}">
                             ${focusPost.isPublic ? '' : '<p class="think-note-private" style="position:static;display:inline-block;margin-bottom:0.35rem">비공개</p>'}
                             <p class="think-note-author">${escapeHtmlAttr(focusPost.name || getStudentDisplayLabel(focusPost.studentId))}</p>
-                            ${qLine ? `<p class="text-[11px] font-black opacity-70 mt-1">Q. ${escapeHtmlAttr(qLine.text)}</p>` : ''}
+                            ${qLine ? `<p class="text-12 font-black opacity-70 mt-1">Q. ${escapeHtmlAttr(qLine.text)}</p>` : ''}
                             ${focusPost.text ? `<p class="think-focus-text mt-2">${escapeHtmlAttr(focusPost.text)}</p>` : ''}
-                            ${focusPost.drawing ? `<img src="${focusPost.drawing}" alt="" class="think-focus-draw">` : ''}
+                            ${focusPost.drawing ? `<img loading="lazy" decoding="async" src="${focusPost.drawing}" alt="" class="think-focus-draw">` : ''}
                         </div>
                         <div class="flex flex-wrap items-center gap-2 think-keep-input">
-                            <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="void window.toggleThinkPostEmpathy('${focusPost.id}')">공감하기</button>
+                            <button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-empathy-btn ${mine ? 'is-on' : ''}" onclick="void window.toggleThinkPostEmpathy('${focusPost.id}')">공감하기</button>
                             <span class="think-empathy-count">${countLabel}</span>
                             ${publishBtn}
                             ${closeBtn}
@@ -13305,7 +13563,7 @@ ${subjectLine}
             }
             if (grid && !showFocus) {
                 if (shownPosts.length === 0) {
-                    grid.innerHTML = `<p class="col-span-full text-[11px] text-amber-900/80 font-bold p-3">${board.posts.length ? '아직 공개된 생각이 없습니다. 선생님이 공개하면 여기에 보여요.' : '아직 붙여진 생각이 없습니다.'}</p>`;
+                    grid.innerHTML = `<p class="col-span-full text-12  font-bold p-3">${board.posts.length ? '아직 공개된 생각이 없습니다. 선생님이 공개하면 여기에 보여요.' : '아직 붙여진 생각이 없습니다.'}</p>`;
                 } else {
                     grid.innerHTML = shownPosts.map((p) => {
                         const glow = glowIds.has(p.id) ? 'think-note-glow' : '';
@@ -13314,15 +13572,15 @@ ${subjectLine}
                         const countLabel = board.empathyPublic ? String(counts[p.id] || 0) : '';
                         const privateMark = p.isPublic ? '' : '<span class="think-note-private">비공개</span>';
                         const publishBtn = (!follower && isAdmin)
-                            ? `<button type="button" class="think-note-publish think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${p.id}', ${p.isPublic ? 'false' : 'true'})">${p.isPublic ? '숨기기' : '개별 공개'}</button>`
+                            ? `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-note-publish think-keep-input" onclick="event.stopPropagation(); void window.setThinkPostPublic('${p.id}', ${p.isPublic ? 'false' : 'true'})">${p.isPublic ? '숨기기' : '개별 공개'}</button>`
                             : '';
                         return `<article class="think-note think-note-${p.color} ${glow}" ${click}>
                             ${privateMark}
                             <p class="think-note-author">${escapeHtmlAttr(p.name || getStudentDisplayLabel(p.studentId))}</p>
                             <p class="think-note-excerpt">${escapeHtmlAttr(thoughtPostExcerpt(p, 90))}</p>
-                            ${p.drawing ? `<img src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
+                            ${p.drawing ? `<img loading="lazy" decoding="async" src="${p.drawing}" alt="" class="think-note-thumb">` : ''}
                             <div class="mt-1 flex items-center justify-between gap-1 think-keep-input" onclick="event.stopPropagation();">
-                                <button type="button" class="think-empathy-btn ${mine ? 'is-on' : ''}" onclick="event.stopPropagation(); void window.toggleThinkPostEmpathy('${p.id}')">공감</button>
+                                <button type="button" class="oly-btn oly-btn-secondary oly-btn-md think-empathy-btn ${mine ? 'is-on' : ''}" onclick="event.stopPropagation(); void window.toggleThinkPostEmpathy('${p.id}')">공감</button>
                                 ${publishBtn}
                                 ${board.empathyPublic ? `<span class="think-empathy-count">${countLabel}</span>` : ''}
                             </div>
@@ -13650,7 +13908,7 @@ ${subjectLine}
             host.classList.remove('hidden');
             sambongModalHost().appendChild(host);
             host.innerHTML = '<p class="class-board-fanfare-label">따봉! +10XP +1봉</p>';
-            const colors = ['#fbbf24', '#f59e0b', '#ef4444', '#a3e635', '#38bdf8', '#f472b6', '#fde68a'];
+            const colors = ['var(--gold)', 'var(--gold)', 'var(--gold-deep)', 'var(--gold)', 'var(--sky)', 'var(--gold-light)', 'var(--gold-light)'];
             for (let i = 0; i < 56; i++) {
                 const el = document.createElement('div');
                 el.className = 'lottery-confetti-piece';
@@ -13808,7 +14066,7 @@ ${subjectLine}
                     const viewOn = p.id === board.viewPageId ? 'is-view' : '';
                     const submitOn = p.id === board.currentPageId ? 'is-submit' : '';
                     const label = p.id === board.currentPageId ? `${p.index}쪽 제출` : `${p.index}쪽`;
-                    return `<button type="button" class="class-board-page-btn ${viewOn} ${submitOn}" onclick="void window.viewClassBoardPage('${p.id}')">${label}</button>`;
+                    return `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md class-board-page-btn ${viewOn} ${submitOn}" onclick="void window.viewClassBoardPage('${p.id}')">${label}</button>`;
                 }).join('');
             }
             const composer = document.getElementById('classBoardComposer');
@@ -13859,7 +14117,7 @@ ${subjectLine}
                     _classBoardModalKey = modalKey;
                     modal.classList.remove('hidden');
                     const closeBtn = isAdmin
-                        ? `<button type="button" class="class-board-focus-close-btn class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`
+                        ? `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md class-board-focus-close-btn class-board-keep-input" onclick="event.stopPropagation(); void window.closeClassBoardFocus()">닫기</button>`
                         : '';
                     const thumbsCls = isAdmin ? '' : 'is-view';
                     const thumbsClick = isAdmin
@@ -13870,8 +14128,8 @@ ${subjectLine}
                             ${closeBtn}
                             <p class="class-note-author">${escapeHtmlAttr(focusNote.name || getStudentDisplayLabel(focusNote.studentId))}</p>
                             <p class="class-board-modal-text">${escapeHtmlAttr(focusNote.text)}</p>
-                            <button type="button" class="class-board-thumbs ${thumbsCls} class-board-keep-input" ${thumbsClick} title="따봉 +${CLASS_BOARD_CHEER_XP}XP +${CLASS_BOARD_CHEER_BONG}봉">
-                                <img src="nav/thumbs-up.svg" alt="따봉" width="72" height="72">
+                            <button type="button" class="oly-btn oly-btn-secondary oly-btn-md class-board-thumbs ${thumbsCls} class-board-keep-input" ${thumbsClick} title="따봉 +${CLASS_BOARD_CHEER_XP}XP +${CLASS_BOARD_CHEER_BONG}봉">
+                                <img loading="lazy" decoding="async" src="nav/thumbs-up.svg" alt="따봉" width="72" height="72">
                                 <span>따봉 · ${CLASS_BOARD_CHEER_XP}XP · ${CLASS_BOARD_CHEER_BONG}봉</span>
                             </button>
                         </div>`;
@@ -13893,7 +14151,7 @@ ${subjectLine}
             if (grid && gridKey !== _classBoardGridKey) {
                 _classBoardGridKey = gridKey;
                 if (!notes.length) {
-                    grid.innerHTML = `<p class="text-[11px] text-lime-100/70 font-bold p-3">아직 붙은 쪽지가 없습니다.</p>`;
+                    grid.innerHTML = `<p class="text-12  font-bold p-3">아직 붙은 쪽지가 없습니다.</p>`;
                 } else {
                     grid.innerHTML = notes.map((n) => {
                         const click = isAdmin ? `onclick="void window.openClassBoardFocus('${n.id}')"` : '';
@@ -14146,7 +14404,7 @@ ${subjectLine}
                     } else {
                         picker.innerHTML = openLessonCatalog().map((row) => {
                             const cover = row.cover ? `style="background-image:url('${escapeHtmlAttr(row.cover)}')"` : '';
-                            return `<button type="button" class="open-lesson-card open-lesson-keep-input" onclick="void window.startOpenLessonNow('${row.id}')">
+                            return `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md open-lesson-card open-lesson-keep-input" onclick="void window.startOpenLessonNow('${row.id}')">
                                 <span class="open-lesson-card-cover" ${cover}></span>
                                 <span class="open-lesson-card-title">${escapeHtmlAttr(row.title)}</span>
                                 <span class="open-lesson-card-meta">${openLessonSlideCount(row)}장 · 터치로 넘김</span>
@@ -14175,7 +14433,7 @@ ${subjectLine}
                 } else if (slide.kind === 'text') {
                     canvas.innerHTML = `<div class="open-lesson-text-slide"><p>${escapeHtmlAttr(slide.text).replace(/\n/g, '<br>')}</p></div>`;
                 } else {
-                    const img = slide.image ? `<img src="${escapeHtmlAttr(slide.image)}" alt="">` : '';
+                    const img = slide.image ? `<img loading="lazy" decoding="async" src="${escapeHtmlAttr(slide.image)}" alt="">` : '';
                     const cap = slide.caption ? `<p class="open-lesson-caption">${escapeHtmlAttr(slide.caption)}</p>` : '';
                     canvas.innerHTML = `${img}${cap}`;
                 }
@@ -14237,10 +14495,10 @@ ${subjectLine}
             gate.classList.remove('hidden');
             const price = formatBongAmount(FEATURE_UNLOCK_PRICE);
             gate.innerHTML = `
-                <div class="rounded-xl border border-amber-500/40 bg-slate-950/70 p-4 text-center space-y-2">
-                    <p class="text-sm font-black text-amber-100"><i class="fa-solid fa-lock mr-1"></i>퀘스트 통계 잠금</p>
-                    <p class="text-[10px] text-slate-400 leading-relaxed">${price}으로 잠금 해제하면 학급 퀘스트 완료율과 Top 3를 볼 수 있습니다.</p>
-                    <button type="button" onclick="void window.unlockFeature('stats')" class="min-h-[44px] px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-900 text-xs font-black">${price} 잠금 해제</button>
+                <div class="rounded-xl border   p-4 text-center space-y-2">
+                    <p class="text-14 font-black "><svg class="oly-icon" data-oly="lock" viewBox="0 0 24 24" aria-hidden="true"></svg>퀘스트 통계 잠금</p>
+                    <p class="text-12  leading-relaxed">${price}으로 잠금 해제하면 학급 퀘스트 완료율과 Top 3를 볼 수 있습니다.</p>
+                    <button type="button" onclick="void window.unlockFeature('stats')" class="oly-btn oly-btn-reward oly-btn-md">${price} 잠금 해제</button>
                 </div>`;
         }
 
@@ -14249,7 +14507,7 @@ ${subjectLine}
         window.unlockFeature = async function(featureId, opts = {}) {
             if (_featureUnlockRunning) return;
             if (!window.playerState || window.playerState.isGuest) {
-                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                return window.customAlert(' 게스트는 이용할 수 없어요.');
             }
             const item = getFeatureUnlockItem(featureId);
             if (!item) return;
@@ -14286,7 +14544,7 @@ ${subjectLine}
                 window.playerState.unlockedFeatures = sanitizeUnlockedFeatures(window.playerState.unlockedFeatures);
                 return;
             }
-            await window.customAlert(`🔓 ${item.label}을(를) 열었습니다.`);
+            await window.customAlert(` ${item.label}을(를) 열었습니다.`);
             updateClassToolsPanelVisibility();
             if (item.id === 'stats') window.renderResearchStatsDashboard();
             if (opts.openTool) window.switchClassTool(opts.openTool);
@@ -14319,11 +14577,11 @@ ${subjectLine}
         function buildPlazaLearningThermometerHtml(sid) {
             const value = getLearningThermometerValueForStudent(sid);
             const cls = value > 0
-                ? 'text-sky-200 border-sky-400/40 bg-sky-950/60'
+                ? '  '
                 : value < 0
-                    ? 'text-red-200 border-red-400/40 bg-red-950/60'
-                    : 'text-slate-300 border-slate-500/40 bg-slate-900/60';
-            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP">🌡 ${value >= 0 ? '+' : ''}${value}</span>`;
+                    ? '  '
+                    : '  ';
+            return `<span class="plaza-learning-thermometer ${cls}" title="학습 온도계 ${value >= 0 ? '+' : ''}${value} XP"> ${value >= 0 ? '+' : ''}${value}</span>`;
         }
 
         function isLearningThermometerLocallyBusy() {
@@ -14388,9 +14646,9 @@ ${subjectLine}
         }
 
         function getLearningThermometerValueClass(value) {
-            if (value > 0) return 'text-sky-200';
-            if (value < 0) return 'text-red-200';
-            return 'text-slate-200';
+            if (value > 0) return '';
+            if (value < 0) return '';
+            return '';
         }
 
         let _learningThermometerZeroLineSyncBound = false;
@@ -14436,7 +14694,7 @@ ${subjectLine}
             if (!box || !status) return;
             updateClassToolsPanelVisibility();
             if (!canViewClassTools()) {
-                box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">로그인 후 학습 온도계를 볼 수 있습니다.</div>';
+                box.innerHTML = '<div class="text-12  p-4">로그인 후 학습 온도계를 볼 수 있습니다.</div>';
                 return;
             }
 
@@ -14457,7 +14715,7 @@ ${subjectLine}
 
             const ids = getActiveStudentIds();
             if (!ids.length) {
-                box.innerHTML = '<div class="text-[10px] text-slate-500 p-4">학생 명단을 불러오는 중입니다.</div>';
+                box.innerHTML = '<div class="text-12  p-4">학생 명단을 불러오는 중입니다.</div>';
                 return;
             }
 
@@ -14468,7 +14726,7 @@ ${subjectLine}
                 ? (state.settledDate === today ? '오늘 15시 정산 완료' : '15시 이후입니다. 곧 자동 정산됩니다.')
                 : '15:00 이후 자동 정산';
             status.innerHTML = `
-                <span class="font-bold text-sky-100">${today}</span>
+                <span class="font-bold ">${today}</span>
                 · 범위 ${state.min} ~ +${state.max} XP
                 · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span>
                 · ${autoText}
@@ -14499,7 +14757,7 @@ ${subjectLine}
                             <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', 1)">+</button>
                         </div>`
                     : `<div class="learning-thermometer-readonly-track" aria-hidden="true">
-                            <div class="learning-thermometer-readonly-fill ${value >= 0 ? 'from-sky-400 to-cyan-200' : 'from-red-500 to-orange-300'}"
+                            <div class="learning-thermometer-readonly-fill ${value >= 0 ? ' ' : ' '}"
                                 style="${value >= 0 ? `bottom:50%;height:${Math.min(50, Math.abs(value) / Math.max(1, state.max) * 50)}%;` : `top:50%;height:${Math.min(50, Math.abs(value) / Math.max(1, Math.abs(state.min)) * 50)}%;`}"></div>
                             <div class="learning-thermometer-readonly-zero"></div>
                         </div>
@@ -14574,7 +14832,7 @@ ${subjectLine}
             const status = document.getElementById('learningThermometerStatus');
             if (status) {
                 const total = getActiveStudentIds().reduce((sum, x) => sum + (Number(state.values[String(x)]) || 0), 0);
-                status.innerHTML = `<span class="font-bold text-sky-100">${state.date}</span> · 범위 ${state.min} ~ +${state.max} XP · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span> · 변경사항 저장 중...`;
+                status.innerHTML = `<span class="font-bold ">${state.date}</span> · 범위 ${state.min} ~ +${state.max} XP · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span> · 변경사항 저장 중...`;
             }
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
@@ -14830,7 +15088,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 수업도구: 전술 카운트다운 타이머 ★
+        //  수업도구: 전술 카운트다운 타이머 
         // ==========================================
         let _classTimerEndAt = null;
         let _classTimerTickId = null;
@@ -15038,7 +15296,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 수업도구: 제비 뽑기 ★
+        //  수업도구: 제비 뽑기 
         // ==========================================
         let _lotteryResults = [];
         let _lotteryRunning = false;
@@ -15054,7 +15312,7 @@ ${subjectLine}
         }
 
         function getLotteryStudentEmoji(sid) {
-            return STUDENT_GENDERS[String(sid)] === 'F' ? '👧' : '👦';
+            return STUDENT_GENDERS[String(sid)] === 'F' ? '' : '';
         }
 
         function getLotteryDisplayName(sid) {
@@ -15070,7 +15328,7 @@ ${subjectLine}
             if (!box) return;
             const ids = getActiveStudentIds();
             if (!ids.length) {
-                box.innerHTML = '<p class="text-[10px] text-amber-200/60 col-span-full py-4 text-center">학생 명단을 불러오는 중이거나 비어 있습니다.</p>';
+                box.innerHTML = '<p class="text-12  col-span-full py-4 text-center">학생 명단을 불러오는 중이거나 비어 있습니다.</p>';
                 return;
             }
             box.innerHTML = ids
@@ -15116,7 +15374,7 @@ ${subjectLine}
                 .map((entry, i) => {
                     const emoji = getLotteryStudentEmoji(entry.id);
                     const name = escapeHtmlLottery(entry.name);
-                    return `<li class="flex items-center gap-2"><span class="text-amber-500 text-[10px]">${i + 1}위</span><span>${emoji} ${name}</span></li>`;
+                    return `<li class="flex items-center gap-2"><span class=" text-12">${i + 1}위</span><span>${emoji} ${name}</span></li>`;
                 })
                 .join('');
         }
@@ -15186,7 +15444,7 @@ ${subjectLine}
             const layer = document.getElementById('lotteryConfettiLayer');
             if (!layer) return;
             layer.innerHTML = '';
-            const colors = ['#fbbf24', '#f59e0b', '#ef4444', '#a3e635', '#38bdf8', '#f472b6', '#fde68a'];
+            const colors = ['var(--gold)', 'var(--gold)', 'var(--gold-deep)', 'var(--gold)', 'var(--sky)', 'var(--gold-light)', 'var(--gold-light)'];
             for (let i = 0; i < count; i++) {
                 const el = document.createElement('div');
                 el.className = 'lottery-confetti-piece';
@@ -15365,7 +15623,7 @@ ${subjectLine}
                     showLotteryBatchWinners(winners);
                     setLotteryOverlayUi({
                         progress: '추첨 완료!',
-                        hint: '당첨을 축하합니다 🎉',
+                        hint: '당첨을 축하합니다 ',
                         showBatch: true,
                     });
                     winners.forEach((id) => {
@@ -15397,7 +15655,7 @@ ${subjectLine}
                         } else {
                             setLotteryOverlayUi({
                                 progress: '추첨 완료!',
-                                hint: '모든 제비 뽑기가 끝났습니다 🎉',
+                                hint: '모든 제비 뽑기가 끝났습니다 ',
                                 showBatch: false,
                             });
                         }
@@ -15410,7 +15668,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 수업도구: 학급 투표(의견 수렴) ★
+        //  수업도구: 학급 투표(의견 수렴) 
         // ==========================================
         const ELECTION_STORAGE_KEY = 'sambong_class_election_v1';
         const ELECTION_DISMISSED_KEY = 'sambong_election_dismissed_v1';
@@ -15636,30 +15894,30 @@ ${subjectLine}
                     <div class="election-cand-row">
                         <span class="election-num-badge">${c.number}</span>
                         <span class="flex-1 truncate">${escapeHtmlElection(c.name)}</span>
-                        ${locked ? '' : `<button type="button" class="election-mini-btn" onclick="window.electionRemoveCandidate(${pi}, '${escapeHtmlAttr(c.id)}')">삭제</button>`}
+                        ${locked ? '' : `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md election-mini-btn" onclick="window.electionRemoveCandidate(${pi}, '${escapeHtmlAttr(c.id)}')">삭제</button>`}
                     </div>
-                `).join('') || '<p class="text-[10px] text-rose-100/50 py-1">선택지를 2개 이상 적어 주세요.</p>';
+                `).join('') || '<p class="text-12  py-1">선택지를 2개 이상 적어 주세요.</p>';
                 const rosterOpts = rosterIds.map((sid) => {
                     const name = escapeHtmlElection(getLotteryDisplayName(sid));
                     return `<option value="${escapeHtmlAttr(name)}">${escapeHtmlElection(sid)}. ${name}</option>`;
                 }).join('');
                 const editors = locked ? '' : `
                     <div class="flex flex-col sm:flex-row gap-1.5">
-                        <input type="text" id="electionNewCand_${pi}" maxlength="40" placeholder="선택지 이름" class="election-input flex-1 text-xs" onkeydown="if(event.key==='Enter'){event.preventDefault();window.electionAddNamedCandidate(${pi});}" />
-                        <button type="button" class="election-mini-btn" onclick="window.electionAddNamedCandidate(${pi})">이름 등록</button>
+                        <input type="text" id="electionNewCand_${pi}" maxlength="40" placeholder="선택지 이름" class="election-input flex-1 text-12" onkeydown="if(event.key==='Enter'){event.preventDefault();window.electionAddNamedCandidate(${pi});}" />
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md election-mini-btn" onclick="window.electionAddNamedCandidate(${pi})">이름 등록</button>
                     </div>
                     <div class="flex flex-col sm:flex-row gap-1.5 mt-1.5">
-                        <select id="electionRoster_${pi}" class="election-input flex-1 text-xs">
+                        <select id="electionRoster_${pi}" class="election-input flex-1 text-12">
                             <option value="">명단에서 선택</option>
                             ${rosterOpts}
                         </select>
-                        <button type="button" class="election-mini-btn" onclick="window.electionAddRosterCandidate(${pi})">명단 추가</button>
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md election-mini-btn" onclick="window.electionAddRosterCandidate(${pi})">명단 추가</button>
                     </div>`;
                 return `
                 <div class="election-pos-card">
                     <div class="flex items-center gap-2 mb-2">
-                        <input type="text" value="${escapeHtmlAttr(pos.name)}" maxlength="40" class="election-input flex-1 text-xs font-black" ${locked ? 'readonly' : ''} onchange="window.electionRenamePosition(${pi}, this.value)" />
-                        ${locked ? '' : `<button type="button" class="election-mini-btn" onclick="window.electionRemovePosition(${pi})">항목 삭제</button>`}
+                        <input type="text" value="${escapeHtmlAttr(pos.name)}" maxlength="40" class="election-input flex-1 text-12 font-black" ${locked ? 'readonly' : ''} onchange="window.electionRenamePosition(${pi}, this.value)" />
+                        ${locked ? '' : `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md election-mini-btn" onclick="window.electionRemovePosition(${pi})">항목 삭제</button>`}
                     </div>
                     <div class="space-y-1 mb-2">${candRows}</div>
                     ${editors}
@@ -15860,9 +16118,9 @@ ${subjectLine}
             const live = _election.phase === 'vote' || _election.phase === 'count' || _election.phase === 'result';
             const overlayOpen = isElectionOverlayOpen();
             dock.classList.toggle('hidden', !(isAdmin && live && !overlayOpen));
-            if (_election.phase === 'result') dock.textContent = '🗳️ 결과 보기';
-            else if (_election.phase === 'count') dock.textContent = '🗳️ 개표 보기';
-            else dock.textContent = '🗳️ 투표 화면';
+            if (_election.phase === 'result') dock.textContent = ' 결과 보기';
+            else if (_election.phase === 'count') dock.textContent = ' 개표 보기';
+            else dock.textContent = ' 투표 화면';
         }
 
         window.closeElectionOverlay = async function() {
@@ -15904,7 +16162,7 @@ ${subjectLine}
             const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'back', '0', 'ok'];
             box.innerHTML = keys.map((k) => {
                 const label = k === 'back' ? '⌫' : (k === 'ok' ? '확인' : k);
-                return `<button type="button" class="election-key" onclick="window.electionPad('${k}')">${label}</button>`;
+                return `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md election-key" onclick="window.electionPad('${k}')">${label}</button>`;
             }).join('');
         }
 
@@ -16159,9 +16417,9 @@ ${subjectLine}
                 const v = counts[c.number] || 0;
                 const pct = Math.round((v / total) * 100);
                 return `<div class="election-bar-row">
-                    <div class="flex justify-between text-[11px] font-black text-rose-50 mb-0.5">
+                    <div class="flex justify-between text-12 font-black  mb-0.5">
                         <span>${c.number}. ${escapeHtmlElection(c.name)}</span>
-                        <span class="tabular-nums text-amber-200">${v}표</span>
+                        <span class="tabular-nums ">${v}표</span>
                     </div>
                     <div class="election-bar-track"><div class="election-bar-fill" style="width:${pct}%"></div></div>
                 </div>`;
@@ -16248,7 +16506,7 @@ ${subjectLine}
             const layer = document.getElementById('electionConfettiLayer');
             if (!layer) return;
             layer.innerHTML = '';
-            const colors = ['#fb7185', '#fbbf24', '#f472b6', '#a3e635', '#38bdf8', '#fde68a', '#c084fc'];
+            const colors = ['var(--gold)', 'var(--gold)', 'var(--gold-light)', 'var(--gold)', 'var(--sky)', 'var(--gold-light)', 'var(--sky)'];
             for (let i = 0; i < count; i++) {
                 const el = document.createElement('div');
                 el.className = 'lottery-confetti-piece';
@@ -16266,20 +16524,20 @@ ${subjectLine}
             return st.positions.map((pos) => {
                 const t = tallyBallots(st.ballots[pos.id] || [], pos.candidates || []);
                 const rows = t.ranked.map((c, i) => {
-                    const crown = i === 0 && c.votes > 0 ? '👑 ' : '';
-                    return `<div class="flex justify-between text-[12px] sm:text-sm font-black text-rose-50 py-0.5">
+                    const crown = i === 0 && c.votes > 0 ? ' ' : '';
+                    return `<div class="flex justify-between text-14 sm:text-14 font-black  py-0.5">
                         <span>${crown}${c.number}. ${escapeHtmlElection(c.name)}</span>
-                        <span class="text-amber-200 tabular-nums">${c.votes}표</span>
+                        <span class=" tabular-nums">${c.votes}표</span>
                     </div>`;
-                }).join('') || '<p class="text-[11px] text-rose-100/60">표가 없습니다.</p>';
+                }).join('') || '<p class="text-12 ">표가 없습니다.</p>';
                 let headline = '표가 없어 1위를 정할 수 없습니다.';
                 if (t.isTie) headline = `동점: ${t.winners.map((w) => w.name).join(', ')}`;
                 else if (t.winners[0]) headline = `1위 · ${t.winners[0].name}`;
                 return `<div class="election-result-card ${t.winners.length === 1 ? 'is-winner' : ''}">
-                    <p class="text-[10px] font-black tracking-widest text-rose-300 mb-1">${escapeHtmlElection(pos.name)}</p>
-                    <p class="font-display text-xl sm:text-2xl text-amber-200 mb-2">${escapeHtmlElection(headline)}</p>
+                    <p class="text-12 font-black tracking-widest  mb-1">${escapeHtmlElection(pos.name)}</p>
+                    <p class="font-display text-24 sm:text-24  mb-2">${escapeHtmlElection(headline)}</p>
                     ${rows}
-                    <p class="text-[10px] text-rose-100/50 mt-2">총 ${t.total}표</p>
+                    <p class="text-12  mt-2">총 ${t.total}표</p>
                 </div>`;
             }).join('');
         }
@@ -16381,9 +16639,9 @@ ${subjectLine}
             document.body.classList.remove('student-election-active');
             if (dock) {
                 dock.classList.remove('hidden');
-                if (phase === 'result') dock.textContent = '🗳️ 결과 보기';
-                else if (phase === 'count') dock.textContent = '🗳️ 개표 보기';
-                else dock.textContent = '🗳️ 투표하기';
+                if (phase === 'result') dock.textContent = ' 결과 보기';
+                else if (phase === 'count') dock.textContent = ' 개표 보기';
+                else dock.textContent = ' 투표하기';
             }
         }
 
@@ -16430,7 +16688,7 @@ ${subjectLine}
                     picks.innerHTML = (pub.positions || []).map((pos) => {
                         const myPick = mine.sessionId === pub.sessionId ? mine.picks[pos.id] : null;
                         const buttons = (pos.candidates || []).map((c) => `
-                            <button type="button" class="student-election-pick ${myPick === c.number ? 'is-selected' : ''}" onclick="window.studentPickElectionCandidate('${escapeHtmlAttr(pos.id)}', ${c.number})">
+                            <button type="button" class="oly-btn oly-btn-secondary oly-btn-md student-election-pick ${myPick === c.number ? 'is-selected' : ''}" onclick="window.studentPickElectionCandidate('${escapeHtmlAttr(pos.id)}', ${c.number})">
                                 <span class="student-election-pick-num">${c.number}</span>
                                 <span>${escapeHtmlElection(c.name)}</span>
                             </button>
@@ -16458,6 +16716,10 @@ ${subjectLine}
         }
 
         function syncStudentElectionUi() {
+            if (!window._worldEntered || isGuestSession()) {
+                hideStudentElectionChrome();
+                return;
+            }
             const pub = getPublishedElection();
             if (!pub.sessionId || pub.phase === 'setup') {
                 _studentElectionUiKey = '';
@@ -16528,9 +16790,9 @@ ${subjectLine}
         loadElectionFromStorage();
 
         // ==========================================
-        // ★ 수업도구: 가위바위보 ★
+        //  수업도구: 가위바위보 
         // ==========================================
-        const RPS_MOVE_EMOJI = Object.freeze({ scissors: '✌️', rock: '✊', paper: '🖐️' });
+        const RPS_MOVE_EMOJI = Object.freeze({ scissors: '', rock: '', paper: '' });
         let _rpsGame = emptyRpsGame();
         let _rpsLocalTeacherPick = '';
         let _rpsIgnoreRemoteUntil = 0;
@@ -16708,9 +16970,9 @@ ${subjectLine}
             const live = !!(_rpsGame.sessionId && _rpsGame.phase !== 'idle');
             const overlayOpen = isRpsOverlayOpen();
             dock.classList.toggle('hidden', !(live && !overlayOpen && _rpsDismissed));
-            if (_rpsGame.phase === 'done') dock.textContent = '✊ 우승자 보기';
-            else if (_rpsGame.phase === 'reveal') dock.textContent = '✊ 결과 보기';
-            else dock.textContent = '✊ 가위바위보';
+            if (_rpsGame.phase === 'done') dock.textContent = ' 우승자 보기';
+            else if (_rpsGame.phase === 'reveal') dock.textContent = ' 결과 보기';
+            else dock.textContent = ' 가위바위보';
         }
 
         function parkRpsOverlayForToolWindow(intoTool) {
@@ -17021,6 +17283,11 @@ ${subjectLine}
                 return;
             }
             if (remote.phase === 'choose') _rpsDismissed = false;
+            if (!window._worldEntered || isGuestSession()) {
+                closeRpsOverlayInternal(true);
+                renderRpsToolPanel();
+                return;
+            }
             if (!_rpsDismissed) openRpsOverlay();
             else {
                 renderRpsOverlay();
@@ -17243,10 +17510,10 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 수업도구: 원형 돌림판 ★
+        //  수업도구: 원형 돌림판 
         // ==========================================
         const CLASS_WHEEL_STORAGE_KEY = 'sambong_class_wheel_v1';
-        const CLASS_WHEEL_COLORS = ['#f472b6', '#a78bfa', '#60a5fa', '#22d3ee', '#34d399', '#facc15', '#fb923c', '#f87171'];
+        const CLASS_WHEEL_COLORS = ['var(--wheel-1)', 'var(--wheel-2)', 'var(--wheel-3)', 'var(--wheel-4)', 'var(--wheel-5)', 'var(--wheel-6)', 'var(--wheel-7)', 'var(--wheel-8)'];
         const CLASS_WHEEL_POINTER_ANGLE = 0; // 12시 방향 화살표 기준
         let _classWheelItems = ['발표하기', '문제 풀기', '친구 칭찬', '한 번 더 기회', '자리 바꾸기', '선생님 선택'];
         let _classWheelRotation = 0;
@@ -17340,7 +17607,7 @@ ${subjectLine}
             disc.style.transform = `rotate(${_classWheelRotation}deg)`;
             labels.innerHTML = items.map((item, i) => {
                 const angle = i * segment + segment / 2;
-                return `<span class="class-wheel-label" style="transform: rotate(${angle}deg) translateY(-7.2rem) rotate(${-angle}deg);">${escapeConvenienceHtml(item)}</span>`;
+                return `<span class="class-wheel-label" style="transform: rotate(${angle}deg) translateY(var(--wheel-label-r)) rotate(${-angle}deg);">${escapeConvenienceHtml(item)}</span>`;
             }).join('');
         }
 
@@ -17476,10 +17743,10 @@ ${subjectLine}
 
 
         // ==========================================
-        // ★ 수업 도구: 판서 모드(전자칠판) ★
+        //  수업 도구: 판서 모드(전자칠판) 
         // ==========================================
         let _chalkMode = 'text';
-        let _chalkColor = '#f8fafc';
+        let _chalkColor = '';
         let _chalkUndoStack = [];
         let _chalkDrawing = false;
         let _chalkLastPoint = null;   // 분필펜·지우개: 직전 포인트
@@ -17547,18 +17814,18 @@ ${subjectLine}
                 ctx.globalCompositeOperation = 'destination-out';
                 ctx.globalAlpha = 1;
                 ctx.lineWidth = width * 4;
-                ctx.strokeStyle = 'rgba(0,0,0,1)';
+                ctx.strokeStyle = resolvePaint('', '--ink');
             } else if (_chalkMode === 'highlight') {
                 // 형광펜: 반투명 굵은 선 (출발점→도착점 직선 1회 그리기 → 겹침 얼룩 없음)
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 0.35;
                 ctx.lineWidth = width * 3;
-                ctx.strokeStyle = _chalkColor;
+                ctx.strokeStyle = resolvePaint(_chalkColor, '--chalk-ink');
             } else {
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 0.95;
                 ctx.lineWidth = width;
-                ctx.strokeStyle = _chalkColor;
+                ctx.strokeStyle = resolvePaint(_chalkColor, '--chalk-ink');
             }
         }
 
@@ -17912,8 +18179,8 @@ ${subjectLine}
             wrap.style.top = opts.top || (48 + offset) + 'px';
             wrap.style.width = opts.width || '32%';
             wrap.innerHTML = `
-                <img src="${src}" alt="첨부 이미지" draggable="false">
-                <button type="button" class="chalk-img-del" title="이미지 삭제">✕</button>
+                <img loading="lazy" decoding="async" src="${src}" alt="첨부 이미지" draggable="false">
+                <button type="button" class="oly-btn oly-btn-secondary oly-btn-md chalk-img-del" title="이미지 삭제">✕</button>
                 <div class="chalk-img-resize" title="드래그하여 크기 조절"></div>`;
             frame.insertBefore(wrap, canvas);
 
@@ -18077,7 +18344,7 @@ ${subjectLine}
             saveCurrentChalkPage();
             if (idx >= _chalkPages.length) {
                 _chalkPages.push(null);
-                chalkboardToast('🆕 새 페이지가 추가되었습니다');
+                chalkboardToast(' 새 페이지가 추가되었습니다');
             }
             _chalkPageIndex = idx;
             loadChalkPage(_chalkPages[idx]);
@@ -18106,7 +18373,7 @@ ${subjectLine}
             if (_chalkPageIndex >= _chalkPages.length) _chalkPageIndex = _chalkPages.length - 1;
             loadChalkPage(_chalkPages[_chalkPageIndex]);
             updateChalkPageIndicator();
-            chalkboardToast('🗑️ 페이지를 삭제했습니다');
+            chalkboardToast(' 페이지를 삭제했습니다');
         };
 
         // ----- 판서 저장·불러오기 (이 기기 브라우저에 저장) -----
@@ -18130,10 +18397,10 @@ ${subjectLine}
                     pageIndex: _chalkPageIndex,
                     savedAt: Date.now(),
                 }));
-                chalkboardToast(`💾 판서 저장 완료 (${_chalkPages.length}페이지)`);
+                chalkboardToast(` 판서 저장 완료 (${_chalkPages.length}페이지)`);
             } catch (e) {
                 // localStorage 용량 초과 등
-                chalkboardToast('⚠️ 저장 실패: 용량 초과 (첨부 이미지가 너무 큽니다)');
+                chalkboardToast(' 저장 실패: 용량 초과 (첨부 이미지가 너무 큽니다)');
             }
         };
 
@@ -18150,9 +18417,9 @@ ${subjectLine}
                 _chalkPageIndex = Math.min(Math.max(0, data.pageIndex || 0), _chalkPages.length - 1);
                 loadChalkPage(_chalkPages[_chalkPageIndex]);
                 updateChalkPageIndicator();
-                chalkboardToast(`📂 불러오기 완료 (${_chalkPages.length}페이지)`);
+                chalkboardToast(` 불러오기 완료 (${_chalkPages.length}페이지)`);
             } catch (e) {
-                chalkboardToast('⚠️ 불러오기 실패: 저장 데이터가 손상되었습니다');
+                chalkboardToast(' 불러오기 실패: 저장 데이터가 손상되었습니다');
             }
         };
 
@@ -18190,7 +18457,8 @@ ${subjectLine}
             }
         };
 
-        window.setChalkboardFontFamily = function(family) {
+        window.setChalkboardFontFamily = function() {
+            const family = 'Gaegu, cursive';
             const textEl = document.getElementById('chalkboardText');
             if (!textEl) return;
             if (chalkSelectionInBoard()) {
@@ -18208,7 +18476,7 @@ ${subjectLine}
         window.setChalkboardFontSize = function(px) {
             const textEl = document.getElementById('chalkboardText');
             if (!textEl) return;
-            const size = Math.max(10, parseInt(px, 10) || 40);
+            const size = Math.max(18, parseInt(px, 10) || 40);
             if (chalkSelectionInBoard()) {
                 // execCommand fontSize는 1~7 단계만 지원 → 7로 찍은 뒤 실제 px로 치환
                 document.execCommand('styleWithCSS', false, true);
@@ -18262,7 +18530,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 커스텀 모달 유틸리티 ★
+        //  커스텀 모달 유틸리티 
         // ==========================================
         /** 브라우저 전체화면·수업도구 창 안에서는 body에 붙인 창이 가려집니다. */
         function sambongModalHost() {
@@ -18288,12 +18556,12 @@ ${subjectLine}
         window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
             // 전역 로딩(z-390)·오프라인 배너(z-400)·수업도구(z-560)·용의 눈(z-730)보다 위 — 확인창이 가려져 이체·구매가 먹통처럼 보이는 문제 방지
-            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center  px-4";
             d.innerHTML = `
-                <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-xl font-display text-white">알림</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <button type="button" class="js-custom-alert-ok bg-sb-blue hover:bg-blue-500 text-white font-bold py-2 px-8 rounded-full w-full">확인</button>
+                <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-24 font-display ">알림</h3>
+                    <p class="text-12 sm:text-14  whitespace-pre-wrap">${m}</p>
+                    <button type="button" class="oly-btn oly-btn-primary oly-btn-lg js-custom-alert-ok w-full">확인</button>
                 </div>`;
             sambongModalHost().appendChild(d);
             const okBtn = d.querySelector('.js-custom-alert-ok');
@@ -18304,14 +18572,14 @@ ${subjectLine}
 
         window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center  px-4";
             d.innerHTML = `
-                <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-xl font-display text-white">확인</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
+                <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-24 font-display ">확인</h3>
+                    <p class="text-12 sm:text-14  whitespace-pre-wrap">${m}</p>
                     <div class="flex gap-4 mt-4">
-                        <button type="button" class="js-custom-confirm-no bg-slate-700 text-white font-bold py-2 rounded-full w-full">취소</button>
-                        <button type="button" class="js-custom-confirm-yes bg-sb-red text-white font-bold py-2 rounded-full w-full">확인</button>
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md js-custom-confirm-no w-full">취소</button>
+                        <button type="button" class="oly-btn oly-btn-danger oly-btn-md js-custom-confirm-yes w-full">확인</button>
                     </div>
                 </div>`;
             sambongModalHost().appendChild(d);
@@ -18325,15 +18593,15 @@ ${subjectLine}
 
         window.customPrompt = (m, type="password") => new Promise(r => {
             const d = document.createElement('div'); 
-            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center  px-4";
             d.innerHTML = `
-                <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-xl font-display text-sb-gold">입력</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <input type="${type}" class="js-custom-prompt-input w-full bg-slate-800 text-white rounded px-4 py-2 text-center my-2 font-bold">
+                <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-24 font-display ">입력</h3>
+                    <p class="text-12 sm:text-14  whitespace-pre-wrap">${m}</p>
+                    <input type="${type}" class="js-custom-prompt-input w-full   rounded px-4 py-2 text-center my-2 font-bold">
                     <div class="flex gap-4">
-                        <button type="button" class="js-custom-prompt-no bg-slate-700 text-white font-bold py-2 w-full rounded">취소</button>
-                        <button type="button" class="js-custom-prompt-yes bg-emerald-500 text-white font-bold py-2 w-full rounded">확인</button>
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md js-custom-prompt-no w-full">취소</button>
+                        <button type="button" class="oly-btn oly-btn-primary oly-btn-md js-custom-prompt-yes w-full">확인</button>
                     </div>
                 </div>`;
             sambongModalHost().appendChild(d);
@@ -18350,21 +18618,21 @@ ${subjectLine}
         // 1~6 면 선택 (주사위 유니코드 면을 보여주고 고름)
         window.customPick1to6 = (m) => new Promise(r => {
             const d = document.createElement('div');
-            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
+            d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center  px-4";
             d.innerHTML = `
-                <div class="bg-gradient-to-b from-pink-950/95 to-slate-900 p-6 rounded-3xl border border-pink-400/40 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-xl font-display text-pink-100">주사위 선택</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">${m}</p>
-                    <p class="text-[10px] text-pink-200/90">1~6 면을 눌러 예측 번호를 고르세요</p>
+                <div class="bg-gradient-to-b   p-6 rounded-3xl border  max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-24 font-display ">주사위 선택</h3>
+                    <p class="text-12 sm:text-14  whitespace-pre-wrap">${m}</p>
+                    <p class="text-12 ">1~6 면을 눌러 예측 번호를 고르세요</p>
                     <div class="grid grid-cols-3 gap-3">
                         ${[1,2,3,4,5,6].map(n => `
-                            <button type="button" data-pick="${n}" class="bg-slate-800/90 hover:bg-pink-900/60 border-2 border-pink-500/35 hover:border-pink-300 rounded-2xl py-3 sm:py-4 flex flex-col items-center justify-center transition shadow-inner active:scale-95">
-                                <span class="text-4xl sm:text-5xl leading-none select-none" style="font-family: Georgia, 'Times New Roman', serif">${DICE_UNICODE_FACES[n - 1]}</span>
-                                <span class="text-[10px] text-slate-400 mt-1 font-bold">${n}</span>
+                            <button type="button" data-pick="${n}" class="oly-btn oly-btn-secondary oly-btn-lg flex flex-col items-center justify-center transition active:scale-95">
+                                <span class="text-48 sm:text-48 leading-none select-none" style="font-family: var(--font-body);">${DICE_UNICODE_FACES[n - 1]}</span>
+                                <span class="text-12  mt-1 font-bold">${n}</span>
                             </button>
                         `).join('')}
                     </div>
-                    <button type="button" id="pickCancel" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 w-full rounded-xl">취소</button>
+                    <button type="button" id="pickCancel" class="oly-btn oly-btn-secondary oly-btn-md w-full">취소</button>
                 </div>`;
             document.body.appendChild(d);
             d.querySelectorAll('button[data-pick]').forEach(btn => {
@@ -18382,12 +18650,12 @@ ${subjectLine}
             return new Promise(function(resolve) {
                 const face = Math.max(1, Math.min(6, parseInt(finalRoll, 10) || 1));
                 const overlay = document.createElement('div');
-                overlay.className = 'fixed inset-0 z-[305] flex items-center justify-center bg-black/78 px-4';
+                overlay.className = 'fixed inset-0 z-[305] flex items-center justify-center  px-4';
                 overlay.innerHTML = `
-                    <div class="bg-slate-900 p-6 sm:p-8 rounded-3xl border-2 border-pink-400/45 text-center shadow-2xl max-w-xs w-full">
-                        <p class="text-pink-200 text-xs font-bold mb-4">주사위 굴리는 중...</p>
-                        <div id="diceRollFace" class="dice-roll-stage text-7xl sm:text-8xl leading-none select-none text-pink-100" style="font-family: Georgia, 'Times New Roman', serif">${DICE_UNICODE_FACES[0]}</div>
-                        <p class="text-slate-500 text-[10px] mt-4">잠시만 기다려 주세요</p>
+                    <div class=" p-6 sm:p-8 rounded-3xl border-2  text-center shadow-2xl max-w-xs w-full">
+                        <p class=" text-12 font-bold mb-4">주사위 굴리는 중...</p>
+                        <div id="diceRollFace" class="dice-roll-stage text-48 sm:text-48 leading-none select-none " style="font-family: var(--font-body);">${DICE_UNICODE_FACES[0]}</div>
+                        <p class=" text-12 mt-4">잠시만 기다려 주세요</p>
                     </div>`;
                 document.body.appendChild(overlay);
                 const faceEl = overlay.querySelector('#diceRollFace');
@@ -18408,7 +18676,7 @@ ${subjectLine}
 
 
         // ==========================================
-        // ★ 동적 콘텐츠 렌더링 ★
+        //  동적 콘텐츠 렌더링 
         // ==========================================
         function renderShopCatalog() {
             const allItems = getAllShopItems();
@@ -18420,11 +18688,11 @@ ${subjectLine}
             const lottoEl = document.getElementById('shopLottoItemContainer');
             if (instantEl) {
                 instantEl.innerHTML = shopInstant.map((shop) => buildShopCardHtml(shop)).join('')
-                    || '<p class="text-[10px] text-slate-500">등록된 즉시 아이템이 없습니다.</p>';
+                    || '<p class="text-12 ">등록된 즉시 아이템이 없습니다.</p>';
             }
             if (classEl) {
                 classEl.innerHTML = shopClass.map((shop) => buildShopCardHtml(shop)).join('')
-                    || '<p class="text-[10px] text-slate-500">등록된 학급 아이템이 없습니다.</p>';
+                    || '<p class="text-12 ">등록된 학급 아이템이 없습니다.</p>';
             }
             if (lottoEl) {
                 lottoEl.innerHTML = shopLotto.map((shop) => buildShopCardHtml(shop)).join('');
@@ -18440,13 +18708,13 @@ ${subjectLine}
                 const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
                 const currentPrice = getEffectiveShopPrice(s.id);
                 const deleteBtn = isCustomShopItem(s)
-                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin('${s.id}')" class="bg-red-900/50 hover:bg-red-800 text-sb-red font-bold py-1.5 px-2 rounded text-[9px] border border-red-900">삭제</button>`
-                    : '<span class="text-[9px] text-slate-600">기본</span>';
+                    ? `<button type="button" onclick="window.deleteCustomShopItemAdmin('${s.id}')" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>`
+                    : '<span class="text-12 ">기본</span>';
                 return `
                     <div class="flex flex-wrap gap-2 items-center mb-2">
-                        <span class="text-[10px] text-slate-300 w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
-                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="1" value="${currentPrice}" class="w-24 bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <span class="text-[9px] text-slate-500">B <span class="text-slate-600">(기본 ${Number(s.price) || 0})</span></span>
+                        <span class="text-12  w-32 sm:w-40 shrink-0 truncate">${safeLabel}</span>
+                        <input type="number" id="gm_shop_price_${s.id}" min="0" step="1" value="${currentPrice}" class="w-24  border   px-2 py-1.5 rounded text-12 font-bold" />
+                        <span class="text-12 ">B <span class="">(기본 ${Number(s.price) || 0})</span></span>
                         ${deleteBtn}
                     </div>`;
             }).join('');
@@ -18501,7 +18769,7 @@ ${subjectLine}
         function getConvenienceOrderItemsHtml(order) {
             const items = Array.isArray(order && order.items) ? order.items : [];
             if (!items.length) return '';
-            return `<div class="mt-1 text-[9px] text-slate-300 bg-slate-900/70 border border-slate-700 rounded px-2 py-1 space-y-0.5">
+            return `<div class="mt-1 text-12   border  rounded px-2 py-1 space-y-0.5">
                 ${items.map((item) => `<div class="flex justify-between gap-2"><span class="truncate">${escapeConvenienceHtml(item.name)} × ${Math.max(1, Number(item.qty) || 1)}</span><span class="shrink-0">${formatBongAmount(item.lineTotal || 0)}</span></div>`).join('')}
             </div>`;
         }
@@ -18509,8 +18777,8 @@ ${subjectLine}
         function getConvenienceOrderRequestHtml(order) {
             const note = String(order && order.requestNote ? order.requestNote : '').trim();
             return note
-                ? `<div class="mt-1 text-[9px] text-orange-100/90 bg-orange-950/35 border border-orange-500/20 rounded px-2 py-1">요청: ${escapeConvenienceHtml(note)}</div>`
-                : '<div class="mt-1 text-[9px] text-slate-600">요청사항 없음</div>';
+                ? `<div class="mt-1 text-12   border  rounded px-2 py-1">요청: ${escapeConvenienceHtml(note)}</div>`
+                : '<div class="mt-1 text-12 ">요청사항 없음</div>';
         }
 
         function getConvenienceOrderDeliveryHtml(order) {
@@ -18521,24 +18789,24 @@ ${subjectLine}
                 ? ` · 지급: ${payouts.map((p) => `${escapeConvenienceHtml(p.name || p.studentId)} ${formatBongAmount(p.payoutB || 0)}`).join(', ')}`
                 : '';
             return delivery
-                ? `<div class="mt-1 text-[9px] text-sky-100/90 bg-sky-950/35 border border-sky-500/20 rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `${formatBongAmount(fee)} 포함` : '무료'}${payoutText}</div>`
-                : '<div class="mt-1 text-[9px] text-slate-600">직접 수령</div>';
+                ? `<div class="mt-1 text-12   border  rounded px-2 py-1">배달 선택 · 배달비 ${fee > 0 ? `${formatBongAmount(fee)} 포함` : '무료'}${payoutText}</div>`
+                : '<div class="mt-1 text-12 ">직접 수령</div>';
         }
 
         /** 주문 방식 선택: 직접 수령 또는 배달 */
         window.customDeliveryChoice = (itemName, deliveryFee) => new Promise((resolve) => {
             const d = document.createElement('div');
-            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center  px-4';
             d.innerHTML = `
-                <div class="bg-slate-900 p-6 rounded-3xl border border-orange-500/50 max-w-sm w-full text-center space-y-4 shadow-2xl">
-                    <h3 class="text-xl font-display text-orange-100">수령 방법 선택</h3>
-                    <p class="text-xs sm:text-sm text-slate-300 whitespace-pre-wrap">[${escapeConvenienceHtml(itemName)}]\n어떻게 받을까요?</p>
-                    <p class="text-[10px] text-slate-500">배달 선택 시 배달비 ${formatConvenienceDeliveryFeeLabel(deliveryFee)}가 추가됩니다.</p>
+                <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-4 shadow-2xl">
+                    <h3 class="text-24 font-display ">수령 방법 선택</h3>
+                    <p class="text-12 sm:text-14  whitespace-pre-wrap">[${escapeConvenienceHtml(itemName)}]\n어떻게 받을까요?</p>
+                    <p class="text-12 ">배달 선택 시 배달비 ${formatConvenienceDeliveryFeeLabel(deliveryFee)}가 추가됩니다.</p>
                     <div class="flex gap-3">
-                        <button id="deliveryNo" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-xl text-xs">직접 수령</button>
-                        <button id="deliveryYes" class="flex-1 bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 rounded-xl text-xs">배달</button>
+                        <button id="deliveryNo" class="oly-btn oly-btn-secondary oly-btn-md flex-1">직접 수령</button>
+                        <button id="deliveryYes" class="oly-btn oly-btn-secondary oly-btn-md flex-1">배달</button>
                     </div>
-                    <button id="deliveryCancel" class="w-full bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-700 font-bold py-2 rounded-xl text-xs">주문 취소</button>
+                    <button id="deliveryCancel" class="oly-btn oly-btn-secondary oly-btn-md w-full">주문 취소</button>
                 </div>`;
             document.body.appendChild(d);
             d.querySelector('#deliveryNo').onclick = () => { d.remove(); resolve(false); };
@@ -18553,55 +18821,55 @@ ${subjectLine}
             const deliveryFee = getConvenienceDeliveryFee();
             if (!items.length) {
                 container.innerHTML = `
-                    <div class="sm:col-span-2 rounded-xl border border-dashed border-orange-500/40 bg-slate-900/70 p-4 text-center text-[10px] text-orange-100/70">
+                    <div class="sm:col-span-2 rounded-xl border border-dashed   p-4 text-center text-12 ">
                         등록된 편의점 물품이 없습니다. 마스터가 아래 관리 패널에서 물품을 추가해 주세요.
                     </div>`;
                 return;
             }
             const { entries, itemTotal, itemCount } = getConvenienceCartTotals();
             const cartHtml = `
-                <div class="sm:col-span-2 rounded-2xl border border-orange-500/40 bg-slate-950/80 p-3 sticky bottom-2 z-10 shadow-2xl">
+                <div class="sm:col-span-2 rounded-2xl border   p-3 sticky bottom-2 z-10 shadow-2xl">
                     <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center gap-2 mb-1">
-                                <span class="text-sm font-black text-orange-200"><i class="fa-solid fa-cart-shopping"></i> 장바구니</span>
-                                <span class="text-[10px] text-slate-400">${itemCount}개 · ${formatBongAmount(itemTotal)}</span>
+                                <span class="text-14 font-black "><svg class="oly-icon" data-oly="cart-shopping" viewBox="0 0 24 24" aria-hidden="true"></svg> 장바구니</span>
+                                <span class="text-12 ">${itemCount}개 · ${formatBongAmount(itemTotal)}</span>
                             </div>
                             <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
                                 ${entries.map(({ item, qty, lineTotal }) => `
-                                    <div class="flex items-center justify-between gap-2 text-[10px] bg-slate-900/80 rounded-lg border border-slate-700 px-2 py-1">
-                                        <span class="truncate text-white">${escapeConvenienceHtml(item.name)}</span>
+                                    <div class="flex items-center justify-between gap-2 text-12  rounded-lg border  px-2 py-1">
+                                        <span class="truncate ">${escapeConvenienceHtml(item.name)}</span>
                                         <div class="flex items-center gap-1 shrink-0">
-                                            <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', -1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">-</button>
-                                            <input type="number" min="1" max="20" value="${qty}" onchange="window.setConvenienceCartQty('${escapeHtmlAttr(item.id)}', this.value)" class="w-12 bg-slate-950 border border-slate-600 rounded px-1 py-0.5 text-center text-white font-bold" />
-                                            <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', 1)" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-white font-bold">+</button>
-                                            <span class="w-14 text-right text-orange-200 font-bold">${formatBongAmount(lineTotal)}</span>
+                                            <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', -1)" class="oly-btn oly-btn-secondary oly-btn-md w-6 h-6">-</button>
+                                            <input type="number" min="1" max="20" value="${qty}" onchange="window.setConvenienceCartQty('${escapeHtmlAttr(item.id)}', this.value)" class="w-12  border  rounded px-1 py-0.5 text-center  font-bold" />
+                                            <button type="button" onclick="window.changeConvenienceCartQty('${escapeHtmlAttr(item.id)}', 1)" class="oly-btn oly-btn-secondary oly-btn-md w-6 h-6">+</button>
+                                            <span class="w-14 text-right  font-bold">${formatBongAmount(lineTotal)}</span>
                                         </div>
                                     </div>
-                                `).join('') || '<div class="text-[10px] text-slate-500 py-1">담은 물품이 없습니다.</div>'}
+                                `).join('') || '<div class="text-12  py-1">담은 물품이 없습니다.</div>'}
                             </div>
                         </div>
                         <div class="flex sm:flex-col gap-2 shrink-0">
-                            <button type="button" onclick="window.checkoutConvenienceCart()" class="flex-1 sm:flex-none bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl text-[10px] border border-orange-500 ${entries.length ? '' : 'opacity-50 cursor-not-allowed'}">주문하기</button>
-                            <button type="button" onclick="window.clearConvenienceCart()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-bold py-2 px-3 rounded-xl text-[10px]">비우기</button>
+                            <button type="button" onclick="window.checkoutConvenienceCart()" class="oly-btn oly-btn-secondary oly-btn-md flex-1 sm:flex-none ${entries.length ? '' : 'opacity-50 cursor-not-allowed'}">주문하기</button>
+                            <button type="button" onclick="window.clearConvenienceCart()" class="oly-btn oly-btn-secondary oly-btn-md">비우기</button>
                         </div>
                     </div>
-                    <p class="text-[9px] text-sky-300/80 mt-2">배달 선택 시 주문 1건당 배달비 ${formatBongAmount(getConvenienceDeliveryFee())}가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
+                    <p class="text-12  mt-2">배달 선택 시 주문 1건당 배달비 ${formatBongAmount(getConvenienceDeliveryFee())}가 추가되고, 편의점 매니저 뱃지를 단 1명에게 자동 지급됩니다.</p>
                 </div>`;
             container.innerHTML = items.map((item) => `
-                <div class="bg-slate-800/80 p-3 rounded-xl border border-orange-500/30 flex flex-col gap-2">
+                <div class=" p-3 rounded-xl border  flex flex-col gap-2">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-orange-950 border border-orange-500/50 flex items-center justify-center text-orange-200 shrink-0">
-                            <i class="fa-solid fa-basket-shopping"></i>
+                        <div class="w-10 h-10 rounded-full  border  flex items-center justify-center  shrink-0">
+                            <svg class="oly-icon" data-oly="basket-shopping" viewBox="0 0 24 24" aria-hidden="true"></svg>
                         </div>
                         <div class="flex-1 min-w-0">
-                            <div class="text-sm font-bold text-white truncate">${escapeConvenienceHtml(item.name)}</div>
-                            <div class="text-[10px] text-slate-400 truncate">${escapeConvenienceHtml(item.desc || '편의점 주문 물품')}</div>
-                            <div class="text-[9px] text-sky-300/80">배달 선택 가능 · 배달비 ${formatBongAmount(getConvenienceDeliveryFee())}</div>
+                            <div class="text-14 font-bold  truncate">${escapeConvenienceHtml(item.name)}</div>
+                            <div class="text-12  truncate">${escapeConvenienceHtml(item.desc || '편의점 주문 물품')}</div>
+                            <div class="text-12 ">배달 선택 가능 · 배달비 ${formatBongAmount(getConvenienceDeliveryFee())}</div>
                         </div>
-                        <div class="text-orange-200 bg-slate-950 px-2 py-1 rounded border border-orange-500/40 text-xs font-bold shrink-0">${formatBongAmount(item.price)}</div>
+                        <div class="  px-2 py-1 rounded border  text-12 font-bold shrink-0">${formatBongAmount(item.price)}</div>
                     </div>
-                    <button type="button" onclick="window.addConvenienceToCart('${escapeHtmlAttr(item.id)}')" class="w-full bg-orange-700 hover:bg-orange-600 text-white font-bold py-2 px-3 rounded-lg text-[10px] border border-orange-500">
+                    <button type="button" onclick="window.addConvenienceToCart('${escapeHtmlAttr(item.id)}')" class="oly-btn oly-btn-secondary oly-btn-md w-full">
                         담기
                     </button>
                 </div>
@@ -18627,20 +18895,20 @@ ${subjectLine}
                 ? window.globalSettings.convenienceItems
                 : [];
             if (!items.length) {
-                listEl.innerHTML = '<div class="text-slate-500 text-center py-3 border border-dashed border-slate-700 rounded-lg">등록된 편의점 물품이 없습니다.</div>';
+                listEl.innerHTML = '<div class=" text-center py-3 border border-dashed  rounded-lg">등록된 편의점 물품이 없습니다.</div>';
                 return;
             }
             listEl.innerHTML = items.map((item) => {
                 const id = String(item.id);
                 return `
-                    <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">
+                    <div class="rounded-lg border   p-2">
                         <div class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_6rem_auto] gap-2 items-center">
-                            <input type="text" id="conv_name_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.name || '')}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                            <input type="number" id="conv_price_${escapeHtmlAttr(id)}" min="0" step="1" value="${normalizeBongValue(Number(item.price) || 0)}" class="bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                            <button type="button" onclick="window.deleteConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1.5 rounded text-[9px] font-bold">삭제</button>
+                            <input type="text" id="conv_name_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.name || '')}" class=" border   px-2 py-1.5 rounded text-12 font-bold" />
+                            <input type="number" id="conv_price_${escapeHtmlAttr(id)}" min="0" step="1" value="${normalizeBongValue(Number(item.price) || 0)}" class=" border   px-2 py-1.5 rounded text-12 font-bold" />
+                            <button type="button" onclick="window.deleteConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>
                         </div>
-                        <input type="text" id="conv_desc_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.desc || '')}" placeholder="설명" class="mt-2 w-full bg-slate-900 border border-slate-600 text-white px-2 py-1.5 rounded text-xs font-bold" />
-                        <button type="button" onclick="window.saveConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="mt-2 w-full bg-orange-800 hover:bg-orange-700 text-white font-bold py-1.5 px-3 rounded text-[9px]">수정 저장</button>
+                        <input type="text" id="conv_desc_${escapeHtmlAttr(id)}" value="${escapeHtmlAttr(item.desc || '')}" placeholder="설명" class="mt-2 w-full  border   px-2 py-1.5 rounded text-12 font-bold" />
+                        <button type="button" onclick="window.saveConvenienceItemAdmin('${escapeHtmlAttr(id)}')" class="oly-btn oly-btn-secondary oly-btn-sm mt-2 w-full">수정 저장</button>
                     </div>`;
             }).join('');
         }
@@ -18659,22 +18927,22 @@ ${subjectLine}
             const pending = getPendingConvenienceOrders();
             mini.innerHTML = `
                 <div class="flex items-center justify-between gap-2 mb-2">
-                    <div class="text-[10px] font-bold text-orange-200">대기 주문 ${pending.length}건</div>
-                    <button type="button" onclick="window.openConvenienceOrderPanel()" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 px-2 py-1 rounded text-[9px] font-bold">전체 보기</button>
+                    <div class="text-12 font-bold ">대기 주문 ${pending.length}건</div>
+                    <button type="button" onclick="window.openConvenienceOrderPanel()" class="oly-btn oly-btn-secondary oly-btn-sm">전체 보기</button>
                 </div>
                 <div class="space-y-1 max-h-36 overflow-y-auto scrollbar-hide">
                     ${pending.slice(0, 5).map((order) => `
-                        <div class="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 border border-orange-500/20 px-2 py-1.5">
+                        <div class="flex items-center justify-between gap-2 rounded-lg  border  px-2 py-1.5">
                             <div class="min-w-0">
-                                <div class="text-white text-[10px] font-bold truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
-                                <div class="text-slate-400 text-[9px] truncate">${escapeConvenienceHtml(order.studentName)} · ${formatBongAmount(order.price)}</div>
+                                <div class=" text-12 font-bold truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
+                                <div class=" text-12 truncate">${escapeConvenienceHtml(order.studentName)} · ${formatBongAmount(order.price)}</div>
                                 ${getConvenienceOrderItemsHtml(order)}
                                 ${getConvenienceOrderDeliveryHtml(order)}
                                 ${getConvenienceOrderRequestHtml(order)}
                             </div>
-                            <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="shrink-0 bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1 rounded text-[9px] font-bold">완료</button>
+                            <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="oly-btn oly-btn-primary oly-btn-sm shrink-0">완료</button>
                         </div>
-                    `).join('') || '<div class="text-[10px] text-slate-500 text-center py-2">대기 주문이 없습니다.</div>'}
+                    `).join('') || '<div class="text-12  text-center py-2">대기 주문이 없습니다.</div>'}
                 </div>`;
         }
 
@@ -18688,42 +18956,42 @@ ${subjectLine}
                 .slice(0, 8);
             body.innerHTML = `
                 <div class="mb-3">
-                    <h4 class="text-[11px] font-bold text-orange-200 mb-2">처리 대기 (${pending.length})</h4>
+                    <h4 class="text-12 font-bold  mb-2">처리 대기 (${pending.length})</h4>
                     <div class="space-y-2 max-h-[42vh] overflow-y-auto scrollbar-hide pr-1">
                         ${pending.map((order) => `
-                            <div class="rounded-xl border border-orange-500/30 bg-slate-950/70 p-3">
+                            <div class="rounded-xl border   p-3">
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
-                                        <div class="text-white font-bold text-sm">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
-                                        <div class="text-[10px] text-slate-400 mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${formatBongAmount(order.price)}</div>
+                                        <div class=" font-bold text-14">${escapeConvenienceHtml(getConvenienceOrderTitle(order))}</div>
+                                        <div class="text-12  mt-1">${escapeConvenienceHtml(order.studentName)} (${escapeConvenienceHtml(order.studentId)}번) · ${formatBongAmount(order.price)}</div>
                                         ${getConvenienceOrderItemsHtml(order)}
                                         ${getConvenienceOrderDeliveryHtml(order)}
                                         ${getConvenienceOrderRequestHtml(order)}
-                                        <div class="text-[9px] text-slate-500 mt-1">${formatConvenienceTime(order.createdAt)}</div>
+                                        <div class="text-12  mt-1">${formatConvenienceTime(order.createdAt)}</div>
                                     </div>
                                     <div class="shrink-0 flex flex-col gap-1">
-                                        <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-lg text-[10px]">처리완료</button>
-                                        <button type="button" onclick="window.refundConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="bg-red-900/70 hover:bg-red-800 text-red-100 font-bold py-2 px-3 rounded-lg text-[10px] border border-red-700">재고없음·환불</button>
+                                        <button type="button" onclick="window.completeConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="oly-btn oly-btn-primary oly-btn-md">처리완료</button>
+                                        <button type="button" onclick="window.refundConvenienceOrder('${escapeHtmlAttr(order.id)}')" class="oly-btn oly-btn-danger oly-btn-md">재고없음·환불</button>
                                     </div>
                                 </div>
                             </div>
-                        `).join('') || '<div class="text-slate-500 text-center text-[10px] py-5 border border-dashed border-slate-700 rounded-xl">대기 주문이 없습니다.</div>'}
+                        `).join('') || '<div class=" text-center text-12 py-5 border border-dashed  rounded-xl">대기 주문이 없습니다.</div>'}
                     </div>
                 </div>
-                <div class="pt-3 border-t border-slate-700">
-                    <h4 class="text-[11px] font-bold text-slate-300 mb-2">최근 완료 주문</h4>
+                <div class="pt-3 border-t ">
+                    <h4 class="text-12 font-bold  mb-2">최근 완료 주문</h4>
                     <div class="space-y-1 max-h-28 overflow-y-auto scrollbar-hide">
                         ${done.map((order) => `
-                            <div class="text-[9px] text-slate-400 rounded bg-slate-900/70 px-2 py-1">
+                            <div class="text-12  rounded  px-2 py-1">
                                 <div class="flex justify-between gap-2">
-                                    <span class="truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))} · ${escapeConvenienceHtml(order.studentName)} ${order.status === 'refunded' ? '<span class="text-red-300">(환불)</span>' : '<span class="text-emerald-300">(완료)</span>'}</span>
+                                    <span class="truncate">${escapeConvenienceHtml(getConvenienceOrderTitle(order))} · ${escapeConvenienceHtml(order.studentName)} ${order.status === 'refunded' ? '<span class="">(환불)</span>' : '<span class="">(완료)</span>'}</span>
                                     <span class="shrink-0">${formatConvenienceTime(order.completedAt || order.refundedAt || order.createdAt)}</span>
                                 </div>
                                 ${getConvenienceOrderItemsHtml(order)}
                                 ${getConvenienceOrderDeliveryHtml(order)}
                                 ${getConvenienceOrderRequestHtml(order)}
                             </div>
-                        `).join('') || '<div class="text-[9px] text-slate-600 text-center py-2">최근 완료 주문이 없습니다.</div>'}
+                        `).join('') || '<div class="text-12  text-center py-2">최근 완료 주문이 없습니다.</div>'}
                     </div>
                 </div>`;
         }
@@ -18739,12 +19007,12 @@ ${subjectLine}
             if (modal) return modal;
             modal = document.createElement('div');
             modal.id = 'convenienceOrderModal';
-            modal.className = 'hidden fixed inset-0 z-[270] bg-black/80 backdrop-blur-sm flex items-center justify-center px-3 py-6';
+            modal.className = 'hidden fixed inset-0 z-[270]  backdrop-blur-sm flex items-center justify-center px-3 py-6';
             modal.innerHTML = `
-                <div class="w-full max-w-lg bg-slate-900 border border-orange-500/50 rounded-2xl shadow-2xl p-4">
-                    <div class="flex items-center justify-between gap-3 mb-3 border-b border-slate-700 pb-3">
-                        <h3 class="text-lg font-display text-orange-100"><i class="fa-solid fa-clipboard-list text-orange-300"></i> 편의점 주문창</h3>
-                        <button type="button" onclick="window.closeConvenienceOrderPanel()" class="text-slate-400 hover:text-white text-xs font-bold">닫기</button>
+                <div class="w-full max-w-lg  border  rounded-2xl shadow-2xl p-4">
+                    <div class="flex items-center justify-between gap-3 mb-3 border-b  pb-3">
+                        <h3 class="text-20 font-display "><svg class="oly-icon" data-oly="clipboard-list" viewBox="0 0 24 24" aria-hidden="true"></svg> 편의점 주문창</h3>
+                        <button type="button" onclick="window.closeConvenienceOrderPanel()" class="oly-btn oly-btn-secondary oly-btn-md">닫기</button>
                     </div>
                     <div id="convenienceOrderModalBody"></div>
                 </div>`;
@@ -18777,7 +19045,11 @@ ${subjectLine}
             const fresh = pending.filter((order) => !seen.has(String(order.id)));
             if (!fresh.length) return;
             markSeenConvenienceOrderIds(fresh.map((order) => order.id));
-            window.openConvenienceOrderPanel();
+            rememberNotice(
+                '편의점 주문',
+                `확인하지 않은 주문이 ${fresh.length}건 있습니다. 편의점 주문 목록에서 볼 수 있어요.`,
+                `conv:${fresh.map((order) => order.id).join(',')}`,
+            );
         }
 
         window.openConvenienceOrderPanel = function() {
@@ -18840,7 +19112,7 @@ ${subjectLine}
         };
 
         window.checkoutConvenienceCart = async function() {
-            if (!window.playerState || window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (!window.playerState || window.playerState.isGuest) return await window.customAlert(' 게스트는 이용할 수 없어요.');
             if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
             const { entries, itemTotal, itemCount } = getConvenienceCartTotals();
             if (!entries.length) return await window.customAlert('장바구니에 물품을 먼저 담아 주세요.');
@@ -18945,7 +19217,7 @@ ${subjectLine}
                 window.convenienceCart = {};
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`✅ 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${formatBongAmount(chargedPrice)}\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
+                await window.customAlert(` 삼봉 편의점 주문이 접수되었습니다.\n수령 방법: ${deliveryRequested ? '배달' : '직접 수령'}\n총 결제: ${formatBongAmount(chargedPrice)}\n${requestNote ? `요청사항: ${requestNote}\n` : ''}편의점 매니저가 처리하면 물품을 받을 수 있어요.`);
             } catch (e) {
                 if (e && e.message === 'insufficient') {
                     return await window.customAlert('서버 최신 잔액 기준으로 삼봉이 부족합니다. 새로고침 후 다시 확인해 주세요.');
@@ -19060,7 +19332,7 @@ ${subjectLine}
                 if (feeEl) feeEl.value = String(fee);
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
-                if (!silent) await window.customAlert(`✅ 편의점 배달비가 ${formatBongAmount(fee)}로 저장되었습니다.`);
+                if (!silent) await window.customAlert(` 편의점 배달비가 ${formatBongAmount(fee)}로 저장되었습니다.`);
                 return true;
             } catch (e) {
                 console.error('saveConvenienceDeliveryFeeAdmin', e);
@@ -19092,7 +19364,7 @@ ${subjectLine}
                 if (descEl) descEl.value = '';
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
-                await window.customAlert('✅ 편의점 물품이 추가되었습니다.');
+                await window.customAlert(' 편의점 물품이 추가되었습니다.');
             } catch (e) {
                 console.error('addConvenienceItemAdmin', e);
                 await window.customAlert('편의점 물품 추가 실패: ' + (e && e.message ? e.message : String(e)));
@@ -19117,7 +19389,7 @@ ${subjectLine}
                 window.globalSettings.convenienceItems = items;
                 renderConvenienceStore();
                 renderConvenienceAdminPanel();
-                await window.customAlert('✅ 편의점 물품이 저장되었습니다.');
+                await window.customAlert(' 편의점 물품이 저장되었습니다.');
             } catch (e) {
                 console.error('saveConvenienceItemAdmin', e);
                 await window.customAlert('편의점 물품 저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -19154,19 +19426,19 @@ ${subjectLine}
                     const isHidden = deleted.has(String(q.id));
                     const typeLabel = q.type === 'daily' ? '일일' : (q.type === 'weekly' ? '주간' : '특수');
                     const action = q.custom
-                        ? `<button type="button" onclick="window.deleteQuestAdmin('${q.id}')" class="bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1 rounded text-[9px] font-bold">삭제</button>`
+                        ? `<button type="button" onclick="window.deleteQuestAdmin('${q.id}')" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>`
                         : isHidden
-                            ? `<button type="button" onclick="window.restoreQuestAdmin('${q.id}')" class="bg-emerald-900/50 hover:bg-emerald-800 text-emerald-100 border border-emerald-800 px-2 py-1 rounded text-[9px] font-bold">복구</button>`
-                            : `<button type="button" onclick="window.deleteQuestAdmin('${q.id}')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2 py-1 rounded text-[9px] font-bold">숨김</button>`;
-                    return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? 'border-slate-800 opacity-55' : 'border-slate-700'} bg-slate-900/70 px-2 py-1.5">
+                            ? `<button type="button" onclick="window.restoreQuestAdmin('${q.id}')" class="oly-btn oly-btn-primary oly-btn-sm">복구</button>`
+                            : `<button type="button" onclick="window.deleteQuestAdmin('${q.id}')" class="oly-btn oly-btn-secondary oly-btn-sm">숨김</button>`;
+                    return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? ' opacity-55' : ''}  px-2 py-1.5">
                         <div class="min-w-0">
-                            <div class="text-white font-bold truncate">${q.name} <span class="text-[8px] text-slate-500">(${typeLabel})</span></div>
-                            <div class="text-[9px] text-slate-400 truncate">${q.xp}XP · ${formatBongAmount(q.bong)} · ${q.desc || '-'}</div>
+                            <div class=" font-bold truncate">${q.name} <span class="text-12 ">(${typeLabel})</span></div>
+                            <div class="text-12  truncate">${q.xp}XP · ${formatBongAmount(q.bong)} · ${q.desc || '-'}</div>
                         </div>
                         ${action}
                     </div>`;
                 });
-            listEl.innerHTML = rows.join('') || '<div class="text-slate-500 text-center py-3">퀘스트가 없습니다.</div>';
+            listEl.innerHTML = rows.join('') || '<div class=" text-center py-3">퀘스트가 없습니다.</div>';
         }
 
         function listJobWearers(job) {
@@ -19200,11 +19472,11 @@ ${subjectLine}
                 const name = STUDENT_NAMES[String(sid)] || sid;
                 const canEdit = canEditStudentAsAdmin(sid);
                 const cls = on
-                    ? 'bg-sb-blue text-white border-sky-300'
+                    ? '  '
                     : canEdit
-                        ? 'bg-slate-900 text-slate-100 border-slate-600 hover:border-sky-400'
-                        : 'bg-slate-950 text-slate-500 border-slate-800';
-                return `<button type="button" onclick="window.selectJobAssignStudent('${sid}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold ${cls}">${sid}. ${escapeHtmlAttr(name)}</button>`;
+                        ? '   '
+                        : '  ';
+                return `<button type="button" onclick="window.selectJobAssignStudent('${sid}')" class="oly-btn oly-btn-secondary oly-btn-sm ${cls}">${sid}. ${escapeHtmlAttr(name)}</button>`;
             }).join('');
         }
 
@@ -19229,25 +19501,28 @@ ${subjectLine}
                     const btn = canEdit
                         ? `onclick="event.stopPropagation(); void window.toggleStudentJob('${w.id}', '${job.id}')"`
                         : 'onclick="event.stopPropagation();"';
-                    return `<button type="button" ${btn} class="text-[8px] px-1 py-0.5 rounded bg-slate-950 border border-sky-500/40 text-sky-100 font-bold" title="눌러서 해제">${escapeHtmlAttr(w.name)}${canEdit ? ' ×' : ''}</button>`;
+                    return `<button type="button" ${btn} class="oly-btn oly-btn-secondary oly-btn-sm" title="눌러서 해제">${escapeHtmlAttr(w.name)}${canEdit ? ' ×' : ''}</button>`;
                 }).join('');
-                const click = isMaster
+                const guestView = !!(window.playerState && window.playerState.isGuest);
+                const click = guestView
+                    ? ''
+                    : (isMaster
                     ? (selectedId
                         ? `onclick="void window.toggleStudentJob('${selectedId}', '${job.id}')"`
                         : `onclick="void window.customAlert('먼저 아래 명단에서 학생을 골라 주세요.')"`)
-                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}', '${job.id}')"`;
-                const ring = isEquipped ? 'ring-1 ring-sb-blue bg-slate-800' : '';
-                const border = isEquipped ? 'border-l-sb-blue' : `border-l-${job.color.replace('text-', '')}`;
+                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}', '${job.id}')"`);
+                const ring = isEquipped ? 'ring-1  ' : '';
+                const border = isEquipped ? 'is-equipped' : '';
                 return `
-                <div id="job-card-${job.id}" ${click} class="relative cursor-pointer glass-panel p-2 sm:p-3 rounded-xl border-l-4 ${border} hover:bg-slate-800 transition flex items-center gap-2 sm:gap-3 group ${ring}">
-                    <i class="fa-solid ${job.icon} text-xl sm:text-2xl ${job.color} group-hover:scale-110 w-8 text-center shrink-0"></i>
+                <div id="job-card-${job.id}" ${click} class="relative cursor-pointer glass-panel p-2 sm:p-3 rounded-xl border-l-4 ${border}  transition flex items-center gap-2 sm:gap-3 group ${ring}">
+                    <svg class="oly-icon" data-oly="${job.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                     <div class="flex-grow min-w-0">
-                        <div class="font-bold text-xs sm:text-sm truncate">${job.name} <span class="font-normal text-[9px] sm:text-[10px] text-slate-400">${job.sub}</span></div>
-                        <div class="text-[9px] sm:text-[10px] text-slate-400 truncate">${job.desc}</div>
-                        ${isMaster ? `<div class="flex flex-wrap gap-1 mt-1" onclick="event.stopPropagation()">${wearerHtml || '<span class="text-[8px] text-slate-500">아직 아무도 안 달았어요</span>'}</div>` : ''}
+                        <div class="font-bold text-12 sm:text-14 truncate">${job.name} <span class="font-normal text-12 sm:text-12 ">${job.sub}</span></div>
+                        <div class="text-12 sm:text-12  truncate">${job.desc}</div>
+                        ${isMaster ? `<div class="flex flex-wrap gap-1 mt-1" onclick="event.stopPropagation()">${wearerHtml || '<span class="text-12 ">아직 아무도 안 달았어요</span>'}</div>` : ''}
                     </div>
-                    <div class="bg-slate-900 text-sb-gold px-2 py-1 rounded font-bold text-[9px] sm:text-[10px] shrink-0 border border-slate-700 whitespace-nowrap">${formatBongAmount(job.pay)}</div>
-                    ${isEquipped ? '<div class="job-check-icon absolute top-2 right-2 text-sb-blue"><i class="fa-solid fa-circle-check"></i></div>' : ''}
+                    <div class="  px-2 py-1 rounded font-bold text-12 sm:text-12 shrink-0 border  whitespace-nowrap">${formatBongAmount(job.pay)}</div>
+                    ${isEquipped ? '<div class="job-check-icon absolute top-2 right-2 "><svg class="oly-icon" data-oly="circle-check" viewBox="0 0 24 24" aria-hidden="true"></svg></div>' : ''}
                 </div>`;
             }).join('');
         }
@@ -19264,70 +19539,101 @@ ${subjectLine}
             listEl.innerHTML = jobs.map((job) => {
                 const isHidden = deleted.has(job.id);
                 const action = job.custom
-                    ? `<button type="button" onclick="window.deleteJobAdmin('${job.id}')" class="bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 px-2 py-1 rounded text-[9px] font-bold">삭제</button>`
+                    ? `<button type="button" onclick="window.deleteJobAdmin('${job.id}')" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>`
                     : isHidden
-                        ? `<button type="button" onclick="window.restoreJobAdmin('${job.id}')" class="bg-emerald-900/50 hover:bg-emerald-800 text-emerald-100 border border-emerald-800 px-2 py-1 rounded text-[9px] font-bold">복구</button>`
-                        : `<button type="button" onclick="window.deleteJobAdmin('${job.id}')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 px-2 py-1 rounded text-[9px] font-bold">숨김</button>`;
-                return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? 'border-slate-800 opacity-55' : 'border-slate-700'} bg-slate-900/70 px-2 py-1.5">
+                        ? `<button type="button" onclick="window.restoreJobAdmin('${job.id}')" class="oly-btn oly-btn-primary oly-btn-sm">복구</button>`
+                        : `<button type="button" onclick="window.deleteJobAdmin('${job.id}')" class="oly-btn oly-btn-secondary oly-btn-sm">숨김</button>`;
+                return `<div class="flex items-center justify-between gap-2 rounded-lg border ${isHidden ? ' opacity-55' : ''}  px-2 py-1.5">
                     <div class="min-w-0">
-                        <div class="text-white font-bold truncate"><i class="fa-solid ${job.icon} ${job.color}"></i> ${job.name} <span class="text-[8px] text-slate-500">${job.sub}</span></div>
-                        <div class="text-[9px] text-slate-400 truncate">${formatBongAmount(job.pay)} · ${job.desc || '-'}</div>
+                        <div class=" font-bold truncate"><svg class="oly-icon" data-oly="${job.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg> ${job.name} <span class="text-12 ">${job.sub}</span></div>
+                        <div class="text-12  truncate">${formatBongAmount(job.pay)} · ${job.desc || '-'}</div>
                     </div>
                     <div class="flex gap-1 shrink-0">
-                        <button type="button" onclick="window.editJobAdmin('${job.id}')" class="bg-blue-900/50 hover:bg-blue-800 text-blue-100 border border-blue-800 px-2 py-1 rounded text-[9px] font-bold">수정</button>
+                        <button type="button" onclick="window.editJobAdmin('${job.id}')" class="oly-btn oly-btn-primary oly-btn-sm">수정</button>
                         ${action}
                     </div>
                 </div>`;
-            }).join('') || '<div class="text-slate-500 text-center py-3">직업이 없습니다.</div>';
+            }).join('') || '<div class=" text-center py-3">직업이 없습니다.</div>';
             renderJobLookPicker();
         }
 
+        function labelIconButtons(root) {
+            const labels = {
+                xmark: '닫기', eye: '보기', 'eye-slash': '숨기기', bell: '알림',
+                'right-from-bracket': '로그아웃', 'chevron-down': '펼치기',
+                'chevron-left': '이전', 'chevron-right': '다음', plus: '추가', minus: '빼기',
+            };
+            const scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll('button').forEach((btn) => {
+                if ((btn.getAttribute('aria-label') || '').trim()) return;
+                if ((btn.innerText || '').replace(/\s+/g, '')) return;
+                const title = (btn.getAttribute('title') || '').trim();
+                const key = btn.querySelector('[data-oly]')?.getAttribute('data-oly') || '';
+                btn.setAttribute('aria-label', title || labels[key] || '버튼');
+            });
+        }
+
         function initDynamicContent() {
+            labelIconButtons(document);
+            if (!window._olyLabelObserver && typeof MutationObserver !== 'undefined') {
+                window._olyLabelObserver = new MutationObserver((records) => {
+                    records.forEach((rec) => {
+                        rec.addedNodes.forEach((node) => {
+                            if (node.nodeType === 1) labelIconButtons(node);
+                        });
+                    });
+                });
+                window._olyLabelObserver.observe(document.body, { childList: true, subtree: true });
+            }
             renderJobGrid();
 
             renderShopCatalog();
             renderConvenienceStore();
             
-            document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
-                <div id="skin-btn-${skin.id}" class="shop-btn bg-slate-800 p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
-                    <div class="bg-amber-50 w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-lg sm:text-xl shrink-0 overflow-hidden border border-white/70">${skin.img ? `<img src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
+            const skinContainer = document.getElementById('skinContainer');
+            if (skinContainer) skinContainer.innerHTML = SKIN_DATA.map(skin => `
+                <div id="skin-btn-${skin.id}" class="shop-btn  p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
+                    <div class=" w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-20 sm:text-24 shrink-0 overflow-hidden border ">${skin.img ? `<img loading="lazy" decoding="async" src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
-                        <div class="font-bold text-sm sm:text-base truncate text-white">${skin.name}</div>
-                        <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
+                        <div class="font-bold text-14 sm:text-16 truncate ">${skin.name}</div>
+                        <div class="text-12 sm:text-12  truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
                     </div>
                     <div id="skin-status-${skin.id}" class="shrink-0">
-                        <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold">${formatBongAmount(skin.price)}</div>
+                        <div class="  px-2 py-1 rounded border  text-12 font-bold">${formatBongAmount(skin.price)}</div>
                     </div>
                 </div>`).join('');
 
-            document.getElementById('emotionBtns').innerHTML = EMOTIONS.map(e => `
-                <button onclick="window.selectEmotion('${e.id}')" id="btn-emo-${e.id}" class="cond-btn w-8 h-8 text-sm sm:text-base rounded-full bg-slate-900 border border-slate-600 flex justify-center items-center transition" title="${e.label}">
+            const emotionBtns = document.getElementById('emotionBtns');
+            if (emotionBtns) emotionBtns.innerHTML = EMOTIONS.map(e => `
+                <button onclick="window.selectEmotion('${e.id}')" id="btn-emo-${e.id}" class="oly-btn oly-btn-secondary oly-btn-md cond-btn w-8 h-8 flex justify-center items-center transition" title="${e.label}">
                     ${e.icon}
                 </button>
             `).join('');
             
-            document.getElementById('bodyBtns').innerHTML = BODY_STATES.map(b => `
-                <button onclick="window.selectBody(${b.val})" id="btn-body-${b.val}" class="cond-btn w-8 h-8 text-xs rounded bg-slate-900 border border-slate-600 flex justify-center items-center transition ${b.color}" title="${b.label}">
-                    <i class="fa-solid ${b.icon}"></i>
+            const bodyBtns = document.getElementById('bodyBtns');
+            if (bodyBtns) bodyBtns.innerHTML = BODY_STATES.map(b => `
+                <button onclick="window.selectBody(${b.val})" id="btn-body-${b.val}" class="oly-btn oly-btn-secondary oly-btn-md cond-btn w-8 h-8 flex justify-center items-center transition ${b.color}" title="${b.label}">
+                    <svg class="oly-icon" data-oly="${b.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                 </button>
             `).join('');
             
             let gbHtml = `
-                <p class="text-[10px] text-slate-400 mb-2">각 문항마다 정답 시 지급할 XP·봉(B)을 입력하세요. (학생은 모든 문제 입력 후 한 번에 제출·채점됩니다.)</p>
+                <p class="text-12  mb-2">각 문항마다 정답 시 지급할 XP·봉(B)을 입력하세요. (학생은 모든 문제 입력 후 한 번에 제출·채점됩니다.)</p>
             `;
             for(let i=0; i<10; i++) {
                 gbHtml += `
                 <div class="flex flex-wrap gap-1 sm:gap-2 mb-2 items-center">
-                    <span class="text-sb-gold font-bold text-xs w-6 text-center shrink-0">Q${i+1}</span>
-                    <input type="text" id="gb_admin_q_${i}" placeholder="문제 (빈칸은 출제안함)" class="flex-1 min-w-[120px] bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs">
-                    <input type="text" id="gb_admin_a_${i}" placeholder="정답" class="w-20 sm:w-24 bg-slate-900 border border-slate-700 text-white px-2 py-1.5 rounded text-xs text-center font-bold shrink-0">
-                    <span class="text-[10px] text-slate-500 shrink-0">XP</span>
-                    <input type="number" id="gb_admin_xp_${i}" min="0" step="1" value="10" title="이 문항 정답 시 지급 XP" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
-                    <span class="text-[10px] text-slate-500 shrink-0">B</span>
-                    <input type="number" id="gb_admin_bong_${i}" min="0" step="1" value="1" title="이 문항 정답 시 지급 봉" class="w-14 bg-slate-900 border border-slate-700 text-white px-1 py-1.5 rounded text-xs text-center shrink-0">
+                    <span class=" font-bold text-12 w-6 text-center shrink-0">Q${i+1}</span>
+                    <input type="text" id="gb_admin_q_${i}" placeholder="문제 (빈칸은 출제안함)" class="flex-1 min-w-[120px]  border   px-2 py-1.5 rounded text-12">
+                    <input type="text" id="gb_admin_a_${i}" placeholder="정답" class="w-20 sm:w-24  border   px-2 py-1.5 rounded text-12 text-center font-bold shrink-0">
+                    <span class="text-12  shrink-0">XP</span>
+                    <input type="number" id="gb_admin_xp_${i}" min="0" step="1" value="10" title="이 문항 정답 시 지급 XP" class="w-14  border   px-1 py-1.5 rounded text-12 text-center shrink-0">
+                    <span class="text-12  shrink-0">B</span>
+                    <input type="number" id="gb_admin_bong_${i}" min="0" step="1" value="1" title="이 문항 정답 시 지급 봉" class="w-14  border   px-1 py-1.5 rounded text-12 text-center shrink-0">
                 </div>`;
             }
-            document.getElementById('gbAdminInputs').innerHTML = gbHtml;
+            const gbAdminInputs = document.getElementById('gbAdminInputs');
+            if (gbAdminInputs) gbAdminInputs.innerHTML = gbHtml;
 
             renderShopManagementAdminPanel();
             renderConvenienceAdminPanel();
@@ -19347,7 +19653,7 @@ ${subjectLine}
             if(activeBtn) activeBtn.classList.add('active');
 
             if (autoSave) {
-                if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+                if (window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
                 if (!selectedBody && window.playerState.condition) selectedBody = window.playerState.condition.body;
                 if (!selectedBody) selectedBody = BODY_STATES[2];
                 
@@ -19366,7 +19672,7 @@ ${subjectLine}
             if(activeBtn) activeBtn.classList.add('active');
 
             if (autoSave) {
-                if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+                if (window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
                 if (!selectedEmotion && window.playerState.condition) selectedEmotion = window.playerState.condition.emotion;
                 if (!selectedEmotion) selectedEmotion = EMOTIONS[0];
                 
@@ -19396,7 +19702,7 @@ ${subjectLine}
 
 
         // ==========================================
-        // ★ Firebase 초기화 및 연동 ★
+        //  Firebase 초기화 및 연동 
         // ==========================================
         async function initApp() {
             initDynamicContent();
@@ -19414,19 +19720,25 @@ ${subjectLine}
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app); 
                 db = getFirestore(app);
+                await setPersistence(auth, browserLocalPersistence);
+                await auth.authStateReady();
+                if (window._guestDemoActive) {
+                    try { if (auth.currentUser) await signOut(auth); } catch (_) { /* 구경 세션은 인증을 유지하지 않습니다. */ }
+                    return;
+                }
+                if (!auth.currentUser) await signInAnonymously(auth);
                 if (typeof window.startClassCreateRequestWatch === 'function') {
                     window.startClassCreateRequestWatch();
                 }
-                
-                await auth.authStateReady();
-                await signInAnonymously(auth);
                 /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
                 if (auth.currentUser) {
                     await auth.currentUser.getIdToken();
                 }
                 // ?c=초대코드 / /c/CODE → 해당 학급으로 이동 (페이지 리로드 시 true)
                 if (await applyInviteCodeFromUrlIfNeeded()) return;
+                if (window._guestDemoActive) return;
                 await loadClassMeta();
+                if (window._guestDemoActive) return;
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyDuplicateQuestBongHotfix();
@@ -19438,6 +19750,7 @@ ${subjectLine}
                 void applyPeClassGroupBuySettleMigration();
 
                 onAuthStateChanged(auth, user => {
+                    if (window._guestDemoActive) return;
                     if (user) {
                         checkTimeEvents();
                         setInterval(checkTimeEvents, 60000);
@@ -19449,6 +19762,7 @@ ${subjectLine}
                         
                         if(unsubscribeGlobal) unsubscribeGlobal();
                         unsubscribeGlobal = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), snap => {
+                            if (window._guestDemoActive) return;
                             const students = []; 
                             let gmD = null, gmaD = null;
                             
@@ -19522,6 +19836,7 @@ ${subjectLine}
 
                         if(unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), (snap) => {
+                            if (window._guestDemoActive) return;
                             const fromCache = !!(snap.metadata && snap.metadata.fromCache);
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
@@ -19680,7 +19995,8 @@ ${subjectLine}
                             }
                         });
 
-                        onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
+                        unsubscribeEstate = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
+                            if (window._guestDemoActive) return;
                             if(snap.exists()) {
                                 window.estateState = normalizeEstateState(snap.data());
                                 if (Array.isArray(window.estateState.seats)) {
@@ -19845,7 +20161,7 @@ ${subjectLine}
                             const gbAdminStatus = document.getElementById('gbAdminStatus');
                             if (gbAdminStatus) {
                                 gbAdminStatus.innerText = window.goldenbellState.isOpen ? '진행중' : '대기중';
-                                gbAdminStatus.className = window.goldenbellState.isOpen ? 'text-[10px] bg-sb-blue text-white px-2 py-0.5 rounded border border-blue-600' : 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
+                                gbAdminStatus.className = window.goldenbellState.isOpen ? 'text-12   px-2 py-0.5 rounded border ' : 'text-12  px-2 py-0.5 rounded border ';
                             }
                         });
 
@@ -19862,6 +20178,7 @@ ${subjectLine}
 
                         if (unsubscribeMartialLaw) unsubscribeMartialLaw();
                         unsubscribeMartialLaw = onSnapshot(getMartialLawStateRef(), (snap) => {
+                            if (window._guestDemoActive) return;
                             if (snap.exists()) {
                                 window.martialLawState = snap.data();
                             } else {
@@ -19912,6 +20229,7 @@ ${subjectLine}
                 });
             } catch(e) {
                 console.error("Firebase 초기화 에러", e);
+                if (typeof window.revealLoginForm === 'function') window.revealLoginForm();
             }
         }
 
@@ -19937,6 +20255,7 @@ ${subjectLine}
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
             }
+            if (isGuestSession()) return;
             void maybeRollPraiseAtMidnight();
             void maybeExpireGoldenBell(now);
 
@@ -19945,7 +20264,7 @@ ${subjectLine}
                 if (r.needSave) {
                     saveDataToCloud();
                     updateUI();
-                    if (r.alertNewDay) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
+                    if (r.alertNewDay) rememberNotice('일일 퀘스트', '새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다.', `quest-reset:${getLocalDateStr()}`);
                 }
             }
 
@@ -19985,7 +20304,7 @@ ${subjectLine}
                 if (termRes.changed || loanLife.changed) {
                     if (termRes.msgs.length > 0) {
                         void window.customAlert(
-                            '🎁 적금 만기!\n\n' +
+                            ' 적금 만기!\n\n' +
                             termRes.msgs.join('\n') +
                             '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
                         );
@@ -20096,20 +20415,20 @@ ${subjectLine}
             const d = document.createElement('div');
             d.id = 'screenNoticePopup';
             d.dataset.noticeId = n.id || (preview ? 'preview' : '');
-            d.className = 'sambong-custom-modal fixed inset-0 flex items-center justify-center bg-black/80 px-4';
+            d.className = 'sambong-custom-modal fixed inset-0 flex items-center justify-center  px-4';
             const bodyHtml = escapeConstitutionHtml(n.text).replace(/\n/g, '<br>');
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             const remoteClear = (!preview && isAdmin)
-                ? '<button type="button" class="js-screen-notice-clear bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-500 font-bold py-2 px-6 rounded-full w-full">모든 화면에서 내리기</button>'
+                ? '<button type="button" class="oly-btn oly-btn-secondary oly-btn-md js-screen-notice-clear w-full">모든 화면에서 내리기</button>'
                 : '';
             d.innerHTML = `
                 <div class="screen-notice-card p-6 sm:p-8 rounded-3xl max-w-3xl w-full text-center space-y-4">
-                    <p class="text-4xl sm:text-5xl leading-none">${n.source === 'morning' ? '📚' : '📢'}</p>
-                    <p class="text-[10px] sm:text-xs font-black tracking-[0.35em] text-sky-200">${preview ? 'PREVIEW' : 'NOTICE'}</p>
-                    <h3 class="text-2xl sm:text-4xl font-display text-white">${escapeHofText(n.title || '공지')}</h3>
-                    <p class="screen-notice-body text-left text-base sm:text-2xl font-black text-sky-50 leading-snug">${bodyHtml}</p>
-                    <p class="text-[10px] text-slate-400">${preview ? '이 기기에만 보이는 미리보기입니다' : '확인을 누르면 이 화면의 팝업만 닫힙니다'}</p>
-                    <button type="button" class="js-screen-notice-ok bg-sky-600 hover:bg-sky-500 text-white font-bold py-2.5 px-8 rounded-full w-full">확인</button>
+                    <p class="text-48 sm:text-48 leading-none">${n.source === 'morning' ? '' : ''}</p>
+                    <p class="text-12 sm:text-12 font-black tracking-[0.35em] ">${preview ? 'PREVIEW' : 'NOTICE'}</p>
+                    <h3 class="text-24 sm:text-48 font-display ">${escapeHofText(n.title || '공지')}</h3>
+                    <p class="screen-notice-body text-left text-16 sm:text-24 font-black  leading-snug">${bodyHtml}</p>
+                    <p class="text-12 ">${preview ? '이 기기에만 보이는 미리보기입니다' : '확인을 누르면 이 화면의 팝업만 닫힙니다'}</p>
+                    <button type="button" class="oly-btn oly-btn-primary oly-btn-lg js-screen-notice-ok w-full">확인</button>
                     ${remoteClear}
                 </div>`;
             document.body.appendChild(d);
@@ -20141,14 +20460,13 @@ ${subjectLine}
                 if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
                 return;
             }
-            const dismissed = readDismissedScreenNoticeId();
-            if (screenNoticeShouldShow(notice, dismissed)) {
-                showScreenNoticePopup(notice);
-            } else if (showing && showing.dataset.noticeId === notice.id) {
-                /* 이미 이 공지를 보고 있음 */
-            } else if (showing && showing.dataset.noticeId !== 'preview' && showing.dataset.noticeId !== notice.id) {
-                hideScreenNoticePopup();
+            if (!window._worldEntered || isGuestSession()) {
+                window._deferredScreenNotice = notice;
+                if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
+                return;
             }
+            rememberNotice(notice.title || '공지', notice.text, `screen:${notice.id || notice.text}`);
+            if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
         }
 
         async function publishScreenNoticePayload(payload) {
@@ -20184,38 +20502,38 @@ ${subjectLine}
                 .split('\n')
                 .map(line => line.trim())
                 .filter(Boolean)
-                .map(line => `<p class="border-b border-slate-300/70 pb-2">${escapeConstitutionHtml(line)}</p>`)
+                .map(line => `<p class="border-b  pb-2">${escapeConstitutionHtml(line)}</p>`)
                 .join('') || `<p>${escapeConstitutionHtml(DEFAULT_MORNING_ACTIVITY_NOTICE)}</p>`;
 
             return `
-                <div class="col-span-full min-h-[78vh] flex items-center justify-center rounded-[2rem] border border-emerald-900/70 bg-gradient-to-br from-slate-950 via-emerald-950 to-slate-900 text-white shadow-[0_0_55px_rgba(16,185,129,0.35)] overflow-hidden relative px-4 sm:px-8 py-6">
-                    <div class="absolute inset-0 opacity-25 bg-[linear-gradient(90deg,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px)] bg-[size:48px_48px]"></div>
-                    <div class="relative z-10 w-full lg:w-[70vw] max-w-6xl min-h-[70vh] rounded-[2rem] border-[10px] border-amber-900 bg-emerald-950 shadow-2xl p-4 sm:p-8 flex flex-col">
-                        <div class="flex items-center justify-between gap-4 border-b-4 border-white/20 pb-4 mb-6">
+                <div class="col-span-full min-h-[78vh] flex items-center justify-center rounded-[2rem] border  bg-gradient-to-br     shadow-[0_0_55px_color-mix(in srgb, var(--sky-deep) 35%, transparent)] overflow-hidden relative px-4 sm:px-8 py-6">
+                    <div class="absolute inset-0 opacity-25 bg-[linear-gradient(90deg,color-mix(in srgb, var(--surface) 8%, transparent)_1px,transparent_1px),linear-gradient(color-mix(in srgb, var(--surface) 8%, transparent)_1px,transparent_1px)] bg-[size:48px_48px]"></div>
+                    <div class="relative z-10 w-full lg:w-[70vw] max-w-6xl min-h-[70vh] rounded-[2rem] border-[10px]   shadow-2xl p-4 sm:p-8 flex flex-col">
+                        <div class="flex items-center justify-between gap-4 border-b-4  pb-4 mb-6">
                             <div class="flex items-center gap-4">
-                                <span class="text-4xl sm:text-6xl">📚</span>
+                                <span class="text-48 sm:text-48"></span>
                                 <div class="text-left">
-                                    <p class="text-emerald-200 text-sm sm:text-xl font-black tracking-[0.35em]">MORNING STUDY</p>
-                                    <h2 class="font-display text-4xl sm:text-6xl lg:text-7xl text-white drop-shadow">아침활동시간</h2>
+                                    <p class=" text-14 sm:text-24 font-black tracking-[0.35em]">MORNING STUDY</p>
+                                    <h2 class="font-display text-48 sm:text-48 lg:text-48  drop-shadow">아침활동시간</h2>
                                 </div>
                             </div>
-                            <div class="hidden sm:flex flex-col items-center justify-center rounded-2xl bg-white/10 border border-white/20 px-5 py-3 text-amber-100">
-                                ${preview ? '<span class="text-xs font-black text-emerald-200 mb-1">미리보기</span>' : '<i class="fa-solid fa-clock text-3xl mb-1"></i>'}
-                                <span class="font-black text-xl">${preview ? 'PREVIEW' : '08:40'}</span>
+                            <div class="hidden sm:flex flex-col items-center justify-center rounded-2xl  border  px-5 py-3 ">
+                                ${preview ? '<span class="text-12 font-black  mb-1">미리보기</span>' : '<svg class="oly-icon" data-oly="clock" viewBox="0 0 24 24" aria-hidden="true"></svg>'}
+                                <span class="font-black text-24">${preview ? 'PREVIEW' : '08:40'}</span>
                             </div>
                         </div>
-                        <div class="flex-1 rounded-[1.5rem] bg-stone-50 text-slate-900 border-4 border-amber-200 shadow-inner px-5 sm:px-10 py-6 sm:py-8 flex items-center">
-                            <div class="w-full text-2xl sm:text-4xl lg:text-5xl font-black leading-snug space-y-4 text-left">
+                        <div class="flex-1 rounded-[1.5rem]   border-4  shadow-inner px-5 sm:px-10 py-6 sm:py-8 flex items-center">
+                            <div class="w-full text-24 sm:text-48 lg:text-48 font-black leading-snug space-y-4 text-left">
                                 ${lines}
                             </div>
                         </div>
-                        <div class="mt-5 flex flex-wrap items-center justify-center gap-3 text-emerald-100 text-lg sm:text-2xl font-black">
-                            <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-book-open"></i> 조용히 읽기</span>
-                            <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-pencil"></i> 차분히 쓰기</span>
-                            <span class="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-2"><i class="fa-solid fa-user-graduate"></i> 배움 준비</span>
+                        <div class="mt-5 flex flex-wrap items-center justify-center gap-3  text-20 sm:text-24 font-black">
+                            <span class="inline-flex items-center gap-2 rounded-full  border  px-4 py-2"><svg class="oly-icon" data-oly="book-open" viewBox="0 0 24 24" aria-hidden="true"></svg> 조용히 읽기</span>
+                            <span class="inline-flex items-center gap-2 rounded-full  border  px-4 py-2"><svg class="oly-icon" data-oly="pencil" viewBox="0 0 24 24" aria-hidden="true"></svg> 차분히 쓰기</span>
+                            <span class="inline-flex items-center gap-2 rounded-full  border  px-4 py-2"><svg class="oly-icon" data-oly="user-graduate" viewBox="0 0 24 24" aria-hidden="true"></svg> 배움 준비</span>
                         </div>
-                        <button type="button" onclick="window.closeMorningActivity()" class="mt-5 mx-auto bg-amber-700 hover:bg-amber-600 text-white font-black py-2.5 px-6 rounded-full text-sm shadow-lg flex items-center gap-2">
-                            <i class="fa-solid fa-xmark"></i> ${preview ? '미리보기 종료' : '닫기'}
+                        <button type="button" onclick="window.closeMorningActivity()" class="oly-btn oly-btn-reward oly-btn-md mt-5 mx-auto flex items-center gap-2">
+                            <svg class="oly-icon" data-oly="xmark" viewBox="0 0 24 24" aria-hidden="true"></svg> ${preview ? '미리보기 종료' : '닫기'}
                         </button>
                     </div>
                 </div>`;
@@ -20223,7 +20541,7 @@ ${subjectLine}
 
 
         // ==========================================
-        // ★ 광장 및 관리자 테이블 렌더링 ★
+        //  광장 및 관리자 테이블 렌더링 
         // ==========================================
         /** 광장 학생 카드는 중간 크기로 고정. 열 수는 부동산 자리표를 따릅니다. */
         function applyPlazaCardSizeUI() {
@@ -20266,9 +20584,9 @@ ${subjectLine}
                 const gmCursor = canEdit && !isGMCard ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : '';
 
                 if (!data && !isGMCard) {
-                    return `<div class="plaza-card flex flex-col items-center p-2 rounded-xl border-2 border-slate-400 bg-slate-800 w-full opacity-70">
-                                <div class="plaza-card-face text-3xl mb-1 opacity-30 grayscale">👤</div>
-                                <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] w-full text-center truncate">${idLabel}</div>
+                    return `<div class="plaza-card flex flex-col items-center p-2 rounded-xl border-2   w-full opacity-70">
+                                <div class="plaza-card-face text-32 mb-1 opacity-30 grayscale"></div>
+                                <div class="plaza-card-name font-bold   px-1 py-0.5 rounded text-12 w-full text-center truncate">${idLabel}</div>
                             </div>`;
                 }
 
@@ -20302,14 +20620,14 @@ ${subjectLine}
                 const overlays = '';
                 
                 const hp = shieldHpOf(displayData);
-                const shieldHtml = hp > 0 ? `<div class="plaza-card-extra plaza-hp-badge absolute -top-2 -right-2 z-30 animate-pulse text-lg">🛡️<span class="text-[8px] font-bold text-white bg-indigo-600 px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
+                const shieldHtml = hp > 0 ? `<div class="plaza-card-extra plaza-hp-badge absolute -top-2 -right-2 z-30 animate-pulse text-20"><span class="text-12 font-bold   px-0.5 rounded -ml-1 shadow">${hp}</span></div>` : '';
 
                 let jobHtml = '';
                 const plazaJobs = resolveStudentJobsFromCatalog(displayData.jobs, getJobCatalog());
                 if (plazaJobs.length > 0) {
                     const jobIcons = plazaJobs.map(j => `
-                        <div class="w-5 h-5 rounded-full bg-slate-900 border flex items-center justify-center ${j.color} border-slate-600 shadow-sm" title="${escapeHtmlAttr(j.name)}">
-                            <i class="fa-solid ${j.icon} text-[9px]"></i>
+                        <div class="w-5 h-5 rounded-full  border flex items-center justify-center ${j.color}  shadow-sm" title="${escapeHtmlAttr(j.name)}">
+                            <svg class="oly-icon" data-oly="${j.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                         </div>
                     `).join('');
                     jobHtml = `<div class="plaza-card-extra absolute top-1 left-1 flex flex-col gap-1 z-20">${jobIcons}</div>`;
@@ -20318,31 +20636,31 @@ ${subjectLine}
                 let condHtml = '';
                 if (displayData.condition && displayData.condition.emotion) {
                     const emo = displayData.condition.emotion.icon;
-                    const bColor = displayData.condition.body ? displayData.condition.body.color : 'text-slate-400';
-                    const bIcon = displayData.condition.body ? displayData.condition.body.icon : 'fa-battery-half';
+                    const bColor = displayData.condition.body ? displayData.condition.body.color : '';
+                    const bIcon = displayData.condition.body ? displayData.condition.body.icon : 'battery-half';
                     const condTop = hp > 0 ? 'top-7' : 'top-1';
-                    condHtml = `<div class="plaza-card-extra absolute ${condTop} right-1 bg-slate-900/80 px-1.5 py-0.5 rounded-full border border-slate-600 flex items-center gap-1 shadow z-20">
-                                    <span class="text-[10px] leading-none">${emo}</span><i class="fa-solid ${bIcon} text-[10px] ${bColor} leading-none"></i>
+                    condHtml = `<div class="plaza-card-extra absolute ${condTop} right-1  px-1.5 py-0.5 rounded-full border  flex items-center gap-1 shadow z-20">
+                                    <span class="text-12 leading-none">${emo}</span><svg class="oly-icon" data-oly="${bIcon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                                 </div>`;
                 }
 
                 const gmXpSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-xp plaza-gm-controls" onclick="event.stopPropagation();">
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+1X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+10X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-xp">+1 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-minus">-1 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-xp">+5 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-minus">-5 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-xp">+10 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-minus">-10 XP</button>
                     </div>` : '';
                 const gmBongSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-bong plaza-gm-controls" onclick="event.stopPropagation();">
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+1${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+5${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-bong">+10${getCurrencyUnit()}</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 1, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-bong">+1${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -1, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-minus">-1${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-bong">+5${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -5, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-minus">-5${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-bong">+10${getCurrencyUnit()}</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', -10, '${targetId}', this)" class="oly-btn oly-btn-secondary oly-btn-md plaza-gm-btn plaza-gm-btn-minus">-10${getCurrencyUnit()}</button>
                     </div>` : '';
 
                 if (isGMCard) {
@@ -20370,8 +20688,8 @@ ${subjectLine}
                         </div>
                         <div class="plaza-staff-copy">
                             <span class="plaza-staff-badge">${badge}</span>
-                            <div class="plaza-card-lv plaza-staff-role font-black ${isA ? 'text-cyan-300' : 'text-amber-300'}">${roleLabel}</div>
-                            <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? 'from-cyan-500 to-sky-700 text-white' : 'from-amber-300 to-yellow-200 text-stone-900'} truncate border-2 ${isA ? 'border-cyan-300' : 'border-amber-300'}">
+                            <div class="plaza-card-lv plaza-staff-role font-black ${isA ? '' : ''}">${roleLabel}</div>
+                            <div class="plaza-card-name plaza-staff-name font-black bg-gradient-to-r ${isA ? '  ' : '  '} truncate border-2 ${isA ? '' : ''}">
                                 ${idLabel}
                             </div>
                         </div>
@@ -20385,7 +20703,9 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
+                const praiseBtn = (window.playerState && window.playerState.isGuest)
+                    ? ''
+                    : `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉"> ${praiseCount}</button>`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
@@ -20394,12 +20714,12 @@ ${subjectLine}
                         <div class="plaza-card-main">
                             ${shieldHtml}${jobHtml}${condHtml}
                             <div class="plaza-card-figure">
-                                <div class="plaza-card-face text-3xl sm:text-4xl flex items-end justify-center z-10 ${lv.info.anim}">
+                                <div class="plaza-card-face text-32 sm:text-48 flex items-end justify-center z-10 ${lv.info.anim}">
                                     <div class="relative inline-block leading-none">${face}${creditStamp}</div>
                                 </div>
-                                <div class="plaza-card-lv text-[8px] font-bold ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
+                                <div class="plaza-card-lv text-12 font-bold ${lv.info.textColor}  px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             </div>
-                            <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
+                            <div class="plaza-card-name font-bold   px-1 py-0.5 rounded text-12 sm:text-12 w-full text-center truncate border ">${idLabel}</div>
                             ${praiseBtn}
                             ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
@@ -20407,10 +20727,10 @@ ${subjectLine}
                     </div>
                     
                     <!-- 파랑=경험치, 금색=봉. 단위는 생략하고 색으로 구분합니다. -->
-                    <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
-                        <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
+                    <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1  rounded border ">
+                        <span class="plaza-stat-xp text-12 sm:text-12  font-black tabular-nums">${(displayData.xp || 0).toLocaleString()} XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
+                        <span class="plaza-stat-bong text-12 sm:text-12 font-black tabular-nums ${walletBong < 0 ? '' : ''}">${formatBongAmount(walletBong)}</span>
                     </div>
                 </div>`;
             };
@@ -20534,39 +20854,39 @@ ${subjectLine}
                     
                     let condStr = '';
                     if(stu.condition && stu.condition.emotion) {
-                        const bIcon = stu.condition.body ? stu.condition.body.icon : 'fa-battery-half';
-                        const bColor = stu.condition.body ? stu.condition.body.color : 'text-slate-400';
-                        condStr = `${stu.condition.emotion.icon} <i class="fa-solid ${bIcon} ${bColor}"></i>`;
+                        const bIcon = stu.condition.body ? stu.condition.body.icon : 'battery-half';
+                        const bColor = stu.condition.body ? stu.condition.body.color : '';
+                        condStr = `${stu.condition.emotion.icon} <svg class="oly-icon" data-oly="${bIcon}" viewBox="0 0 24 24" aria-hidden="true"></svg>`;
                     }
                     const stuName = STUDENT_NAMES[sid] || sid;
                     
                     tbody.innerHTML += `
-                    <tr id="admin-row-${stu.id}" class="border-b border-slate-700 hover:bg-slate-800 ${!canEdit ? 'opacity-50' : ''}">
+                    <tr id="admin-row-${stu.id}" class="border-b   ${!canEdit ? 'opacity-50' : ''}">
                         <td class="p-2 cursor-pointer" onclick="window.changeStudentPin('${stu.id}', '${stuName}')">
-                            ${getStudentDisplayLabel(sid)} <span class="text-[8px] text-slate-500">****</span>
+                            ${getStudentDisplayLabel(sid)} <span class="text-12 ">****</span>
                         </td>
                         <td class="p-2 whitespace-nowrap">
-                            ${faceEmoji} <span class="text-[9px] text-slate-400">Lv.${exactLv} ${condStr}</span>
+                            ${faceEmoji} <span class="text-12 ">Lv.${exactLv} ${condStr}</span>
                         </td>
-                        <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
+                        <td class="p-2  font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
+                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? '' : ''}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
-                        <td class="p-2 border-l border-slate-700/50 w-24">
-                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+10X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+5${getCurrencyUnit()}</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+10${getCurrencyUnit()}</button></div>` : '-'}
+                        <td class="p-2 border-l  w-24">
+                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="oly-btn oly-btn-primary oly-btn-sm">+5 XP</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${stu.id}', this)" class="oly-btn oly-btn-primary oly-btn-sm">+10 XP</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="oly-btn oly-btn-danger oly-btn-sm">-5 XP</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${stu.id}', this)" class="oly-btn oly-btn-reward oly-btn-sm">+5${getCurrencyUnit()}</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${stu.id}', this)" class="oly-btn oly-btn-reward oly-btn-sm">+10${getCurrencyUnit()}</button></div>` : '-'}
                         </td>
-                        <td class="p-2 text-center border-l border-slate-700/50 min-w-[4.5rem]">
+                        <td class="p-2 text-center border-l  min-w-[4.5rem]">
                             ${canEdit ? (() => {
                                 const backup = window.studentBackupMap && window.studentBackupMap[String(stu.id)];
                                 const backupTitle = backup && backup.savedAt
                                     ? `마지막 백업: ${new Date(backup.savedAt).toLocaleString('ko-KR')}`
                                     : '초기화 전 백업이 없습니다';
                                 const restoreBtn = backup
-                                    ? `<button type="button" onclick="event.stopPropagation(); void window.restoreStudentData('${stu.id}')" class="bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100 border border-emerald-800/80 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap" title="${backupTitle}">복구</button>`
-                                    : `<button type="button" disabled class="bg-slate-800 text-slate-500 border border-slate-700 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap cursor-not-allowed" title="${backupTitle}">복구</button>`;
-                                return `<div class="flex flex-col gap-1 items-center">${restoreBtn}<button type="button" onclick="event.stopPropagation(); void window.resetStudentData('${stu.id}')" class="bg-red-900/60 hover:bg-red-800 text-red-100 border border-red-800/80 px-1.5 py-1 rounded text-[8px] font-bold whitespace-nowrap" title="초기화 전 자동 백업 후 XP·봉·퀘스트 등 초기화 (PIN 유지)">초기화</button></div>`;
+                                    ? `<button type="button" onclick="event.stopPropagation(); void window.restoreStudentData('${stu.id}')" class="oly-btn oly-btn-primary oly-btn-sm whitespace-nowrap" title="${backupTitle}">복구</button>`
+                                    : `<button type="button" disabled class="oly-btn oly-btn-secondary oly-btn-sm whitespace-nowrap cursor-not-allowed" title="${backupTitle}">복구</button>`;
+                                return `<div class="flex flex-col gap-1 items-center">${restoreBtn}<button type="button" onclick="event.stopPropagation(); void window.resetStudentData('${stu.id}')" class="oly-btn oly-btn-danger oly-btn-sm whitespace-nowrap" title="초기화 전 자동 백업 후 XP·봉·퀘스트 등 초기화 (PIN 유지)">초기화</button></div>`;
                             })() : '-'}
                         </td>
                     </tr>`;
@@ -20584,8 +20904,8 @@ ${subjectLine}
             if (existing.length === ADMIN_EXPORT_SHEET_OPTIONS.length) return;
             box.innerHTML = ADMIN_EXPORT_SHEET_OPTIONS.map((opt) => {
                 const checked = opt.defaultOn ? ' checked' : '';
-                return `<label class="flex items-start gap-2 bg-slate-950/50 border border-slate-700/70 rounded-lg px-2 py-1.5 cursor-pointer hover:border-lime-500/40">
-                    <input type="checkbox" data-export-sheet="${opt.id}" class="mt-0.5 rounded border-slate-600"${checked}>
+                return `<label class="flex items-start gap-2  border  rounded-lg px-2 py-1.5 cursor-pointer ">
+                    <input type="checkbox" data-export-sheet="${opt.id}" class="mt-0.5 rounded "${checked}>
                     <span class="leading-snug">${opt.label}</span>
                 </label>`;
             }).join('');
@@ -20657,13 +20977,13 @@ ${subjectLine}
                     }
                 }
                 if (status) status.textContent = '엑셀 파일 생성 중…';
-                const result = downloadAdminStudentWorkbook({
+                const result = await downloadAdminStudentWorkbook({
                     selectedIds,
                     ctx: buildAdminExportContext(window.allStudentsData || []),
                     fileName: buildAdminExportFileName('xlsx'),
                 });
-                if (status) status.textContent = `✅ ${result.fileName} (${result.sheetCount}시트)`;
-                await window.customAlert(`✅ 엑셀 다운로드를 시작했습니다.\n파일: ${result.fileName}\n시트 수: ${result.sheetCount}`);
+                if (status) status.textContent = ` ${result.fileName} (${result.sheetCount}시트)`;
+                await window.customAlert(` 엑셀 다운로드를 시작했습니다.\n파일: ${result.fileName}\n시트 수: ${result.sheetCount}`);
             } catch (e) {
                 console.error('downloadAdminStudentExcel', e);
                 if (status) status.textContent = '내보내기 실패 — 다시 시도해 주세요';
@@ -20691,7 +21011,7 @@ ${subjectLine}
                     ctx: buildAdminExportContext(window.allStudentsData || []),
                     fileName: buildAdminExportFileName('json'),
                 });
-                if (status) status.textContent = `✅ ${result.fileName}`;
+                if (status) status.textContent = ` ${result.fileName}`;
             } catch (e) {
                 console.error(e);
                 await window.customAlert('JSON 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
@@ -20716,7 +21036,7 @@ ${subjectLine}
                     ctx: buildAdminExportContext(window.allStudentsData || []),
                     fileName: buildAdminExportFileName('csv'),
                 });
-                if (status) status.textContent = `✅ ${result.fileName}`;
+                if (status) status.textContent = ` ${result.fileName}`;
             } catch (e) {
                 console.error(e);
                 await window.customAlert('CSV 내보내기 실패: ' + (e && e.message ? e.message : String(e)));
@@ -20733,8 +21053,8 @@ ${subjectLine}
             document.querySelectorAll('[data-research-period]').forEach((btn) => {
                 const on = btn.getAttribute('data-research-period') === _researchPeriod;
                 btn.className = on
-                    ? 'bg-fuchsia-600 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg min-h-[44px]'
-                    : 'bg-slate-800 text-slate-300 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-slate-600 min-h-[44px]';
+                    ? 'oly-btn oly-btn-primary oly-btn-md'
+                    : 'oly-btn oly-btn-secondary oly-btn-md';
             });
             window.renderResearchStatsDashboard();
         };
@@ -20760,54 +21080,54 @@ ${subjectLine}
                 });
                 _lastResearchStats = stats;
                 const periodLabel = _researchPeriod === 'today' ? '오늘' : (_researchPeriod === 'all' ? '전체' : '이번 주');
-                const medal = ['🥇', '🥈', '🥉'];
+                const medal = ['', '', ''];
                 const top3 = Array.isArray(stats.topQuestsPeriod) ? stats.topQuestsPeriod : [];
                 const top3Html = top3.length
                     ? top3.map((q, i) =>
-                        `<div class="flex items-center justify-between gap-2 rounded-lg border border-fuchsia-500/30 bg-fuchsia-950/30 px-2.5 py-2">
+                        `<div class="flex items-center justify-between gap-2 rounded-lg border   px-2.5 py-2">
                             <div class="min-w-0 flex items-center gap-2">
-                                <span class="text-base leading-none">${medal[i] || `${i + 1}.`}</span>
-                                <span class="font-bold text-white truncate">${q.name}</span>
+                                <span class="text-16 leading-none">${medal[i] || `${i + 1}.`}</span>
+                                <span class="font-bold  truncate">${q.name}</span>
                             </div>
-                            <span class="shrink-0 text-fuchsia-300 font-black tabular-nums">${q.count}회</span>
+                            <span class="shrink-0  font-black tabular-nums">${q.count}회</span>
                         </div>`
                     ).join('')
-                    : '<div class="text-slate-500 text-center py-3">해당 기간 완료 기록이 없습니다.</div>';
+                    : '<div class=" text-center py-3">해당 기간 완료 기록이 없습니다.</div>';
                 const xpKey = _researchPeriod === 'today' ? 'xpGainToday' : 'xpGainWeek';
                 const sortedXp = [...(stats.perStudent || [])].sort((a, b) => (b[xpKey] || 0) - (a[xpKey] || 0));
                 const xpTop = sortedXp.slice(0, 5).map((r, i) =>
-                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${r.name}</span><span class="text-sb-blue font-bold">+${r[xpKey] || 0} XP</span></div>`
-                ).join('') || '<div class="text-slate-500">기록 없음</div>';
+                    `<div class="flex justify-between gap-2"><span>${i + 1}. ${r.name}</span><span class=" font-bold">+${r[xpKey] || 0} XP</span></div>`
+                ).join('') || '<div class="">기록 없음</div>';
                 const completionRate = _researchPeriod === 'today' ? stats.todayCompletionRate
                     : (_researchPeriod === 'all' ? (stats.allCompletionRate ?? stats.weekCompletionRate) : stats.weekCompletionRate);
                 const avgXp = _researchPeriod === 'today' ? stats.avgXpGainToday : stats.avgXpGainWeek;
                 const shopCount = _researchPeriod === 'all' ? (stats.purchaseCount || 0) : (stats.purchaseCountWeek || 0);
                 const shopLabel = _researchPeriod === 'all' ? '상점 이용(누적)' : '상점 이용(주)';
                 const html = `
-                    <div class="text-[9px] text-slate-400 mb-1">기간: <strong class="text-fuchsia-200">${periodLabel}</strong></div>
-                    <div class="rounded-xl border border-fuchsia-500/40 bg-gradient-to-br from-fuchsia-950/40 to-slate-950/80 p-3 space-y-2">
-                        <div class="text-[11px] text-fuchsia-200 font-black"><i class="fa-solid fa-trophy text-amber-300 mr-1"></i> 퀘스트별 가장 많이 완료 · Top 3</div>
+                    <div class="text-12  mb-1">기간: <strong class="">${periodLabel}</strong></div>
+                    <div class="rounded-xl border  bg-gradient-to-br   p-3 space-y-2">
+                        <div class="text-12  font-black"><svg class="oly-icon" data-oly="trophy" viewBox="0 0 24 24" aria-hidden="true"></svg> 퀘스트별 가장 많이 완료 · Top 3</div>
                         <div class="space-y-1.5">${top3Html}</div>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">퀘스트 완료율</div><div class="text-lg font-black text-emerald-300 tabular-nums">${completionRate}%</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2"><div class="text-[8px] text-slate-500">평균 XP↑</div><div class="text-lg font-black text-sb-blue tabular-nums">${avgXp}</div></div>
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2 col-span-2 sm:col-span-1"><div class="text-[8px] text-slate-500">${shopLabel}</div><div class="text-lg font-black text-amber-300 tabular-nums">${shopCount}건</div></div>
+                        <div class="rounded-xl  border  p-2"><div class="text-12 ">퀘스트 완료율</div><div class="text-20 font-black  tabular-nums">${completionRate}%</div></div>
+                        <div class="rounded-xl  border  p-2"><div class="text-12 ">평균 XP↑</div><div class="text-20 font-black  tabular-nums">${avgXp}</div></div>
+                        <div class="rounded-xl  border  p-2 col-span-2 sm:col-span-1"><div class="text-12 ">${shopLabel}</div><div class="text-20 font-black  tabular-nums">${shopCount}건</div></div>
                     </div>
-                    <div class="grid sm:grid-cols-3 gap-2 text-[9px]">
-                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">전부완료(오늘) <strong class="text-white">${stats.allClearToday}</strong>명</div>
-                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">상점 이용(주) <strong class="text-white">${stats.purchaseCountWeek}</strong>건</div>
-                        <div class="rounded-lg border border-slate-700 bg-slate-950/50 p-2">은행 이용 <strong class="text-white">${stats.bankUseCount || 0}</strong>건</div>
+                    <div class="grid sm:grid-cols-3 gap-2 text-12">
+                        <div class="rounded-lg border   p-2">전부완료(오늘) <strong class="">${stats.allClearToday}</strong>명</div>
+                        <div class="rounded-lg border   p-2">상점 이용(주) <strong class="">${stats.purchaseCountWeek}</strong>건</div>
+                        <div class="rounded-lg border   p-2">은행 이용 <strong class="">${stats.bankUseCount || 0}</strong>건</div>
                     </div>
                     <div>
-                        <div class="text-[9px] text-sb-blue font-bold mb-1">XP 증가량 상위</div>
+                        <div class="text-12  font-bold mb-1">XP 증가량 상위</div>
                         ${xpTop}
                     </div>`;
                 panels.forEach((panel) => { panel.innerHTML = html; });
             } catch (e) {
                 console.error('renderResearchStatsDashboard', e);
                 panels.forEach((panel) => {
-                    panel.innerHTML = `<div class="text-red-300 text-center py-3">통계 집계 오류: ${e && e.message ? e.message : e}</div>`;
+                    panel.innerHTML = `<div class=" text-center py-3">통계 집계 오류: ${e && e.message ? e.message : e}</div>`;
                 });
             }
         };
@@ -20850,15 +21170,15 @@ ${subjectLine}
             if (!list) return;
             const journal = getResearchSettings().journal.slice().reverse();
             if (!journal.length) {
-                list.innerHTML = '<div class="text-slate-500 text-center py-2">아직 일지가 없습니다. 관찰·소감·업무 시간 변화를 남겨 두세요.</div>';
+                list.innerHTML = '<div class=" text-center py-2">아직 일지가 없습니다. 관찰·소감·업무 시간 변화를 남겨 두세요.</div>';
                 return;
             }
             list.innerHTML = journal.map((e, idx) => {
                 const realIdx = getResearchSettings().journal.length - 1 - idx;
                 const when = e.at ? new Date(e.at).toLocaleString('ko-KR') : '';
-                return `<div class="border border-slate-700/80 rounded-lg px-2 py-1.5 bg-slate-900/60 flex gap-2 justify-between">
-                    <div class="min-w-0"><div class="text-slate-500">${when}</div><div class="text-slate-200 whitespace-pre-wrap break-words">${String(e.text || '').replace(/</g, '&lt;')}</div></div>
-                    <button type="button" class="shrink-0 text-red-400 text-[8px] font-bold" onclick="void window.deleteResearchJournalEntry(${realIdx})">삭제</button>
+                return `<div class="border  rounded-lg px-2 py-1.5  flex gap-2 justify-between">
+                    <div class="min-w-0"><div class="">${when}</div><div class=" whitespace-pre-wrap break-words">${String(e.text || '').replace(/</g, '&lt;')}</div></div>
+                    <button type="button" class="oly-btn oly-btn-danger oly-btn-md shrink-0" onclick="void window.deleteResearchJournalEntry(${realIdx})">삭제</button>
                 </div>`;
             }).join('');
         };
@@ -20968,7 +21288,7 @@ ${subjectLine}
                 window.globalSettings = { ...window.globalSettings, ...payload };
                 window.hideGlobalLoading();
                 window.showToast('기본 템플릿이 적용되었습니다!');
-                await window.customAlert('✅ 기본 템플릿을 적용했습니다.\n퀘스트·직업·헌법·교육과정 매핑을 확인해 주세요.');
+                await window.customAlert(' 기본 템플릿을 적용했습니다.\n퀘스트·직업·헌법·교육과정 매핑을 확인해 주세요.');
                 if (typeof window.renderCurriculumMappingPanel === 'function') window.renderCurriculumMappingPanel();
             } catch (e) {
                 window.hideGlobalLoading();
@@ -20990,8 +21310,8 @@ ${subjectLine}
                 : DEFAULT_CURRICULUM_MAPPING);
             el.innerHTML = `
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left text-[10px] text-slate-300 min-w-[480px]">
-                        <thead class="bg-slate-800 text-slate-400">
+                    <table class="w-full text-left text-12  min-w-[480px]">
+                        <thead class=" ">
                             <tr>
                                 <th class="p-2">기능명</th>
                                 <th class="p-2">관련 역량/성취기준</th>
@@ -20999,15 +21319,15 @@ ${subjectLine}
                             </tr>
                         </thead>
                         <tbody>
-                            ${rows.map((r) => `<tr class="border-b border-slate-800">
-                                <td class="p-2 font-bold text-white">${r.feature || ''}</td>
+                            ${rows.map((r) => `<tr class="border-b ">
+                                <td class="p-2 font-bold ">${r.feature || ''}</td>
                                 <td class="p-2">${r.competency || ''}</td>
-                                <td class="p-2 text-slate-400">${r.example || ''}</td>
+                                <td class="p-2 ">${r.example || ''}</td>
                             </tr>`).join('')}
                         </tbody>
                     </table>
                 </div>
-                <p class="text-[9px] text-slate-500 mt-2">태그 예시: ${(window.globalSettings?.curriculumTags || DEFAULT_CURRICULUM_TAGS).join(' ')}</p>`;
+                <p class="text-12  mt-2">태그 예시: ${(window.globalSettings?.curriculumTags || DEFAULT_CURRICULUM_TAGS).join(' ')}</p>`;
         };
 
         window.renderTeacherOnboarding = function() {
@@ -21082,8 +21402,8 @@ ${subjectLine}
             let allClearStudents = 0;
 
             const headCells = dailyQuests.map((q, qi) => 
-                `<th class="p-0.5 sm:p-1 text-center font-normal border-b border-slate-700/90 bg-slate-900/95 min-w-[1.65rem]" title="${q.name} · ${q.desc}">
-                    <i class="fa-solid ${q.icon} ${q.color} text-[9px] sm:text-[10px]"></i>
+                `<th class="p-0.5 sm:p-1 text-center font-normal border-b   min-w-[1.65rem]" title="${q.name} · ${q.desc}">
+                    <svg class="oly-icon" data-oly="${q.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                 </th>`
             ).join('');
 
@@ -21098,45 +21418,45 @@ ${subjectLine}
                         rowDone++;
                         colDone[qi]++;
                     }
-                    return `<td class="p-0.5 text-center border-b border-slate-800/80 ${ok ? 'text-emerald-400' : 'text-slate-600'}"><span class="font-black">${ok ? '✓' : '·'}</span></td>`;
+                    return `<td class="p-0.5 text-center border-b  ${ok ? '' : ''}"><span class="font-black">${ok ? '✓' : '·'}</span></td>`;
                 }).join('');
                 sumDoneAll += rowDone;
                 if (stu && rowDone === total && total > 0) allClearStudents++;
 
                 const shortName = `${sid}`;
-                const rowBg = rowDone === total && total > 0 ? 'bg-emerald-950/35' : '';
+                const rowBg = rowDone === total && total > 0 ? '' : '';
                 bodyRows += `
                 <tr class="${rowBg}">
-                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-[8px] sm:text-[9px] text-slate-200 font-bold border-b border-r border-slate-700/80 bg-slate-900/98 max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] || ''}">${shortName}. ${STUDENT_NAMES[sid] || '-'}</td>
+                    <td class="sticky left-0 z-[1] p-0.5 sm:p-1 pr-1 text-12 sm:text-12  font-bold border-b border-r   max-w-[3.2rem] sm:max-w-[4.5rem] truncate" title="${STUDENT_NAMES[sid] || ''}">${shortName}. ${STUDENT_NAMES[sid] || '-'}</td>
                     ${cells}
-                    <td class="p-0.5 text-center border-b border-slate-800/80 text-[8px] sm:text-[9px] tabular-nums text-slate-400 font-bold whitespace-nowrap">${rowDone}/${total}</td>
+                    <td class="p-0.5 text-center border-b  text-12 sm:text-12 tabular-nums  font-bold whitespace-nowrap">${rowDone}/${total}</td>
                 </tr>`;
             });
 
             const studentCount = Math.max(studentIds.length, 1);
             const avg = sumDoneAll / studentCount;
             const badgeLine = dailyQuests.map((q, qi) => 
-                `<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-slate-800/90 border border-slate-600/60 text-[8px] text-slate-300 shrink-0" title="${q.name}"><i class="fa-solid ${q.icon} ${q.color} text-[7px]"></i>${colDone[qi]}</span>`
+                `<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded  border  text-12  shrink-0" title="${q.name}"><svg class="oly-icon" data-oly="${q.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>${colDone[qi]}</span>`
             ).join('');
 
             const html = `
-                <table class="w-full min-w-[280px] text-[8px] sm:text-[9px] border-collapse">
+                <table class="w-full min-w-0 text-12 sm:text-12 border-collapse">
                     <thead>
                         <tr>
-                            <th class="sticky left-0 z-[2] p-0.5 sm:p-1 text-left text-slate-400 font-bold border-b border-r border-slate-700 bg-slate-900/98 w-[4.5rem] sm:w-auto">이름</th>
+                            <th class="sticky left-0 z-[2] p-0.5 sm:p-1 text-left  font-bold border-b border-r   w-[4.5rem] sm:w-auto">이름</th>
                             ${headCells}
-                            <th class="p-0.5 sm:p-1 text-center text-slate-500 font-bold border-b border-slate-700 bg-slate-900/95 whitespace-nowrap">합</th>
+                            <th class="p-0.5 sm:p-1 text-center  font-bold border-b   whitespace-nowrap">합</th>
                         </tr>
                     </thead>
                     <tbody>${bodyRows}</tbody>
                 </table>
-                <div class="flex flex-nowrap gap-1 overflow-x-auto px-1 py-1 border-t border-slate-700/60 bg-slate-900/40 max-w-full">
-                    <span class="text-[8px] text-slate-500 font-bold shrink-0 self-center">열별 완료</span>
+                <div class="flex flex-wrap gap-1 overflow-x-hidden px-1 py-1 border-t   max-w-full min-w-0">
+                    <span class="text-12  font-bold shrink-0 self-center">열별 완료</span>
                     ${badgeLine}
                 </div>`;
             boards.forEach((board) => { board.innerHTML = html; });
 
-            const summaryHtml = `평균 <span class="text-emerald-300">${avg.toFixed(1)}</span>/${total} · 전원완료 <span class="text-yellow-300">${allClearStudents}</span>명`;
+            const summaryHtml = `평균 <span class="">${avg.toFixed(1)}</span>/${total} · 전원완료 <span class="">${allClearStudents}</span>명`;
             summaryEls.forEach((el) => { el.innerHTML = summaryHtml; });
         };
 
@@ -21161,11 +21481,11 @@ ${subjectLine}
                     const fromSeason1 = calculateExactLevel(s.xp || 0) < 100 && s1Xp >= 40000;
                     const caption = fromSeason1 ? '시즌 1 · Lv.100 전설' : 'Lv.100 전설';
                     return `
-                    <div class="glass-panel p-4 rounded-xl border-2 border-yellow-500 bg-gradient-to-b from-yellow-900/60 flex flex-col items-center w-28">
-                        <div class="text-3xl mb-1 drop-shadow-lg avatar-legend">👑</div>
-                        <div class="text-3xl mb-2 drop-shadow-md">${face}</div>
-                        <div class="font-display text-white text-sm">${STUDENT_NAMES[s.id] || s.name || s.id}</div>
-                        <div class="text-[9px] text-yellow-400 mt-1 font-bold">${caption}</div>
+                    <div class="glass-panel p-4 rounded-xl border-2  bg-gradient-to-b  flex flex-col items-center w-28">
+                        <div class="text-32 mb-1 drop-shadow-lg avatar-legend"></div>
+                        <div class="text-32 mb-2 drop-shadow-md">${face}</div>
+                        <div class="font-display  text-14">${STUDENT_NAMES[s.id] || s.name || s.id}</div>
+                        <div class="text-12  mt-1 font-bold">${caption}</div>
                     </div>`;
                 }).join('');
             } else { 
@@ -21198,22 +21518,22 @@ ${subjectLine}
                 const face = buildCharacterAvatarHtml({ studentId: s.id, data: s, showWeapon: false, portraitClass: 'char-portrait-sm' });
                 const displayName = lunchQueueDisplayName(s, STUDENT_NAMES);
                 
-                const rankColor = idx === 0 ? 'text-yellow-400 font-black' : (idx < 3 ? 'text-orange-300 font-bold' : 'text-slate-300 font-bold');
-                const borderClass = idx === 0 ? 'border-yellow-500 bg-yellow-900/40 ring-1 ring-yellow-500' : 'border-slate-700 bg-slate-800/50';
-                const crown = idx === 0 ? '<i class="fa-solid fa-crown text-yellow-400 text-[10px] absolute -top-2 left-1/2 transform -translate-x-1/2"></i>' : '';
+                const rankColor = idx === 0 ? ' font-black' : (idx < 3 ? ' font-bold' : ' font-bold');
+                const borderClass = idx === 0 ? '  ring-1 ' : ' ';
+                const crown = idx === 0 ? '<svg class="oly-icon" data-oly="crown" viewBox="0 0 24 24" aria-hidden="true"></svg>' : '';
                 
                 return `
                 <div class="flex items-center justify-between p-2 rounded-xl border ${borderClass} relative">
                     <div class="flex items-center gap-2">
-                        <div class="w-5 text-center text-base ${rankColor}">${idx + 1}</div>
-                        <div class="text-2xl relative">${crown}${face}</div>
+                        <div class="w-5 text-center text-16 ${rankColor}">${idx + 1}</div>
+                        <div class="text-24 relative">${crown}${face}</div>
                         <div>
-                            <div class="font-bold text-xs text-white">${displayName}</div>
-                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
+                            <div class="font-bold text-12 ">${displayName}</div>
+                            <div class="text-12 ">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="">VIP</span>' : ''}</div>
                         </div>
                     </div>
-                    <div class="bg-slate-900 px-2 py-1 rounded-lg border border-slate-600 text-right min-w-[52px]">
-                        <div class="text-orange-400 font-black text-xs">${bidAmt > 0 ? '+' : ''}${formatBongAmount(bidAmt)}</div>
+                    <div class=" px-2 py-1 rounded-lg border  text-right min-w-[52px]">
+                        <div class=" font-black text-12">${bidAmt > 0 ? '+' : ''}${formatBongAmount(bidAmt)}</div>
                     </div>
                 </div>`;
             }).join('');
@@ -21259,20 +21579,20 @@ ${subjectLine}
             grid.innerHTML = window.estateState.seats.map((seat) => {
                 if (isEstateSeatDisabled(seat)) {
                     const adminClick = estateAdmin ? `onclick="window.openEstateSeatAdmin(${seat.id})"` : '';
-                    return `<div class="bg-slate-900/40 border border-dashed border-slate-600/60 rounded-xl p-2 sm:p-3 text-center opacity-50 ${estateAdmin ? 'cursor-pointer hover:opacity-80' : 'pointer-events-none select-none'} grayscale" ${adminClick}>
-                        <div class="text-slate-500 font-bold text-[10px] mb-1"><i class="fa-solid fa-xmark text-slate-600"></i> 비활성</div>
-                        <div class="text-slate-500 text-[10px]">${seat.id + 1}번</div>
-                        <div class="text-[9px] text-slate-600 mt-1">사용 안 함</div>
+                    return `<div class=" border border-dashed  rounded-xl p-2 sm:p-3 text-center opacity-50 ${estateAdmin ? 'cursor-pointer hover:opacity-80' : 'pointer-events-none select-none'} grayscale" ${adminClick}>
+                        <div class=" font-bold text-12 mb-1"><svg class="oly-icon" data-oly="xmark" viewBox="0 0 24 24" aria-hidden="true"></svg> 비활성</div>
+                        <div class=" text-12">${seat.id + 1}번</div>
+                        <div class="text-12  mt-1">사용 안 함</div>
                     </div>`;
                 }
                 // 마스터는 어느 자리든 클릭 시 관리 모달(주인 변경·삭제, 가격, 잠금)을 연다
                 const adminClick = estateAdmin ? `onclick="window.openEstateSeatAdmin(${seat.id})"` : '';
                 if (seat.owner) {
                     const ownerName = STUDENT_NAMES[seat.owner] || '학생';
-                    return `<div class="bg-teal-900/40 border border-teal-500 rounded-xl p-2 sm:p-3 text-center shadow-[0_0_10px_rgba(20,184,166,0.3)] ${estateAdmin ? 'cursor-pointer transition hover:border-amber-400' : ''}" ${adminClick}>
-                        <div class="text-teal-400 font-bold text-xs mb-1">구매 완료</div>
-                        <div class="text-white text-[10px]">${ownerName}</div>
-                        ${estateAdmin ? `<div class="text-[9px] text-slate-400 mt-1">${formatBongAmount(seat.price)} · 관리</div>` : ''}
+                    return `<div class=" border  rounded-xl p-2 sm:p-3 text-center shadow-[0_0_10px_color-mix(in srgb, var(--sky-deep) 30%, transparent)] ${estateAdmin ? 'cursor-pointer transition ' : ''}" ${adminClick}>
+                        <div class=" font-bold text-12 mb-1">구매 완료</div>
+                        <div class=" text-12">${ownerName}</div>
+                        ${estateAdmin ? `<div class="text-12  mt-1">${formatBongAmount(seat.price)} · 관리</div>` : ''}
                     </div>`;
                 }
                 if (seat.assignee) {
@@ -21280,22 +21600,22 @@ ${subjectLine}
                     const clickAction = estateAdmin
                         ? adminClick
                         : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
-                    return `<div class="bg-indigo-900/40 border border-indigo-400 rounded-xl p-2 sm:p-3 text-center cursor-pointer transition hover:border-indigo-300" ${clickAction}>
-                        <div class="text-indigo-300 font-bold text-xs mb-1">임시 배치</div>
-                        <div class="text-white text-[10px]">${assignName}</div>
-                        <div class="text-sb-gold text-[9px] mt-1">${formatBongAmount(seat.price)}</div>
+                    return `<div class=" border  rounded-xl p-2 sm:p-3 text-center cursor-pointer transition " ${clickAction}>
+                        <div class=" font-bold text-12 mb-1">임시 배치</div>
+                        <div class=" text-12">${assignName}</div>
+                        <div class=" text-12 mt-1">${formatBongAmount(seat.price)}</div>
                     </div>`;
                 }
                 if (seat.locked) {
-                    return `<div class="bg-slate-900/80 border border-slate-700 rounded-xl p-2 sm:p-3 text-center transition ${estateAdmin ? 'cursor-pointer hover:border-red-500' : ''}" ${adminClick}>
-                        <div class="text-slate-500 font-bold text-xs mb-1"><i class="fa-solid fa-lock text-red-900"></i> 잠김</div>
-                        <div class="text-slate-600 text-[10px]">${seat.id + 1}번 자리</div>
+                    return `<div class=" border  rounded-xl p-2 sm:p-3 text-center transition ${estateAdmin ? 'cursor-pointer ' : ''}" ${adminClick}>
+                        <div class=" font-bold text-12 mb-1"><svg class="oly-icon" data-oly="lock" viewBox="0 0 24 24" aria-hidden="true"></svg> 잠김</div>
+                        <div class=" text-12">${seat.id + 1}번 자리</div>
                     </div>`;
                 }
                 const clickAction = estateAdmin ? adminClick : `onclick="window.buyEstateSeat(${seat.id}, ${seat.price})"`;
-                return `<div class="bg-slate-800 border border-slate-600 hover:border-sb-gold rounded-xl p-2 sm:p-3 text-center cursor-pointer transition group" ${clickAction}>
-                    <div class="text-slate-300 font-bold text-xs mb-1 group-hover:text-white">${seat.id + 1}번 자리</div>
-                    <div class="text-sb-gold text-[10px] bg-slate-900 px-1 py-0.5 rounded inline-block border border-slate-700">${formatBongAmount(seat.price)}</div>
+                return `<div class=" border   rounded-xl p-2 sm:p-3 text-center cursor-pointer transition group" ${clickAction}>
+                    <div class=" font-bold text-12 mb-1 ">${seat.id + 1}번 자리</div>
+                    <div class=" text-12  px-1 py-0.5 rounded inline-block border ">${formatBongAmount(seat.price)}</div>
                 </div>`;
             }).join('');
 
@@ -21453,7 +21773,7 @@ ${subjectLine}
                         </label>
                         <span class="bus-seat-name">${escapeHtmlAttr(status)}</span>
                         <input type="number" class="bus-admin-price" data-bus-id="${seat.id}" min="0" max="${BUS_SEAT_PRICE_MAX}" step="1" value="${Number(seat.price) || BUS_SEAT_DEFAULT_PRICE}" ${unused ? 'disabled' : ''} aria-label="${cell.no}번 기본 가격">
-                        <button type="button" class="bus-admin-more" onclick="event.stopPropagation(); window.openBusSeatAdmin(${seat.id})">관리</button>
+                        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md bus-admin-more" onclick="event.stopPropagation(); window.openBusSeatAdmin(${seat.id})">관리</button>
                     </div>`;
                 }
                 const click = buyable ? `onclick="window.buyBusSeat(${seat.id})"` : '';
@@ -21736,7 +22056,7 @@ ${subjectLine}
                 if (appliedState) window.busSeatState = appliedState;
                 if (typeof updateUI === 'function') updateUI();
                 if (typeof window.renderBusSeats === 'function') window.renderBusSeats();
-                await window.customAlert(`🚌 ${sid + 1}번 자리를 ${formatBongAmount(appliedBid)}에 구입했습니다.`);
+                await window.customAlert(` ${sid + 1}번 자리를 ${formatBongAmount(appliedBid)}에 구입했습니다.`);
             } catch (e) {
                 const code = String(e && e.message ? e.message : e);
                 console.error('buyBusSeat', e);
@@ -21768,34 +22088,34 @@ ${subjectLine}
                 }))
                 .join('');
             const d = document.createElement('div');
-            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center  px-4';
             d.innerHTML = `
-                <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-amber-500/50 max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
-                    <h3 class="text-lg font-display text-amber-300 text-center">🚌 ${seatId + 1}번 버스 자리</h3>
-                    <p class="text-[10px] text-slate-400 text-center leading-relaxed">
-                        구매자: <strong class="text-white">${escapeHtmlGb(ownerName)}</strong>
+                <div class=" p-5 sm:p-6 rounded-3xl border  max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-20 font-display  text-center"> ${seatId + 1}번 버스 자리</h3>
+                    <p class="text-12  text-center leading-relaxed">
+                        구매자: <strong class="">${escapeHtmlGb(ownerName)}</strong>
                         ${owned ? `(${formatBongAmount(seat.paid)})` : ''}
                         · 앉은 사람: ${escapeHtmlGb(assignName)}
-                        · ${unused ? '<span class="text-slate-400 font-bold">비활성</span>' : (seat.locked ? '<span class="text-rose-400 font-bold">고정</span>' : '<span class="text-emerald-300 font-bold">구입·뽑기</span>')}
+                        · ${unused ? '<span class=" font-bold">비활성</span>' : (seat.locked ? '<span class=" font-bold">고정</span>' : '<span class=" font-bold">구입·뽑기</span>')}
                     </p>
-                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
-                        <input type="checkbox" id="busAdminUnused" ${unused ? 'checked' : ''} class="rounded border-slate-600">
+                    <label class="flex items-center gap-2 text-12  font-bold  border  rounded-xl px-3 py-2">
+                        <input type="checkbox" id="busAdminUnused" ${unused ? 'checked' : ''} class="rounded ">
                         <span>이 자리 사용 안 함 (비활성)</span>
                     </label>
-                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
-                        <input type="checkbox" id="busAdminLock" ${seat.locked && !unused ? 'checked' : ''} class="rounded border-slate-600" ${unused ? 'disabled' : ''}>
+                    <label class="flex items-center gap-2 text-12  font-bold  border  rounded-xl px-3 py-2">
+                        <input type="checkbox" id="busAdminLock" ${seat.locked && !unused ? 'checked' : ''} class="rounded " ${unused ? 'disabled' : ''}>
                         <span>구입·뽑기에서 빼 두고 고정</span>
                     </label>
-                    <label class="block text-[10px] text-slate-300 font-bold">기본 가격 (${getCurrencyUnit()})
-                        <input type="number" id="busAdminPrice" min="0" max="${BUS_SEAT_PRICE_MAX}" step="1" value="${Number(seat.price) || BUS_SEAT_DEFAULT_PRICE}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>
+                    <label class="block text-12  font-bold">기본 가격 (${getCurrencyUnit()})
+                        <input type="number" id="busAdminPrice" min="0" max="${BUS_SEAT_PRICE_MAX}" step="1" value="${Number(seat.price) || BUS_SEAT_DEFAULT_PRICE}" class="mt-1 w-full  border   px-2 py-2 rounded text-12" ${unused ? 'disabled' : ''}>
                     </label>
-                    <label class="block text-[10px] text-slate-300 font-bold">구매자 / 앉힐 학생
-                        <select id="busAdminAssignee" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
+                    <label class="block text-12  font-bold">구매자 / 앉힐 학생
+                        <select id="busAdminAssignee" class="mt-1 w-full  border   px-2 py-2 rounded text-12" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
                     </label>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">구매자를 비우면 낸 봉을 돌려줍니다. 다른 자리에 구입한 학생을 고르면 그 구입을 이쪽으로 옮기고, 이 자리에도 구매자가 있으면 자리를 맞바꿉니다. 비활성으로 바꿔도 낸 봉을 돌려줍니다.</p>
+                    <p class="text-12  leading-relaxed">구매자를 비우면 낸 봉을 돌려줍니다. 다른 자리에 구입한 학생을 고르면 그 구입을 이쪽으로 옮기고, 이 자리에도 구매자가 있으면 자리를 맞바꿉니다. 비활성으로 바꿔도 낸 봉을 돌려줍니다.</p>
                     <div class="flex gap-2">
-                        <button type="button" id="busAdminSave" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs">저장</button>
-                        <button type="button" id="busAdminCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">취소</button>
+                        <button type="button" id="busAdminSave" class="oly-btn oly-btn-reward oly-btn-md flex-1">저장</button>
+                        <button type="button" id="busAdminCancel" class="oly-btn oly-btn-secondary oly-btn-md">취소</button>
                     </div>
                 </div>`;
             document.body.appendChild(d);
@@ -21863,7 +22183,7 @@ ${subjectLine}
                     }
                     window._busSeatAdminDirty = false;
                     window.renderBusSeats({ force: true });
-                    await window.customAlert(`✅ ${seatId + 1}번 버스 자리를 저장했습니다.`);
+                    await window.customAlert(` ${seatId + 1}번 버스 자리를 저장했습니다.`);
                 } catch (e) {
                     console.error('openBusSeatAdmin', e);
                     await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -22010,7 +22330,7 @@ ${subjectLine}
                 let tail = '';
                 if (drawn && drawn.leftoverStudents) tail += `\n학생 ${drawn.leftoverStudents}명은 자리가 모자라 빠졌습니다.`;
                 if (drawn && drawn.leftoverSeats) tail += `\n빈 자리 ${drawn.leftoverSeats}석은 비워 두었습니다.`;
-                await window.customAlert(`🚌 버스 랜덤 뽑기 완료!\n배치: ${drawn ? drawn.placed : 0}명${tail}`);
+                await window.customAlert(` 버스 랜덤 뽑기 완료!\n배치: ${drawn ? drawn.placed : 0}명${tail}`);
             } catch (e) {
                 console.error('shuffleBusSeatAssignments', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -22116,25 +22436,21 @@ ${subjectLine}
         function formatBankLoanLifecycleAlerts(msgs) {
             (msgs || []).forEach((m) => {
                 if (m.kind === 'repay') {
-                    setTimeout(() => {
-                        void window.customAlert(
-                            `🏦 대출 약정 자동이체\n\n원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`
-                        );
-                    }, 80);
+                    rememberNotice(
+                        '대출 상환',
+                        `원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`,
+                        `loan-repay:${m.due || ''}:${m.principal}`,
+                    );
                 } else if (m.kind === 'default_start') {
-                    setTimeout(() => {
-                        void window.customAlert(creditDefaultBlockMessage(m.untilYmd));
-                    }, 140);
+                    rememberNotice('신용불량', creditDefaultBlockMessage(m.untilYmd), `loan-default:${m.untilYmd}`);
                 } else if (m.kind === 'penalty_start') {
-                    setTimeout(() => {
-                        void window.customAlert(loanPenaltyBlockMessage(m.untilYmd));
-                    }, 180);
+                    rememberNotice('대출 연체', loanPenaltyBlockMessage(m.untilYmd), `loan-penalty:${m.untilYmd}`);
                 } else if (m.kind === 'penalty_half') {
-                    setTimeout(() => {
-                        void window.customAlert(
-                            `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`
-                        );
-                    }, 200);
+                    rememberNotice(
+                        '신용불량',
+                        `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`,
+                        `loan-half:${m.nextDue || ''}`,
+                    );
                 }
             });
         }
@@ -22237,9 +22553,9 @@ ${subjectLine}
             const inDefault = studentIsCreditDefault(window.playerState);
             if (loanStatus) {
                 if (inDefault) {
-                    loanStatus.innerHTML = `<span class="text-red-300 font-bold">${playerCreditDefaultMessage().replace(/\n/g, '<br>')}</span>`;
+                    loanStatus.innerHTML = `<span class=" font-bold">${playerCreditDefaultMessage().replace(/\n/g, '<br>')}</span>`;
                 } else if (loan) {
-                    loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
+                    loanStatus.innerHTML = `진행 중: 원금 <b class="">${formatBongAmount(loan.principal)}</b> + 이자 <b class="">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
                 } else if (outstanding) {
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
                     loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
@@ -22261,7 +22577,7 @@ ${subjectLine}
                 const gotToday = last === today;
                 if (isVacationAutomationPaused('bankBonus')) {
                     const ws = getWorldSettings();
-                    dailyLine.textContent = `🏖️ ${ws.vacationLabel || '방학'} 기간에는 예금 주기 보너스가 지급되지 않습니다. (${ws.vacationStartDate} ~ ${ws.vacationEndDate})`;
+                    dailyLine.textContent = ` ${ws.vacationLabel || '방학'} 기간에는 예금 주기 보너스가 지급되지 않습니다. (${ws.vacationStartDate} ~ ${ws.vacationEndDate})`;
                 } else if (total < 100) {
                     dailyLine.textContent = `일반예금+적금 원금 합계 100${getCurrencyUnit()} 이상이면, 마지막 지급일 기준 3일마다 1${getCurrencyUnit()}가 지갑으로 지급됩니다.`;
                 } else if (gotToday) {
@@ -22278,7 +22594,7 @@ ${subjectLine}
             if (termList) {
                 const arr = window.playerState.bankTermDeposits || [];
                 if (arr.length === 0) {
-                    termList.innerHTML = '<p class="text-[10px] text-slate-500 py-1">아직 가입한 적금이 없습니다. 아래에서 보물상자 적금을 만들 수 있어요.</p>';
+                    termList.innerHTML = '<p class="text-12  py-1">아직 가입한 적금이 없습니다. 아래에서 보물상자 적금을 만들 수 있어요.</p>';
                 } else {
                     termList.innerHTML = arr.map((td, idx) => {
                         const elapsed = bankCalendarDaysElapsed(td.startDate);
@@ -22286,15 +22602,15 @@ ${subjectLine}
                         const daysShow = Math.min(30, elapsed + 1);
                         const interestPrev = Math.round((Number(td.amount) || 0) * (rate / 100));
                         const sid = String(td.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-                        return `<div class="border border-amber-600/35 rounded-xl p-3 bg-slate-900/60 mb-2 text-left">
+                        return `<div class="border  rounded-xl p-3  mb-2 text-left">
                             <div class="flex justify-between items-start gap-2">
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-amber-200 font-bold text-sm">보물상자 #${idx + 1} 🔒</div>
-                                    <div class="text-[10px] text-slate-400 mt-0.5">원금 <span class="text-white font-bold">${formatBongAmount(td.amount)}</span></div>
-                                    <div class="text-[10px] text-sky-300 mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
-                                    <div class="text-[9px] text-slate-500 mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${formatBongAmount(interestPrev)} · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
+                                    <div class=" font-bold text-14">보물상자 #${idx + 1} </div>
+                                    <div class="text-12  mt-0.5">원금 <span class=" font-bold">${formatBongAmount(td.amount)}</span></div>
+                                    <div class="text-12  mt-1">누적 <span class="font-bold">${daysShow}</span>일 / 30일</div>
+                                    <div class="text-12  mt-0.5">만기 시 이자(현재 설정 ${rate}% 기준, 반올림): 약 ${formatBongAmount(interestPrev)} · 만기 시 이율은 만기 당시 설정이 적용됩니다.</div>
                                 </div>
-                                <button type="button" onclick="window.earlyWithdrawTermDeposit('${sid}')" class="text-[10px] shrink-0 bg-red-900/50 hover:bg-red-800 text-red-100 px-2 py-1 rounded border border-red-800/80">중도해지</button>
+                                <button type="button" onclick="window.earlyWithdrawTermDeposit('${sid}')" class="oly-btn oly-btn-danger oly-btn-sm shrink-0">중도해지</button>
                             </div>
                         </div>`;
                     }).join('');
@@ -22317,16 +22633,16 @@ ${subjectLine}
                             ? `${formatBongAmount(loanRow.principal)} / ${loanRow.dueYmd}`
                             : (loanStillOutstanding(stu.bankLoan) ? `상환 전${stu.bankLoan && stu.bankLoan.dueYmd ? ` / ${stu.bankLoan.dueYmd}` : ''}` : '—');
                         const defTxt = studentIsCreditDefault(stu) ? '신용불량' : '';
-                        rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
-                            <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
-                            <div class="text-right text-sky-300 tabular-nums">${formatBongAmount(regular)}</div>
-                            <div class="text-right text-amber-200 tabular-nums">${formatBongAmount(termTotal)}</div>
-                            <div class="text-right text-rose-200 tabular-nums">${loanTxt}</div>
-                            <div class="text-right text-red-300 font-bold">${defTxt}</div>
+                        rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b  items-center">
+                            <div class="font-bold  truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
+                            <div class="text-right tabular-nums ${wallet < 0 ? '' : ''}">${formatBongAmount(wallet)}</div>
+                            <div class="text-right  tabular-nums">${formatBongAmount(regular)}</div>
+                            <div class="text-right  tabular-nums">${formatBongAmount(termTotal)}</div>
+                            <div class="text-right  tabular-nums">${loanTxt}</div>
+                            <div class="text-right  font-bold">${defTxt}</div>
                         </div>`);
                     });
-                    adminList.innerHTML = `<div class="grid grid-cols-6 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700">
+                    adminList.innerHTML = `<div class="grid grid-cols-6 gap-1 px-2 py-1.5 sticky top-0  text-12  font-bold border-b ">
                         <div>학생</div><div class="text-right">지갑</div><div class="text-right">일반예금</div><div class="text-right">적금</div><div class="text-right">대출</div><div class="text-right">신용</div>
                     </div>${rows.join('')}`;
                 }
@@ -22380,14 +22696,14 @@ ${subjectLine}
         };
 
         function formatBankAdminInvestCell(row) {
-            if (!row || !row.held) return '<span class="text-slate-600">—</span>';
+            if (!row || !row.held) return '<span class="">—</span>';
             const delta = Number(row.delta) || 0;
-            const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
+            const cls = delta > 0 ? '' : delta < 0 ? '' : '';
             const deltaTxt = delta > 0 ? `+${formatBongAmount(delta)}` : formatBongAmount(delta);
             return `<div class="text-right leading-tight">
-                <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
-                <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
-                <div class="text-[8px] text-slate-400 tabular-nums">매수 ${formatIndexPrice(row.buyIndex)}</div>
+                <div class=" font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
+                <div class="${cls} text-12 tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
+                <div class="text-12  tabular-nums">매수 ${formatIndexPrice(row.buyIndex)}</div>
             </div>`;
         }
 
@@ -22411,23 +22727,23 @@ ${subjectLine}
                 const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(sid)) || {};
                 const sum = summarizeStudentStockInvest(stu, _marketQuotes);
                 const name = STUDENT_NAMES[String(sid)] || sid;
-                const totalCls = sum.delta > 0 ? 'text-rose-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const totalCls = sum.delta > 0 ? '' : sum.delta < 0 ? '' : '';
                 const totalDelta = sum.delta > 0 ? `+${formatBongAmount(sum.delta)}` : formatBongAmount(sum.delta);
                 const kospi = sum.markets.find((m) => m.id === 'kospi');
                 const kosdaq = sum.markets.find((m) => m.id === 'kosdaq');
                 const nasdaq = sum.markets.find((m) => m.id === 'nasdaq');
-                rows.push(`<div class="grid grid-cols-5 gap-1 px-2 py-1.5 border-b border-slate-800 items-center min-w-[28rem]">
-                    <div class="font-bold text-slate-200 truncate" title="${escapeHtmlAttr(name)}">${escapeHtmlAttr(name)}</div>
+                rows.push(`<div class="grid grid-cols-5 gap-1 px-2 py-1.5 border-b  items-center min-w-[28rem]">
+                    <div class="font-bold  truncate" title="${escapeHtmlAttr(name)}">${escapeHtmlAttr(name)}</div>
                     ${formatBankAdminInvestCell(kospi)}
                     ${formatBankAdminInvestCell(kosdaq)}
                     ${formatBankAdminInvestCell(nasdaq)}
                     <div class="text-right leading-tight">
-                        <div class="text-white font-bold tabular-nums">${sum.held ? formatBongAmount(sum.principal) : '—'}</div>
-                        ${sum.held ? `<div class="${totalCls} text-[9px] tabular-nums">${formatBongAmount(sum.payout)} (${totalDelta})</div>` : '<div class="text-slate-600 text-[9px]">미보유</div>'}
+                        <div class=" font-bold tabular-nums">${sum.held ? formatBongAmount(sum.principal) : '—'}</div>
+                        ${sum.held ? `<div class="${totalCls} text-12 tabular-nums">${formatBongAmount(sum.payout)} (${totalDelta})</div>` : '<div class=" text-12">미보유</div>'}
                     </div>
                 </div>`);
             });
-            list.innerHTML = `<div class="grid grid-cols-5 gap-1 px-2 py-1.5 sticky top-0 bg-slate-900 text-[9px] text-slate-400 font-bold border-b border-slate-700 min-w-[28rem]">
+            list.innerHTML = `<div class="grid grid-cols-5 gap-1 px-2 py-1.5 sticky top-0  text-12  font-bold border-b  min-w-[28rem]">
                 <div>학생</div><div class="text-right">코스피</div><div class="text-right">코스닥</div><div class="text-right">나스닥</div><div class="text-right">합계</div>
             </div>${rows.join('')}`;
         }
@@ -22448,29 +22764,29 @@ ${subjectLine}
                 const pos = bag[m.id];
                 const q = _marketQuotes[m.id];
                 if (!pos) {
-                    return `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/50 text-[10px] text-slate-400">${m.name} 보유 없음 · ${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 매수</div>`;
+                    return `<div class="border  rounded-xl p-3  text-12 ">${m.name} 보유 없음 · ${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 매수</div>`;
                 }
                 const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
                 const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
-                const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const deltaCls = settled.delta > 0 ? '' : settled.delta < 0 ? '' : '';
                 const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
                 const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
                 const room = stockInvestRoom(pos);
                 const roomTxt = room >= STOCK_INVEST_MIN
                     ? `추가 매수 가능 ${formatBongAmount(room)}`
                     : '추가 매수 한도 가득';
-                return `<div class="border border-amber-500/35 rounded-xl p-3 bg-slate-900/70">
+                return `<div class="border  rounded-xl p-3 ">
                     <div class="flex justify-between gap-2 items-start">
                         <div class="min-w-0">
-                            <div class="text-amber-100 font-bold text-sm">${m.name}</div>
-                            <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
-                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
-                            <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
+                            <div class=" font-bold text-14">${m.name}</div>
+                            <div class="text-12  mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
+                            <div class="text-12 ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
+                            <div class="text-12  mt-0.5">${roomTxt}</div>
                         </div>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center mt-2">
-                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
-                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
+                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px]  border   px-2 py-1 rounded text-12 font-bold" />
+                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="oly-btn oly-btn-reward oly-btn-sm js-stock-trade-btn shrink-0"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
                     </div>
                 </div>`;
             });
@@ -22695,7 +23011,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
             if (!saved) return;
-            window.customAlert(`🏦 일반예금에 ${formatBongAmount(amt)}를 넣었습니다.`);
+            window.customAlert(` 일반예금에 ${formatBongAmount(amt)}를 넣었습니다.`);
         };
 
         /** 일반예금 출금 */
@@ -22714,7 +23030,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금' });
             if (!saved) return;
-            window.customAlert(`💵 ${formatBongAmount(amt)}를 찾았습니다.`);
+            window.customAlert(` ${formatBongAmount(amt)}를 찾았습니다.`);
         };
 
         /** 일반예금 전액을 지갑으로 출금 */
@@ -22731,14 +23047,14 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금' });
             if (!saved) return;
-            await window.customAlert(`💵 ${formatBongAmount(sav)}를 모두 찾았습니다.`);
+            await window.customAlert(` ${formatBongAmount(sav)}를 모두 찾았습니다.`);
         };
 
         /** 적금(보물상자) 가입 — 안내 후 확인 */
         window.openTermDeposit = async function() {
             if (window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
             await window.customAlert(
-                '📦 적금(보물상자) 안내\n\n' +
+                ' 적금(보물상자) 안내\n\n' +
                 '· 넣은 금액은 30일 동안 보물상자에 잠깁니다.\n' +
                 '· 30일이 지나 만기되면, 그때 마스터가 설정한 이자율(%)을 원금에 적용한 이자(반올림)와 함께 지갑으로 돌아옵니다.\n' +
                 '· 이자율이 바뀌면, 만기 처리 시점의 이율이 적용됩니다.\n' +
@@ -22766,7 +23082,7 @@ ${subjectLine}
                 return;
             }
             updateUI();
-            await window.customAlert(`🎁 보물상자 적금 ${formatBongAmount(amt)}가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
+            await window.customAlert(` 보물상자 적금 ${formatBongAmount(amt)}가 시작되었습니다. 30일 후 만기를 기다려 주세요!`);
         };
 
         /** 적금 중도 해지 — 원금만 지갑으로, 이자 없음 */
@@ -22787,7 +23103,7 @@ ${subjectLine}
             updateUI();
             const saved = await saveDataToCloud({ allowBankFieldChanges: true, operationLabel: '보물상자 적금 중도 해지', bongLogSource: 'bankTermEarly' });
             if (!saved) return;
-            await window.customAlert(`💰 원금 ${formatBongAmount(principal)}가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
+            await window.customAlert(` 원금 ${formatBongAmount(principal)}가 지갑으로 반환되었습니다. (중도 해지로 이자 없음)`);
         };
 
         window.saveBankInterestRate = async function() {
@@ -22983,6 +23299,13 @@ ${subjectLine}
         }
 
         async function ensureClassOpsLoaded(force) {
+            if (isGuestSession()) {
+                window._attendanceDays = window._attendanceDays || {};
+                window._checklists = window._checklists || [];
+                window._praiseBoard = window._praiseBoard || {};
+                window._classOpsReady = true;
+                return;
+            }
             if (!db) return;
             if (window._classOpsLoading) return window._classOpsLoading;
             if (window._classOpsReady && !force) return;
@@ -23112,17 +23435,17 @@ ${subjectLine}
                     const cur = String(marks[stu.id] || '');
                     const btn = (status, label) => {
                         const on = cur === status;
-                        return `<button type="button" ${admin ? '' : 'disabled'} onclick="void window.setAttendanceMark('${stu.id}','${status}')" class="px-2 py-1 rounded-lg border text-[10px] font-bold min-h-[36px] ${on ? 'bg-amber-500 text-stone-950 border-amber-300' : 'bg-slate-900 text-slate-200 border-slate-600'}">${label}</button>`;
+                        return `<button type="button" ${admin ? '' : 'disabled'} onclick="void window.setAttendanceMark('${stu.id}','${status}')" class="oly-btn oly-btn-reward oly-btn-sm ${on ? ' ' : ' '}">${label}</button>`;
                     };
-                    return `<div class="flex flex-wrap items-center gap-1 border border-slate-800 rounded-xl px-2 py-1.5">
-                        <span class="w-16 truncate font-bold text-slate-100">${stu.order}. ${escapeHofText(stu.name)}</span>
+                    return `<div class="flex flex-wrap items-center gap-1 border  rounded-xl px-2 py-1.5">
+                        <span class="w-16 truncate font-bold ">${stu.order}. ${escapeHofText(stu.name)}</span>
                         ${btn('present', '출석')}
                         ${btn('late', '지각')}
                         ${btn('early', '조퇴')}
                         ${btn('absent', '결석')}
                     </div>`;
                 });
-                el.innerHTML = rows.join('') || '<p class="text-slate-500">명단이 없습니다.</p>';
+                el.innerHTML = rows.join('') || '<p class="">명단이 없습니다.</p>';
             });
         };
 
@@ -23156,7 +23479,7 @@ ${subjectLine}
         window.exportAttendanceXlsx = async function() {
             await ensureClassOpsLoaded(true);
             const rows = buildAttendanceSheetRows(window._attendanceDays || {}, rosterStudentsForOps());
-            downloadAoaWorkbook('출석의 축복', rows, `출석의축복_${getLocalDateStr()}.xlsx`);
+            await downloadAoaWorkbook('출석의 축복', rows, `출석의축복_${getLocalDateStr()}.xlsx`);
         };
 
         window.renderChecklistBoard = function() {
@@ -23172,19 +23495,19 @@ ${subjectLine}
                 const admin = !!(window.playerState && window.playerState.isAdmin);
                 const items = sanitizeChecklists(window._checklists || []);
                 if (!items.length) {
-                    host.innerHTML = '<p class="text-slate-500 text-[10px]">아직 체크리스트가 없습니다. 교사가 제목을 달아 만들 수 있습니다.</p>';
+                    host.innerHTML = '<p class=" text-12">아직 체크리스트가 없습니다. 교사가 제목을 달아 만들 수 있습니다.</p>';
                     return;
                 }
                 host.innerHTML = items.map((item) => {
                     const cells = students.map((stu) => {
                         const done = !!item.marks[stu.id];
                         const can = admin || myId === stu.id;
-                        return `<button type="button" ${can ? '' : 'disabled'} onclick="void window.toggleChecklistCell('${item.id}','${stu.id}')" class="checklist-cell ${done ? 'is-done' : ''}" title="${escapeHofText(stu.name)}">${done ? '✓' : stu.order}</button>`;
+                        return `<button type="button" ${can ? '' : 'disabled'} onclick="void window.toggleChecklistCell('${item.id}','${stu.id}')" class="oly-btn oly-btn-secondary oly-btn-md checklist-cell ${done ? 'is-done' : ''}" title="${escapeHofText(stu.name)}">${done ? '✓' : stu.order}</button>`;
                     }).join('');
-                    const del = admin ? `<button type="button" onclick="void window.removeClassChecklist('${item.id}')" class="text-[10px] text-rose-200 border border-rose-700 rounded-lg px-2 py-1">삭제</button>` : '';
-                    return `<section class="border border-slate-700 rounded-2xl p-2 bg-slate-950/40">
+                    const del = admin ? `<button type="button" onclick="void window.removeClassChecklist('${item.id}')" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>` : '';
+                    return `<section class="border  rounded-2xl p-2 ">
                         <div class="flex items-center justify-between gap-2 mb-2">
-                            <h4 class="text-cyan-100 font-black text-xs">${escapeHofText(item.title)}</h4>
+                            <h4 class=" font-black text-12">${escapeHofText(item.title)}</h4>
                             ${del}
                         </div>
                         <div class="checklist-grid">${cells}</div>
@@ -23332,25 +23655,25 @@ ${subjectLine}
         };
 
         window.maybeShowLoanMorningNotice = function() {
-            if (!window.playerState || window.playerState.isGuest) return;
+            if (!window._worldEntered || !window.playerState || window.playerState.isGuest) return;
             const loan = sanitizeBankLoan(window.playerState.bankLoan);
             if (!loan || !loanStillOutstanding(window.playerState.bankLoan)) return;
             const sid = String(localStorage.getItem('sambong_student_id') || '');
             const key = `sambongLoanNotice:${appId}:${sid}:${getLocalDateStr()}`;
             if (localStorage.getItem(key) === '1') return;
-            const modal = document.getElementById('loanMorningModal');
-            const body = document.getElementById('loanMorningBody');
-            if (!modal || !body) return;
+            try { localStorage.setItem(key, '1'); } catch (_) { /* 알림함에는 남깁니다. */ }
             const due = loanDueTotal(loan);
             const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
-            body.textContent =
-                `너에게 아직 갚지 않은 대출이 있다.\n` +
+            rememberNotice(
+                '대출 안내',
+                `아직 갚지 않은 대출이 있습니다.\n` +
                 `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
-                `납기일 ${loan.dueYmd}\n\n` +
+                `납기일 ${loan.dueYmd}\n` +
                 (penalty
-                    ? '이미 납기일을 넘겼다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있다.'
-                    : '이 날짜가 지나기 전에 갚아라. 일부만 갚을 수도 있다. 미루면 도장이 찍힌다.');
-            modal.classList.remove('hidden');
+                    ? '이미 납기일을 넘겼습니다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있습니다.'
+                    : '이 날짜가 지나기 전에 갚아 주세요. 일부만 갚을 수도 있습니다.'),
+                key,
+            );
         };
 
         window.dismissLoanMorningNotice = function(goBank) {
@@ -23626,7 +23949,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 내 상태 UI 및 퀘스트/인벤토리 처리 ★
+        //  내 상태 UI 및 퀘스트/인벤토리 처리 
         // ==========================================
         function updateUI() {
             /** docRef 없다고 전체 UI를 건너뛰면, 스냅샷이 playerState만 갱신한 뒤 대시보드·퀘스트가 영원히 옛값으로 남음(실시간 동기화 깨짐) */
@@ -23653,13 +23976,11 @@ ${subjectLine}
                     bankSaveOperationLabel = '보물상자 적금 만기';
                     bankSaveBongLogSource = 'bankTermMaturity';
                     if (termRes.msgs.length > 0) {
-                        setTimeout(() => {
-                            void window.customAlert(
-                                '🎁 적금 만기!\n\n' +
-                                termRes.msgs.join('\n') +
-                                '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
-                            );
-                        }, 80);
+                        rememberNotice(
+                            '적금 만기',
+                            termRes.msgs.join('\n') + '\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)',
+                            `term:${getLocalDateStr()}:${termRes.msgs.join('|')}`,
+                        );
                     }
                 }
                 const loanLife = applyBankLoanLifecycleLocal();
@@ -23674,9 +23995,11 @@ ${subjectLine}
                 }
                 if (applyBankRegularDailyBonus()) {
                     bankProcessingNeedSave = true;
-                    setTimeout(() => {
-                        void window.customAlert(`🏦 예금 주기 보너스: 일반+적금 원금 합 100${getCurrencyUnit()} 이상 유지로 이번 주기 1${getCurrencyUnit()}가 지갑에 들어왔습니다! (3일마다 지급)`);
-                    }, 120);
+                    rememberNotice(
+                        '예금 보너스',
+                        `일반+적금 원금 합 100${getCurrencyUnit()} 이상 유지로 이번 주기 1${getCurrencyUnit()}가 지갑에 들어왔습니다. (3일마다 지급)`,
+                        `bank-bonus:${getLocalDateStr()}`,
+                    );
                 }
                 /**
                  * 주말 키는 저장하되 보유 성구는 절대 초기화하지 않습니다.
@@ -23821,7 +24144,7 @@ ${subjectLine}
             const exactLv = calculateExactLevel(xp);
             
             const mySid = localStorage.getItem('sambong_student_id');
-            const dashAura = applyEquippedAura(window.playerState, 'border-slate-600', 'shadow-lg');
+            const dashAura = applyEquippedAura(window.playerState, '', 'shadow-lg');
             let cardBorder = dashAura.border;
             let cardGlow = dashAura.glow;
             const useStudentLook = !window.playerState.isAdmin || window.playerState.homeLookMode === 'student';
@@ -23866,15 +24189,13 @@ ${subjectLine}
             if (dashBongEl) {
                 const bBal = Number(window.playerState.bong) || 0;
                 dashBongEl.innerText = formatBongDisplay(bBal);
-                dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
-                dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
             }
 
             const hp = shieldHpOf(window.playerState);
             const dashShieldEl = document.getElementById('dashShield');
             if (dashShieldEl) {
                 dashShieldEl.innerHTML = (!window.playerState.isAdmin && hp > 0)
-                    ? `🛡️<span class="text-[10px] bg-indigo-600 px-1 rounded absolute -top-1 -right-2 font-bold text-white border border-indigo-400 shadow">${hp}</span>`
+                    ? `<span class="text-12  px-1 rounded absolute -top-1 -right-2 font-bold  border  shadow">${hp}</span>`
                     : '';
             }
             
@@ -23884,8 +24205,8 @@ ${subjectLine}
                 dashJobEl.innerHTML = window.playerState.isAdmin
                     ? ''
                     : liveJobs.map(j => `
-                <div class="w-6 h-6 rounded-full bg-slate-900 border flex items-center justify-center ${j.color}" title="${escapeHtmlAttr(j.name)}">
-                    <i class="fa-solid ${j.icon} text-[10px]"></i>
+                <div class="w-6 h-6 rounded-full  border flex items-center justify-center ${j.color}" title="${escapeHtmlAttr(j.name)}">
+                    <svg class="oly-icon" data-oly="${j.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                 </div>`).join('');
             }
 
@@ -23934,13 +24255,13 @@ ${subjectLine}
                 todoBox.innerHTML = dailyQuestList.map(q => {
                 const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                 const act = done ? 'cancelQuest' : 'attemptQuest';
-                const todoIcon = done ? 'fa-check text-cyan-300' : (q.icon || 'fa-star');
+                const todoIcon = done ? 'check ' : (q.icon || 'star');
                 const todoTitle = escapeHtmlAttr(`${q.name}${q.desc ? ' · ' + q.desc : ''}`);
                 return `
-                <button type="button" title="${todoTitle}" class="quest-tile touch-manipulation ${done ? 'border-cyan-400/80 bg-gradient-to-br from-cyan-950/70 to-slate-900/80 shadow-[0_0_12px_rgba(34,211,238,0.15)] ring-1 ring-cyan-500/30' : 'bg-slate-900/60 border-slate-700'}" onclick="window.${act}('${q.id}', ${q.xp}, ${q.bong})">
-                    <span class="quest-tile-icon ${done ? 'text-cyan-300' : q.color}"><i class="fa-solid ${todoIcon}"></i></span>
-                    <span class="quest-tile-name ${done ? 'text-cyan-100' : q.color}">${q.name}</span>
-                    <span class="quest-tile-pay"><span class="text-sb-blue">+${q.xp}X</span> <span class="text-sb-gold">+${formatBongAmount(q.bong)}</span></span>
+                <button type="button" title="${todoTitle}" class="oly-btn oly-btn-primary oly-btn-md quest-tile touch-manipulation ${done ? '' : ' '}" onclick="window.${act}('${q.id}', ${q.xp}, ${q.bong})">
+                    <span class="quest-tile-icon ${done ? '' : q.color}"><svg class="oly-icon" data-oly="${todoIcon}" viewBox="0 0 24 24" aria-hidden="true"></svg></span>
+                    <span class="quest-tile-name ${done ? '' : q.color}">${q.name}</span>
+                    <span class="quest-tile-pay"><span class="">+${q.xp}X</span> <span class="">+${formatBongAmount(q.bong)}</span></span>
                 </button>`;
                 }).join('');
             }
@@ -23967,14 +24288,14 @@ ${subjectLine}
                 for(let i=1; i<=7; i++) {
                     if (collected.includes(i)) {
                         let starsHtml = ''; 
-                        for(let s=0; s<i; s++) starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
+                        for(let s=0; s<i; s++) starsHtml += `<svg class="oly-icon" data-oly="star" viewBox="0 0 24 24" aria-hidden="true"></svg>`;
                         slotsHtml += `
                         <div class="w-8 h-8 sm:w-10 sm:h-10 dragonball-3d shadow-md shrink-0">
                             <div class="flex flex-wrap items-center justify-center w-[70%] h-[70%] leading-none">${starsHtml}</div>
                         </div>`;
                     } else {
                         slotsHtml += `
-                        <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center bg-amber-900/50 border-2 border-amber-800/50 shadow-inner text-amber-700 font-black text-xs shrink-0">${i}</div>`;
+                        <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center  border-2  shadow-inner  font-black text-12 shrink-0">${i}</div>`;
                     }
                 }
                 dbSlots.innerHTML = slotsHtml;
@@ -23986,47 +24307,47 @@ ${subjectLine}
                 document.getElementById(containerId).innerHTML = quests.map(q => {
                     const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                     const unlocked = window.playerState.unlockedQuests && window.playerState.unlockedQuests[q.id];
-                    let cls = "border-slate-700";
+                    let cls = "";
                     let act = `window.attemptQuest('${q.id}', ${q.xp}, ${q.bong})`;
 
                     if (done) {
                         cls =
                             q.type === 'daily'
-                                ? 'border-cyan-400/80 bg-gradient-to-br from-cyan-950/50 to-slate-900/80 ring-1 ring-cyan-500/35 shadow-[0_0_12px_rgba(34,211,238,0.12)]'
-                                : 'border-sb-blue bg-slate-800';
+                                ? ' bg-gradient-to-br   ring-1  shadow-[0_0_12px_color-mix(in srgb, var(--sky) 12%, transparent)]'
+                                : ' ';
                         act = `window.cancelQuest('${q.id}', ${q.xp}, ${q.bong})`;
                     }
                     else if (creditBlocked) {
-                        cls = "opacity-50 border-red-800";
+                        cls = "opacity-50 ";
                         act = `window.customAlert(${JSON.stringify(playerCreditDefaultMessage())})`;
                     }
                     else if (q.type === 'locked' && !unlocked) {
-                        cls = "opacity-50 border-slate-700";
+                        cls = "opacity-50 ";
                         act = `window.promptUnlock('${q.id}')`;
                     }
                     else if (q.type === 'locked' && unlocked) {
-                        cls = "border-emerald-500";
+                        cls = "";
                     }
                     else if (q.type === 'weekly' && today !== 5 && !window.playerState.isAdmin) { 
-                        cls = "opacity-50 border-slate-700"; 
+                        cls = "opacity-50 "; 
                         act = `window.customAlert('금요일에만 가능합니다!')`; 
                     }
                     
                     let ext = '';
-                    if (q.id === 'q1') ext = `<span class="quest-tile-extra">🔥${window.playerState.earlyBirdCount || 0}/5</span>`;
+                    if (q.id === 'q1') ext = `<span class="quest-tile-extra">${window.playerState.earlyBirdCount || 0}/5</span>`;
                     const tileIcon = done
-                        ? 'fa-check'
-                        : (q.type === 'locked' && unlocked ? 'fa-unlock' : (q.icon || 'fa-star'));
+                        ? 'check'
+                        : (q.type === 'locked' && unlocked ? 'unlock' : (q.icon || 'star'));
                     const tileIconColor = done
-                        ? (q.type === 'daily' ? 'text-cyan-300' : 'text-sb-blue')
-                        : (q.type === 'locked' && unlocked ? 'text-emerald-400' : (q.color || 'text-slate-300'));
+                        ? (q.type === 'daily' ? '' : '')
+                        : (q.type === 'locked' && unlocked ? '' : (q.color || ''));
                     const tileTitle = escapeHtmlAttr(`${q.name}${q.desc ? ' · ' + q.desc : ''}`);
 
                     return `
-                    <button type="button" title="${tileTitle}" onclick="${act}" class="quest-tile bg-slate-800/50 touch-manipulation ${cls}">
-                        <span class="quest-tile-icon ${tileIconColor}"><i class="fa-solid ${tileIcon}"></i></span>
-                        <span class="quest-tile-name ${done ? 'text-slate-300' : q.color}">${q.name}${ext}</span>
-                        <span class="quest-tile-pay"><span class="text-sb-blue">+${q.xp}X</span> <span class="text-sb-gold">+${formatBongAmount(q.bong)}</span></span>
+                    <button type="button" title="${tileTitle}" onclick="${act}" class="oly-btn oly-btn-secondary oly-btn-md quest-tile touch-manipulation ${cls}">
+                        <span class="quest-tile-icon ${tileIconColor}"><svg class="oly-icon" data-oly="${tileIcon}" viewBox="0 0 24 24" aria-hidden="true"></svg></span>
+                        <span class="quest-tile-name ${done ? '' : q.color}">${q.name}${ext}</span>
+                        <span class="quest-tile-pay"><span class="">+${q.xp}X</span> <span class="">+${formatBongAmount(q.bong)}</span></span>
                     </button>`;
                 }).join('');
             };
@@ -24048,8 +24369,7 @@ ${subjectLine}
                     const isEquipped = window.playerState.equippedSkins[skin.id];
                     
                     if (isOwned) {
-                        item.classList.replace('unaffordable', 'affordable'); 
-                        item.classList.add('border-pink-500');
+                        item.classList.replace('unaffordable', 'affordable');
                         const refundB = getEquippedSkinRefundBong(skin);
                         const canRefundEquipped =
                             isEquipped
@@ -24059,13 +24379,12 @@ ${subjectLine}
                         status.innerHTML = isEquipped
                             ? (canRefundEquipped
                                 ? `<div class="flex flex-col items-end gap-1">
-                                    <span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>
-                                    <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${formatBongAmount(refundB)}</button>
+                                    <span class="text-12   px-2 py-1 rounded">장착중</span>
+                                    <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="oly-btn oly-btn-reward oly-btn-sm">환불 ${formatBongAmount(refundB)}</button>
                                    </div>`
-                                : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>')
-                            : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
+                                : '<span class="text-12   px-2 py-1 rounded">장착중</span>')
+                            : '<span class="text-12 border   px-2 py-1 rounded">보유중</span>';
                     } else {
-                        item.classList.remove('border-pink-500');
                         const lv = calculateExactLevel(window.playerState.xp || 0);
                         const levelOk = !skin.minLevel || window.playerState.isAdmin || lv >= skin.minLevel;
                         if ((window.playerState.bong >= skin.price && levelOk) || window.playerState.isAdmin) { 
@@ -24073,7 +24392,7 @@ ${subjectLine}
                         } else { 
                             item.classList.replace('affordable', 'unaffordable'); 
                         }
-                        status.innerHTML = `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}${skin.minLevel ? `<div class="text-[8px] text-slate-400">Lv.${skin.minLevel}</div>` : ''}</div>`;
+                        status.innerHTML = `<div class="  px-2 py-1 rounded border text-12 font-bold">${formatBongAmount(skin.price)}${skin.minLevel ? `<div class="text-12 ">Lv.${skin.minLevel}</div>` : ''}</div>`;
                     }
                 }
             });
@@ -24087,12 +24406,12 @@ ${subjectLine}
                         let stockDiv = item.querySelector('.stock-display');
                         if (!stockDiv) {
                             stockDiv = document.createElement('div');
-                            stockDiv.className = 'stock-display text-[10px] font-bold mt-0.5';
+                            stockDiv.className = 'stock-display text-12 font-bold mt-0.5';
                             const fg = item.querySelector('.flex-grow');
                             if (fg) fg.appendChild(stockDiv);
                         }
                         stockDiv.innerText = stock <= 0 ? '(품절)' : `(남은재고: ${stock}개)`;
-                        stockDiv.className = stock <= 0 ? 'stock-display text-[10px] font-bold mt-0.5 text-red-400' : 'stock-display text-[10px] font-bold mt-0.5 text-indigo-300';
+                        stockDiv.className = stock <= 0 ? 'stock-display text-12 font-bold mt-0.5 ' : 'stock-display text-12 font-bold mt-0.5 ';
                         
                         if ((window.playerState.bong >= eff || window.playerState.isAdmin) && stock > 0) { 
                             item.classList.replace('unaffordable', 'affordable'); 
@@ -24113,13 +24432,13 @@ ${subjectLine}
                             let limitDiv = item.querySelector('.shop-daily-limit');
                             if (!limitDiv) {
                                 limitDiv = document.createElement('div');
-                                limitDiv.className = 'shop-daily-limit text-[10px] font-bold mt-0.5';
+                                limitDiv.className = 'shop-daily-limit text-12 font-bold mt-0.5';
                                 const fg = item.querySelector('.flex-grow');
                                 if (fg) fg.appendChild(limitDiv);
                             }
                             if (window.playerState.isAdmin) {
                                 limitDiv.innerText = '(마스터 무제한)';
-                                limitDiv.className = 'shop-daily-limit text-[10px] font-bold mt-0.5 text-slate-500';
+                                limitDiv.className = 'shop-daily-limit text-12 font-bold mt-0.5 ';
                             } else {
                                 const used = getShopDailyPurchaseUsed(window.playerState, shop.id);
                                 const remain = getShopDailyPurchaseRemaining(window.playerState, shop.id);
@@ -24130,8 +24449,8 @@ ${subjectLine}
                                         : `(오늘 ${cap}회 모두 사용)`;
                                 limitDiv.className =
                                     remain > 0
-                                        ? 'shop-daily-limit text-[10px] font-bold mt-0.5 text-amber-300'
-                                        : 'shop-daily-limit text-[10px] font-bold mt-0.5 text-red-400';
+                                        ? 'shop-daily-limit text-12 font-bold mt-0.5 '
+                                        : 'shop-daily-limit text-12 font-bold mt-0.5 ';
                             }
                         }
                     }
@@ -24147,10 +24466,10 @@ ${subjectLine}
                     const lines = arr.slice(-5).reverse().map((entry) => {
                         const d = entry.at ? new Date(entry.at) : null;
                         const ds = d && !isNaN(d.getTime()) ? `${d.getMonth() + 1}/${d.getDate()}` : '';
-                        const songPart = entry.songTitle ? ` · 🎵 ${escapeConvenienceHtml(String(entry.songTitle).slice(0, 24))}` : '';
-                        return `<div class="flex justify-between gap-2"><span class="text-pink-300/90 truncate">${entry.name || entry.id}${songPart}</span><span class="text-slate-500 shrink-0">${ds} · ${formatBongAmount(entry.price)}</span></div>`;
+                        const songPart = entry.songTitle ? ` ·  ${escapeConvenienceHtml(String(entry.songTitle).slice(0, 24))}` : '';
+                        return `<div class="flex justify-between gap-2"><span class=" truncate">${entry.name || entry.id}${songPart}</span><span class=" shrink-0">${ds} · ${formatBongAmount(entry.price)}</span></div>`;
                     });
-                    logEl.innerHTML = '<div class="text-[10px] text-slate-500 font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
+                    logEl.innerHTML = '<div class="text-12  font-bold mb-1">최근 학급 활동 예약</div>' + lines.join('');
                     logEl.classList.remove('hidden');
                 } else {
                     logEl.innerHTML = '';
@@ -24182,9 +24501,19 @@ ${subjectLine}
             if (typeof refreshSchoolWeather === 'function') void refreshSchoolWeather(false);
             if (typeof syncSchoolWeatherSearchUi === 'function') syncSchoolWeatherSearchUi();
             if (typeof renderMarketTicker === 'function') renderMarketTicker();
-            if (canRunBankSideEffects) {
+            if (canRunBankSideEffects && window._worldEntered && !isGuestSession()) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
+            }
+            renderNoticeInbox();
+            if (isGuestSession()) {
+                document.body.classList.add('is-guest');
+                if (window._guestDemoActive) document.body.classList.add('is-guest-demo');
+                const adminTab = document.getElementById('tab-admin');
+                const settingsTab = document.getElementById('tab-settings');
+                if (adminTab) adminTab.classList.add('hidden');
+                if (settingsTab) settingsTab.classList.add('hidden');
+                maskGuestWriteControls(document);
             }
         }
 
@@ -24222,49 +24551,72 @@ ${subjectLine}
 
 
         // ==========================================
-        // ★ 로그인, 식권 구매 및 데이터 저장 로직 ★
+        //  로그인, 식권 구매 및 데이터 저장 로직 
         // ==========================================
-        document.getElementById('btnLogin').onclick = () => {
+        window.submitStudentLogin = function() {
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
         };
+        window.submitTeacherLogin = function() {
+            attemptLogin(
+                document.getElementById('loginIdTeacher')?.value,
+                document.getElementById('loginPinTeacher')?.value,
+                false
+            );
+        };
+        const btnLoginEl = document.getElementById('btnLogin');
+        if (btnLoginEl && btnLoginEl.dataset.loginBridge !== '1') btnLoginEl.onclick = () => window.submitStudentLogin();
         const btnLoginTeacher = document.getElementById('btnLoginTeacher');
-        if (btnLoginTeacher) {
-            btnLoginTeacher.onclick = () => {
-                attemptLogin(
-                    document.getElementById('loginIdTeacher')?.value,
-                    document.getElementById('loginPinTeacher')?.value,
-                    false
-                );
-            };
-        }
+        if (btnLoginTeacher && btnLoginTeacher.dataset.loginBridge !== '1') btnLoginTeacher.onclick = () => window.submitTeacherLogin();
         const btnApplyClass = document.getElementById('btnApplyClass');
-        if (btnApplyClass) btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
-        if (typeof window.setLoginMode === 'function') window.setLoginMode('student');
+        if (btnApplyClass && btnApplyClass.dataset.loginBridge !== '1') btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
+        if (!document.body.dataset.loginMode && typeof window.setLoginMode === 'function') window.setLoginMode('student');
         
-        window.loginAsGuest = function() {
-            window.playerState = { 
-                xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
-                jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
-                ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
-                inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, gearEnhance: { wp1: 1 }, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
-                dragonBalls: [], dragonBallWeekendKey: '',
-                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
-                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
-                catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
-                isGuest: true, isGM: false, isGMA: false, isAdmin: false 
-            };
-            
-            document.getElementById('loginOverlay').style.opacity = '0'; 
-            setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
-            document.getElementById('saveStatus').classList.replace('hidden', 'flex');
-            document.getElementById('playerNameDisplay').innerText = "손님"; 
-            document.getElementById('cloudIcon').className = "fa-solid fa-eye-slash text-slate-400";
-            
+        window.loginAsGuest = async function() {
+            window._guestDemoActive = true;
+            document.body.classList.add('is-guest', 'is-guest-demo');
+            stopClassRealtime();
+            _deferredNotices = [];
+            _noticeInbox = [];
+            window._deferredScreenNotice = null;
+            clearStrayOverlays();
+            dismissLoginOverlay();
+            try { if (auth) await signOut(auth); } catch (_) { /* 세션이 없어도 데모는 계속 */ }
+            window.classMeta = buildGuestDemoClassMeta();
+            syncNameGenderMaps();
+            window.allStudentsData = buildGuestDemoStudents();
+            window.gmData = buildGuestDemoTeacher();
+            window.estateState = { seats: [], layout: { rows: 2, cols: 4 } };
+            window.playerState = buildGuestPlayerState();
+            const navLabel = document.getElementById('navClassLabel');
+            if (navLabel) navLabel.textContent = '데모 반 · 시즌 1';
+            const banner = document.getElementById('guestDemoBanner');
+            if (banner) banner.hidden = false;
+            window._worldEntered = true;
+            const saveStatus = document.getElementById('saveStatus');
+            if (saveStatus) {
+                saveStatus.classList.remove('hidden');
+                saveStatus.classList.add('flex');
+            }
+            const nameEl = document.getElementById('playerNameDisplay');
+            if (nameEl) nameEl.textContent = '구경꾼';
+            const cloudIcon = document.getElementById('cloudIcon');
+            if (cloudIcon) { cloudIcon.setAttribute('data-oly', 'eye'); cloudIcon.setAttribute('class', 'oly-icon'); }
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
-            updateUI(); 
-            window.switchTab('plaza');
+            watchGuestWriteControls();
+            window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
+            updateUI();
+            window.switchTab('dashboard');
+            renderShopCatalog();
+            maskGuestWriteControls(document);
         };
         
+        window.loginAsSomeoneElse = function() {
+            localStorage.removeItem('sambong_student_id');
+            localStorage.removeItem('sambong_student_pin');
+            window._switchUser = true;
+            location.reload();
+        };
+
         window.logout = async function() { 
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
             if(isOk) {
@@ -24281,17 +24633,17 @@ ${subjectLine}
         function promptMyPasswordChange(costLabel) {
             return new Promise((resolve) => {
                 const d = document.createElement('div');
-                d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
+                d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center  px-4';
                 d.innerHTML = `
-                    <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-3 shadow-2xl">
-                        <h3 class="text-xl font-display text-sb-gold">비밀번호 변경</h3>
-                        <p class="text-xs text-slate-300 leading-relaxed">숫자 4자리로 바꿉니다. 바꾸면 ${costLabel}이 차감됩니다.</p>
-                        <input type="password" data-pin="current" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="현재 비밀번호" class="w-full bg-slate-800 text-white rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
-                        <input type="password" data-pin="next" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" placeholder="새 비밀번호" class="w-full bg-slate-800 text-white rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
-                        <input type="password" data-pin="confirm" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" placeholder="새 비밀번호 확인" class="w-full bg-slate-800 text-white rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
+                    <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-3 shadow-2xl">
+                        <h3 class="text-24 font-display ">비밀번호 변경</h3>
+                        <p class="text-12  leading-relaxed">숫자 4자리로 바꿉니다. 바꾸면 ${costLabel}이 차감됩니다.</p>
+                        <input type="password" data-pin="current" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="현재 비밀번호" class="w-full   rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
+                        <input type="password" data-pin="next" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" placeholder="새 비밀번호" class="w-full   rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
+                        <input type="password" data-pin="confirm" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" placeholder="새 비밀번호 확인" class="w-full   rounded-xl px-4 py-2 text-center font-bold tracking-[0.4em]">
                         <div class="flex gap-3 pt-1">
-                            <button type="button" data-act="no" class="bg-slate-700 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">취소</button>
-                            <button type="button" data-act="yes" class="bg-emerald-500 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">변경</button>
+                            <button type="button" data-act="no" class="oly-btn oly-btn-secondary oly-btn-md w-full">취소</button>
+                            <button type="button" data-act="yes" class="oly-btn oly-btn-primary oly-btn-md w-full">변경</button>
                         </div>
                     </div>`;
                 document.body.appendChild(d);
@@ -24309,7 +24661,7 @@ ${subjectLine}
 
         window.changeMyPassword = async function() {
             if (!window.playerState || window.playerState.isGuest) {
-                return await window.customAlert('👀 게스트는 비밀번호를 바꿀 수 없어요.');
+                return await window.customAlert(' 게스트는 비밀번호를 바꿀 수 없어요.');
             }
             if (window.playerState.isAdmin) {
                 return await window.customAlert('마스터 PIN은 학급 관리에서 바꿔 주세요.');
@@ -24334,9 +24686,9 @@ ${subjectLine}
             });
             if (!planned.ok) {
                 const messages = {
-                    guest: '👀 게스트는 비밀번호를 바꿀 수 없어요.',
+                    guest: ' 게스트는 비밀번호를 바꿀 수 없어요.',
                     admin: '마스터 PIN은 학급 관리에서 바꿔 주세요.',
-                    current: '❌ 현재 비밀번호가 틀렸어요.',
+                    current: ' 현재 비밀번호가 틀렸어요.',
                     format: '새 비밀번호는 숫자 4자리여야 해요.',
                     mismatch: '새 비밀번호 확인이 같지 않아요.',
                     same: '지금과 같은 비밀번호로는 바꿀 수 없어요.',
@@ -24366,12 +24718,16 @@ ${subjectLine}
             }
             localStorage.setItem('sambong_student_pin', planned.pin);
             updateUI();
-            await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
+            await window.customAlert(` 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
 
         async function attemptLogin(studentId, pin, isAutoLogin) {
+            const stopAutoResume = () => {
+                if (isAutoLogin && typeof window.revealLoginForm === 'function') window.revealLoginForm();
+            };
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
                 return;
             }
@@ -24379,20 +24735,24 @@ ${subjectLine}
                 await auth.authStateReady();
                 if (!auth.currentUser) await signInAnonymously(auth);
             } catch (e) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
                 return;
             }
             if (!auth.currentUser) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
                 return;
             }
             try {
                 await auth.currentUser.getIdToken();
             } catch (e) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
                 return;
             }
             if (!studentId) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('이름(학번)을 선택해 주세요.');
                 return;
             }
@@ -24407,7 +24767,10 @@ ${subjectLine}
                 
                 if (data) {
                     if (!data.pin) {
-                        if (isAutoLogin) return; 
+                        if (isAutoLogin) {
+                            stopAutoResume();
+                            return;
+                        } 
                         const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                         if(!isOk) return; 
                         data.pin = pin; 
@@ -24420,10 +24783,13 @@ ${subjectLine}
                             location.reload();
                             return;
                         }
-                        return await window.customAlert("❌ 비밀번호가 틀렸어요!");
+                        return await window.customAlert(" 비밀번호가 틀렸어요!");
                     }
                 } else {
-                    if (isAutoLogin) return; 
+                    if (isAutoLogin) {
+                        stopAutoResume();
+                        return;
+                    } 
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
@@ -24452,11 +24818,17 @@ ${subjectLine}
                 window._suppressXpSyncToast = true;
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1200);
                 
-                document.getElementById('loginOverlay').style.opacity = '0'; 
-                setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
-                document.getElementById('saveStatus').classList.replace('hidden', 'flex');
-                document.getElementById('playerNameDisplay').innerText = STUDENT_NAMES[studentId];
-                document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue";
+                dismissLoginOverlay();
+                const saveStatus = document.getElementById('saveStatus');
+                if (saveStatus) saveStatus.classList.replace('hidden', 'flex');
+                const nameEl = document.getElementById('playerNameDisplay');
+                if (nameEl) nameEl.innerText = STUDENT_NAMES[studentId] || '';
+                const cloudIcon = document.getElementById('cloudIcon');
+                if (cloudIcon) {
+                    cloudIcon.setAttribute('data-oly', 'cloud');
+                    cloudIcon.setAttribute('class', 'oly-icon');
+                }
+                enterWorld();
                 
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
@@ -24464,6 +24836,7 @@ ${subjectLine}
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
             } catch (e) { 
+                stopAutoResume();
                 await window.customAlert("에러: " + e.message); 
             }
         }
@@ -24880,7 +25253,7 @@ ${subjectLine}
         }
 
         window.submitLunchBid = async function() {
-            if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
             if (window.playerState.isAdmin) return window.customAlert("선생님은 식권 경매에 참여할 수 없습니다.");
             if (!db || !currentStudentDocRef) return window.customAlert('서버 연결 후 다시 시도해 주세요.');
 
@@ -24924,7 +25297,7 @@ ${subjectLine}
                     const rankHint = rankOpen
                         ? '밥줄 탭 순위에서 확인할 수 있어요.'
                         : '순위는 낮 12시 10분에 공개됩니다. 투자 칸에 오늘 넣은 금액이 바로 보입니다.';
-                    await window.customAlert(`✅ 결제 완료!\n오늘 총 ${formatBongAmount(window.playerState.lunchBid.amount)}를 썼습니다.\n${rankHint}`);
+                    await window.customAlert(` 결제 완료!\n오늘 총 ${formatBongAmount(window.playerState.lunchBid.amount)}를 썼습니다.\n${rankHint}`);
                     inputEl.value = '';
                 } catch (e) {
                     if (e && e.message === 'reserve') {
@@ -24937,7 +25310,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
+        //  퀘스트, 아이템, 무기 및 부동산 로직 
         // ==========================================
 
         /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구 — 시드(데모) 학급·기본 4×4 전용 */
@@ -25009,7 +25382,7 @@ ${subjectLine}
                 at: Date.now()
             });
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
-            window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
+            window.customAlert(` ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
         };
 
         window.toggleSeatLock = async function(seatId) {
@@ -25027,7 +25400,7 @@ ${subjectLine}
         };
 
         /**
-         * ★ 마스터: 자리 관리 모달 ★
+         *  마스터: 자리 관리 모달 
          * 자리를 클릭하면 주인 변경·삭제(매물 전환), 가격 조정, 잠금/해제를 한 곳에서 처리.
          * ※ 봉(B) 정산은 자동으로 하지 않음(필요 시 마스터 탭에서 직접 조정).
          */
@@ -25048,30 +25421,30 @@ ${subjectLine}
                 .join('');
 
             const d = document.createElement('div');
-            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center  px-4';
             d.innerHTML = `
-                <div class="bg-sb-panel p-5 sm:p-6 rounded-3xl border border-teal-500/50 max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
-                    <h3 class="text-lg font-display text-teal-300 text-center">🪑 ${seatId + 1}번 자리 관리</h3>
-                    <p class="text-[10px] text-slate-400 text-center leading-relaxed">
-                        현재 주인: <strong class="text-white">${escapeHtmlGb(ownerName)}</strong>
+                <div class=" p-5 sm:p-6 rounded-3xl border  max-w-sm w-full space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-20 font-display  text-center"> ${seatId + 1}번 자리 관리</h3>
+                    <p class="text-12  text-center leading-relaxed">
+                        현재 주인: <strong class="">${escapeHtmlGb(ownerName)}</strong>
                         · 임시 배치: ${escapeHtmlGb(assignName)}
-                        · 상태: ${unused ? '<span class="text-slate-400 font-bold">사용 안 함</span>' : (seat.locked ? '<span class="text-rose-400 font-bold">잠김</span>' : '<span class="text-emerald-300 font-bold">열림</span>')}
+                        · 상태: ${unused ? '<span class=" font-bold">사용 안 함</span>' : (seat.locked ? '<span class=" font-bold">잠김</span>' : '<span class=" font-bold">열림</span>')}
                     </p>
-                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-2">
-                        <input type="checkbox" id="estAdminUnused" ${unused ? 'checked' : ''} class="rounded border-slate-600">
+                    <label class="flex items-center gap-2 text-12  font-bold  border  rounded-xl px-3 py-2">
+                        <input type="checkbox" id="estAdminUnused" ${unused ? 'checked' : ''} class="rounded ">
                         <span>이 자리 사용 안 함 (통로·빈칸)</span>
                     </label>
-                    <label class="block text-[10px] text-slate-300 font-bold">자리 주인
-                        <select id="estAdminOwner" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
+                    <label class="block text-12  font-bold">자리 주인
+                        <select id="estAdminOwner" class="mt-1 w-full  border   px-2 py-2 rounded text-12" ${unused ? 'disabled' : ''}>${ownerOptions}</select>
                     </label>
-                    <label class="block text-[10px] text-slate-300 font-bold">가격 (${getCurrencyUnit()})
-                        <input type="number" id="estAdminPrice" min="0" step="1" value="${Number(seat.price) || 0}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs" ${unused ? 'disabled' : ''}>
+                    <label class="block text-12  font-bold">가격 (${getCurrencyUnit()})
+                        <input type="number" id="estAdminPrice" min="0" step="1" value="${Number(seat.price) || 0}" class="mt-1 w-full  border   px-2 py-2 rounded text-12" ${unused ? 'disabled' : ''}>
                     </label>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">※ 주인 변경·삭제 시 ${getCurrencyUnit()}은(는) 자동 정산되지 않습니다. 「사용 안 함」이면 주인·임시 배치가 해제됩니다.</p>
+                    <p class="text-12  leading-relaxed">※ 주인 변경·삭제 시 ${getCurrencyUnit()}은(는) 자동 정산되지 않습니다. 「사용 안 함」이면 주인·임시 배치가 해제됩니다.</p>
                     <div class="flex gap-2 flex-wrap">
-                        <button type="button" id="estAdminSave" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs">저장</button>
-                        <button type="button" id="estAdminLock" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600 ${unused ? 'opacity-40 pointer-events-none' : ''}">${seat.locked ? '🔓 잠금 해제' : '🔒 잠금'}</button>
-                        <button type="button" id="estAdminCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold py-2.5 px-3 rounded-xl text-xs border border-slate-600">취소</button>
+                        <button type="button" id="estAdminSave" class="oly-btn oly-btn-primary oly-btn-md flex-1">저장</button>
+                        <button type="button" id="estAdminLock" class="oly-btn oly-btn-secondary oly-btn-md ${unused ? 'opacity-40 pointer-events-none' : ''}">${seat.locked ? ' 잠금 해제' : ' 잠금'}</button>
+                        <button type="button" id="estAdminCancel" class="oly-btn oly-btn-secondary oly-btn-md">취소</button>
                     </div>
                 </div>`;
             document.body.appendChild(d);
@@ -25149,7 +25522,7 @@ ${subjectLine}
                 try {
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
                     window.renderEstate();
-                    await window.customAlert(`✅ ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
+                    await window.customAlert(` ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
                 } catch (e) {
                     console.error('openEstateSeatAdmin save', e);
                     await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -25216,7 +25589,7 @@ ${subjectLine}
                 } else if (seatOrder.length > placeCount) {
                     tail = `\n\n※ 빈 자리 ${seatOrder.length - placeCount}칸은 비워 두었습니다.`;
                 }
-                await window.customAlert(`🔀 자리 랜덤 배치 완료!\n배치: ${placeCount}명${tail}`);
+                await window.customAlert(` 자리 랜덤 배치 완료!\n배치: ${placeCount}명${tail}`);
             } catch (e) {
                 console.error('shuffleEstateSeatAssignments', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -25270,11 +25643,11 @@ ${subjectLine}
                 layout: built.layout,
                 purchaseHistory: prevHistory,
             });
-            window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록·배열 설정은 보존되었습니다.)");
+            window.customAlert(" 부동산 전체 자리가 초기화되었습니다. (구매 기록·배열 설정은 보존되었습니다.)");
         };
 
         /**
-         * ★ 마스터: 자리 배열(행·열·사용 안 함) 편집 ★
+         *  마스터: 자리 배열(행·열·사용 안 함) 편집 
          * 표 만들듯이 행/열을 정하고, 미리보기에서 안 쓰는 칸을 토글한다.
          */
         window.openEstateLayoutEditor = function() {
@@ -25299,33 +25672,33 @@ ${subjectLine}
             })();
 
             const d = document.createElement('div');
-            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-3 py-4';
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center  px-3 py-4';
             d.innerHTML = `
-                <div class="bg-sb-panel p-4 sm:p-6 rounded-3xl border border-teal-500/50 max-w-xl w-full space-y-3 shadow-2xl max-h-[92vh] overflow-y-auto">
-                    <h3 class="text-lg font-display text-teal-300 text-center"><i class="fa-solid fa-table-cells"></i> 자리 배열 설정</h3>
-                    <p class="text-[10px] text-slate-400 text-center leading-relaxed">행·열을 입력한 뒤, 미리보기에서 칸을 눌러 「사용 안 함」(통로·빈자리)을 지정하세요.</p>
+                <div class=" p-4 sm:p-6 rounded-3xl border  max-w-xl w-full space-y-3 shadow-2xl max-h-[92vh] overflow-y-auto">
+                    <h3 class="text-20 font-display  text-center"><svg class="oly-icon" data-oly="table-cells" viewBox="0 0 24 24" aria-hidden="true"></svg> 자리 배열 설정</h3>
+                    <p class="text-12  text-center leading-relaxed">행·열을 입력한 뒤, 미리보기에서 칸을 눌러 「사용 안 함」(통로·빈자리)을 지정하세요.</p>
                     <div class="grid grid-cols-3 gap-2">
-                        <label class="text-[10px] text-slate-300 font-bold">행
-                            <input type="number" id="estLayoutRows" min="1" max="12" value="${draftRows}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs font-bold text-center">
+                        <label class="text-12  font-bold">행
+                            <input type="number" id="estLayoutRows" min="1" max="12" value="${draftRows}" class="mt-1 w-full  border   px-2 py-2 rounded text-12 font-bold text-center">
                         </label>
-                        <label class="text-[10px] text-slate-300 font-bold">열
-                            <input type="number" id="estLayoutCols" min="1" max="12" value="${draftCols}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs font-bold text-center">
+                        <label class="text-12  font-bold">열
+                            <input type="number" id="estLayoutCols" min="1" max="12" value="${draftCols}" class="mt-1 w-full  border   px-2 py-2 rounded text-12 font-bold text-center">
                         </label>
-                        <label class="text-[10px] text-slate-300 font-bold">새 자리 가격
-                            <input type="number" id="estLayoutPrice" min="0" step="1" value="${defaultPrice}" class="mt-1 w-full bg-slate-900 border border-slate-600 text-white px-2 py-2 rounded text-xs font-bold text-center">
+                        <label class="text-12  font-bold">새 자리 가격
+                            <input type="number" id="estLayoutPrice" min="0" step="1" value="${defaultPrice}" class="mt-1 w-full  border   px-2 py-2 rounded text-12 font-bold text-center">
                         </label>
                     </div>
-                    <label class="flex items-center gap-2 text-[10px] text-slate-300 font-bold bg-slate-900/50 border border-slate-700 rounded-xl px-3 py-2">
-                        <input type="checkbox" id="estLayoutKeep" checked class="rounded border-slate-600">
+                    <label class="flex items-center gap-2 text-12  font-bold  border  rounded-xl px-3 py-2">
+                        <input type="checkbox" id="estLayoutKeep" checked class="rounded ">
                         <span>기존 주인·가격·잠금 유지 (겹치는 번호만)</span>
                     </label>
-                    <div class="text-center text-[9px] text-slate-500 bg-slate-950/60 rounded-lg py-1.5 border border-slate-700">칠판 (앞)</div>
+                    <div class="text-center text-12   rounded-lg py-1.5 border ">칠판 (앞)</div>
                     <div id="estLayoutPreview" class="grid gap-1.5"></div>
-                    <p id="estLayoutSummary" class="text-[10px] text-teal-200/90 font-bold text-center"></p>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">※ 배열을 줄여 사라지는 자리에 주인이 있으면 해당 소유는 해제됩니다(자동 환불 없음).</p>
+                    <p id="estLayoutSummary" class="text-12  font-bold text-center"></p>
+                    <p class="text-12  leading-relaxed">※ 배열을 줄여 사라지는 자리에 주인이 있으면 해당 소유는 해제됩니다(자동 환불 없음).</p>
                     <div class="flex gap-2">
-                        <button type="button" id="estLayoutApply" class="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs">적용·저장</button>
-                        <button type="button" id="estLayoutCancel" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-4 rounded-xl text-xs border border-slate-600">취소</button>
+                        <button type="button" id="estLayoutApply" class="oly-btn oly-btn-primary oly-btn-md flex-1">적용·저장</button>
+                        <button type="button" id="estLayoutCancel" class="oly-btn oly-btn-secondary oly-btn-md">취소</button>
                     </div>
                 </div>`;
             document.body.appendChild(d);
@@ -25348,11 +25721,7 @@ ${subjectLine}
                 let html = '';
                 for (let i = 0; i < total; i++) {
                     const off = draftHidden.has(i);
-                    html += `<button type="button" data-est-idx="${i}" class="min-h-[44px] rounded-lg border text-[10px] font-bold transition ${
-                        off
-                            ? 'bg-slate-900/70 border-dashed border-slate-600 text-slate-500'
-                            : 'bg-teal-900/40 border-teal-500/70 text-teal-100 hover:border-teal-300'
-                    }">${off ? '×' : (i + 1)}</button>`;
+                    html += `<button type="button" data-est-idx="${i}" class="oly-btn oly-btn-primary oly-btn-md transition ${ off ? '' : ' ' }">${off ? '×' : (i + 1)}</button>`;
                 }
                 preview.innerHTML = html;
                 const active = total - draftHidden.size;
@@ -25414,7 +25783,7 @@ ${subjectLine}
                         purchaseHistory: prevHistory,
                     });
                     d.remove();
-                    await window.customAlert(`✅ 자리 배열을 저장했습니다.\n${draftRows}행 × ${draftCols}열`);
+                    await window.customAlert(` 자리 배열을 저장했습니다.\n${draftRows}행 × ${draftCols}열`);
                 } catch (e) {
                     console.error('openEstateLayoutEditor', e);
                     await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -25427,7 +25796,7 @@ ${subjectLine}
         };
 
         window.equipGear = async function(gearId) {
-            if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
             window.playerState.inventory = sanitizeGearInventory(window.playerState.inventory);
             window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
@@ -25458,13 +25827,13 @@ ${subjectLine}
             const lv = gearEnhanceOf(window.playerState, dropped);
             await window.customAlert(
                 applied.duplicate
-                    ? `🎁 [${slotName} 중복]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] 갯수만 늘어납니다. 추가 경험치·봉은 없습니다.\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요.`
-                    : `🎉 [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요. 같은 칸을 탭하면 장착합니다.`
+                    ? ` [${slotName} 중복]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] 갯수만 늘어납니다. 추가 경험치·봉은 없습니다.\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요.`
+                    : ` [${slotName} 획득!]\n[${(g && g.emoji) || ''} ${(g && g.name) || dropped}] ${(g && g.desc) || ''}\n보유 ${n}개 · ${lv}단계\n같은 아이템이 2개면 강화할 수 있어요. 같은 칸을 탭하면 장착합니다.`
             );
         }
 
         window.attemptQuest = async function(qId, xp, bong) {
-            if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window.playerState.isGuest) return await window.customAlert(" 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
             if (window._questActionRunning) return;
             if (studentIsCreditDefault(window.playerState)) {
@@ -25545,22 +25914,22 @@ ${subjectLine}
                 window.playerState.dailyAllClearBonusDate = todayStrBonus;
                 window.playerState.xp += DAILY_ALL_CLEAR_XP;
                 window.playerState.bong = normalizeBongValue(window.playerState.bong + DAILY_ALL_CLEAR_BONG);
-                dailyAllClearMsg = `🌟 [일일 퀘스트 전부 완료!]\n보너스 경험치 +${DAILY_ALL_CLEAR_XP} XP · 삼봉 +${DAILY_ALL_CLEAR_BONG} B\n\n`;
+                dailyAllClearMsg = ` [일일 퀘스트 전부 완료!]\n보너스 경험치 +${DAILY_ALL_CLEAR_XP} XP · 삼봉 +${DAILY_ALL_CLEAR_BONG} B\n\n`;
             }
 
             const newLv = getLevelInfo(window.playerState.xp).index;
 
-            let alertMsg = `✅ [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongAmount(finalBong)}`;
+            let alertMsg = ` [${qName}] 완료!\n경험치 +${finalXp} XP · 삼봉 +${formatBongAmount(finalBong)}`;
             if (dailyAllClearMsg) alertMsg = dailyAllClearMsg.trim() + '\n\n' + alertMsg;
-            if (isEarlyBirdJackpot) alertMsg += `\n\n🎊 [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`;
-            if (buffAmount > 0 && weaponProc && weaponProc.weapon) alertMsg += `\n\n🗡️ [${weaponProc.weapon.name}] 발동! 추가 경험치 +${buffAmount} XP`;
+            if (isEarlyBirdJackpot) alertMsg += `\n\n [금요일 보너스]\n월~금 성실 등교 완주! 보너스 20 XP 지급!`;
+            if (buffAmount > 0 && weaponProc && weaponProc.weapon) alertMsg += `\n\n [${weaponProc.weapon.name}] 발동! 추가 경험치 +${buffAmount} XP`;
 
             if (newLv > oldLv) {
                 const bonus = newLv * 3;
                 window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + bonus);
                 const newRank = LEVEL_DATA[newLv] || LEVEL_DATA[LEVEL_DATA.length - 1];
                 const look = resolveRankLook(newRank.name);
-                alertMsg += `\n\n🎉 등급이 [${newRank.name}]이 되었어요!\n${look.hint}\n보너스 자산 [${formatBongAmount(bonus)}]를 드립니다!`;
+                alertMsg += `\n\n 등급이 [${newRank.name}]이 되었어요!\n${look.hint}\n보너스 자산 [${formatBongAmount(bonus)}]를 드립니다!`;
                 showRankUpCelebrate(newRank, look);
             }
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
@@ -25598,13 +25967,13 @@ ${subjectLine}
             }
         };
 
-        // ★ 버그 수정: 퀘스트 취소 시 UI 초기화 기능 개선
+        //  버그 수정: 퀘스트 취소 시 UI 초기화 기능 개선
         window.cancelQuest = async function(qId, xp, bong) {
             if (window.playerState.isGuest) return;
             if (shouldIgnoreAccidentalPointer()) return;
             if (window._questActionRunning) return;
             const rewardBong = catalogQuestRewards(getQuestCatalog().find((q) => q.id === qId), xp, bong).bong;
-            const isOk = await window.customConfirm("퀘스트를 취소할까요?\n⚠️ 수수료(1 B)가 깎여요.");
+            const isOk = await window.customConfirm("퀘스트를 취소할까요?\n 수수료(1 B)가 깎여요.");
             
             if (isOk) {
                 if (qId === 'q1') window.playerState.earlyBirdCount = Math.max(0, (window.playerState.earlyBirdCount || 1) - 1);
@@ -25868,8 +26237,8 @@ ${subjectLine}
             playSfx('bong', result >= 50);
 
             const floater = document.createElement('div');
-            floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center max-w-[95vw] px-2`;
-            floater.innerHTML = `🎁<br>총 ${formatBongAmount(result)}<br><span class="text-lg sm:text-2xl font-bold">비율 분배 완료</span>`;
+            floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-48 sm:text-48 font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_var(--gold)]  whitespace-nowrap text-center max-w-[95vw] px-2`;
+            floater.innerHTML = `<br>총 ${formatBongAmount(result)}<br><span class="text-20 sm:text-24 font-bold">비율 분배 완료</span>`;
             document.body.appendChild(floater);
             setTimeout(() => floater.remove(), 2500);
 
@@ -25888,11 +26257,11 @@ ${subjectLine}
             else if (result < target) tail = `\n\n모둠 순손실: ${formatBongAmount(Math.abs(profit))}`;
             else tail = `\n\n모둠 본전 (총 당첨 = 목표 ${formatBongAmount(target)})`;
 
-            await window.customAlert(`🎁 공동구매 랜덤 박스 결과: 총 ${formatBongAmount(result)}\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
+            await window.customAlert(` 공동구매 랜덤 박스 결과: 총 ${formatBongAmount(result)}\n\n출자 비율로 나눠 넣었어요:\n${lines}${mine}${tail}`);
         }
 
         window.buyLottoTicket = async function () {
-            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isGuest) return await window.customAlert(' 게스트는 이용할 수 없어요.');
             if (!db || !currentStudentDocRef) return await window.customAlert('서버 연결 후 다시 시도해 주세요.');
             if (!isLottoPurchaseOpen()) {
                 // 마스터는 구매 시간 밖에서도 확인 후 구매 가능(테스트·시연용)
@@ -25988,7 +26357,7 @@ ${subjectLine}
                 }
                 playSfx('bong', true);
                 updateUI();
-                await window.customAlert(`🎟️ 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: ${formatBongAmount(savedLotto && savedLotto.poolB || 0)}`);
+                await window.customAlert(` 로또 구매 완료!\n내 번호: ${formatLottoNumbers(numbers)}\n이번 회차 누적: ${formatBongAmount(savedLotto && savedLotto.poolB || 0)}`);
             } catch (e) {
                 console.error('buyLottoTicket', e);
                 const msg = String(e && e.message ? e.message : e);
@@ -26126,7 +26495,7 @@ ${subjectLine}
             const groupEx = opts && opts.groupBuyExecute === true;
             const price = getEffectiveShopPrice(id);
             const currentShopItem = getShopItemById(id);
-            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isGuest) return await window.customAlert(' 게스트는 이용할 수 없어요.');
             if (groupEx && id === 'item_mystery_dice') return;
             if (id === LOTTO_SHOP_ID) return await window.buyLottoTicket();
 
@@ -26154,8 +26523,8 @@ ${subjectLine}
                 playSfx('bong', result >= 50);
 
                 const floater = document.createElement('div');
-                floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-5xl sm:text-6xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(251,191,36,1)] text-yellow-400 whitespace-nowrap text-center`;
-                floater.innerHTML = `🎁<br>${formatBongAmount(result)} 당첨!`;
+                floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-48 sm:text-48 font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_var(--gold)]  whitespace-nowrap text-center`;
+                floater.innerHTML = `<br>${formatBongAmount(result)} 당첨!`;
                 document.body.appendChild(floater);
                 setTimeout(() => floater.remove(), 2500);
 
@@ -26172,9 +26541,9 @@ ${subjectLine}
                     return;
                 }
 
-                if (result > price) await window.customAlert(`🎉 대박! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!\n(수익: +${formatBongAmount(result - price)})`);
-                else if (result === price) await window.customAlert(`🎁 본전! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!`);
-                else await window.customAlert(`💦 아쉽네요! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!\n(손해: ${formatBongAmount(result - price)})`);
+                if (result > price) await window.customAlert(` 대박! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!\n(수익: +${formatBongAmount(result - price)})`);
+                else if (result === price) await window.customAlert(` 본전! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!`);
+                else await window.customAlert(` 아쉽네요! 랜덤 박스 결과: [ ${formatBongAmount(result)} ] 획득!\n(손해: ${formatBongAmount(result - price)})`);
                 return;
             }
 
@@ -26200,7 +26569,7 @@ ${subjectLine}
                 const pick = await window.customPick1to6(`1~6 중에 하나를 선택하세요. (맞추면 ${formatBongAmount(bet * 5)})`);
                 if (pick === null) return;
 
-                const ok = await window.customConfirm(`🎲 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${formatBongAmount(bet)}\n- 성공 보상: ${formatBongAmount(bet * 5)}`);
+                const ok = await window.customConfirm(` 주사위를 굴릴까요?\n- 선택: ${pick}\n- 투자: ${formatBongAmount(bet)}\n- 성공 보상: ${formatBongAmount(bet * 5)}`);
                 if (!ok) return;
 
                 if (!window.playerState.isAdmin) window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - bet);
@@ -26225,13 +26594,13 @@ ${subjectLine}
                 }
 
                 const floater = document.createElement('div');
-                floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-4xl sm:text-5xl font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_rgba(16,185,129,0.9)] text-emerald-400 whitespace-nowrap text-center`;
-                floater.innerHTML = `🎲 ${roll}<br>${win ? `성공! +${formatBongAmount(payout)}` : `실패... (-${formatBongAmount(bet)})`}`;
+                floater.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-48 sm:text-48 font-black z-[9999] animate-bounce drop-shadow-[0_0_20px_color-mix(in srgb, var(--sky-deep) 90%, transparent)]  whitespace-nowrap text-center`;
+                floater.innerHTML = ` ${roll}<br>${win ? `성공! +${formatBongAmount(payout)}` : `실패... (-${formatBongAmount(bet)})`}`;
                 document.body.appendChild(floater);
                 setTimeout(() => floater.remove(), 2500);
 
-                if (win) return await window.customAlert(`🎉 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${formatBongAmount(payout)}\n(순이익: +${formatBongAmount(payout - bet)})`);
-                return await window.customAlert(`💦 실패!\n선택: ${pick}\n주사위: ${roll}\n손해: -${formatBongAmount(bet)}`);
+                if (win) return await window.customAlert(` 성공!\n선택: ${pick}\n주사위: ${roll}\n보상: +${formatBongAmount(payout)}\n(순이익: +${formatBongAmount(payout - bet)})`);
+                return await window.customAlert(` 실패!\n선택: ${pick}\n주사위: ${roll}\n손해: -${formatBongAmount(bet)}`);
             }
 
             if (id === 'item_xp_pack') {
@@ -26257,7 +26626,7 @@ ${subjectLine}
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : packPrice, requireServerBongBalance: !groupEx, operationLabel: '경험치 팩 구매' });
                 if (!saved) return;
-                return await window.customAlert(`⚡ 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
+                return await window.customAlert(` 경험치 팩 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
             if (currentShopItem && currentShopItem.custom && currentShopItem.effect === 'xp') {
@@ -26283,7 +26652,7 @@ ${subjectLine}
                 updateUI();
                 const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, operationLabel: '경험치 아이템 구매' });
                 if (!saved) return;
-                return await window.customAlert(`⚡ ${currentShopItem.name} 사용!\n+${gainXp} XP 획득했습니다.`);
+                return await window.customAlert(` ${currentShopItem.name} 사용!\n+${gainXp} XP 획득했습니다.`);
             }
 
             if (isClassShopId(id)) {
@@ -26307,7 +26676,7 @@ ${subjectLine}
                         return await window.customAlert(formatInsufficientBongAlert(eff - (Number(window.playerState.bong) || 0)));
                     }
                     const confirmMsg = String(id) === MUSIC_TIME_SHOP_ID && musicSongTitle
-                        ? `[${shop.name}] ${formatBongAmount(eff)}를 내고 신청곡을 등록할까요?\n\n🎵 ${musicSongTitle}\n\n삼봉은 즉시 차감되며, 신청곡 리스트에 추가됩니다.`
+                        ? `[${shop.name}] ${formatBongAmount(eff)}를 내고 신청곡을 등록할까요?\n\n ${musicSongTitle}\n\n삼봉은 즉시 차감되며, 신청곡 리스트에 추가됩니다.`
                         : `[${shop.name}] ${formatBongAmount(eff)}를 내고 학급 활동 예약을 할까요?\n` + '삼봉은 즉시 차감되며, 진행은 담임 선생님과 일정을 맞춰 주세요.';
                     const ok = await window.customConfirm(confirmMsg);
                     if (!ok) return;
@@ -26337,7 +26706,7 @@ ${subjectLine}
                         const modal = document.getElementById('musicTimeQueueModal');
                         if (modal && !modal.classList.contains('hidden')) renderMusicTimeQueueModalBody();
                         return await window.customAlert(
-                            `✅ [${shop.name}] 신청 완료!\n\n🎵 ${musicSongTitle}\n\n신청곡 리스트에 추가되었어요.\n「신청곡 리스트 보기」에서 확인할 수 있습니다.`
+                            ` [${shop.name}] 신청 완료!\n\n ${musicSongTitle}\n\n신청곡 리스트에 추가되었어요.\n「신청곡 리스트 보기」에서 확인할 수 있습니다.`
                         );
                     } catch (e) {
                         console.error('appendMusicTimeRequest', e);
@@ -26346,13 +26715,13 @@ ${subjectLine}
                         );
                     }
                 }
-                return await window.customAlert(`✅ [${shop.name}] 구매가 기록되었습니다!\n선생님께 일정을 요청해 주세요.\n(아래 '최근 학급 활동 예약'에 남습니다)`);
+                return await window.customAlert(` [${shop.name}] 구매가 기록되었습니다!\n선생님께 일정을 요청해 주세요.\n(아래 '최근 학급 활동 예약'에 남습니다)`);
             }
 
             if (isConsumable) {
                 if (groupEx && id === 'item_shield') {
                     const currentStock = getShieldStockNow();
-                    if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
+                    if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert(' 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
                     const hp = shieldHpOf(window.playerState);
                     window.playerState.shieldHP = hp + 100;
                     window.playerState.hasShield = false;
@@ -26361,14 +26730,14 @@ ${subjectLine}
                     updateUI();
                     const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: groupEx ? 0 : price, requireServerBongBalance: !groupEx, allowShieldPurchase: true, operationLabel: '방패 구매' });
                     if (!saved) return;
-                    return await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
+                    return await window.customAlert(` 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                 }
 
                 if (window.playerState.bong >= price || window.playerState.isAdmin) {
                     let cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?`;
                     if (id === 'item_shield') {
                         const currentStock = getShieldStockNow();
-                        if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert('❌ 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
+                        if (currentStock <= 0 && !window.playerState.isAdmin) return await window.customAlert(' 현재 품절되었습니다! 마스터가 재입고해야 합니다.');
                         const hp = shieldHpOf(window.playerState);
                         cMsg = `[${name}] 아이템을 ${formatBongAmount(price)}에 살까요?\n경험치 차감만 막습니다(봉과 무관).\n(현재 방패 내구도: ${hp} / 남은 재고: ${currentStock}개)`;
                     }
@@ -26387,7 +26756,7 @@ ${subjectLine}
                             updateUI();
                             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, allowShieldPurchase: true, operationLabel: '방패 구매' });
                             if (!saved) return;
-                            await window.customAlert(`🛡️ 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
+                            await window.customAlert(` 방패 충전 완료!\n현재 방패 내구도: ${window.playerState.shieldHP}`);
                         } else {
                             updateUI();
                             const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: price, requireServerBongBalance: true, operationLabel: '아이템 구매' });
@@ -26398,7 +26767,7 @@ ${subjectLine}
             } else {
                 const msg =
                     window.playerState.bong >= price || window.playerState.isAdmin
-                        ? '🎉 [구매 가능] 선생님께 말씀해주세요!'
+                        ? ' [구매 가능] 선생님께 말씀해주세요!'
                         : formatInsufficientBongAlert(price - (Number(window.playerState.bong) || 0));
                 await window.customAlert(msg);
             }
@@ -26423,7 +26792,7 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shopPrices, customShopItems }, { merge: true });
-                await window.customAlert('✅ 아이템 상점 가격이 저장되었습니다.');
+                await window.customAlert(' 아이템 상점 가격이 저장되었습니다.');
             } catch (e) {
                 console.error('saveShopPricesAdmin', e);
                 await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -26458,8 +26827,8 @@ ${subjectLine}
                 name,
                 desc: desc || (type === 'xp' ? `${xpReward} XP 지급` : '마스터 추가 학급 활동'),
                 price,
-                icon: type === 'xp' ? 'fa-bolt' : 'fa-ticket',
-                iconColor: type === 'xp' ? 'text-amber-300' : 'text-cyan-300',
+                icon: type === 'xp' ? 'bolt' : 'ticket',
+                iconColor: type === 'xp' ? '' : '',
                 isConsumable: type === 'xp',
                 custom: true,
                 effect: type,
@@ -26479,7 +26848,7 @@ ${subjectLine}
                 window.globalSettings.shopPrices = shopPrices;
                 renderShopCatalog();
                 renderShopManagementAdminPanel();
-                await window.customAlert('✅ 새 상점 아이템이 추가되었습니다.');
+                await window.customAlert(' 새 상점 아이템이 추가되었습니다.');
             } catch (e) {
                 console.error('addCustomShopItemAdmin', e);
                 await window.customAlert('아이템 추가 실패: ' + (e && e.message ? e.message : String(e)));
@@ -26524,8 +26893,8 @@ ${subjectLine}
             const desc = descEl ? String(descEl.value || '').trim() : '';
             const xp = Math.min(CUSTOM_QUEST_XP_MAX, Math.max(0, Math.floor(Number(xpEl ? xpEl.value : 0) || 0)));
             const bong = normalizeBongValue(Math.max(0, Number(bongEl ? bongEl.value : 0) || 0));
-            const icon = iconEl && iconEl.value ? String(iconEl.value).trim() : 'fa-star';
-            const color = colorEl ? String(colorEl.value || 'text-emerald-300') : 'text-emerald-300';
+            const icon = iconEl && iconEl.value ? String(iconEl.value).trim() : 'star';
+            const color = colorEl ? String(colorEl.value || '') : '';
             if (!name) return await window.customAlert('퀘스트 이름을 입력해 주세요.');
             if (!['daily', 'weekly', 'locked'].includes(type)) return await window.customAlert('퀘스트 종류가 올바르지 않습니다.');
             const baseId = name
@@ -26632,20 +27001,29 @@ ${subjectLine}
             setGmJobLookFormValues(icon, color);
             const previewIcon = document.getElementById('gmJobLookPreviewIcon');
             const previewLabel = document.getElementById('gmJobLookPreviewLabel');
-            if (previewIcon) previewIcon.className = `fa-solid ${icon} text-2xl ${color} w-8 text-center`;
+            if (previewIcon) {
+                previewIcon.setAttribute('class', 'oly-icon');
+                previewIcon.setAttribute('data-oly', icon);
+                if (typeof window.olyIcon === 'function') {
+                    const holder = document.createElement('div');
+                    holder.innerHTML = window.olyIcon(icon);
+                    const drawn = holder.querySelector('svg');
+                    if (drawn) previewIcon.innerHTML = drawn.innerHTML;
+                }
+            }
             if (previewLabel) previewLabel.textContent = `${jobIconLabel(icon)} · ${jobColorLabel(color)}`;
             const attr = (value) => String(value).replace(/'/g, '');
             iconGrid.innerHTML = jobIconChoicesForPicker(icon).map((item) => {
                 const taken = used.icons.has(item.class) && item.class !== icon;
                 const selected = item.class === icon;
                 const title = taken ? `${item.label} (다른 직업이 사용 중)` : item.label;
-                return `<button type="button" class="gm-job-icon-btn${selected ? ' is-selected' : ''}" ${taken ? 'disabled' : ''} title="${title}" aria-label="${title}" onclick="window.selectGmJobIcon('${attr(item.class)}')"><i class="fa-solid ${item.class}"></i></button>`;
+                return `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md gm-job-icon-btn ${selected ? ' is-selected' : ''}" ${taken ? 'disabled' : ''} title="${title}" aria-label="${title}" onclick="window.selectGmJobIcon('${attr(item.class)}')"><svg class="oly-icon" data-oly="${item.class}" viewBox="0 0 24 24" aria-hidden="true"></svg></button>`;
             }).join('');
             colorGrid.innerHTML = jobColorChoicesForPicker(color).map((item) => {
                 const taken = used.colors.has(item.class) && item.class !== color;
                 const selected = item.class === color;
                 const title = taken ? `${item.label} (다른 직업이 사용 중)` : item.label;
-                return `<button type="button" class="gm-job-color-btn ${item.class}${selected ? ' is-selected' : ''}" ${taken ? 'disabled' : ''} title="${title}" aria-label="${title}" onclick="window.selectGmJobColor('${attr(item.class)}')"><span class="gm-job-color-swatch"></span></button>`;
+                return `<button type="button" class="oly-btn oly-btn-secondary oly-btn-md gm-job-color-btn ${item.class} ${selected ? ' is-selected' : ''}" ${taken ? 'disabled' : ''} title="${title}" aria-label="${title}" onclick="window.selectGmJobColor('${attr(item.class)}')"><span class="gm-job-color-swatch"></span></button>`;
             }).join('');
         }
 
@@ -26804,14 +27182,14 @@ ${subjectLine}
         };
 
         window.openShopGroupBuyModal = function (shopId) {
-            if (window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isGuest) return window.customAlert(' 게스트는 이용할 수 없어요.');
             if (window.playerState.isAdmin) return window.customAlert('학생만 공동구매에 참여할 수 있어요.');
             if (shopId === 'item_mystery_dice') return;
             window._groupBuyModalShopId = shopId;
             const shop = getShopItemById(shopId);
             const title = document.getElementById('shopGroupBuyModalTitle');
             const hint = document.getElementById('shopGroupBuyModalHint');
-            if (title) title.innerHTML = `<i class="fa-solid fa-people-group text-cyan-400"></i> 공동구매 · ${shop ? shop.name : shopId}`;
+            if (title) title.innerHTML = `<svg class="oly-icon" data-oly="people-group" viewBox="0 0 24 24" aria-hidden="true"></svg> 공동구매 · ${shop ? shop.name : shopId}`;
             if (hint) {
                 hint.textContent = shop
                     ? shopId === 'item_random'
@@ -26853,9 +27231,9 @@ ${subjectLine}
                     .sort((a, b) => b.amt - a.amt);
                 listEl.innerHTML =
                     rows.length === 0
-                        ? '<div class="text-slate-500 text-center py-2">아직 입금 내역이 없어요.</div>'
+                        ? '<div class=" text-center py-2">아직 입금 내역이 없어요.</div>'
                         : rows
-                              .map((r) => `<div class="flex justify-between gap-2"><span class="text-slate-200">${r.nm}</span><span class="text-cyan-300 font-bold tabular-nums">${formatBongAmount(r.amt)}</span></div>`)
+                              .map((r) => `<div class="flex justify-between gap-2"><span class="">${r.nm}</span><span class=" font-bold tabular-nums">${formatBongAmount(r.amt)}</span></div>`)
                               .join('');
             }
             const myId =
@@ -26880,7 +27258,7 @@ ${subjectLine}
 
         window.openShopGroupBuyStatusPanel = function () {
             if (!window.playerState || window.playerState.isGuest) {
-                return window.customAlert('👀 게스트는 이용할 수 없어요.');
+                return window.customAlert(' 게스트는 이용할 수 없어요.');
             }
             if (window.playerState.isGM) return window.openShopGroupBuyAdminModal();
             return window.openShopGroupBuyStudentOverviewModal();
@@ -26912,20 +27290,20 @@ ${subjectLine}
                     const myId = localStorage.getItem('sambong_student_id');
                     const myAmt = myId ? mergedContribs[String(myId)] || 0 : 0;
                     return `
-                        <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                        <div class="rounded-xl border   p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <div class="font-bold text-white">${shop.name}</div>
-                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${formatBongAmount(target)} (${pct}%)</div>
+                                <div class="font-bold ">${shop.name}</div>
+                                <div class=" font-black tabular-nums">${sum} / ${formatBongAmount(target)} (${pct}%)</div>
                             </div>
-                            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
-                                <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
+                            <div class="h-1.5 rounded-full  overflow-hidden mb-2">
+                                <div class="h-full bg-gradient-to-r  " style="width:${pct}%"></div>
                             </div>
-                            <div class="text-[9px] text-slate-400">${myAmt > 0 ? `내 입금 <span class="text-cyan-300 font-bold">${formatBongAmount(myAmt)}</span>` : '내 입금 없음'}</div>
-                            <button type="button" onclick="window.openShopGroupBuyModal('${shop.id}')" class="mt-2 w-full bg-cyan-900/70 hover:bg-cyan-800 text-cyan-100 font-bold py-1.5 px-2 rounded text-[9px] border border-cyan-600">이 상품 공동구매 열기</button>
+                            <div class="text-12 ">${myAmt > 0 ? `내 입금 <span class=" font-bold">${formatBongAmount(myAmt)}</span>` : '내 입금 없음'}</div>
+                            <button type="button" onclick="window.openShopGroupBuyModal('${shop.id}')" class="oly-btn oly-btn-primary oly-btn-sm mt-2 w-full">이 상품 공동구매 열기</button>
                         </div>`;
                 });
 
-            body.innerHTML = rows.join('') || '<div class="text-center text-slate-500 py-6">조회할 공동구매 항목이 없습니다.</div>';
+            body.innerHTML = rows.join('') || '<div class="text-center  py-6">조회할 공동구매 항목이 없습니다.</div>';
         };
 
         window.openShopGroupBuyAdminModal = function () {
@@ -26973,32 +27351,32 @@ ${subjectLine}
                         .filter((r) => r.amount > 0)
                         .sort((a, b) => b.amount - a.amount);
                     const contributors = contributorRows.length === 0
-                        ? '<div class="text-slate-500">입금 없음</div>'
+                        ? '<div class="">입금 없음</div>'
                         : contributorRows.map((r) => `<div class="flex flex-wrap items-center justify-between gap-2">
                             <span>${r.name}</span>
-                            <span class="text-cyan-300 font-bold">${formatBongAmount(r.amount)}</span>
+                            <span class=" font-bold">${formatBongAmount(r.amount)}</span>
                             <div class="flex gap-1 w-full sm:w-auto">
-                                <input type="number" id="gb_admin_refund_${shop.id}_${r.sid}" min="1" max="${r.amount}" step="1" placeholder="환불할 ${getCurrencyUnit()}" class="flex-1 sm:w-20 bg-slate-900 border border-slate-600 text-white px-2 py-1 rounded text-[9px] font-bold" />
-                                <button type="button" onclick="window.refundShopGroupBuyStudentAdmin('${shop.id}', '${r.sid}')" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-1 px-2 rounded text-[9px]">학생별 환불</button>
+                                <input type="number" id="gb_admin_refund_${shop.id}_${r.sid}" min="1" max="${r.amount}" step="1" placeholder="환불할 ${getCurrencyUnit()}" class="flex-1 sm:w-20  border   px-2 py-1 rounded text-12 font-bold" />
+                                <button type="button" onclick="window.refundShopGroupBuyStudentAdmin('${shop.id}', '${r.sid}')" class="oly-btn oly-btn-reward oly-btn-sm">학생별 환불</button>
                             </div>
                         </div>`).join('');
                     const lastSettleLine = pool.lastSettleAt
-                        ? `<div class="text-[9px] text-emerald-300/80 mt-1">마지막 구매처리 ${formatBongAmount(Number(pool.lastSettleOriginalTotal) || 0)} · ${new Date(Number(pool.lastSettleAt)).toLocaleString('ko-KR')}</div>`
+                        ? `<div class="text-12  mt-1">마지막 구매처리 ${formatBongAmount(Number(pool.lastSettleOriginalTotal) || 0)} · ${new Date(Number(pool.lastSettleAt)).toLocaleString('ko-KR')}</div>`
                         : '';
                     const settleBtn = sum > 0
-                        ? `<button type="button" onclick="void window.settleShopGroupBuyAdmin('${shop.id}')" class="mt-2 w-full bg-emerald-900/60 hover:bg-emerald-800 text-emerald-100 border border-emerald-700 font-bold py-1.5 px-2 rounded text-[9px]">구매처리 (환불 없음 · 목표 미달이어도 가능)</button>`
-                        : `<button type="button" disabled class="mt-2 w-full bg-slate-800 text-slate-600 border border-slate-700 font-bold py-1.5 px-2 rounded text-[9px] cursor-not-allowed">구매처리할 입금 없음</button>`;
+                        ? `<button type="button" onclick="void window.settleShopGroupBuyAdmin('${shop.id}')" class="oly-btn oly-btn-primary oly-btn-sm mt-2 w-full">구매처리 (환불 없음 · 목표 미달이어도 가능)</button>`
+                        : `<button type="button" disabled class="oly-btn oly-btn-secondary oly-btn-sm mt-2 w-full cursor-not-allowed">구매처리할 입금 없음</button>`;
                     const resetBtn = sum > 0
-                        ? `<button type="button" onclick="window.resetShopGroupBuyAdmin('${shop.id}')" class="mt-2 w-full bg-red-900/50 hover:bg-red-800 text-red-100 border border-red-800 font-bold py-1.5 px-2 rounded text-[9px]">10% 차감 환불 후 초기화</button>`
-                        : `<button type="button" disabled class="mt-2 w-full bg-slate-800 text-slate-600 border border-slate-700 font-bold py-1.5 px-2 rounded text-[9px] cursor-not-allowed">초기화할 입금 없음</button>`;
+                        ? `<button type="button" onclick="window.resetShopGroupBuyAdmin('${shop.id}')" class="oly-btn oly-btn-danger oly-btn-sm mt-2 w-full">10% 차감 환불 후 초기화</button>`
+                        : `<button type="button" disabled class="oly-btn oly-btn-secondary oly-btn-sm mt-2 w-full cursor-not-allowed">초기화할 입금 없음</button>`;
                     return `
-                        <div class="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+                        <div class="rounded-xl border   p-3">
                             <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                                <div class="font-bold text-white">${shop.name}</div>
-                                <div class="text-cyan-200 font-black tabular-nums">${sum} / ${formatBongAmount(target)} (${pct}%)</div>
+                                <div class="font-bold ">${shop.name}</div>
+                                <div class=" font-black tabular-nums">${sum} / ${formatBongAmount(target)} (${pct}%)</div>
                             </div>
-                            <div class="h-1.5 rounded-full bg-slate-800 overflow-hidden mb-2">
-                                <div class="h-full bg-gradient-to-r from-cyan-600 to-emerald-500" style="width:${pct}%"></div>
+                            <div class="h-1.5 rounded-full  overflow-hidden mb-2">
+                                <div class="h-full bg-gradient-to-r  " style="width:${pct}%"></div>
                             </div>
                             <div class="space-y-1">${contributors}</div>
                             ${lastSettleLine}
@@ -27007,7 +27385,7 @@ ${subjectLine}
                         </div>`;
                 });
 
-            body.innerHTML = rows.join('') || '<div class="text-center text-slate-500 py-6">조회할 공동구매 항목이 없습니다.</div>';
+            body.innerHTML = rows.join('') || '<div class="text-center  py-6">조회할 공동구매 항목이 없습니다.</div>';
         };
 
         window.contributeShopGroupBuy = async function () {
@@ -27130,7 +27508,7 @@ ${subjectLine}
                 const left = buildSanitizedContributionsMap(poolAfter.contributions)[String(myId)] || 0;
                 const poolSum = sumShopPoolContributions(poolAfter);
                 await window.customAlert(
-                    `♻️ 환불 완료! 지갑 +${formatBongAmount(result.refund)}\n` +
+                    ` 환불 완료! 지갑 +${formatBongAmount(result.refund)}\n` +
                     `모금에서 ${formatBongAmount(rawAmount)} 차감됨 · 현재 모금 ${formatBongAmount(poolSum)}` +
                     (left > 0 ? `\n내 남은 입금: ${formatBongAmount(left)}` : '\n내 입금은 모두 환불되었습니다.')
                 );
@@ -27387,7 +27765,7 @@ ${subjectLine}
         };
 
         window.toggleJob = async function(jobName, iconClass, colorClass, jobId) {
-            if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window.playerState.isGuest) return await window.customAlert(" 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
             if (window.playerState.isAdmin) {
                 return await window.customAlert('마스터는 직업 카드로 학생 직업을 달거나 벗깁니다.\n먼저 학생을 고른 뒤 카드를 눌러 주세요.');
@@ -27505,7 +27883,7 @@ ${subjectLine}
                     spark.style.left = '50%';
                     spark.style.top = '50%';
                     spark.style.animationDelay = `${(i % 7) * 0.025}s`;
-                    if (!success) spark.style.background = '#94a3b8';
+                    if (!success) spark.style.background = 'var(--sky)';
                     burst.appendChild(spark);
                 }
             }
@@ -27520,7 +27898,7 @@ ${subjectLine}
         }
 
         window.enhanceGear = async function(gearId) {
-            if (!window.playerState || window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert(' 게스트는 이용할 수 없어요.');
             if (shouldIgnoreAccidentalPointer()) return;
             const g = getGear(gearId);
             if (!g) return;
@@ -27555,13 +27933,13 @@ ${subjectLine}
             await playGearEnhanceFx(result.success, result.after);
             await window.customAlert(
                 result.success
-                    ? `✨ 강화 성공!\n[${g.name}] ${result.after}단계가 되었습니다.`
-                    : `💨 강화 실패…\n[${g.name}]이(가) 1단계로 돌아갔습니다.`
+                    ? ` 강화 성공!\n[${g.name}] ${result.after}단계가 되었습니다.`
+                    : ` 강화 실패…\n[${g.name}]이(가) 1단계로 돌아갔습니다.`
             );
         };
 
         window.refundEquippedSkin = async function(skinId) {
-            if (window.playerState.isGuest) return await window.customAlert('👀 게스트는 이용할 수 없어요.');
+            if (window.playerState.isGuest) return await window.customAlert(' 게스트는 이용할 수 없어요.');
             if (window.playerState.isAdmin) return await window.customAlert('마스터 계정은 환불 대상이 아닙니다.');
             if (window._skinRefundRunning) return;
             const skin = SKIN_DATA.find((s) => s.id === skinId);
@@ -27608,7 +27986,7 @@ ${subjectLine}
                 playSfx('bong', true);
                 updateUI();
                 await window.customAlert(
-                    `♻️ [${skin.name}] 환불 완료!\n+${formatBongAmount(refundB)}가 지급되었습니다.\n(장착 해제 및 삭제됨)`
+                    ` [${skin.name}] 환불 완료!\n+${formatBongAmount(refundB)}가 지급되었습니다.\n(장착 해제 및 삭제됨)`
                 );
                 window.switchTab('plaza');
             } catch (e) {
@@ -27655,7 +28033,7 @@ ${subjectLine}
         }
 
         window.handleSkin = async function(skinId, stayOnPage) {
-            if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window.playerState.isGuest) return await window.customAlert(" 게스트는 이용할 수 없어요.");
             const skin = SKIN_DATA.find(s => s.id === skinId);
             if (!skin) return;
             
@@ -27703,7 +28081,7 @@ ${subjectLine}
                         window.playerState.equippedSkins[skinId] = true;
                         if (window.playerState.isAdmin && skin.type === 'face') window.playerState.homeLookMode = 'student';
                         syncOwnCosmeticToPlazaCache();
-                        await window.customAlert(`🎉 획득 완료! 바로 ${kindLabel === '오라' ? '적용' : '내 캐릭터로 사용'}했어요.`); 
+                        await window.customAlert(` 획득 완료! 바로 ${kindLabel === '오라' ? '적용' : '내 캐릭터로 사용'}했어요.`); 
                         updateUI();
                         const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price, requireServerBongBalance: true, operationLabel: `${skin.name} ${kindLabel} 구매` });
                         if (!saved) return;
@@ -27733,8 +28111,8 @@ ${subjectLine}
                 const click = have
                     ? `onclick="window.handleSkin('${s.id}', true)"`
                     : `onclick="window.openSkinShop()"`;
-                return `<button type="button" ${click} class="char-dress-slot ${on ? 'is-on' : ''} ${have ? '' : 'opacity-60'}" title="${s.name}">
-                    <span class="char-dress-slot-art">${s.img ? `<img src="${s.img}" alt="">` : s.emoji}</span>
+                return `<button type="button" ${click} class="oly-btn oly-btn-secondary oly-btn-md char-dress-slot ${on ? 'is-on' : ''} ${have ? '' : 'opacity-60'}" title="${s.name}">
+                    <span class="char-dress-slot-art">${s.img ? `<img loading="lazy" decoding="async" src="${s.img}" alt="">` : s.emoji}</span>
                     <span class="char-dress-slot-name">${s.name}</span>
                     <span class="char-dress-slot-own">${on ? '사용 중' : have ? (owned[s.id] ? '보유' : '살펴보기') : `${s.price}`}${skinStatLabel(s.id) ? ` · ${skinStatLabel(s.id)}` : ''}</span>
                 </button>`;
@@ -27745,11 +28123,11 @@ ${subjectLine}
             const studentBases = window.playerState.isAdmin ? listAllCharacterBases() : listCharacterBases(gender);
             const baseOn = (b) => b.id === current.id && !faces.some((s) => equipped[s.id]) && (!window.playerState.isAdmin || window.playerState.homeLookMode === 'student');
             const studentBaseHtml = `
-                <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">기본 백성 (동양 · 서양 · 초원 · 무료)</p>
+                <p class="text-12  font-bold mb-1.5">기본 백성 (동양 · 서양 · 초원 · 무료)</p>
                 <div class="flex flex-wrap gap-1.5 justify-center">${studentBases.map((b) => {
                     const on = baseOn(b);
-                    return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
-                        <img src="${b.img}" alt="${b.name}">
+                    return `<button type="button" onclick="window.setBaseFace('${b.id}')" class="oly-btn oly-btn-secondary oly-btn-md base-face-btn ${on ? 'is-on' : ''}" title="${b.name}">
+                        <img loading="lazy" decoding="async" src="${b.img}" alt="${b.name}">
                         <span>${b.gender === 'F' ? '여 · ' : window.playerState.isAdmin ? '남 · ' : ''}${b.name}</span>
                     </button>`;
                 }).join('')}</div>`;
@@ -27758,15 +28136,15 @@ ${subjectLine}
                 const staffCurrent = resolveStaffLook(window.playerState.staffLookId, sid);
                 const looks = listStaffLooks();
                 staffHtml = `
-                    <p class="text-[10px] text-amber-100/80 font-bold mb-1.5">수호 캐릭터</p>
+                    <p class="text-12  font-bold mb-1.5">수호 캐릭터</p>
                     <div class="grid grid-cols-5 gap-1.5">${looks.map((b) => {
                         const on = b.id === staffCurrent.id && window.playerState.homeLookMode !== 'student';
-                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}${staffLookStatLabel(b.id) ? ` · ${staffLookStatLabel(b.id)}` : ''}">
-                            <img src="${b.img}" alt="${b.name}">
+                        return `<button type="button" onclick="window.setStaffLook('${b.id}')" class="oly-btn oly-btn-secondary oly-btn-md base-face-btn ${on ? 'is-on' : ''}" title="${b.name}${b.masterOnly ? ' · 마스터 전용' : ''}${staffLookStatLabel(b.id) ? ` · ${staffLookStatLabel(b.id)}` : ''}">
+                            <img loading="lazy" decoding="async" src="${b.img}" alt="${b.name}">
                             <span>${b.name}${b.masterOnly ? ' · 전용' : ''}</span>
                         </button>`;
                     }).join('')}</div>
-                    <p class="text-[9px] text-slate-400 mt-1.5 text-center">수호 캐릭터를 고르면 광장에 그 얼굴이 나옵니다. 상점 스킨을 착용하면 광장 카드도 그 스킨으로 바뀝니다.</p>`;
+                    <p class="text-12  mt-1.5 text-center">수호 캐릭터를 고르면 광장에 그 얼굴이 나옵니다. 상점 스킨을 착용하면 광장 카드도 그 스킨으로 바뀝니다.</p>`;
             }
             const rank = getLevelInfo(window.playerState.xp || 0).info;
             const look = resolveRankLook(rank.name);
@@ -27775,38 +28153,38 @@ ${subjectLine}
                 ${staffHtml}
                 ${studentBaseHtml}
                 <div class="char-dress-rank">
-                    ${rank.img ? `<span class="char-dress-rank-art${rank.ring ? ` char-rank-${rank.ring}` : ''}"><img src="${rank.img}" alt=""></span>` : ''}
+                    ${rank.img ? `<span class="char-dress-rank-art${rank.ring ? ` char-rank-${rank.ring}` : ''}"><img loading="lazy" decoding="async" src="${rank.img}" alt=""></span>` : ''}
                     <div>
                         <p class="char-dress-rank-title">등급 · ${rank.name}</p>
                         <p class="char-dress-rank-hint">${look.hint}</p>
-                        <p class="char-dress-rank-hint mt-0.5 text-slate-400">광장·홈 캐릭터 뒤 원형 테두리로 보여요.</p>
+                        <p class="char-dress-rank-hint mt-0.5 ">광장·홈 캐릭터 뒤 원형 테두리로 보여요.</p>
                     </div>
                 </div>
-                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">상점 캐릭터</p>
+                <p class="text-12  font-bold mt-2 mb-1">상점 캐릭터</p>
                 <div class="char-dress-grid">${faceHtml}</div>
-                <p class="text-[10px] text-amber-100/80 font-bold mt-2 mb-1">장비</p>
+                <p class="text-12  font-bold mt-2 mb-1">장비</p>
                 <div class="flex flex-wrap gap-1.5 justify-center">
                     <div class="char-dress-slot ${wp ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${wp ? (wp.img ? `<img loading="lazy" decoding="async" src="${wp.img}" alt="">` : wp.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${wp ? wp.name : '무기 미장착'}</span>
                     </div>
                     <div class="char-dress-slot ${shEq ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${shEq ? (shEq.img ? `<img src="${shEq.img}" alt="">` : shEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${shEq ? (shEq.img ? `<img loading="lazy" decoding="async" src="${shEq.img}" alt="">` : shEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${shEq ? shEq.name : '방패 미장착'}</span>
                     </div>
                     <div class="char-dress-slot ${shoeEq ? 'is-on' : ''}" style="max-width:7rem">
-                        <span class="char-dress-slot-art">${shoeEq ? (shoeEq.img ? `<img src="${shoeEq.img}" alt="">` : shoeEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
+                        <span class="char-dress-slot-art">${shoeEq ? (shoeEq.img ? `<img loading="lazy" decoding="async" src="${shoeEq.img}" alt="">` : shoeEq.emoji) : '<span class="char-dress-empty">+</span>'}</span>
                         <span class="char-dress-slot-name">${shoeEq ? shoeEq.name : '신발 미장착'}</span>
                     </div>
                 </div>
-                <button type="button" onclick="window.openSkinShop()" class="char-dress-shop-btn">캐릭터 상점으로</button>`;
+                <button type="button" onclick="window.openSkinShop()" class="oly-btn oly-btn-secondary oly-btn-md char-dress-shop-btn">캐릭터 상점으로</button>`;
         }
 
         function renderSkinVault() {
             const box = document.getElementById('skinVault');
             if (!box) return;
             if (!window.playerState || window.playerState.isGuest) {
-                box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">로그인하면 보유 스킨을 볼 수 있습니다.</span>';
+                box.innerHTML = '<span class="text-12  col-span-3">로그인하면 보유 스킨을 볼 수 있습니다.</span>';
                 return;
             }
             const owned = window.playerState.ownedSkins || {};
@@ -27815,19 +28193,19 @@ ${subjectLine}
                 ? SKIN_DATA.slice()
                 : SKIN_DATA.filter((s) => owned[s.id]);
             if (!have.length) {
-                box.innerHTML = '<span class="text-[10px] text-slate-300 col-span-3">아직 산 스킨이 없습니다. 상점에서 캐릭터를 사면 여기에 모입니다.</span>';
+                box.innerHTML = '<span class="text-12  col-span-3">아직 산 스킨이 없습니다. 상점에서 캐릭터를 사면 여기에 모입니다.</span>';
                 return;
             }
             box.innerHTML = have.map((s) => {
                 const on = !!equipped[s.id];
                 const mine = !!owned[s.id];
-                const art = s.img ? `<img src="${s.img}" alt="" class="w-full h-full object-contain">` : `<span class="text-2xl">${s.emoji || ''}</span>`;
+                const art = s.img ? `<img loading="lazy" decoding="async" src="${s.img}" alt="" class="w-full h-full object-contain">` : `<span class="text-24">${s.emoji || ''}</span>`;
                 const sub = on ? '사용 중' : (mine ? '보유' : '살펴보기');
-                return `<button type="button" onclick="window.handleSkin('${s.id}', true)" class="rounded-xl border-2 ${on ? 'border-yellow-300 bg-amber-900' : 'border-cyan-400 bg-slate-950'} p-1.5 text-center">
-                    <div class="w-full aspect-square rounded-lg overflow-hidden bg-amber-50 mb-1">${art}</div>
-                    <div class="text-[10px] font-black text-white truncate">${s.name}</div>
-                    <div class="text-[9px] font-bold ${on ? 'text-yellow-200' : 'text-cyan-200'}">${sub}</div>
-                    ${skinStatLabel(s.id) ? `<div class="text-[8px] text-emerald-300 font-bold truncate">${skinStatLabel(s.id)}</div>` : ''}
+                return `<button type="button" onclick="window.handleSkin('${s.id}', true)" class="oly-btn oly-btn-reward oly-btn-md ${on ? ' ' : ' '}">
+                    <div class="w-full aspect-square rounded-lg overflow-hidden  mb-1">${art}</div>
+                    <div class="text-12 font-black  truncate">${s.name}</div>
+                    <div class="text-12 font-bold ${on ? '' : ''}">${sub}</div>
+                    ${skinStatLabel(s.id) ? `<div class="text-12  font-bold truncate">${skinStatLabel(s.id)}</div>` : ''}
                 </button>`;
             }).join('');
         }
@@ -27843,7 +28221,7 @@ ${subjectLine}
             host.classList.remove('hidden');
             host.innerHTML = `
                 <div class="rank-up-card">
-                    ${rank && rank.img ? `<img src="${rank.img}" alt="">` : ''}
+                    ${rank && rank.img ? `<img loading="lazy" decoding="async" src="${rank.img}" alt="">` : ''}
                     <p class="rank-up-title">${rank && rank.name ? rank.name : '레벨업'} 달성!</p>
                     <p class="rank-up-hint">${(look && look.hint) || ''}</p>
                 </div>`;
@@ -27908,8 +28286,8 @@ ${subjectLine}
                 btn.classList.toggle('is-on', on);
                 btn.setAttribute('aria-pressed', on ? 'true' : 'false');
                 btn.innerHTML = on
-                    ? '<i class="fa-solid fa-eye"></i> 용의 눈 켜짐'
-                    : '<i class="fa-solid fa-eye-slash"></i> 용의 눈';
+                    ? '<svg class="oly-icon" data-oly="eye" viewBox="0 0 24 24" aria-hidden="true"></svg> 용의 눈 켜짐'
+                    : '<svg class="oly-icon" data-oly="eye-slash" viewBox="0 0 24 24" aria-hidden="true"></svg> 용의 눈';
             });
         }
 
@@ -27940,19 +28318,19 @@ ${subjectLine}
                 if (code !== "마스터J" && code !== masterBypass) {
                     if (!window.playerState.usedRaidPasswords) window.playerState.usedRaidPasswords = [];
                     if (window.playerState.usedRaidPasswords.includes(code)) {
-                        return await window.customAlert("❌ 이미 사용한 비밀번호입니다.\n비밀번호 하나당 하나의 레이드만 열 수 있습니다.");
+                        return await window.customAlert(" 이미 사용한 비밀번호입니다.\n비밀번호 하나당 하나의 레이드만 열 수 있습니다.");
                     }
                     window.playerState.usedRaidPasswords.push(code);
                 }
-                await window.customAlert("🔓 퀘스트가 열렸어요!");
+                await window.customAlert(" 퀘스트가 열렸어요!");
                 if(!window.playerState.unlockedQuests) window.playerState.unlockedQuests = {};
                 window.playerState.unlockedQuests[qId] = true; 
                 updateUI(); saveDataToCloud();
-            } else if (code !== null) await window.customAlert("❌ 비밀번호가 틀렸어요.");
+            } else if (code !== null) await window.customAlert(" 비밀번호가 틀렸어요.");
         };
 
         // ==========================================
-        // ★ 관리자 권한 도구 모음 (자동 경험치 포함) ★
+        //  관리자 권한 도구 모음 (자동 경험치 포함) 
         // ==========================================
         /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
         const STUDENT_GAME_FIELD_KEYS = [
@@ -28117,7 +28495,7 @@ ${subjectLine}
                 }
                 window.refreshSeason2StartPanel();
                 await window.customAlert(
-                    `✅ 시즌 2를 시작했습니다.\n정산 학생 ${paid.length}명 · 지급 봉 합계 ${formatBongAmount(totalBong)}.\n보유 무기는 모두 초기화되었습니다.\n목표: 1월 7일까지 ${SEASON2.targetXp.toLocaleString()} XP (퀘스트 약 ${SEASON2.questXpBudget.toLocaleString()} + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()}).`
+                    ` 시즌 2를 시작했습니다.\n정산 학생 ${paid.length}명 · 지급 봉 합계 ${formatBongAmount(totalBong)}.\n보유 무기는 모두 초기화되었습니다.\n목표: 1월 7일까지 ${SEASON2.targetXp.toLocaleString()} XP (퀘스트 약 ${SEASON2.questXpBudget.toLocaleString()} + 수업 부여 ${SEASON2.teacherXpBudget.toLocaleString()}).`
                 );
             } catch (e) {
                 console.error('startSeason2', e);
@@ -28489,7 +28867,7 @@ ${subjectLine}
 
             const label = stuName || STUDENT_NAMES[String(stuId)] || String(stuId);
             const ok = await window.customConfirm(
-                `⚠️ [${label}] 학생의 게임 데이터를 초기화할까요?\n\n` +
+                ` [${label}] 학생의 게임 데이터를 초기화할까요?\n\n` +
                 'XP·봉·퀘스트·은행·인벤토리·드래곤볼 등이 0/빈 값으로 돌아갑니다.\n' +
                 'PIN(비밀번호)은 유지됩니다.'
             );
@@ -28517,7 +28895,7 @@ ${subjectLine}
                     updateUI();
                 }
 
-                await window.customAlert(`✅ [${label}] 학생 데이터 초기화가 완료되었습니다.\n(직전 상태는 복구 버튼으로 되돌릴 수 있습니다.)`);
+                await window.customAlert(` [${label}] 학생 데이터 초기화가 완료되었습니다.\n(직전 상태는 복구 버튼으로 되돌릴 수 있습니다.)`);
             } catch (e) {
                 console.error('resetStudentData', e);
                 await window.customAlert('초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
@@ -28551,7 +28929,7 @@ ${subjectLine}
                 ? new Date(backup.savedAt).toLocaleString('ko-KR')
                 : '알 수 없음';
             const ok = await window.customConfirm(
-                `↩️ [${label}] 학생 데이터를 복구할까요?\n\n` +
+                ` [${label}] 학생 데이터를 복구할까요?\n\n` +
                 `복구 시점: ${savedLabel}\n` +
                 '초기화·실수 변경 직전 상태로 되돌립니다.'
             );
@@ -28572,7 +28950,7 @@ ${subjectLine}
                     updateUI();
                 }
 
-                await window.customAlert(`✅ [${label}] 학생 데이터 복구가 완료되었습니다.`);
+                await window.customAlert(` [${label}] 학생 데이터 복구가 완료되었습니다.`);
             } catch (e) {
                 console.error('restoreStudentData', e);
                 await window.customAlert('복구 중 오류: ' + (e && e.message ? e.message : String(e)));
@@ -28583,7 +28961,7 @@ ${subjectLine}
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             const classLabel = window.classMeta?.displayName || appId;
             const ok0 = await window.customConfirm(
-                '⚠️ [매우 위험] — 현재 학급만 초기화\n\n' +
+                ' [매우 위험] — 현재 학급만 초기화\n\n' +
                 `대상 학급: ${classLabel}\n` +
                 `(학급 ID: ${appId})\n\n` +
                 '이 학급 학생의 XP·봉·아이템·상태가 초기화됩니다.\n' +
@@ -28618,7 +28996,7 @@ ${subjectLine}
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: SHIELD_STOCK_DEFAULT }, { merge: true });
                     await batch.commit();
                 }, '학급 초기화');
-                await window.customAlert(`✅ 「${classLabel}」 학급 초기화가 완료되었습니다.\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.`);
+                await window.customAlert(` 「${classLabel}」 학급 초기화가 완료되었습니다.\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.`);
             } catch(e) {
                 window.customAlert("초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
             } finally {
@@ -28659,7 +29037,7 @@ ${subjectLine}
                     }
                     transaction.set(settingsRef, {
                         lastAutoXpTime: todayKey,
-                        announcement: `[${timeStr}] 수업 종료! 모든 학생에게 경험치 +5XP가 자동 지급되었습니다! 🎉`
+                        announcement: `[${timeStr}] 수업 종료! 모든 학생에게 경험치 +5XP가 자동 지급되었습니다! `
                     }, { merge: true });
                     return true;
                 });
@@ -28669,31 +29047,29 @@ ${subjectLine}
             }
 
             if (granted) {
-                window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${stuList.length}명에게 경험치 +5 자동 지급을 완료했습니다.`);
+                rememberNotice('수업 종료', `[${timeStr}] 수업 종료. 학생 ${stuList.length}명에게 경험치 +5 XP를 지급했습니다.`, `class-xp:${todayKey}`);
             }
         };
 
         window.checkAndDistributeSalary = async function() {
+            if (isGuestSession() || !window._worldEntered) return;
             if (!db || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
             const day = now.getDay();
             const hours = now.getHours();
 
-            /** 금요일 오후 3시(15:00) 이후부터 해당 주 주급 창구 오픈. 토·일은 직전 금요일분 정산. */
             const isFridayPayWindow = day === 5 && hours >= 15;
             const isPast = isFridayPayWindow || day === 6 || day === 0;
             if (!isPast) return;
 
-            let dDate = new Date(now);
+            const dDate = new Date(now);
             if (day === 6) dDate.setDate(now.getDate() - 1);
             else if (day === 0) dDate.setDate(now.getDate() - 2);
-            /** 정산 대상 금요일(또는 금요 당일)이 방학이면 주급 지급 안 함 */
             if (isVacationAutomationPaused('salary', dDate)) return;
 
             const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
-
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-            const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+            const stuList = window.allStudentsData.filter((s) => s.id !== 'gm' && s.id !== 'gm_a');
 
             try {
                 const paidCount = await runTransaction(db, async (transaction) => {
@@ -28717,7 +29093,7 @@ ${subjectLine}
                         if (pay > 0) {
                             const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
                             transaction.set(ref, { bong: increment(pay) }, { merge: true });
-                            count++;
+                            count += 1;
                         }
                     }
 
@@ -28726,7 +29102,7 @@ ${subjectLine}
                 });
 
                 if (paidCount != null && window.playerState && window.playerState.isGM) {
-                    window.customAlert(`💰 자동 주급 정산 완료! (${paidCount}명 지급)\n(금요 15:00 이후 · 서버 트랜잭션 1회)`);
+                    rememberNotice('주급', `자동 주급 정산 완료! (${paidCount}명 지급)\n금요 15:00 이후 · 서버 트랜잭션 1회`, `salary:${wId}`);
                 }
             } catch (e) {
                 console.warn('checkAndDistributeSalary', e);
@@ -28751,7 +29127,7 @@ ${subjectLine}
             window.playerState.lastLunchDeductDate = todayYmd;
             await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: 10 });
             updateUI();
-            await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
+            rememberNotice('점심값', `점심값으로 10${getCurrencyUnit()}가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시됩니다.\n(오늘 날짜 기준 1회만 적용)`, `lunch:${todayYmd}`);
         };
 
         // 이전 버전 호환용 (일괄 차감). 현재는 applyPersonalLunchDeductionIfNeeded 로 개별 처리합니다.
@@ -28787,8 +29163,8 @@ ${subjectLine}
             if (btnElement && typeof btnElement.getBoundingClientRect === 'function') {
                 const rect = btnElement.getBoundingClientRect();
                 const floater = document.createElement('div');
-                floater.className = `floating-text ${amount > 0 ? (type === 'xp' ? 'text-sb-blue' : 'text-yellow-400') : 'text-sb-red'}`;
-                floater.innerHTML = `${amount > 0 ? '+' : ''}${amount}<span class="text-[10px]">${type === 'xp' ? 'XP' : 'B'}</span>`;
+                floater.className = `floating-text ${amount > 0 ? (type === 'xp' ? '' : '') : ''}`;
+                floater.innerHTML = `${amount > 0 ? '+' : ''}${amount}<span class="text-12">${type === 'xp' ? 'XP' : 'B'}</span>`;
                 floater.style.left = `${rect.left + (rect.width / 2) - 15 + window.scrollX}px`;
                 floater.style.top = `${rect.top + window.scrollY - 10}px`;
                 document.body.appendChild(floater);
@@ -28850,7 +29226,7 @@ ${subjectLine}
                             window.showToast && window.showToast('장착 방패가 경험치 차감을 막았습니다.');
                         } else if (shielded.absorbed > 0) {
                             const left = shieldHpOf({ ...stu, ...shielded.updates });
-                            window.showToast && window.showToast(`🛡️ 절대 방패가 ${shielded.absorbed} XP를 막았습니다 (남은 내구 ${left})`);
+                            window.showToast && window.showToast(` 절대 방패가 ${shielded.absorbed} XP를 막았습니다 (남은 내구 ${left})`);
                         }
                     }
 
@@ -28931,7 +29307,7 @@ ${subjectLine}
                     window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
                     if (window.renderAdminTable) window.renderAdminTable(window.allStudentsData);
                 }
-                window.customAlert('✅ 일괄 지급 완료!');
+                window.customAlert(' 일괄 지급 완료!');
             } catch (e) {
                 console.error('bulkAdd', e);
                 await window.customAlert('일괄 지급 저장에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -28943,7 +29319,7 @@ ${subjectLine}
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const ok = await window.customConfirm(
                 type === 'xp'
-                    ? `모든 학생의 XP를 ${amount} 차감합니까?\n⚠️ 장착 방패가 확률로 막을 수 있고, 절대 방패 보유자는 경험치 대신 방패가 깎입니다.`
+                    ? `모든 학생의 XP를 ${amount} 차감합니까?\n 장착 방패가 확률로 막을 수 있고, 절대 방패 보유자는 경험치 대신 방패가 깎입니다.`
                     : `모든 학생의 B를 ${amount} 차감합니까?\n절대 방패는 봉 차감과 무관합니다.`
             );
             if(!ok) return;
@@ -29000,8 +29376,8 @@ ${subjectLine}
                 }
                 window.customAlert(
                     type === 'xp'
-                        ? `💥 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`
-                        : `💥 일괄 차감 완료\n피해: ${aCount}명\n(절대 방패는 봉과 무관합니다)`
+                        ? ` 일괄 차감 완료\n피해: ${aCount}명\n방패 방어: ${pCount}명`
+                        : ` 일괄 차감 완료\n피해: ${aCount}명\n(절대 방패는 봉과 무관합니다)`
                 );
             } catch (e) {
                 console.error('bulkDeduct', e);
@@ -29037,7 +29413,7 @@ ${subjectLine}
                 }
                 let msg = `[${stuName}] 경험치를 ${curNum} → ${val}(으)로 낮춥니다.\n비정상 상승·오류 수정용입니다.\n절대 방패가 있으면 경험치 대신 방패가 깎입니다.`;
                 if (questFloor > 0 && val < questFloor) {
-                    msg += `\n\n⚠ 퀘스트 기록 합계(${questFloor} XP)보다 낮습니다. 기록과 숫자가 어긋날 수 있어요.`;
+                    msg += `\n\n 퀘스트 기록 합계(${questFloor} XP)보다 낮습니다. 기록과 숫자가 어긋날 수 있어요.`;
                 }
                 const ok = await window.customConfirm(msg + '\n\n계속할까요?');
                 if (!ok) return;
@@ -29052,7 +29428,7 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 await adminSetStudentStat(stuId, type, val);
-                await window.customAlert('✅ 저장되었습니다.');
+                await window.customAlert(' 저장되었습니다.');
             } catch (e) {
                 console.error('editStudentStat', e);
                 const code = e && e.code ? String(e.code) : '';
@@ -29070,7 +29446,7 @@ ${subjectLine}
             const newPin = await window.customPrompt(`[${stuName}] 새 4자리 PIN 입력:`, "number");
             if (newPin && newPin.length === 4) { 
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { pin: newPin }, { merge: true }); 
-                window.customAlert("✅ 변경 완료"); 
+                window.customAlert(" 변경 완료"); 
             }
         };
 
@@ -29108,7 +29484,7 @@ ${subjectLine}
 
             try {
                 const r = await applyRaidResetToAllStudents();
-                await window.customAlert(`✅ 초기화 완료! (${r.count}명) 전담 레이드가 잠금으로 돌아갔습니다.`);
+                await window.customAlert(` 초기화 완료! (${r.count}명) 전담 레이드가 잠금으로 돌아갔습니다.`);
             } catch (e) {
                 console.error('resetRaids', e);
                 await window.customAlert('초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -29124,7 +29500,7 @@ ${subjectLine}
             try {
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(p) }, { merge: true });
                 const r = await applyRaidResetToAllStudents();
-                await window.customAlert(`✅ 비밀번호 변경 및 전담 레이드 초기화 완료! (학생 ${r.count}명 반영)`);
+                await window.customAlert(` 비밀번호 변경 및 전담 레이드 초기화 완료! (학생 ${r.count}명 반영)`);
             } catch (e) {
                 console.error('setRaidPassword', e);
                 await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -29143,7 +29519,7 @@ ${subjectLine}
                 if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(password) }, { merge: true });
                 const r = await applyRaidResetToAllStudents();
-                await window.customAlert(`✅ ${label} 완료!\n새 전담 레이드 비번: ${password}\n학생 ${r.count}명의 전담 레이드가 잠금으로 초기화되었습니다.`);
+                await window.customAlert(` ${label} 완료!\n새 전담 레이드 비번: ${password}\n학생 ${r.count}명의 전담 레이드가 잠금으로 초기화되었습니다.`);
             } catch (e) {
                 console.error('saveRaidPasswordAndReset', e);
                 await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -29165,7 +29541,7 @@ ${subjectLine}
         };
 
         window.openQuestHistory = function() {
-            if (window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if (window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
             document.getElementById('questHistoryModal').classList.remove('hidden');
             
             const history = window.playerState.questHistory || [];
@@ -29193,19 +29569,19 @@ ${subjectLine}
             const filtered = history.filter(q => q.date.startsWith(selectedMonth)).sort((a, b) => b.timestamp - a.timestamp);
             
             if (filtered.length === 0) {
-                list.innerHTML = `<div class="text-center text-slate-500 py-10 text-xs font-bold glass-panel rounded-xl border border-slate-700">이 달에 완료한 퀘스트가 없습니다.</div>`;
+                list.innerHTML = `<div class="text-center  py-10 text-12 font-bold glass-panel rounded-xl border ">이 달에 완료한 퀘스트가 없습니다.</div>`;
                 return;
             }
             
             list.innerHTML = filtered.map(q => `
-                <div class="flex items-center justify-between bg-slate-800/80 p-3 rounded-xl border border-slate-700 shadow-sm">
+                <div class="flex items-center justify-between  p-3 rounded-xl border  shadow-sm">
                     <div>
-                        <div class="text-white font-bold text-sm mb-0.5">${q.name}</div>
-                        <div class="text-[10px] text-slate-400"><i class="fa-regular fa-clock"></i> ${q.date}</div>
+                        <div class=" font-bold text-14 mb-0.5">${q.name}</div>
+                        <div class="text-12 "><svg class="oly-icon" data-oly="clock" viewBox="0 0 24 24" aria-hidden="true"></svg> ${q.date}</div>
                     </div>
                     <div class="text-right shrink-0">
-                        <div class="text-sb-blue text-[10px] font-bold">+${q.xp} XP</div>
-                        <div class="text-sb-gold text-[10px] font-bold">+${formatBongAmount(q.bong || 0)}</div>
+                        <div class=" text-12 font-bold">+${q.xp} XP</div>
+                        <div class=" text-12 font-bold">+${formatBongAmount(q.bong || 0)}</div>
                     </div>
                 </div>
             `).join('');
@@ -29231,7 +29607,7 @@ ${subjectLine}
             const t = document.getElementById('gmAnnouncementInput').value.trim(); 
             if (!t) return window.customAlert('공지 내용을 입력해주세요.');
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { announcement: t }, { merge: true }); 
-            window.customAlert('✅ 공지 등록 완료!'); 
+            window.customAlert(' 공지 등록 완료!'); 
             document.getElementById('gmAnnouncementInput').value = ''; 
         };
 
@@ -29242,7 +29618,7 @@ ${subjectLine}
             if (!text) return window.customAlert('아침활동시간 안내 내용을 입력해주세요.');
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { morningActivityNotice: text }, { merge: true });
             window.globalSettings.morningActivityNotice = text;
-            await window.customAlert('✅ 아침활동시간 안내가 저장되었습니다.');
+            await window.customAlert(' 아침활동시간 안내가 저장되었습니다.');
         };
 
         window.previewMorningActivityNotice = function() {
@@ -29324,7 +29700,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 마스터 스피드 퀴즈 (선착순 N명, Firestore 트랜잭션) ★
+        //  마스터 스피드 퀴즈 (선착순 N명, Firestore 트랜잭션) 
         // ==========================================
         window.updateMasterQuizAdminUI = function () {
             if (!window.playerState || !window.playerState.isAdmin) return;
@@ -29342,11 +29718,11 @@ ${subjectLine}
                 if (st && st.isOpen) {
                     status.innerText = isFull ? `마감 (${count}/${maxW})` : `진행중 (${count}/${maxW})`;
                     status.className = isFull
-                        ? 'text-[10px] bg-emerald-900/50 text-emerald-200 px-2 py-0.5 rounded border border-emerald-700'
-                        : 'text-[10px] bg-cyan-900/50 text-cyan-100 px-2 py-0.5 rounded border border-cyan-700';
+                        ? 'text-12   px-2 py-0.5 rounded border '
+                        : 'text-12   px-2 py-0.5 rounded border ';
                 } else {
                     status.innerText = '대기중';
-                    status.className = 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
+                    status.className = 'text-12  px-2 py-0.5 rounded border ';
                 }
             }
 
@@ -29471,14 +29847,14 @@ ${subjectLine}
                 if (input) input.disabled = true;
                 if (submitBtn) submitBtn.disabled = true;
                 if (feedback) {
-                    feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-amber-200';
+                    feedback.className = 'text-12 font-bold min-h-[1.25rem] ';
                     feedback.textContent = '이미 정원이 차서 마감되었어요.';
                 }
             } else {
                 if (input) input.disabled = false;
                 if (submitBtn) submitBtn.disabled = false;
                 if (feedback) {
-                    feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-slate-500';
+                    feedback.className = 'text-12 font-bold min-h-[1.25rem] ';
                     feedback.textContent = '';
                 }
             }
@@ -29669,12 +30045,12 @@ ${subjectLine}
                     winnersCount: (Number.isFinite(Number(prevMq.winnersCount)) ? Number(prevMq.winnersCount) : Object.keys(prevWinners).length) + 1,
                 };
                 window.dismissMasterQuizModal();
-                await window.customAlert('🎉 선착순 정답! 보상이 반영되었습니다.');
+                await window.customAlert(' 선착순 정답! 보상이 반영되었습니다.');
             } catch (e) {
                 const msg = e && e.message ? String(e.message) : String(e);
                 if (msg === 'wrong') {
                     if (feedback) {
-                        feedback.className = 'text-[10px] font-bold min-h-[1.25rem] text-rose-300';
+                        feedback.className = 'text-12 font-bold min-h-[1.25rem] ';
                         feedback.textContent = '틀렸어요. 다시 생각해 보세요!';
                     }
                 } else if (msg === 'taken' || msg === 'already' || msg === 'no_quiz' || msg === 'closed') {
@@ -29690,7 +30066,7 @@ ${subjectLine}
         };
 
         // ==========================================
-        // ★ 골든벨 전용 함수 ★
+        //  골든벨 전용 함수 
         // ==========================================
         /** 마스터 화면·답안 표시용 HTML 이스케이프 */
         function escapeHtmlGb(s) {
@@ -29726,11 +30102,11 @@ ${subjectLine}
                 return s && (s.finalized || s.rewardsGiven);
             }).length;
 
-            let thead = '<thead><tr><th class="sticky left-0 z-10 bg-slate-800 p-1.5 text-[9px] border border-slate-600 min-w-[52px]">학생</th>';
+            let thead = '<thead><tr><th class="sticky left-0 z-10  p-1.5 text-12 border  min-w-[52px]">학생</th>';
             for (let i = 0; i < n; i++) {
-                thead += `<th class="p-1.5 text-[9px] border border-slate-600 min-w-[76px]">Q${i + 1}</th>`;
+                thead += `<th class="p-1.5 text-12 border  min-w-[76px]">Q${i + 1}</th>`;
             }
-            thead += '<th class="p-1.5 text-[9px] border border-slate-600 min-w-[64px]">합계</th></tr></thead>';
+            thead += '<th class="p-1.5 text-12 border  min-w-[64px]">합계</th></tr></thead>';
 
             const studentIds = getActiveStudentIds();
             let body = '<tbody>';
@@ -29738,12 +30114,12 @@ ${subjectLine}
                 const id = String(sid);
                 const name = STUDENT_NAMES[id];
                 const s = subs[id];
-                body += `<tr><td class="sticky left-0 z-10 bg-slate-900/95 p-1.5 text-[9px] font-bold border border-slate-600">${escapeHtmlGb(name)}</td>`;
+                body += `<tr><td class="sticky left-0 z-10  p-1.5 text-12 font-bold border ">${escapeHtmlGb(name)}</td>`;
                 if (!s || !Array.isArray(s.answers)) {
                     for (let j = 0; j < n; j++) {
-                        body += `<td class="p-1.5 text-[9px] text-slate-500 border border-slate-600 align-top">—</td>`;
+                        body += `<td class="p-1.5 text-12  border  align-top">—</td>`;
                     }
-                    body += `<td class="p-1.5 text-[9px] text-slate-500 border border-slate-600">미제출</td></tr>`;
+                    body += `<td class="p-1.5 text-12  border ">미제출</td></tr>`;
                     return;
                 }
                 const results = Array.isArray(s.results) ? s.results : [];
@@ -29752,23 +30128,23 @@ ${subjectLine}
                     const ans = (s.answers[j] != null) ? String(s.answers[j]) : '';
                     const ok = results[j] === true;
                     if (ok) correct++;
-                    const mark = ok ? '<span class="text-emerald-400 font-black">O</span>' : (results[j] === false ? '<span class="text-rose-400 font-black">X</span>' : '<span class="text-slate-500">—</span>');
+                    const mark = ok ? '<span class=" font-black">O</span>' : (results[j] === false ? '<span class=" font-black">X</span>' : '<span class="">—</span>');
                     const shortAns = ans.length > 14 ? ans.slice(0, 12) + '…' : ans;
                     const titleAttr = escapeHtmlGb(ans).replace(/"/g, '&quot;');
-                    body += `<td class="p-1 text-[8px] border border-slate-600 align-top leading-tight" title="${titleAttr}"><div class="text-slate-200 break-all">${escapeHtmlGb(shortAns)}</div><div class="mt-0.5">${mark}</div></td>`;
+                    body += `<td class="p-1 text-12 border  align-top leading-tight" title="${titleAttr}"><div class=" break-all">${escapeHtmlGb(shortAns)}</div><div class="mt-0.5">${mark}</div></td>`;
                 }
                 const fin = !!(s.finalized || s.rewardsGiven);
                 const rxp = s.rewardXpTotal;
                 const rb = s.rewardBongTotal;
                 const sumHtml = fin && rxp != null && rb != null
-                    ? `<div class="text-emerald-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-yellow-200/90">+${rxp}XP</div><div class="text-[8px] text-amber-200/90">+${formatBongAmount(rb)}</div>`
-                    : `<div class="text-slate-300 font-bold">${correct}/${n}</div><div class="text-[8px] text-slate-500">${fin ? '완료' : '작성중'}</div>`;
-                body += `<td class="p-1.5 text-[9px] border border-slate-600 align-top">${sumHtml}</td></tr>`;
+                    ? `<div class=" font-bold">${correct}/${n}</div><div class="text-12 ">+${rxp}XP</div><div class="text-12 ">+${formatBongAmount(rb)}</div>`
+                    : `<div class=" font-bold">${correct}/${n}</div><div class="text-12 ">${fin ? '완료' : '작성중'}</div>`;
+                body += `<td class="p-1.5 text-12 border  align-top">${sumHtml}</td></tr>`;
             });
             body += '</tbody>';
 
-            return `<div class="text-[10px] text-slate-300 mb-2">최종 제출·채점 완료: ${submittedCount} / ${studentIds.length} (실시간 반영)</div>
-                <div class="overflow-x-auto max-h-[52vh] overflow-y-auto rounded-lg border border-slate-600/80">
+            return `<div class="text-12  mb-2">최종 제출·채점 완료: ${submittedCount} / ${studentIds.length} (실시간 반영)</div>
+                <div class="overflow-x-auto max-h-[52vh] overflow-y-auto rounded-lg border ">
                 <table class="w-full border-collapse">${thead}${body}</table>
                 </div>`;
         }
@@ -29802,7 +30178,7 @@ ${subjectLine}
             if (st && st.isOpen) {
                 dash.classList.remove('hidden');
                 dash.innerHTML = `
-                    <h4 class="text-yellow-400 font-bold text-xs mb-2"><i class="fa-solid fa-table"></i> 실시간 답안·채점 현황</h4>
+                    <h4 class=" font-bold text-12 mb-2"><svg class="oly-icon" data-oly="table" viewBox="0 0 24 24" aria-hidden="true"></svg> 실시간 답안·채점 현황</h4>
                     ${buildGoldenBellMasterAnswerTableHtml(st)}
                 `;
             } else dash.classList.add('hidden');
@@ -29849,7 +30225,7 @@ ${subjectLine}
                 submissions: {} 
             });
             void archiveQuestionsToBank(bankItems);
-            window.customAlert(`🔔 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.\n퀴즈 레이드 문제 은행에도 보관했습니다.`);
+            window.customAlert(` 골든벨 오픈 완료! (${qs.length}문제)\n정답은 학생 화면 데이터에 저장하지 않으며, 1시간 뒤 자동 초기화됩니다.\n퀴즈 레이드 문제 은행에도 보관했습니다.`);
         };
 
         window.saveGoldenBellDraft = async function() {
@@ -29876,7 +30252,7 @@ ${subjectLine}
                 updatedAt: Date.now()
             }, { merge: true });
             void archiveQuestionsToBank(bankItems);
-            window.customAlert('✅ 골든벨 문제가 저장되었습니다. (새로고침해도 유지)\n퀴즈 레이드 문제 은행에도 보관했습니다.');
+            window.customAlert(' 골든벨 문제가 저장되었습니다. (새로고침해도 유지)\n퀴즈 레이드 문제 은행에도 보관했습니다.');
         };
 
         window.clearGoldenBellInputs = async function() {
@@ -29902,7 +30278,7 @@ ${subjectLine}
             window._gbPreviewStudent = !window._gbPreviewStudent;
             if(window._gbPreviewStudent) window.renderGoldenBellStudent();
             else window.renderGoldenBellMasterLive();
-            window.customAlert(window._gbPreviewStudent ? '👀 학생 화면 미리보기 ON' : '📊 학생 화면 미리보기 OFF');
+            window.customAlert(window._gbPreviewStudent ? ' 학생 화면 미리보기 ON' : ' 학생 화면 미리보기 OFF');
         };
 
         // 선생님 테스트용: 인원 부족해도 즉시 퀴즈 시작
@@ -29922,7 +30298,7 @@ ${subjectLine}
                 [`turnSubmissions.${st.currentTurn || 0}`]: (st.turnSubmissions && st.turnSubmissions[st.currentTurn || 0]) ? st.turnSubmissions[st.currentTurn || 0] : {}
             }, { merge: true });
 
-            window.customAlert('✅ 테스트 퀴즈 시작! (인원 부족 무시)');
+            window.customAlert(' 테스트 퀴즈 시작! (인원 부족 무시)');
         };
 
         window.closeGoldenBell = async function() {
@@ -29932,7 +30308,7 @@ ${subjectLine}
         };
 
         /**
-         * ★ 마스터: 최종 채점 발표 및 초기화 ★
+         *  마스터: 최종 채점 발표 및 초기화 
          * 1) 현재 제출된 채점 결과(점수·보상)를 lastResults로 요약 저장
          * 2) 같은 쓰기에서 골든벨 상태를 완전 초기화(isOpen:false, 문제·제출 기록 삭제)
          * → 학생 화면에는 스냅샷 수신 시 결과 팝업이 1회 표시되고, 골든벨은 새로 열 수 있는 상태가 된다.
@@ -29978,22 +30354,22 @@ ${subjectLine}
                     results
                 }
             });
-            window.customAlert(`📣 최종 채점 발표 완료! (제출 ${submittedIds.length}명)\n학생 화면에 결과 팝업이 표시되고, 골든벨이 초기화되었습니다.`);
+            window.customAlert(` 최종 채점 발표 완료! (제출 ${submittedIds.length}명)\n학생 화면에 결과 팝업이 표시되고, 골든벨이 초기화되었습니다.`);
         };
 
         /** 발표된 최종 결과를 학생에게 보여주는 팝업 */
         function showGoldenBellAnnounceModal(mine, totalQuestions) {
             const d = document.createElement('div');
-            d.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-4';
+            d.className = 'fixed inset-0 z-[300] flex items-center justify-center  px-4';
             const bodyHtml = mine
-                ? `<p class="text-center text-sm text-white font-bold mt-2">정답 ${mine.score} / ${totalQuestions}문항</p>
-                   <p class="text-center text-[11px] text-yellow-200/90 mt-1">획득 보상: +${mine.rewardXp} XP · +${formatBongAmount(mine.rewardBong)} (이미 지급됨)</p>`
-                : `<p class="text-center text-xs text-slate-300 mt-2">이번 골든벨에는 최종 제출 기록이 없어요.<br>다음 골든벨에 꼭 참여해 보세요!</p>`;
+                ? `<p class="text-center text-14  font-bold mt-2">정답 ${mine.score} / ${totalQuestions}문항</p>
+                   <p class="text-center text-12  mt-1">획득 보상: +${mine.rewardXp} XP · +${formatBongAmount(mine.rewardBong)} (이미 지급됨)</p>`
+                : `<p class="text-center text-12  mt-2">이번 골든벨에는 최종 제출 기록이 없어요.<br>다음 골든벨에 꼭 참여해 보세요!</p>`;
             d.innerHTML = `
-                <div class="bg-sb-panel p-6 rounded-3xl border border-yellow-500/40 max-w-sm w-full text-center space-y-3 shadow-2xl">
-                    <h3 class="text-lg font-display text-yellow-300">🔔 골든벨 최종 결과 발표</h3>
+                <div class=" p-6 rounded-3xl border  max-w-sm w-full text-center space-y-3 shadow-2xl">
+                    <h3 class="text-20 font-display "> 골든벨 최종 결과 발표</h3>
                     ${bodyHtml}
-                    <button type="button" id="gbAnnounceOk" class="bg-sb-blue hover:bg-blue-500 text-white font-bold py-2.5 px-8 rounded-full w-full">확인</button>
+                    <button type="button" id="gbAnnounceOk" class="oly-btn oly-btn-primary oly-btn-lg w-full">확인</button>
                 </div>`;
             document.body.appendChild(d);
             document.getElementById('gbAnnounceOk').onclick = () => d.remove();
@@ -30021,14 +30397,14 @@ ${subjectLine}
             const container = document.getElementById('gbStudentContainer');
             if(!container) return;
             if (isMartialLawLockingStudent()) {
-                container.innerHTML = '<div class="text-center p-6 text-red-200 glass-panel rounded-2xl font-bold">비상계엄 연출 중입니다. 연출이 끝난 뒤 골든벨을 이용할 수 있습니다.</div>';
+                container.innerHTML = '<div class="text-center p-6  glass-panel rounded-2xl font-bold">비상계엄 연출 중입니다. 연출이 끝난 뒤 골든벨을 이용할 수 있습니다.</div>';
                 return;
             }
             const st = window.goldenbellState;
             const mId = localStorage.getItem('sambong_student_id');
             
             if (!st || !st.isOpen) {
-                container.innerHTML = '<div class="text-center p-6 text-slate-400 glass-panel rounded-2xl">현재 진행 중인 골든벨이 없습니다.</div>';
+                container.innerHTML = '<div class="text-center p-6  glass-panel rounded-2xl">현재 진행 중인 골든벨이 없습니다.</div>';
                 return;
             }
 
@@ -30063,9 +30439,9 @@ ${subjectLine}
             }
 
             let html = `
-                <div class="glass-panel p-3 rounded-2xl border border-yellow-500/40 mb-4 bg-slate-900/50">
-                    <div class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-bell text-yellow-400"></i> 골든벨</div>
-                    <p class="text-[10px] text-slate-400 leading-relaxed">모든 문항에 답을 입력한 뒤 하단 <strong class="text-yellow-200">최종 제출 및 채점</strong>을 누르면 한 번에 채점·보상이 적용됩니다.</p>
+                <div class="glass-panel p-3 rounded-2xl border  mb-4 ">
+                    <div class=" font-bold text-14 mb-1"><svg class="oly-icon" data-oly="bell" viewBox="0 0 24 24" aria-hidden="true"></svg> 골든벨</div>
+                    <p class="text-12  leading-relaxed">모든 문항에 답을 입력한 뒤 하단 <strong class="">최종 제출 및 채점</strong>을 누르면 한 번에 채점·보상이 적용됩니다.</p>
                 </div>
                 <div class="grid lg:grid-cols-2 gap-3">
             `;
@@ -30078,33 +30454,33 @@ ${subjectLine}
                         : (myAnswers[idx] != null ? String(myAnswers[idx]) : '');
                 const defRx = (item.rewardXp != null && !isNaN(Number(item.rewardXp))) ? Number(item.rewardXp) : 10;
                 const defB = (item.rewardBong != null && !isNaN(Number(item.rewardBong))) ? Number(item.rewardBong) : 1;
-                let inputCls = 'bg-slate-900/80 border border-slate-600 text-white';
+                let inputCls = ' border  ';
                 let resHtml = '';
                 if (locked && myResults[idx] !== undefined && myResults[idx] !== null) {
                     const correct = myResults[idx] === true;
                     if (correct) {
-                        inputCls = 'bg-emerald-900/20 border-emerald-500 text-white';
-                        resHtml = `<span class="text-emerald-400 font-black text-sm">O</span> <span class="text-[10px] text-emerald-300/90">(+${defRx}XP · +${formatBongAmount(defB)})</span>`;
+                        inputCls = '  ';
+                        resHtml = `<span class=" font-black text-14">O</span> <span class="text-12 ">(+${defRx}XP · +${formatBongAmount(defB)})</span>`;
                     } else {
-                        inputCls = 'bg-red-900/20 border-sb-red text-white';
-                        resHtml = `<span class="text-rose-400 font-bold text-sm">X</span> <span class="text-[10px] text-slate-400">(오답)</span>`;
+                        inputCls = '  ';
+                        resHtml = `<span class=" font-bold text-14">X</span> <span class="text-12 ">(오답)</span>`;
                     }
                 }
 
                 html += `
-                <div class="glass-panel p-3 rounded-xl border-l-4 border-l-yellow-500 relative h-full">
-                    <div class="text-sb-gold font-black text-xs sm:text-sm mb-2">
-                        <span class="bg-yellow-600/20 px-2 py-0.5 rounded text-yellow-400">문제 ${idx+1}</span>
-                        <span class="text-white/95">${escapeHtmlGb(item.q)}</span>
+                <div class="glass-panel p-3 rounded-xl border-l-4 relative h-full">
+                    <div class=" font-black text-12 sm:text-14 mb-2">
+                        <span class=" px-2 py-0.5 rounded ">문제 ${idx+1}</span>
+                        <span class="">${escapeHtmlGb(item.q)}</span>
                     </div>
-                    <p class="text-[9px] text-slate-500 mb-2">이 문항 정답 시: ${defRx} XP · ${formatBongAmount(defB)}</p>
+                    <p class="text-12  mb-2">이 문항 정답 시: ${defRx} XP · ${formatBongAmount(defB)}</p>
                     <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
                         <input type="text"
                             id="gb_ans_${idx}"
                             value="${escapeHtmlGb(val)}"
                             ${locked ? 'disabled' : ''}
                             placeholder="정답 입력"
-                            class="flex-1 px-3 py-2 rounded-lg text-sm font-bold focus:border-yellow-500 focus:outline-none transition shadow-inner ${inputCls}">
+                            class="flex-1 px-3 py-2 rounded-lg text-14 font-bold  focus:outline-none transition shadow-inner ${inputCls}">
                         ${locked ? `<div class="text-right sm:text-left sm:min-w-[140px] shrink-0">${resHtml}</div>` : ''}
                     </div>
                 </div>`;
@@ -30114,19 +30490,19 @@ ${subjectLine}
 
             if (locked) {
                 html += `
-                    <div class="mt-4 bg-emerald-900/25 border border-emerald-500/50 p-4 rounded-2xl text-center">
-                        <div class="text-white font-black text-sm">✅ 채점 완료</div>
-                        <div class="text-[11px] text-slate-200 font-bold mt-2">정답 ${myScore} / ${totalQuestions}문항</div>
-                        <div class="text-[10px] text-yellow-200 mt-1">획득: +${rxTotal != null ? rxTotal : '—'} XP · +${rbTotal != null ? rbTotal : '—'} B</div>
+                    <div class="mt-4  border  p-4 rounded-2xl text-center">
+                        <div class=" font-black text-14"> 채점 완료</div>
+                        <div class="text-12  font-bold mt-2">정답 ${myScore} / ${totalQuestions}문항</div>
+                        <div class="text-12  mt-1">획득: +${rxTotal != null ? rxTotal : '—'} XP · +${rbTotal != null ? rbTotal : '—'} B</div>
                     </div>`;
             } else {
                 html += `
                     <div class="mt-4">
                         <button type="button" onclick="window.submitGoldenBellAll()"
-                            class="w-full py-3.5 rounded-2xl font-black text-sm bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-slate-900 shadow-[0_0_18px_rgba(234,179,8,0.45)]">
+                            class="oly-btn oly-btn-reward oly-btn-lg w-full">
                             최종 제출 및 채점
                         </button>
-                        <p class="text-[9px] text-slate-500 text-center mt-2">제출 후에는 수정할 수 없습니다.</p>
+                        <p class="text-12  text-center mt-2">제출 후에는 수정할 수 없습니다.</p>
                     </div>`;
             }
 
@@ -30152,32 +30528,32 @@ ${subjectLine}
             return new Promise((resolve) => {
                 const d = document.createElement('div');
                 d.className =
-                    'fixed inset-0 z-[300] flex items-center justify-center bg-black/80 px-3 py-6 overflow-y-auto';
+                    'fixed inset-0 z-[300] flex items-center justify-center  px-3 py-6 overflow-y-auto';
                 const rowsHtml = rows
                     .map((r, i) => {
                         const borderCls = r.ok
-                            ? 'border-emerald-600/50 bg-emerald-950/25'
-                            : 'border-rose-600/40 bg-rose-950/20';
-                        const markCls = r.ok ? 'text-emerald-400' : 'text-rose-400';
+                            ? ' '
+                            : ' ';
+                        const markCls = r.ok ? '' : '';
                         const mark = r.ok ? 'O' : 'X';
                         return `
                     <div class="rounded-xl border ${borderCls} p-2.5 mb-2 text-left">
-                        <div class="text-[10px] font-black text-yellow-400 mb-1">문제 ${i + 1}</div>
-                        <div class="text-[10px] text-slate-400 mb-0.5">내 답</div>
-                        <div class="text-xs font-bold text-white break-all mb-1.5">${escapeHtmlGb(r.my)}</div>
-                        <div class="text-[10px] text-slate-400 mb-0.5">결과</div>
-                        <div class="text-xs font-bold text-emerald-200/95 break-all mb-1">${r.ok ? '정답입니다.' : '오답입니다.'}</div>
-                        <div class="text-right text-sm font-black ${markCls}">${mark}</div>
+                        <div class="text-12 font-black  mb-1">문제 ${i + 1}</div>
+                        <div class="text-12  mb-0.5">내 답</div>
+                        <div class="text-12 font-bold  break-all mb-1.5">${escapeHtmlGb(r.my)}</div>
+                        <div class="text-12  mb-0.5">결과</div>
+                        <div class="text-12 font-bold  break-all mb-1">${r.ok ? '정답입니다.' : '오답입니다.'}</div>
+                        <div class="text-right text-14 font-black ${markCls}">${mark}</div>
                     </div>`;
                     })
                     .join('');
                 d.innerHTML = `
-                    <div class="bg-sb-panel p-4 sm:p-6 rounded-3xl border border-yellow-500/40 max-w-md w-full shadow-2xl my-auto max-h-[90vh] flex flex-col">
-                        <h3 class="text-lg font-display text-yellow-300 text-center shrink-0">채점 결과</h3>
-                        <p class="text-center text-sm text-white font-bold mt-2 shrink-0">정답 ${score} / ${totalQuestions}문항</p>
-                        <p class="text-center text-[11px] text-yellow-200/90 shrink-0 mb-3">보상: +${rewardXp} XP · +${formatBongAmount(rewardBong)}</p>
+                    <div class=" p-4 sm:p-6 rounded-3xl border  max-w-md w-full shadow-2xl my-auto max-h-[90vh] flex flex-col">
+                        <h3 class="text-20 font-display  text-center shrink-0">채점 결과</h3>
+                        <p class="text-center text-14  font-bold mt-2 shrink-0">정답 ${score} / ${totalQuestions}문항</p>
+                        <p class="text-center text-12  shrink-0 mb-3">보상: +${rewardXp} XP · +${formatBongAmount(rewardBong)}</p>
                         <div class="overflow-y-auto flex-1 min-h-0 pr-1">${rowsHtml}</div>
-                        <button type="button" id="gbGradeOk" class="mt-4 bg-sb-blue hover:bg-blue-500 text-white font-bold py-2.5 px-8 rounded-full w-full shrink-0">확인</button>
+                        <button type="button" id="gbGradeOk" class="oly-btn oly-btn-primary oly-btn-lg mt-4 w-full shrink-0">확인</button>
                     </div>`;
                 document.body.appendChild(d);
                 document.getElementById('gbGradeOk').onclick = () => {
@@ -30189,7 +30565,7 @@ ${subjectLine}
 
         /** 골든벨: 모든 문항 한 번에 채점·보상 (문항별 XP·봉 합산) */
         window.submitGoldenBellAll = async function() {
-            if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if(window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
             if (isMartialLawLockingStudent()) return window.customAlert('비상계엄 연출 중에는 골든벨을 이용할 수 없습니다.');
             if(window._gbFinalSubmitting) return;
             window._gbFinalSubmitting = true;
@@ -30304,7 +30680,7 @@ ${subjectLine}
                 });
                 const container = document.getElementById('gbStudentContainer');
                 if (container) {
-                    container.innerHTML = '<div class="text-center p-6 text-emerald-300 glass-panel rounded-2xl font-bold">제출이 완료되어 골든벨 창을 닫았습니다.</div>';
+                    container.innerHTML = '<div class="text-center p-6  glass-panel rounded-2xl font-bold">제출이 완료되어 골든벨 창을 닫았습니다.</div>';
                 }
                 window.switchTab('dashboard');
             } catch (e) {
@@ -30389,7 +30765,7 @@ ${subjectLine}
         }
 
         window.claimDragonBall = async function() {
-            if(window.playerState.isGuest) return window.customAlert("👀 게스트는 이용할 수 없어요.");
+            if(window.playerState.isGuest) return window.customAlert(" 게스트는 이용할 수 없어요.");
             if (window._claimingDragonBall) return;
             if(!window.dragonBallState || !window.dragonBallState.isActive) return;
             if (!isLocalWeekend()) return window.customAlert('드래곤볼은 주말(토·일)에만 수집할 수 있어요!');
@@ -30434,7 +30810,7 @@ ${subjectLine}
             const findBits = [];
             if (!dbXpBlocked && reward.findXp > 0) findBits.push(`+${reward.findXp} XP`);
             if (reward.findBong > 0) findBits.push(`+${formatBongAmount(reward.findBong)}`);
-            await window.customAlert(`🐉 ${dbNum}성구를 찾았습니다!${findBits.length ? ` (${findBits.join(' · ')})` : ''}\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
+            await window.customAlert(` ${dbNum}성구를 찾았습니다!${findBits.length ? ` (${findBits.join(' · ')})` : ''}\n7개를 모두 모으면 엄청난 일이 일어납니다!`);
             
             if(window.playerState.dragonBalls.length >= 7) {
                 if (!dbXpBlocked) window.playerState.xp += reward.completeXp;
@@ -30444,7 +30820,7 @@ ${subjectLine}
                 const doneBits = [];
                 if (!dbXpBlocked && reward.completeXp > 0) doneBits.push(`+${reward.completeXp} XP`);
                 if (reward.completeBong > 0) doneBits.push(`+${formatBongAmount(reward.completeBong)}`);
-                await window.customAlert(`🌟 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복${doneBits.length ? `(${doneBits.join(' · ')})` : ''}을 획득했습니다!`);
+                await window.customAlert(` 7개의 드래곤볼을 모두 모았습니다!\n신룡의 축복${doneBits.length ? `(${doneBits.join(' · ')})` : ''}을 획득했습니다!`);
             }
             
             const dragonBallRef = doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state');
@@ -30492,7 +30868,7 @@ ${subjectLine}
                 if (stars && window.dragonBallState) {
                     let starsHtml = '';
                     for (let i = 0; i < window.dragonBallState.number; i++) {
-                        starsHtml += `<i class="fa-solid fa-star text-red-700 drop-shadow-md text-[6px] sm:text-[8px] m-[0.5px]"></i>`;
+                        starsHtml += `<svg class="oly-icon" data-oly="star" viewBox="0 0 24 24" aria-hidden="true"></svg>`;
                     }
                     stars.innerHTML = starsHtml;
                 }
@@ -30623,25 +30999,25 @@ ${subjectLine}
                 return;
             }
             if (c.total === 0) {
-                list.innerHTML = '<p class="text-[10px] text-slate-500">아직 문제가 없습니다. 엑셀 서식을 받아 올리거나, 골든벨·스피드퀴즈를 출제하면 은행에 쌓입니다.</p>';
+                list.innerHTML = '<p class="text-12 ">아직 문제가 없습니다. 엑셀 서식을 받아 올리거나, 골든벨·스피드퀴즈를 출제하면 은행에 쌓입니다.</p>';
                 return;
             }
             if (shown.length === 0) {
-                list.innerHTML = '<p class="text-[10px] text-slate-500">검색과 맞는 문항이 없습니다.</p>';
+                list.innerHTML = '<p class="text-12 ">검색과 맞는 문항이 없습니다.</p>';
                 return;
             }
             list.innerHTML = shown.map((item, idx) => {
                 const src = quizBankSourceLabel(item.source);
                 const kind = item.type === 'mc' ? '객관식' : '주관식';
-                return `<div class="text-[10px] text-slate-300 bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-1.5 flex gap-2 items-start">
-                    <span class="text-purple-300 font-bold shrink-0">${idx + 1}</span>
+                return `<div class="text-12   border  rounded-lg px-2 py-1.5 flex gap-2 items-start">
+                    <span class=" font-bold shrink-0">${idx + 1}</span>
                     <span class="min-w-0 flex-1">
                         <span class="block break-words">${escapeHtmlGb(item.q)}</span>
-                        <span class="block text-slate-500 mt-0.5">${kind}·${src} · 정답 ${escapeHtmlGb(item.a)}</span>
+                        <span class="block  mt-0.5">${kind}·${src} · 정답 ${escapeHtmlGb(item.a)}</span>
                     </span>
                     <span class="shrink-0 flex gap-1">
-                        <button type="button" data-quiz-act="edit" data-quiz-id="${escapeHtmlGb(item.id)}" class="bg-slate-700 hover:bg-slate-600 text-lime-100 px-2 py-1 rounded font-bold border border-slate-500">수정</button>
-                        <button type="button" data-quiz-act="delete" data-quiz-id="${escapeHtmlGb(item.id)}" class="bg-red-950/70 hover:bg-red-900 text-red-100 px-2 py-1 rounded font-bold border border-red-800">삭제</button>
+                        <button type="button" data-quiz-act="edit" data-quiz-id="${escapeHtmlGb(item.id)}" class="oly-btn oly-btn-secondary oly-btn-sm">수정</button>
+                        <button type="button" data-quiz-act="delete" data-quiz-id="${escapeHtmlGb(item.id)}" class="oly-btn oly-btn-danger oly-btn-sm">삭제</button>
                     </span>
                 </div>`;
             }).join('');
@@ -30776,12 +31152,12 @@ ${subjectLine}
             }
         };
 
-        window.downloadQuizBankTemplate = function() {
+        window.downloadQuizBankTemplate = async function() {
             if (!window.playerState || !window.playerState.isAdmin) {
                 return window.customAlert('선생님만 엑셀 서식을 받을 수 있습니다.');
             }
             try {
-                const result = downloadQuizBankTemplateFile();
+                const result = await downloadQuizBankTemplateFile();
                 window.customAlert(`엑셀 서식을 내려받았습니다.\n파일: ${result.fileName}\n「문제은행」 시트에 작성한 뒤 올려 주세요.`);
             } catch (e) {
                 console.error('downloadQuizBankTemplate', e);
@@ -30809,9 +31185,9 @@ ${subjectLine}
                 const name = String(file.name || '');
                 let parsed;
                 if (/\.csv$/i.test(name)) {
-                    parsed = parseQuizBankWorkbook(await file.text(), { name });
+                    parsed = await parseQuizBankWorkbook(await file.text(), { name });
                 } else {
-                    parsed = parseQuizBankWorkbook(await file.arrayBuffer(), { name });
+                    parsed = await parseQuizBankWorkbook(await file.arrayBuffer(), { name });
                 }
                 if (!parsed.questions.length) {
                     const msg = (parsed.errors && parsed.errors.length) ? parsed.errors.slice(0, 5).join('\n') : '유효한 문항이 없습니다.';
@@ -30836,7 +31212,7 @@ ${subjectLine}
                 const warn = (parsed.errors && parsed.errors.length)
                     ? `\n\n건너뛴 행:\n${parsed.errors.slice(0, 6).join('\n')}`
                     : '';
-                await window.customAlert(`✅ ${parsed.questions.length}문항을 문제 은행에 올렸습니다.${extra}${warn}`);
+                await window.customAlert(` ${parsed.questions.length}문항을 문제 은행에 올렸습니다.${extra}${warn}`);
             } catch (e) {
                 console.error('onQuizBankExcelPicked', e);
                 await window.customAlert('엑셀 업로드에 실패했습니다.\n' + (e && e.message ? e.message : String(e)));
@@ -30880,11 +31256,11 @@ ${subjectLine}
                 const newLogs = Array.isArray(st.logs) ? [...st.logs] : [];
                 if (unanswered.length) {
                     const why = force ? '선생님이 넘김' : (timedOut ? '시간 초과' : '미제출');
-                    newLogs.push(`⏭️ ${turn + 1}번 ${why}: ${skipNames.join(', ')}`);
+                    newLogs.push(` ${turn + 1}번 ${why}: ${skipNames.join(', ')}`);
                 } else {
-                    newLogs.push(`✅ ${turn + 1}번 문제 제출 완료`);
+                    newLogs.push(` ${turn + 1}번 문제 제출 완료`);
                 }
-                if(isLast) newLogs.push('✅ 퀴즈 레이드 완료!');
+                if(isLast) newLogs.push(' 퀴즈 레이드 완료!');
 
                 if(isLast) {
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
@@ -30985,7 +31361,7 @@ ${subjectLine}
                 });
 
                 if (paid && window.playerState && window.playerState.isGM) {
-                    window.customAlert(`✅ 퀴즈 레이드 보상 지급 완료!\n(개인 정답 수 비례 / 최대 ${paidRewardMaxXp}XP, ${formatBongAmount(paidRewardMaxBong)})`);
+                    window.customAlert(` 퀴즈 레이드 보상 지급 완료!\n(개인 정답 수 비례 / 최대 ${paidRewardMaxXp}XP, ${formatBongAmount(paidRewardMaxBong)})`);
                 }
             } catch(e) {
                 console.error('raid reward distribution failed', e);
@@ -31034,7 +31410,7 @@ ${subjectLine}
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), {
                 status: 'recruiting', participants: [], bossHP: BASE_BOSS_HP, maxBossHP: BASE_BOSS_HP,
                 currentTurn: 0, currentActorIndex: 0,
-                startTime: Date.now(), combo: 0, logs: [`📚 ${qs.length}문항 무작위 출제 (골든벨·스피드퀴즈·엑셀 은행)`], questions: qs,
+                startTime: Date.now(), combo: 0, logs: [` ${qs.length}문항 무작위 출제 (골든벨·스피드퀴즈·엑셀 은행)`], questions: qs,
                 mode: 'quiz',
                 rewardMaxXp: settings.xp, rewardMaxBong: settings.bong,
                 turnStartTime: 0, turnResolvedFor: null, turnSubmissions: {},
@@ -31059,7 +31435,7 @@ ${subjectLine}
                 weekendRaidRewardXp: settings.xp,
                 weekendRaidRewardBong: settings.bong
             }, { merge: true });
-            window.customAlert('✅ 퀴즈 레이드 출제 수와 보상이 저장되었습니다. (새로고침해도 유지)');
+            window.customAlert(' 퀴즈 레이드 출제 수와 보상이 저장되었습니다. (새로고침해도 유지)');
         };
 
         window.resetRaidForce = async function() {
@@ -31129,7 +31505,7 @@ ${subjectLine}
 
             // 로그
             const pName = st.participants.find(p => String(p.id) === String(myId))?.name || STUDENT_NAMES[myId] || myId;
-            const newLogs = Array.isArray(st.logs) ? [...st.logs, `🏃 ${pName} 도망! (참여 탈퇴)`] : [`🏃 ${pName} 도망! (참여 탈퇴)`];
+            const newLogs = Array.isArray(st.logs) ? [...st.logs, ` ${pName} 도망! (참여 탈퇴)`] : [` ${pName} 도망! (참여 탈퇴)`];
 
             // 현재 턴에 내 제출 기록이 있으면 제거 (차례 꼬임 방지)
             const turnSubs = (st.turnSubmissions && st.turnSubmissions[turn]) ? { ...st.turnSubmissions[turn] } : {};
@@ -31279,8 +31655,8 @@ ${subjectLine}
             const feedback = document.getElementById('raidAnswerFeedback');
             if(feedback) {
                 feedback.className = isCorrect
-                    ? 'text-[10px] font-bold min-h-[1.25rem] mt-1 text-emerald-300'
-                    : 'text-[10px] font-bold min-h-[1.25rem] mt-1 text-rose-300';
+                    ? 'text-12 font-bold min-h-[1.25rem] mt-1 '
+                    : 'text-12 font-bold min-h-[1.25rem] mt-1 ';
                 feedback.textContent = isCorrect ? '정답! 다른 친구를 기다립니다.' : '오답. 다른 친구를 기다립니다.';
             }
             void tryAdvanceRaidTurn();
@@ -31300,24 +31676,24 @@ ${subjectLine}
             if (raidAdminStatus) {
                 if (!st || !st.status || st.status === 'waiting') {
                     raidAdminStatus.innerText = '대기중';
-                    raidAdminStatus.className = 'text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-slate-600';
+                    raidAdminStatus.className = 'text-12  px-2 py-0.5 rounded border ';
                 } else if (st.status === 'recruiting') {
                     raidAdminStatus.innerText = '모집중';
-                    raidAdminStatus.className = 'text-[10px] bg-purple-900/50 text-purple-100 px-2 py-0.5 rounded border border-purple-600';
+                    raidAdminStatus.className = 'text-12   px-2 py-0.5 rounded border ';
                 } else if (st.status === 'playing') {
                     raidAdminStatus.innerText = '퀴즈중';
-                    raidAdminStatus.className = 'text-[10px] bg-cyan-900/50 text-cyan-100 px-2 py-0.5 rounded border border-cyan-700';
+                    raidAdminStatus.className = 'text-12   px-2 py-0.5 rounded border ';
                 }
             }
 
             if (!st || !st.status) {
                 btn.disabled = true;
                 btn.innerText = "모집 대기중";
-                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
+                btn.className = "w-full oly-btn oly-btn-secondary oly-btn-md";
                 if (cntDiv) cntDiv.classList.add('hidden');
                 if (statusTxt) {
                     statusTxt.innerText = "상태 확인 중...";
-                    statusTxt.className = "text-[10px] text-slate-500 font-bold";
+                    statusTxt.className = "text-12  font-bold";
                 }
                 return;
             }
@@ -31325,30 +31701,30 @@ ${subjectLine}
             if(st.status === 'recruiting') {
                 btn.disabled = false;
                 btn.innerText = "레이드 참가하기";
-                btn.className = "w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-2.5 px-4 rounded-xl shadow-[0_0_15px_rgba(147,51,234,0.5)] transition transform hover:scale-105 text-xs";
+                btn.className = "w-full oly-btn oly-btn-primary oly-btn-md";
                 if (cntDiv) cntDiv.classList.remove('hidden');
                 if (rCount) rCount.innerText = (st.participants && st.participants.length) ? st.participants.length : 0;
                 if (statusTxt) {
-                    statusTxt.innerText = "🔥 용사 모집 중! (마스터가 연 퀴즈 레이드)";
-                    statusTxt.className = "text-[10px] text-emerald-400 font-bold animate-pulse";
+                    statusTxt.innerText = " 용사 모집 중! (마스터가 연 퀴즈 레이드)";
+                    statusTxt.className = "text-12  font-bold animate-pulse";
                 }
             } else if (st.status === 'playing') {
                 btn.disabled = true;
                 btn.innerText = "퀴즈 진행 중";
-                btn.className = "w-full bg-slate-800 text-purple-300 font-bold py-2.5 px-4 rounded-xl border border-purple-500/50 text-xs";
+                btn.className = "w-full oly-btn oly-btn-secondary oly-btn-md";
                 if (cntDiv) cntDiv.classList.add('hidden');
                 if (statusTxt) {
-                    statusTxt.innerText = "🧠 퀴즈 레이드 진행 중!";
-                    statusTxt.className = "text-[10px] text-purple-300 font-bold animate-pulse";
+                    statusTxt.innerText = " 퀴즈 레이드 진행 중!";
+                    statusTxt.className = "text-12  font-bold animate-pulse";
                 }
             } else {
                 btn.disabled = true;
                 btn.innerText = "모집 대기중";
-                btn.className = "w-full bg-slate-700 text-slate-400 font-bold py-2.5 px-4 rounded-xl border border-slate-600 text-xs cursor-not-allowed";
+                btn.className = "w-full oly-btn oly-btn-secondary oly-btn-md";
                 if (cntDiv) cntDiv.classList.add('hidden');
                 if (statusTxt) {
                     statusTxt.innerText = "휴식 중 · 마스터가 퀴즈 레이드를 시작하면 참가할 수 있어요";
-                    statusTxt.className = "text-[10px] text-slate-500 font-bold";
+                    statusTxt.className = "text-12  font-bold";
                 }
             }
 
@@ -31425,7 +31801,7 @@ ${subjectLine}
                     window._raidLastAnnouncedId = completionId;
                     if(lsKey) localStorage.setItem(lsKey, '1');
                     const lastLogs = st.logs.slice(-5).join('\n');
-                    const title = st.raidResult === 'success' ? '✅ 퀴즈 레이드 완료!' : '📘 퀴즈 레이드 종료';
+                    const title = st.raidResult === 'success' ? ' 퀴즈 레이드 완료!' : ' 퀴즈 레이드 종료';
                     (async () => {
                         await window.customAlert(`${title}\n\n${lastLogs}`);
                         const modal = document.getElementById('raidBattleModal');
@@ -31474,8 +31850,8 @@ ${subjectLine}
                     const skipped = isQuizRaidSkipAnswer(rawAns);
                     const done = rawAns !== undefined;
                     const score = Number(scoreBy[String(p.id)]) || 0;
-                    const mark = skipped ? ' <span class="text-amber-300">미제출</span>' : (done ? ' <span class="text-emerald-400">제출</span>' : '');
-                    return `<div class="text-[10px] text-slate-300 flex items-center gap-1"><i class="fa-solid fa-user text-slate-500"></i> ${p.name} <span class="text-purple-300">${score}점</span>${mark}</div>`;
+                    const mark = skipped ? ' <span class="">미제출</span>' : (done ? ' <span class="">제출</span>' : '');
+                    return `<div class="text-12  flex items-center gap-1"><svg class="oly-icon" data-oly="user" viewBox="0 0 24 24" aria-hidden="true"></svg> ${p.name} <span class="">${score}점</span>${mark}</div>`;
                 }).join('');
             }
 
@@ -31505,8 +31881,8 @@ ${subjectLine}
                 }
                 if(qText) {
                     if(st.status === 'recruiting') qText.innerText = '친구가 모이면 퀴즈가 시작됩니다.';
-                    else if(st.raidResult === 'success') qText.innerText = '✅ 퀴즈 레이드 완료! 정답 수에 비례해 보상이 지급됩니다.';
-                    else if(st.raidResult === 'fail') qText.innerText = '📘 퀴즈 레이드가 종료되었습니다.';
+                    else if(st.raidResult === 'success') qText.innerText = ' 퀴즈 레이드 완료! 정답 수에 비례해 보상이 지급됩니다.';
+                    else if(st.raidResult === 'fail') qText.innerText = ' 퀴즈 레이드가 종료되었습니다.';
                     else qText.innerText = '퀴즈가 종료되었습니다.';
                 }
                 if(feedback) feedback.textContent = '';
@@ -31562,7 +31938,7 @@ ${subjectLine}
             }
 
             if(feedback && !already) {
-                feedback.className = 'text-[10px] font-bold min-h-[1.25rem] mt-1 text-slate-500';
+                feedback.className = 'text-12 font-bold min-h-[1.25rem] mt-1 ';
                 feedback.textContent = isSpectator ? '관전 중입니다.' : '';
             }
 
@@ -31576,3 +31952,14 @@ ${subjectLine}
             void initApp();
         }
 
+
+
+function resolvePaint(value, fallback) {
+    const raw = String(value || '').trim();
+    let token = '';
+    if (raw.startsWith('var(') && raw.endsWith(')')) token = raw.slice(4, -1).trim();
+    else if (raw.startsWith('--')) token = raw;
+    if (token && typeof window.olyPaint === 'function') return window.olyPaint(token);
+    if (raw && !token) return raw;
+    return typeof window.olyPaint === 'function' ? window.olyPaint(fallback || '--ink') : raw;
+}

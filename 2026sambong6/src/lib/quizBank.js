@@ -1,7 +1,10 @@
 /**
  * 도전 탭 문제 은행 — 엑셀 일괄 업로드 · 골든벨/스피드퀴즈 보관 · 퀴즈 레이드 출제
  */
-import * as XLSX from 'xlsx';
+async function loadXlsx() {
+    const mod = await import('xlsx');
+    return mod.default && mod.default.utils ? mod.default : mod;
+}
 
 /** 한 학급 문제 은행에 보관할 최대 문항 수 (Firestore 문서 크기 여유) */
 export const QUIZ_BANK_MAX = 400;
@@ -586,7 +589,8 @@ export function parseQuizBankAoa(aoa) {
  * @param {ArrayBuffer|Uint8Array|string} data
  * @param {{ name?: string }} [meta]
  */
-export function parseQuizBankWorkbook(data, meta = {}) {
+export async function parseQuizBankWorkbook(data, meta = {}) {
+    const XLSX = await loadXlsx();
     const name = String(meta.name || '').toLowerCase();
     let wb;
     try {
@@ -635,7 +639,8 @@ export function quizBankGuideRows() {
 /**
  * @returns {import('xlsx').WorkBook}
  */
-export function buildQuizBankTemplateWorkbook() {
+export async function buildQuizBankTemplateWorkbook() {
+    const XLSX = await loadXlsx();
     const wb = XLSX.utils.book_new();
     const dataSheet = XLSX.utils.aoa_to_sheet(quizBankTemplateExampleRows());
     dataSheet['!cols'] = [
@@ -661,8 +666,9 @@ export function buildQuizBankTemplateWorkbook() {
  * 브라우저에서 서식 파일을 내려받습니다.
  * @param {string} [fileName]
  */
-export function downloadQuizBankTemplate(fileName) {
-    const wb = buildQuizBankTemplateWorkbook();
+export async function downloadQuizBankTemplate(fileName) {
+    const XLSX = await loadXlsx();
+    const wb = await buildQuizBankTemplateWorkbook();
     const name = fileName || '삼봉월드_퀴즈문제_서식.xlsx';
     XLSX.writeFile(wb, name);
     return { fileName: name };

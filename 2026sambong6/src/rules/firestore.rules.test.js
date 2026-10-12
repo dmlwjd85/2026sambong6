@@ -87,6 +87,33 @@ test('주급 표식 없는 봉 증가는 주급 상한과 따로 둔다', async 
     await assertSucceeds(updateDoc(ref, { bong: 10 }));
 });
 
+test('학생 문서 생성은 앱 기본값인 xp 0, bong 0 이하만 허용한다', async () => {
+    await testEnv.clearFirestore();
+    const db = authedDb();
+    await assertSucceeds(setDoc(doc(db, 'artifacts/class/public/data/students/student_new'), {
+        pin: '1234',
+        xp: 0,
+        bong: 0,
+        quests: {},
+        jobs: [],
+        inventory: [],
+    }));
+    await assertSucceeds(setDoc(doc(db, 'artifacts/class/public/data/students/student_gm'), {
+        pin: '5678',
+        xp: 0,
+        bong: 0,
+        quests: {},
+        unlockedQuests: {},
+        jobs: [],
+        inventory: [],
+        questHistory: [],
+    }));
+    await assertFails(setDoc(doc(db, 'artifacts/class/public/data/students/student_xp'), { xp: 1, bong: 0 }));
+    await assertFails(setDoc(doc(db, 'artifacts/class/public/data/students/student_bong'), { xp: 0, bong: 1 }));
+    const anon = testEnv.unauthenticatedContext().firestore();
+    await assertFails(setDoc(doc(anon, 'artifacts/class/public/data/students/student_anon'), { xp: 0, bong: 0 }));
+});
+
 test('인증된 클라이언트는 학생 문서가 아닌 설정을 갱신할 수 있다', async () => {
     await testEnv.clearFirestore();
     const db = authedDb();

@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signOut, onAuthStateChanged } from 'firebase/auth';
+import { browserLocalPersistence, getAuth, onAuthStateChanged, setPersistence, signInAnonymously, signOut } from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -4780,6 +4780,9 @@ function redrawPlazaGrantsUi() {
 
         function dismissLoginOverlay() {
             const el = document.getElementById('loginOverlay');
+            document.documentElement.classList.remove('boot-resume');
+            const sk = document.getElementById('bootSkeleton');
+            if (sk) sk.hidden = true;
             if (!el || el.classList.contains('is-leaving') || el.classList.contains('is-dismissed')) return;
             el.classList.add('is-leaving');
             document.body.classList.add('oly-app');
@@ -19588,7 +19591,8 @@ ${subjectLine}
             renderShopCatalog();
             renderConvenienceStore();
             
-            document.getElementById('skinContainer').innerHTML = SKIN_DATA.map(skin => `
+            const skinContainer = document.getElementById('skinContainer');
+            if (skinContainer) skinContainer.innerHTML = SKIN_DATA.map(skin => `
                 <div id="skin-btn-${skin.id}" class="shop-btn  p-2 sm:p-3 rounded-xl border-2 flex items-center gap-2 unaffordable" onclick="window.handleSkin('${skin.id}')">
                     <div class=" w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center text-20 sm:text-24 shrink-0 overflow-hidden border ">${skin.img ? `<img loading="lazy" decoding="async" src="${skin.img}" alt="" class="w-full h-full object-contain">` : skin.emoji}</div>
                     <div class="flex-grow min-w-0">
@@ -19600,13 +19604,15 @@ ${subjectLine}
                     </div>
                 </div>`).join('');
 
-            document.getElementById('emotionBtns').innerHTML = EMOTIONS.map(e => `
+            const emotionBtns = document.getElementById('emotionBtns');
+            if (emotionBtns) emotionBtns.innerHTML = EMOTIONS.map(e => `
                 <button onclick="window.selectEmotion('${e.id}')" id="btn-emo-${e.id}" class="oly-btn oly-btn-secondary oly-btn-md cond-btn w-8 h-8 flex justify-center items-center transition" title="${e.label}">
                     ${e.icon}
                 </button>
             `).join('');
             
-            document.getElementById('bodyBtns').innerHTML = BODY_STATES.map(b => `
+            const bodyBtns = document.getElementById('bodyBtns');
+            if (bodyBtns) bodyBtns.innerHTML = BODY_STATES.map(b => `
                 <button onclick="window.selectBody(${b.val})" id="btn-body-${b.val}" class="oly-btn oly-btn-secondary oly-btn-md cond-btn w-8 h-8 flex justify-center items-center transition ${b.color}" title="${b.label}">
                     <svg class="oly-icon" data-oly="${b.icon}" viewBox="0 0 24 24" aria-hidden="true"></svg>
                 </button>
@@ -19627,7 +19633,8 @@ ${subjectLine}
                     <input type="number" id="gb_admin_bong_${i}" min="0" step="1" value="1" title="이 문항 정답 시 지급 봉" class="w-14  border   px-1 py-1.5 rounded text-12 text-center shrink-0">
                 </div>`;
             }
-            document.getElementById('gbAdminInputs').innerHTML = gbHtml;
+            const gbAdminInputs = document.getElementById('gbAdminInputs');
+            if (gbAdminInputs) gbAdminInputs.innerHTML = gbHtml;
 
             renderShopManagementAdminPanel();
             renderConvenienceAdminPanel();
@@ -19714,15 +19721,15 @@ ${subjectLine}
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app); 
                 db = getFirestore(app);
+                await setPersistence(auth, browserLocalPersistence);
+                await auth.authStateReady();
+                if (window._guestDemoActive) {
+                    try { if (auth.currentUser) await signOut(auth); } catch (_) { /* 구경 세션은 인증을 유지하지 않습니다. */ }
+                    return;
+                }
+                if (!auth.currentUser) await signInAnonymously(auth);
                 if (typeof window.startClassCreateRequestWatch === 'function') {
                     window.startClassCreateRequestWatch();
-                }
-                
-                await auth.authStateReady();
-                await signInAnonymously(auth);
-                if (window._guestDemoActive) {
-                    try { await signOut(auth); } catch (_) { /* 구경 세션은 인증을 유지하지 않습니다. */ }
-                    return;
                 }
                 /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
                 if (auth.currentUser) {
@@ -20223,6 +20230,7 @@ ${subjectLine}
                 });
             } catch(e) {
                 console.error("Firebase 초기화 에러", e);
+                if (typeof window.revealLoginForm === 'function') window.revealLoginForm();
             }
         }
 
@@ -23292,6 +23300,13 @@ ${subjectLine}
         }
 
         async function ensureClassOpsLoaded(force) {
+            if (isGuestSession()) {
+                window._attendanceDays = window._attendanceDays || {};
+                window._checklists = window._checklists || [];
+                window._praiseBoard = window._praiseBoard || {};
+                window._classOpsReady = true;
+                return;
+            }
             if (!db) return;
             if (window._classOpsLoading) return window._classOpsLoading;
             if (window._classOpsReady && !force) return;
@@ -24539,22 +24554,23 @@ ${subjectLine}
         // ==========================================
         //  로그인, 식권 구매 및 데이터 저장 로직 
         // ==========================================
-        document.getElementById('btnLogin').onclick = () => {
+        window.submitStudentLogin = function() {
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
         };
+        window.submitTeacherLogin = function() {
+            attemptLogin(
+                document.getElementById('loginIdTeacher')?.value,
+                document.getElementById('loginPinTeacher')?.value,
+                false
+            );
+        };
+        const btnLoginEl = document.getElementById('btnLogin');
+        if (btnLoginEl && btnLoginEl.dataset.loginBridge !== '1') btnLoginEl.onclick = () => window.submitStudentLogin();
         const btnLoginTeacher = document.getElementById('btnLoginTeacher');
-        if (btnLoginTeacher) {
-            btnLoginTeacher.onclick = () => {
-                attemptLogin(
-                    document.getElementById('loginIdTeacher')?.value,
-                    document.getElementById('loginPinTeacher')?.value,
-                    false
-                );
-            };
-        }
+        if (btnLoginTeacher && btnLoginTeacher.dataset.loginBridge !== '1') btnLoginTeacher.onclick = () => window.submitTeacherLogin();
         const btnApplyClass = document.getElementById('btnApplyClass');
-        if (btnApplyClass) btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
-        if (typeof window.setLoginMode === 'function') window.setLoginMode('student');
+        if (btnApplyClass && btnApplyClass.dataset.loginBridge !== '1') btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
+        if (!document.body.dataset.loginMode && typeof window.setLoginMode === 'function') window.setLoginMode('student');
         
         window.loginAsGuest = async function() {
             window._guestDemoActive = true;
@@ -24595,6 +24611,13 @@ ${subjectLine}
             maskGuestWriteControls(document);
         };
         
+        window.loginAsSomeoneElse = function() {
+            localStorage.removeItem('sambong_student_id');
+            localStorage.removeItem('sambong_student_pin');
+            window._switchUser = true;
+            location.reload();
+        };
+
         window.logout = async function() { 
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
             if(isOk) {
@@ -24700,8 +24723,12 @@ ${subjectLine}
         };
 
         async function attemptLogin(studentId, pin, isAutoLogin) {
+            const stopAutoResume = () => {
+                if (isAutoLogin && typeof window.revealLoginForm === 'function') window.revealLoginForm();
+            };
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
                 return;
             }
@@ -24709,20 +24736,24 @@ ${subjectLine}
                 await auth.authStateReady();
                 if (!auth.currentUser) await signInAnonymously(auth);
             } catch (e) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
                 return;
             }
             if (!auth.currentUser) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
                 return;
             }
             try {
                 await auth.currentUser.getIdToken();
             } catch (e) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
                 return;
             }
             if (!studentId) {
+                stopAutoResume();
                 if (!isAutoLogin) await window.customAlert('이름(학번)을 선택해 주세요.');
                 return;
             }
@@ -24737,7 +24768,10 @@ ${subjectLine}
                 
                 if (data) {
                     if (!data.pin) {
-                        if (isAutoLogin) return; 
+                        if (isAutoLogin) {
+                            stopAutoResume();
+                            return;
+                        } 
                         const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                         if(!isOk) return; 
                         data.pin = pin; 
@@ -24753,7 +24787,10 @@ ${subjectLine}
                         return await window.customAlert(" 비밀번호가 틀렸어요!");
                     }
                 } else {
-                    if (isAutoLogin) return; 
+                    if (isAutoLogin) {
+                        stopAutoResume();
+                        return;
+                    } 
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
@@ -24800,6 +24837,7 @@ ${subjectLine}
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
             } catch (e) { 
+                stopAutoResume();
                 await window.customAlert("에러: " + e.message); 
             }
         }

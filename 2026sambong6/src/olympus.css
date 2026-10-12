@@ -92,7 +92,7 @@ h3, h4, h5, h6 { color: var(--navy); font-weight: 700; line-height: 1.5; }
     text-decoration: none;
 }
 .oly-btn-sm { min-height: 36px; padding: 4px 12px; font-size: calc(14px * var(--type-scale)); }
-.oly-btn-md { min-height: 44px; padding: 8px 16px; font-size: calc(16px * var(--type-scale)); }
+.oly-btn-md { min-height: 48px; padding: 8px 16px; font-size: calc(16px * var(--type-scale)); }
 .oly-btn-lg {
     min-height: 48px;
     padding: 12px 20px;
@@ -115,7 +115,7 @@ select, textarea {
     color: var(--ink);
     border: 2px solid var(--navy);
     border-radius: 14px;
-    min-height: 44px;
+    min-height: 48px;
     font-size: calc(16px * var(--type-scale));
     font-family: var(--font-body);;;;
     line-height: 1.5;
@@ -155,8 +155,18 @@ nav.fixed.top-0 span { color: var(--surface); }
     color: var(--ink);
     font-size: calc(12px * var(--type-scale));
     font-weight: 700;
-    min-height: 44px;
+    min-height: 48px;
+    min-width: 48px;
     border-radius: 14px;
+}
+#appNavDock {
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}
+#loginOverlay {
+    padding-top: calc(16px + env(safe-area-inset-top));
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 .app-nav-item.is-active,
 .app-sub-item.is-active,
@@ -222,7 +232,7 @@ body.oly-app-in #appShell { display: block; }
 .worldmap-vignette, .worldmap-mist, .star, .worldmap-season-seal { display: none; }
 
 .oly-shopkeeper { width: min(100%, 280px); height: auto; display: block; }
-.oly-adult summary { font-size: calc(16px * var(--type-scale)); font-weight: 700; color: var(--navy); cursor: pointer; min-height: 44px; }
+.oly-adult summary { font-size: calc(16px * var(--type-scale)); font-weight: 700; color: var(--navy); cursor: pointer; min-height: 48px; }
 
 .class-wheel-stage {
     overflow: visible;

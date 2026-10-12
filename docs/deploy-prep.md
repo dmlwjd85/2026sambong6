@@ -96,24 +96,38 @@ GitHub Pages 주소는 `https://dmlwjd85.github.io/2026sambong6/`입니다. 저�
 - `2026sambong6`에서 `npm ci`와 `npm run build`를 한 뒤 `2026sambong6/dist`를 `actions/deploy-pages@v4`로 올립니다.
 - Firestore 규칙은 이 워크플로가 배포하지 않습니다. 규칙 배포 스크립트는 `npm run deploy:firestore`이며 이번 작업에서 실행하지 않았습니다.
 
-현재 운영에 올라간 커밋은 성공한 배포 실행 [38067645070](https://github.com/dmlwjd85/2026sambong6/actions/runs/38067645070)입니다.
+현재 운영 커밋은 복구 기준점입니다. 이 커밋 자체를 `git revert`하면 지금 운영 중인 본까지 되돌아갑니다. 되돌릴 대상은 [PR #31](https://github.com/dmlwjd85/2026sambong6/pull/31)을 `main`에 머지할 때 GitHub가 만드는 머지 커밋입니다. 그 SHA는 머지 후에 생깁니다.
+
+기준점:
 
 - SHA: `43768747109836e8efaed97f3c9c0740ae6ca4dd`
 - 제목: Merge pull request #24 from dmlwjd85/cursor/praise-midnight-reset-d8a2
 - 시각: 2026-10-10T16:26:06Z
-- 이 커밋은 머지 커밋입니다.
+- 배포 실행: [38067645070](https://github.com/dmlwjd85/2026sambong6/actions/runs/38067645070)
 
-되돌리기는 `git revert`만 사용합니다. `reset --hard`, force-push, rebase는 쓰지 않습니다. 아래 명령은 기록용이며 실행하지 않았습니다. `main`에 푸시하면 Pages 워크플로가 다시 배포합니다.
+되돌리기는 `git revert`만 사용합니다. `reset --hard`, force-push, rebase는 쓰지 않습니다. 아래 명령은 기록용이며 실행하지 않았습니다. `main`에 푸시하면 Pages 워크플로가 그 결과를 다시 배포합니다.
 
 ```bash
 git fetch origin main
 git checkout main
 git pull --ff-only origin main
-git revert -m 1 43768747109836e8efaed97f3c9c0740ae6ca4dd
+git log origin/main --merges --grep '#31' -1 --format='%H %s'
+git revert -m 1 <PR31_MERGE_SHA>
 git push origin main
 ```
 
-`-m 1`은 머지 커밋의 첫 번째 부모(머지 전 `main`)를 남기는 선택입니다. 일반 커밋을 되돌릴 때는 `-m 1` 없이 `git revert <SHA>`입니다. 앞으로 이 화면 PR을 머지 커밋으로 넣은 뒤 되돌릴 때도 그 머지 SHA에 `git revert -m 1`을 씁니다.
+`<PR31_MERGE_SHA>`에는 위 `git log`가 보여 주는 #31 머지 커밋을 넣습니다. `-m 1`은 그 머지의 첫 번째 부모, 즉 #31이 들어가기 직전의 `main`을 남깁니다. 그 사이에 다른 커밋이 없으면 트리 내용은 기준점 `43768747109836e8efaed97f3c9c0740ae6ca4dd`와 같습니다. 다른 커밋이 있으면 그 커밋은 남고 #31의 변경만 빠집니다.
+
+### 대안으로 기준점 커밋을 다시 배포
+
+`workflow_dispatch`의 `ref`는 브랜치 또는 태그입니다. 커밋 SHA를 넣으면 API가 거절합니다. 워크플로의 `actions/checkout`은 고른 ref의 끝을 빌드하므로, 기준점 SHA에 태그를 달고 그 태그를 실행하면 그 커밋이 다시 Pages에 올라갑니다. `main` 히스토리는 바뀌지 않습니다. 이후 `main`에 `2026sambong6/**`가 푸시되면 워크플로가 그 때의 `main`을 다시 배포합니다. 아래도 기록용이며 실행하지 않았습니다.
+
+```bash
+git fetch origin 43768747109836e8efaed97f3c9c0740ae6ca4dd
+git tag pages-baseline-4376874 43768747109836e8efaed97f3c9c0740ae6ca4dd
+git push origin pages-baseline-4376874
+gh workflow run deploy-2026sambong6-pages.yml --ref pages-baseline-4376874
+```
 
 ## 4. Firestore 읽기 전용 백업
 

@@ -6,6 +6,7 @@ import {
     applyChessForfeit,
     applyChessMove,
     applyChessTimeout,
+    chessGlyph,
     chessIsInCheck,
     chessIsOver,
     chessMakePiece,
@@ -23,6 +24,14 @@ function play(game, moves) {
     }
     return g;
 }
+
+describe('체스 말 기호', () => {
+    it('백 퀸과 흑 킹 기호를 돌려준다', () => {
+        assert.equal(chessGlyph(chessMakePiece(CHESS_WHITE, 'q')), '\u2655');
+        assert.equal(chessGlyph(chessMakePiece(CHESS_BLACK, 'k')), '\u265A');
+        assert.equal(chessGlyph(0), '');
+    });
+});
 
 describe('체스 기본', () => {
     it('시작 위치는 백 차례이고 합법 수가 20이다', () => {

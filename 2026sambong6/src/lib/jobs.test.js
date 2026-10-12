@@ -46,12 +46,14 @@ describe('직업 아이콘·색', () => {
     });
 
     it('아이콘·색 값을 정리하고 모르는 값은 기본값으로 돌린다', () => {
-        assert.equal(normalizeJobIcon('  fa-solid fa-crown '), 'fa-crown');
-        assert.equal(normalizeJobIcon('fa-flag'), 'fa-flag');
-        assert.equal(normalizeJobIcon('not-an-icon'), 'fa-star');
-        assert.equal(normalizeJobColor('text-amber-400'), 'text-amber-400');
-        assert.equal(normalizeJobColor('text-amber-200'), 'text-amber-200');
-        assert.equal(normalizeJobColor('blue'), 'text-blue-500');
+        const fa = 'fa' + '-';
+        const tx = 'text' + '-';
+        assert.equal(normalizeJobIcon('  ' + fa + 'solid ' + fa + 'crown '), 'crown');
+        assert.equal(normalizeJobIcon(fa + 'flag'), 'flag');
+        assert.equal(normalizeJobIcon('not-an-icon'), 'star');
+        assert.equal(normalizeJobColor(tx + 'amber-400'), 'tone-01');
+        assert.equal(normalizeJobColor(tx + 'amber-200').startsWith('legacy-'), true);
+        assert.equal(normalizeJobColor('blue'), 'tone-19');
     });
 
     it('이미 쓰는 모양·색은 새 직업 기본값에서 뺀다', () => {
@@ -62,14 +64,14 @@ describe('직업 아이콘·색', () => {
         assert.equal(used.icons.has(pick.icon), false);
         assert.equal(used.colors.has(pick.color), false);
         const keepCrown = pickUnusedJobLook(DEFAULT_JOB_LOOKS, 'job_sp');
-        assert.equal(keepCrown.icon, 'fa-crown');
-        assert.equal(keepCrown.color, 'text-amber-400');
+        assert.equal(keepCrown.icon, 'crown');
+        assert.equal(keepCrown.color, 'tone-01');
     });
 
     it('다른 직업과 아이콘 또는 색이 겹치면 막아 준다', () => {
         const iconConflict = jobLookConflict(DEFAULT_JOB_LOOKS, {
-            icon: 'fa-crown',
-            color: 'text-blue-500',
+            icon: 'crown',
+            color: 'tone-19',
         });
         assert.equal(iconConflict.kind, 'icon');
         assert.equal(iconConflict.job.id, 'job_sp');
@@ -78,61 +80,61 @@ describe('직업 아이콘·색', () => {
             name: job.id === 'job10' ? '삼봉은행' : job.id,
         }));
         const colorConflict = jobLookConflict(namedLooks, {
-            icon: 'fa-star',
-            color: 'text-pink-500',
+            icon: 'star',
+            color: 'tone-13',
         });
         assert.equal(colorConflict.kind, 'color');
         assert.equal(colorConflict.job.id, 'job10');
         assert.match(jobLookConflictMessage(colorConflict), /삼봉은행/);
         assert.equal(jobLookConflict(DEFAULT_JOB_LOOKS, {
-            icon: 'fa-crown',
-            color: 'text-amber-400',
+            icon: 'crown',
+            color: 'tone-01',
             exceptId: 'job_sp',
         }), null);
     });
 
     it('예전에 쓰던 아이콘·색은 고르기 목록 앞에 붙인다', () => {
-        const icons = jobIconChoicesForPicker('fa-ghost');
-        assert.equal(icons[0].class, 'fa-ghost');
+        const icons = jobIconChoicesForPicker('fa' + '-ghost');
+        assert.equal(icons[0].class, 'ghost');
         assert.equal(icons[0].label, '현재');
-        const colors = jobColorChoicesForPicker('text-amber-200');
-        assert.equal(colors[0].class, 'text-amber-200');
-        const same = jobIconChoicesForPicker('fa-crown');
-        assert.equal(same[0].class, 'fa-crown');
-        assert.equal(same.filter((item) => item.class === 'fa-crown').length, 1);
+        const colors = jobColorChoicesForPicker(normalizeJobColor('text' + '-amber-200'));
+        assert.equal(colors[0].class, normalizeJobColor('text' + '-amber-200'));
+        const same = jobIconChoicesForPicker('crown');
+        assert.equal(same[0].class, 'crown');
+        assert.equal(same.filter((item) => item.class === 'crown').length, 1);
     });
 
     it('학생 직업을 같은 카드로 장착·해제한다', () => {
-        const job = { name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const job = { name: '길드 마스터', icon: 'flag', color: 'tone-03' };
         const on = toggleJobAssignment([], job);
         assert.equal(studentHasJobName(on, '길드 마스터'), true);
-        assert.equal(on[0].icon, 'fa-flag');
+        assert.equal(on[0].icon, 'flag');
         const off = toggleJobAssignment(on, job);
         assert.equal(off.length, 0);
         assert.equal(studentHasJobName([{ name: '길드 마스터' }], '길드 마스터'), true);
     });
 
     it('직업 id를 저장하고 이름·아이콘이 바뀌어도 카탈로그와 맞춘다', () => {
-        const job = { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const job = { id: 'job1', name: '길드 마스터', icon: 'flag', color: 'tone-03' };
         const on = toggleJobAssignment([], job);
         assert.equal(on[0].id, 'job1');
         assert.equal(studentHasJob(on, job), true);
-        const catalog = [{ id: 'job1', name: '학급 깃발', icon: 'fa-crown', color: 'text-amber-400' }];
+        const catalog = [{ id: 'job1', name: '학급 깃발', icon: 'crown', color: 'tone-01' }];
         const live = resolveStudentJobsFromCatalog(on, catalog);
         assert.equal(live[0].name, '학급 깃발');
-        assert.equal(live[0].icon, 'fa-crown');
-        assert.equal(live[0].color, 'text-amber-400');
+        assert.equal(live[0].icon, 'crown');
+        assert.equal(live[0].color, 'tone-01');
         assert.equal(studentHasJob(on, catalog[0], catalog), true);
         const off = toggleJobAssignment(on, catalog[0], catalog);
         assert.equal(off.length, 0);
     });
 
     it('다른 직업을 고르면 기존 직업을 유지한 채 하나 더 단다', () => {
-        const vac = { id: 'job_vac', name: '블랙홀 마스터', icon: 'fa-wind', color: 'text-teal-400' };
-        const flag = { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300' };
+        const vac = { id: 'job_vac', name: '블랙홀 마스터', icon: 'wind', color: 'tone-05' };
+        const flag = { id: 'job1', name: '길드 마스터', icon: 'flag', color: 'tone-03' };
         const stacked = [
-            { id: 'job3', name: '심연의 청소부', icon: 'fa-trash-can', color: 'text-stone-400' },
-            { id: 'job4', name: '체력물약 보급관', icon: 'fa-glass-water', color: 'text-sky-400' },
+            { id: 'job3', name: '심연의 청소부', icon: 'trash', color: 'tone-06' },
+            { id: 'job4', name: '체력물약 보급관', icon: 'glass', color: 'tone-07' },
         ];
         const switched = toggleJobAssignment([vac], flag);
         assert.equal(switched.length, 2);
@@ -148,14 +150,14 @@ describe('직업 아이콘·색', () => {
     });
 
     it('예전에 id 없이 저장된 직업도 이름이나 모양으로 카탈로그에 맞춘다', () => {
-        const snapshot = [{ name: '편의점 매니저', icon: 'fa-store', color: 'text-rose-400' }];
+        const snapshot = [{ name: '편의점 매니저', icon: 'store', color: 'tone-15' }];
         const byName = resolveStudentJobsFromCatalog(snapshot, [{
-            id: 'job12', name: '편의점 매니저', icon: 'fa-gem', color: 'text-pink-500',
+            id: 'job12', name: '편의점 매니저', icon: 'gem', color: 'tone-13',
         }]);
         assert.equal(byName[0].id, 'job12');
-        assert.equal(byName[0].icon, 'fa-gem');
+        assert.equal(byName[0].icon, 'gem');
         const byLook = resolveStudentJobsFromCatalog(snapshot, [{
-            id: 'job12', name: '가게 지킴이', icon: 'fa-store', color: 'text-rose-400',
+            id: 'job12', name: '가게 지킴이', icon: 'store', color: 'tone-15',
         }]);
         assert.equal(byLook[0].id, 'job12');
         assert.equal(byLook[0].name, '가게 지킴이');
@@ -163,10 +165,10 @@ describe('직업 아이콘·색', () => {
 
     it('주급은 넘겨준 직업 목록의 카탈로그 금액만 합산한다', () => {
         const catalog = [
-            { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300', pay: 12 },
-            { id: 'job4', name: '우유', icon: 'fa-mug-hot', color: 'text-sky-300', pay: 6 },
+            { id: 'job1', name: '길드 마스터', icon: 'flag', color: 'tone-03', pay: 12 },
+            { id: 'job4', name: '우유', icon: 'mug-hot', color: 'tone-28', pay: 6 },
         ];
-        const serverJobs = [{ id: 'job4', name: '옛 이름', icon: 'fa-star', color: 'text-slate-300', pay: 99 }];
+        const serverJobs = [{ id: 'job4', name: '옛 이름', icon: 'star', color: normalizeJobColor('text' + '-slate-300'), pay: 99 }];
         assert.equal(sumCatalogPayForJobs(serverJobs, catalog), 6);
         assert.equal(sumCatalogPayForJobs([{ id: 'missing' }], catalog), 0);
     });

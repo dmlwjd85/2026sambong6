@@ -32,8 +32,8 @@ export function buildGuestDemoClassMeta() {
                 gender: 'M',
                 role: 'teacher',
                 label: '담임',
-                optionClass: 'text-sb-gold',
-                emoji: '👑',
+                optionClass: '',
+                emoji: '',
             },
         ],
         schoolName: '',
@@ -48,7 +48,7 @@ export function buildGuestDemoStudents() {
         xp: 900 + index * 380,
         bong: 24 + index * 6,
         jobs: index % 3 === 0
-            ? [{ id: 'demo-lib', name: '도서부', icon: 'fa-book', color: 'text-amber-300', pay: 4 }]
+            ? [{ id: 'demo-lib', name: '도서부', icon: 'book', color: '', pay: 4 }]
             : [],
         statusMessage: index % 2 === 0 ? '데모 상태' : '',
         ownedSkins: {},
@@ -81,7 +81,7 @@ export function buildGuestPlayerState() {
         bong: 80,
         quests: {},
         unlockedQuests: {},
-        jobs: [{ name: '구경꾼', icon: 'fa-eye', color: 'text-slate-300', pay: 0 }],
+        jobs: [{ name: '구경꾼', icon: 'eye', color: '', pay: 0 }],
         ownedSkins: {},
         equippedSkins: {},
         hasShield: false,

@@ -121,7 +121,7 @@ describe('일기장', () => {
             weather: 'rain',
             mood: 'happy',
             body: '오늘 비가 왔다.',
-            strokes: [{ color: '#111', width: 2, pts: [0.1, 0.1, 0.2, 0.2, 0.3, 0.25] }],
+            strokes: [{ color: 'var(--chalk-board)', width: 2, pts: [0.1, 0.1, 0.2, 0.2, 0.3, 0.25] }],
         });
         assert.equal(entry.weather, 'rain');
         assert.equal(canViewDiary({ id: '12' }, entry), true);
@@ -182,7 +182,7 @@ describe('일기장', () => {
             weather: 'rain',
             mood: 'happy',
             updatedAt: 20,
-            strokes: [{ color: '#111', width: 2, pts: [0.1, 0.1, 0.2, 0.2] }],
+            strokes: [{ color: 'var(--chalk-board)', width: 2, pts: [0.1, 0.1, 0.2, 0.2] }],
         }));
         const picked = pickDiaryComposerSource({
             serverBody: '서버',

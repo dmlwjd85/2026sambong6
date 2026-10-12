@@ -120,12 +120,12 @@ describe('엑셀 서식 파싱', () => {
         assert.equal(parsed.questions[2].source, 'speedquiz');
     });
 
-    it('xlsx 워크북 왕복이 된다', () => {
-        const wb = buildQuizBankTemplateWorkbook();
+    it('xlsx 워크북 왕복이 된다', async () => {
+        const wb = await buildQuizBankTemplateWorkbook();
         assert.ok(wb.SheetNames.includes('문제은행'));
         assert.ok(wb.SheetNames.includes('작성안내'));
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-        const parsed = parseQuizBankWorkbook(buf, { name: '서식.xlsx' });
+        const parsed = await parseQuizBankWorkbook(buf, { name: '서식.xlsx' });
         assert.equal(parsed.questions.length, 3);
         assert.deepEqual(QUIZ_BANK_HEADERS.slice(0, 2), ['문제', '정답']);
     });

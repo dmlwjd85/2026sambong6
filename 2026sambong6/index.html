@@ -22,7 +22,7 @@
         document.write(`<link rel="manifest" href="${manifestUrl}">`);
     </script>
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
     <input type="file" id="quizBankExcelInput" accept=".xlsx,.xls,.csv" class="sr-only" tabindex="-1" aria-hidden="true" onchange="window.onQuizBankExcelPicked(event)">
@@ -218,10 +218,16 @@
                     <span id="playerNameDisplay" class="font-bold text-white truncate max-w-[60px] sm:max-w-none"></span>
                     <i class="fa-solid fa-cloud text-sb-blue" id="cloudIcon"></i>
                 </div>
+                <button type="button" id="noticeInboxBtn" class="hidden relative text-[10px] sm:text-xs bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1.5 rounded-lg border border-slate-600" onclick="window.toggleNoticeInbox()" aria-label="알림함" aria-expanded="false">
+                    <i class="fa-solid fa-bell"></i>
+                    <span id="noticeInboxBadge" class="hidden absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-black leading-4 text-center">0</span>
+                </button>
                 <button onclick="window.logout()" class="text-[10px] sm:text-xs bg-slate-700 hover:bg-slate-600 text-white px-2.5 py-1.5 rounded-lg transition"><i class="fa-solid fa-right-from-bracket"></i></button>
             </div>
         </div>
     </nav>
+    <div id="guestDemoBanner" class="guest-demo-banner" hidden>데모 반을 구경하는 중입니다. 기록·구매·투자 등 쓰기 동작은 꺼져 있고, 실제 학급 데이터는 바뀌지 않습니다.</div>
+    <div id="noticeInboxPanel" class="notice-inbox-panel hidden" role="dialog" aria-label="알림함"></div>
 
     <!-- 앱 아이콘 독: 모바일 하단 · 웹(768px+) 상단 -->
     <nav id="appNavDock" class="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-cyan-300 bg-sky-600" aria-label="주요 메뉴">
@@ -768,7 +774,7 @@
                                     <div class="flex flex-wrap gap-1.5" id="bodyBtns"></div>
                                 </div>
                             </div>
-                            <div class="mt-4">
+                            <div class="js-guest-write mt-4">
                                 <div class="flex items-end justify-between gap-2 mb-1.5">
                                     <div class="text-[10px] text-slate-400 font-bold">상태 메시지</div>
                                     <span class="text-[9px] text-slate-500">10글자 · 광장 프로필</span>
@@ -1217,7 +1223,7 @@
             </div>
 
             <div class="inner-pane" data-pane-group="literature" data-pane="reading">
-                <div class="glass-panel p-4 rounded-2xl border-t-4 border-t-amber-400 space-y-3">
+                <div id="readingComposer" class="js-guest-write glass-panel p-4 rounded-2xl border-t-4 border-t-amber-400 space-y-3">
                     <div class="flex flex-wrap items-start justify-between gap-2">
                         <div>
                             <h3 class="font-bold text-sm text-amber-200"><i class="fa-solid fa-book"></i> 오늘의 독서기록</h3>
@@ -1595,7 +1601,7 @@
                     </div>
                 </div>
                 
-                <div class="inner-pane glass-panel p-3 rounded-2xl border border-orange-500/30" data-pane-group="lunch" data-pane="invest">
+                <div class="js-guest-write inner-pane glass-panel p-3 rounded-2xl border border-orange-500/30" data-pane-group="lunch" data-pane="invest">
                     <h3 class="font-bold text-xs text-white mb-2">식권 투자하기</h3>
                     <div class="flex gap-2">
                         <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" data-currency-placeholder="추가 투자할 {u} 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
@@ -1918,7 +1924,7 @@
                     <p id="bankDailyBonusLine" class="text-[9px] sm:text-[10px] text-emerald-300/90 leading-snug border-t border-slate-700/80 pt-2"></p>
                     <p id="bankCreditDefaultLine" class="hidden text-[10px] text-red-300 font-bold leading-snug border-t border-red-800/60 pt-2"></p>
                 </div>
-                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-rose-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="loan">
+                <div class="js-guest-write inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-rose-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="loan">
                     <h3 class="text-rose-200 font-bold text-sm"><i class="fa-solid fa-file-invoice-dollar"></i> 대출</h3>
                     <p class="text-[9px] text-slate-500 leading-relaxed">최소 10봉 · 10봉 단위 · 1~5영업일. 이자는 적금 만기 이율과 연동하되 1.5배로 세게 매기고, 최소 1봉입니다. 약정일이 되면 지갑→일반예금 순으로 강제 자동이체되며 적금은 건드리지 않습니다. 갚을 대출이 남아 있으면 새 대출은 받지 못합니다. 지갑이 마이너스인 채로 5영업일이 지나면 3일간 신용불량이 되어 퀘스트·추가 경험치를 받을 수 없습니다.</p>
                     <div id="bankLoanStatus" class="text-[11px] text-slate-300 leading-relaxed border border-slate-700 rounded-xl p-3 bg-slate-950/50"></div>
@@ -1947,7 +1953,7 @@
                     </div>
                     <button type="button" id="bankLoanRepayBtn" onclick="void window.repayBankLoan()" class="js-bank-loan-btn hidden bg-rose-900 hover:bg-rose-800 text-rose-50 font-bold py-2 px-4 rounded-xl text-xs border border-rose-600">지금 갚기 (이자 포함)</button>
                 </div>
-                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="regular">
+                <div class="js-guest-write inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="regular">
                     <h3 class="text-sky-200 font-bold text-sm"><i class="fa-solid fa-piggy-bank"></i> 일반예금</h3>
                     <p class="text-[9px] text-slate-500">이자 없음. 입·출금 자유.</p>
                     <div class="flex gap-2 flex-wrap items-center">
@@ -1960,7 +1966,7 @@
                         <button type="button" onclick="window.withdrawBankAll()" class="bg-slate-700 hover:bg-slate-600 text-amber-200 font-bold py-2 px-3 rounded-xl text-[10px] shrink-0 border border-slate-500">전액 출금</button>
                     </div>
                 </div>
-                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="term">
+                <div class="js-guest-write inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="term">
                     <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-box-open"></i> 적금 (보물상자)</h3>
                     <p class="text-[9px] text-slate-500">건당 30일 잠금 · 만기 시 이자 지급 · 중도 해지는 원금만</p>
                     <div id="bankTermDepositsList" class="min-h-[2rem]"></div>
@@ -1969,7 +1975,7 @@
                         <button type="button" onclick="window.openTermDeposit()" class="bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-xs shrink-0">적금 가입</button>
                     </div>
                 </div>
-                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-emerald-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="transfer">
+                <div class="js-guest-write inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-emerald-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="transfer">
                     <h3 class="text-emerald-200 font-bold text-sm"><i class="fa-solid fa-arrow-right-arrow-left"></i> 계좌이체</h3>
                     <p class="text-[9px] text-slate-500">지갑에서 다른 학생에게 봉을 보냅니다. 마스터도 자기 지갑에서 보낼 수 있습니다. 수수료는 보내는 사람이 냅니다.</p>
                     <p id="bankTransferFeeHint" class="text-[10px] text-emerald-200/90 font-bold">이체 수수료 0봉</p>
@@ -1982,7 +1988,7 @@
                     </div>
                     <p id="bankTransferPreview" class="text-[10px] text-slate-400 leading-snug">1~5000봉까지 보낼 수 있습니다.</p>
                 </div>
-                <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-400/45 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="invest">
+                <div class="js-guest-write inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-400/45 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="invest">
                     <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-chart-line"></i> 코스피 · 코스닥 · 나스닥 투자</h3>
                     <p class="text-[9px] text-slate-400 leading-relaxed">지갑에서 10~1000봉을 넣고, 실제 지수 등락만큼 되찾습니다. 이미 투자한 시장에도 원금 합계 1000봉까지 추가 매수할 수 있고, 매수가와 수익률은 합산됩니다. 매도할 때는 원금 중 팔 만큼을 직접 정할 수 있습니다. 남기려면 10봉 이상이어야 합니다. 하루 수익은 최대 8봉이고 등락도 작게 묶여 있습니다. 코스피·코스닥은 장중 1시간마다 갱신됩니다.</p>
                     <div id="bankInvestQuoteLine" class="text-[10px] text-amber-100 font-bold">지수를 불러오는 중…</div>

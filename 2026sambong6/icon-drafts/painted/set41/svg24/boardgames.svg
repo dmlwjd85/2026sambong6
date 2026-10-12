@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>보드게임</title>
+  <style>@import url("../../../src/olympus-tokens.css");</style>
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
+  <rect x="4.6" y="5.2" width="14.8" height="13.6" rx="1.2" fill="var(--marble)" stroke="var(--gold)" stroke-width="2"/><circle cx="9" cy="10" r="1.5" fill="var(--gold)"/><circle cx="15" cy="14" r="1.5" fill="var(--ink)"/>
+</svg>

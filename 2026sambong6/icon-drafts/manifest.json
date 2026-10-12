@@ -1,0 +1,155 @@
+{
+  "note": "시안 전용. index.html 과 olympus-icons.js 에는 연결하지 않습니다.",
+  "border": "96px 그림의 테두리는 5, 24px 그림의 테두리는 1.25. 비율은 같습니다.",
+  "light": "왼쪽 위",
+  "tokens": [
+    "--gold",
+    "--gold-rim-hi",
+    "--gold-rim-lo",
+    "--marble",
+    "--sky",
+    "--sky-deep"
+  ],
+  "icons": [
+    {
+      "id": "shop",
+      "label": "상점",
+      "motif": "금화 암포라",
+      "plate": "enamel",
+      "slot": "경제 · 상점"
+    },
+    {
+      "id": "quest",
+      "label": "퀘스트",
+      "motif": "두루마리",
+      "plate": "marble",
+      "slot": "내비 · 퀘스트"
+    },
+    {
+      "id": "rank",
+      "label": "순위",
+      "motif": "월계관과 메달",
+      "plate": "marble",
+      "slot": "밥줄 · 급식 순위"
+    },
+    {
+      "id": "bank",
+      "label": "은행",
+      "motif": "신전 금고",
+      "plate": "marble",
+      "slot": "경제 · 은행"
+    },
+    {
+      "id": "lunch",
+      "label": "급식",
+      "motif": "암브로시아 그릇",
+      "plate": "enamel",
+      "slot": "내비 · 밥줄"
+    },
+    {
+      "id": "wheel",
+      "label": "룰렛",
+      "motif": "운명의 수레바퀴",
+      "plate": "enamel",
+      "slot": "수업 · 돌림판"
+    },
+    {
+      "id": "home",
+      "label": "홈",
+      "motif": "페디먼트 신전",
+      "plate": "marble",
+      "slot": "내비 · 홈"
+    },
+    {
+      "id": "plaza",
+      "label": "광장",
+      "motif": "열주",
+      "plate": "enamel",
+      "slot": "내비 · 광장"
+    },
+    {
+      "id": "literature",
+      "label": "문학",
+      "motif": "올리브 가지",
+      "plate": "marble",
+      "slot": "내비 · 문학"
+    },
+    {
+      "id": "jobs",
+      "label": "직업",
+      "motif": "올리브 관",
+      "plate": "marble",
+      "slot": "내비 · 직업"
+    },
+    {
+      "id": "economy",
+      "label": "경제",
+      "motif": "날개 신발",
+      "plate": "enamel",
+      "slot": "내비 · 경제"
+    },
+    {
+      "id": "challenge",
+      "label": "도전",
+      "motif": "번개",
+      "plate": "enamel",
+      "slot": "내비 · 도전"
+    },
+    {
+      "id": "constitution",
+      "label": "헌법",
+      "motif": "법 석비",
+      "plate": "enamel",
+      "slot": "내비 · 헌법"
+    },
+    {
+      "id": "classtools",
+      "label": "수업",
+      "motif": "아테나 올빼미",
+      "plate": "enamel",
+      "slot": "내비 · 수업"
+    },
+    {
+      "id": "admin",
+      "label": "마스터",
+      "motif": "번개 홀",
+      "plate": "marble",
+      "slot": "내비 · 마스터"
+    },
+    {
+      "id": "settings",
+      "label": "설정",
+      "motif": "메안더 열쇠",
+      "plate": "marble",
+      "slot": "내비 · 설정"
+    },
+    {
+      "id": "help",
+      "label": "도움말",
+      "motif": "횃불",
+      "plate": "enamel",
+      "slot": "내비 · 도움말"
+    },
+    {
+      "id": "more",
+      "label": "더보기",
+      "motif": "세 기둥",
+      "plate": "enamel",
+      "slot": "내비 · 더보기"
+    },
+    {
+      "id": "estate",
+      "label": "부동산",
+      "motif": "기둥 저택과 올리브",
+      "plate": "marble",
+      "slot": "경제 · 부동산"
+    },
+    {
+      "id": "groupbuy",
+      "label": "공동구매",
+      "motif": "월계수로 묶은 암포라",
+      "plate": "marble",
+      "slot": "경제 · 공동구매"
+    }
+  ]
+}

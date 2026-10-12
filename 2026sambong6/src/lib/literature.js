@@ -27,20 +27,20 @@ export const READING_GENRES = Object.freeze([
 ]);
 
 export const DIARY_WEATHER = Object.freeze([
-    { id: 'sunny', label: '맑음', emoji: '' },
-    { id: 'cloudy', label: '흐림', emoji: '' },
-    { id: 'rain', label: '비', emoji: '' },
-    { id: 'snow', label: '눈', emoji: '' },
-    { id: 'wind', label: '바람', emoji: '' },
+    { id: 'sunny', label: '맑음', emoji: '☀️' },
+    { id: 'cloudy', label: '흐림', emoji: '☁️' },
+    { id: 'rain', label: '비', emoji: '🌧️' },
+    { id: 'snow', label: '눈', emoji: '❄️' },
+    { id: 'wind', label: '바람', emoji: '💨' },
 ]);
 
 export const DIARY_MOODS = Object.freeze([
-    { id: 'happy', label: '기쁨', emoji: '' },
-    { id: 'calm', label: '평온', emoji: '' },
-    { id: 'excited', label: '설렘', emoji: '' },
-    { id: 'tired', label: '피곤', emoji: '' },
-    { id: 'sad', label: '슬픔', emoji: '' },
-    { id: 'angry', label: '화남', emoji: '' },
+    { id: 'happy', label: '기쁨', emoji: '😊' },
+    { id: 'calm', label: '평온', emoji: '😌' },
+    { id: 'excited', label: '설렘', emoji: '🤩' },
+    { id: 'tired', label: '피곤', emoji: '😪' },
+    { id: 'sad', label: '슬픔', emoji: '😢' },
+    { id: 'angry', label: '화남', emoji: '😠' },
 ]);
 
 function clipText(raw, max) {
@@ -277,7 +277,7 @@ export function sanitizeDiaryStrokes(raw) {
     const out = [];
     for (const s of raw.slice(0, DIARY_STROKE_MAX)) {
         if (!s || typeof s !== 'object') continue;
-        const color = String(s.color || 'var(--ink-2)').slice(0, 16);
+        const color = String(s.color || '#334155').slice(0, 16);
         const width = clampInt(s.width, 1, 10, 3);
         const ptsRaw = Array.isArray(s.pts) ? s.pts : [];
         const pts = [];

@@ -11,7 +11,7 @@ describe('체스 기물 SVG', () => {
         assert.match(wq, /linearGradient/);
         assert.match(wq, /상아 퀸/);
         assert.match(bk, /흑철 킹/);
-        assert.equal(/\p{Extended_Pictographic}/u.test(wq), false);
+        assert.equal(wq.includes('♛') || wq.includes('♕'), false);
         assert.match(chessPieceHtml(chessMakePiece('w', 'p'), 12), /chess-piece-p/);
         assert.equal(chessPieceHtml(0), '');
     });

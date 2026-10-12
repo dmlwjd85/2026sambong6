@@ -67,12 +67,16 @@ service cloud.firestore {
         );
     }
 
+    // 첫 로그인·새 학급 마스터·없는 학생 초기화는 xp 0, bong 0으로 만듭니다.
+    // 생성 때는 그 기본값보다 큰 초깃값을 거절합니다.
     function studentCreateIsSafe() {
       return signedIn()
         && request.resource.data.xp is number
         && request.resource.data.bong is number
         && request.resource.data.xp >= 0
-        && request.resource.data.bong >= -2000;
+        && request.resource.data.xp <= 0
+        && request.resource.data.bong >= -2000
+        && request.resource.data.bong <= 0;
     }
 
     function studentUpdateIsSafe() {

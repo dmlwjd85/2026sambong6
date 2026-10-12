@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 12" fill="none">
+  <path d="M1 2 H8 V10 H4 V6 H6 V8 H8" stroke="#7A5A10" stroke-width="1.5" stroke-linejoin="miter"/>
+  <path d="M12 2 H20 V10 H14 V6 H18 V8" stroke="#7A5A10" stroke-width="1.5" stroke-linejoin="miter"/>
+  <path d="M24 2 H32 V10 H26 V6 H30 V8" stroke="#7A5A10" stroke-width="1.5" stroke-linejoin="miter"/>
+  <path d="M36 2 H46 V10 H38 V6 H42 V8" stroke="#7A5A10" stroke-width="1.5" stroke-linejoin="miter"/>
+</svg>

@@ -1,0 +1,69 @@
+/* 올림푸스 색은 이 파일의 :root 에만 적습니다. */
+:root {
+    --bg: #F3F8FD;
+    --surface: #FFFFFF;
+    --marble: #F7F5F0;
+    --sky: #6EC1F0;
+    --sky-deep: #1C64A8;
+    --gold: #D4A63A;
+    --gold-light: #F4D77E;
+    --gold-deep: #A87B1F;
+    --gold-text: #6B4F0E;
+    --ink: #1E2A40;
+    --ink-2: #45526C;
+    --line: #E3E8F0;
+    --laurel: #345E22;
+    --danger: #8E2424;
+    --wine: #8B1E3F;
+    --navy: #1B2A4A;
+    --secondary-bg: #E7F3FC;
+    --reward-bg: linear-gradient(180deg, #F4D77E, #E8C56A);
+    --shadow-card: 0 4px 12px rgba(36, 50, 74, 0.08);
+    --shadow-press: 0 4px 0 #0E3F6E;
+    --chalk-board: #14352A;
+    --chalk-ink: #F4F7F2;
+    --chess-b-body: #1B1F27;
+    --chess-b-mid: #2C3340;
+    --chess-b-light: #8B93A1;
+    --chess-b-shine: #D7DDE6;
+    --chess-b-edge: #0B0D11;
+    --chess-b-shade: #0A0C10;
+    --chess-w-body: #F3E2C2;
+    --chess-w-mid: #E7CF9F;
+    --chess-w-light: #FFF6E4;
+    --chess-w-shine: #FFFFFF;
+    --chess-w-edge: #8A6430;
+    --chess-w-shade: #C4A36A;
+    --wheel-1: var(--sky);
+    --wheel-2: var(--gold-light);
+    --wheel-3: var(--laurel);
+    --wheel-4: var(--wine);
+    --wheel-5: var(--navy);
+    --wheel-6: var(--sky-deep);
+    --wheel-7: var(--marble);
+    --wheel-8: var(--gold);
+    --font-body: Pretendard, sans-serif;
+    --font-display: "Gowun Batang", Pretendard, serif;
+    --font-logo: Cinzel, "Gowun Batang", serif;
+    --leading: 1.5;
+    --radius-btn: 14px;
+    --radius-card: 20px;
+    --header-h: 72px;
+    --dock-h: 76px;
+    --meander-h: 6px;
+    --max-w: 1200px;
+    --wheel-label-r: -6.2rem;
+}
+
+@media (min-width: 1600px) {
+    :root {
+        --header-h: 96px;
+        --dock-h: 104px;
+        --meander-h: 12px;
+        --max-w: 90vw;
+    }
+}
+
+@media (max-width: 480px) {
+    :root { --wheel-label-r: -4.4rem; }
+}

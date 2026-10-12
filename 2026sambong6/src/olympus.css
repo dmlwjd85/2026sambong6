@@ -1,0 +1,356 @@
+/* 올림푸스 컴포넌트. 색은 var(--token) 만 사용합니다. */
+
+html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);;;;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+h1, .oly-logo, #navWorldBrand, #loginWorldTitle {
+    font-family: var(--font-logo);;;;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--navy);
+}
+
+h2, .font-display, .oly-title {
+    font-family: var(--font-display);;;;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--navy);
+}
+
+h3, h4, h5, h6 { color: var(--navy); font-weight: 700; line-height: 1.5; }
+
+.text-12 { font-size: 12px; line-height: 1.5; }
+.text-14 { font-size: 14px; line-height: 1.5; }
+.text-16 { font-size: 16px; line-height: 1.5; }
+.text-20 { font-size: 20px; line-height: 1.5; }
+.text-24 { font-size: 24px; line-height: 1.5; }
+.text-32 { font-size: 32px; line-height: 1.5; font-family: var(--font-display);;;; }
+.text-48 { font-size: 48px; line-height: 1.5; font-family: var(--font-display);;;; }
+
+.oly-ink { color: var(--ink); }
+.oly-muted { color: var(--ink-2); }
+.oly-gold-text { color: var(--gold-text); }
+.oly-surface {
+    background: var(--surface);
+    color: var(--ink);
+}
+.oly-fill { background: var(--sky); color: var(--ink); }
+.oly-line { border-color: var(--line); }
+
+.glass-panel,
+.oly-card {
+    background: var(--surface);
+    color: var(--ink);
+    border: 2px solid var(--gold-text);
+    border-radius: 20px;
+    box-shadow: var(--shadow-card);
+}
+
+.glass-panel:has(h2),
+.glass-panel:has(h3),
+.oly-card:has(h2),
+.oly-card:has(h3) {
+    position: relative;
+    padding-top: 26px;
+}
+.glass-panel:has(h2)::before,
+.glass-panel:has(h3)::before,
+.oly-card:has(h2)::before,
+.oly-card:has(h3)::before {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: var(--meander-h);
+    background: var(--surface) url("/2026sambong6/olympus/meander.svg") left center / auto 100% repeat-x;
+    pointer-events: none;
+}
+
+[class*="bg-theme-"] {
+    background: var(--bg);
+    background-image: none;
+}
+
+#swipeWrapper { max-width: var(--max-w); }
+
+.oly-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 14px;
+    font-family: var(--font-body);;;;
+    font-weight: 700;
+    line-height: 1.5;
+    border: 2px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+}
+.oly-btn-sm { min-height: 36px; padding: 4px 12px; font-size: 14px; }
+.oly-btn-md { min-height: 44px; padding: 8px 16px; font-size: 16px; }
+.oly-btn-lg {
+    min-height: 48px;
+    padding: 12px 20px;
+    font-size: 16px;
+    box-shadow: var(--shadow-press);
+}
+.oly-btn-lg:active { transform: translateY(2px); }
+.oly-btn-primary,
+button.oly-btn-primary { background: var(--sky-deep); color: var(--surface); }
+.oly-btn-secondary,
+button.oly-btn-secondary { background: var(--secondary-bg); color: var(--ink); border-color: var(--navy); }
+.oly-btn-reward,
+button.oly-btn-reward { background: var(--reward-bg); color: var(--ink); border-color: var(--gold-text); }
+.oly-btn-danger,
+button.oly-btn-danger { background: var(--wine); color: var(--surface); }
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select, textarea {
+    background: var(--surface);
+    color: var(--ink);
+    border: 2px solid var(--navy);
+    border-radius: 14px;
+    min-height: 44px;
+    font-size: 16px;
+    font-family: var(--font-body);;;;
+    line-height: 1.5;
+}
+
+nav.fixed.top-0 {
+    background: var(--navy);
+    color: var(--surface);
+    border: 0;
+    min-height: var(--header-h);
+}
+nav.fixed.top-0 #navWorldBrand,
+nav.fixed.top-0 #navClassLabel,
+nav.fixed.top-0 button,
+nav.fixed.top-0 span { color: var(--surface); }
+#navWorldBrand { font-family: var(--font-logo);;;; font-size: 32px; letter-spacing: 0.08em; }
+#navClassLabel { font-size: 16px; font-weight: 700; }
+.oly-pediment { display: block; width: 100%; height: 28px; }
+
+#appNavDock {
+    background: var(--surface);
+    border-top: 2px solid var(--gold-text);
+    color: var(--ink);
+}
+.app-nav-item, .app-sub-item {
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 700;
+    min-height: 44px;
+    border-radius: 14px;
+}
+.app-nav-item.is-active,
+.app-sub-item.is-active,
+.inner-pane-btn.is-active {
+    background: var(--navy);
+    color: var(--surface);
+}
+.app-nav-icon {
+    width: 48px;
+    height: 48px;
+    display: grid;
+    place-items: center;
+    background: var(--sky);
+    border: 2px solid var(--ink);
+    border-radius: 14px;
+    overflow: hidden;
+}
+.app-nav-icon .oly-icon { width: 28px; height: 28px; }
+.app-nav-item.is-active .app-nav-icon { background: var(--gold-light); }
+.oly-icon { width: 24px; height: 24px; display: inline-block; vertical-align: -0.3em; }
+.oly-icon .f { fill: var(--sky); }
+.oly-icon .s { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.oly-icon .g { fill: none; stroke: var(--gold-text); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.app-nav-item.is-active .oly-icon .s { stroke: var(--navy); }
+
+#loginOverlay { background: var(--bg); }
+#loginStack { transition: opacity 100ms linear; }
+#loginOverlay.is-leaving #loginStack { opacity: 0; visibility: hidden; }
+#appShell { opacity: 0; }
+body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
+
+.guest-demo-banner, body.is-guest #guestDemoBanner { display: none !important; }
+
+.oly-empty {
+    margin: 12px 0;
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: var(--secondary-bg);
+    color: var(--ink);
+    font-size: 16px;
+    line-height: 1.5;
+}
+
+#worldMapArea { background: var(--sky); }
+#worldMapArea .worldmap-atlas,
+.worldmap-atlas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.worldmap-label {
+    font-size: 14px;
+    line-height: 1.5;
+    font-weight: 700;
+    color: var(--ink);
+    background: var(--surface);
+    border: 2px solid var(--navy);
+    border-radius: 999px;
+    padding: 4px 12px;
+}
+.worldmap-vignette, .worldmap-mist, .star, .worldmap-season-seal { display: none; }
+
+.oly-shopkeeper { width: min(100%, 280px); height: auto; display: block; }
+.oly-adult summary { font-size: 16px; font-weight: 700; color: var(--navy); cursor: pointer; min-height: 44px; }
+
+.class-wheel-stage {
+    overflow: visible;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    background: var(--surface);
+    border: 2px solid var(--navy);
+}
+.class-wheel-disc {
+    width: min(100%, 280px);
+    height: auto;
+    aspect-ratio: 1;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
+    border: 4px solid var(--navy);
+    background: var(--marble);
+}
+.class-wheel-label {
+    font-size: 12px;
+    color: var(--ink);
+    background: var(--surface);
+    border-radius: 999px;
+    width: auto;
+    max-width: 6rem;
+    padding: 2px 6px;
+}
+.class-wheel-pointer { border-top-color: var(--wine); }
+.class-wheel-spin-fx { width: min(100%, 280px); height: auto; aspect-ratio: 1; }
+@media (max-width: 480px) {
+    .class-wheel-panel { overflow: visible; }
+    .class-wheel-stage { padding-top: 36px; }
+    .class-wheel-disc, .class-wheel-spin-fx { width: min(100%, 68vw); }
+    #appNavDock { top: auto; bottom: 0; }
+    .app-nav-item.oly-nav-overflow { display: none !important; }
+    #tab-more { display: flex !important; }
+}
+
+#tab-more { display: none; }
+#navMoreSheet {
+    position: fixed;
+    left: 12px; right: 12px; bottom: 88px;
+    z-index: 80;
+    background: var(--surface);
+    color: var(--ink);
+    border: 2px solid var(--navy);
+    border-radius: 20px;
+    padding: 12px;
+    box-shadow: var(--shadow-card);
+}
+#navMoreSheet button {
+    width: 100%;
+    text-align: left;
+}
+
+.oly-cloud {
+    position: fixed;
+    z-index: 0;
+    width: min(160px, 18vw);
+    pointer-events: none;
+}
+.oly-cloud-left { left: 0; top: 18%; }
+.oly-cloud-right { right: 0; bottom: 12%; }
+#appShell, #loginOverlay { position: relative; z-index: 1; }
+
+:focus-visible { outline: 3px solid var(--navy); outline-offset: 2px; }
+
+#dashBong, #dashXp, #seasonTimerDisplay { font-size: 32px; font-weight: 700; color: var(--ink); }
+#homeHero #todoContainer > :nth-child(n + 4) { display: none; }
+
+@media (min-width: 1600px) {
+    body { font-size: 24px; }
+    h1, h2, .font-display, .oly-title, #loginWorldTitle { font-size: 48px; }
+    h3 { font-size: 32px; }
+    #dashBong, #dashXp, #seasonTimerDisplay { font-size: 48px; }
+    .app-nav-icon { width: 64px; height: 64px; }
+    .app-nav-icon .oly-icon, .oly-icon { width: 48px; height: 48px; }
+    .app-nav-label, .app-nav-item { font-size: 20px; }
+    #swipeWrapper { padding-left: 5vw; padding-right: 5vw; max-width: none; }
+}
+
+#chalkboardText, .chalkboard-text {
+    color: var(--chalk-ink);
+    font-size: 48px;
+}
+.chalkboard-board, #chalkboardBoard, .chalk-surface {
+    background: var(--chalk-board);
+    color: var(--chalk-ink);
+}
+
+body[class*="bg-theme-"] {
+    background: var(--bg) !important;
+    background-image: none !important;
+    color: var(--ink);
+}
+.summer-sun-glow, .summer-bubbles { display: none !important; }
+#navSeasonBadge { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.glass-panel, .oly-card {
+    background: var(--surface) !important;
+    color: var(--ink) !important;
+    border-color: var(--line) !important;
+}
+.glass-panel[class*="border-t-"],
+.oly-card[class*="border-t-"] {
+    border-top-color: var(--gold-text) !important;
+}
+.glass-panel.is-equipped {
+    border-left-color: var(--sky-deep) !important;
+}
+button.oly-btn-primary { background: var(--sky-deep) !important; color: var(--surface) !important; }
+button.oly-btn-secondary { background: var(--secondary-bg) !important; color: var(--ink) !important; border-color: var(--navy) !important; }
+button.oly-btn-reward { background: var(--reward-bg) !important; color: var(--ink) !important; }
+button.oly-btn-danger { background: var(--wine) !important; color: var(--surface) !important; }
+nav.fixed.top-0 { background: var(--navy) !important; color: var(--surface) !important; }
+#appNavDock { background: var(--surface) !important; }
+.class-wheel-stage { overflow: visible !important; }
+.class-wheel-disc, .class-wheel-spin-fx {
+    width: min(100%, 280px) !important;
+    height: auto !important;
+    aspect-ratio: 1 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+    max-height: none !important;
+}
+.class-wheel-hub {
+    color: var(--ink) !important;
+    background: var(--surface) !important;
+}
+body.is-guest:not(.is-guest-demo) #tab-admin { display: none !important; }
+body.is-guest-demo #adminSection button:not(.inner-pane-btn):not(.app-sub-item):not(.app-nav-item) {
+    pointer-events: none;
+}
+#homeHero {
+    display: grid;
+    gap: 16px;
+    margin: 0 0 16px;
+}
+@media (min-width: 800px) {
+    #homeHero { grid-template-columns: 1fr 1fr; }
+}

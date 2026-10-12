@@ -177,7 +177,6 @@ nav.fixed.top-0 span { color: var(--surface); }
 #appShell { opacity: 0; }
 body.oly-app-in #appShell { opacity: 1; transition: opacity 100ms linear; }
 
-.guest-demo-banner, body.is-guest #guestDemoBanner { display: none !important; }
 
 .oly-empty {
     margin: 12px 0;
@@ -342,10 +341,8 @@ nav.fixed.top-0 { background: var(--navy) !important; color: var(--surface) !imp
     color: var(--ink) !important;
     background: var(--surface) !important;
 }
-body.is-guest:not(.is-guest-demo) #tab-admin { display: none !important; }
-body.is-guest-demo #adminSection button:not(.inner-pane-btn):not(.app-sub-item):not(.app-nav-item) {
-    pointer-events: none;
-}
+body.is-guest #tab-admin,
+body.is-guest .js-admin-entry { display: none !important; }
 #homeHero {
     display: grid;
     gap: 16px;
@@ -353,4 +350,30 @@ body.is-guest-demo #adminSection button:not(.inner-pane-btn):not(.app-sub-item):
 }
 @media (min-width: 800px) {
     #homeHero { grid-template-columns: 1fr 1fr; }
+}
+
+.hidden,
+[hidden],
+.oly-btn.hidden,
+.oly-btn[hidden],
+.app-sub-item.hidden,
+.app-nav-item.hidden,
+.inner-pane.hidden,
+.oly-icon.hidden,
+.app-nav-icon.hidden {
+    display: none !important;
+}
+
+#questsSection,
+#questsSection > .grid,
+#questsSection .inner-pane,
+#questsSection .quest-card-grid,
+#dailyQuestBoard,
+.quest-tile {
+    min-width: 0;
+    max-width: 100%;
+}
+.quest-tile.oly-btn {
+    width: 100%;
+    min-width: 0;
 }

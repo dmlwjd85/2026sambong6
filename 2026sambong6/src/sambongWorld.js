@@ -9928,8 +9928,7 @@ ${subjectLine}
          * @param {string} [subOrOpts] 경제/도전 서브 또는 생략
          */
         window.switchTab = function(tabId, subOrOpts) {
-            if (isGuestSession() && tabId === 'settings') return;
-            if (isGuestSession() && tabId === 'admin' && !window._guestDemoActive) return;
+            if (isGuestSession() && (tabId === 'admin' || tabId === 'settings')) return;
             if (isMartialLawLockingStudent()) return;
             // 레거시 딥링크 별칭
             if (tabId === 'goldenbell') {
@@ -9994,9 +9993,6 @@ ${subjectLine}
             }
             if (tabId === 'admin' && window.playerState && window.playerState.isGM && typeof window.renderClassAdminPanel === 'function') {
                 window.renderClassAdminPanel();
-            }
-            if (tabId === 'admin' && window._guestDemoActive && typeof window.renderAdminQuestBoard === 'function') {
-                window.renderAdminQuestBoard(window.allStudentsData || []);
             }
             if (tabId === 'challenge') {
                 window.switchChallengeSub(challengeSub);
@@ -21403,7 +21399,7 @@ ${subjectLine}
             ).join('');
 
             const html = `
-                <table class="w-full min-w-[280px] text-12 sm:text-12 border-collapse">
+                <table class="w-full min-w-0 text-12 sm:text-12 border-collapse">
                     <thead>
                         <tr>
                             <th class="sticky left-0 z-[2] p-0.5 sm:p-1 text-left  font-bold border-b border-r   w-[4.5rem] sm:w-auto">이름</th>
@@ -21413,7 +21409,7 @@ ${subjectLine}
                     </thead>
                     <tbody>${bodyRows}</tbody>
                 </table>
-                <div class="flex flex-nowrap gap-1 overflow-x-auto px-1 py-1 border-t   max-w-full">
+                <div class="flex flex-wrap gap-1 overflow-x-hidden px-1 py-1 border-t   max-w-full min-w-0">
                     <span class="text-12  font-bold shrink-0 self-center">열별 완료</span>
                     ${badgeLine}
                 </div>`;
@@ -24467,7 +24463,7 @@ ${subjectLine}
                 if (window._guestDemoActive) document.body.classList.add('is-guest-demo');
                 const adminTab = document.getElementById('tab-admin');
                 const settingsTab = document.getElementById('tab-settings');
-                if (adminTab) adminTab.classList.toggle('hidden', !window._guestDemoActive);
+                if (adminTab) adminTab.classList.add('hidden');
                 if (settingsTab) settingsTab.classList.add('hidden');
                 maskGuestWriteControls(document);
             }
@@ -24753,9 +24749,15 @@ ${subjectLine}
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1200);
                 
                 dismissLoginOverlay();
-                document.getElementById('saveStatus').classList.replace('hidden', 'flex');
-                document.getElementById('playerNameDisplay').innerText = STUDENT_NAMES[studentId];
-                document.getElementById('cloudIcon').className = " cloud ";
+                const saveStatus = document.getElementById('saveStatus');
+                if (saveStatus) saveStatus.classList.replace('hidden', 'flex');
+                const nameEl = document.getElementById('playerNameDisplay');
+                if (nameEl) nameEl.innerText = STUDENT_NAMES[studentId] || '';
+                const cloudIcon = document.getElementById('cloudIcon');
+                if (cloudIcon) {
+                    cloudIcon.setAttribute('data-oly', 'cloud');
+                    cloudIcon.setAttribute('class', 'oly-icon');
+                }
                 enterWorld();
                 
                 updateUI(); 
@@ -26928,7 +26930,16 @@ ${subjectLine}
             setGmJobLookFormValues(icon, color);
             const previewIcon = document.getElementById('gmJobLookPreviewIcon');
             const previewLabel = document.getElementById('gmJobLookPreviewLabel');
-            if (previewIcon) previewIcon.className = ` ${icon} text-24 ${color} w-8 text-center`;
+            if (previewIcon) {
+                previewIcon.setAttribute('class', 'oly-icon');
+                previewIcon.setAttribute('data-oly', icon);
+                if (typeof window.olyIcon === 'function') {
+                    const holder = document.createElement('div');
+                    holder.innerHTML = window.olyIcon(icon);
+                    const drawn = holder.querySelector('svg');
+                    if (drawn) previewIcon.innerHTML = drawn.innerHTML;
+                }
+            }
             if (previewLabel) previewLabel.textContent = `${jobIconLabel(icon)} · ${jobColorLabel(color)}`;
             const attr = (value) => String(value).replace(/'/g, '');
             iconGrid.innerHTML = jobIconChoicesForPicker(icon).map((item) => {

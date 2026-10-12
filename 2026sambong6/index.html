@@ -224,13 +224,13 @@
             <div class="flex items-center space-x-2">
                 <div id="saveStatus" class="hidden text-12 sm:text-12  items-center gap-1.5  px-2 py-1 rounded-full border ">
                     <span id="playerNameDisplay" class="font-bold  truncate max-w-[60px] sm:max-w-none"></span>
-                    <svg class="oly-icon" data-oly="cloud" viewBox="0 0 24 24" aria-hidden="true"></svg>
+                    <svg id="cloudIcon" class="oly-icon" data-oly="cloud" viewBox="0 0 24 24" aria-hidden="true"></svg>
                 </div>
                 <button type="button" id="noticeInboxBtn" class="oly-btn oly-btn-secondary oly-btn-sm hidden relative" onclick="window.toggleNoticeInbox()" aria-label="알림함" aria-expanded="false">
                     <svg class="oly-icon" data-oly="bell" viewBox="0 0 24 24" aria-hidden="true"></svg>
                     <span id="noticeInboxBadge" class="hidden absolute -top-1 -right-1 min-w-[1rem] h-4 px-1 rounded-full   text-12 font-black leading-4 text-center">0</span>
                 </button>
-                <button onclick="window.logout()" class="oly-btn oly-btn-secondary oly-btn-sm transition"><svg class="oly-icon" data-oly="right-from-bracket" viewBox="0 0 24 24" aria-hidden="true"></svg></button>
+                <button type="button" onclick="window.logout()" class="oly-btn oly-btn-secondary oly-btn-sm transition" aria-label="로그아웃"><svg class="oly-icon" data-oly="right-from-bracket" viewBox="0 0 24 24" aria-hidden="true"></svg></button>
             </div>
         </div>
     </nav>
@@ -240,7 +240,7 @@
         <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.switchTab('jobs'); this.parentElement.classList.add('hidden')">직업</button>
         <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.switchTab('constitution'); this.parentElement.classList.add('hidden')">헌법</button>
         <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.switchTab('classtools'); this.parentElement.classList.add('hidden')">수업</button>
-        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.switchTab('admin'); this.parentElement.classList.add('hidden')">마스터</button>
+        <button type="button" class="oly-btn oly-btn-secondary oly-btn-md js-admin-entry" onclick="window.switchTab('admin'); this.parentElement.classList.add('hidden')">마스터</button>
         <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.switchTab('settings'); this.parentElement.classList.add('hidden')">설정</button>
         <button type="button" class="oly-btn oly-btn-secondary oly-btn-md" onclick="window.switchTab('help'); this.parentElement.classList.add('hidden')">도움말</button>
     </div>
@@ -1594,7 +1594,7 @@
                     <input type="number" id="gmJobPay" min="0" step="1" placeholder="주급 B" data-currency-placeholder="주급 {u}" class=" border   px-2 py-1.5 rounded text-12 font-bold sm:col-span-2" />
                 </div>
                 <div class="gm-job-look-preview mb-2 flex items-center gap-3 rounded-lg border   px-3 py-2">
-                    <svg class="oly-icon" data-oly="star" viewBox="0 0 24 24" aria-hidden="true"></svg>
+                    <svg id="gmJobLookPreviewIcon" class="oly-icon" data-oly="star" viewBox="0 0 24 24" aria-hidden="true"></svg>
                     <div class="min-w-0">
                         <div class="text-12  font-bold">선택한 모습</div>
                         <div id="gmJobLookPreviewLabel" class="text-12  truncate">아래에서 아이콘과 색을 고르세요</div>

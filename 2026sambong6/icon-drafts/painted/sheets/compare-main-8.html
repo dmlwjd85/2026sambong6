@@ -3,345 +3,581 @@
 <link rel="stylesheet" href="../../../public/fonts/fonts.css">
 <style>
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Pretendard,sans-serif}
-.sheet{width:1040px;padding:24px 28px 32px;box-sizing:border-box}
-h1{font-family:"Gowun Batang",serif;font-size:32px;margin:0 0 4px}
-.lead{margin:0 0 16px;font-size:14px;color:var(--ink-2);line-height:1.5}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+.sheet{width:1280px;padding:24px 28px 32px;box-sizing:border-box}
+h1{font-family:"Gowun Batang",serif;font-size:30px;margin:0 0 4px}
+.lead{margin:0 0 14px;font-size:14px;color:var(--ink-2);line-height:1.45}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 article{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:10px 12px 12px}
-h2{margin:0 0 6px;font-size:16px}
-.cols{display:flex;gap:12px}
-.cols>div{flex:1}
-p{margin:0 0 6px;font-size:12px;color:var(--ink-2);font-weight:700}
-img,.s24 svg{display:inline-block;vertical-align:bottom;border-radius:8px}
-.s96{width:96px;height:96px;object-fit:cover}
-.s48{width:48px;height:48px;object-fit:cover;margin-left:8px}
-.s24,.s24 svg{width:24px;height:24px;margin-left:8px;object-fit:cover}
-.sizes{display:flex;gap:8px;font-size:12px;color:var(--gold-text);margin:4px 0 0}
-.sizes span{width:96px}
-.sizes span:nth-child(2){width:48px}
-.sizes span:nth-child(3){width:24px}
+h2{margin:0 0 8px;font-size:16px}
+.vers{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+p{margin:0 0 4px;font-size:12px;color:var(--ink-2);font-weight:700}
+.row{display:flex;align-items:flex-end;gap:8px}
+.s96{width:96px;height:96px;object-fit:cover;border-radius:8px}
+.s48{width:48px;height:48px;object-fit:cover;border-radius:6px}
+.s24,.s24 svg{width:24px;height:24px;display:block;border-radius:4px}
 </style></head><body><div class="sheet">
-<h1>main · 새 시안 8</h1>
-<p class="lead">각 칸은 96px, 48px, 24px입니다. 시안의 96·48은 512px 그림을 줄인 WebP이고, 24px는 단색 실루엣입니다. 금테와 바탕판은 기존 SVG입니다.</p>
+<h1>main · 7.9 · 새 시안</h1>
+<p class="lead">각 칸은 96px, 48px, 24px입니다. 7.9는 지난 점수 버전이고, 새 시안은 장면·대비·굵은 24px 실루엣을 고친 버전입니다.</p>
 <div class="grid">
-      <article>
-        <h2>상점</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+<article>
+      <h2>상점</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/nav-shop.webp" alt="">
             <img class="s48" src="../../../public/nav/nav-shop.webp" alt="">
             <img class="s24" src="../../../public/nav/nav-shop.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/shop.webp" alt="">
-            <img class="s48" src="../webp/96/shop.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/shop.webp" alt="">
+            <img class="s48" src="../v79/webp/96/shop.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>상점</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-shop-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-shop-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-shop-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-shop-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-shop-v79)"/>
   <path d="M8 6.2h5.4c.5 0 .8.4.8.9v2c2.5 1 3.8 3 3.8 5.4 0 3.4-2.2 5.6-4.2 6.2v1.2H7.6v-1.2C5.6 20.1 3.4 17.9 3.4 14.5c0-2.4 1.3-4.4 3.8-5.4V7.1c0-.5.3-.9.8-.9z" fill="var(--gold)"/><path d="M7.6 9.4C5.6 10.2 4.6 12.6 6 14.6M15.2 9.4c2 .8 3 3.2 1.6 5.2" fill="none" stroke="var(--gold-rim-lo)" stroke-width="1.4" stroke-linecap="round"/><circle cx="16.6" cy="7.4" r="2.4" fill="var(--gold-rim-hi)" stroke="var(--gold-rim-lo)" stroke-width="0.8"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>퀘스트</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/shop.webp" alt="">
+            <img class="s48" src="../webp/96/shop.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>상점</title>
+  
+  <defs>
+    <linearGradient id="rim-shop-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-shop-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-shop-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-shop-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-shop-new)"/>
+  <path d="M7.6 6.2h5.2c.5 0 .9.4.9.9v1c2.2.8 3.4 2.5 3.4 4.6 0 3.2-2 5.4-3.8 6v1.2H6.7v-1.2c-1.8-.6-3.8-2.8-3.8-6 0-2.1 1.2-3.8 3.4-4.6v-1c0-.5.4-.9.9-.9z" fill="var(--gold)"/><circle cx="16.8" cy="7.2" r="2.5" fill="var(--gold-rim-hi)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>퀘스트</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/nav-quests.webp" alt="">
             <img class="s48" src="../../../public/nav/nav-quests.webp" alt="">
             <img class="s24" src="../../../public/nav/nav-quests.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/quest.webp" alt="">
-            <img class="s48" src="../webp/96/quest.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/quest.webp" alt="">
+            <img class="s48" src="../v79/webp/96/quest.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>퀘스트</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-quest-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-quest-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-quest-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-quest-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble-quest-v79)"/>
   <rect x="6.4" y="6.4" width="11.2" height="11" rx="0.8" fill="var(--gold-light)"/><path d="M8.2 9.6h7.4M8.2 12.2h7.4" stroke="var(--gold-text)" stroke-width="1.2" stroke-linecap="round"/><ellipse cx="6.3" cy="11.9" rx="1.8" ry="4.6" fill="var(--gold)"/><ellipse cx="17.7" cy="11.9" rx="1.8" ry="4.6" fill="var(--gold-rim-lo)"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>도전</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/quest.webp" alt="">
+            <img class="s48" src="../webp/96/quest.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>퀘스트</title>
+  
+  <defs>
+    <linearGradient id="rim-quest-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-quest-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-quest-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-quest-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-quest-new)"/>
+  <path d="M6.6 6.4h9.4c.7 0 1.2.6 1.2 1.3v8.2c0 .7-.5 1.3-1.2 1.3H8c-.8 0-1.4.6-1.4 1.3V6.4z" fill="var(--gold-light)"/><ellipse cx="6.2" cy="12.2" rx="2.2" ry="5.2" fill="var(--gold)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>도전</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/nav-challenge.webp" alt="">
             <img class="s48" src="../../../public/nav/nav-challenge.webp" alt="">
             <img class="s24" src="../../../public/nav/nav-challenge.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/challenge.webp" alt="">
-            <img class="s48" src="../webp/96/challenge.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/challenge.webp" alt="">
+            <img class="s48" src="../v79/webp/96/challenge.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>도전</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-challenge-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-challenge-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-challenge-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-challenge-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-challenge-v79)"/>
   <path d="M13.4 4.4 6.2 12.4h4.4L8.8 19.6 17.8 10.2h-4.6z" fill="var(--gold-rim-hi)"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>홈</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/challenge.webp" alt="">
+            <img class="s48" src="../webp/96/challenge.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>도전</title>
+  
+  <defs>
+    <linearGradient id="rim-challenge-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-challenge-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-challenge-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-challenge-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-challenge-new)"/>
+  <path d="M14.8 3.2 4.6 12.8h5.8L8 20.8 19.4 9.4h-6.2z" fill="var(--gold-rim-hi)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>홈</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/nav-home.webp" alt="">
             <img class="s48" src="../../../public/nav/nav-home.webp" alt="">
             <img class="s24" src="../../../public/nav/nav-home.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/home.webp" alt="">
-            <img class="s48" src="../webp/96/home.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/home.webp" alt="">
+            <img class="s48" src="../v79/webp/96/home.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>홈</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-home-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-home-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-home-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-home-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble-home-v79)"/>
   <path d="M4.6 11.2 12 5l7.4 6.2z" fill="var(--navy)"/><rect x="6.2" y="11" width="2.1" height="6.2" fill="var(--surface)"/><rect x="10.9" y="11" width="2.2" height="6.2" fill="var(--surface)"/><rect x="15.6" y="11" width="2.1" height="6.2" fill="var(--surface)"/><rect x="11.2" y="13.2" width="1.6" height="4" fill="var(--navy)"/><rect x="5" y="17.3" width="14" height="1.6" rx="0.4" fill="var(--gold-rim-lo)"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>문학</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/home.webp" alt="">
+            <img class="s48" src="../webp/96/home.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>홈</title>
+  
+  <defs>
+    <linearGradient id="rim-home-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-home-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-home-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-home-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-home-new)"/>
+  <path d="M3.6 11.6 12 3.4 20.4 11.6z" fill="var(--gold-rim-lo)"/><rect x="4.8" y="11.2" width="3.6" height="7.6" fill="var(--gold)"/><rect x="10.2" y="11.2" width="3.6" height="7.6" fill="var(--gold)"/><rect x="15.6" y="11.2" width="3.6" height="7.6" fill="var(--gold)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>문학</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/nav-literature.webp" alt="">
             <img class="s48" src="../../../public/nav/nav-literature.webp" alt="">
             <img class="s24" src="../../../public/nav/nav-literature.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/literature.webp" alt="">
-            <img class="s48" src="../webp/96/literature.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/literature.webp" alt="">
+            <img class="s48" src="../v79/webp/96/literature.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>문학</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-literature-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-literature-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-literature-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-literature-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble-literature-v79)"/>
   <path d="M4.8 8.4h6.6V16H6.4c-.9 0-1.6.6-1.6 1.4V8.4z" fill="var(--gold-light)"/><path d="M12.6 8.4H19v7.6h-4.8c-.8 0-1.6.6-1.6 1.4V8.4z" fill="var(--surface)" stroke="var(--gold)" stroke-width="0.7"/><path d="M11.4 8.6v7.2" stroke="var(--gold-text)" stroke-width="0.8"/><path d="M14.6 7.2c2.2 1.4 2.8 3.6 1.2 5.2" fill="none" stroke="var(--gold-rim-lo)" stroke-width="1.3" stroke-linecap="round"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>칠판</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/literature.webp" alt="">
+            <img class="s48" src="../webp/96/literature.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>문학</title>
+  
+  <defs>
+    <linearGradient id="rim-literature-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-literature-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-literature-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-literature-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-literature-new)"/>
+  <path d="M3.8 7h7.2v8.8c0 1.1-1.5 2-3.5 2S3.8 16.8 3.8 15.6V7zm8.6 0h7.8v8.6c0 1.2-1.8 2.2-3.9 2.2s-3.9-1-3.9-2.2V7z" fill="var(--gold-light)"/><rect x="11" y="7" width="2" height="9.4" fill="var(--gold)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>칠판</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/tool-chalk.webp" alt="">
             <img class="s48" src="../../../public/nav/tool-chalk.webp" alt="">
             <img class="s24" src="../../../public/nav/tool-chalk.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/chalk.webp" alt="">
-            <img class="s48" src="../webp/96/chalk.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/chalk.webp" alt="">
+            <img class="s48" src="../v79/webp/96/chalk.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>칠판</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-chalk-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-chalk-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-chalk-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-chalk-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble-chalk-v79)"/>
   <rect x="6.2" y="5.2" width="11.6" height="12.2" rx="1.2" fill="var(--chalk-board)" stroke="var(--gold)" stroke-width="1.3"/><rect x="8.4" y="17.2" width="7.2" height="1.5" rx="0.4" fill="var(--gold)"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>돌림판</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/chalk.webp" alt="">
+            <img class="s48" src="../webp/96/chalk.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>칠판</title>
+  
+  <defs>
+    <linearGradient id="rim-chalk-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-chalk-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-chalk-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-chalk-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble-chalk-new)"/>
+  <rect x="3.6" y="4.4" width="13.4" height="12" rx="1.2" fill="var(--chalk-board)" stroke="var(--gold)" stroke-width="2.2"/><rect x="17.3" y="8.2" width="2.6" height="7.6" rx="0.8" fill="var(--surface)" transform="rotate(18 18.6 12)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>돌림판</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/tool-wheel.webp" alt="">
             <img class="s48" src="../../../public/nav/tool-wheel.webp" alt="">
             <img class="s24" src="../../../public/nav/tool-wheel.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/wheel.webp" alt="">
-            <img class="s48" src="../webp/96/wheel.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/wheel.webp" alt="">
+            <img class="s48" src="../v79/webp/96/wheel.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>돌림판</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-wheel-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-wheel-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-wheel-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-wheel-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-wheel-v79)"/>
   <path d="M12 4.4 13.6 7H10.4z" fill="var(--wine)"/><path d="M12 8.2a4.8 4.8 0 0 1 4.8 4.8H12Z" fill="var(--gold-light)"/><path d="M16.8 13A4.8 4.8 0 0 1 12 17.8V13Z" fill="var(--laurel)"/><path d="M12 17.8A4.8 4.8 0 0 1 7.2 13H12Z" fill="var(--wine)"/><path d="M7.2 13A4.8 4.8 0 0 1 12 8.2V13Z" fill="var(--sky)"/><circle cx="12" cy="13" r="4.8" fill="none" stroke="var(--gold)" stroke-width="1.5"/><circle cx="12" cy="13" r="1.6" fill="var(--gold-rim-hi)"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article>
-      <article>
-        <h2>가위바위보</h2>
-        <div class="cols">
-          <div>
-            <p>main</p>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/wheel.webp" alt="">
+            <img class="s48" src="../webp/96/wheel.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>돌림판</title>
+  
+  <defs>
+    <linearGradient id="rim-wheel-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-wheel-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-wheel-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-wheel-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-wheel-new)"/>
+  <path d="M12 3.4 14.6 7.2H9.4z" fill="var(--wine)"/><circle cx="12" cy="13.2" r="6.2" fill="var(--sky-deep)" stroke="var(--gold)" stroke-width="2.8"/><circle cx="12" cy="13.2" r="2.4" fill="var(--gold-rim-hi)"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article><article>
+      <h2>가위바위보</h2>
+      <div class="vers">
+        <div>
+          <p>main</p>
+          <div class="row">
             <img class="s96" src="../../../public/nav/tool-rps.webp" alt="">
             <img class="s48" src="../../../public/nav/tool-rps.webp" alt="">
             <img class="s24" src="../../../public/nav/tool-rps.webp" alt="">
           </div>
-          <div>
-            <p>시안</p>
-            <img class="s96" src="../webp/192/rps.webp" alt="">
-            <img class="s48" src="../webp/96/rps.webp" alt="">
-            <span class="s24">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+        </div>
+        <div>
+          <p>7.9</p>
+          <div class="row">
+            <img class="s96" src="../v79/webp/192/rps.webp" alt="">
+            <img class="s48" src="../v79/webp/96/rps.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
   <title>가위바위보</title>
   
   <defs>
-    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="rim-rps-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--gold-rim-hi)"/>
       <stop offset="0.46" stop-color="var(--gold)"/>
       <stop offset="1" stop-color="var(--gold-rim-lo)"/>
     </linearGradient>
-    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+    <radialGradient id="enamel-rps-v79" cx="0.32" cy="0.24" r="0.85">
       <stop offset="0" stop-color="var(--sky)"/>
       <stop offset="1" stop-color="var(--sky-deep)"/>
     </radialGradient>
-    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="marble-rps-v79" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="var(--surface)"/>
       <stop offset="1" stop-color="var(--marble)"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
-  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-rps-v79)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-rps-v79)"/>
   <circle cx="7.4" cy="14.6" r="2.7" fill="var(--surface)" stroke="var(--gold-rim-lo)" stroke-width="1"/><rect x="10.2" y="6.2" width="4.6" height="5.2" rx="1" fill="var(--surface)" stroke="var(--gold-rim-lo)" stroke-width="1"/><path d="M15.2 9.2v4.2M17.4 8.4v5" stroke="var(--gold)" stroke-width="1.7" stroke-linecap="round"/>
-</svg>
-</span>
+</svg></span>
           </div>
         </div>
-      </article></div>
-</div></body></html>
+        <div>
+          <p>새 시안</p>
+          <div class="row">
+            <img class="s96" src="../webp/192/rps.webp" alt="">
+            <img class="s48" src="../webp/96/rps.webp" alt="">
+            <span class="s24"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>가위바위보</title>
+  
+  <defs>
+    <linearGradient id="rim-rps-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel-rps-new" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble-rps-new" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim-rps-new)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel-rps-new)"/>
+  <path d="M7.2 18.4 11.2 5.4h2.6L11 13.2 15.6 5h2.6L12.2 18.4z" fill="var(--surface)" stroke="var(--gold)" stroke-width="2"/>
+</svg></span>
+          </div>
+        </div>
+      </div>
+    </article>
+</div></div></body></html>

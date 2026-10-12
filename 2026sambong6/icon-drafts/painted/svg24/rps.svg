@@ -19,5 +19,5 @@
   </defs>
   <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
   <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
-  <circle cx="7.4" cy="14.6" r="2.7" fill="var(--surface)" stroke="var(--gold-rim-lo)" stroke-width="1"/><rect x="10.2" y="6.2" width="4.6" height="5.2" rx="1" fill="var(--surface)" stroke="var(--gold-rim-lo)" stroke-width="1"/><path d="M15.2 9.2v4.2M17.4 8.4v5" stroke="var(--gold)" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M7.2 18.4 11.2 5.4h2.6L11 13.2 15.6 5h2.6L12.2 18.4z" fill="var(--surface)" stroke="var(--gold)" stroke-width="2"/>
 </svg>

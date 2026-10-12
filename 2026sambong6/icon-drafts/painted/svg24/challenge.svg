@@ -19,5 +19,5 @@
   </defs>
   <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
   <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#enamel)"/>
-  <path d="M13.4 4.4 6.2 12.4h4.4L8.8 19.6 17.8 10.2h-4.6z" fill="var(--gold-rim-hi)"/>
+  <path d="M14.8 3.2 4.6 12.8h5.8L8 20.8 19.4 9.4h-6.2z" fill="var(--gold-rim-hi)"/>
 </svg>

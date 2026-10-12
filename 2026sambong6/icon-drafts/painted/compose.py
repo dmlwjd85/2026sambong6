@@ -19,14 +19,14 @@ INNER = {
 }
 
 ICONS = [
-    {'id': 'shop', 'label': '상점', 'plate': 'enamel', 'main': 'nav/nav-shop.webp', 'src': 'oly-shop-center.jpg'},
-    {'id': 'quest', 'label': '퀘스트', 'plate': 'marble', 'main': 'nav/nav-quests.webp', 'src': 'oly-quest-center.jpg'},
-    {'id': 'challenge', 'label': '도전', 'plate': 'enamel', 'main': 'nav/nav-challenge.webp', 'src': 'oly-challenge-center.jpg'},
-    {'id': 'home', 'label': '홈', 'plate': 'marble', 'main': 'nav/nav-home.webp', 'src': 'oly-home-center.jpg'},
-    {'id': 'literature', 'label': '문학', 'plate': 'marble', 'main': 'nav/nav-literature.webp', 'src': 'oly-literature-center.jpg'},
-    {'id': 'chalk', 'label': '칠판', 'plate': 'marble', 'main': 'nav/tool-chalk.webp', 'src': 'oly-chalk-center.jpg'},
-    {'id': 'wheel', 'label': '돌림판', 'plate': 'enamel', 'main': 'nav/tool-wheel.webp', 'src': 'oly-wheel-center.jpg'},
-    {'id': 'rps', 'label': '가위바위보', 'plate': 'enamel', 'main': 'nav/tool-rps.webp', 'src': 'oly-rps-center.jpg'},
+    {'id': 'shop', 'label': '상점', 'plate': 'enamel', 'main': 'nav/nav-shop.webp', 'src': 'oly2-shop.jpg'},
+    {'id': 'quest', 'label': '퀘스트', 'plate': 'enamel', 'main': 'nav/nav-quests.webp', 'src': 'oly2-quest.jpg'},
+    {'id': 'challenge', 'label': '도전', 'plate': 'enamel', 'main': 'nav/nav-challenge.webp', 'src': 'oly2-challenge.jpg'},
+    {'id': 'home', 'label': '홈', 'plate': 'enamel', 'main': 'nav/nav-home.webp', 'src': 'oly2-home.jpg'},
+    {'id': 'literature', 'label': '문학', 'plate': 'enamel', 'main': 'nav/nav-literature.webp', 'src': 'oly2-literature.jpg'},
+    {'id': 'chalk', 'label': '칠판', 'plate': 'marble', 'main': 'nav/tool-chalk.webp', 'src': 'oly2-chalk.jpg'},
+    {'id': 'wheel', 'label': '돌림판', 'plate': 'enamel', 'main': 'nav/tool-wheel.webp', 'src': 'oly2-wheel.jpg'},
+    {'id': 'rps', 'label': '가위바위보', 'plate': 'enamel', 'main': 'nav/tool-rps.webp', 'src': 'oly2-rps.jpg'},
 ]
 
 
@@ -97,10 +97,10 @@ def rounded_mask(size, box, radius):
 
 
 def fit_art(art, canvas_size):
-    pad = INNER['w'] * 0.04
+    pad = INNER['w'] * 0.012
     max_w = INNER['w'] - pad * 2
     max_h = INNER['h'] - pad * 2
-    scale = min(max_w / art.width, max_h / art.height)
+    scale = max(max_w / art.width, max_h / art.height)
     resized = art.resize((max(1, round(art.width * scale)), max(1, round(art.height * scale))), Image.Resampling.LANCZOS)
     layer = Image.new('RGBA', (canvas_size, canvas_size), (0, 0, 0, 0))
     ox = round(INNER['x'] + (INNER['w'] - resized.width) / 2)
@@ -165,14 +165,14 @@ def write_frame_html():
 
 
 SILHOUETTES = {
-    'shop': '<path d="M8 6.2h5.4c.5 0 .8.4.8.9v2c2.5 1 3.8 3 3.8 5.4 0 3.4-2.2 5.6-4.2 6.2v1.2H7.6v-1.2C5.6 20.1 3.4 17.9 3.4 14.5c0-2.4 1.3-4.4 3.8-5.4V7.1c0-.5.3-.9.8-.9z" fill="var(--gold)"/><path d="M7.6 9.4C5.6 10.2 4.6 12.6 6 14.6M15.2 9.4c2 .8 3 3.2 1.6 5.2" fill="none" stroke="var(--gold-rim-lo)" stroke-width="1.4" stroke-linecap="round"/><circle cx="16.6" cy="7.4" r="2.4" fill="var(--gold-rim-hi)" stroke="var(--gold-rim-lo)" stroke-width="0.8"/>',
-    'quest': '<rect x="6.4" y="6.4" width="11.2" height="11" rx="0.8" fill="var(--gold-light)"/><path d="M8.2 9.6h7.4M8.2 12.2h7.4" stroke="var(--gold-text)" stroke-width="1.2" stroke-linecap="round"/><ellipse cx="6.3" cy="11.9" rx="1.8" ry="4.6" fill="var(--gold)"/><ellipse cx="17.7" cy="11.9" rx="1.8" ry="4.6" fill="var(--gold-rim-lo)"/>',
-    'challenge': '<path d="M13.4 4.4 6.2 12.4h4.4L8.8 19.6 17.8 10.2h-4.6z" fill="var(--gold-rim-hi)"/>',
-    'home': '<path d="M4.6 11.2 12 5l7.4 6.2z" fill="var(--navy)"/><rect x="6.2" y="11" width="2.1" height="6.2" fill="var(--surface)"/><rect x="10.9" y="11" width="2.2" height="6.2" fill="var(--surface)"/><rect x="15.6" y="11" width="2.1" height="6.2" fill="var(--surface)"/><rect x="11.2" y="13.2" width="1.6" height="4" fill="var(--navy)"/><rect x="5" y="17.3" width="14" height="1.6" rx="0.4" fill="var(--gold-rim-lo)"/>',
-    'literature': '<path d="M4.8 8.4h6.6V16H6.4c-.9 0-1.6.6-1.6 1.4V8.4z" fill="var(--gold-light)"/><path d="M12.6 8.4H19v7.6h-4.8c-.8 0-1.6.6-1.6 1.4V8.4z" fill="var(--surface)" stroke="var(--gold)" stroke-width="0.7"/><path d="M11.4 8.6v7.2" stroke="var(--gold-text)" stroke-width="0.8"/><path d="M14.6 7.2c2.2 1.4 2.8 3.6 1.2 5.2" fill="none" stroke="var(--gold-rim-lo)" stroke-width="1.3" stroke-linecap="round"/>',
-    'chalk': '<rect x="6.2" y="5.2" width="11.6" height="12.2" rx="1.2" fill="var(--chalk-board)" stroke="var(--gold)" stroke-width="1.3"/><rect x="8.4" y="17.2" width="7.2" height="1.5" rx="0.4" fill="var(--gold)"/>',
-    'wheel': '<path d="M12 4.4 13.6 7H10.4z" fill="var(--wine)"/><path d="M12 8.2a4.8 4.8 0 0 1 4.8 4.8H12Z" fill="var(--gold-light)"/><path d="M16.8 13A4.8 4.8 0 0 1 12 17.8V13Z" fill="var(--laurel)"/><path d="M12 17.8A4.8 4.8 0 0 1 7.2 13H12Z" fill="var(--wine)"/><path d="M7.2 13A4.8 4.8 0 0 1 12 8.2V13Z" fill="var(--sky)"/><circle cx="12" cy="13" r="4.8" fill="none" stroke="var(--gold)" stroke-width="1.5"/><circle cx="12" cy="13" r="1.6" fill="var(--gold-rim-hi)"/>',
-    'rps': '<circle cx="7.4" cy="14.6" r="2.7" fill="var(--surface)" stroke="var(--gold-rim-lo)" stroke-width="1"/><rect x="10.2" y="6.2" width="4.6" height="5.2" rx="1" fill="var(--surface)" stroke="var(--gold-rim-lo)" stroke-width="1"/><path d="M15.2 9.2v4.2M17.4 8.4v5" stroke="var(--gold)" stroke-width="1.7" stroke-linecap="round"/>',
+    'shop': '<path d="M7.6 6.2h5.2c.5 0 .9.4.9.9v1c2.2.8 3.4 2.5 3.4 4.6 0 3.2-2 5.4-3.8 6v1.2H6.7v-1.2c-1.8-.6-3.8-2.8-3.8-6 0-2.1 1.2-3.8 3.4-4.6v-1c0-.5.4-.9.9-.9z" fill="var(--gold)"/><circle cx="16.8" cy="7.2" r="2.5" fill="var(--gold-rim-hi)"/>',
+    'quest': '<path d="M6.6 6.4h9.4c.7 0 1.2.6 1.2 1.3v8.2c0 .7-.5 1.3-1.2 1.3H8c-.8 0-1.4.6-1.4 1.3V6.4z" fill="var(--gold-light)"/><ellipse cx="6.2" cy="12.2" rx="2.2" ry="5.2" fill="var(--gold)"/>',
+    'challenge': '<path d="M14.8 3.2 4.6 12.8h5.8L8 20.8 19.4 9.4h-6.2z" fill="var(--gold-rim-hi)"/>',
+    'home': '<path d="M3.6 11.6 12 3.4 20.4 11.6z" fill="var(--gold-rim-lo)"/><rect x="4.8" y="11.2" width="3.6" height="7.6" fill="var(--gold)"/><rect x="10.2" y="11.2" width="3.6" height="7.6" fill="var(--gold)"/><rect x="15.6" y="11.2" width="3.6" height="7.6" fill="var(--gold)"/>',
+    'literature': '<path d="M3.8 7h7.2v8.8c0 1.1-1.5 2-3.5 2S3.8 16.8 3.8 15.6V7zm8.6 0h7.8v8.6c0 1.2-1.8 2.2-3.9 2.2s-3.9-1-3.9-2.2V7z" fill="var(--gold-light)"/><rect x="11" y="7" width="2" height="9.4" fill="var(--gold)"/>',
+    'chalk': '<rect x="3.6" y="4.4" width="13.4" height="12" rx="1.2" fill="var(--chalk-board)" stroke="var(--gold)" stroke-width="2.2"/><rect x="17.3" y="8.2" width="2.6" height="7.6" rx="0.8" fill="var(--surface)" transform="rotate(18 18.6 12)"/>',
+    'wheel': '<path d="M12 3.4 14.6 7.2H9.4z" fill="var(--wine)"/><circle cx="12" cy="13.2" r="6.2" fill="var(--sky-deep)" stroke="var(--gold)" stroke-width="2.8"/><circle cx="12" cy="13.2" r="2.4" fill="var(--gold-rim-hi)"/>',
+    'rps': '<path d="M7.2 18.4 11.2 5.4h2.6L11 13.2 15.6 5h2.6L12.2 18.4z" fill="var(--surface)" stroke="var(--gold)" stroke-width="2"/>',
 }
 
 

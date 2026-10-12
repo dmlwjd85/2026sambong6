@@ -64,8 +64,8 @@ import {
     buildGuestPlayerState,
     guestMayWrite,
 } from './lib/guestDemo.js';
-import { isSalaryPayWindow, planStudentSalaryPayment, salaryWeekId } from './lib/weeklySalary.js';
-import { markAllRead, pushNotice, unreadCount } from './lib/noticeInbox.js';
+import { isSalaryPayWindow, planStudentSalaryPayment, recentSalaryWeekId } from './lib/weeklySalary.js';
+import { loadNoticeInbox, markAllRead, noticeInboxStorageKey, pushNotice, serializeNoticeInbox, unreadCount } from './lib/noticeInbox.js';
 import {
     computeResearchStats,
     researchStatsToCsv,
@@ -598,6 +598,7 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
     resolveStudentJobsFromCatalog,
+    sumCatalogPayForJobs,
     studentHasJob,
     toggleJobAssignment,
 } from './lib/jobs.js';
@@ -4843,6 +4844,27 @@ function redrawPlazaGrantsUi() {
                 ${rows}`;
         }
 
+        function currentNoticeInboxKey() {
+            const sid = localStorage.getItem('sambong_student_id') || '';
+            return noticeInboxStorageKey(typeof appId !== 'undefined' ? appId : '', sid);
+        }
+
+        function persistNoticeInbox() {
+            if (!window._worldEntered || isGuestSession()) return;
+            try {
+                localStorage.setItem(currentNoticeInboxKey(), serializeNoticeInbox(_noticeInbox));
+            } catch (_) { /* 저장 공간이 없어도 이번 화면의 알림함은 유지합니다. */ }
+        }
+
+        function restoreNoticeInbox() {
+            if (isGuestSession()) return;
+            try {
+                _noticeInbox = loadNoticeInbox(localStorage.getItem(currentNoticeInboxKey()));
+            } catch (_) {
+                _noticeInbox = [];
+            }
+        }
+
         function rememberNotice(title, body, key) {
             const notice = { title, body, key: key || '', at: Date.now() };
             if (!window._worldEntered || isGuestSession()) {
@@ -4852,6 +4874,7 @@ function redrawPlazaGrantsUi() {
                 return;
             }
             _noticeInbox = pushNotice(_noticeInbox, notice);
+            persistNoticeInbox();
             renderNoticeInbox();
         }
 
@@ -4864,12 +4887,14 @@ function redrawPlazaGrantsUi() {
             batch.forEach((notice) => {
                 _noticeInbox = pushNotice(_noticeInbox, notice);
             });
+            persistNoticeInbox();
             renderNoticeInbox();
         }
 
         function enterWorld() {
             clearStrayOverlays();
             window._worldEntered = true;
+            restoreNoticeInbox();
             const heldNotice = window._deferredScreenNotice;
             if (heldNotice && heldNotice.active && heldNotice.text && !isGuestSession()) {
                 rememberNotice(heldNotice.title || '공지', heldNotice.text, `screen:${heldNotice.id || heldNotice.text}`);
@@ -4893,6 +4918,7 @@ function redrawPlazaGrantsUi() {
             if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
             if (open) {
                 _noticeInbox = markAllRead(_noticeInbox);
+                persistNoticeInbox();
                 renderNoticeInbox();
                 panel.classList.remove('hidden');
             }
@@ -20579,11 +20605,11 @@ ${subjectLine}
                 const gmXpSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-xp plaza-gm-controls" onclick="event.stopPropagation();">
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+1 XP</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1 XP</button>
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5 XP</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5 XP</button>
                         <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+10 XP</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10 XP</button>
                     </div>` : '';
                 const gmBongSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-bong plaza-gm-controls" onclick="event.stopPropagation();">
@@ -28957,7 +28983,7 @@ ${subjectLine}
             else if (day === 0) dDate.setDate(now.getDate() - 2);
             if (isVacationAutomationPaused('salary', dDate)) return;
 
-            const wId = salaryWeekId(now);
+            const wId = recentSalaryWeekId(now);
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
             const stuList = window.allStudentsData.filter((s) => s.id !== 'gm' && s.id !== 'gm_a');
             const authOk = await ensureAnonAuthReady();
@@ -28980,17 +29006,8 @@ ${subjectLine}
                         const snap = snaps[index];
                         if (!snap.exists()) return;
                         const data = snap.data() || {};
-                        let pay = 0;
-                        if (row.stu.jobs) {
-                            const catalog = getJobCatalog();
-                            resolveStudentJobsFromCatalog(row.stu.jobs, catalog).forEach((j) => {
-                                const ji = catalog.find((jd) =>
-                                    (jd.id && j.id && String(jd.id) === String(j.id))
-                                    || jd.name === j.name
-                                    || (jd.icon === j.icon && jd.color === j.color));
-                                if (ji) pay += ji.pay;
-                            });
-                        }
+                        const catalog = getJobCatalog();
+                        const pay = sumCatalogPayForJobs(data.jobs, catalog);
                         const plan = planStudentSalaryPayment({
                             salaryPaidWeek: data.salaryPaidWeek,
                             weekId: wId,

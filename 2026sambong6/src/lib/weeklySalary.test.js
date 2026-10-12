@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isSalaryPayWindow, planStudentSalaryPayment, salaryWeekId } from './weeklySalary.js';
+import { isSalaryPayWindow, MAX_WEEKLY_SALARY_BONG, planStudentSalaryPayment, recentSalaryWeekId, salaryWeekId } from './weeklySalary.js';
 
 test('금요일 15시 이후와 주말에만 주급 창이 열린다', () => {
     assert.equal(isSalaryPayWindow(new Date(2026, 9, 9, 14, 59)), false);
@@ -34,6 +34,25 @@ test('예전 전역 정산만 된 주는 금액 없이 표식만 남긴다', () 
             pay: 12,
         }),
         { action: 'mark' },
+    );
+});
+
+test('최근 주급 키는 한국 시간 지급 창의 금요일이다', () => {
+    assert.equal(recentSalaryWeekId(new Date('2026-10-12T00:00:00+09:00')), 'SALARY_2026_10_09');
+    assert.equal(recentSalaryWeekId(new Date('2026-10-16T14:59:00+09:00')), 'SALARY_2026_10_09');
+    assert.equal(recentSalaryWeekId(new Date('2026-10-16T15:00:00+09:00')), 'SALARY_2026_10_16');
+    assert.equal(recentSalaryWeekId(new Date('2026-10-17T09:00:00+09:00')), 'SALARY_2026_10_16');
+    assert.equal(recentSalaryWeekId(new Date('2026-10-18T21:00:00+09:00')), 'SALARY_2026_10_16');
+});
+
+test('주급은 상한을 넘기지 않는다', () => {
+    assert.deepEqual(
+        planStudentSalaryPayment({ salaryPaidWeek: '', weekId: 'SALARY_2026_10_09', legacyWeekSettled: false, pay: 999 }),
+        { action: 'pay', amount: MAX_WEEKLY_SALARY_BONG },
+    );
+    assert.deepEqual(
+        planStudentSalaryPayment({ salaryPaidWeek: '', weekId: 'not-a-week', legacyWeekSettled: false, pay: 10 }),
+        { action: 'skip' },
     );
 });
 

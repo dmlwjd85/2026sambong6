@@ -15,6 +15,7 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
     resolveStudentJobsFromCatalog,
+    sumCatalogPayForJobs,
     studentHasJob,
     studentHasJobName,
     toggleJobAssignment,
@@ -158,5 +159,15 @@ describe('직업 아이콘·색', () => {
         }]);
         assert.equal(byLook[0].id, 'job12');
         assert.equal(byLook[0].name, '가게 지킴이');
+    });
+
+    it('주급은 넘겨준 직업 목록의 카탈로그 금액만 합산한다', () => {
+        const catalog = [
+            { id: 'job1', name: '길드 마스터', icon: 'fa-flag', color: 'text-yellow-300', pay: 12 },
+            { id: 'job4', name: '우유', icon: 'fa-mug-hot', color: 'text-sky-300', pay: 6 },
+        ];
+        const serverJobs = [{ id: 'job4', name: '옛 이름', icon: 'fa-star', color: 'text-slate-300', pay: 99 }];
+        assert.equal(sumCatalogPayForJobs(serverJobs, catalog), 6);
+        assert.equal(sumCatalogPayForJobs([{ id: 'missing' }], catalog), 0);
     });
 });

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>홈</title>
+  <style>@import url("../../../src/olympus-tokens.css");</style>
+  <defs>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--gold-rim-hi)"/>
+      <stop offset="0.46" stop-color="var(--gold)"/>
+      <stop offset="1" stop-color="var(--gold-rim-lo)"/>
+    </linearGradient>
+    <radialGradient id="enamel" cx="0.32" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="var(--sky)"/>
+      <stop offset="1" stop-color="var(--sky-deep)"/>
+    </radialGradient>
+    <linearGradient id="marble" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--surface)"/>
+      <stop offset="1" stop-color="var(--marble)"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="23" height="23" rx="5.5" fill="url(#rim)"/>
+  <rect x="1.75" y="1.75" width="20.5" height="20.5" rx="4.25" fill="url(#marble)"/>
+  <path d="M4.6 11.2 12 5l7.4 6.2z" fill="var(--navy)"/><rect x="6.2" y="11" width="2.1" height="6.2" fill="var(--surface)"/><rect x="10.9" y="11" width="2.2" height="6.2" fill="var(--surface)"/><rect x="15.6" y="11" width="2.1" height="6.2" fill="var(--surface)"/><rect x="11.2" y="13.2" width="1.6" height="4" fill="var(--navy)"/><rect x="5" y="17.3" width="14" height="1.6" rx="0.4" fill="var(--gold-rim-lo)"/>
+</svg>

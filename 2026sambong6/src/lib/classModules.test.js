@@ -55,7 +55,7 @@ describe('외부 세계 링크', () => {
         assert.equal(resolveExternalPortals(undefined, { isSeed: false, hasModuleRecord: false }).length, DEFAULT_SEED_EXTERNAL_PORTALS.length);
         assert.deepEqual(resolveExternalPortals([], { isSeed: true }), []);
         const cleaned = sanitizeExternalPortals([
-            { name: '우리 반 패드', url: 'https://example.com/pad', emoji: '' },
+            { name: '우리 반 패드', url: 'https://example.com/pad', emoji: '📌' },
             { name: '나쁜곳', url: 'javascript:alert(1)' },
         ]);
         assert.equal(cleaned.length, 1);

@@ -15,15 +15,23 @@ const PATHS = Object.freeze({
 });
 
 function palette(color) {
-    const side = color === 'b' ? 'b' : 'w';
-    const pick = (name) => `var(--chess-${side}-${name})`;
+    if (color === 'b') {
+        return {
+            body: '#1b1f27',
+            mid: '#2c3340',
+            light: '#8b93a1',
+            shine: '#d7dde6',
+            edge: '#0b0d11',
+            shade: '#0a0c10',
+        };
+    }
     return {
-        body: pick('body'),
-        mid: pick('mid'),
-        light: pick('light'),
-        shine: pick('shine'),
-        edge: pick('edge'),
-        shade: pick('shade'),
+        body: '#f3e2c2',
+        mid: '#e7cf9f',
+        light: '#fff6e4',
+        shine: '#ffffff',
+        edge: '#8a6430',
+        shade: '#c4a36a',
     };
 }
 

@@ -3,11 +3,11 @@
  */
 
 export const DEFAULT_SEED_EXTERNAL_PORTALS = [
-    { id: 'fc', name: '삼봉FC', url: 'https://dmlwjd85.github.io/sambong-FC/', emoji: '', desc: '축구 세계로 이동', tone: 'lime' },
+    { id: 'fc', name: '삼봉FC', url: 'https://dmlwjd85.github.io/sambong-FC/', emoji: '⚽', desc: '축구 세계로 이동', tone: 'lime' },
     { id: 'ncgame', name: '가나다 눈치게임', url: 'https://dmlwjd85.github.io/ncgame/', emoji: 'ㄱㄴㄷ', desc: '눈치게임 세계로 이동', tone: 'cyan' },
-    { id: 'englishrpg', name: '영켓몬', url: 'https://joontube82.github.io/English-RPG/', emoji: '', desc: '영어 RPG 세계로 이동', tone: 'red' },
-    { id: 'iscream', name: '지식의 샘', url: 'https://www.i-scream.co.kr/', emoji: '', desc: '아이스크림 지식 세계로 이동', tone: 'amber' },
-    { id: 'picbook', name: '픽북', url: 'https://dmlwjd85.github.io/picbook/', emoji: '', desc: 'AI 그림책 세계로 이동', tone: 'fuchsia' },
+    { id: 'englishrpg', name: '영켓몬', url: 'https://joontube82.github.io/English-RPG/', emoji: '🐾', desc: '영어 RPG 세계로 이동', tone: 'red' },
+    { id: 'iscream', name: '지식의 샘', url: 'https://www.i-scream.co.kr/', emoji: '📚', desc: '아이스크림 지식 세계로 이동', tone: 'amber' },
+    { id: 'picbook', name: '픽북', url: 'https://dmlwjd85.github.io/picbook/', emoji: '📖', desc: 'AI 그림책 세계로 이동', tone: 'fuchsia' },
 ];
 
 const PORTAL_TONES = ['lime', 'cyan', 'red', 'amber', 'fuchsia', 'sky'];
@@ -38,7 +38,7 @@ export function sanitizeExternalPortal(raw, idx = 0) {
         id: clip(src.id, 24) || `portal_${idx}`,
         name,
         url,
-        emoji: clip(src.emoji, 8) || '',
+        emoji: clip(src.emoji, 8) || '🌐',
         desc: clip(src.desc, 40),
         tone,
     };

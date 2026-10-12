@@ -11,19 +11,18 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            --type-scale: 1;
-            background: var(--chalk-board);
-            color: var(--line);
-            font-family: var(--font-body);;
+            background: #0f172a;
+            color: #f9a8d4;
+            font-family: "Noto Sans KR", system-ui, sans-serif;
             font-weight: 700;
-            font-size: calc(20px * var(--type-scale));
+            font-size: 1.2rem;
             text-align: center;
             padding: 1.5rem;
         }
     </style>
 </head>
 <body>
-    <div id="msg"> 준비 중...</div>
+    <div id="msg">🎵 준비 중...</div>
     <script>
         (function () {
             var params = new URLSearchParams(location.search);
@@ -32,7 +31,7 @@
             var msg = document.getElementById('msg');
 
             if (wait && !u) {
-                msg.textContent = ' 곡을 찾는 중...';
+                msg.textContent = '🎵 곡을 찾는 중...';
                 return;
             }
             if (!u) {
@@ -52,7 +51,7 @@
                     msg.textContent = '허용되지 않은 주소입니다.';
                     return;
                 }
-                msg.textContent = ' 유튜브 뮤직으로 이동 중...';
+                msg.textContent = '🎵 유튜브 뮤직으로 이동 중...';
                 location.replace(u);
             } catch (e) {
                 msg.textContent = '주소 오류로 이동할 수 없습니다.';

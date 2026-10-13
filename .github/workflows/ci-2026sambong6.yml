@@ -28,5 +28,5 @@ jobs:
               working-directory: 2026sambong6
               run: |
                   if [ -f package-lock.json ]; then npm ci; else npm install; fi
-                  node --test src/lib/teacherAccount.test.js src/lib/classAccess.test.js src/lib/classCreateRequest.test.js src/lib/classDirectory.test.js
+                  node --test src/lib/teacherAccount.test.js src/lib/classAccess.test.js src/lib/classCreateRequest.test.js src/lib/classDirectory.test.js src/lib/studentPinSecret.test.js src/lib/studentPassword.test.js
                   npm run build

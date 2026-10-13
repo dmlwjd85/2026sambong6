@@ -38,11 +38,12 @@ describe('학급 입장 권한', () => {
         assert.equal(resolveBootInvite({ classId: 'sambong-class-2026' }), '');
     });
 
-    it('소유자가 없는 학급만 교사가 가져갈 수 있다', () => {
-        assert.equal(canClaimClassOwnership({}, 'uid-1'), true);
-        assert.equal(canClaimClassOwnership({ ownerUid: '' }, 'uid-1'), true);
+    it('주인 없는 학급은 gm PIN을 맞힌 교사만 가져갈 수 있다', () => {
+        assert.equal(canClaimClassOwnership({}, 'uid-1'), false);
+        assert.equal(canClaimClassOwnership({ ownerUid: '' }, 'uid-1'), false);
+        assert.equal(canClaimClassOwnership({ ownerUid: '' }, 'uid-1', { gmPinVerified: true }), true);
         assert.equal(canClaimClassOwnership({ ownerUid: 'uid-1' }, 'uid-1'), true);
-        assert.equal(canClaimClassOwnership({ ownerUid: 'uid-2' }, 'uid-1'), false);
+        assert.equal(canClaimClassOwnership({ ownerUid: 'uid-2' }, 'uid-1', { gmPinVerified: true }), false);
         const patch = classOwnerClaimPatch({ uid: 'uid-1', email: 't@school.kr' }, 10);
         assert.equal(patch.ownerUid, 'uid-1');
         assert.equal(patch.ownerEmail, 't@school.kr');

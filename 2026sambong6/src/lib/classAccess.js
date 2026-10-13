@@ -85,12 +85,17 @@ export function resolveBootInvite({ urlInvite, storedInvite, recentEntries, clas
     return inviteCodeFromRecentClasses(recentEntries, classId);
 }
 
-export function canClaimClassOwnership(classMeta, teacherUid) {
+/**
+ * 주인 없는 학급은 마스터(gm) PIN probe를 통과한 교사만 가져갑니다.
+ * 이미 자기 소유면 재확인 없이 true 입니다.
+ */
+export function canClaimClassOwnership(classMeta, teacherUid, opts = {}) {
     const uid = String(teacherUid || '').trim();
     if (!uid) return false;
     const owner = String(classMeta && classMeta.ownerUid || '').trim();
-    if (!owner) return true;
-    return owner === uid;
+    if (owner === uid) return true;
+    if (owner) return false;
+    return opts.gmPinVerified === true;
 }
 
 export function classOwnerClaimPatch(teacherSession, nowMs = Date.now()) {

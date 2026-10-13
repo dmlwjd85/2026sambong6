@@ -4345,14 +4345,26 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .plaza-cards-seating .plaza-card-face .char-avatar-stack {
             padding: 0.26rem 0.55rem 0.78rem;
         }
+        .plaza-card-figure {
+            position: relative;
+            z-index: 1;
+        }
         .plaza-card-lv,
-        .plaza-card-name,
         .plaza-card-stats,
         .plaza-card-status,
         .plaza-gm-side,
         .plaza-gm-controls {
             position: relative;
             z-index: 10;
+        }
+        .plaza-card-name {
+            position: relative;
+            z-index: 60;
+            background-color: #020617;
+            box-shadow: 0 0 0 2px #020617;
+        }
+        .plaza-cards-seating .char-shoes {
+            bottom: -4%;
         }
         /* 경험치·화폐 버튼을 캐릭터 좌우에 세워 카드가 아래로 길어지지 않게 합니다. */
         .plaza-card-core {
@@ -5862,4 +5874,120 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .gomoku-zoom-help { display: none; }
             .boardgame-title { font-size: 1.05rem; }
             .gomoku-hud-timer { font-size: 1.1rem; }
+        }
+
+        /* 로그인 오버레이는 flex와 hidden이 같이 있어도 화면에서 사라집니다. */
+        #loginOverlay.is-dismissed,
+        #loginOverlay.hidden,
+        #globalLoadingOverlay.hidden {
+            display: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+
+        .guest-demo-banner {
+            display: none;
+            position: sticky;
+            top: 3.5rem;
+            z-index: 45;
+            margin: 0;
+            padding: 0.45rem 0.8rem;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 800;
+            color: #fffbeb;
+            background: #92400e;
+            border-bottom: 2px solid #fde68a;
+        }
+        body.is-guest #guestDemoBanner { display: block !important; }
+        body.is-guest .js-guest-write,
+        body.is-guest .guest-write-hidden,
+        body.is-guest #tab-admin,
+        body.is-guest #tab-settings,
+        body.is-guest .praise-btn,
+        body.is-guest .plaza-gm-controls {
+            display: none !important;
+        }
+
+        .notice-inbox-panel {
+            position: fixed;
+            top: 3.6rem;
+            right: 0.6rem;
+            z-index: 460;
+            width: min(22rem, calc(100vw - 1.2rem));
+            max-height: min(70vh, 28rem);
+            overflow: auto;
+            padding: 0.75rem;
+            border-radius: 1rem;
+            border: 2px solid #fde68a;
+            background: #0f172a;
+            color: #f8fafc;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+        }
+        .notice-inbox-panel h3 {
+            font-size: 1rem;
+            font-weight: 900;
+            color: #fef3c7;
+        }
+        .notice-inbox-item {
+            margin-top: 0.55rem;
+            padding: 0.55rem 0.65rem;
+            border-radius: 0.75rem;
+            background: #1e293b;
+            border: 1px solid #475569;
+        }
+        .notice-inbox-item strong {
+            display: block;
+            color: #fef9c3;
+            font-size: 13px;
+        }
+        .notice-inbox-item p {
+            margin-top: 0.25rem;
+            white-space: pre-wrap;
+            color: #f8fafc;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        /* 교실 TV: 멀리서도 이름·수치·안내가 읽히게 글자와 대비를 올립니다. */
+        @media (min-width: 1200px) {
+            .plaza-card-name,
+            .plaza-cards-sm .plaza-card-name,
+            .plaza-cards-md .plaza-card-name,
+            .plaza-cards-lg .plaza-card-name,
+            .plaza-cards-seating .plaza-card-name {
+                font-size: 16px !important;
+                color: #ffffff !important;
+                background: #020617 !important;
+                line-height: 1.35;
+                padding: 0.28rem 0.35rem !important;
+            }
+            .plaza-cards-sm .plaza-card-stats span,
+            .plaza-cards-md .plaza-card-stats span,
+            .plaza-cards-lg .plaza-card-stats span,
+            .plaza-cards.plaza-cards-seating .plaza-card-stats span {
+                font-size: 14px !important;
+            }
+            .plaza-cards.plaza-cards-seating .plaza-card-status,
+            .plaza-card-status {
+                font-size: 14px !important;
+                color: #fffbeb !important;
+                background: #0f172a !important;
+                border-color: #fbbf24 !important;
+            }
+            .plaza-classroom-board {
+                font-size: 18px;
+                letter-spacing: 0.16em;
+                color: #ffffff;
+                background: #0c4a6e;
+            }
+            .plaza-stat-xp { color: #7dd3fc; }
+            .plaza-stat-bong { color: #fde047; }
+            body.classtool-fs-open .class-board-q { font-size: 2.1rem; color: #052e16; }
+            body.classtool-fs-open .class-board-page-badge,
+            body.classtool-fs-open .class-board-timer { font-size: 1.35rem; color: #f7fee7; }
+            body.classtool-fs-open .think-focus-text { font-size: 2rem; color: #0f172a; }
+            body.classtool-fs-open .open-lesson-slide,
+            body.classtool-fs-open .open-lesson-body { font-size: 1.8rem; color: #0f172a; }
         }

@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, signOut, onAuthStateChanged } from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -57,6 +57,15 @@ import {
     updateQuizBankItem,
 } from './lib/quizBank.js';
 import { withRetry, isLikelyNetworkError, isRetryableWriteError } from './lib/withRetry.js';
+import {
+    buildGuestDemoClassMeta,
+    buildGuestDemoStudents,
+    buildGuestDemoTeacher,
+    buildGuestPlayerState,
+    guestMayWrite,
+} from './lib/guestDemo.js';
+import { isSalaryPayWindow, planStudentSalaryPayment, recentSalaryWeekId } from './lib/weeklySalary.js';
+import { loadNoticeInbox, markAllRead, noticeInboxStorageKey, pushNotice, serializeNoticeInbox, unreadCount } from './lib/noticeInbox.js';
 import {
     computeResearchStats,
     researchStatsToCsv,
@@ -589,6 +598,7 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
     resolveStudentJobsFromCatalog,
+    sumCatalogPayForJobs,
     studentHasJob,
     toggleJobAssignment,
 } from './lib/jobs.js';
@@ -1107,8 +1117,12 @@ function redrawPlazaGrantsUi() {
 
         window.syncMartialLawModal = function() {
             const st = window.martialLawState;
-            const loginOverlay = document.getElementById('loginOverlay');
-            const onLoginScreen = loginOverlay && !loginOverlay.classList.contains('hidden');
+            if (!window._worldEntered || isGuestSession()) {
+                hideMartialLawModal();
+                window.stopMartialLawSiren();
+                _martialLawSirenSessionId = null;
+                return;
+            }
 
             if (!st || !st.isActive || st.step === 'closed') {
                 hideMartialLawModal();
@@ -1121,16 +1135,14 @@ function redrawPlazaGrantsUi() {
                 hideMartialLawModal();
                 return;
             }
-            if (!window.playerState) {
-                window.playerState = { isGuest: false, isGM: false, isGMA: false, isAdmin: false };
-            }
+            if (!window.playerState) return;
 
             const idx = Math.max(0, Math.min(MARTIAL_LAW_PROCLAMATION.length - 1, Number(st.proclamationIndex) || 0));
             window._martialLawProclamationIndex = idx;
             const step = st.step === 'proclamation' ? 'proclamation' : 'declaration';
             const readOnly = !window.playerState.isAdmin;
 
-            if (readOnly || onLoginScreen) {
+            if (readOnly) {
                 applyMartialLawBodyLock(true);
             } else {
                 applyMartialLawBodyLock(false);
@@ -1379,7 +1391,9 @@ function redrawPlazaGrantsUi() {
 
         /** 현재 학급 화폐 단위 (설정 탭에서 변경) */
         function getCurrencyUnit() {
-            return getWorldSettings().currencyUnit || DEFAULT_WORLD_SETTINGS.currencyUnit;
+            const unit = String(getWorldSettings().currencyUnit || DEFAULT_WORLD_SETTINGS.currencyUnit || '').trim();
+            if (!unit || unit === 'B' || unit === 'b') return '봉';
+            return unit;
         }
         window.getCurrencyUnit = getCurrencyUnit;
 
@@ -2954,6 +2968,11 @@ function redrawPlazaGrantsUi() {
 
         function updateClassDisplayLabels() {
             const meta = window.classMeta;
+            if (meta && meta.isGuestDemo) {
+                const navOnly = document.getElementById('navClassLabel');
+                if (navOnly) navOnly.textContent = meta.displayName || '데모 반';
+                return;
+            }
             const labelEl = document.getElementById('loginClassLabel');
             const codeEl = document.getElementById('loginClassCode');
             const navClassEl = document.getElementById('navClassLabel');
@@ -3029,6 +3048,7 @@ function redrawPlazaGrantsUi() {
         async function loadClassMeta() {
             const classRef = doc(db, 'classes', appId);
             const snap = await getDoc(classRef);
+            if (window._guestDemoActive) return;
             if (snap.exists()) {
                 const data = snap.data() || {};
                 const base = (data.isDemoSeed || appId === SEED_CLASS_ID)
@@ -4676,6 +4696,11 @@ function redrawPlazaGrantsUi() {
         let unsubscribeOpenLesson = null;
         let unsubscribeBusSeats = null;
         let unsubscribeBoardRooms = null;
+        let unsubscribeEstate = null;
+        let _noticeInbox = [];
+        let _deferredNotices = [];
+        window._worldEntered = false;
+        window._guestDemoActive = false;
         let _classBoardDocReady = false;
         let _openLessonDocReady = false;
         /** Firestore artifacts 세그먼트 — URL ?class=, localStorage, window.__app_id 순으로 결정 */
@@ -4685,7 +4710,12 @@ function redrawPlazaGrantsUi() {
          * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
          * authStateReady + 익명 로그인 후 getIdToken()으로 토큰을 확실히 받은 뒤에만 true.
          */
+        function isGuestSession() {
+            return !guestMayWrite(window.playerState, window._guestDemoActive);
+        }
+
         async function ensureAnonAuthReady() {
+            if (isGuestSession()) return false;
             if (!auth) return false;
             const tryOnce = async () => {
                 await auth.authStateReady();
@@ -4705,6 +4735,219 @@ function redrawPlazaGrantsUi() {
                 console.warn('ensureAnonAuthReady 최종 실패', e);
                 return false;
             }
+        }
+
+        function stopClassRealtime() {
+            [
+                unsubscribeGlobal,
+                unsubscribeSettings,
+                unsubscribeRaid,
+                unsubscribeDragonBall,
+                unsubscribeGoldenBell,
+                unsubscribeMasterQuiz,
+                unsubscribeShopGroupBuy,
+                unsubscribeConvenienceOrders,
+                unsubscribeStudentBackups,
+                unsubscribeClassBoard,
+                unsubscribeOpenLesson,
+                unsubscribeBusSeats,
+                unsubscribeBoardRooms,
+                unsubscribeEstate,
+                unsubscribeMartialLaw,
+                window._unsubQuizBank,
+                window._unsubRaidDraft,
+                window._unsubGbDraft,
+            ].forEach((unsub) => {
+                if (typeof unsub === 'function') {
+                    try { unsub(); } catch (_) { /* ignore */ }
+                }
+            });
+            unsubscribeGlobal = null;
+            unsubscribeSettings = null;
+            unsubscribeRaid = null;
+            unsubscribeDragonBall = null;
+            unsubscribeGoldenBell = null;
+            unsubscribeMasterQuiz = null;
+            unsubscribeShopGroupBuy = null;
+            unsubscribeConvenienceOrders = null;
+            unsubscribeStudentBackups = null;
+            unsubscribeClassBoard = null;
+            unsubscribeOpenLesson = null;
+            unsubscribeBusSeats = null;
+            unsubscribeBoardRooms = null;
+            unsubscribeEstate = null;
+            unsubscribeMartialLaw = null;
+            window._unsubQuizBank = null;
+            window._unsubRaidDraft = null;
+            window._unsubGbDraft = null;
+        }
+
+        function dismissLoginOverlay() {
+            const el = document.getElementById('loginOverlay');
+            if (!el) return;
+            el.classList.add('is-dismissed', 'hidden');
+            el.style.display = 'none';
+            el.style.opacity = '0';
+            el.style.pointerEvents = 'none';
+            el.style.visibility = 'hidden';
+            el.setAttribute('aria-hidden', 'true');
+        }
+
+        function clearStrayOverlays() {
+            document.querySelectorAll('.sambong-custom-modal').forEach((el) => el.remove());
+            hideScreenNoticePopup();
+            hideClassBellPopup();
+            if (typeof hideMartialLawModal === 'function') hideMartialLawModal();
+            ['electionOverlay', 'studentElectionOverlay', 'rpsOverlay', 'masterQuizModal', 'raidBattleModal'].forEach((id) => {
+                const node = document.getElementById(id);
+                if (node) node.classList.add('hidden');
+            });
+            document.body.classList.remove('martial-law-student-lock', 'student-election-active');
+        }
+
+        function escapeNoticeText(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        function renderNoticeInbox() {
+            const btn = document.getElementById('noticeInboxBtn');
+            const badge = document.getElementById('noticeInboxBadge');
+            const panel = document.getElementById('noticeInboxPanel');
+            const show = !!window._worldEntered && !isGuestSession();
+            if (btn) btn.classList.toggle('hidden', !show);
+            const unread = unreadCount(_noticeInbox);
+            if (badge) {
+                badge.textContent = String(unread);
+                badge.classList.toggle('hidden', unread <= 0);
+            }
+            if (!panel) return;
+            if (!show) {
+                panel.classList.add('hidden');
+                return;
+            }
+            if (panel.classList.contains('hidden')) return;
+            const rows = _noticeInbox.length
+                ? _noticeInbox.map((row) => `
+                    <article class="notice-inbox-item">
+                        <strong>${escapeNoticeText(row.title)}</strong>
+                        <p>${escapeNoticeText(row.body)}</p>
+                    </article>`).join('')
+                : '<p class="text-sm text-slate-200 mt-2">새 알림이 없습니다.</p>';
+            panel.innerHTML = `
+                <div class="flex items-center justify-between gap-2">
+                    <h3>알림함</h3>
+                    <button type="button" class="text-[11px] font-bold text-slate-200" onclick="window.toggleNoticeInbox(false)">닫기</button>
+                </div>
+                ${rows}`;
+        }
+
+        function currentNoticeInboxKey() {
+            const sid = localStorage.getItem('sambong_student_id') || '';
+            return noticeInboxStorageKey(typeof appId !== 'undefined' ? appId : '', sid);
+        }
+
+        function persistNoticeInbox() {
+            if (!window._worldEntered || isGuestSession()) return;
+            try {
+                localStorage.setItem(currentNoticeInboxKey(), serializeNoticeInbox(_noticeInbox));
+            } catch (_) { /* 저장 공간이 없어도 이번 화면의 알림함은 유지합니다. */ }
+        }
+
+        function restoreNoticeInbox() {
+            if (isGuestSession()) return;
+            try {
+                _noticeInbox = loadNoticeInbox(localStorage.getItem(currentNoticeInboxKey()));
+            } catch (_) {
+                _noticeInbox = [];
+            }
+        }
+
+        function rememberNotice(title, body, key) {
+            const notice = { title, body, key: key || '', at: Date.now() };
+            if (!window._worldEntered || isGuestSession()) {
+                if (notice.key && _deferredNotices.some((row) => row.key === notice.key)) return;
+                if (!String(body || '').trim()) return;
+                _deferredNotices.push(notice);
+                return;
+            }
+            _noticeInbox = pushNotice(_noticeInbox, notice);
+            persistNoticeInbox();
+            renderNoticeInbox();
+        }
+
+        function flushDeferredNotices() {
+            if (!window._worldEntered || isGuestSession()) {
+                _deferredNotices = [];
+                return;
+            }
+            const batch = _deferredNotices.splice(0);
+            batch.forEach((notice) => {
+                _noticeInbox = pushNotice(_noticeInbox, notice);
+            });
+            persistNoticeInbox();
+            renderNoticeInbox();
+        }
+
+        function enterWorld() {
+            clearStrayOverlays();
+            window._worldEntered = true;
+            restoreNoticeInbox();
+            const heldNotice = window._deferredScreenNotice;
+            if (heldNotice && heldNotice.active && heldNotice.text && !isGuestSession()) {
+                rememberNotice(heldNotice.title || '공지', heldNotice.text, `screen:${heldNotice.id || heldNotice.text}`);
+                if (typeof writeDismissedScreenNoticeId === 'function') writeDismissedScreenNoticeId(heldNotice.id);
+            }
+            window._deferredScreenNotice = null;
+            flushDeferredNotices();
+            if (typeof syncStudentElectionUi === 'function') syncStudentElectionUi();
+            if (window.globalSettings && window.globalSettings.rpsGame && typeof applyRemoteRpsGame === 'function') {
+                applyRemoteRpsGame(window.globalSettings.rpsGame);
+            }
+            if (typeof window.syncMartialLawModal === 'function') window.syncMartialLawModal();
+        }
+
+        window.toggleNoticeInbox = function(forceOpen) {
+            const panel = document.getElementById('noticeInboxPanel');
+            const btn = document.getElementById('noticeInboxBtn');
+            if (!panel || isGuestSession() || !window._worldEntered) return;
+            const open = typeof forceOpen === 'boolean' ? forceOpen : panel.classList.contains('hidden');
+            panel.classList.toggle('hidden', !open);
+            if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            if (open) {
+                _noticeInbox = markAllRead(_noticeInbox);
+                persistNoticeInbox();
+                renderNoticeInbox();
+                panel.classList.remove('hidden');
+            }
+        };
+
+        const GUEST_WRITE_RE = /window\.(attemptQuest|cancelQuest|buyItem|submitLunchBid|submitReadingLog|saveReadingTeacherNote|givePeerPraise|depositBank|withdrawBank|withdrawBankAll|transferBong|openTermDeposit|takeBankLoan|repayBankLoan|previewBankLoan|buyBusSeat|purchaseBus|buyEstate|setBaseFace|saveStatusMessage|submitDiary|saveDiary|buyLotto|joinShopGroupBuy|openShopGroupBuyModal|orderConvenience|equipSkin|enhanceGear|submitRaidAnswer|submitRaidShortAnswer|submitMasterQuizAnswer|quickReward|changeMyPassword|studentPickElection|toggleJob|toggleStudentJob|promptUnlock|placeWorldCup|investStock|sellStock)/;
+
+        function maskGuestWriteControls(root) {
+            if (!isGuestSession()) return;
+            const scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll('button, [onclick]').forEach((el) => {
+                if (el.closest('#appNavDock, #loginOverlay, nav.fixed.top-0, #noticeInboxPanel')) return;
+                const oc = el.getAttribute('onclick') || '';
+                if (GUEST_WRITE_RE.test(oc)) el.classList.add('guest-write-hidden');
+            });
+        }
+
+        function watchGuestWriteControls() {
+            if (window._guestWriteObserver) return;
+            let frame = 0;
+            window._guestWriteObserver = new MutationObserver(() => {
+                if (!isGuestSession()) return;
+                if (frame) return;
+                frame = requestAnimationFrame(() => {
+                    frame = 0;
+                    maskGuestWriteControls(document);
+                });
+            });
+            window._guestWriteObserver.observe(document.body, { childList: true, subtree: true });
         }
 
         /** 전역 로딩 스피너 / 에러 표시 */
@@ -5653,11 +5896,10 @@ function redrawPlazaGrantsUi() {
             markSeenMusicTimeRequestIds(fresh.map((row) => row.id));
             if (fresh.length === 1) {
                 const row = fresh[0];
-                void window.customAlert(
-                    `🎵 뮤직 타임 신청곡\n\n` +
-                    `- 신청: ${row.studentName} (${row.studentId}번)\n` +
-                    `- 곡: ${row.song}\n\n` +
-                    `상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`
+                rememberNotice(
+                    '뮤직 타임',
+                    `신청: ${row.studentName} (${row.studentId}번)\n곡: ${row.song}\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`,
+                    `music:${row.id}`,
                 );
                 return;
             }
@@ -5666,8 +5908,10 @@ function redrawPlazaGrantsUi() {
                 .sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0))
                 .map((row, idx) => `${idx + 1}. ${row.studentName} · ${row.song}`)
                 .join('\n');
-            void window.customAlert(
-                `🎵 뮤직 타임 신청곡 ${fresh.length}건\n\n${lines}\n\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`
+            rememberNotice(
+                '뮤직 타임',
+                `신청곡 ${fresh.length}건\n${lines}\n상점 「신청곡 리스트 보기」에서 확인할 수 있어요.`,
+                `music:${fresh.map((row) => row.id).join(',')}`,
             );
         }
 
@@ -5805,6 +6049,7 @@ function redrawPlazaGrantsUi() {
         };
 
         function checkClassStartReminders(now = new Date()) {
+            if (!window._worldEntered || isGuestSession()) return;
             if (!window.playerState || !window.playerState.isAdmin) return;
             const dayKey = getClassTimetableDayKeyFromDate(now);
             if (!CLASS_TIMETABLE_DAYS.some((d) => d.key === dayKey)) return;
@@ -5829,11 +6074,10 @@ function redrawPlazaGrantsUi() {
                 }
                 // 수업 종을 켠 기기는 시작·종료 팝업이 이 알림을 대신합니다.
                 if (getClassBellEnabled()) continue;
-                void window.customAlert(
-                    `🔔 수업 준비 알림\n\n` +
-                    `${period.label} (${period.start}~${period.end})\n` +
-                    `${subjectLine}\n\n` +
-                    `수업 시작 시간입니다. 준비해 주세요!`
+                rememberNotice(
+                    '수업 준비',
+                    `${period.label} (${period.start}~${period.end})\n${subjectLine}\n수업 시작 시간입니다. 준비해 주세요!`,
+                    alertKey,
                 );
             }
         }
@@ -5872,7 +6116,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function showClassBellPopup(event, now = new Date()) {
-            if (!event) return;
+            if (!event || !window._worldEntered || isGuestSession()) return;
             hideClassBellPopup();
             const d = document.createElement('div');
             d.id = 'classBellPopup';
@@ -5909,6 +6153,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function checkClassBells(now = new Date()) {
+            if (!window._worldEntered || isGuestSession()) return;
             if (!getClassBellEnabled()) return;
             if (typeof isWorldVacationDay === 'function' && isWorldVacationDay(now)) return;
             const event = matchClassBell(now);
@@ -6837,10 +7082,12 @@ ${subjectLine}
                         </div>
                         <div id="shop-price-${shop.id}" class="text-sb-gold bg-slate-900 px-3 py-1 rounded border border-slate-700 text-xs font-bold shrink-0">${formatBongAmount(shop.price)}</div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
+                    ${window.playerState && window.playerState.isGuest
+                        ? '<p class="text-[10px] text-slate-400">구경 중에는 구매할 수 없습니다.</p>'
+                        : `<div class="flex flex-wrap gap-2">
                         <button type="button" class="flex-1 min-w-[4.5rem] bg-pink-900/70 hover:bg-pink-800 text-white text-[10px] font-bold py-2 px-2 rounded-lg border border-pink-600" onclick="event.stopPropagation();window.buyItem('${shop.id}','${safeName}',${shop.isConsumable || false})">구매</button>
                         ${groupBuyBtn}
-                    </div>
+                    </div>`}
                 </div>`;
         }
 
@@ -7285,11 +7532,12 @@ ${subjectLine}
             _xpSupervisionStudentAlertRunning = true;
             try {
                 const lines = newOnes.map((inc) => `· ${buildSupervisionIncidentSummaryLine(inc)}`).join('\n');
-                await window.customAlert(
-                    '⚠️ 경험치 감시 경고\n\n' +
+                rememberNotice(
+                    '경험치 감시',
                     '허용되지 않은 방법으로 경험치가 급증한 것으로 보입니다.\n' +
                     `${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
-                    '[감지 내역]\n' + lines
+                    '[감지 내역]\n' + lines,
+                    `xp-watch:${newOnes.map((inc) => inc.id).join(',')}`,
                 );
                 newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
                 localStorage.setItem(storageKey, JSON.stringify(seen));
@@ -7330,13 +7578,14 @@ ${subjectLine}
                     }
                     return block;
                 }).join('\n\n');
-                await window.customAlert(
-                    '⚠️ 삼봉 금융감독 경고\n\n' +
-                    '비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n' +
+                rememberNotice(
+                    '금융감독',
+                    `비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n` +
                     `허용되지 않은 방법으로 획득·환불한 경우 ${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
                     '[감지 내역]\n' +
                     lines +
-                    `\n\n정상 활동이라면 ${getMasterDisplayName()}에게 문의하세요.`
+                    `\n\n정상 활동이라면 ${getMasterDisplayName()}에게 문의하세요.`,
+                    `bong-watch:${newOnes.map((inc) => inc.id).join(',')}`,
                 );
                 newOnes.forEach((inc) => { seen[inc.id] = Date.now(); });
                 localStorage.setItem(storageKey, JSON.stringify(seen));
@@ -7614,9 +7863,7 @@ ${subjectLine}
             if (!seenKey) return;
             if (localStorage.getItem(seenKey) === '1') return;
             localStorage.setItem(seenKey, '1');
-            setTimeout(() => {
-                void window.customAlert(buildLottoResultMessage(lastDraw));
-            }, 250);
+            rememberNotice('로또', buildLottoResultMessage(lastDraw), seenKey);
         }
 
         function getSanitizedLottoState(raw) {
@@ -9682,6 +9929,7 @@ ${subjectLine}
          * @param {string} [subOrOpts] 경제/도전 서브 또는 생략
          */
         window.switchTab = function(tabId, subOrOpts) {
+            if (isGuestSession() && (tabId === 'admin' || tabId === 'settings')) return;
             if (isMartialLawLockingStudent()) return;
             // 레거시 딥링크 별칭
             if (tabId === 'goldenbell') {
@@ -9733,6 +9981,7 @@ ${subjectLine}
             }
 
             document.body.className = `antialiased selection:bg-sb-gold selection:text-slate-900 bg-theme-${tabId}`;
+            if (isGuestSession()) document.body.classList.add('is-guest');
             if (window.updateBankPanel) window.updateBankPanel();
             if (tabId === 'admin' && window.playerState && window.playerState.isAdmin && typeof window.renderAdminExportPanel === 'function') {
                 window.renderAdminExportPanel();
@@ -16458,6 +16707,10 @@ ${subjectLine}
         }
 
         function syncStudentElectionUi() {
+            if (!window._worldEntered || isGuestSession()) {
+                hideStudentElectionChrome();
+                return;
+            }
             const pub = getPublishedElection();
             if (!pub.sessionId || pub.phase === 'setup') {
                 _studentElectionUiKey = '';
@@ -17021,6 +17274,11 @@ ${subjectLine}
                 return;
             }
             if (remote.phase === 'choose') _rpsDismissed = false;
+            if (!window._worldEntered || isGuestSession()) {
+                closeRpsOverlayInternal(true);
+                renderRpsToolPanel();
+                return;
+            }
             if (!_rpsDismissed) openRpsOverlay();
             else {
                 renderRpsOverlay();
@@ -18777,7 +19035,11 @@ ${subjectLine}
             const fresh = pending.filter((order) => !seen.has(String(order.id)));
             if (!fresh.length) return;
             markSeenConvenienceOrderIds(fresh.map((order) => order.id));
-            window.openConvenienceOrderPanel();
+            rememberNotice(
+                '편의점 주문',
+                `확인하지 않은 주문이 ${fresh.length}건 있습니다. 편의점 주문 목록에서 볼 수 있어요.`,
+                `conv:${fresh.map((order) => order.id).join(',')}`,
+            );
         }
 
         window.openConvenienceOrderPanel = function() {
@@ -19231,11 +19493,14 @@ ${subjectLine}
                         : 'onclick="event.stopPropagation();"';
                     return `<button type="button" ${btn} class="text-[8px] px-1 py-0.5 rounded bg-slate-950 border border-sky-500/40 text-sky-100 font-bold" title="눌러서 해제">${escapeHtmlAttr(w.name)}${canEdit ? ' ×' : ''}</button>`;
                 }).join('');
-                const click = isMaster
+                const guestView = !!(window.playerState && window.playerState.isGuest);
+                const click = guestView
+                    ? ''
+                    : (isMaster
                     ? (selectedId
                         ? `onclick="void window.toggleStudentJob('${selectedId}', '${job.id}')"`
                         : `onclick="void window.customAlert('먼저 아래 명단에서 학생을 골라 주세요.')"`)
-                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}', '${job.id}')"`;
+                    : `onclick="window.toggleJob('${job.name.replace(/'/g, "\\'")}', '${job.icon}', '${job.color}', '${job.id}')"`);
                 const ring = isEquipped ? 'ring-1 ring-sb-blue bg-slate-800' : '';
                 const border = isEquipped ? 'border-l-sb-blue' : `border-l-${job.color.replace('text-', '')}`;
                 return `
@@ -19420,13 +19685,19 @@ ${subjectLine}
                 
                 await auth.authStateReady();
                 await signInAnonymously(auth);
+                if (window._guestDemoActive) {
+                    try { await signOut(auth); } catch (_) { /* 구경 세션은 인증을 유지하지 않습니다. */ }
+                    return;
+                }
                 /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
                 if (auth.currentUser) {
                     await auth.currentUser.getIdToken();
                 }
                 // ?c=초대코드 / /c/CODE → 해당 학급으로 이동 (페이지 리로드 시 true)
                 if (await applyInviteCodeFromUrlIfNeeded()) return;
+                if (window._guestDemoActive) return;
                 await loadClassMeta();
+                if (window._guestDemoActive) return;
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyDuplicateQuestBongHotfix();
@@ -19438,6 +19709,7 @@ ${subjectLine}
                 void applyPeClassGroupBuySettleMigration();
 
                 onAuthStateChanged(auth, user => {
+                    if (window._guestDemoActive) return;
                     if (user) {
                         checkTimeEvents();
                         setInterval(checkTimeEvents, 60000);
@@ -19449,6 +19721,7 @@ ${subjectLine}
                         
                         if(unsubscribeGlobal) unsubscribeGlobal();
                         unsubscribeGlobal = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), snap => {
+                            if (window._guestDemoActive) return;
                             const students = []; 
                             let gmD = null, gmaD = null;
                             
@@ -19522,6 +19795,7 @@ ${subjectLine}
 
                         if(unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), (snap) => {
+                            if (window._guestDemoActive) return;
                             const fromCache = !!(snap.metadata && snap.metadata.fromCache);
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
@@ -19680,7 +19954,8 @@ ${subjectLine}
                             }
                         });
 
-                        onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
+                        unsubscribeEstate = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
+                            if (window._guestDemoActive) return;
                             if(snap.exists()) {
                                 window.estateState = normalizeEstateState(snap.data());
                                 if (Array.isArray(window.estateState.seats)) {
@@ -19862,6 +20137,7 @@ ${subjectLine}
 
                         if (unsubscribeMartialLaw) unsubscribeMartialLaw();
                         unsubscribeMartialLaw = onSnapshot(getMartialLawStateRef(), (snap) => {
+                            if (window._guestDemoActive) return;
                             if (snap.exists()) {
                                 window.martialLawState = snap.data();
                             } else {
@@ -19937,6 +20213,7 @@ ${subjectLine}
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
             }
+            if (isGuestSession()) return;
             void maybeRollPraiseAtMidnight();
             void maybeExpireGoldenBell(now);
 
@@ -19945,7 +20222,7 @@ ${subjectLine}
                 if (r.needSave) {
                     saveDataToCloud();
                     updateUI();
-                    if (r.alertNewDay) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
+                    if (r.alertNewDay) rememberNotice('일일 퀘스트', '새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다.', `quest-reset:${getLocalDateStr()}`);
                 }
             }
 
@@ -20141,14 +20418,13 @@ ${subjectLine}
                 if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
                 return;
             }
-            const dismissed = readDismissedScreenNoticeId();
-            if (screenNoticeShouldShow(notice, dismissed)) {
-                showScreenNoticePopup(notice);
-            } else if (showing && showing.dataset.noticeId === notice.id) {
-                /* 이미 이 공지를 보고 있음 */
-            } else if (showing && showing.dataset.noticeId !== 'preview' && showing.dataset.noticeId !== notice.id) {
-                hideScreenNoticePopup();
+            if (!window._worldEntered || isGuestSession()) {
+                window._deferredScreenNotice = notice;
+                if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
+                return;
             }
+            rememberNotice(notice.title || '공지', notice.text, `screen:${notice.id || notice.text}`);
+            if (showing && showing.dataset.noticeId !== 'preview') hideScreenNoticePopup();
         }
 
         async function publishScreenNoticePayload(payload) {
@@ -20328,12 +20604,12 @@ ${subjectLine}
 
                 const gmXpSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-xp plaza-gm-controls" onclick="event.stopPropagation();">
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+1X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+10X</button>
-                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10X</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+1 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -1, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-1 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+5 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-5 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-xp">+10 XP</button>
+                        <button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -10, '${targetId}', this)" class="plaza-gm-btn plaza-gm-btn-minus">-10 XP</button>
                     </div>` : '';
                 const gmBongSide = canEdit && !isGMCard ? `
                     <div class="plaza-gm-side plaza-gm-bong plaza-gm-controls" onclick="event.stopPropagation();">
@@ -20385,7 +20661,9 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
+                const praiseBtn = (window.playerState && window.playerState.isGuest)
+                    ? ''
+                    : `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
@@ -20408,9 +20686,9 @@ ${subjectLine}
                     
                     <!-- 파랑=경험치, 금색=봉. 단위는 생략하고 색으로 구분합니다. -->
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
-                        <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
+                        <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()} XP</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
+                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(walletBong)}</span>
                     </div>
                 </div>`;
             };
@@ -20555,7 +20833,7 @@ ${subjectLine}
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
-                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+10X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5X</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+5${getCurrencyUnit()}</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+10${getCurrencyUnit()}</button></div>` : '-'}
+                            ${canEdit ? `<div class="flex flex-wrap gap-1"><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 5, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+5 XP</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', 10, '${stu.id}', this)" class="bg-sb-blue/20 text-sb-blue px-1 py-1 rounded text-[8px]">+10 XP</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('xp', -5, '${stu.id}', this)" class="bg-red-900/40 text-red-300 px-1 py-1 rounded text-[8px]">-5 XP</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 5, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+5${getCurrencyUnit()}</button><button type="button" onclick="event.stopPropagation(); void window.quickReward('bong', 10, '${stu.id}', this)" class="bg-sb-gold/20 text-yellow-400 px-1 py-1 rounded text-[8px]">+10${getCurrencyUnit()}</button></div>` : '-'}
                         </td>
                         <td class="p-2 text-center border-l border-slate-700/50 min-w-[4.5rem]">
                             ${canEdit ? (() => {
@@ -22116,25 +22394,21 @@ ${subjectLine}
         function formatBankLoanLifecycleAlerts(msgs) {
             (msgs || []).forEach((m) => {
                 if (m.kind === 'repay') {
-                    setTimeout(() => {
-                        void window.customAlert(
-                            `🏦 대출 약정 자동이체\n\n원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`
-                        );
-                    }, 80);
+                    rememberNotice(
+                        '대출 상환',
+                        `원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`,
+                        `loan-repay:${m.due || ''}:${m.principal}`,
+                    );
                 } else if (m.kind === 'default_start') {
-                    setTimeout(() => {
-                        void window.customAlert(creditDefaultBlockMessage(m.untilYmd));
-                    }, 140);
+                    rememberNotice('신용불량', creditDefaultBlockMessage(m.untilYmd), `loan-default:${m.untilYmd}`);
                 } else if (m.kind === 'penalty_start') {
-                    setTimeout(() => {
-                        void window.customAlert(loanPenaltyBlockMessage(m.untilYmd));
-                    }, 180);
+                    rememberNotice('대출 연체', loanPenaltyBlockMessage(m.untilYmd), `loan-penalty:${m.untilYmd}`);
                 } else if (m.kind === 'penalty_half') {
-                    setTimeout(() => {
-                        void window.customAlert(
-                            `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`
-                        );
-                    }, 200);
+                    rememberNotice(
+                        '신용불량',
+                        `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`,
+                        `loan-half:${m.nextDue || ''}`,
+                    );
                 }
             });
         }
@@ -23332,25 +23606,25 @@ ${subjectLine}
         };
 
         window.maybeShowLoanMorningNotice = function() {
-            if (!window.playerState || window.playerState.isGuest) return;
+            if (!window._worldEntered || !window.playerState || window.playerState.isGuest) return;
             const loan = sanitizeBankLoan(window.playerState.bankLoan);
             if (!loan || !loanStillOutstanding(window.playerState.bankLoan)) return;
             const sid = String(localStorage.getItem('sambong_student_id') || '');
             const key = `sambongLoanNotice:${appId}:${sid}:${getLocalDateStr()}`;
             if (localStorage.getItem(key) === '1') return;
-            const modal = document.getElementById('loanMorningModal');
-            const body = document.getElementById('loanMorningBody');
-            if (!modal || !body) return;
+            try { localStorage.setItem(key, '1'); } catch (_) { /* 알림함에는 남깁니다. */ }
             const due = loanDueTotal(loan);
             const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
-            body.textContent =
-                `너에게 아직 갚지 않은 대출이 있다.\n` +
+            rememberNotice(
+                '대출 안내',
+                `아직 갚지 않은 대출이 있습니다.\n` +
                 `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
-                `납기일 ${loan.dueYmd}\n\n` +
+                `납기일 ${loan.dueYmd}\n` +
                 (penalty
-                    ? '이미 납기일을 넘겼다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있다.'
-                    : '이 날짜가 지나기 전에 갚아라. 일부만 갚을 수도 있다. 미루면 도장이 찍힌다.');
-            modal.classList.remove('hidden');
+                    ? '이미 납기일을 넘겼습니다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있습니다.'
+                    : '이 날짜가 지나기 전에 갚아 주세요. 일부만 갚을 수도 있습니다.'),
+                key,
+            );
         };
 
         window.dismissLoanMorningNotice = function(goBank) {
@@ -23653,13 +23927,11 @@ ${subjectLine}
                     bankSaveOperationLabel = '보물상자 적금 만기';
                     bankSaveBongLogSource = 'bankTermMaturity';
                     if (termRes.msgs.length > 0) {
-                        setTimeout(() => {
-                            void window.customAlert(
-                                '🎁 적금 만기!\n\n' +
-                                termRes.msgs.join('\n') +
-                                '\n\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)'
-                            );
-                        }, 80);
+                        rememberNotice(
+                            '적금 만기',
+                            termRes.msgs.join('\n') + '\n원금과 이자가 지갑으로 입금되었습니다. (이자는 반올림)',
+                            `term:${getLocalDateStr()}:${termRes.msgs.join('|')}`,
+                        );
                     }
                 }
                 const loanLife = applyBankLoanLifecycleLocal();
@@ -23674,9 +23946,11 @@ ${subjectLine}
                 }
                 if (applyBankRegularDailyBonus()) {
                     bankProcessingNeedSave = true;
-                    setTimeout(() => {
-                        void window.customAlert(`🏦 예금 주기 보너스: 일반+적금 원금 합 100${getCurrencyUnit()} 이상 유지로 이번 주기 1${getCurrencyUnit()}가 지갑에 들어왔습니다! (3일마다 지급)`);
-                    }, 120);
+                    rememberNotice(
+                        '예금 보너스',
+                        `일반+적금 원금 합 100${getCurrencyUnit()} 이상 유지로 이번 주기 1${getCurrencyUnit()}가 지갑에 들어왔습니다. (3일마다 지급)`,
+                        `bank-bonus:${getLocalDateStr()}`,
+                    );
                 }
                 /**
                  * 주말 키는 저장하되 보유 성구는 절대 초기화하지 않습니다.
@@ -24182,9 +24456,18 @@ ${subjectLine}
             if (typeof refreshSchoolWeather === 'function') void refreshSchoolWeather(false);
             if (typeof syncSchoolWeatherSearchUi === 'function') syncSchoolWeatherSearchUi();
             if (typeof renderMarketTicker === 'function') renderMarketTicker();
-            if (canRunBankSideEffects) {
+            if (canRunBankSideEffects && window._worldEntered && !isGuestSession()) {
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
+            }
+            renderNoticeInbox();
+            if (isGuestSession()) {
+                document.body.classList.add('is-guest');
+                const adminTab = document.getElementById('tab-admin');
+                const settingsTab = document.getElementById('tab-settings');
+                if (adminTab) adminTab.classList.add('hidden');
+                if (settingsTab) settingsTab.classList.add('hidden');
+                maskGuestWriteControls(document);
             }
         }
 
@@ -24241,28 +24524,43 @@ ${subjectLine}
         if (btnApplyClass) btnApplyClass.onclick = () => { void window.applyLoginClassCode(); };
         if (typeof window.setLoginMode === 'function') window.setLoginMode('student');
         
-        window.loginAsGuest = function() {
-            window.playerState = { 
-                xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
-                jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
-                ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
-                inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, gearEnhance: { wp1: 1 }, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
-                dragonBalls: [], dragonBallWeekendKey: '',
-                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
-                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
-                catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
-                isGuest: true, isGM: false, isGMA: false, isAdmin: false 
-            };
-            
-            document.getElementById('loginOverlay').style.opacity = '0'; 
-            setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
-            document.getElementById('saveStatus').classList.replace('hidden', 'flex');
-            document.getElementById('playerNameDisplay').innerText = "손님"; 
-            document.getElementById('cloudIcon').className = "fa-solid fa-eye-slash text-slate-400";
-            
+        window.loginAsGuest = async function() {
+            window._guestDemoActive = true;
+            document.body.classList.add('is-guest');
+            stopClassRealtime();
+            _deferredNotices = [];
+            _noticeInbox = [];
+            window._deferredScreenNotice = null;
+            clearStrayOverlays();
+            dismissLoginOverlay();
+            try { if (auth) await signOut(auth); } catch (_) { /* 세션이 없어도 데모는 계속 */ }
+            window.classMeta = buildGuestDemoClassMeta();
+            syncNameGenderMaps();
+            window.allStudentsData = buildGuestDemoStudents();
+            window.gmData = buildGuestDemoTeacher();
+            window.estateState = { seats: [], layout: { rows: 2, cols: 4 } };
+            window.playerState = buildGuestPlayerState();
+            const navLabel = document.getElementById('navClassLabel');
+            if (navLabel) navLabel.textContent = '데모 반';
+            const banner = document.getElementById('guestDemoBanner');
+            if (banner) banner.hidden = false;
+            window._worldEntered = true;
+            const saveStatus = document.getElementById('saveStatus');
+            if (saveStatus) {
+                saveStatus.classList.remove('hidden');
+                saveStatus.classList.add('flex');
+            }
+            const nameEl = document.getElementById('playerNameDisplay');
+            if (nameEl) nameEl.textContent = '구경꾼';
+            const cloudIcon = document.getElementById('cloudIcon');
+            if (cloudIcon) cloudIcon.className = 'fa-solid fa-eye text-slate-300';
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
-            updateUI(); 
+            watchGuestWriteControls();
+            window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);
+            updateUI();
             window.switchTab('plaza');
+            renderShopCatalog();
+            maskGuestWriteControls(document);
         };
         
         window.logout = async function() { 
@@ -24452,11 +24750,11 @@ ${subjectLine}
                 window._suppressXpSyncToast = true;
                 setTimeout(() => { window._suppressXpSyncToast = false; }, 1200);
                 
-                document.getElementById('loginOverlay').style.opacity = '0'; 
-                setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
+                dismissLoginOverlay();
                 document.getElementById('saveStatus').classList.replace('hidden', 'flex');
                 document.getElementById('playerNameDisplay').innerText = STUDENT_NAMES[studentId];
                 document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue";
+                enterWorld();
                 
                 updateUI(); 
                 window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData); 
@@ -28669,64 +28967,67 @@ ${subjectLine}
             }
 
             if (granted) {
-                window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${stuList.length}명에게 경험치 +5 자동 지급을 완료했습니다.`);
+                rememberNotice('수업 종료', `[${timeStr}] 수업 종료. 학생 ${stuList.length}명에게 경험치 +5 XP를 지급했습니다.`, `class-xp:${todayKey}`);
             }
         };
 
         window.checkAndDistributeSalary = async function() {
+            if (isGuestSession() || !window._worldEntered) return;
             if (!db || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
+            if (!isSalaryPayWindow(now)) return;
+
             const day = now.getDay();
-            const hours = now.getHours();
-
-            /** 금요일 오후 3시(15:00) 이후부터 해당 주 주급 창구 오픈. 토·일은 직전 금요일분 정산. */
-            const isFridayPayWindow = day === 5 && hours >= 15;
-            const isPast = isFridayPayWindow || day === 6 || day === 0;
-            if (!isPast) return;
-
-            let dDate = new Date(now);
+            const dDate = new Date(now);
             if (day === 6) dDate.setDate(now.getDate() - 1);
             else if (day === 0) dDate.setDate(now.getDate() - 2);
-            /** 정산 대상 금요일(또는 금요 당일)이 방학이면 주급 지급 안 함 */
             if (isVacationAutomationPaused('salary', dDate)) return;
 
-            const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
-
+            const wId = recentSalaryWeekId(now);
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-            const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+            const stuList = window.allStudentsData.filter((s) => s.id !== 'gm' && s.id !== 'gm_a');
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return;
 
             try {
-                const paidCount = await runTransaction(db, async (transaction) => {
+                const result = await runTransaction(db, async (transaction) => {
                     const settingsSnap = await transaction.get(settingsRef);
                     const last = settingsSnap.exists() ? settingsSnap.data().lastSalaryWeek : null;
-                    if (last === wId) return null;
+                    const legacySettled = last === wId;
+                    const rows = stuList.map((stu) => ({
+                        stu,
+                        ref: doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id),
+                    }));
+                    const snaps = [];
+                    for (const row of rows) snaps.push(await transaction.get(row.ref));
 
-                    let count = 0;
-                    for (const stu of stuList) {
-                        let pay = 0;
-                        if (stu.jobs) {
-                            const catalog = getJobCatalog();
-                            resolveStudentJobsFromCatalog(stu.jobs, catalog).forEach((j) => {
-                                const ji = catalog.find((jd) =>
-                                    (jd.id && j.id && String(jd.id) === String(j.id))
-                                    || jd.name === j.name
-                                    || (jd.icon === j.icon && jd.color === j.color));
-                                if (ji) pay += ji.pay;
-                            });
+                    let paid = 0;
+                    rows.forEach((row, index) => {
+                        const snap = snaps[index];
+                        if (!snap.exists()) return;
+                        const data = snap.data() || {};
+                        const catalog = getJobCatalog();
+                        const pay = sumCatalogPayForJobs(data.jobs, catalog);
+                        const plan = planStudentSalaryPayment({
+                            salaryPaidWeek: data.salaryPaidWeek,
+                            weekId: wId,
+                            legacyWeekSettled: legacySettled,
+                            pay,
+                        });
+                        if (plan.action === 'skip') return;
+                        if (plan.action === 'pay') {
+                            transaction.set(row.ref, { bong: increment(plan.amount), salaryPaidWeek: wId }, { merge: true });
+                            paid += 1;
+                        } else {
+                            transaction.set(row.ref, { salaryPaidWeek: wId }, { merge: true });
                         }
-                        if (pay > 0) {
-                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
-                            transaction.set(ref, { bong: increment(pay) }, { merge: true });
-                            count++;
-                        }
-                    }
-
-                    transaction.set(settingsRef, { lastSalaryWeek: wId }, { merge: true });
-                    return count;
+                    });
+                    if (!legacySettled) transaction.set(settingsRef, { lastSalaryWeek: wId }, { merge: true });
+                    return { paid };
                 });
 
-                if (paidCount != null && window.playerState && window.playerState.isGM) {
-                    window.customAlert(`💰 자동 주급 정산 완료! (${paidCount}명 지급)\n(금요 15:00 이후 · 서버 트랜잭션 1회)`);
+                if (result && result.paid > 0 && window.playerState && window.playerState.isGM) {
+                    rememberNotice('주급', `자동 주급 정산 완료! (${result.paid}명 지급)\n금요 15:00 이후 · 학생별 주 1회`, `salary:${wId}`);
                 }
             } catch (e) {
                 console.warn('checkAndDistributeSalary', e);
@@ -28751,7 +29052,7 @@ ${subjectLine}
             window.playerState.lastLunchDeductDate = todayYmd;
             await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: 10 });
             updateUI();
-            await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
+            rememberNotice('점심값', `점심값으로 10${getCurrencyUnit()}가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시됩니다.\n(오늘 날짜 기준 1회만 적용)`, `lunch:${todayYmd}`);
         };
 
         // 이전 버전 호환용 (일괄 차감). 현재는 applyPersonalLunchDeductionIfNeeded 로 개별 처리합니다.

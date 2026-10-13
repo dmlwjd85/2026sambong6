@@ -328,6 +328,16 @@ export function resolveStudentJobsFromCatalog(jobs, catalog) {
     }).filter(Boolean);
 }
 
+/** 학생 문서에 저장된 직업 목록을 카탈로그 주급으로 합산합니다. */
+export function sumCatalogPayForJobs(jobs, catalog) {
+    const cat = Array.isArray(catalog) ? catalog : [];
+    return resolveStudentJobsFromCatalog(jobs, cat).reduce((sum, owned) => {
+        const match = findCatalogJobForOwned(owned, cat);
+        const pay = Math.max(0, Math.round(Number(match && match.pay) || 0));
+        return sum + pay;
+    }, 0);
+}
+
 /** id가 있으면 id로, 없으면 이름·모양으로 장착 여부를 봅니다. 카탈로그가 있으면 먼저 동기화합니다. */
 export function studentHasJob(jobs, jobSpec, catalog = []) {
     if (!jobSpec) return false;

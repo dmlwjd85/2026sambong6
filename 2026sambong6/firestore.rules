@@ -9,17 +9,81 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // 인증이 없는 요청만 거절합니다.
+    // 익명 로그인만 된 클라이언트는 아래 필드 제약 안에서 쓸 수 있습니다.
+    // 학생별 uid 명단은 두지 않습니다. 학급 로그인이 기기마다 새 익명 uid를 만들기 때문입니다.
+    function canAccessClassData() {
+      return signedIn();
+    }
+
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    function salaryYmd(ts) {
+      return string(ts.year()) + '_' + pad2(ts.month()) + '_' + pad2(ts.day());
+    }
+
+    // 한국 시간 기준 최근 주급 금요일. weeklySalary.js recentSalaryWeekId 와 같습니다.
+    function recentSalaryWeekKey() {
+      let now = request.time + duration.value(9, 'h');
+      let wd = (int(now.toMillis() / 86400000) + 4) % 7;
+      let hr = now.hours();
+      let inWindow = (wd == 5 && hr >= 15) || wd == 6 || wd == 0;
+      let friday = inWindow
+        ? (wd == 6
+            ? now + duration.value(-1, 'd')
+            : (wd == 0 ? now + duration.value(-2, 'd') : now))
+        : (wd == 5
+            ? now + duration.value(-7, 'd')
+            : now + duration.value(-(wd + 2), 'd'));
+      return 'SALARY_' + salaryYmd(friday);
+    }
+
+    function salaryWeekValueIsRecent() {
+      return request.resource.data.salaryPaidWeek is string
+        && request.resource.data.salaryPaidWeek.matches('^SALARY_\\d{4}_\\d{2}_\\d{2}$')
+        && request.resource.data.salaryPaidWeek == recentSalaryWeekKey();
+    }
+
+    // 주급 표식은 최근 키로만 바꿉니다. 비우거나 다른 주로 돌리면 거절합니다.
+    function salaryMarkerIsSafe() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return !changed.hasAny(['salaryPaidWeek'])
+        || salaryWeekValueIsRecent();
+    }
+
+    // 주급 표식을 옮기는 쓰기는 봉을 주급 상한(200)까지만 올릴 수 있습니다.
+    function salaryPayoutBongIsSafe() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let weekMoved = changed.hasAny(['salaryPaidWeek']);
+      let bongMoved = changed.hasAny(['bong']);
+      return !weekMoved
+        || !bongMoved
+        || (
+          request.resource.data.bong is number
+          && resource.data.bong is number
+          && request.resource.data.bong - resource.data.bong <= 200
+        );
+    }
+
+    // 첫 로그인·새 학급 마스터·없는 학생 초기화는 xp 0, bong 0으로 만듭니다.
+    // 생성 때는 그 기본값보다 큰 초깃값을 거절합니다.
     function studentCreateIsSafe() {
       return signedIn()
         && request.resource.data.xp is number
         && request.resource.data.bong is number
         && request.resource.data.xp >= 0
-        && request.resource.data.bong >= -2000;
+        && request.resource.data.xp <= 0
+        && request.resource.data.bong >= -2000
+        && request.resource.data.bong <= 0;
     }
 
     function studentUpdateIsSafe() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return signedIn()
+      return canAccessClassData()
+        && salaryMarkerIsSafe()
+        && salaryPayoutBongIsSafe()
         // XP: 하락(마스터 수정·차감) 허용, 1회 저장 상승은 650 이하(비정상 급등 방지)
         && (!changed.hasAny(['xp']) || (
           request.resource.data.xp is number
@@ -39,7 +103,7 @@ service cloud.firestore {
     }
 
     match /artifacts/{appId}/public/data/students/{studentId} {
-      allow read: if true;
+      allow read: if canAccessClassData();
       allow create: if studentCreateIsSafe();
       allow update: if studentUpdateIsSafe();
       allow delete: if false;
@@ -58,9 +122,24 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
-    match /artifacts/{appId}/public/{document=**} {
-      allow read: if true;
-      allow write: if request.auth != null;
+    // 학생 문서는 위 students 규칙만 씁니다.
+    // public/{document=**} 와일드카드 update는 학생 경로까지 허용되어 XP 650 상한을 무력화합니다.
+    // 재귀 캡처에는 split/matches가 없어, 컬렉션 이름이 students가 아닌 문서만 여기서 씁니다.
+    // 읽기는 인증된 요청만 허용합니다. 인증이 없으면 거절합니다.
+    match /artifacts/{appId}/public/data/{collection}/{docId} {
+      allow read: if canAccessClassData();
+      allow create, delete: if canAccessClassData() && collection != 'students';
+      allow update: if canAccessClassData()
+        && collection != 'students'
+        && salaryMarkerIsSafe();
+    }
+
+    match /artifacts/{appId}/public/data/{collection}/{docId}/{rest=**} {
+      allow read: if canAccessClassData();
+      allow create, delete: if canAccessClassData() && collection != 'students';
+      allow update: if canAccessClassData()
+        && collection != 'students'
+        && salaryMarkerIsSafe();
     }
 
     match /classes/{classId} {

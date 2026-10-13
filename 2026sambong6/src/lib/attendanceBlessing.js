@@ -19,6 +19,8 @@ export function attendanceDimsCard(status) {
     return !!(row && row.dim);
 }
 
+const ATTENDANCE_DAY_KEEP = 120;
+
 /** 이전 상태를 다음 상태로 바꿀 때 지갑에 더할 값. 같은 상태면 해제입니다. */
 export function planAttendanceChange(prevStatus, nextStatus) {
     const nextKey = String(nextStatus || '');
@@ -35,6 +37,35 @@ export function planAttendanceChange(prevStatus, nextStatus) {
         dim: !clearing && !!next.dim,
         label: clearing ? '' : next.label,
     };
+}
+
+/**
+ * 서버에 있는 출석부를 기준으로 학생 한 명의 오늘 상태만 바꿉니다.
+ * 로컬에 들고 있던 출석부 전체를 덮어쓰면 방금 찍힌 다른 학생 기록이 사라집니다.
+ */
+export function applyAttendanceDayMark(days, todayYmd, studentId, status) {
+    const today = String(todayYmd || '');
+    const sid = String(studentId || '');
+    const book = {};
+    const src = days && typeof days === 'object' ? days : {};
+    Object.keys(src).forEach((ymd) => {
+        const marks = src[ymd];
+        book[ymd] = marks && typeof marks === 'object' ? { ...marks } : {};
+    });
+    if (!sid || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+        return { ok: false, reason: 'who', days: book };
+    }
+    const todayMarks = { ...(book[today] || {}) };
+    const plan = planAttendanceChange(todayMarks[sid] || '', status);
+    if (!plan.ok) return { ok: false, reason: plan.reason, days: book };
+    if (plan.status) todayMarks[sid] = plan.status;
+    else delete todayMarks[sid];
+    book[today] = todayMarks;
+    const keys = Object.keys(book).sort();
+    keys.slice(0, Math.max(0, keys.length - ATTENDANCE_DAY_KEEP)).forEach((key) => {
+        delete book[key];
+    });
+    return { ok: true, plan, days: book };
 }
 
 export function attendanceMarkForToday(mark, todayYmd) {

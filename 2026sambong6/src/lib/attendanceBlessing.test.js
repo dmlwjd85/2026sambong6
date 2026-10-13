@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    applyAttendanceDayMark,
     attendanceDimsCard,
     attendanceMarkForToday,
     buildAttendanceSheetRows,
@@ -38,5 +39,30 @@ describe('출석의 축복', () => {
         assert.equal(rows[1][2], '김삼봉');
         assert.equal(rows[1][3], '출석');
         assert.equal(rows[2][4], -10);
+    });
+
+    it('학생을 잇달아 찍어도 양쪽 기록이 남고 오래된 날짜는 잘린다', () => {
+        const first = applyAttendanceDayMark({}, '2026-10-10', '3', 'present');
+        const second = applyAttendanceDayMark(first.days, '2026-10-10', '7', 'absent');
+        assert.equal(second.ok, true);
+        assert.equal(second.days['2026-10-10']['3'], 'present');
+        assert.equal(second.days['2026-10-10']['7'], 'absent');
+        assert.equal(second.plan.xpDelta, -10);
+        const again = applyAttendanceDayMark(second.days, '2026-10-10', '3', 'present');
+        assert.equal(again.plan.status, '');
+        assert.equal(again.days['2026-10-10']['3'], undefined);
+        assert.equal(again.days['2026-10-10']['7'], 'absent');
+
+        const dated = {};
+        for (let n = 0; n < 121; n += 1) {
+            const dt = new Date(Date.UTC(2024, 0, 1 + n));
+            dated[dt.toISOString().slice(0, 10)] = { '1': 'present' };
+        }
+        const trimmed = applyAttendanceDayMark(dated, '2026-10-10', '2', 'late');
+        assert.equal(Object.keys(trimmed.days).length, 120);
+        assert.equal(trimmed.days['2024-01-01'], undefined);
+        assert.equal(trimmed.days['2024-01-02'], undefined);
+        assert.equal(trimmed.days['2024-01-03']['1'], 'present');
+        assert.equal(trimmed.days['2026-10-10']['2'], 'late');
     });
 });

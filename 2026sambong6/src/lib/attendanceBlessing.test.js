@@ -6,6 +6,8 @@ import {
     attendanceMarkForToday,
     buildAttendanceSheetRows,
     planAttendanceChange,
+    planAttendanceWrite,
+    projectAttendanceDays,
 } from './attendanceBlessing.js';
 
 describe('출석의 축복', () => {
@@ -64,5 +66,59 @@ describe('출석의 축복', () => {
         assert.equal(trimmed.days['2024-01-02'], undefined);
         assert.equal(trimmed.days['2024-01-03']['1'], 'present');
         assert.equal(trimmed.days['2026-10-10']['2'], 'late');
+    });
+
+    it('같은 상태를 빈 칸에서 두 번 눌러도 서버에 이미 있으면 보상을 되돌리지 않는다', () => {
+        const first = planAttendanceWrite({
+            serverStatus: '',
+            requestedStatus: 'present',
+            seenStatus: '',
+            today: '2026-10-13',
+        });
+        assert.equal(first.noop, false);
+        assert.equal(first.clearCell, false);
+        assert.equal(first.status, 'present');
+        assert.equal(first.xpDelta, 8);
+        assert.equal(first.bongDelta, 1);
+        const raced = planAttendanceWrite({
+            serverStatus: 'present',
+            requestedStatus: 'present',
+            seenStatus: '',
+            today: '2026-10-13',
+        });
+        assert.equal(raced.noop, true);
+        assert.equal(raced.xpDelta, 0);
+        assert.equal(raced.bongDelta, 0);
+        assert.equal(raced.status, 'present');
+        const days = projectAttendanceDays({ '2026-10-13': { '7': 'absent' } }, '2026-10-13', '3', first);
+        assert.equal(days['2026-10-13']['3'], 'present');
+        assert.equal(days['2026-10-13']['7'], 'absent');
+    });
+
+    it('이 탭이 본 상태를 다시 누르면 그 칸만 지운다', () => {
+        const clear = planAttendanceWrite({
+            serverStatus: 'present',
+            requestedStatus: 'present',
+            seenStatus: 'present',
+            today: '2026-10-13',
+        });
+        assert.equal(clear.clearCell, true);
+        assert.equal(clear.status, '');
+        assert.equal(clear.xpDelta, -8);
+        assert.equal(clear.bongDelta, -1);
+        assert.deepEqual(clear.attendanceMark, { date: '', status: '' });
+        const days = projectAttendanceDays({
+            '2026-10-13': { '3': 'present', '7': 'absent' },
+        }, '2026-10-13', '3', clear);
+        assert.equal(days['2026-10-13']['3'], undefined);
+        assert.equal(days['2026-10-13']['7'], 'absent');
+        const already = planAttendanceWrite({
+            serverStatus: '',
+            requestedStatus: 'present',
+            seenStatus: 'present',
+            today: '2026-10-13',
+        });
+        assert.equal(already.noop, true);
+        assert.equal(already.xpDelta, 0);
     });
 });

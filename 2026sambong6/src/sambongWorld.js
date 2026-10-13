@@ -593,11 +593,11 @@ import {
     toggleJobAssignment,
 } from './lib/jobs.js';
 import {
-    applyAttendanceDayMark,
     attendanceDimsCard,
     attendanceMarkForToday,
     buildAttendanceSheetRows,
 } from './lib/attendanceBlessing.js';
+import { commitAttendanceMark } from './lib/attendanceCommit.js';
 import {
     createChecklist,
     deleteChecklist,
@@ -23101,6 +23101,18 @@ ${subjectLine}
             }
         }
 
+        /** 이미 반영된 출석은 보상을 다시 계산하지 않고, 서버 학생 문서 그대로 화면에 맞춥니다. */
+        function syncAttendanceServerStudent(sid, stu) {
+            if (!stu) return;
+            mergeStudentDocIntoPlazaCache(sid, { ...stu, id: String(sid) });
+            if (String(localStorage.getItem('sambong_student_id') || '') !== String(sid) || !window.playerState) return;
+            if (stu.xp != null) window.playerState.xp = stu.xp;
+            if (stu.bong != null) window.playerState.bong = stu.bong;
+            if (Object.prototype.hasOwnProperty.call(stu, 'attendanceMark')) {
+                window.playerState.attendanceMark = stu.attendanceMark;
+            }
+        }
+
         window.renderAttendanceBoard = function() {
             const el = document.getElementById('attendanceBoard');
             if (!el) return;
@@ -23140,26 +23152,24 @@ ${subjectLine}
                 if (!authOk) return window.customAlert('인증에 실패했습니다.');
                 await ensureClassOpsLoaded();
                 const today = getLocalDateStr();
+                const seenStatus = String((window._attendanceDays && window._attendanceDays[today] && window._attendanceDays[today][studentId]) || '');
                 const attRef = classOpsRef('attendance');
                 const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
-                const applied = await runTransaction(db, async (tx) => {
-                    const attSnap = await tx.get(attRef);
-                    const stuSnap = await tx.get(stuRef);
-                    const serverDays = attSnap.exists() && attSnap.data() ? attSnap.data().days : {};
-                    const next = applyAttendanceDayMark(serverDays, today, studentId, status);
-                    if (!next.ok) return { ok: false, reason: next.reason };
-                    const stu = stuSnap.exists() ? (stuSnap.data() || {}) : {};
-                    const attendanceMark = next.plan.status
-                        ? { date: today, status: next.plan.status }
-                        : { date: '', status: '' };
-                    const payload = studentRewardPatch(stu, next.plan.xpDelta, next.plan.bongDelta, { attendanceMark });
-                    tx.set(stuRef, payload, { merge: true });
-                    tx.set(attRef, { days: next.days }, { merge: true });
-                    return { ok: true, days: next.days, stu, payload };
+                const applied = await commitAttendanceMark(db, {
+                    attRef,
+                    stuRef,
+                    today,
+                    studentId,
+                    requestedStatus: status,
+                    seenStatus,
                 });
                 if (!applied || !applied.ok) return;
                 window._attendanceDays = applied.days;
-                rememberStudentReward(studentId, applied.stu, applied.payload);
+                if (applied.noop) {
+                    syncAttendanceServerStudent(studentId, applied.stu);
+                } else {
+                    rememberStudentReward(studentId, applied.stu, applied.payload);
+                }
                 window.renderAttendanceBoard();
                 if (typeof window.renderPlaza === 'function') {
                     window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);

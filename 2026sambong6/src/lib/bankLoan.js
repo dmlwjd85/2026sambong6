@@ -160,8 +160,35 @@ export function loanStillOutstanding(raw) {
     return false;
 }
 
+function validLoanYmd(raw) {
+    const due = String(raw || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : '';
+}
+
+/**
+ * 정규 대출이 아니어도 갚을 수 있는 기록.
+ * 화면은 「갚은 뒤 다시 신청」이라고 안내하므로, 형식이 깨져도 상환 경로는 남겨 둡니다.
+ * 적혀 있지 않은 이자는 만들지 않습니다.
+ */
+export function readOutstandingLoan(raw) {
+    const clean = sanitizeBankLoan(raw);
+    if (clean) return clean;
+    if (!raw || typeof raw !== 'object' || !loanStillOutstanding(raw)) return null;
+    const principalRaw = Math.floor(Number(raw.principal));
+    const interestRaw = Math.floor(Number(raw.interest));
+    return {
+        id: String(raw.id || '').trim() || 'loan_outstanding',
+        principal: Number.isFinite(principalRaw) && principalRaw > 0 ? principalRaw : 0,
+        interest: Number.isFinite(interestRaw) && interestRaw > 0 ? interestRaw : 0,
+        days: Math.max(0, Math.floor(Number(raw.days)) || 0),
+        startYmd: validLoanYmd(raw.startYmd),
+        dueYmd: validLoanYmd(raw.dueYmd),
+        rateAtStart: Math.max(0, Number(raw.rateAtStart) || 0),
+    };
+}
+
 export function loanDueTotal(loan) {
-    const clean = sanitizeBankLoan(loan);
+    const clean = readOutstandingLoan(loan);
     if (!clean) return 0;
     return clean.principal + clean.interest;
 }
@@ -314,9 +341,9 @@ export function planTakeLoan({
 }
 
 export function planRepayLoan(state) {
-    const loan = sanitizeBankLoan(state && state.bankLoan);
+    const loan = readOutstandingLoan(state && state.bankLoan);
     if (!loan) return { ok: false, reason: 'none' };
-    const due = loanDueTotal(loan);
+    const due = loan.principal + loan.interest;
     const collected = collectLoanRepayment({
         bong: state && state.bong,
         regular: state && state.bankRegularSavings,
@@ -360,10 +387,13 @@ export function planPartialRepay(state, amount) {
  */
 export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     const today = String(todayYmd || '');
-    const loan0 = sanitizeBankLoan(state && state.bankLoan);
+    const rawLoan = state && state.bankLoan;
+    const cleanLoan = sanitizeBankLoan(rawLoan);
+    const outstanding = readOutstandingLoan(rawLoan);
     let bong = Math.floor(Number(state && state.bong) || 0);
     let regular = Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0));
-    let loan = loan0;
+    // 약정 전에는 깨진 기록의 모양을 유지합니다. 정규 대출만 정리된 값으로 둡니다.
+    let loan = cleanLoan || (outstanding ? rawLoan : null);
     let defaultUntil = String(state && state.creditDefaultUntilYmd || '').trim();
     let negSince = String(state && state.bankNegativeSinceYmd || '').trim();
     if (negSince && !/^\d{4}-\d{2}-\d{2}$/.test(negSince)) negSince = '';
@@ -372,8 +402,8 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     let changed = false;
 
     let penaltyUntil = penaltySnapshot(state);
-    if (!loan) penaltyUntil = '';
-    if (loan && today && today >= loan.dueYmd) {
+    if (cleanLoan && today && today >= cleanLoan.dueYmd) {
+        loan = cleanLoan;
         const inFreeze = !!(penaltyUntil && today < penaltyUntil);
         const freezeEnded = !!(penaltyUntil && today >= penaltyUntil);
         if (inFreeze) {
@@ -402,6 +432,27 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
             msgs.push({ kind: 'penalty_start', untilYmd: penaltyUntil, dueYmd: loan.dueYmd });
             changed = true;
         }
+    } else if (outstanding && outstanding.dueYmd && today && today >= outstanding.dueYmd) {
+        // 정규 대출이 아닌 기록은 약정일에 적힌 원금·이자만 자동이체하고 비웁니다.
+        // 없는 이자는 만들지 않고, 신용불량 정지는 정규 대출에만 둡니다.
+        const due = outstanding.principal + outstanding.interest;
+        const paid = collectLoanRepayment({ bong, regular, due });
+        bong = paid.bong;
+        regular = paid.regular;
+        msgs.push({
+            kind: 'repay',
+            principal: outstanding.principal,
+            interest: outstanding.interest,
+            due,
+            fromWallet: paid.fromWallet,
+            fromRegular: paid.fromRegular,
+            dueYmd: outstanding.dueYmd,
+        });
+        loan = null;
+        penaltyUntil = '';
+        changed = true;
+    } else if (!cleanLoan) {
+        penaltyUntil = '';
     }
 
     if (defaultUntil && today && today >= defaultUntil) {
@@ -510,7 +561,13 @@ export function applyLoanAction(state, action, opts = {}) {
     }
     if (action === 'repay') {
         const plan = planRepayLoan(next);
-        if (!plan.ok) return { ok: false, reason: plan.reason, ...next };
+        if (!plan.ok) {
+            // 약정일 자동이체가 같은 호출에서 이미 깨진 기록을 비웠으면 그 결과를 성공으로 둡니다.
+            if (plan.reason === 'none' && !next.bankLoan && life.msgs.some((m) => m.kind === 'repay')) {
+                return { ok: true, ...next };
+            }
+            return { ok: false, reason: plan.reason, ...next };
+        }
         next.bong = plan.bong;
         next.bankRegularSavings = plan.regular;
         next.bankLoan = null;
@@ -544,4 +601,26 @@ export function applyLoanAction(state, action, opts = {}) {
         return { ok: true, ...next, due: plan.left, amount: plan.amount };
     }
     return { ok: false, reason: 'action', ...next };
+}
+
+/**
+ * 은행 자동 정산이 지갑을 서버 기준으로 덮어쓴 뒤에도,
+ * 이번 저장이 명시한 증감(점심값 차감·상한 있는 환급)은 정산 잔액 위에 남깁니다.
+ * 클라이언트가 들고 있던 그 밖의 잔액 차이는 올리지 않습니다.
+ */
+export function bongAfterAccrualWithIntent(accruedBong, requestedBong, serverBong, caps = {}) {
+    const accrued = Math.floor(Number(accruedBong) || 0);
+    const requested = Math.floor(Number(requestedBong) || 0);
+    const server = Math.floor(Number(serverBong) || 0);
+    const maxDecrease = Math.max(0, Math.floor(Number(caps.maxDecrease) || 0));
+    const maxIncrease = Math.max(0, Math.floor(Number(caps.maxIncrease) || 0));
+    if (caps.allowDecrease && maxDecrease > 0 && requested < server) {
+        const drop = Math.min(maxDecrease, server - requested);
+        return accrued - drop;
+    }
+    if (maxIncrease > 0 && requested > server) {
+        const rise = Math.min(maxIncrease, requested - server);
+        return accrued + rise;
+    }
+    return accrued;
 }

@@ -26,7 +26,7 @@
 </head>
 <body class="antialiased selection:bg-cyan-300 selection:text-slate-900 bg-theme-plaza relative" id="mainBody">
     <input type="file" id="quizBankExcelInput" accept=".xlsx,.xls,.csv" class="sr-only" tabindex="-1" aria-hidden="true" onchange="window.onQuizBankExcelPicked(event)">
-    <div id="appVersionCorner" data-app-version class="fixed bottom-28 right-3 z-[380] md:top-[8.65rem] md:bottom-auto text-[10px] font-bold text-slate-500/90 pointer-events-none select-none">v1.4</div>
+    <div id="appVersionCorner" data-app-version class="fixed bottom-28 right-3 z-[380] md:top-[8.65rem] md:bottom-auto text-[10px] font-bold text-slate-200/90 pointer-events-none select-none">v1.5</div>
     <!-- 네트워크·로딩 UX -->
     <div id="offlineBanner" class="hidden fixed top-0 inset-x-0 z-[400] bg-amber-600 text-white text-center text-[11px] sm:text-xs font-bold py-2.5 px-3 shadow-lg">
         <i class="fa-solid fa-wifi"></i> 연결이 불안정합니다. 자동으로 다시 시도합니다.
@@ -58,11 +58,12 @@
             <i class="fa-solid fa-gamepad text-4xl sm:text-5xl text-cyan-200 mb-3 sm:mb-4 animate-bounce relative z-10"></i>
             <h1 id="loginWorldTitle" class="text-4xl sm:text-6xl font-display text-white tracking-wide sm:tracking-widest drop-shadow-[0_0_18px_rgba(56,189,248,0.6)] relative z-10 whitespace-nowrap">MATE</h1>
             <p id="loginSeasonSubtitle" class="text-sm sm:text-base text-cyan-200/90 mt-2 font-bold tracking-wide sm:tracking-widest relative z-10">🌊 [시즌 1 : 우리 반 모험]</p>
-            <p class="text-[10px] text-slate-500 mt-2 relative z-10" data-app-version>v1.2</p>
+            <p class="text-[12px] text-cyan-100 mt-2 relative z-10" data-app-version>v1.5</p>
         </div>
 
         <div class="glass-panel p-5 sm:p-7 rounded-3xl max-w-md w-full shadow-2xl border-t-4 border-t-cyan-400/80 relative z-10 max-h-[min(92vh,920px)] overflow-y-auto scrollbar-hide">
-            <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-4">어떻게 들어갈까요?</h2>
+            <h2 class="text-lg sm:text-xl font-bold text-center text-white mb-2">어떻게 들어갈까요?</h2>
+            <p class="text-[13px] text-slate-100 text-center mb-4 leading-relaxed">학생은 초대 코드로, 선생님은 계정으로 우리 반만 엽니다.</p>
 
             <!-- 역할 선택 (큰 CTA) -->
             <div class="grid grid-cols-2 gap-2 mb-4">
@@ -73,7 +74,7 @@
                     <div class="flex flex-col items-center gap-1"><i class="fa-solid fa-chalkboard-user text-xl"></i> 선생님</div>
                 </button>
             </div>
-            <p id="loginRoleHint" class="text-[11px] text-slate-300 text-center mb-3 font-bold">선생님이 알려 준 초대 코드를 넣고 내 이름을 고르세요.</p>
+            <p id="loginRoleHint" class="text-[13px] text-slate-100 text-center mb-3 font-bold leading-relaxed">선생님이 알려 준 초대 코드를 넣고 내 이름을 고르세요.</p>
 
             <!-- 학생 접속 -->
             <div id="loginPanelStudent" class="space-y-3">
@@ -83,7 +84,7 @@
                         <input type="text" id="loginClassCode" placeholder="예: A3K9MP" class="flex-1 min-w-0 bg-slate-800/80 border border-slate-600 text-white rounded-xl px-3 py-3 focus:outline-none focus:border-sb-blue text-sm font-bold uppercase tracking-wide min-h-[44px]" autocomplete="off">
                         <button type="button" id="btnApplyClass" class="shrink-0 bg-cyan-700 hover:bg-cyan-600 text-white font-black px-3 py-2 rounded-xl text-[11px] whitespace-nowrap min-h-[44px]">열기</button>
                     </div>
-                    <p id="loginClassLabel" class="text-[10px] text-emerald-300/90">초대 코드를 넣으면 학급 이름이 나타납니다.</p>
+                    <p id="loginClassLabel" class="text-[12px] text-emerald-200">초대 코드를 넣으면 학급 이름이 나타납니다.</p>
                 </div>
                 <div id="loginRecentClasses" class="hidden" hidden></div>
                 <label class="block text-[11px] text-white font-black">2. 내 이름
@@ -94,15 +95,41 @@
                 <label class="block text-[11px] text-white font-black">3. 비밀번호 4자리
                     <input type="password" id="loginPin" placeholder="••••" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-sb-blue font-bold text-center tracking-[0.5em] min-h-[44px]" maxlength="4" pattern="[0-9]*" inputmode="numeric">
                 </label>
-                <p class="text-[10px] text-slate-500 text-center">처음 넣은 번호가 내 비밀번호가 됩니다.</p>
+                <p class="text-[12px] text-slate-200 text-center">처음 넣은 번호가 내 비밀번호가 됩니다.</p>
                 <button id="btnLogin" class="w-full bg-gradient-to-r from-sb-blue to-cyan-500 hover:from-blue-500 text-white font-black py-3.5 rounded-xl shadow-lg transition min-h-[48px]">들어가기</button>
             </div>
 
             <!-- 선생님: 기존 학급 / 새 학급 -->
             <div id="loginPanelTeacher" class="hidden space-y-4">
+                <div id="teacherAccountCard" class="teacher-account-card rounded-2xl border-2 border-amber-300 bg-amber-950/50 p-4 space-y-3">
+                    <h3 class="text-white font-black text-sm"><i class="fa-solid fa-id-card" aria-hidden="true"></i> 선생님 계정</h3>
+                    <p id="teacherAccountHint" class="text-[13px] text-slate-100 leading-relaxed">이메일로 가입한 뒤 학급을 만들면, 학생에게는 초대 링크만 보내면 됩니다.</p>
+                    <div id="teacherAccountSignedOut" class="space-y-3">
+                        <label class="block text-[13px] text-white font-black">이메일
+                            <input id="teacherEmailInput" type="email" autocomplete="username" inputmode="email" placeholder="예: teacher@school.kr" class="mt-1 w-full bg-slate-900 border-2 border-amber-200/70 text-white rounded-xl px-3 py-3 text-sm font-bold min-h-[44px]">
+                        </label>
+                        <label class="block text-[13px] text-white font-black">비밀번호 (6자 이상)
+                            <input id="teacherPasswordInput" type="password" autocomplete="current-password" placeholder="••••••" class="mt-1 w-full bg-slate-900 border-2 border-amber-200/70 text-white rounded-xl px-3 py-3 text-sm font-bold min-h-[44px]">
+                        </label>
+                        <p id="teacherAccountError" class="hidden text-[13px] text-rose-200 font-bold" role="alert"></p>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button type="button" onclick="void window.signInTeacherEmail()" class="min-h-[48px] rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-sm">로그인</button>
+                            <button type="button" onclick="void window.signUpTeacherEmail()" class="min-h-[48px] rounded-xl bg-sky-700 hover:bg-sky-600 text-white font-black text-sm">회원가입</button>
+                        </div>
+                        <button type="button" onclick="void window.signInTeacherGoogle()" class="w-full min-h-[48px] rounded-xl border-2 border-white/70 bg-white text-slate-900 font-black text-sm">
+                            <i class="fa-brands fa-google" aria-hidden="true"></i> 구글로 시작
+                        </button>
+                    </div>
+                    <div id="teacherAccountSignedIn" class="hidden space-y-3">
+                        <p id="teacherAccountEmail" class="text-sm text-white font-black break-all"></p>
+                        <p class="text-[13px] text-amber-50">내 학급을 고르거나 아래에서 새 학급을 만드세요.</p>
+                        <div id="teacherOwnedClassList" class="space-y-2"></div>
+                        <button type="button" onclick="void window.signOutTeacherAccount()" class="w-full min-h-[44px] rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm border border-slate-500">계정 로그아웃</button>
+                    </div>
+                </div>
                 <div class="grid grid-cols-2 gap-2">
-                    <button type="button" id="teacherSubJoinBtn" onclick="window.setTeacherSubMode('join')" class="teacher-sub-btn py-2.5 rounded-lg text-[11px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap">우리 학급</button>
-                    <button type="button" id="teacherSubCreateBtn" onclick="window.setTeacherSubMode('create')" class="teacher-sub-btn py-2.5 rounded-lg text-[11px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap">새 학급</button>
+                    <button type="button" id="teacherSubJoinBtn" onclick="window.setTeacherSubMode('join')" class="teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap">우리 학급</button>
+                    <button type="button" id="teacherSubCreateBtn" onclick="window.setTeacherSubMode('create')" class="teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-bold border border-slate-500 bg-slate-800/60 text-slate-100 whitespace-nowrap">새 학급</button>
                 </div>
 
                 <div id="teacherJoinPanel" class="space-y-3">
@@ -112,7 +139,7 @@
                             <button type="button" onclick="void window.applyTeacherJoinCode()" class="shrink-0 bg-amber-700 hover:bg-amber-600 text-white font-black px-3 py-2 rounded-xl text-[11px] whitespace-nowrap min-h-[44px]">열기</button>
                         </div>
                     </label>
-                    <p class="text-[10px] text-emerald-300/90" id="teacherJoinClassHint">학급을 열면 여기에 이름이 나타납니다.</p>
+                    <p class="text-[12px] text-emerald-200" id="teacherJoinClassHint">학급을 열면 여기에 이름이 나타납니다. 이미 만든 반은 위 계정으로 바로 들어갑니다.</p>
                     <label class="block text-[11px] text-white font-black">마스터 계정
                         <select id="loginIdTeacher" class="mt-1 w-full bg-slate-800/80 border border-slate-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:border-amber-400 font-bold appearance-none min-h-[44px]">
                             <option value="" disabled selected>계정 선택</option>
@@ -125,7 +152,7 @@
                 </div>
 
                 <div id="teacherCreatePanel" class="hidden space-y-3">
-                    <p id="teacherCreateIntro" class="text-[11px] text-slate-300">새 학급은 개설 코드가 있을 때만 요청할 수 있습니다. 헌법은 비운 채로 시작합니다.</p>
+                    <p id="teacherCreateIntro" class="text-[13px] text-slate-100 leading-relaxed">선생님 계정으로 로그인하면 바로 새 학급을 만들 수 있습니다. 명단은 비어 있고, 실명 데모 데이터는 들어가지 않습니다.</p>
                     <div id="classCreateRequestBox" class="hidden p-3 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
                     <div id="teacherCreateUnlockGate" class="space-y-3">
                         <p class="text-[11px] text-amber-100/90 leading-relaxed">받은 <strong class="text-white">학급 개설 코드 6자리</strong>를 넣으세요.</p>
@@ -179,17 +206,17 @@
                             </label>
                         </div>
                     </details>
-                    <button type="button" onclick="void window.createClassFromLogin()" class="w-full bg-gradient-to-r from-sky-600 to-emerald-500 hover:from-sky-500 text-white font-black py-3.5 rounded-xl shadow-lg text-sm min-h-[48px]">
-                        <i class="fa-solid fa-school"></i> 학급 개설 요청하기
+                    <button type="button" id="teacherCreateSubmitBtn" onclick="void window.createClassFromLogin()" class="w-full bg-gradient-to-r from-sky-600 to-emerald-500 hover:from-sky-500 text-white font-black py-3.5 rounded-xl shadow-lg text-sm min-h-[48px]">
+                        <i class="fa-solid fa-school"></i> 학급 만들기
                     </button>
                     </div>
                 </div>
             </div>
 
             <div class="mt-4 pt-3 border-t border-slate-700/50 flex items-center justify-center gap-3">
-                <button onclick="window.loginAsGuest()" class="text-[11px] text-slate-500 hover:text-slate-300 underline"><i class="fa-solid fa-eye"></i> 구경만 하기</button>
-                <span class="text-slate-700">·</span>
-                <button type="button" onclick="window.switchTab('help'); document.getElementById('loginOverlay')?.classList.add('opacity-0'); setTimeout(()=>document.getElementById('loginOverlay')?.classList.add('hidden'), 300);" class="text-[11px] text-slate-500 hover:text-cyan-300 underline">도움말</button>
+                <button type="button" onclick="window.loginAsGuest()" class="text-[13px] text-slate-200 hover:text-white underline min-h-[44px] px-1"><i class="fa-solid fa-eye"></i> 구경만 하기</button>
+                <span class="text-slate-500">·</span>
+                <button type="button" onclick="window.switchTab('help'); document.getElementById('loginOverlay')?.classList.add('opacity-0'); setTimeout(()=>document.getElementById('loginOverlay')?.classList.add('hidden'), 300);" class="text-[13px] text-cyan-200 hover:text-white underline min-h-[44px] px-1">도움말</button>
             </div>
         </div>
     </div>
@@ -1038,35 +1065,35 @@
                 </div>
 
                 <!-- 선생님 허브: 초대 코드·공유 링크 -->
-                <div id="teacherClassHub" class="hidden glass-panel p-3 sm:p-4 rounded-2xl border border-emerald-500/50 bg-slate-900/80">
-                    <div class="flex flex-wrap items-start justify-between gap-2 mb-2">
+                <div id="teacherClassHub" class="hidden glass-panel p-4 sm:p-5 rounded-2xl border-2 border-emerald-400/70 bg-slate-900/80">
+                    <div class="flex flex-wrap items-start justify-between gap-2 mb-3">
                         <div>
-                            <h3 class="text-emerald-300 font-bold text-sm"><i class="fa-solid fa-chalkboard-user"></i> 우리 학급 허브</h3>
-                            <p class="text-[9px] text-slate-400 mt-0.5">학생에게 초대 코드를 알려 주세요. 학급마다 데이터가 분리됩니다.</p>
+                            <h3 class="text-emerald-200 font-black text-base"><i class="fa-solid fa-chalkboard-user"></i> 우리 학급 허브</h3>
+                            <p class="text-[13px] text-slate-100 mt-1 leading-relaxed">학생에게 초대 코드만 알려 주세요. 다른 반 데이터는 보이지 않습니다.</p>
                         </div>
-                        <button type="button" onclick="window.switchTab('admin')" class="text-[10px] bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-1.5 px-3 rounded-lg">명단·설정</button>
+                        <button type="button" onclick="window.switchTab('admin')" class="min-h-[44px] text-[13px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2 px-4 rounded-xl">명단·설정</button>
                     </div>
-                    <div class="grid sm:grid-cols-2 gap-2 text-[10px]">
-                        <div class="rounded-xl bg-slate-950/70 border border-slate-700 p-2.5">
-                            <div class="text-slate-500 mb-1">학급</div>
-                            <div id="teacherHubClassName" class="text-white font-bold truncate">—</div>
-                            <div id="teacherHubClassId" class="text-slate-500 text-[8px] mt-0.5 truncate">—</div>
+                    <div class="grid sm:grid-cols-2 gap-2 text-[13px]">
+                        <div class="rounded-xl bg-slate-950/70 border border-slate-500 p-3">
+                            <div class="text-slate-200 mb-1 font-bold">학급</div>
+                            <div id="teacherHubClassName" class="text-white font-black truncate">—</div>
+                            <div id="teacherHubClassId" class="text-slate-300 text-[11px] mt-1 truncate">—</div>
                         </div>
-                        <div class="rounded-xl bg-slate-950/70 border border-emerald-700/40 p-2.5">
-                            <div class="text-slate-500 mb-1">초대 코드</div>
+                        <div class="rounded-xl bg-slate-950/70 border border-emerald-500/50 p-3">
+                            <div class="text-slate-200 mb-1 font-bold">초대 코드</div>
                             <div class="flex items-center gap-2">
-                                <span id="teacherHubInviteCode" class="text-emerald-300 font-black text-lg tracking-widest">—</span>
-                                <button type="button" onclick="window.copyTeacherInviteCode()" class="text-[9px] bg-slate-800 hover:bg-slate-700 text-white px-2 py-1 rounded font-bold border border-slate-600">복사</button>
+                                <span id="teacherHubInviteCode" class="text-emerald-200 font-black text-xl tracking-widest">—</span>
+                                <button type="button" onclick="window.copyTeacherInviteCode()" class="min-h-[44px] text-[13px] bg-slate-800 hover:bg-slate-700 text-white px-3 py-2 rounded-xl font-black border border-slate-400">복사</button>
                             </div>
                         </div>
                     </div>
-                    <div class="mt-2 flex flex-wrap gap-2">
-                        <button type="button" onclick="window.copyTeacherClassLink()" class="text-[10px] bg-sky-800 hover:bg-sky-700 text-white font-bold py-1.5 px-3 rounded-lg">접속 링크 복사 (?c=초대코드)</button>
-                        <button type="button" onclick="window.openClassSwitchPanel()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-1.5 px-3 rounded-lg border border-slate-600">다른 학급으로 전환</button>
-                        <button type="button" onclick="void window.leaveCurrentClass()" class="text-[10px] bg-slate-800 hover:bg-slate-700 text-amber-200 font-bold py-1.5 px-3 rounded-lg border border-amber-700/50">이 기기에서 학급 나가기</button>
-                        <button type="button" onclick="void window.archiveCurrentClass()" class="text-[10px] bg-red-950/60 hover:bg-red-900 text-red-200 font-bold py-1.5 px-3 rounded-lg border border-red-800/60">학급 보관(비활성)</button>
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        <button type="button" onclick="window.copyTeacherClassLink()" class="min-h-[44px] text-[13px] bg-sky-700 hover:bg-sky-600 text-white font-black py-2 px-4 rounded-xl">접속 링크 복사</button>
+                        <button type="button" onclick="window.openClassSwitchPanel()" class="min-h-[44px] text-[13px] bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-xl border border-slate-400">다른 학급으로 전환</button>
+                        <button type="button" onclick="void window.leaveCurrentClass()" class="min-h-[44px] text-[13px] bg-slate-800 hover:bg-slate-700 text-amber-100 font-bold py-2 px-4 rounded-xl border border-amber-400/70">이 기기에서 학급 나가기</button>
+                        <button type="button" onclick="void window.archiveCurrentClass()" class="min-h-[44px] text-[13px] bg-red-950/70 hover:bg-red-900 text-red-100 font-bold py-2 px-4 rounded-xl border border-red-400/70">학급 보관(비활성)</button>
                     </div>
-                    <p class="mt-2 text-[9px] text-slate-500 leading-relaxed">학생 공유용 주소 예: <span class="text-sky-300/90">…/2026sambong6/?c=ABC123</span> — 학급마다 다른 링크로 보이며, 데이터는 학급별로 분리됩니다.</p>
+                    <p class="mt-3 text-[12px] text-slate-200 leading-relaxed">학생 주소 예: <span class="text-sky-200">…/2026sambong6/?c=ABC123</span> — 학급마다 다른 링크이며 데이터는 분리됩니다.</p>
                 </div>
             </div>
         </section>
@@ -2760,14 +2787,14 @@
             </div>
             <!-- 학급·명단 관리 (담임 전용) -->
             <div class="inner-pane hidden" data-pane-group="admin" data-pane="roster">
-            <div id="classAdminSection" class="hidden glass-panel p-4 rounded-xl mb-4 border border-emerald-500/50 bg-slate-900/80">
-                <h3 class="text-white font-bold text-sm mb-2"><i class="fa-solid fa-users text-emerald-400"></i> 학급·명단 관리</h3>
-                <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">학생 명단은 Firestore에 저장됩니다. 내년에는 <strong class="text-emerald-200">새 학급 만들기</strong>로 데이터를 분리하고, 다른 선생님은 초대 코드로 접속할 수 있습니다.</p>
+            <div id="classAdminSection" class="hidden glass-panel p-4 sm:p-5 rounded-2xl mb-4 border-2 border-emerald-400/70 bg-slate-900/80">
+                <h3 class="text-white font-black text-base mb-2"><i class="fa-solid fa-users text-emerald-300"></i> 학급·명단 관리</h3>
+                <p class="text-[13px] text-slate-100 mb-3 leading-relaxed">학생 이름은 이 반 명단에만 저장됩니다. 다른 선생님 학급으로 복사되지 않습니다. 내년에는 <strong class="text-emerald-200">새 학급 만들기</strong>로 데이터를 분리하세요.</p>
                 <div id="adminClassCreateInbox" class="js-class-create-inbox hidden mb-3"></div>
                 <div id="adminClassCreateUnlockAdmin" class="js-class-create-unlock-admin hidden mb-3"></div>
                 <div class="mb-4 rounded-xl border-2 border-cyan-300 bg-slate-950 p-3 space-y-2">
                     <h4 class="text-white font-black text-xs"><i class="fa-solid fa-school text-cyan-300"></i> 다른 학급 열람 · 삭제 · 추가</h4>
-                    <p class="text-[10px] text-slate-200 leading-relaxed">시드 마스터는 서버에 있는 학급을 모두 봅니다. 쓰지 않는 반은 <strong class="text-white">삭제(보관)</strong>하면 기본 목록에서 빠지고, <strong class="text-white">목록에서 지우기</strong>로 완전히 숨길 수 있습니다.</p>
+                    <p class="text-[13px] text-slate-100 leading-relaxed">내가 만든 학급만 보입니다. 쓰지 않는 반은 <strong class="text-white">삭제(보관)</strong>하면 기본 목록에서 빠지고, <strong class="text-white">목록에서 지우기</strong>로 숨길 수 있습니다.</p>
                     <label class="flex items-center gap-2 text-[10px] text-white font-bold">
                         <input type="checkbox" class="js-show-archived-classes rounded border-slate-500" onchange="window.setShowArchivedClasses(this.checked)">
                         보관된 학급도 보기
@@ -3346,11 +3373,11 @@
             <div class="inner-pane" data-pane-group="help" data-pane="guide">
             <div class="glass-panel p-4 rounded-2xl border border-sky-500/40 bg-slate-900/80 space-y-2">
                 <h3 class="text-white font-bold text-sm"><i class="fa-solid fa-chalkboard-user text-sky-400"></i> 선생님 시작 가이드 (6단계)</h3>
-                <ol class="text-[11px] text-slate-300 leading-relaxed list-decimal pl-4 space-y-1.5">
-                    <li>새 학급 만들기 → 학급명·시즌·마스터 이름 입력</li>
-                    <li>초대 코드 복사해서 학생에게 공유</li>
-                    <li>마스터로 로그인 후 명단 입력</li>
-                    <li>기본 템플릿 적용 (선택)</li>
+                <ol class="text-[13px] text-slate-100 leading-relaxed list-decimal pl-4 space-y-1.5">
+                    <li>로그인 화면에서 「선생님」 → 이메일 회원가입(또는 구글)</li>
+                    <li>「새 학급」에서 학급명·마스터 PIN을 넣고 학급 만들기</li>
+                    <li>초대 코드 또는 접속 링크(?c=)를 학생에게 공유</li>
+                    <li>마스터 PIN으로 들어가 학급을 가져온 뒤 명단 입력 (실명 데모는 자동으로 들어오지 않습니다)</li>
                     <li>설정 → 기능에서 문학·경제·도전 등을 하나씩 해금</li>
                     <li>헌법을 우리 반 약속에 맞게 고친 뒤 수업 시작</li>
                 </ol>
@@ -3397,7 +3424,10 @@
                     <li><strong class="text-white">Q. 초대 코드가 안 열려요.</strong> A. 대소문자·공백을 확인하고, 네트워크를 점검한 뒤 다시 시도하세요. 보관된 학급은 입장할 수 없습니다.</li>
                     <li><strong class="text-white">Q. 학급마다 다른 주소를 줄 수 있나요?</strong> A. 네. 「접속 링크 복사」하면 <code class="text-sky-300">?c=초대코드</code> 형태 링크가 복사됩니다.</li>
                     <li><strong class="text-white">Q. 다른 반으로 바꾸려면?</strong> A. 상단 학급 메뉴에서 전환하거나, 다른 초대 코드 링크로 접속하세요.</li>
-                    <li><strong class="text-white">Q. 게스트는?</strong> A. 구경만 가능하며 실제 데이터는 변경되지 않습니다.</li>
+                    <li><strong class="text-white">Q. 선생님은 어떻게 가입하나요?</strong> A. 「선생님」에서 이메일·비밀번호(6자 이상)로 회원가입하거나 구글로 시작합니다. 가입 후 새 학급을 만들면 그 반만 보입니다.</li>
+                    <li><strong class="text-white">Q. 예전 마스터 PIN은요?</strong> A. 교실에 들어갈 때 그대로 쓸 수 있습니다. 주인 없는 학급을 가져오려면 선생님 계정으로 그 PIN을 맞춰야 합니다. 부팅만으로 소유가 넘어가지 않습니다.</li>
+                    <li><strong class="text-white">Q. 친구 PIN이 보이나요?</strong> A. 아니요. PIN은 공개 학생 문서에 없고 해시로만 확인합니다. 다른 학생 PIN을 읽거나 바꿀 수 없습니다.</li>
+                    <li><strong class="text-white">Q. 게스트는?</strong> A. 초대 코드로 학급을 연 뒤에만 구경할 수 있으며 실제 데이터는 변경되지 않습니다.</li>
                     <li><strong class="text-white">Q. 레이드 비밀번호는?</strong> A. 마스터 탭 「퀘스트」 상단에서 바꿉니다. 기본 1234는 사용하지 않습니다.</li>
                     <li><strong class="text-white">Q. 학급게시판은?</strong> A. 수업도구에서 교사가 발문과 시간을 열면 학생이 쪽지로 바로 제출합니다. 페이지 넘김은 이전 쪽지를 남기고 새 페이지를 엽니다. 「함께 보기」를 켜면 작성이 멈추고 화면만 봅니다.</li>
                 </ul>
@@ -3444,7 +3474,7 @@
                 <button type="button" onclick="window.closePrivacyPolicyModal()" class="text-slate-400 hover:text-white text-xs font-bold min-h-[44px] px-2">닫기</button>
             </div>
             <div class="text-[11px] text-slate-300 leading-relaxed space-y-2">
-                <p><strong class="text-white">1. 수집 항목</strong> — 학번·이름(명단), 접속 PIN, 게임 진행 데이터(경험치·봉·퀘스트·구매·직업 등), 선택적 설문 응답(외부 설문 시 해당 서비스 정책 적용).</p>
+                <p><strong class="text-white">1. 수집 항목</strong> — 학번·이름(명단), 접속 PIN(해시만 저장, 공개 문서에 평문 없음), 게임 진행 데이터(경험치·봉·퀘스트·구매·직업 등), 선택적 설문 응답(외부 설문 시 해당 서비스 정책 적용).</p>
                 <p><strong class="text-white">2. 이용 목적</strong> — 수업 중 학급 운영, 보상·경제 시뮬레이션, 교육 연구·보고서용 통계(익명·집계 가능).</p>
                 <p><strong class="text-white">3. 보관</strong> — Firebase(Firestore)에 학급(artifacts) 단위로 저장되며, 담임(마스터)이 학급 데이터를 관리합니다.</p>
                 <p><strong class="text-white">4. 제3자 제공</strong> — 수업·연구 목적 외 외부 판매·광고에 제공하지 않습니다. 호스팅·DB는 Google Firebase를 사용합니다.</p>

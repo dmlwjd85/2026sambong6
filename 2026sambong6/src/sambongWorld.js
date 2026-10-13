@@ -1,5 +1,16 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import {
+    getAuth,
+    signInAnonymously,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    signInWithPopup,
+    GoogleAuthProvider,
+    EmailAuthProvider,
+    linkWithCredential,
+    signOut,
+} from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -19,6 +30,7 @@ import {
     serverTimestamp,
     query,
     where,
+    deleteField,
 } from 'firebase/firestore';
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
@@ -449,6 +461,38 @@ import {
     writeClassCreateUnlockSession,
     writeStoredClassCreateRequestId,
 } from './lib/classCreateRequest.js';
+import {
+    buildTeacherProfile,
+    isTeacherSessionActive,
+    teacherAuthErrorMessage,
+    teacherOwnsClass,
+    teacherSessionFromUser,
+    validateTeacherEmail,
+    validateTeacherPassword,
+    withOwnedClass,
+} from './lib/teacherAccount.js';
+import {
+    buildClassAccessPayload,
+    canClaimClassOwnership,
+    classOwnerClaimPatch,
+    normalizeInviteCode,
+    readStoredClassInvite,
+    resolveBootInvite,
+    writeStoredClassInvite,
+} from './lib/classAccess.js';
+import {
+    classifyPinLogin,
+    hashStudentPin,
+    isFirestorePermissionDenied,
+    normalizeStudentPin,
+    pinProbePayload,
+    pinProbeSegments,
+    pinSecretPayload,
+    pinSecretSegments,
+    stripPinFromStudentData,
+    studentPinDocId,
+} from './lib/studentPinSecret.js';
+import { buildGenericDemoRoster, genericStudentGenderMap, genericStudentNameMap } from './lib/demoRoster.js';
 import {
     canArchiveManagedClass,
     canHideManagedClassFromDirectory,
@@ -1552,7 +1596,7 @@ function redrawPlazaGrantsUi() {
         }
 
         async function persistSharedSchoolWeather(weather, region) {
-            if (!db || !weather || !weather.ok) return;
+            if (!db || !appId || !weather || !weather.ok) return;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return;
@@ -1561,7 +1605,9 @@ function redrawPlazaGrantsUi() {
                     regionKey: weatherRegionKey(region),
                     fetchedAt: weather.fetchedAt || Date.now(),
                 };
-                await setDoc(getGlobalSettingsDocRef(), { schoolWeather: payload }, { merge: true });
+                const settingsRef = getGlobalSettingsDocRef();
+                if (!settingsRef) return;
+                await setDoc(settingsRef, { schoolWeather: payload }, { merge: true });
                 if (window.globalSettings) window.globalSettings.schoolWeather = payload;
             } catch (e) {
                 console.warn('schoolWeather save', e);
@@ -2539,17 +2585,8 @@ function redrawPlazaGrantsUi() {
             return `<span class="${clipCls} rank-badge-emoji">${(info && info.prop) || ''}</span>`;
         }
 
-        const STUDENT_NAMES = { 
-            "1": "김단엘", "2": "김라희", "3": "김민지", "4": "김정훈", 
-            "5": "박문경", "6": "박소윤", "7": "박하율", "8": "박현수", 
-            "9": "백시율", "10": "임은영", "11": "조이담", "12": "황훈태", "13": "석서영", 
-            "gm": "마스터 J", "gm_a": "마스터 A", "guest": "손님" 
-        };
-        const STUDENT_GENDERS = { 
-            "1": "M", "2": "F", "3": "F", "4": "M", "5": "M", "6": "F", 
-            "7": "F", "8": "M", "9": "M", "10": "F", "11": "M", "12": "M", 
-            "13": "F", "gm": "M", "gm_a": "F", "guest": "M" 
-        };
+        const STUDENT_NAMES = genericStudentNameMap(13);
+        const STUDENT_GENDERS = genericStudentGenderMap(13);
 
         const DEFAULT_CLASS_STAFF = [
             { id: 'gm', name: '마스터 J', gender: 'M', role: 'teacher', label: '담임교사', optionClass: 'text-sb-gold', emoji: '👑' },
@@ -2564,6 +2601,8 @@ function redrawPlazaGrantsUi() {
         let _unsubMyClassCreateRequest = null;
         let _classCreateUnlockCode = '';
         let _showArchivedClasses = false;
+        let _teacherSession = null;
+        let _teacherProfile = null;
 
         /** 시드(데모) 학급인지 — 부동산 자동복구 등은 여기에만 적용 */
         function isSeedDemoClass() {
@@ -2583,21 +2622,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function buildDefaultRosterFromLegacy() {
-            return [
-                { id: '1', name: '김단엘', gender: 'M', label: '', active: true },
-                { id: '2', name: '김라희', gender: 'F', label: '', active: true },
-                { id: '3', name: '김민지', gender: 'F', label: '', active: true },
-                { id: '4', name: '김정훈', gender: 'M', label: '', active: true },
-                { id: '5', name: '박문경', gender: 'M', label: '', active: true },
-                { id: '6', name: '박소윤', gender: 'F', label: '', active: true },
-                { id: '7', name: '박하율', gender: 'F', label: '', active: true },
-                { id: '8', name: '박현수', gender: 'M', label: '', active: true },
-                { id: '9', name: '백시율', gender: 'M', label: '', active: true },
-                { id: '10', name: '임은영', gender: 'F', label: '', active: true },
-                { id: '11', name: '조이담', gender: 'M', label: '', active: true },
-                { id: '12', name: '황훈태', gender: 'M', label: '', active: true },
-                { id: '13', name: '석서영', gender: 'F', label: '해적섬', active: true },
-            ];
+            return buildGenericDemoRoster(13);
         }
 
         /** 새 학급용 빈 명단 틀 */
@@ -2625,7 +2650,7 @@ function redrawPlazaGrantsUi() {
             if (stored) return stored;
             if (typeof window.__app_id !== 'undefined' && window.__app_id) return window.__app_id;
             if (typeof __app_id !== 'undefined' && __app_id) return __app_id;
-            return SEED_CLASS_ID;
+            return '';
         }
 
         /** 시드(데모) 학급 메타 — 기존 반 유지용 */
@@ -2927,6 +2952,7 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading?.('학급 링크로 이동 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(invite);
+                await ensureClassAccess(classId, invite, currentTeacherSession() ? 'teacher' : 'student');
                 localStorage.setItem('sambong_class_id', classId);
                 const url = new URL(window.location.href);
                 url.searchParams.delete('c');
@@ -3027,6 +3053,7 @@ function redrawPlazaGrantsUi() {
         }
 
         async function loadClassMeta() {
+            if (!appId || !db) return;
             const classRef = doc(db, 'classes', appId);
             const snap = await getDoc(classRef);
             if (snap.exists()) {
@@ -3053,21 +3080,22 @@ function redrawPlazaGrantsUi() {
                         window.classMeta.roster = buildBlankRoster(data.studentCount || 25);
                     }
                 }
-                if (!window.classMeta.inviteCode) {
+                if (!window.classMeta.inviteCode && currentTeacherSession() && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta)) {
                     window.classMeta.inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
                     try {
                         await setDoc(classRef, { inviteCode: window.classMeta.inviteCode, updatedAt: serverTimestamp() }, { merge: true });
                     } catch (_) { /* ignore */ }
                 }
-                try {
-                    await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
-                } catch (e) {
-                    console.warn('registerInviteCode(load)', e);
+                if (window.classMeta.inviteCode && currentTeacherSession() && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta)) {
+                    try {
+                        await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
+                    } catch (e) {
+                        console.warn('registerInviteCode(load)', e);
+                    }
                 }
             } else if (appId === SEED_CLASS_ID) {
                 const defaultMeta = buildDefaultClassMeta(appId);
                 window.classMeta = defaultMeta;
-                await setDoc(classRef, { ...defaultMeta, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
             } else {
                 // 아직 메타가 없는 신규 ID — 시드 명단을 쓰지 않음
                 window.classMeta = buildBlankClassMeta(appId);
@@ -3126,15 +3154,7 @@ function redrawPlazaGrantsUi() {
                     if (String(e.message) === 'class_archived') throw e;
                     console.warn('inviteCodes lookup', e);
                 }
-                // 2) 하위 호환: classes.inviteCode 쿼리 후 매핑 백필
-                const q = query(collection(db, 'classes'), where('inviteCode', '==', upper));
-                const found = await getDocs(q);
-                if (found.empty) throw new Error('invite_not_found');
-                const classId = found.docs[0].id;
-                const data = found.docs[0].data() || {};
-                if (data.isActive === false) throw new Error('class_archived');
-                try { await registerInviteCode(upper, classId, { displayName: data.displayName }); } catch (_) { /* ignore */ }
-                return classId;
+                throw new Error('invite_not_found');
             }
             // 학급 ID 직접 지정
             try {
@@ -3232,6 +3252,110 @@ function redrawPlazaGrantsUi() {
             return doc(db, 'artifacts', classId, 'public', 'data', 'students', String(studentKey));
         }
 
+        function pinSecretRefFor(classId, studentId) {
+            return doc(db, ...pinSecretSegments(classId, studentId));
+        }
+
+        function pinProbeRefFor(classId, uid) {
+            return doc(db, ...pinProbeSegments(classId, uid));
+        }
+
+        async function writePinSecretDoc(classId, studentId, pin, extra = {}) {
+            const hash = extra.hash || await hashStudentPin({ classId, studentId, pin });
+            if (!hash) throw new Error('pin_hash');
+            await setDoc(pinSecretRefFor(classId, studentId), pinSecretPayload(hash, {
+                prevHash: extra.prevHash || '',
+                updatedAt: serverTimestamp(),
+            }));
+            return hash;
+        }
+
+        async function tryWritePinProbe(classId, studentId, hash) {
+            if (!auth || !auth.currentUser || !hash) return false;
+            try {
+                await setDoc(pinProbeRefFor(classId, auth.currentUser.uid), {
+                    ...pinProbePayload({ studentId, hash }),
+                    at: serverTimestamp(),
+                });
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        async function tryCreatePinSecret(classId, studentId, hash) {
+            if (!hash) return false;
+            try {
+                await setDoc(pinSecretRefFor(classId, studentId), pinSecretPayload(hash, {
+                    updatedAt: serverTimestamp(),
+                }));
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        async function stripPublicStudentPin(classId, studentKey) {
+            try {
+                await setDoc(studentDocRefForClass(classId, studentKey), { pin: deleteField() }, { merge: true });
+            } catch (_) { /* 규칙·네트워크 — 다음 저장에서 다시 뺌 */ }
+        }
+
+        async function verifyStudentPinForLogin({ classId, studentId, pin, leftoverPin, ownerBypass, isAutoLogin }) {
+            if (ownerBypass) {
+                return classifyPinLogin({ ownerBypass: true });
+            }
+            const typed = normalizeStudentPin(pin) || String(pin || '').trim();
+            const hash = await hashStudentPin({ classId, studentId, pin: typed });
+            const leftover = leftoverPin == null ? '' : String(leftoverPin);
+            const probeOk = hash ? await tryWritePinProbe(classId, studentId, hash) : false;
+            if (probeOk) return classifyPinLogin({ probeOk: true, leftoverPin: leftover, typedPin: typed });
+
+            const leftoverMatch = !!(leftover && leftover === typed && typed);
+            if (leftoverMatch && hash) {
+                const secretCreated = await tryCreatePinSecret(classId, studentId, hash);
+                if (secretCreated) {
+                    await tryWritePinProbe(classId, studentId, hash);
+                    return classifyPinLogin({ secretCreated: true, leftoverPin: leftover, typedPin: typed });
+                }
+                return classifyPinLogin({ leftoverPin: leftover, typedPin: typed, isAutoLogin });
+            }
+
+            if (!leftover && hash && !isAutoLogin) {
+                return classifyPinLogin({ isAutoLogin: false, leftoverPin: '', typedPin: typed });
+            }
+            return classifyPinLogin({ leftoverPin: leftover, typedPin: typed, isAutoLogin });
+        }
+
+        async function migrateLegacyStudentPinsOffPublicDocs(classId) {
+            if (!db || !classId) return;
+            if (!teacherOwnsClass(_teacherProfile || currentTeacherSession(), classId, window.classMeta)) return;
+            try {
+                const snap = await getDocs(collection(db, 'artifacts', classId, 'public', 'data', 'students'));
+                const jobs = [];
+                snap.forEach((d) => {
+                    const data = d.data() || {};
+                    if (data.pin == null || data.pin === '') return;
+                    const sid = studentPinDocId(d.id);
+                    jobs.push((async () => {
+                        const pin = String(data.pin);
+                        const secretRef = pinSecretRefFor(classId, sid);
+                        const secretSnap = await getDoc(secretRef);
+                        if (!secretSnap.exists()) {
+                            const hash = await hashStudentPin({ classId, studentId: sid, pin });
+                            if (hash) {
+                                await setDoc(secretRef, pinSecretPayload(hash, { updatedAt: serverTimestamp() }));
+                            }
+                        }
+                        await setDoc(studentDocRefForClass(classId, d.id), { pin: deleteField() }, { merge: true });
+                    })());
+                });
+                await Promise.all(jobs);
+            } catch (e) {
+                console.warn('migrateLegacyStudentPinsOffPublicDocs', e);
+            }
+        }
+
         function studentBackupRefForClass(classId, stuId) {
             return doc(db, 'artifacts', classId, 'public', 'data', 'studentBackups', 'backup_' + stuId);
         }
@@ -3255,11 +3379,16 @@ function redrawPlazaGrantsUi() {
             if (!byKey.has('student_gm')) byKey.set('student_gm', {});
             if (!byKey.has('student_gm_a')) byKey.set('student_gm_a', {});
             const newPin = rotateMasterPin ? createRandomMasterPin() : '';
+            if (rotateMasterPin && newPin) {
+                const hash = await hashStudentPin({ classId: id, studentId: 'gm', pin: newPin });
+                if (hash) {
+                    await setDoc(pinSecretRefFor(id, 'gm'), pinSecretPayload(hash, { updatedAt: serverTimestamp() }));
+                }
+            }
             const batch = writeBatch(db);
             byKey.forEach((data, key) => {
                 const sid = key === 'student_gm' ? 'gm' : (key === 'student_gm_a' ? 'gm_a' : key.replace(/^student_/, ''));
                 const payload = buildStudentResetPayload(data);
-                if (key === 'student_gm' && rotateMasterPin) payload.pin = newPin;
                 batch.set(studentBackupRefForClass(id, sid), {
                     studentId: String(sid),
                     savedAt: new Date().toISOString(),
@@ -3468,11 +3597,13 @@ function redrawPlazaGrantsUi() {
             let serverEntries = [];
             const seedViewer = isSeedMasterViewer(window.playerState, appId);
             const archivedRow = document.getElementById('showArchivedClassesRow');
-            if (archivedRow) archivedRow.classList.toggle('hidden', !seedViewer);
-            if (seedViewer && db) {
+            if (archivedRow) archivedRow.classList.toggle('hidden', !seedViewer && !currentTeacherSession());
+            if (db && (currentTeacherSession() || seedViewer)) {
                 try {
-                    const snap = await getDocs(collection(db, 'classes'));
-                    snap.forEach((d) => serverEntries.push(sanitizeClassDirectoryEntry(d.data(), d.id)));
+                    serverEntries = await loadOwnedClassesForTeacher();
+                    if (!serverEntries.length && currentTeacherSession()) {
+                        serverEntries = [];
+                    }
                 } catch (e) {
                     console.warn('refreshManagedClassDirectory', e);
                 }
@@ -3480,7 +3611,7 @@ function redrawPlazaGrantsUi() {
             const current = window.classMeta
                 ? sanitizeClassDirectoryEntry(window.classMeta, appId)
                 : sanitizeClassDirectoryEntry({ displayName: appId }, appId);
-            const recent = seedViewer ? getRecentClasses() : [];
+            const recent = currentTeacherSession() || seedViewer ? getRecentClasses() : [];
             const merged = sortClassDirectory(
                 mergeClassDirectory(serverEntries, recent, current),
                 appId,
@@ -3492,6 +3623,7 @@ function redrawPlazaGrantsUi() {
                 }),
                 window.playerState,
                 appId,
+                _teacherProfile && _teacherProfile.ownedClassIds,
             );
             const html = window.renderManagedClassDirectoryHtml(visible);
             boxes.forEach((el) => { el.innerHTML = html; });
@@ -3505,6 +3637,8 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading('학급을 찾는 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(raw);
+                const invite = normalizeInviteCode(raw) || readStoredClassInvite();
+                await ensureClassAccess(classId, invite, currentTeacherSession() ? 'teacher' : 'student');
                 window.hideGlobalLoading();
                 window.switchClass(classId);
             } catch (e) {
@@ -3551,8 +3685,11 @@ function redrawPlazaGrantsUi() {
             const hint = document.getElementById('loginRoleHint');
             if (hint) {
                 hint.textContent = isTeacher
-                    ? '초대 코드로 우리 학급을 연 뒤 마스터 PIN을 넣으세요.'
+                    ? '선생님 계정으로 로그인한 뒤 학급을 만들거나, 초대 코드로 기존 반을 여세요.'
                     : '선생님이 알려 준 초대 코드를 넣고 내 이름을 고르세요.';
+            if (isTeacher && typeof window.renderTeacherAccountPanel === 'function') {
+                void window.renderTeacherAccountPanel();
+            }
             }
             if (isTeacher) window.setTeacherSubMode('join');
             if (typeof window.renderClassCreateRequestStatus === 'function') {
@@ -3570,16 +3707,183 @@ function redrawPlazaGrantsUi() {
             if (create) create.classList.toggle('hidden', !isCreate);
             if (btnJ) {
                 btnJ.className = isCreate
-                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap'
-                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap';
+                    ? 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-bold border border-slate-500 bg-slate-800/60 text-slate-100 whitespace-nowrap'
+                    : 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-black border-2 border-amber-400 bg-amber-900/30 text-amber-100 whitespace-nowrap';
             }
             if (btnC) {
                 btnC.className = isCreate
-                    ? 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
-                    : 'teacher-sub-btn py-2.5 rounded-lg text-[10px] font-bold border border-slate-600 bg-slate-800/60 text-slate-300 whitespace-nowrap';
+                    ? 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-black border-2 border-sky-400 bg-sky-900/30 text-sky-100 whitespace-nowrap'
+                    : 'teacher-sub-btn min-h-[48px] py-2.5 rounded-xl text-[13px] font-bold border border-slate-500 bg-slate-800/60 text-slate-100 whitespace-nowrap';
             }
             if (typeof window.renderClassCreateRequestStatus === 'function') {
                 window.renderClassCreateRequestStatus();
+            }
+        };
+
+        function readTeacherAuthForm() {
+            const emailCheck = validateTeacherEmail(document.getElementById('teacherEmailInput')?.value);
+            const pwCheck = validateTeacherPassword(document.getElementById('teacherPasswordInput')?.value);
+            return { emailCheck, pwCheck };
+        }
+
+        async function finishTeacherAuth(user) {
+            _teacherSession = teacherSessionFromUser(user);
+            if (!_teacherSession) throw new Error('not_teacher');
+            await ensureTeacherProfileDoc(user);
+            showTeacherAccountError('');
+            await window.renderTeacherAccountPanel();
+            window.setTeacherSubMode('create');
+            if (typeof window.renderClassCreateRequestStatus === 'function') {
+                window.renderClassCreateRequestStatus();
+            }
+        }
+
+        window.renderTeacherAccountPanel = async function() {
+            const signedOut = document.getElementById('teacherAccountSignedOut');
+            const signedIn = document.getElementById('teacherAccountSignedIn');
+            const emailEl = document.getElementById('teacherAccountEmail');
+            const listEl = document.getElementById('teacherOwnedClassList');
+            const hint = document.getElementById('teacherAccountHint');
+            const session = currentTeacherSession();
+            if (signedOut) signedOut.classList.toggle('hidden', !!session);
+            if (signedIn) signedIn.classList.toggle('hidden', !session);
+            if (!session) {
+                if (hint) hint.textContent = '이메일로 가입한 뒤 학급을 만들면, 학생에게는 초대 링크만 보내면 됩니다.';
+                return;
+            }
+            if (emailEl) emailEl.textContent = session.email;
+            if (hint) hint.textContent = '이 계정으로 만든 학급만 열 수 있습니다. 주인 없는 반은 마스터 PIN으로 로그인한 뒤에만 가져갑니다.';
+            if (listEl) {
+                listEl.innerHTML = '<p class="text-[12px] text-slate-200">내 학급을 불러오는 중…</p>';
+                const rows = await loadOwnedClassesForTeacher();
+                if (!rows.length) {
+                    listEl.innerHTML = '<p class="text-[13px] text-slate-100">아직 만든 학급이 없습니다. 아래에서 새 학급을 만드세요.</p>';
+                } else {
+                    listEl.innerHTML = rows.map((row) => `
+                        <button type="button" class="w-full min-h-[48px] text-left rounded-xl border-2 border-emerald-300 bg-slate-950 px-3 py-2" onclick="void window.enterOwnedClass('${row.classId}')">
+                            <span class="block text-white font-black text-sm">${escapeHofText(row.displayName || row.classId)}</span>
+                            <span class="block text-[12px] text-emerald-200">초대 ${escapeHofText(row.inviteCode || '—')}</span>
+                        </button>`).join('');
+                }
+            }
+            const submitBtn = document.getElementById('teacherCreateSubmitBtn');
+            if (submitBtn) submitBtn.innerHTML = '<i class="fa-solid fa-school"></i> 학급 만들기';
+        };
+
+        window.signUpTeacherEmail = async function() {
+            showTeacherAccountError('');
+            const { emailCheck, pwCheck } = readTeacherAuthForm();
+            if (!emailCheck.ok) return showTeacherAccountError('이메일 형식을 확인해 주세요.');
+            if (!pwCheck.ok) return showTeacherAccountError('비밀번호는 6자 이상으로 만들어 주세요.');
+            if (!auth) return showTeacherAccountError('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('선생님 계정을 만드는 중…');
+                await auth.authStateReady();
+                const email = emailCheck.email;
+                const password = String(document.getElementById('teacherPasswordInput')?.value || '');
+                if (auth.currentUser && auth.currentUser.isAnonymous) {
+                    try {
+                        const cred = EmailAuthProvider.credential(email, password);
+                        const linked = await linkWithCredential(auth.currentUser, cred);
+                        await finishTeacherAuth(linked.user);
+                        window.hideGlobalLoading();
+                        return;
+                    } catch (linkErr) {
+                        if (linkErr && linkErr.code !== 'auth/email-already-in-use' && linkErr.code !== 'auth/credential-already-in-use') {
+                            throw linkErr;
+                        }
+                    }
+                }
+                const created = await createUserWithEmailAndPassword(auth, email, password);
+                await finishTeacherAuth(created.user);
+                window.hideGlobalLoading();
+            } catch (e) {
+                window.hideGlobalLoading();
+                showTeacherAccountError(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.signInTeacherEmail = async function() {
+            showTeacherAccountError('');
+            const { emailCheck, pwCheck } = readTeacherAuthForm();
+            if (!emailCheck.ok) return showTeacherAccountError('이메일 형식을 확인해 주세요.');
+            if (!pwCheck.ok) return showTeacherAccountError('비밀번호는 6자 이상으로 만들어 주세요.');
+            if (!auth) return showTeacherAccountError('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('로그인 중…');
+                const cred = await signInWithEmailAndPassword(auth, emailCheck.email, String(document.getElementById('teacherPasswordInput')?.value || ''));
+                await finishTeacherAuth(cred.user);
+                window.hideGlobalLoading();
+            } catch (e) {
+                window.hideGlobalLoading();
+                showTeacherAccountError(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.signInTeacherGoogle = async function() {
+            showTeacherAccountError('');
+            if (!auth) return showTeacherAccountError('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
+            try {
+                window.showGlobalLoading('구글 로그인 중…');
+                const provider = new GoogleAuthProvider();
+                const cred = await signInWithPopup(auth, provider);
+                await finishTeacherAuth(cred.user);
+                window.hideGlobalLoading();
+            } catch (e) {
+                window.hideGlobalLoading();
+                showTeacherAccountError(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.signOutTeacherAccount = async function() {
+            if (!auth) return;
+            const ok = await window.customConfirm('선생님 계정에서 로그아웃할까요? 학생 초대 코드 입장은 그대로 쓸 수 있습니다.');
+            if (!ok) return;
+            try {
+                await signOut(auth);
+                _teacherSession = null;
+                _teacherProfile = null;
+                await signInAnonymously(auth);
+                await window.renderTeacherAccountPanel();
+                window.setTeacherSubMode('join');
+            } catch (e) {
+                await window.customAlert(teacherAuthErrorMessage(e && e.code));
+            }
+        };
+
+        window.enterOwnedClass = async function(classId) {
+            const id = String(classId || '').trim();
+            if (!id) return;
+            const rows = await loadOwnedClassesForTeacher();
+            const row = rows.find((r) => r.classId === id);
+            if (row && row.inviteCode) {
+                try { await ensureClassAccess(id, row.inviteCode, 'teacher'); } catch (_) { /* 소유 교사는 규칙으로 열람 가능 */ }
+                writeStoredClassInvite(row.inviteCode);
+            }
+            window.switchClass(id);
+        };
+
+        window.claimCurrentClassAsTeacher = async function(opts = {}) {
+            const session = currentTeacherSession();
+            if (!session || !appId || !window.classMeta) return false;
+            const alreadyOwner = String(window.classMeta.ownerUid || '') === String(session.uid);
+            if (alreadyOwner) return true;
+            if (!canClaimClassOwnership(window.classMeta, session.uid, {
+                gmPinVerified: opts.gmPinVerified === true,
+            })) return false;
+            const patch = classOwnerClaimPatch(session);
+            try {
+                await setDoc(doc(db, 'classes', appId), {
+                    ...patch,
+                    updatedAt: serverTimestamp(),
+                }, { merge: true });
+                window.classMeta = { ...window.classMeta, ...patch };
+                await rememberOwnedClass(appId);
+                void migrateLegacyStudentPinsOffPublicDocs(appId);
+                return true;
+            } catch (e) {
+                console.warn('claimCurrentClassAsTeacher', e);
+                return false;
             }
         };
 
@@ -3605,12 +3909,20 @@ function redrawPlazaGrantsUi() {
                 schoolName,
                 masterDisplayName: teacherName,
             });
+            const teacher = currentTeacherSession();
             await setDoc(doc(db, 'classes', newClassId), {
                 ...newMeta,
+                ownerUid: teacher ? teacher.uid : '',
+                ownerEmail: teacher ? teacher.email : '',
+                isDemoSeed: false,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true });
             await registerInviteCode(inviteCode, newClassId, { displayName });
+            if (teacher) {
+                await rememberOwnedClass(newClassId);
+                await ensureClassAccess(newClassId, inviteCode, 'teacher');
+            }
 
             // 새 학급은 기존 교실 설정을 복사하지 않습니다. 기본 기능만 켠 깨끗한 시작값만 넣습니다.
             const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
@@ -3661,7 +3973,6 @@ function redrawPlazaGrantsUi() {
                 const pin = String(teacherPin).trim();
                 if (/^\d{4}$/.test(pin)) {
                     await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'students', 'student_gm'), {
-                        pin,
                         xp: 0,
                         bong: 0,
                         quests: {},
@@ -3670,6 +3981,7 @@ function redrawPlazaGrantsUi() {
                         inventory: [],
                         questHistory: [],
                     }, { merge: true });
+                    await writePinSecretDoc(newClassId, 'gm', pin);
                 }
             }
 
@@ -3717,7 +4029,7 @@ function redrawPlazaGrantsUi() {
             const mine = _myClassCreateRequest;
             const waiting = !!(mine && (mine.status === 'pending' || mine.status === 'approved' || mine.status === 'rejected'));
             const hideFormWaiting = waiting && mine.status !== 'rejected';
-            const unlocked = canCreateClassImmediately(window.playerState, appId) || readClassCreateUnlockSession();
+            const unlocked = canTeacherCreateNow() || readClassCreateUnlockSession();
             const hideCreateForm = hideFormWaiting || !unlocked;
             const form = document.getElementById('teacherCreateFormFields');
             const settingsForm = document.getElementById('newClassCreateFormFields');
@@ -4064,8 +4376,9 @@ function redrawPlazaGrantsUi() {
 
         window.createClassFromLogin = async function() {
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
-            if (!readClassCreateUnlockSession()) {
-                return window.customAlert('학급을 개설하려면 원래 마스터가 준 개설 코드가 필요합니다.');
+            const teacherReady = canTeacherCreateNow();
+            if (!teacherReady && !readClassCreateUnlockSession()) {
+                return window.customAlert('학급을 만들려면 선생님 계정으로 로그인해 주세요.');
             }
             const displayName = String(document.getElementById('createClassDisplayName')?.value || '').trim();
             const schoolName = String(document.getElementById('createClassSchoolName')?.value || '').trim();
@@ -4085,21 +4398,41 @@ function redrawPlazaGrantsUi() {
             if (!/^\d{4}$/.test(teacherPin)) {
                 return window.customAlert('마스터 PIN은 숫자 4자리로 설정해 주세요.');
             }
+            const immediate = teacherReady;
             const ok = await window.customConfirm(
-                `새 학급 개설을 원래 마스터에게 요청합니다.\n\n` +
+                (immediate ? `새 학급을 만듭니다.\n\n` : `새 학급 개설을 원래 마스터에게 요청합니다.\n\n`) +
                 `학급명: ${displayName}\n` +
                 (schoolName ? `학교: ${schoolName}\n` : '') +
                 `${schoolYear}학년도 ${grade}학년 ${homeroom}반\n` +
                 `시즌: ${seasonLabel} / ${seasonTheme}\n` +
                 `마스터: ${teacherName}\n` +
                 `기본 템플릿: ${applyDefaultTemplate ? '적용' : '나중에'}\n\n` +
-                `허락되면 반이 생성되고 초대 코드가 발급됩니다.`
+                (immediate ? `빈 명단으로 시작하고 초대 코드가 발급됩니다.` : `허락되면 반이 생성되고 초대 코드가 발급됩니다.`)
             );
             if (!ok) return;
             try {
-                window.showGlobalLoading('인증 요청을 보내는 중…');
+                window.showGlobalLoading(immediate ? '학급을 만드는 중…' : '인증 요청을 보내는 중…');
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
+                if (immediate) {
+                    const { newClassId, inviteCode } = await createClassWorkspace({
+                        displayName,
+                        schoolName,
+                        schoolYear,
+                        grade,
+                        homeroom,
+                        teacherName,
+                        studentCount,
+                        teacherPin,
+                        seasonLabel,
+                        seasonTheme,
+                        applyDefaultTemplate,
+                    });
+                    window.hideGlobalLoading();
+                    await window.customAlert(`학급이 만들어졌습니다.\n\n초대 코드: ${inviteCode}\n\n학생에게 이 코드 또는 접속 링크를 알려 주세요.`);
+                    window.switchClass(newClassId);
+                    return;
+                }
                 const sent = await submitClassCreateRequest({
                     displayName,
                     schoolName,
@@ -4123,7 +4456,7 @@ function redrawPlazaGrantsUi() {
             } catch (e) {
                 console.error('createClassFromLogin', e);
                 window.hideGlobalLoading();
-                await window.customAlert('요청 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert((immediate ? '만들기 실패: ' : '요청 실패: ') + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -4135,16 +4468,16 @@ function redrawPlazaGrantsUi() {
             const meta = window.classMeta || (appId === SEED_CLASS_ID ? buildDefaultClassMeta(appId) : buildBlankClassMeta(appId));
             const rosterRows = (meta.roster || []).map((r, idx) => `
                 <tr class="border-b border-slate-700/80">
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" class="w-10 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="id" value="${r.id || ''}" aria-label="번호" class="w-12 bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]"></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="name" value="${r.name || ''}" aria-label="이름" class="w-full bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]"></td>
                     <td class="p-1">
-                        <select data-roster-idx="${idx}" data-roster-field="gender" class="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white">
+                        <select data-roster-idx="${idx}" data-roster-field="gender" aria-label="성별" class="bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]">
                             <option value="M" ${r.gender !== 'F' ? 'selected' : ''}>남</option>
                             <option value="F" ${r.gender === 'F' ? 'selected' : ''}>여</option>
                         </select>
                     </td>
-                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" class="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white"></td>
-                    <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" ${r.active !== false ? 'checked' : ''}></td>
+                    <td class="p-1"><input type="text" data-roster-idx="${idx}" data-roster-field="label" value="${r.label || ''}" placeholder="별칭" aria-label="별칭" class="w-full bg-slate-900 border border-slate-500 rounded-lg px-2 py-2 text-[13px] text-white min-h-[44px]"></td>
+                    <td class="p-1 text-center"><input type="checkbox" data-roster-idx="${idx}" data-roster-field="active" aria-label="활성" class="w-5 h-5"></td>
                 </tr>`).join('');
             panel.innerHTML = `
                 <div class="grid sm:grid-cols-2 gap-3 mb-3">
@@ -4180,8 +4513,8 @@ function redrawPlazaGrantsUi() {
                     </table>
                 </div>
                 <div class="flex flex-wrap gap-2 mb-3">
-                    <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold py-2 px-3 rounded border border-slate-600">+ 학생 추가</button>
-                    <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] font-bold py-2 px-4 rounded">명단 저장</button>
+                    <button type="button" onclick="window.addClassRosterRow()" class="bg-slate-800 hover:bg-slate-700 text-white text-[13px] font-black py-2 px-4 rounded-xl border border-slate-400 min-h-[44px]">+ 학생 추가</button>
+                    <button type="button" onclick="window.saveClassMeta()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-black py-2 px-4 rounded-xl min-h-[44px]">명단 저장</button>
                 </div>
                 <div class="border-t border-slate-700 pt-3 mt-1">
                     <h4 class="text-white font-bold text-xs mb-2"><i class="fa-solid fa-plus-circle text-sky-400"></i> 새 학급 만들기 (내년·다른 반)</h4>
@@ -4192,8 +4525,8 @@ function redrawPlazaGrantsUi() {
                         <input id="newClassGrade" type="number" min="1" max="6" placeholder="학년" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                         <input id="newClassHomeroom" type="number" min="1" max="20" placeholder="반" class="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-xs text-white">
                     </div>
-                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[10px] font-bold py-2 px-4 rounded">${canCreateClassImmediately(window.playerState, appId) ? '새 학급 추가 후 이동' : '원래 마스터에게 인증 요청'}</button>
-                    <p class="text-[9px] text-slate-500 mt-2">${canCreateClassImmediately(window.playerState, appId) ? '시드 마스터는 바로 새 반을 만들 수 있습니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '다른 학급은 원래 마스터가 허락한 뒤에만 만들어집니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
+                    <button type="button" onclick="window.createNewClass()" class="bg-sky-700 hover:bg-sky-600 text-white text-[13px] font-black py-2 px-4 rounded-xl min-h-[44px]">${canTeacherCreateNow() ? '새 학급 추가 후 이동' : '선생님 계정으로 만들기'}</button>
+                    <p class="text-[12px] text-slate-200 mt-2">${canTeacherCreateNow() ? '선생님 계정으로 바로 새 반을 만듭니다. 새 학급은 별도 데이터 공간(artifacts)을 사용합니다.' : '선생님 계정으로 로그인하면 바로 새 반을 만들 수 있습니다. 작년 반 데이터는 그대로 보존됩니다.'}</p>
                     </div>
                     <div id="myClassCreateRequestBox" class="hidden mt-2 p-2 rounded-xl border border-amber-500/40 bg-amber-950/30"></div>
                 </div>`;
@@ -4293,9 +4626,9 @@ function redrawPlazaGrantsUi() {
                 return window.customAlert('학급 이름, 학년도, 학년, 반을 모두 입력해 주세요.');
             }
             const teacherName = getStaffMember('gm')?.name || '담임 선생님';
-            const immediate = canCreateClassImmediately(window.playerState, appId);
+            const immediate = canTeacherCreateNow();
             if (!immediate && !readClassCreateUnlockSession()) {
-                return window.customAlert('새 학급을 요청하려면 원래 마스터가 준 개설 코드가 필요합니다.');
+                return window.customAlert('새 학급을 만들려면 선생님 계정으로 로그인해 주세요.');
             }
             const ok = await window.customConfirm(
                 immediate
@@ -4461,6 +4794,8 @@ function redrawPlazaGrantsUi() {
             try {
                 window.showGlobalLoading('학급을 찾는 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(raw);
+                const invite = normalizeInviteCode(raw) || readStoredClassInvite();
+                await ensureClassAccess(classId, invite, currentTeacherSession() ? 'teacher' : 'student');
                 window.hideGlobalLoading();
                 window.switchClass(classId);
             } catch (e) {
@@ -4685,6 +5020,120 @@ function redrawPlazaGrantsUi() {
          * Firestore 규칙이 request.auth != null 일 때, 로그인 직후 토큰이 아직 안 붙은 채로 쓰기하면 permission-denied가 날 수 있음.
          * authStateReady + 익명 로그인 후 getIdToken()으로 토큰을 확실히 받은 뒤에만 true.
          */
+        function currentTeacherSession() {
+            return isTeacherSessionActive(_teacherSession) ? _teacherSession : teacherSessionFromUser(auth && auth.currentUser);
+        }
+
+        function canTeacherCreateNow() {
+            return canCreateClassImmediately(window.playerState, appId, currentTeacherSession());
+        }
+
+        function showTeacherAccountError(msg) {
+            const el = document.getElementById('teacherAccountError');
+            if (!el) return;
+            if (msg) {
+                el.textContent = msg;
+                el.classList.remove('hidden');
+            } else {
+                el.textContent = '';
+                el.classList.add('hidden');
+            }
+        }
+
+        async function ensureTeacherProfileDoc(user) {
+            const built = buildTeacherProfile(user, {
+                ownedClassIds: _teacherProfile && _teacherProfile.ownedClassIds,
+                createdAt: _teacherProfile && _teacherProfile.createdAt,
+            });
+            if (!built.ok || !db) return null;
+            const ref = doc(db, 'teachers', built.profile.uid);
+            try {
+                const snap = await getDoc(ref);
+                const prev = snap.exists() ? snap.data() : {};
+                const merged = {
+                    ...built.profile,
+                    ownedClassIds: Array.from(new Set([
+                        ...(Array.isArray(prev.ownedClassIds) ? prev.ownedClassIds : []),
+                        ...built.profile.ownedClassIds,
+                    ])).slice(0, 40),
+                    createdAt: prev.createdAt || built.profile.createdAt,
+                    updatedAt: Date.now(),
+                };
+                await setDoc(ref, merged, { merge: true });
+                _teacherProfile = merged;
+                return merged;
+            } catch (e) {
+                console.warn('ensureTeacherProfileDoc', e);
+                _teacherProfile = built.profile;
+                return built.profile;
+            }
+        }
+
+        async function rememberOwnedClass(classId) {
+            const session = currentTeacherSession();
+            if (!session || !db) return;
+            const next = withOwnedClass(_teacherProfile || { uid: session.uid, email: session.email, displayName: session.displayName, ownedClassIds: [] }, classId);
+            _teacherProfile = { ...next, updatedAt: Date.now() };
+            try {
+                await setDoc(doc(db, 'teachers', session.uid), _teacherProfile, { merge: true });
+            } catch (e) {
+                console.warn('rememberOwnedClass', e);
+            }
+        }
+
+        async function loadOwnedClassesForTeacher() {
+            const session = currentTeacherSession();
+            if (!session || !db) return [];
+            try {
+                const q = query(collection(db, 'classes'), where('ownerUid', '==', session.uid));
+                const snap = await getDocs(q);
+                const rows = [];
+                snap.forEach((d) => rows.push(sanitizeClassDirectoryEntry(d.data(), d.id)));
+                return rows;
+            } catch (e) {
+                console.warn('loadOwnedClassesForTeacher', e);
+                return [];
+            }
+        }
+
+        async function ensureClassAccess(classId, inviteCode, role = 'student') {
+            if (!auth || !auth.currentUser || !db) return false;
+            const built = buildClassAccessPayload({
+                uid: auth.currentUser.uid,
+                classId,
+                inviteCode,
+                role,
+            });
+            if (!built.ok) return false;
+            await setDoc(doc(db, 'classAccess', auth.currentUser.uid), {
+                uid: built.access.uid,
+                classId: built.access.classId,
+                inviteCode: built.access.inviteCode,
+                role: built.access.role,
+                updatedAt: Date.now(),
+            });
+            writeStoredClassInvite(built.access.inviteCode);
+            return true;
+        }
+
+        async function ensureBootClassAccess() {
+            if (!appId || !auth || !auth.currentUser) return false;
+            if (currentTeacherSession()) return true;
+            const invite = resolveBootInvite({
+                urlInvite: readInviteCodeFromLocation(),
+                storedInvite: readStoredClassInvite(),
+                recentEntries: getRecentClasses(),
+                classId: appId,
+            });
+            if (!invite) return false;
+            try {
+                return await ensureClassAccess(appId, invite, 'student');
+            } catch (e) {
+                console.warn('ensureBootClassAccess', e);
+                return false;
+            }
+        }
+
         async function ensureAnonAuthReady() {
             if (!auth) return false;
             const tryOnce = async () => {
@@ -4692,6 +5141,7 @@ function redrawPlazaGrantsUi() {
                 if (!auth.currentUser) await signInAnonymously(auth);
                 const u = auth.currentUser;
                 if (!u) return false;
+                _teacherSession = teacherSessionFromUser(u);
                 await u.getIdToken();
                 return true;
             };
@@ -4852,6 +5302,7 @@ function redrawPlazaGrantsUi() {
         }
 
         function getGlobalSettingsDocRef() {
+            if (!db || !appId) return null;
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
         }
 
@@ -7426,6 +7877,7 @@ ${subjectLine}
                     payload.xp = shielded.xp;
                 }
                 payload.xpChangeLog = arrayUnion(buildXpChangeLogEntry('마스터 직접 XP 수정', beforeXp, payload.xp, { actor: window.playerState?.isGM ? 'gm' : 'admin' }));
+                if (payload.xp > beforeXp) payload.xpWriteAt = serverTimestamp();
             }
             await setDoc(ref, payload, { merge: true });
             mergeStudentDocIntoPlazaCache(sid, { ...(stu || {}), ...payload });
@@ -10634,7 +11086,10 @@ ${subjectLine}
                         const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + log.studentId);
                         const payload = {};
                         const logStu = (window.allStudentsData || []).find((s) => String(s.id) === String(log.studentId)) || {};
-                        if (reviewed.grantXp > 0 && !studentIsCreditDefault(logStu)) payload.xp = increment(reviewed.grantXp);
+                        if (reviewed.grantXp > 0 && !studentIsCreditDefault(logStu)) {
+                            payload.xp = increment(reviewed.grantXp);
+                            payload.xpWriteAt = serverTimestamp();
+                        }
                         if (reviewed.grantBong > 0) payload.bong = increment(reviewed.grantBong);
                         if (Object.keys(payload).length) batch.set(stuRef, payload, { merge: true });
                     }
@@ -10652,7 +11107,10 @@ ${subjectLine}
             const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
             const payload = {};
             const stu = (window.allStudentsData || []).find((s) => String(s.id) === String(studentId)) || {};
-            if (grantXp > 0 && !studentIsCreditDefault(stu)) payload.xp = increment(grantXp);
+            if (grantXp > 0 && !studentIsCreditDefault(stu)) {
+                payload.xp = increment(grantXp);
+                payload.xpWriteAt = serverTimestamp();
+            }
             if (grantBong > 0) payload.bong = increment(grantBong);
             if (!Object.keys(payload).length) return;
             batch.set(stuRef, payload, { merge: true });
@@ -13709,7 +14167,7 @@ ${subjectLine}
                 if (stu == null) return window.customAlert('해당 학생 데이터를 찾을 수 없습니다.');
                 const nx = Math.max(0, Math.floor(Number(stu.xp) || 0) + CLASS_BOARD_CHEER_XP);
                 const nb = normalizeBongValue((Number(stu.bong) || 0) + CLASS_BOARD_CHEER_BONG);
-                await setDoc(ref, { xp: nx, bong: nb }, { merge: true });
+                await setDoc(ref, { xp: nx, bong: nb, xpWriteAt: serverTimestamp() }, { merge: true });
                 mergeStudentDocIntoPlazaCache(sid, { ...stu, xp: nx, bong: nb });
                 playSfx('xp', true);
                 const ok = await saveClassBoard((s) => cheerClassBoardNote(s, noteId, Date.now()));
@@ -14757,7 +15215,12 @@ ${subjectLine}
                         }));
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { ...shieldUpdates, xp: afterXp, xpChangeLog: logs },
+                            {
+                                ...shieldUpdates,
+                                xp: afterXp,
+                                xpChangeLog: logs,
+                                ...(afterXp > beforeXp ? { xpWriteAt: serverTimestamp() } : {}),
+                            },
                             { merge: true }
                         );
                         appliedCount++;
@@ -19419,14 +19882,34 @@ ${subjectLine}
                 }
                 
                 await auth.authStateReady();
-                await signInAnonymously(auth);
+                if (!auth.currentUser) await signInAnonymously(auth);
                 /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
                 if (auth.currentUser) {
+                    _teacherSession = teacherSessionFromUser(auth.currentUser);
                     await auth.currentUser.getIdToken();
+                    if (_teacherSession) await ensureTeacherProfileDoc(auth.currentUser);
+                }
+                if (typeof window.renderTeacherAccountPanel === 'function') {
+                    void window.renderTeacherAccountPanel();
                 }
                 // ?c=초대코드 / /c/CODE → 해당 학급으로 이동 (페이지 리로드 시 true)
                 if (await applyInviteCodeFromUrlIfNeeded()) return;
-                await loadClassMeta();
+                if (!appId) {
+                    if (typeof window.setLoginMode === 'function') window.setLoginMode(_teacherSession ? 'teacher' : 'student');
+                    return;
+                }
+                await ensureBootClassAccess();
+                try {
+                    await loadClassMeta();
+                    if (teacherOwnsClass(_teacherProfile || _teacherSession, appId, window.classMeta)) {
+                        void migrateLegacyStudentPinsOffPublicDocs(appId);
+                    }
+                } catch (e) {
+                    console.warn('loadClassMeta boot', e);
+                    window.classMeta = null;
+                    if (typeof window.setLoginMode === 'function') window.setLoginMode(_teacherSession ? 'teacher' : 'student');
+                    return;
+                }
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyDuplicateQuestBongHotfix();
@@ -19699,13 +20182,16 @@ ${subjectLine}
                                     hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
                                 });
                                 const initialSeats = built.seats;
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
-                                initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden = false;
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
-                                initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
-                                const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
+                                let ph = [];
+                                if (isSeedDemoClass()) {
+                                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].owner = '13';
+                                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].locked = false;
+                                    initialSeats[ESTATE_RESTORE_SEOK_SEAT_INDEX].hidden = false;
+                                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].owner = '12';
+                                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
+                                    initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
+                                    ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '시드 학급 자리 복구' }];
+                                }
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
                                     seats: initialSeats,
                                     layout: built.layout,
@@ -19907,6 +20393,8 @@ ${subjectLine}
                         const savedPin = localStorage.getItem('sambong_student_pin');
                         if (savedId && savedPin) {
                             attemptLogin(savedId, savedPin, true);
+                        } else if (currentTeacherSession() && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta)) {
+                            attemptLogin('gm', savedPin || '', true, { ownerBypassPin: true });
                         }
                     }
                 });
@@ -24242,6 +24730,9 @@ ${subjectLine}
         if (typeof window.setLoginMode === 'function') window.setLoginMode('student');
         
         window.loginAsGuest = function() {
+            if (!appId || !window.classMeta) {
+                return window.customAlert('구경하려면 먼저 초대 코드로 학급을 열어 주세요.');
+            }
             window.playerState = { 
                 xp: 8500, bong: 120.0, quests: {}, unlockedQuests: {}, 
                 jobs: [{name: '게스트', icon: 'fa-eye', color: 'text-slate-400'}], 
@@ -24348,6 +24839,22 @@ ${subjectLine}
             if (!ok) return;
             const prevPin = window.playerState.pin;
             const prevBong = Number(window.playerState.bong) || 0;
+            const studentId = localStorage.getItem('sambong_student_id') || '';
+            try {
+                const prevHash = await hashStudentPin({ classId: appId, studentId, pin: prevPin });
+                const nextHash = await hashStudentPin({ classId: appId, studentId, pin: planned.pin });
+                if (!prevHash || !nextHash) throw new Error('pin_hash');
+                await setDoc(pinSecretRefFor(appId, studentId), pinSecretPayload(nextHash, {
+                    prevHash,
+                    updatedAt: serverTimestamp(),
+                }));
+                await stripPublicStudentPin(appId, 'student_' + studentId);
+            } catch (e) {
+                if (!isFirestorePermissionDenied(e) && String(e && e.message) !== 'pin_hash') {
+                    console.warn('changeMyPassword secret', e);
+                }
+                return await window.customAlert('❌ 비밀번호 비밀 저장에 실패했습니다. 현재 비밀번호를 다시 확인해 주세요.');
+            }
             window.playerState.pin = planned.pin;
             window.playerState.bong = planned.nextBong;
             updateUI();
@@ -24369,7 +24876,7 @@ ${subjectLine}
             await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
 
-        async function attemptLogin(studentId, pin, isAutoLogin) {
+        async function attemptLogin(studentId, pin, isAutoLogin, opts = {}) {
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
@@ -24399,39 +24906,76 @@ ${subjectLine}
             const isGM = (studentId === 'gm'); 
             const isGMA = (studentId === 'gm_a'); 
             const isAdmin = isGM || isGMA;
+            const ownerBypass = !!(opts.ownerBypassPin && isGM && currentTeacherSession()
+                && teacherOwnsClass(_teacherProfile || currentTeacherSession(), appId, window.classMeta));
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
             
             try {
                 const docSnap = await getDoc(docRef); 
                 let data = docSnap.exists() ? docSnap.data() : null;
-                
-                if (data) {
-                    if (!data.pin) {
-                        if (isAutoLogin) return; 
-                        const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
-                        if(!isOk) return; 
-                        data.pin = pin; 
-                        await setDoc(docRef, { pin: pin }, { merge: true });
-                    } else if (data.pin !== pin) {
-                        if (isAutoLogin) {
-                            const classId = localStorage.getItem('sambong_class_id');
-                            localStorage.clear();
-                            if (classId) localStorage.setItem('sambong_class_id', classId);
-                            location.reload();
-                            return;
-                        }
-                        return await window.customAlert("❌ 비밀번호가 틀렸어요!");
-                    }
-                } else {
-                    if (isAutoLogin) return; 
+                const leftoverPin = data && data.pin != null ? String(data.pin) : '';
+                let verified = await verifyStudentPinForLogin({
+                    classId: appId,
+                    studentId,
+                    pin,
+                    leftoverPin,
+                    ownerBypass,
+                    isAutoLogin,
+                });
+
+                if (!verified.ok && verified.reason === 'needs-first-set') {
+                    if (isAutoLogin) return;
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
-                    if(!isOk) return;
-                    
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
-                    await setDoc(docRef, data);
+                    if (!isOk) return;
+                    const hash = await hashStudentPin({ classId: appId, studentId, pin });
+                    const created = hash ? await tryCreatePinSecret(appId, studentId, hash) : false;
+                    if (created) {
+                        await tryWritePinProbe(appId, studentId, hash);
+                        verified = classifyPinLogin({ secretCreated: true, typedPin: String(pin || '') });
+                    } else {
+                        const retried = hash ? await tryWritePinProbe(appId, studentId, hash) : false;
+                        if (retried) {
+                            verified = classifyPinLogin({ probeOk: true });
+                        } else if (leftover) {
+                            verified = classifyPinLogin({ leftoverPin, typedPin: String(pin || ''), isAutoLogin: false });
+                        } else {
+                            try {
+                                await setDoc(docRef, { pin: String(pin) }, { merge: true });
+                                if (data) data.pin = pin;
+                                verified = classifyPinLogin({ leftoverPin: String(pin), typedPin: String(pin) });
+                            } catch (_) {
+                                verified = { ok: false, reason: 'mismatch' };
+                            }
+                        }
+                    }
                 }
 
-                window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                if (!verified.ok) {
+                    if (isAutoLogin) {
+                        const classId = localStorage.getItem('sambong_class_id');
+                        localStorage.clear();
+                        if (classId) localStorage.setItem('sambong_class_id', classId);
+                        location.reload();
+                        return;
+                    }
+                    return await window.customAlert("❌ 비밀번호가 틀렸어요!");
+                }
+
+                if (!data) {
+                    data = stripPinFromStudentData({
+                        xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: []
+                    });
+                    await setDoc(docRef, data);
+                } else if (verified.stripPublicPin) {
+                    data = stripPinFromStudentData(data);
+                    await stripPublicStudentPin(appId, 'student_' + studentId);
+                }
+
+                if (verified.canClaim && isGM && currentTeacherSession()) {
+                    await window.claimCurrentClassAsTeacher({ gmPinVerified: true });
+                }
+
+                window.playerState = { ...data, pin, isGuest: false, isGM, isGMA, isAdmin };
                 window.playerState.dragonBalls = sanitizeDragonBallList(window.playerState.dragonBalls);
                 window._questHistorySyncReady = false;
                 window._localQuestCompleteKeys = new Set();
@@ -24484,11 +25028,12 @@ ${subjectLine}
                 operationLabel: '저장',
                 ...options,
             };
-            const dataToSave = { ...window.playerState };
+            const dataToSave = stripPinFromStudentData({ ...window.playerState });
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
+            delete dataToSave.pin;
             dataToSave.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
             dataToSave.unlockedFeatures = sanitizeUnlockedFeatures(dataToSave.unlockedFeatures);
             dataToSave.statusMessage = sanitizeStatusMessage(dataToSave.statusMessage);
@@ -24779,6 +25324,9 @@ ${subjectLine}
                             dataToSave.hasShield = shieldFix.hasShield;
                         }
                         const finalXp = Number(dataToSave.xp);
+                        if (Number.isFinite(serverXp) && Number.isFinite(finalXp) && Math.floor(finalXp) > Math.floor(serverXp)) {
+                            dataToSave.xpWriteAt = serverTimestamp();
+                        }
                         if (Number.isFinite(serverXp) && Number.isFinite(finalXp) && Math.floor(finalXp) !== Math.floor(serverXp)) {
                             const logs = Array.isArray(serverData.xpChangeLog) ? serverData.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
                             logs.push(buildXpChangeLogEntry(opts.operationLabel, serverXp, finalXp, {
@@ -27954,9 +28502,9 @@ ${subjectLine}
         // ==========================================
         // ★ 관리자 권한 도구 모음 (자동 경험치 포함) ★
         // ==========================================
-        /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 유지) */
+        /** 학생 1명 게임 데이터 초기화 페이로드 (PIN은 pinSecrets에 두고 공개 문서에 넣지 않음) */
         const STUDENT_GAME_FIELD_KEYS = [
-            'pin', 'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
+            'xp', 'xpChangeLog', 'bong', 'quests', 'unlockedQuests', 'jobs', 'ownedSkins', 'equippedSkins', 'baseFaceId', 'staffLookId',
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
@@ -27972,8 +28520,7 @@ ${subjectLine}
             STUDENT_GAME_FIELD_KEYS.forEach((key) => {
                 if (existingData[key] !== undefined) data[key] = existingData[key];
             });
-            if (data.pin === undefined) data.pin = existingData.pin || '';
-            return data;
+            return stripPinFromStudentData(data);
         }
 
         function getStudentBackupRef(stuId) {
@@ -28434,7 +28981,6 @@ ${subjectLine}
 
         function buildStudentResetPayload(existingData = {}) {
             return {
-                pin: existingData.pin || '',
                 xp: 0,
                 xpChangeLog: [],
                 bong: 0.0,
@@ -28558,9 +29104,7 @@ ${subjectLine}
             if (!ok) return;
 
             try {
-                const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
-                const restorePayload = { ...backup.data };
-                if (stu.pin) restorePayload.pin = stu.pin;
+                const restorePayload = stripPinFromStudentData({ ...backup.data });
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
                 await setDoc(docRef, restorePayload);
 
@@ -28654,6 +29198,7 @@ ${subjectLine}
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
                         transaction.set(ref, {
                             xp: increment(5),
+                            xpWriteAt: serverTimestamp(),
                             xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, Number(stu.xp) || 0, (Number(stu.xp) || 0) + 5, { source: 'class-end-auto' })),
                         }, { merge: true });
                     }
@@ -28831,7 +29376,7 @@ ${subjectLine}
                 if (amount > 0) {
                     if (type === 'xp') {
                         const nx = Math.floor(xp + Math.floor(amount));
-                        await setDoc(ref, { xp: nx }, { merge: true });
+                        await setDoc(ref, { xp: nx, xpWriteAt: serverTimestamp() }, { merge: true });
                         mergedForCache = { ...stu, xp: nx };
                     } else {
                         const nb = normalizeBongValue(bong + Number(amount));
@@ -28911,7 +29456,7 @@ ${subjectLine}
                     bong = normalizeBongValue(bong);
                     const r = doc(db, 'artifacts', appId, 'public', 'data', 'students', did);
                     if (type === 'xp') {
-                        batch.set(r, { xp: Math.floor(xp + amt) }, { merge: true });
+                        batch.set(r, { xp: Math.floor(xp + amt), xpWriteAt: serverTimestamp() }, { merge: true });
                     } else {
                         batch.set(r, { bong: normalizeBongValue(bong + amt) }, { merge: true });
                     }
@@ -29068,9 +29613,18 @@ ${subjectLine}
             if (window.playerState.isGMA && stuId !== '13') return;
             
             const newPin = await window.customPrompt(`[${stuName}] 새 4자리 PIN 입력:`, "number");
-            if (newPin && newPin.length === 4) { 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { pin: newPin }, { merge: true }); 
-                window.customAlert("✅ 변경 완료"); 
+            if (newPin && newPin.length === 4) {
+                try {
+                    await writePinSecretDoc(appId, stuId, newPin);
+                    await stripPublicStudentPin(appId, 'student_' + stuId);
+                    window.customAlert("✅ 변경 완료");
+                } catch (e) {
+                    await window.customAlert(
+                        isFirestorePermissionDenied(e)
+                            ? 'PIN은 학급 소유 선생님 계정으로만 바꿀 수 있습니다. 마스터 PIN으로 로그인한 뒤 학급을 가져가세요.'
+                            : ('변경 실패: ' + (e && e.message ? e.message : String(e)))
+                    );
+                }
             }
         };
 
@@ -29651,7 +30205,10 @@ ${subjectLine}
                     );
                     if (rx > 0 || rb > 0) {
                         const mqPay = {};
-                        if (rx > 0 && !studentIsCreditDefault(window.playerState)) mqPay.xp = increment(rx);
+                        if (rx > 0 && !studentIsCreditDefault(window.playerState)) {
+                            mqPay.xp = increment(rx);
+                            mqPay.xpWriteAt = serverTimestamp();
+                        }
                         if (rb > 0) mqPay.bong = increment(normalizeBongValue(rb));
                         if (Object.keys(mqPay).length) transaction.set(sRef, mqPay, { merge: true });
                     }
@@ -30279,7 +30836,10 @@ ${subjectLine}
                     }, { merge: true });
                     if (currentStudentDocRef) {
                         const gbPay = {};
-                        if (rewardXp > 0 && !studentIsCreditDefault(window.playerState)) gbPay.xp = increment(rewardXp);
+                        if (rewardXp > 0 && !studentIsCreditDefault(window.playerState)) {
+                            gbPay.xp = increment(rewardXp);
+                            gbPay.xpWriteAt = serverTimestamp();
+                        }
                         if (rewardBong) gbPay.bong = increment(normalizeBongValue(rewardBong));
                         if (Object.keys(gbPay).length) transaction.set(currentStudentDocRef, gbPay, { merge: true });
                     }
@@ -30971,7 +31531,10 @@ ${subjectLine}
                         if(reward.xp <= 0 && reward.bong <= 0) return;
                         const raidStu = (window.allStudentsData || []).find((s) => String(s.id) === id) || {};
                         const raidPay = {};
-                        if (reward.xp > 0 && !studentIsCreditDefault(raidStu)) raidPay.xp = increment(reward.xp);
+                        if (reward.xp > 0 && !studentIsCreditDefault(raidStu)) {
+                            raidPay.xp = increment(reward.xp);
+                            raidPay.xpWriteAt = serverTimestamp();
+                        }
                         if (reward.bong > 0) raidPay.bong = increment(reward.bong);
                         if (!Object.keys(raidPay).length) return;
                         transaction.set(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + id), raidPay, { merge: true });

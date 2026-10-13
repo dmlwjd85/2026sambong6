@@ -98,8 +98,13 @@ export function shouldRotateMasterPinOnReset(targetClassId) {
  * 시드 마스터만 다른 학급 목록을 봅니다.
  * 그 외 마스터·학생은 지금 들어와 있는 반만 남깁니다.
  */
-export function directoryEntriesForViewer(entries, viewer, currentClassId) {
+export function directoryEntriesForViewer(entries, viewer, currentClassId, ownedClassIds) {
     const list = Array.isArray(entries) ? entries.filter((e) => e && e.classId) : [];
+    const owned = new Set((Array.isArray(ownedClassIds) ? ownedClassIds : []).map((id) => String(id || '')));
+    if (owned.size) {
+        const cur = String(currentClassId || '');
+        return list.filter((e) => e.classId === cur || owned.has(e.classId));
+    }
     if (isSeedMasterViewer(viewer, currentClassId)) return list;
     const cur = String(currentClassId || '');
     if (!cur) return [];

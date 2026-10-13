@@ -23196,26 +23196,63 @@ ${subjectLine}
         window.createClassChecklist = async function() {
             if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('교사만 체크리스트를 만들 수 있습니다.');
             const title = String((document.getElementById('checklistTitleInput') || {}).value || '');
+            if (!String(title).trim()) return window.customAlert('제목을 입력하세요.');
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             await ensureClassOpsLoaded();
-            const made = createChecklist(window._checklists || [], title, `chk_${Date.now().toString(36)}`);
-            if (!made.ok) return window.customAlert(made.reason === 'title' ? '제목을 입력하세요.' : '체크리스트를 더 만들 수 없습니다.');
             const authOk = await ensureAnonAuthReady();
             if (!authOk) return window.customAlert('인증에 실패했습니다.');
-            await setDoc(classOpsRef('checklists'), { items: made.items }, { merge: true });
-            window._checklists = made.items;
-            const input = document.getElementById('checklistTitleInput');
-            if (input) input.value = '';
-            window.renderChecklistBoard();
+            const listRef = classOpsRef('checklists');
+            try {
+                // 화면에 남아 있는 목록 전체를 다시 쓰면, 그 사이 제출된 번호와 다른 목록이 지워집니다.
+                // 지워진 번호는 다시 누를 수 있어 경험치와 봉이 한 번 더 나갑니다.
+                const made = await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(listRef);
+                    const id = `chk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+                    const next = createChecklist(snap.exists() ? snap.data() : [], title, id);
+                    if (!next.ok) return next;
+                    tx.set(listRef, { items: next.items }, { merge: true });
+                    return next;
+                });
+                if (!made.ok) {
+                    const msg = made.reason === 'title'
+                        ? '제목을 입력하세요.'
+                        : made.reason === 'id'
+                            ? '같은 체크리스트가 이미 있습니다. 한 번 더 만들어 주세요.'
+                            : '체크리스트를 더 만들 수 없습니다.';
+                    return window.customAlert(msg);
+                }
+                window._checklists = made.items;
+                const input = document.getElementById('checklistTitleInput');
+                if (input) input.value = '';
+                window.renderChecklistBoard();
+            } catch (e) {
+                console.error('createClassChecklist', e);
+                await window.customAlert('체크리스트를 저장하지 못했습니다.');
+            }
         };
 
         window.removeClassChecklist = async function(id) {
             if (!window.playerState || !window.playerState.isAdmin) return;
             if (!await window.customConfirm('이 체크리스트를 삭제할까요?\n이미 준 보상은 되돌리지 않습니다.')) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             await ensureClassOpsLoaded();
-            const next = deleteChecklist(window._checklists || [], id);
-            await setDoc(classOpsRef('checklists'), { items: next.items }, { merge: true });
-            window._checklists = next.items;
-            window.renderChecklistBoard();
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const listRef = classOpsRef('checklists');
+            try {
+                // 삭제할 목록만 서버 문서에서 빼야, 다른 목록의 제출 표시가 같이 지워지지 않습니다.
+                const next = await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(listRef);
+                    const removed = deleteChecklist(snap.exists() ? snap.data() : [], id);
+                    tx.set(listRef, { items: removed.items }, { merge: true });
+                    return removed;
+                });
+                window._checklists = next.items;
+                window.renderChecklistBoard();
+            } catch (e) {
+                console.error('removeClassChecklist', e);
+                await window.customAlert('체크리스트를 삭제하지 못했습니다.');
+            }
         };
 
         window.toggleChecklistCell = async function(checklistId, sid) {

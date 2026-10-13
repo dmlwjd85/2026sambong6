@@ -31,6 +31,8 @@ export function createChecklist(items, title, id) {
     if (!nextId) return { ok: false, reason: 'id' };
     const list = sanitizeChecklists(items);
     if (list.length >= 30) return { ok: false, reason: 'limit' };
+    // 같은 id를 다시 넣으면 제출 칸이 두 개가 되어, 토글은 앞 목록만 바꾸고 보상도 어긋납니다.
+    if (list.some((item) => item.id === nextId)) return { ok: false, reason: 'id' };
     list.push({ id: nextId, title: name, marks: {} });
     return { ok: true, items: list };
 }

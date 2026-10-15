@@ -4,8 +4,18 @@ import fs from 'node:fs';
 import {
     GM_IDLE_LOGOUT_MS,
     GM_ONLY_SETTING_KEYS,
+    ORIGINAL_HOME_CLASS_ID,
     classifyAuthError,
+    isOriginalHomeClass,
     isTeacherProvider,
+    planGmIdleExpiry,
+    readGmIdleLogoutOverride,
+    resolveGmIdleLogoutMs,
+    HOME_CLASS_IDLE_AUTH_NOTICE,
+    TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
+    shouldApplyTeacherBadgeRead,
+    shouldSignOutNonAnonymousForPinLogin,
+    shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
     teacherAuthStatusText,
 } from './adminAuth.js';
@@ -63,6 +73,7 @@ describe('선생님 인증 판별', () => {
             assert.equal(listed.includes(key), true, key);
         });
         assert.equal(GM_IDLE_LOGOUT_MS, 15 * 60 * 1000);
+        assert.equal(ORIGINAL_HOME_CLASS_ID, 'sambong-class-2026');
         assert.match(rules, /function isAdmin\(\)/);
         assert.match(rules, /function isAdminForApp\(appId\)/);
         assert.match(rules, /sign_in_provider != 'anonymous'/);
@@ -70,5 +81,109 @@ describe('선생님 인증 판별', () => {
         assert.doesNotMatch(rules, /updatedBy\s*==/);
         assert.doesNotMatch(rules, /\.updatedBy/);
         assert.match(rules, /allow delete: if false;/);
+    });
+});
+
+describe('원래 학급 PIN 로그인 유지', () => {
+    it('시드 학급 ID만 원래 학급으로 본다', () => {
+        assert.equal(isOriginalHomeClass('sambong-class-2026'), true);
+        assert.equal(isOriginalHomeClass(' sambong-class-2026 '), true);
+        assert.equal(isOriginalHomeClass('other-class'), false);
+        assert.equal(isOriginalHomeClass(''), false);
+        assert.equal(isOriginalHomeClass(null), false);
+    });
+
+    it('원래 학급 유휴는 선생님 인증만 끝내고 다른 학급은 통째로 로그아웃한다', () => {
+        assert.equal(planGmIdleExpiry({ classId: 'sambong-class-2026', isAdmin: true }), 'end-teacher-auth');
+        assert.equal(planGmIdleExpiry({ classId: 'other-class', isAdmin: true }), 'full-logout');
+        assert.equal(planGmIdleExpiry({
+            classId: 'sambong-class-2026',
+            isAdmin: true,
+            projectionActive: true,
+        }), 'defer');
+        assert.equal(planGmIdleExpiry({ classId: 'sambong-class-2026', isAdmin: false }), 'ignore');
+        assert.equal(planGmIdleExpiry({ classId: 'other-class', isAdmin: false, projectionActive: true }), 'ignore');
+    });
+
+    it('유휴 시간은 운영 한도보다 짧게만 덮어쓴다', () => {
+        assert.equal(resolveGmIdleLogoutMs(undefined), GM_IDLE_LOGOUT_MS);
+        assert.equal(resolveGmIdleLogoutMs(''), GM_IDLE_LOGOUT_MS);
+        assert.equal(resolveGmIdleLogoutMs('nope'), GM_IDLE_LOGOUT_MS);
+        assert.equal(resolveGmIdleLogoutMs(-5), GM_IDLE_LOGOUT_MS);
+        assert.equal(resolveGmIdleLogoutMs(GM_IDLE_LOGOUT_MS + 1), GM_IDLE_LOGOUT_MS);
+        assert.equal(resolveGmIdleLogoutMs(2500), 2500);
+        assert.equal(resolveGmIdleLogoutMs(0), 0);
+        assert.equal(readGmIdleLogoutOverride('?emulator=1&gmIdleMs=2500'), '2500');
+        assert.equal(readGmIdleLogoutOverride(''), undefined);
+    });
+
+    it('에뮬레이터 연결은 로컬 ?emulator=1 에서만 연다', () => {
+        assert.equal(shouldUseLocalFirebaseEmulator({
+            hostname: '127.0.0.1',
+            search: '?emulator=1&gmIdleMs=1000',
+        }), true);
+        assert.equal(shouldUseLocalFirebaseEmulator({
+            hostname: 'localhost',
+            search: '?emulator=1',
+        }), true);
+        assert.equal(shouldUseLocalFirebaseEmulator({
+            hostname: 'dmlwjd85.github.io',
+            search: '?emulator=1',
+        }), false);
+        assert.equal(shouldUseLocalFirebaseEmulator({
+            hostname: '127.0.0.1',
+            search: '',
+        }), false);
+    });
+
+    it('gm이 아닌 PIN 로그인은 학급과 상관없이 학생 문서 전에 선생님 세션을 끊는다', () => {
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({
+            studentId: 'gm',
+            classId: 'sambong-class-2026',
+            isAutoLogin: true,
+        }), false);
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({
+            studentId: 'gm_a',
+            classId: 'other-class',
+            isAutoLogin: false,
+        }), false);
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({
+            studentId: '1',
+            classId: 'sambong-class-2026',
+            isAutoLogin: true,
+        }), true);
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({
+            studentId: '1',
+            classId: 'sambong-class-2026',
+            isAutoLogin: false,
+        }), true);
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({
+            studentId: '1',
+            classId: 'other-class',
+            isAutoLogin: true,
+        }), true);
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({ studentId: '13' }), true);
+        assert.match(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE, /저장된 비밀번호는 그대로/);
+        assert.match(HOME_CLASS_IDLE_AUTH_NOTICE, /선생님 인증이 풀렸어요/);
+    });
+
+    it('선생님 허용 목록 조회가 끝난 뒤 세션이 바뀌면 배지에 그리지 않는다', () => {
+        const teacher = {
+            uid: 'teacher-1',
+            isAnonymous: false,
+            providerData: [{ providerId: 'password', email: 'teacher@school.kr' }],
+        };
+        const otherTeacher = {
+            uid: 'teacher-2',
+            isAnonymous: false,
+            providerData: [{ providerId: 'password', email: 'other@school.kr' }],
+        };
+        const anon = { uid: 'anon-1', isAnonymous: true, providerData: [] };
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, teacher), true);
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, anon), false);
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, null), false);
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, otherTeacher), false);
+        assert.equal(shouldApplyTeacherBadgeRead(anon, anon), true);
+        assert.equal(shouldApplyTeacherBadgeRead(null, anon), true);
     });
 });

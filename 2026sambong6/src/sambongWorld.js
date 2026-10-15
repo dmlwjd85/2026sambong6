@@ -1,7 +1,8 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
 import {
     getFirestore,
+    connectFirestoreEmulator,
     doc,
     setDoc,
     getDoc,
@@ -380,8 +381,15 @@ import {
 } from './lib/shopDiscount.js';
 import {
     classifyAuthError,
-    GM_IDLE_LOGOUT_MS,
+    HOME_CLASS_IDLE_AUTH_NOTICE,
+    TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
     isTeacherProvider,
+    planGmIdleExpiry,
+    readGmIdleLogoutOverride,
+    resolveGmIdleLogoutMs,
+    shouldApplyTeacherBadgeRead,
+    shouldSignOutNonAnonymousForPinLogin,
+    shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
@@ -4781,14 +4789,22 @@ function redrawPlazaGrantsUi() {
             }
         }
 
+        let teacherBadgeReadGeneration = 0;
         async function refreshTeacherAuthBadge() {
             if (!auth) return;
+            const generation = ++teacherBadgeReadGeneration;
             const user = auth.currentUser;
             if (!isTeacherProvider(user)) {
                 renderTeacherAuthBadges({ authenticated: false, allowlisted: false, email: '' });
             } else {
-                renderTeacherAuthBadges(await readTeacherAllowlist(user));
+                const state = await readTeacherAllowlist(user);
+                // 학생 PIN 로그인이 그 사이에 선생님 세션을 끊으면, 늦게 도착한 허용 목록으로
+                // "인증됨"을 다시 그리지 않습니다.
+                if (generation !== teacherBadgeReadGeneration) return;
+                if (!shouldApplyTeacherBadgeRead(user, auth.currentUser)) return;
+                renderTeacherAuthBadges(state);
             }
+            if (generation !== teacherBadgeReadGeneration) return;
             if (window.playerState && window.playerState.isAdmin && typeof renderLearningThermometerPanel === 'function') {
                 renderLearningThermometerPanel();
             }
@@ -19891,14 +19907,39 @@ ${subjectLine}
                     appId: "1:728320769100:web:7510c9a77cca6b87a788e9" 
                 };
                 
+                const useEmulator = shouldUseLocalFirebaseEmulator({
+                    hostname: window.location.hostname,
+                    search: window.location.search,
+                });
+                if (useEmulator) firebaseConfig.projectId = 'demo-sambong';
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app);
+                db = getFirestore(app);
+                if (useEmulator) {
+                    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+                    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+                    window.__sambongE2E = {
+                        projectId: firebaseConfig.projectId,
+                        get appId() { return appId; },
+                        signInTeacher(email, password) {
+                            return signInWithEmailAndPassword(auth, email, password).then(() => refreshTeacherAuthBadge());
+                        },
+                        authSummary() {
+                            const user = auth.currentUser;
+                            return {
+                                anonymous: !!(user && user.isAnonymous),
+                                email: user && user.email ? String(user.email) : '',
+                                uid: user ? user.uid : '',
+                            };
+                        },
+                        armIdleTimer() { resetGmIdleTimer(); },
+                    };
+                }
                 try {
                     await setPersistence(auth, browserSessionPersistence);
                 } catch (e) {
                     console.warn('setPersistence', e);
                 }
-                db = getFirestore(app);
                 if (typeof window.startClassCreateRequestWatch === 'function') {
                     window.startClassCreateRequestWatch();
                 }
@@ -24781,6 +24822,17 @@ ${subjectLine}
             if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
         }
 
+        function currentGmIdleLogoutMs() {
+            let fromUrl;
+            try {
+                fromUrl = readGmIdleLogoutOverride(window.location.search);
+            } catch (_) { /* ignore */ }
+            const override = (fromUrl != null && fromUrl !== '')
+                ? fromUrl
+                : (typeof window.__GM_IDLE_LOGOUT_MS !== 'undefined' ? window.__GM_IDLE_LOGOUT_MS : undefined);
+            return resolveGmIdleLogoutMs(override);
+        }
+
         async function endGmAuthSession() {
             if (!auth) return;
             try {
@@ -24808,7 +24860,7 @@ ${subjectLine}
             if (_gmIdleTimer) clearTimeout(_gmIdleTimer);
             _gmIdleTimer = null;
             if (!window.playerState || !window.playerState.isAdmin) return;
-            _gmIdleTimer = setTimeout(() => { void expireGmSessionForIdle(); }, GM_IDLE_LOGOUT_MS);
+            _gmIdleTimer = setTimeout(() => { void expireGmSessionForIdle(); }, currentGmIdleLogoutMs());
         }
 
         function isGmClassProjectionActive() {
@@ -24818,8 +24870,27 @@ ${subjectLine}
         }
 
         async function expireGmSessionForIdle() {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            if (isGmClassProjectionActive()) {
+            const mode = planGmIdleExpiry({
+                classId: appId,
+                isAdmin: !!(window.playerState && window.playerState.isAdmin),
+                projectionActive: isGmClassProjectionActive(),
+            });
+            if (mode === 'ignore') return;
+            if (mode === 'defer') {
+                resetGmIdleTimer();
+                return;
+            }
+            // 원래 학급(sambong-class-2026): 선생님 인증 배지만 내린다.
+            // PIN localStorage, 화면 로그인, 익명 세션은 그대로 두고 새로고침하지 않는다.
+            if (mode === 'end-teacher-auth') {
+                const hadTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
+                await endGmAuthSession();
+                const stillTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
+                try { await refreshTeacherAuthBadge(); } catch (e) { console.warn('refreshTeacherAuthBadge', e); }
+                syncGmLogoutButton();
+                if (hadTeacher && !stillTeacher && typeof window.showToast === 'function') {
+                    window.showToast(HOME_CLASS_IDLE_AUTH_NOTICE, 8000);
+                }
                 resetGmIdleTimer();
                 return;
             }
@@ -24956,16 +25027,39 @@ ${subjectLine}
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
                 return;
             }
+            const dropTeacher = shouldSignOutNonAnonymousForPinLogin({
+                studentId,
+                classId: appId,
+                isAutoLogin: !!isAutoLogin,
+            });
+            let teacherSignOutFailed = false;
             try {
                 await auth.authStateReady();
-                const loggingInAsGm = studentId === 'gm' || studentId === 'gm_a';
-                // 학생 PIN만 남아 있는 선생님 세션을 끊습니다. gm/gm_a 자동 로그인은 유지합니다.
-                if (!loggingInAsGm && auth.currentUser && !auth.currentUser.isAnonymous) {
-                    await signOut(auth);
+                // gm/gm_a 가 아니면 학급과 상관없이 학생 문서를 읽기 전에 선생님 세션을 끊습니다.
+                // 실패하면 저장된 PIN은 그대로 두고 로그인을 멈춥니다.
+                if (dropTeacher && auth.currentUser && !auth.currentUser.isAnonymous) {
+                    try {
+                        await signOut(auth);
+                    } catch (signOutErr) {
+                        teacherSignOutFailed = true;
+                        throw signOutErr;
+                    }
+                    if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                        teacherSignOutFailed = true;
+                        throw new Error('teacher-session-remains');
+                    }
                 }
                 if (!auth.currentUser) await signInAnonymously(auth);
             } catch (e) {
+                if (teacherSignOutFailed) {
+                    await window.customAlert(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE);
+                    return;
+                }
                 if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
+                return;
+            }
+            if (dropTeacher && auth.currentUser && !auth.currentUser.isAnonymous) {
+                await window.customAlert(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE);
                 return;
             }
             if (!auth.currentUser) {
@@ -25049,7 +25143,7 @@ ${subjectLine}
                 void window.applyPersonalLunchDeductionIfNeeded();
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
-                if (isAdmin) void refreshTeacherAuthBadge();
+                void refreshTeacherAuthBadge();
                 syncGmLogoutButton();
                 resetGmIdleTimer();
             } catch (e) { 

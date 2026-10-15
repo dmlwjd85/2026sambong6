@@ -26,6 +26,18 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    function adminRecord() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
+    }
+
+    // 이미 있는 학급 설정은 admins.classIds 에 그 학급 ID가 있을 때만 고칩니다.
+    // 새 settings/global 생성은 학급 ID가 그때 정해지므로 허용목록만 봅니다.
+    function isAdminForApp(appId) {
+      return isAdmin()
+        && adminRecord().classIds is list
+        && appId in adminRecord().classIds;
+    }
+
     function isSettingsGlobalDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/global$');
     }
@@ -45,7 +57,37 @@ service cloud.firestore {
         'raidPassword',
         'weekendRaidRewardXp',
         'weekendRaidRewardBong',
-        'constitutionItems'
+        'constitutionItems',
+        'bankInterestPercent',
+        'bankLoanLimitPerStudent',
+        'bankTransferFeeBong',
+        'dragonBallFindXp',
+        'dragonBallFindBong',
+        'dragonBallCompleteXp',
+        'dragonBallCompleteBong',
+        'convenienceDeliveryFee',
+        'announcement',
+        'morningActivityNotice',
+        'screenNotice',
+        'classTimetable',
+        'birthdayCelebrations',
+        'classModules',
+        'externalPortals',
+        'weatherRegion',
+        'classToolShare',
+        'researchJournal',
+        'researchSurveyUrl',
+        'researchSurveyNote',
+        'classWatchOn',
+        'curriculumTags',
+        'curriculumMapping',
+        'applyDefaultTemplatePending',
+        'season2StartedAt',
+        'season2StartedBy',
+        'season2WeaponsClearedAt',
+        'season2DragonBallsClearedAt',
+        'shieldStockFixedTo5At',
+        'lastAutoXpTime'
       ];
     }
 
@@ -151,7 +193,7 @@ service cloud.firestore {
       allow update: if signedIn() && (
         (shopDiscountUntouched() && gmOnlyUntouched())
         || (
-          isAdmin()
+          isAdminForApp(appId)
           && (shopDiscountUntouched() || shopDiscountChangeIsValid())
         )
       );

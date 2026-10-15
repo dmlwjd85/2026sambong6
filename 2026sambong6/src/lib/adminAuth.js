@@ -3,6 +3,9 @@
  * Firestore 규칙의 isAdmin() 과 맞춥니다. 익명 로그인은 선생님이 아닙니다.
  */
 
+/** GM 화면을 15분 동안 건드리지 않으면 선생님 세션을 끊습니다. */
+export const GM_IDLE_LOGOUT_MS = 15 * 60 * 1000;
+
 export const GM_ONLY_SETTING_KEYS = Object.freeze([
     'shopPrices',
     'customShopItems',
@@ -17,6 +20,36 @@ export const GM_ONLY_SETTING_KEYS = Object.freeze([
     'weekendRaidRewardXp',
     'weekendRaidRewardBong',
     'constitutionItems',
+    'bankInterestPercent',
+    'bankLoanLimitPerStudent',
+    'bankTransferFeeBong',
+    'dragonBallFindXp',
+    'dragonBallFindBong',
+    'dragonBallCompleteXp',
+    'dragonBallCompleteBong',
+    'convenienceDeliveryFee',
+    'announcement',
+    'morningActivityNotice',
+    'screenNotice',
+    'classTimetable',
+    'birthdayCelebrations',
+    'classModules',
+    'externalPortals',
+    'weatherRegion',
+    'classToolShare',
+    'researchJournal',
+    'researchSurveyUrl',
+    'researchSurveyNote',
+    'classWatchOn',
+    'curriculumTags',
+    'curriculumMapping',
+    'applyDefaultTemplatePending',
+    'season2StartedAt',
+    'season2StartedBy',
+    'season2WeaponsClearedAt',
+    'season2DragonBallsClearedAt',
+    'shieldStockFixedTo5At',
+    'lastAutoXpTime',
 ]);
 
 function providerIds(user) {
@@ -92,7 +125,7 @@ export function teacherAuthFailureMessage(reason) {
         case 'provider_disabled':
             return '이 로그인 방식이 아직 켜져 있지 않습니다. Firebase 콘솔에서 Google 또는 이메일/비밀번호를 사용 설정해 주세요.';
         case 'permission_denied':
-            return '저장이 거부되었습니다. 선생님 계정 인증과 admins 문서를 확인해 주세요.';
+            return '저장이 거부되었습니다. 선생님 계정 인증, admins 문서, classIds에 이 학급 ID가 있는지 확인해 주세요.';
         default:
             return '선생님 계정 인증에 실패했습니다. 다시 시도해 주세요.';
     }

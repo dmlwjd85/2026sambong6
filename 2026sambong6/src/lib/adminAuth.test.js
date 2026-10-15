@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+    GM_IDLE_LOGOUT_MS,
     GM_ONLY_SETTING_KEYS,
     classifyAuthError,
     isTeacherProvider,
@@ -61,7 +62,9 @@ describe('선생님 인증 판별', () => {
         GM_ONLY_SETTING_KEYS.forEach((key) => {
             assert.equal(listed.includes(key), true, key);
         });
+        assert.equal(GM_IDLE_LOGOUT_MS, 15 * 60 * 1000);
         assert.match(rules, /function isAdmin\(\)/);
+        assert.match(rules, /function isAdminForApp\(appId\)/);
         assert.match(rules, /sign_in_provider != 'anonymous'/);
         assert.match(rules, /documents\/admins\/\$\(request\.auth\.uid\)/);
         assert.doesNotMatch(rules, /updatedBy\s*==/);

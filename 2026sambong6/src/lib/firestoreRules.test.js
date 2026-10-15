@@ -48,10 +48,17 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             await setDoc(doc(db, 'admins/teacher1'), {
                 role: 'gm',
                 email: 'teacher@school.kr',
+                classIds: ['class1', 'new-class'],
+            });
+            await setDoc(doc(db, 'admins/teacher-other'), {
+                role: 'gm',
+                email: 'other@school.kr',
+                classIds: ['other-class'],
             });
             await setDoc(doc(db, 'admins/anon-student'), {
                 role: 'gm',
                 email: 'anon@school.kr',
+                classIds: ['class1'],
             });
         });
     });
@@ -73,6 +80,13 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
     function teacher() {
         return testEnv.authenticatedContext('teacher1', {
             email: 'teacher@school.kr',
+            firebase: { sign_in_provider: 'password' },
+        });
+    }
+
+    function otherTeacher() {
+        return testEnv.authenticatedContext('teacher-other', {
+            email: 'other@school.kr',
             firebase: { sign_in_provider: 'password' },
         });
     }
@@ -117,6 +131,34 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }, { merge: true }));
         await assertFails(setDoc(doc(db, settingsPath), {
             shopDiscount: validDiscount({ startAt: 5000, endAt: 5000 }),
+        }, { merge: true }));
+    });
+
+    it('익명 학생은 이자율처럼 GM 전용 경제 키를 저장하지 못한다', async () => {
+        const db = anon().firestore();
+        await assertFails(setDoc(doc(db, settingsPath), {
+            bankInterestPercent: 1000,
+        }, { merge: true }));
+        await assertFails(setDoc(doc(db, settingsPath), {
+            announcement: '학생 공지',
+            dragonBallFindXp: 9999,
+        }, { merge: true }));
+    });
+
+    it('허용된 선생님은 자기 학급 이자율만 저장한다', async () => {
+        const own = teacher().firestore();
+        await assertSucceeds(setDoc(doc(own, settingsPath), {
+            bankInterestPercent: 3,
+        }, { merge: true }));
+        const other = otherTeacher().firestore();
+        await assertFails(setDoc(doc(other, settingsPath), {
+            bankInterestPercent: 1000,
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(other, 'artifacts/brand-new-class/public/data/settings/global'), {
+            raidPassword: '9999',
+        }));
+        await assertFails(setDoc(doc(other, 'artifacts/brand-new-class/public/data/settings/global'), {
+            bankInterestPercent: 9,
         }, { merge: true }));
     });
 

@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -378,6 +378,7 @@ import {
 } from './lib/shopDiscount.js';
 import {
     classifyAuthError,
+    GM_IDLE_LOGOUT_MS,
     isTeacherProvider,
     teacherAuthFailureMessage,
     teacherAuthStatusText,
@@ -1871,8 +1872,8 @@ function redrawPlazaGrantsUi() {
             if (!hit) return;
             const region = sanitizeWeatherRegion({ label: hit.label, lat: hit.lat, lon: hit.lon });
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk || !db) return window.customAlert('네트워크를 확인한 뒤 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk || !db) return;
                 await setDoc(getGlobalSettingsDocRef(), { weatherRegion: region }, { merge: true });
                 if (window.globalSettings) window.globalSettings.weatherRegion = region;
                 _schoolWeather = null;
@@ -4821,6 +4822,7 @@ function redrawPlazaGrantsUi() {
             if (!state.allowlisted) {
                 return { ok: false, reason: 'not_allowlisted', message: teacherAuthFailureMessage('not_allowlisted') };
             }
+            if (window.playerState && window.playerState.isAdmin) void runAdminOneShotMigrations();
             return { ok: true, email: state.email };
         }
 
@@ -5984,6 +5986,8 @@ function redrawPlazaGrantsUi() {
             const payload = { classTimetable: { days } };
             const statusEl = document.getElementById('classTimetableStatus');
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), payload, { merge: true });
                 if (!window.globalSettings) window.globalSettings = {};
                 window.globalSettings.classTimetable = payload.classTimetable;
@@ -6650,8 +6654,8 @@ ${subjectLine}
             list = sanitizeBirthdayCelebrations(list);
             try {
                 window.showGlobalLoading('생일 일정 저장 중…');
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) throw new Error('인증 실패');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                     birthdayCelebrations: list,
                 }, { merge: true });
@@ -6678,6 +6682,8 @@ ${subjectLine}
             const list = sanitizeBirthdayCelebrations(getBirthdayCelebrations().filter((x) => x.id !== id));
             try {
                 window.showGlobalLoading('삭제 중…');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                     birthdayCelebrations: list,
                 }, { merge: true });
@@ -9911,8 +9917,8 @@ ${subjectLine}
                 id: `portal_${idx}`,
             }));
             const list = sanitizeExternalPortals(rows.map((row, i) => sanitizeExternalPortal(row, i)));
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const authOk = await requireGmSettingsAuth();
+            if (!authOk) return;
             await setDoc(getGlobalSettingsDocRef(), { externalPortals: list }, { merge: true });
             window.globalSettings = { ...(window.globalSettings || {}), externalPortals: list };
             renderExternalPortalList();
@@ -9929,8 +9935,8 @@ ${subjectLine}
             if (!ok) return;
             if (!db) return window.customAlert('서버에 연결되지 않았습니다.');
             const next = unlockClassModule(window.globalSettings, moduleId);
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const authOk = await requireGmSettingsAuth();
+            if (!authOk) return;
             await setDoc(getGlobalSettingsDocRef(), { classModules: next }, { merge: true });
             window.globalSettings = { ...(window.globalSettings || {}), classModules: next };
             syncClassModuleUi();
@@ -11496,11 +11502,8 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isAdmin) return false;
             if (!db || !payload) return false;
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) {
-                    await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                    return false;
-                }
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return false;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { classToolShare: payload }, { merge: true });
                 window.globalSettings.classToolShare = payload;
                 updateClassToolShareBar();
@@ -19397,11 +19400,8 @@ ${subjectLine}
             if (silent && !raw) return false;
             const fee = normalizeConvenienceDeliveryFee(raw !== '' ? raw : DEFAULT_CONVENIENCE_DELIVERY_FEE);
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) {
-                    if (!silent) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
-                    return false;
-                }
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return false;
                 await setDoc(getGlobalSettingsDocRef(), { convenienceDeliveryFee: fee }, { merge: true });
                 applyConvenienceDeliveryFeeFromSettingsData({ convenienceDeliveryFee: fee });
                 if (feeEl) feeEl.value = String(fee);
@@ -19757,7 +19757,12 @@ ${subjectLine}
                 };
                 
                 const app = initializeApp(firebaseConfig); 
-                auth = getAuth(app); 
+                auth = getAuth(app);
+                try {
+                    await setPersistence(auth, browserSessionPersistence);
+                } catch (e) {
+                    console.warn('setPersistence', e);
+                }
                 db = getFirestore(app);
                 if (typeof window.startClassCreateRequestWatch === 'function') {
                     window.startClassCreateRequestWatch();
@@ -20508,8 +20513,8 @@ ${subjectLine}
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             if (!payload) return window.customAlert('공지 내용을 입력해 주세요.');
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { screenNotice: payload }, { merge: true });
                 window.globalSettings.screenNotice = payload;
                 writeDismissedScreenNoticeId('');
@@ -21218,9 +21223,10 @@ ${subjectLine}
             const surveyUrl = String(document.getElementById('researchSurveyUrl')?.value || '').trim().slice(0, 400);
             const surveyNote = String(document.getElementById('researchSurveyNote')?.value || '').trim().slice(0, 120);
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 window.showGlobalLoading('설문 설정 저장 중…');
                 await runWithNetworkRetry(async () => {
-                    await ensureAnonAuthReady();
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                         researchSurveyUrl: surveyUrl,
                         researchSurveyNote: surveyNote,
@@ -21247,9 +21253,10 @@ ${subjectLine}
             journal.push({ at: Date.now(), text, by: window.playerState.isGM ? 'gm' : 'gm_a' });
             const clipped = journal.slice(-80);
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 window.showGlobalLoading('일지 저장 중…');
                 await runWithNetworkRetry(async () => {
-                    await ensureAnonAuthReady();
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                         researchJournal: clipped,
                     }, { merge: true });
@@ -21271,6 +21278,8 @@ ${subjectLine}
             if (!ok) return;
             journal.splice(idx, 1);
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { researchJournal: journal }, { merge: true });
                 window.globalSettings = { ...window.globalSettings, researchJournal: journal };
                 window.renderResearchJournalList();
@@ -23145,6 +23154,8 @@ ${subjectLine}
             const v = el ? parseFloat(el.value) : NaN;
             if (!Number.isFinite(v) || v < 0 || v > 100) return window.customAlert('0~100 사이의 이자율(%)을 입력하세요.');
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { bankInterestPercent: v }, { merge: true });
                 await window.customAlert(`적금 만기 이자율을 ${v}% 로 저장했습니다.\n(적금이 30일 만기될 때 이 비율이 적용됩니다. 대출 이자도 이 이율에 연동됩니다.)`);
             } catch (e) {
@@ -23159,8 +23170,8 @@ ${subjectLine}
             const el = document.getElementById('gmBankLoanLimit');
             const cap = sanitizeLoanLimit(el ? el.value : LOAN_LIMIT_DEFAULT);
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(getGlobalSettingsDocRef(), { bankLoanLimitPerStudent: cap }, { merge: true });
                 if (window.globalSettings) window.globalSettings.bankLoanLimitPerStudent = cap;
                 if (el) el.value = String(cap);
@@ -23724,8 +23735,8 @@ ${subjectLine}
             }
             const fee = sanitizeBankTransferFee(raw);
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(getGlobalSettingsDocRef(), { bankTransferFeeBong: fee }, { merge: true });
                 if (window.globalSettings) window.globalSettings.bankTransferFeeBong = fee;
                 if (el) el.value = String(fee);
@@ -23980,6 +23991,7 @@ ${subjectLine}
         function updateUI() {
             /** docRef 없다고 전체 UI를 건너뛰면, 스냅샷이 playerState만 갱신한 뒤 대시보드·퀘스트가 영원히 옛값으로 남음(실시간 동기화 깨짐) */
             if (!window.playerState) return;
+            syncGmLogoutButton();
             if (typeof window.syncMartialLawModal === 'function') window.syncMartialLawModal();
             ensureStudentBackupSubscription();
             const canRunBankSideEffects = !window.playerState.isGuest && currentStudentDocRef;
@@ -24577,23 +24589,67 @@ ${subjectLine}
             window.switchTab('plaza');
         };
         
+        function clearLoginStorageKeepingClass() {
+            const classId = localStorage.getItem('sambong_class_id');
+            const recent = localStorage.getItem(RECENT_CLASSES_KEY);
+            localStorage.clear();
+            if (classId) localStorage.setItem('sambong_class_id', classId);
+            if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
+        }
+
+        async function endGmAuthSession() {
+            if (!auth) return;
+            try {
+                if (auth.currentUser && !auth.currentUser.isAnonymous) await signOut(auth);
+                if (!auth.currentUser) await signInAnonymously(auth);
+            } catch (e) {
+                console.warn('endGmAuthSession', e);
+            }
+        }
+
+        function syncGmLogoutButton() {
+            const btn = document.getElementById('navLogoutButton');
+            if (!btn) return;
+            const gm = !!(window.playerState && window.playerState.isAdmin);
+            btn.classList.toggle('bg-rose-600', gm);
+            btn.classList.toggle('hover:bg-rose-500', gm);
+            btn.classList.toggle('bg-slate-700', !gm);
+            btn.innerHTML = gm
+                ? '<i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> 로그아웃'
+                : '<i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>';
+        }
+
+        let _gmIdleTimer = null;
+        function resetGmIdleTimer() {
+            if (_gmIdleTimer) clearTimeout(_gmIdleTimer);
+            _gmIdleTimer = null;
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            _gmIdleTimer = setTimeout(() => { void expireGmSessionForIdle(); }, GM_IDLE_LOGOUT_MS);
+        }
+
+        async function expireGmSessionForIdle() {
+            if (!window.playerState || !window.playerState.isAdmin) return;
+            clearLoginStorageKeepingClass();
+            await endGmAuthSession();
+            location.reload();
+        }
+
+        function bindGmIdleWatch() {
+            if (window._gmIdleWatchBound) return;
+            window._gmIdleWatchBound = true;
+            const bump = () => resetGmIdleTimer();
+            ['pointerdown', 'keydown', 'touchstart'].forEach((eventName) => {
+                window.addEventListener(eventName, bump, { passive: true });
+            });
+        }
+        bindGmIdleWatch();
+
         window.logout = async function() { 
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
             if(isOk) {
                 const wasGmSession = !!(window.playerState && window.playerState.isAdmin);
-                const classId = localStorage.getItem('sambong_class_id');
-                const recent = localStorage.getItem(RECENT_CLASSES_KEY);
-                localStorage.clear();
-                if (classId) localStorage.setItem('sambong_class_id', classId);
-                if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
-                if (wasGmSession && auth) {
-                    try {
-                        await signOut(auth);
-                        await signInAnonymously(auth);
-                    } catch (e) {
-                        console.warn('gm logout auth reset', e);
-                    }
-                }
+                clearLoginStorageKeepingClass();
+                if (wasGmSession) await endGmAuthSession();
                 location.reload();
             }
         };
@@ -24698,6 +24754,10 @@ ${subjectLine}
             }
             try {
                 await auth.authStateReady();
+                // PIN 로그인은 남아 있는 선생님(Google/이메일) 세션을 쓰지 않습니다.
+                if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                    await signOut(auth);
+                }
                 if (!auth.currentUser) await signInAnonymously(auth);
             } catch (e) {
                 if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
@@ -24785,6 +24845,8 @@ ${subjectLine}
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
                 if (isAdmin) void refreshTeacherAuthBadge();
+                syncGmLogoutButton();
+                resetGmIdleTimer();
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
             }
@@ -28421,6 +28483,12 @@ ${subjectLine}
             applyClassWatchUI();
             if (!db) return;
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) {
+                    window.globalSettings.classWatchOn = !next;
+                    applyClassWatchUI();
+                    return;
+                }
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { classWatchOn: next }, { merge: true });
             } catch (e) {
                 console.error('toggleClassWatch', e);
@@ -28631,6 +28699,7 @@ ${subjectLine}
         /** 마스터 접속 시 1회 마이그레이션은 서버 설정을 확인한 뒤에만 돌립니다. */
         async function runAdminOneShotMigrations() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (!isTeacherProvider(auth && auth.currentUser)) return;
             if (window._adminOneShotMigrationsDone || window._adminOneShotMigrationsRunning) return;
             window._adminOneShotMigrationsRunning = true;
             try {
@@ -28879,6 +28948,8 @@ ${subjectLine}
                 'dragonBallCompleteBongInput'
             );
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 window.showGlobalLoading('드래곤볼 보상 저장 중…');
                 await setDoc(getGlobalSettingsDocRef(), {
                     dragonBallFindXp: reward.findXp,
@@ -29130,6 +29201,10 @@ ${subjectLine}
         /** 평일 수업 종료 시각(타임테이블)마다 전 학생 문서에 XP+5. 담임 화면이 켜진 경우에만 트랜잭션 1회 실행. (특정 학번만 아님 — 전원 동일 규칙) */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
+            if (!isTeacherProvider(auth && auth.currentUser)) {
+                console.warn('checkAndDistributeClassXP: 선생님 인증 세션이 없어 수업 XP 기록을 건너뜁니다.');
+                return;
+            }
             const now = new Date();
             if (isVacationAutomationPaused('classXp', now)) return;
             const day = now.getDay();
@@ -29733,6 +29808,8 @@ ${subjectLine}
             if(!window.playerState.isAdmin) return; 
             const t = document.getElementById('gmAnnouncementInput').value.trim(); 
             if (!t) return window.customAlert('공지 내용을 입력해주세요.');
+            const authOk = await requireGmSettingsAuth();
+            if (!authOk) return;
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { announcement: t }, { merge: true }); 
             window.customAlert('✅ 공지 등록 완료!'); 
             document.getElementById('gmAnnouncementInput').value = ''; 
@@ -29743,6 +29820,8 @@ ${subjectLine}
             const el = document.getElementById('gmMorningActivityNoticeInput');
             const text = el ? el.value.trim() : '';
             if (!text) return window.customAlert('아침활동시간 안내 내용을 입력해주세요.');
+            const authOk = await requireGmSettingsAuth();
+            if (!authOk) return;
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { morningActivityNotice: text }, { merge: true });
             window.globalSettings.morningActivityNotice = text;
             await window.customAlert('✅ 아침활동시간 안내가 저장되었습니다.');
@@ -29814,8 +29893,8 @@ ${subjectLine}
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const closed = closeScreenNotice(window.globalSettings && window.globalSettings.screenNotice);
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { screenNotice: closed }, { merge: true });
                 window.globalSettings.screenNotice = closed;
                 hideScreenNoticePopup();

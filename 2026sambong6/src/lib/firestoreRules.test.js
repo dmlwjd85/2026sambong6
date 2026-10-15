@@ -2,6 +2,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { deleteDoc, deleteField, doc, getDoc, setDoc } from 'firebase/firestore';
+import { classXpSlotFromTime } from './classXpSlot.js';
 import {
     assertFails,
     assertSucceeds,
@@ -237,7 +238,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }, { merge: true }));
     });
 
-    it('수업 XP 표식은 KST 종 시각과 키가 같고 미래 슬롯은 거절한다', async () => {
+    it('수업 XP 공지 문서는 현재 KST 종 시각이 아니면 쓰지 못한다', async () => {
         const db = anon().firestore();
         const path = 'artifacts/class1/public/data/settings/autoXp';
         const now = Date.now();
@@ -250,10 +251,69 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(db, path), { ...autoXpPayload(prev), announcement: '선생님: 오늘 숙제 없음' }));
         await assertFails(setDoc(doc(db, path), autoXpPayload(prev + 1000)));
         await assertFails(setDoc(doc(db, path), autoXpPayload(future)));
-        await assertSucceeds(setDoc(doc(db, path), autoXpPayload(prev)));
-        await assertSucceeds(setDoc(doc(db, path), autoXpPayload(recent)));
-        await assertFails(setDoc(doc(db, path), autoXpPayload(recent)));
+        const live = classXpSlotFromTime(new Date());
+        if (live) {
+            await assertFails(setDoc(doc(db, path), autoXpPayload(prev)));
+            await assertSucceeds(setDoc(doc(db, path), autoXpPayload(live.slotMs)));
+            await assertFails(setDoc(doc(db, path), autoXpPayload(live.slotMs)));
+        } else {
+            await assertFails(setDoc(doc(db, path), autoXpPayload(prev)));
+            await assertFails(setDoc(doc(db, path), autoXpPayload(recent)));
+        }
         await assertFails(deleteDoc(doc(db, path)));
+    });
+
+    it('수업 XP 슬롯 키는 현재 종 시각의 +5와 함께만 학생 문서에 기록된다', async () => {
+        const studentPath = 'artifacts/class1/public/data/students/student_3';
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), studentPath), {
+                xp: 10,
+                bong: 0,
+                lastClassXpSlot: '2026_10_15_09:40',
+            });
+        });
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/students/student_9'), {
+            xp: 0,
+            bong: 0,
+        }));
+        await assertFails(setDoc(doc(db, 'artifacts/class1/public/data/students/student_8'), {
+            xp: 5,
+            bong: 0,
+            lastClassXpSlot: '2026_10_15_09:40',
+        }));
+        await assertSucceeds(setDoc(doc(db, studentPath), { xp: 12 }, { merge: true }));
+        await assertFails(setDoc(doc(db, studentPath), {
+            lastClassXpSlot: '2099_01_01_09:40',
+        }, { merge: true }));
+        await assertFails(setDoc(doc(db, studentPath), {
+            xp: 17,
+            lastClassXpSlot: '2099_01_01_09:40',
+        }, { merge: true }));
+        const live = classXpSlotFromTime(new Date());
+        if (live) {
+            await assertSucceeds(setDoc(doc(db, studentPath), {
+                xp: 17,
+                lastClassXpSlot: live.key,
+            }, { merge: true }));
+            await assertFails(setDoc(doc(db, studentPath), {
+                xp: 22,
+                lastClassXpSlot: '2099_01_01_14:40',
+            }, { merge: true }));
+        } else {
+            await assertFails(setDoc(doc(db, studentPath), {
+                xp: 17,
+                lastClassXpSlot: '2026_10_15_14:40',
+            }, { merge: true }));
+        }
+        await assertFails(setDoc(doc(db, studentPath), {
+            lastClassXpSlot: deleteField(),
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, studentPath), {
+            xp: 0,
+            bong: 0,
+            lastClassXpSlot: deleteField(),
+        }, { merge: true }));
     });
 
     it('학습 온도계 값은 학생 문서에만, 정산 필드는 선생님만 저장한다', async () => {
@@ -262,9 +322,10 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const path = 'artifacts/class1/public/data/settings/learningThermometer';
         const vote = `${path}/votes/2`;
         await assertFails(setDoc(doc(anonDb, vote), { value: 1 }));
+        await assertFails(setDoc(doc(anonDb, path), thermometerPayload()));
         await assertFails(setDoc(doc(anonDb, path), thermometerPayload({ max: 100 })));
         await assertFails(setDoc(doc(anonDb, path), thermometerPayload({ values: { '2': 20 } })));
-        await assertSucceeds(setDoc(doc(anonDb, path), thermometerPayload()));
+        await assertSucceeds(setDoc(doc(teacherDb, path), thermometerPayload()));
         await assertFails(setDoc(doc(anonDb, vote), { value: 5 }));
         await assertSucceeds(setDoc(doc(teacherDb, vote), { value: 5 }));
         await assertFails(setDoc(doc(teacherDb, vote), { value: 21 }));

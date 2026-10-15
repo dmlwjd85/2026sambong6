@@ -498,6 +498,7 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
+import { classXpSlotFromTime } from './lib/classXpSlot.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
     listAllCharacterBases,
@@ -4782,9 +4783,12 @@ function redrawPlazaGrantsUi() {
             const user = auth.currentUser;
             if (!isTeacherProvider(user)) {
                 renderTeacherAuthBadges({ authenticated: false, allowlisted: false, email: '' });
-                return;
+            } else {
+                renderTeacherAuthBadges(await readTeacherAllowlist(user));
             }
-            renderTeacherAuthBadges(await readTeacherAllowlist(user));
+            if (window.playerState && window.playerState.isAdmin && typeof renderLearningThermometerPanel === 'function') {
+                renderLearningThermometerPanel();
+            }
         }
 
         async function ensureTeacherAuth(options = {}) {
@@ -11386,14 +11390,23 @@ ${subjectLine}
         let _learningThermometerIgnoreRemoteUntil = 0;
         let _thermometerAuthPromptAt = 0;
         let _thermometerSettleAuthNoticeDate = '';
+        let _thermometerUnsaved = false;
         const _thermometerPendingVoteIds = new Set();
 
         function canViewClassTools() {
             return !!(window.playerState && !window.playerState.isGuest && classModuleOn('classtools'));
         }
 
-        function canEditLearningThermometer() {
+        function canManageLearningThermometer() {
             return !!(window.playerState && window.playerState.isAdmin);
+        }
+
+        function canEditLearningThermometer() {
+            return canManageLearningThermometer() && isTeacherProvider(auth && auth.currentUser);
+        }
+
+        function learningThermometerHasUnsavedEdits() {
+            return _thermometerUnsaved || _thermometerPendingVoteIds.size > 0 || _learningThermometerSavePending;
         }
 
         function isClassToolFullscreenOpen() {
@@ -14800,19 +14813,26 @@ ${subjectLine}
             }
 
             const state = getLearningThermometerState();
+            const canManage = canManageLearningThermometer();
             const canEdit = canEditLearningThermometer();
+            const authBadge = document.getElementById('learningThermometerAuthBadge');
+            const unsavedBadge = document.getElementById('learningThermometerUnsavedBadge');
+            if (authBadge) authBadge.classList.toggle('hidden', !canManage || canEdit);
+            if (unsavedBadge) unsavedBadge.classList.toggle('hidden', !learningThermometerHasUnsavedEdits());
             if (minEl && document.activeElement !== minEl) minEl.value = String(state.min);
             if (maxEl && document.activeElement !== maxEl) maxEl.value = String(state.max);
             if (minEl) minEl.disabled = !canEdit;
             if (maxEl) maxEl.disabled = !canEdit;
             [minEl, maxEl].forEach((el) => {
                 const label = el && el.closest('label');
-                if (label) label.classList.toggle('hidden', !canEdit);
+                if (label) label.classList.toggle('hidden', !canManage);
             });
-            ['learningThermometerSaveRangeBtn', 'learningThermometerResetBtn', 'learningThermometerSettleBtn'].forEach((id) => {
+            ['learningThermometerSaveRangeBtn', 'learningThermometerResetBtn'].forEach((id) => {
                 const btn = document.getElementById(id);
                 if (btn) btn.classList.toggle('hidden', !canEdit);
             });
+            const settleBtn = document.getElementById('learningThermometerSettleBtn');
+            if (settleBtn) settleBtn.classList.toggle('hidden', !canManage);
 
             const ids = getActiveStudentIds();
             if (!ids.length) {
@@ -14823,14 +14843,20 @@ ${subjectLine}
             const total = ids.reduce((sum, sid) => sum + (Number(state.values[String(sid)]) || 0), 0);
             const now = new Date();
             const today = getLocalDateStr();
-            const autoText = now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR
-                ? (state.settledDate === today ? '오늘 15시 정산 완료' : '15시 이후입니다. 곧 자동 정산됩니다.')
-                : '15:00 이후 자동 정산';
+            const unsavedText = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
+            let autoText = '15:00 이후, 선생님 인증이 있으면 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
+            if (!canEdit && canManage) {
+                autoText = '선생님 인증 필요. 슬라이더는 저장되지 않으며, 정산은 인증 후 지금 XP 반영으로 실행합니다.';
+            } else if (now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR) {
+                autoText = state.settledDate === today
+                    ? '오늘 15시 정산 완료'
+                    : '15시 이후입니다. 선생님 인증이 있으면 자동 정산되고, 아니면 지금 XP 반영을 누르세요.';
+            }
             status.innerHTML = `
                 <span class="font-bold text-sky-100">${today}</span>
                 · 범위 ${state.min} ~ +${state.max} XP
                 · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span>
-                · ${autoText}
+                · ${autoText}${unsavedText}
             `;
 
             box.innerHTML = ids.map((sid) => {
@@ -14887,22 +14913,30 @@ ${subjectLine}
                 _learningThermometerSavePending = true;
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
-                const teacherOk = await ensureThermometerTeacher();
-                if (!teacherOk) return false;
+                if (!isTeacherProvider(auth && auth.currentUser)) {
+                    _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
+                    if (!silent) await ensureThermometerTeacher();
+                    renderLearningThermometerPanel();
+                    return false;
+                }
                 const state = getLearningThermometerState();
                 await ensureLearningThermometerParent(state);
                 if (writeParent) await setDoc(getLearningThermometerDocRef(), thermometerParentPayload(state));
                 const ids = [..._thermometerPendingVoteIds];
-                _thermometerPendingVoteIds.clear();
                 await Promise.all(ids.map(async (sid) => {
                     const value = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[sid]) || 0)));
                     await setDoc(getLearningThermometerVoteRef(sid), { value });
                 }));
+                ids.forEach((sid) => _thermometerPendingVoteIds.delete(sid));
+                _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
+                renderLearningThermometerPanel();
                 return true;
             } catch (e) {
                 console.error('saveLearningThermometerState', e);
+                _thermometerUnsaved = true;
+                renderLearningThermometerPanel();
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;
             } finally {
@@ -14930,6 +14964,7 @@ ${subjectLine}
             if (next === 0) delete state.values[id];
             else state.values[id] = next;
             state.date = getLocalDateStr();
+            _thermometerUnsaved = true;
             setLocalLearningThermometerState(state);
 
             const valueEl = document.getElementById(`lt_value_${id}`);
@@ -14943,7 +14978,8 @@ ${subjectLine}
             const status = document.getElementById('learningThermometerStatus');
             if (status) {
                 const total = getActiveStudentIds().reduce((sum, x) => sum + (Number(state.values[String(x)]) || 0), 0);
-                status.innerHTML = `<span class="font-bold text-sky-100">${state.date}</span> · 범위 ${state.min} ~ +${state.max} XP · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span> · 변경사항 저장 중...`;
+                const unsaved = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
+                status.innerHTML = `<span class="font-bold text-sky-100">${state.date}</span> · 범위 ${state.min} ~ +${state.max} XP · 현재 합계 <span class="${getLearningThermometerValueClass(total)} font-black">${total >= 0 ? '+' : ''}${total} XP</span> · 변경사항 저장 중...${unsaved}`;
             }
             if (typeof window.renderPlaza === 'function') {
                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
@@ -15199,10 +15235,10 @@ ${subjectLine}
             const today = getLocalDateStr();
             if (state.settledDate === today) return;
             if (!isTeacherProvider(auth && auth.currentUser)) {
-                const hasValues = Object.keys(state.values || {}).length > 0;
-                if (hasValues && _thermometerSettleAuthNoticeDate !== today) {
+                if (_thermometerSettleAuthNoticeDate !== today) {
                     _thermometerSettleAuthNoticeDate = today;
-                    void window.customAlert('학습 온도계 15시 정산은 선생님 계정 인증이 되어 있어야 기록됩니다.\n선생님 계정 인증을 한 뒤 이 화면을 다시 열어 주세요.');
+                    renderLearningThermometerPanel();
+                    void window.customAlert('학습 온도계 자동 정산을 실행하지 못했습니다.\n\n선생님 계정 인증이 없습니다. 슬라이더 값은 저장되지 않습니다.\n학습 온도계의 지금 XP 반영 버튼으로 인증한 뒤 정산해 주세요.');
                 }
                 return;
             }
@@ -29394,50 +29430,44 @@ ${subjectLine}
 
         let _classXpWriteNoticeKey = '';
 
-        /** 평일 수업 종료 시각마다 전 학생 XP+5. 표식은 settings/autoXp 라 선생님 인증이 없어도 됩니다. */
+        /** 평일 KST 종 시각마다 전 학생 XP+5. 중복 여부는 학생 문서 lastClassXpSlot으로 판단합니다. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
-            if (isVacationAutomationPaused('classXp', now)) return;
-            const day = now.getDay();
-            if (day === 0 || day === 6) return;
+            const slot = classXpSlotFromTime(now);
+            if (!slot) return;
+            if (isVacationAutomationPaused('classXp', slot.ymd)) return;
 
-            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            const targetTimes = ['09:40', '10:30', '11:20', '12:10', '13:50', '14:40'];
-            if (!targetTimes.includes(timeStr)) return;
-
-            const todayKey = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}_${String(now.getDate()).padStart(2, '0')}_${timeStr}`;
-            const legacyKey = `${now.getFullYear()}_${now.getMonth() + 1}_${now.getDate()}_${timeStr}`;
-            const slotMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0).getTime();
+            const { key: todayKey, slotMs, timeStr } = slot;
             const autoXpRef = getAutoXpDocRef();
-            const settingsRef = getGlobalSettingsDocRef();
             const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
             const announcement = classEndAutoXpAnnouncement(timeStr);
 
-            let granted = false;
+            let grantedCount = 0;
             try {
-                granted = await runTransaction(db, async (transaction) => {
-                    const autoSnap = await transaction.get(autoXpRef);
-                    const settingsSnap = await transaction.get(settingsRef);
-                    const prevSlot = autoSnap.exists() ? Number(autoSnap.data().slotMs) || 0 : 0;
-                    const last = autoSnap.exists()
-                        ? autoSnap.data().lastAutoXpTime
-                        : (settingsSnap.exists() ? settingsSnap.data().lastAutoXpTime : null);
-                    if (prevSlot === slotMs || last === todayKey || last === legacyKey) return false;
-
+                grantedCount = await runTransaction(db, async (transaction) => {
+                    const targets = [];
                     for (const stu of stuList) {
                         if (studentIsCreditDefault(stu)) continue;
                         const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
-                        transaction.set(ref, {
-                            xp: increment(5),
-                            xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, Number(stu.xp) || 0, (Number(stu.xp) || 0) + 5, { source: 'class-end-auto' })),
-                        }, { merge: true });
+                        const snap = await transaction.get(ref);
+                        if (!snap.exists()) continue;
+                        const prev = String((snap.data() && snap.data().lastClassXpSlot) || '');
+                        if (prev === todayKey) continue;
+                        targets.push({
+                            stu,
+                            ref,
+                            xp: Number(snap.data().xp) || 0,
+                        });
                     }
-                    transaction.set(autoXpRef, {
-                        lastAutoXpTime: todayKey,
-                        slotMs,
+                    targets.forEach((row) => {
+                        transaction.set(row.ref, {
+                            xp: increment(5),
+                            lastClassXpSlot: todayKey,
+                            xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, row.xp, row.xp + 5, { source: 'class-end-auto' })),
+                        }, { merge: true });
                     });
-                    return true;
+                    return targets.length;
                 });
             } catch (e) {
                 console.warn('checkAndDistributeClassXP', e);
@@ -29446,22 +29476,27 @@ ${subjectLine}
                     const detail = e && e.message ? `\n(${e.message})` : '';
                     await window.customAlert(
                         '수업 종료 경험치를 기록하지 못했습니다.\n\n' +
-                        '이 기기 시계가 한국 표준시와 15초 넘게 다르면 서버가 기록을 거절합니다.\n' +
-                        '설정에서 시각을 자동으로 맞춘 뒤, 이 화면을 다시 열어 주세요.' +
+                        '지급은 한국 표준시 종 시각의 그 1분 안에만 기록됩니다.\n' +
+                        '이 기기 시계나 시간대가 한국 표준시와 다르면 서버가 거절합니다.\n' +
+                        '시간대를 서울로 맞추고 시각을 자동으로 설정한 뒤, 그 1분 안에 이 화면을 다시 열어 주세요.' +
                         detail
                     );
                 }
                 return;
             }
 
-            if (granted) {
-                if (!window.globalSettings) window.globalSettings = {};
-                window.globalSettings.autoXpAnnouncement = announcement;
-                window.globalSettings.lastAutoXpTime = todayKey;
-                const npcEl = document.getElementById('npcText');
-                if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
-                window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${stuList.length}명에게 경험치 +5 자동 지급을 완료했습니다.`);
+            if (!grantedCount) return;
+            try {
+                await setDoc(autoXpRef, { lastAutoXpTime: todayKey, slotMs });
+            } catch (e) {
+                console.warn('autoXp advisory', e);
             }
+            if (!window.globalSettings) window.globalSettings = {};
+            window.globalSettings.autoXpAnnouncement = announcement;
+            window.globalSettings.lastAutoXpTime = todayKey;
+            const npcEl = document.getElementById('npcText');
+            if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
+            window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${grantedCount}명에게 경험치 +5 자동 지급을 완료했습니다.`);
         };
 
         window.checkAndDistributeSalary = async function() {

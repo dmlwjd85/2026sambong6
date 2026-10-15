@@ -42,7 +42,7 @@ firebase deploy --only firestore:rules --project sambong-world-2026
 - 선생님 Google/이메일 로그인은 브라우저 탭 세션에만 남습니다. 탭을 닫으면 사라집니다.
 - PIN 로그인 중 학생만 남아 있는 선생님 세션을 끊습니다. `gm` / `gm_a` 로그인(새로고침 자동 로그인 포함)은 그 세션을 유지합니다.
 - GM 화면을 15분 동안 건드리지 않으면 확인 없이 로그아웃합니다. 마우스 이동, 휠, 스크롤도 5초 간격으로 활동으로 셉니다. 수업도구를 전체 화면으로 띄우거나 학생 화면에 공유 중이면 이 자동 로그아웃을 하지 않습니다.
-- 수업 종료 자동 XP는 `settings/autoXp`에 `lastAutoXpTime`과 `slotMs`만 기록합니다. 공지 문장은 저장하지 않고, 화면이 슬롯 시각으로 `[09:40] 수업 종료! ...` 문장을 만듭니다. 규칙은 `slotMs`를 한국 표준시로 바꿔 시·분이 09:40, 10:30, 11:20, 12:10, 13:50, 14:40 중 하나이고 초·밀리초가 0인지 확인합니다. `lastAutoXpTime`은 그 시각과 같은 `YYYY_MM_DD_HH:MM`이어야 합니다. `slotMs`는 서버 시각보다 15초를 넘겨 미래일 수 없고, 이전 슬롯보다 40분 이상 뒤여야 갱신됩니다. 그 1분(또는 15초 전) 안에 다른 클라이언트가 같은 슬롯을 먼저 쓰면 담임 화면은 이미 지급된 것으로 보고 건너뜁니다. 이 창을 없애는 근본 방법은 Cloud Scheduler가 Admin SDK로 이 문서를 쓰는 것입니다. 이번 변경에는 Cloud Functions를 넣지 않았습니다. 기기 시계가 어긋나 기록이 거절되면 화면에 안내를 띄웁니다.
+- 수업 종료 자동 XP는 학생 문서의 `lastClassXpSlot`으로 이미 지급했는지 판단합니다. 키는 한국 표준시 종 시각 `YYYY_MM_DD_HH:MM`이고, 규칙은 그 시각의 1분 안에 경험치가 정확히 +5일 때만 이 필드를 바꿉니다. `settings/autoXp`는 공지용이라, 학생이 그 문서를 먼저 써도 경험치 지급을 건너뛰지 않습니다. 슬롯 시각은 기기 시간대가 아니라 한국 표준시로 계산합니다. 기기 시계나 시간대가 달라 기록이 거절되면 화면에 안내를 띄웁니다. Cloud Functions는 넣지 않았습니다.
 - 1회 마이그레이션(방패 재고 표식, 시즌 2 무기/드래곤볼 정리, 시즌 1 환불 표식)은 선생님 인증이 있는 동안에만 기록합니다.
 
 규칙을 게시한 뒤에는 새 학급을 만들거나 개설 요청을 허락할 때도 선생님 인증이 필요합니다. 만드는 계정은 `classIds`에 `sambong-class-2026`이 있어야 합니다. 앱이 새 학급 ID로 `approvedClassIds/{학급ID}` 표식을 만든 뒤 `settings/global`을 만듭니다. 표식의 `createdBy`는 그 요청을 실행한 선생님 uid입니다. 다른 선생님은 그 표식만으로 설정을 만들지 못합니다. 만든 직후 그 ID를 `classIds`에 넣어야 이후 할인·공지·은행 설정 수정이 됩니다.
@@ -74,9 +74,9 @@ firebase deploy --only firestore:rules --project sambong-world-2026
 | `marketQuotes` | 열려 있는 화면이 시세를 갱신해 저장합니다. |
 | `worldCupBet` | 마감 시각이 되면 아무 클라이언트가 베팅 문서를 닫습니다. 학생 베팅금은 학생 문서에 있습니다. |
 | `lastSalaryWeek` | 금요일 주급 정산을 아무 로그인 클라이언트가 실행합니다. |
-| `lastAutoXpTime` | `settings/global`에서는 뺐습니다. 수업 XP 시각은 `settings/autoXp`의 `slotMs`와 같은 키로만 씁니다. 자동 공지 문장은 저장하지 않습니다. |
+| `lastAutoXpTime` | `settings/global`에서는 뺐습니다. 지급 여부는 학생 문서 `lastClassXpSlot`이고, `settings/autoXp`는 공지용입니다. |
 
-학습 온도계의 학생별 값은 `settings/learningThermometer/votes/{학생ID}` 문서의 `value` 하나입니다. 부모 문서의 `min`~`max` 안 정수만 허용합니다. Firebase 로그인 uid는 학번이 아니라서, 학번 문서는 그 학급이 `classIds`에 있는 선생님만 쓸 수 있습니다. 학생은 문서 ID가 자기 uid인 값만 쓸 수 있고, 정산은 학번 목록만 읽으므로 그 문서는 경험치에 반영되지 않습니다. `settlementStatus`, `settlementKey`를 비롯한 정산 필드와 `min`/`max` 변경은 선생님만 가능합니다. 슬라이더와 15시 정산은 선생님 인증 세션이 있을 때 동작합니다. `gm` / `gm_a`로 다시 들어오면 그 세션은 유지됩니다. 인증이 없는데 15시가 지났고 값이 남아 있으면 화면에 한 번 안내합니다. `settings/global`의 옛 `learningThermometer` 필드는 GM 전용입니다. 정산으로 오르는 경험치는 학생 문서 규칙(한 번에 +650 이하)에 다시 걸립니다.
+학습 온도계의 학생별 값은 `settings/learningThermometer/votes/{학생ID}` 문서의 `value` 하나입니다. 부모 문서의 `min`~`max` 안 정수만 허용합니다. 부모 문서를 만드는 것도 그 학급 선생님만 가능합니다. Firebase 로그인 uid는 학번이 아니라서, 학번 문서는 그 학급이 `classIds`에 있는 선생님만 쓸 수 있습니다. 학생은 문서 ID가 자기 uid이고 24자 이하일 때만 값을 쓸 수 있고, 정산은 학번 목록만 읽습니다. `settlementStatus`, `settlementKey`를 비롯한 정산 필드와 `min`/`max` 변경은 선생님만 가능합니다. PIN만 로그인한 GM 화면은 슬라이더를 잠그고 **선생님 인증 필요** 배지를 보입니다. 저장되지 않은 값은 **미저장**으로 표시합니다. 15:00 자동 정산은 선생님 인증이 있을 때만 실행되고, 없을 때는 안내 후 건너뜁니다. **지금 XP 반영** 버튼은 GM 화면에 남아 있으며, 인증이 없으면 인증을 요구합니다. `settings/global`의 옛 `learningThermometer` 필드는 GM 전용입니다. 정산으로 오르는 경험치는 학생 문서 규칙(한 번에 +650 이하)에 다시 걸립니다.
 
 ## 막혔을 때
 

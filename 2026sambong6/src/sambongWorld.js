@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import {
     getFirestore,
     doc,
@@ -376,6 +376,12 @@ import {
     skinRefundBase,
     skinRefundBong,
 } from './lib/shopDiscount.js';
+import {
+    classifyAuthError,
+    isTeacherProvider,
+    teacherAuthFailureMessage,
+    teacherAuthStatusText,
+} from './lib/adminAuth.js';
 import {
     extractWeatherJson,
     isSharedWeatherFresh,
@@ -2038,8 +2044,8 @@ function redrawPlazaGrantsUi() {
             opsPayload.dragonBallCompleteBong = dbRewards.completeBong;
 
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return window.customAlert('인증에 실패했습니다.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
 
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), opsPayload, { merge: true });
                 window.globalSettings = { ...window.globalSettings, ...opsPayload };
@@ -2099,7 +2105,7 @@ function redrawPlazaGrantsUi() {
                 if (status) status.textContent = '저장 실패';
                 const retry = await window.customConfirm(
                     '저장에 실패했습니다. 다시 시도해 주세요.\n\n' +
-                    (e && e.message ? e.message : String(e)) +
+                    describeSettingsWriteFailure(e) +
                     '\n\n다시 시도할까요?'
                 );
                 if (retry) return window.saveWorldSettingsFromPanel();
@@ -3600,6 +3606,7 @@ function redrawPlazaGrantsUi() {
         /** 공통: 새 학급 Firestore 워크스페이스 생성 */
         async function createClassWorkspace({ displayName, schoolYear, grade, homeroom, teacherName, studentCount, teacherPin, copySettingsFromCurrent, schoolName, seasonLabel, seasonTheme, applyDefaultTemplate, raidPassword, copyFromClassId }) {
             if (!db) throw new Error('no_db');
+            await assertGmSettingsAuth();
             const inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
             let newClassId = buildClassIdFromMeta({ schoolYear, grade, homeroom });
             // 충돌 시 접미사 재생성
@@ -4681,6 +4688,7 @@ function redrawPlazaGrantsUi() {
         window.studentBackupMap = {};
         
         let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
+        let _firestoreListenersReady = false;
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
         let unsubscribeShopGroupBuy = null;
@@ -4703,7 +4711,13 @@ function redrawPlazaGrantsUi() {
             if (!auth) return false;
             const tryOnce = async () => {
                 await auth.authStateReady();
-                if (!auth.currentUser) await signInAnonymously(auth);
+                const existing = auth.currentUser;
+                // 선생님 Google/이메일 세션이 있으면 익명 로그인으로 덮지 않습니다.
+                if (existing && !existing.isAnonymous) {
+                    await existing.getIdToken();
+                    return true;
+                }
+                if (!existing) await signInAnonymously(auth);
                 const u = auth.currentUser;
                 if (!u) return false;
                 await u.getIdToken();
@@ -4720,6 +4734,170 @@ function redrawPlazaGrantsUi() {
                 return false;
             }
         }
+
+        function describeSettingsWriteFailure(error) {
+            if (classifyAuthError(error) === 'permission_denied') {
+                return teacherAuthFailureMessage('permission_denied');
+            }
+            return (error && error.message) ? error.message : String(error);
+        }
+
+        function renderTeacherAuthBadges(state) {
+            const text = teacherAuthStatusText(state);
+            document.querySelectorAll('.teacher-auth-badge').forEach((el) => {
+                el.textContent = text;
+                el.classList.toggle('text-emerald-300', !!(state && state.allowlisted));
+                el.classList.toggle('text-rose-300', !!(state && state.authenticated && !state.allowlisted));
+                el.classList.toggle('text-slate-300', !(state && state.authenticated));
+            });
+        }
+
+        async function readTeacherAllowlist(user) {
+            if (!db || !isTeacherProvider(user)) {
+                return { authenticated: false, allowlisted: false, email: '' };
+            }
+            const email = String(user.email || (user.providerData && user.providerData[0] && user.providerData[0].email) || '');
+            try {
+                const snap = await getDoc(doc(db, 'admins', user.uid));
+                return { authenticated: true, allowlisted: snap.exists(), email };
+            } catch (e) {
+                console.warn('admins read', e);
+                return { authenticated: true, allowlisted: false, email };
+            }
+        }
+
+        async function refreshTeacherAuthBadge() {
+            if (!auth) return;
+            const user = auth.currentUser;
+            if (!isTeacherProvider(user)) {
+                renderTeacherAuthBadges({ authenticated: false, allowlisted: false, email: '' });
+                return;
+            }
+            renderTeacherAuthBadges(await readTeacherAllowlist(user));
+        }
+
+        async function ensureTeacherAuth(options = {}) {
+            if (!auth || !db) {
+                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown') };
+            }
+            await auth.authStateReady();
+            let user = auth.currentUser;
+            const email = String(options.email || '').trim();
+            const password = String(options.password || '');
+            if (email && password) {
+                try {
+                    const cred = await signInWithEmailAndPassword(auth, email, password);
+                    user = cred.user;
+                } catch (e) {
+                    const reason = classifyAuthError(e);
+                    return { ok: false, reason, message: teacherAuthFailureMessage(reason), showEmail: true };
+                }
+            } else if (!isTeacherProvider(user)) {
+                try {
+                    const provider = new GoogleAuthProvider();
+                    provider.setCustomParameters({ prompt: 'select_account' });
+                    const cred = await signInWithPopup(auth, provider);
+                    user = cred.user;
+                } catch (e) {
+                    const reason = classifyAuthError(e);
+                    return {
+                        ok: false,
+                        reason,
+                        message: teacherAuthFailureMessage(reason),
+                        showEmail: reason === 'popup_blocked',
+                    };
+                }
+            }
+            if (!isTeacherProvider(user)) {
+                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown'), showEmail: true };
+            }
+            const state = await readTeacherAllowlist(user);
+            renderTeacherAuthBadges(state);
+            try {
+                await user.getIdToken(true);
+            } catch (e) {
+                console.warn('teacher getIdToken', e);
+            }
+            if (!state.allowlisted) {
+                return { ok: false, reason: 'not_allowlisted', message: teacherAuthFailureMessage('not_allowlisted') };
+            }
+            return { ok: true, email: state.email };
+        }
+
+        async function requireGmSettingsAuth() {
+            const result = await ensureTeacherAuth();
+            if (!result.ok) {
+                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
+                    window.openTeacherAuthModal({ showEmail: true });
+                }
+                await window.customAlert(result.message);
+                return false;
+            }
+            return true;
+        }
+
+        async function assertGmSettingsAuth() {
+            const result = await ensureTeacherAuth();
+            if (!result.ok) {
+                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
+                    window.openTeacherAuthModal({ showEmail: true });
+                }
+                const err = new Error(result.message);
+                err.teacherAuth = true;
+                throw err;
+            }
+        }
+
+        window.openTeacherAuthModal = function(options = {}) {
+            const modal = document.getElementById('teacherAuthModal');
+            const form = document.getElementById('teacherAuthEmailForm');
+            const hint = document.getElementById('teacherAuthModalHint');
+            if (form) form.classList.toggle('hidden', !options.showEmail);
+            if (hint) {
+                hint.textContent = options.showEmail
+                    ? 'Google 창을 열 수 없습니다. 이메일과 비밀번호로 인증해 주세요.'
+                    : 'Google 계정으로 인증합니다. 창이 막히면 이메일과 비밀번호를 사용하세요.';
+            }
+            if (modal) modal.classList.remove('hidden');
+        };
+
+        window.closeTeacherAuthModal = function() {
+            const modal = document.getElementById('teacherAuthModal');
+            if (modal) modal.classList.add('hidden');
+        };
+
+        window.showTeacherEmailFallback = function() {
+            const form = document.getElementById('teacherAuthEmailForm');
+            if (form) form.classList.remove('hidden');
+        };
+
+        window.startTeacherGoogleAuth = async function() {
+            const result = await ensureTeacherAuth();
+            if (!result.ok) {
+                if (result.showEmail) window.openTeacherAuthModal({ showEmail: true });
+                await window.customAlert(result.message);
+                return;
+            }
+            window.closeTeacherAuthModal();
+            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
+        };
+
+        window.startTeacherEmailAuth = async function() {
+            const email = String(document.getElementById('teacherAuthEmail')?.value || '').trim();
+            const password = String(document.getElementById('teacherAuthPassword')?.value || '');
+            if (!email || !password) {
+                await window.customAlert('이메일과 비밀번호를 입력해 주세요.');
+                return;
+            }
+            const result = await ensureTeacherAuth({ email, password });
+            if (!result.ok) {
+                window.openTeacherAuthModal({ showEmail: true });
+                await window.customAlert(result.message);
+                return;
+            }
+            window.closeTeacherAuthModal();
+            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
+        };
 
         /** 전역 로딩 스피너 / 에러 표시 */
         window.showGlobalLoading = function(msg) {
@@ -6776,15 +6954,15 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('헌법 수정은 마스터만 할 수 있습니다.');
             const constitutionItems = collectConstitutionDraftFromDom();
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { constitutionItems }, { merge: true });
                 window.globalSettings.constitutionItems = constitutionItems;
                 window.cancelConstitutionEditor();
                 await window.customAlert('✅ 헌법이 저장되었습니다.');
             } catch (e) {
                 console.error(e);
-                await window.customAlert('저장 중 오류가 발생했습니다.');
+                await window.customAlert(describeSettingsWriteFailure(e));
             }
         };
 
@@ -18608,8 +18786,8 @@ ${subjectLine}
                 updatedBy: String(localStorage.getItem('sambong_student_id') || 'gm'),
             };
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(getGlobalSettingsDocRef(), { shopDiscount }, { merge: true });
                 window.globalSettings = { ...(window.globalSettings || {}), shopDiscount };
                 syncShopDiscountAdminForm();
@@ -18617,7 +18795,7 @@ ${subjectLine}
                 await window.customAlert('✅ 캐릭터 상점 할인이 저장되었습니다.');
             } catch (e) {
                 console.error('saveShopDiscountAdmin', e);
-                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('저장 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -19252,8 +19430,8 @@ ${subjectLine}
             const id = `conv_${Date.now().toString(36)}`;
             const convenienceItems = [...(window.globalSettings.convenienceItems || []), { id, name, desc, price, createdAt: Date.now() }];
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceItems }, { merge: true });
                 window.globalSettings.convenienceItems = convenienceItems;
                 if (nameEl) nameEl.value = '';
@@ -19264,7 +19442,7 @@ ${subjectLine}
                 await window.customAlert('✅ 편의점 물품이 추가되었습니다.');
             } catch (e) {
                 console.error('addConvenienceItemAdmin', e);
-                await window.customAlert('편의점 물품 추가 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('편의점 물품 추가 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -19280,8 +19458,8 @@ ${subjectLine}
             if (!Number.isFinite(price) || price < 0) return await window.customAlert('가격은 0 이상의 숫자로 입력해 주세요.');
             items[idx] = { ...items[idx], name, desc, price, updatedAt: Date.now() };
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceItems: items }, { merge: true });
                 window.globalSettings.convenienceItems = items;
                 renderConvenienceStore();
@@ -19289,7 +19467,7 @@ ${subjectLine}
                 await window.customAlert('✅ 편의점 물품이 저장되었습니다.');
             } catch (e) {
                 console.error('saveConvenienceItemAdmin', e);
-                await window.customAlert('편의점 물품 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('편의점 물품 저장 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -19301,8 +19479,8 @@ ${subjectLine}
             if (!await window.customConfirm(`[${item.name}] 편의점 물품을 삭제할까요?\n이미 접수된 주문 기록은 유지됩니다.`)) return;
             const convenienceItems = items.filter((x) => String(x.id) !== String(itemId));
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { convenienceItems }, { merge: true });
                 window.globalSettings.convenienceItems = convenienceItems;
                 renderConvenienceStore();
@@ -19310,7 +19488,7 @@ ${subjectLine}
                 await window.customAlert('삭제되었습니다.');
             } catch (e) {
                 console.error('deleteConvenienceItemAdmin', e);
-                await window.customAlert('편의점 물품 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('편의점 물품 삭제 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -19586,7 +19764,8 @@ ${subjectLine}
                 }
                 
                 await auth.authStateReady();
-                await signInAnonymously(auth);
+                // 새로고침 때 선생님 계정이 남아 있으면 익명으로 바꾸지 않습니다.
+                if (!auth.currentUser) await signInAnonymously(auth);
                 /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
                 if (auth.currentUser) {
                     await auth.currentUser.getIdToken();
@@ -19605,6 +19784,9 @@ ${subjectLine}
                 void applyPeClassGroupBuySettleMigration();
 
                 onAuthStateChanged(auth, user => {
+                    void refreshTeacherAuthBadge();
+                    if (!user || _firestoreListenersReady) return;
+                    _firestoreListenersReady = true;
                     if (user) {
                         checkTimeEvents();
                         setInterval(checkTimeEvents, 60000);
@@ -19703,7 +19885,7 @@ ${subjectLine}
                                         window.renderWorldSettingsPanel();
                                     }
                                 }
-                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate) {
+                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate && isTeacherProvider(auth && auth.currentUser)) {
                                     window._appliedPendingTemplate = true;
                                     void (async () => {
                                         try {
@@ -21113,8 +21295,7 @@ ${subjectLine}
             if (!ok) return;
             try {
                 window.showGlobalLoading('잠시만 기다려 주세요…');
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) throw new Error('인증 실패');
+                await assertGmSettingsAuth();
                 const constitutionItems = Array.isArray(window.globalSettings?.constitutionItems) && window.globalSettings.constitutionItems.length
                     ? window.globalSettings.constitutionItems
                     : [
@@ -21140,7 +21321,7 @@ ${subjectLine}
                 if (typeof window.renderCurriculumMappingPanel === 'function') window.renderCurriculumMappingPanel();
             } catch (e) {
                 window.hideGlobalLoading();
-                await window.customAlert('템플릿 적용 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('템플릿 적용 실패: ' + describeSettingsWriteFailure(e));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -24399,11 +24580,20 @@ ${subjectLine}
         window.logout = async function() { 
             const isOk = await window.customConfirm("로그아웃 할까요?"); 
             if(isOk) {
+                const wasGmSession = !!(window.playerState && window.playerState.isAdmin);
                 const classId = localStorage.getItem('sambong_class_id');
                 const recent = localStorage.getItem(RECENT_CLASSES_KEY);
                 localStorage.clear();
                 if (classId) localStorage.setItem('sambong_class_id', classId);
                 if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
+                if (wasGmSession && auth) {
+                    try {
+                        await signOut(auth);
+                        await signInAnonymously(auth);
+                    } catch (e) {
+                        console.warn('gm logout auth reset', e);
+                    }
+                }
                 location.reload();
             }
         };
@@ -24594,6 +24784,7 @@ ${subjectLine}
                 void window.applyPersonalLunchDeductionIfNeeded();
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
+                if (isAdmin) void refreshTeacherAuthBadge();
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
             }
@@ -26551,13 +26742,13 @@ ${subjectLine}
                 price: shopPrices[item.id] != null ? shopPrices[item.id] : (Number(item.price) || 0),
             }));
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shopPrices, customShopItems }, { merge: true });
                 await window.customAlert('✅ 아이템 상점 가격이 저장되었습니다.');
             } catch (e) {
                 console.error('saveShopPricesAdmin', e);
-                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('저장 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26599,8 +26790,8 @@ ${subjectLine}
             const customShopItems = [...getCustomShopItems(), item];
             const shopPrices = { ...(window.globalSettings.shopPrices || {}), [id]: price };
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customShopItems, shopPrices }, { merge: true });
                 if (nameEl) nameEl.value = '';
                 if (descEl) descEl.value = '';
@@ -26613,7 +26804,7 @@ ${subjectLine}
                 await window.customAlert('✅ 새 상점 아이템이 추가되었습니다.');
             } catch (e) {
                 console.error('addCustomShopItemAdmin', e);
-                await window.customAlert('아이템 추가 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('아이템 추가 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26626,8 +26817,8 @@ ${subjectLine}
             const shopPrices = { ...(window.globalSettings.shopPrices || {}) };
             delete shopPrices[itemId];
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customShopItems, shopPrices }, { merge: true });
                 window.globalSettings.customShopItems = customShopItems;
                 window.globalSettings.shopPrices = shopPrices;
@@ -26636,7 +26827,7 @@ ${subjectLine}
                 await window.customAlert('삭제되었습니다.');
             } catch (e) {
                 console.error('deleteCustomShopItemAdmin', e);
-                await window.customAlert('아이템 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('아이템 삭제 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26667,8 +26858,8 @@ ${subjectLine}
             const q = { id: `custom_q_${baseId}_${Date.now().toString(36)}`, type, name, desc, xp, bong, icon, color, custom: true };
             const customQuests = [...getCustomQuests(), q];
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customQuests }, { merge: true });
                 window.globalSettings.customQuests = customQuests;
                 if (nameEl) nameEl.value = '';
@@ -26681,7 +26872,7 @@ ${subjectLine}
                 await window.customAlert('퀘스트가 추가되었습니다.');
             } catch (e) {
                 console.error('addCustomQuestAdmin', e);
-                await window.customAlert('퀘스트 추가 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('퀘스트 추가 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26700,8 +26891,8 @@ ${subjectLine}
             const customQuests = custom ? getCustomQuests().filter((q) => q.id !== id) : getCustomQuests();
             const deletedQuestIds = custom ? Array.from(getDeletedQuestIds()) : [...new Set([...Array.from(getDeletedQuestIds()), id])];
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customQuests, deletedQuestIds }, { merge: true });
                 window.globalSettings.customQuests = customQuests;
                 window.globalSettings.deletedQuestIds = deletedQuestIds;
@@ -26710,7 +26901,7 @@ ${subjectLine}
                 await window.customAlert(custom ? '퀘스트가 삭제되었습니다.' : '기본 퀘스트가 숨김 처리되었습니다.');
             } catch (e) {
                 console.error('deleteQuestAdmin', e);
-                await window.customAlert('퀘스트 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('퀘스트 삭제 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26719,8 +26910,8 @@ ${subjectLine}
             const id = String(questId);
             const deletedQuestIds = Array.from(getDeletedQuestIds()).filter((x) => x !== id);
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { deletedQuestIds }, { merge: true });
                 window.globalSettings.deletedQuestIds = deletedQuestIds;
                 renderQuestManagementAdminPanel();
@@ -26728,7 +26919,7 @@ ${subjectLine}
                 await window.customAlert('퀘스트가 복구되었습니다.');
             } catch (e) {
                 console.error('restoreQuestAdmin', e);
-                await window.customAlert('퀘스트 복구 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('퀘스트 복구 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26864,8 +27055,8 @@ ${subjectLine}
                 jobOverrides[editId] = { name, sub, desc, pay, icon, color };
             }
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customJobs, jobOverrides }, { merge: true });
                 window.globalSettings.customJobs = customJobs;
                 window.globalSettings.jobOverrides = jobOverrides;
@@ -26877,7 +27068,7 @@ ${subjectLine}
                 await window.customAlert('직업 항목이 저장되었습니다.');
             } catch (e) {
                 console.error('saveJobAdmin', e);
-                await window.customAlert('직업 저장 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('직업 저장 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26891,8 +27082,8 @@ ${subjectLine}
             const customJobs = custom ? getCustomJobs().filter((j) => j.id !== id) : getCustomJobs();
             const deletedJobIds = custom ? Array.from(getDeletedJobIds()) : [...new Set([...Array.from(getDeletedJobIds()), id])];
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { customJobs, deletedJobIds }, { merge: true });
                 window.globalSettings.customJobs = customJobs;
                 window.globalSettings.deletedJobIds = deletedJobIds;
@@ -26903,7 +27094,7 @@ ${subjectLine}
                 await window.customAlert(custom ? '직업이 삭제되었습니다.' : '기본 직업이 숨김 처리되었습니다.');
             } catch (e) {
                 console.error('deleteJobAdmin', e);
-                await window.customAlert('직업 삭제 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('직업 삭제 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -26911,8 +27102,8 @@ ${subjectLine}
             if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 복구할 수 있습니다.`);
             const deletedJobIds = Array.from(getDeletedJobIds()).filter((id) => id !== String(jobId));
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { deletedJobIds }, { merge: true });
                 window.globalSettings.deletedJobIds = deletedJobIds;
                 renderJobGrid();
@@ -26922,7 +27113,7 @@ ${subjectLine}
                 await window.customAlert('직업이 복구되었습니다.');
             } catch (e) {
                 console.error('restoreJobAdmin', e);
-                await window.customAlert('직업 복구 실패: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('직업 복구 실패: ' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -28357,6 +28548,7 @@ ${subjectLine}
 
             try {
                 window.showGlobalLoading('시즌 2 시작 중…');
+                await assertGmSettingsAuth();
                 const nowMs = Date.now();
                 const ids = getActiveStudentIds();
                 const rows = [];
@@ -28430,7 +28622,7 @@ ${subjectLine}
                 );
             } catch (e) {
                 console.error('startSeason2', e);
-                await window.customAlert('시즌 2 시작 중 오류: ' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('시즌 2 시작 중 오류: ' + describeSettingsWriteFailure(e));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -29431,12 +29623,14 @@ ${subjectLine}
             if (p === null || String(p).trim() === '') return;
 
             try {
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(p) }, { merge: true });
                 const r = await applyRaidResetToAllStudents();
                 await window.customAlert(`✅ 비밀번호 변경 및 전담 레이드 초기화 완료! (학생 ${r.count}명 반영)`);
             } catch (e) {
                 console.error('setRaidPassword', e);
-                await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + describeSettingsWriteFailure(e));
             }
         };
 
@@ -29448,14 +29642,14 @@ ${subjectLine}
             if (!window.playerState.isGM) return window.customAlert(`${getMasterDisplayName()} 전용 기능입니다.`);
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다. 새로고침 후 다시 시도해 주세요.');
             try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                const authOk = await requireGmSettingsAuth();
+                if (!authOk) return;
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { raidPassword: String(password) }, { merge: true });
                 const r = await applyRaidResetToAllStudents();
                 await window.customAlert(`✅ ${label} 완료!\n새 전담 레이드 비번: ${password}\n학생 ${r.count}명의 전담 레이드가 잠금으로 초기화되었습니다.`);
             } catch (e) {
                 console.error('saveRaidPasswordAndReset', e);
-                await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + (e && e.message ? e.message : String(e)));
+                await window.customAlert('비밀번호 저장 또는 초기화 중 오류가 났습니다.\n' + describeSettingsWriteFailure(e));
             }
         }
 
@@ -31335,7 +31529,9 @@ ${subjectLine}
             const picked = pickRandomQuizQuestions(bank, settings.questionCount);
             const qs = picked.map((item) => toRaidSessionQuestion(item)).filter(Boolean);
             if(qs.length === 0) return window.customAlert('출제할 유효한 문제가 없습니다. 문제 은행을 확인해 주세요.');
-            
+            const authOk = await requireGmSettingsAuth();
+            if (!authOk) return;
+            try {
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), {
                 weekendRaidRewardXp: settings.xp,
                 weekendRaidRewardBong: settings.bong
@@ -31353,11 +31549,18 @@ ${subjectLine}
                 scoreBy: {}
             });
             window.customAlert(`퀴즈 레이드 모집 시작!\n출제 ${qs.length}문항 · 보상 최대치: ${settings.xp}XP / ${formatBongAmount(settings.bong)}`);
+            } catch (e) {
+                console.error('openRaidLobby', e);
+                await window.customAlert('레이드 모집을 저장하지 못했습니다.\n' + describeSettingsWriteFailure(e));
+            }
         };
         
         window.saveRaidQuestions = async function() {
             if(!window.playerState.isGM) return;
             const settings = readRaidQuizSettings();
+            const authOk = await requireGmSettingsAuth();
+            if (!authOk) return;
+            try {
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'draft'), {
                 questionCount: settings.questionCount,
                 rewardMaxXp: settings.xp,
@@ -31369,6 +31572,10 @@ ${subjectLine}
                 weekendRaidRewardBong: settings.bong
             }, { merge: true });
             window.customAlert('✅ 퀴즈 레이드 출제 수와 보상이 저장되었습니다. (새로고침해도 유지)');
+            } catch (e) {
+                console.error('saveRaidQuestions', e);
+                await window.customAlert('레이드 보상 저장 실패: ' + describeSettingsWriteFailure(e));
+            }
         };
 
         window.resetRaidForce = async function() {

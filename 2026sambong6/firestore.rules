@@ -9,30 +9,70 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // settings/global 의 shopDiscount 만 검사합니다.
-    // 로또·방패 재고·시간표·학급 생성 등 다른 필드는 이 키가 그대로면 통과합니다.
-    // 익명 로그인에는 마스터 토큰이 없어 updatedBy 가 gm / gm_a 인지만 봅니다.
-    // 그 값은 클라이언트가 넣으므로, 수정된 앱은 흉내 낼 수 있습니다.
+    // 선생님 계정은 익명이 아닌 로그인(Google 또는 이메일/비밀번호)이고
+    // admins/{uid} 문서가 있을 때만 인정합니다. updatedBy 문자열은 보지 않습니다.
+    // 학생 익명 세션은 로또·뮤직타임·방패 재고처럼 학생이 쓰는 키만 바꿀 수 있습니다.
     // 스킨 구매 시각(request.time)은 여기서 보지 않습니다. 가격표는 앱에만 있고
     // 규칙에는 반올림이 없으며, 학생 문서는 퀘스트·은행·선생님 복구가 한 번에 덮입니다.
     // {document=**} 는 path 라서 문자열과 바로 비교하지 않습니다.
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token is map
+        && 'firebase' in request.auth.token
+        && request.auth.token.firebase is map
+        && 'sign_in_provider' in request.auth.token.firebase
+        && request.auth.token.firebase.sign_in_provider is string
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     function isSettingsGlobalDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/global$');
+    }
+
+    // 학생 화면이 쓰지 않는 것이 확인된 키만 둡니다. 애매한 키는 넣지 않습니다.
+    function gmOnlyKeys() {
+      return [
+        'shopPrices',
+        'customShopItems',
+        'convenienceItems',
+        'customQuests',
+        'deletedQuestIds',
+        'customJobs',
+        'jobOverrides',
+        'deletedJobIds',
+        'worldSettings',
+        'raidPassword',
+        'weekendRaidRewardXp',
+        'weekendRaidRewardBong',
+        'constitutionItems'
+      ];
     }
 
     function shopDiscountUntouched() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['shopDiscount']);
     }
 
+    function gmOnlyUntouched() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(gmOnlyKeys());
+    }
+
+    function createHasShopDiscount() {
+      return 'shopDiscount' in request.resource.data;
+    }
+
+    function createTouchesGmOnly() {
+      return request.resource.data.keys().hasAny(gmOnlyKeys());
+    }
+
     function shopDiscountChangeIsValid() {
       let d = request.resource.data.shopDiscount;
       return d is map
-        && d.keys().hasAll(['enabled', 'percent', 'updatedBy'])
+        && d.keys().hasAll(['enabled', 'percent'])
         && d.enabled is bool
         && d.percent is int
         && d.percent >= 0
         && d.percent <= 100
-        && (d.updatedBy == 'gm' || d.updatedBy == 'gm_a')
         && (
           d.enabled == false
           || (
@@ -94,19 +134,34 @@ service cloud.firestore {
     }
 
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 학급을 처음 만들 때는 shopDiscount 가 없습니다. 그 생성은 막지 않습니다.
-    // 앱은 이 문서를 지우지 않습니다. 학급 초기화는 학생 문서만 덮고, 여기서는 shieldStock 만 merge 합니다.
+    // shopDiscount 와 GM 전용 키가 없는 생성·수정은 로그인(익명 포함)만으로 됩니다.
+    // 그 키를 넣거나 바꾸려면 isAdmin() 입니다. 앱은 이 문서를 지우지 않습니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
       allow create: if signedIn() && (
-        !('shopDiscount' in request.resource.data)
-        || shopDiscountChangeIsValid()
+        (
+          !createHasShopDiscount()
+          && !createTouchesGmOnly()
+        )
+        || (
+          isAdmin()
+          && (!createHasShopDiscount() || shopDiscountChangeIsValid())
+        )
       );
       allow update: if signedIn() && (
-        shopDiscountUntouched()
-        || shopDiscountChangeIsValid()
+        (shopDiscountUntouched() && gmOnlyUntouched())
+        || (
+          isAdmin()
+          && (shopDiscountUntouched() || shopDiscountChangeIsValid())
+        )
       );
       allow delete: if false;
+    }
+
+    // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
     }
 
     match /artifacts/{appId}/public/{document=**} {

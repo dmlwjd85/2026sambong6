@@ -3,8 +3,79 @@
  * Firestore 규칙의 isAdmin() 과 맞춥니다. 익명 로그인은 선생님이 아닙니다.
  */
 
+import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
+
 /** GM 화면을 15분 동안 건드리지 않으면 선생님 세션을 끊습니다. */
 export const GM_IDLE_LOGOUT_MS = 15 * 60 * 1000;
+
+/**
+ * 담임 원래 학급(시드).
+ * resolveClassId()가 URL ?class= / ?classId=, localStorage sambong_class_id,
+ * window.__app_id 순으로 학급을 정하고, 아무것도 없으면 이 ID를 기본 appId로 씁니다.
+ * isDemoSeed 표식만 있는 다른 학급은 여기 포함하지 않습니다.
+ */
+export const ORIGINAL_HOME_CLASS_ID = SEED_MASTER_CLASS_ID;
+
+export function isOriginalHomeClass(classId) {
+    return String(classId == null ? '' : classId).trim() === ORIGINAL_HOME_CLASS_ID;
+}
+
+/**
+ * GM 유휴 만료.
+ * - ignore: GM이 아니라 아무것도 하지 않음
+ * - defer: 수업 화면 공유 중이라 타이머만 다시 켬
+ * - end-teacher-auth: 원래 학급. 선생님 인증(비익명)만 종료. PIN·localStorage·화면 로그인은 유지하고 새로고침하지 않음
+ * - full-logout: 다른 학급. 로그인 저장소 삭제, 선생님 세션 종료, 새로고침
+ */
+export function planGmIdleExpiry({ classId, isAdmin, projectionActive }) {
+    if (!isAdmin) return 'ignore';
+    if (projectionActive) return 'defer';
+    return isOriginalHomeClass(classId) ? 'end-teacher-auth' : 'full-logout';
+}
+
+/** 쿼리·테스트 값이 있으면 운영 한도보다 짧게만 유휴 시간을 줄입니다. */
+export function resolveGmIdleLogoutMs(override, fallback = GM_IDLE_LOGOUT_MS) {
+    if (override == null || override === '') return fallback;
+    const n = Number(override);
+    if (!Number.isFinite(n) || n < 0) return fallback;
+    return Math.min(Math.floor(n), fallback);
+}
+
+export function readGmIdleLogoutOverride(search) {
+    try {
+        const params = new URLSearchParams(String(search || '').replace(/^\?/, ''));
+        if (!params.has('gmIdleMs')) return undefined;
+        return params.get('gmIdleMs');
+    } catch (_) {
+        return undefined;
+    }
+}
+
+/** localhost에서 ?emulator=1 일 때만 로컬 Firebase 에뮬레이터에 붙습니다. */
+export function shouldUseLocalFirebaseEmulator({ hostname, search } = {}) {
+    const host = String(hostname || '');
+    if (host !== 'localhost' && host !== '127.0.0.1') return false;
+    try {
+        const params = new URLSearchParams(String(search || '').replace(/^\?/, ''));
+        return params.get('emulator') === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * 학생 PIN 로그인이 남아 있는 선생님(비익명) 세션을 로그인 전에 끊을지.
+ * gm/gm_a 는 유지합니다.
+ * 원래 학급의 자동 로그인(새로고침·브라우저 재실행)은 여기서 끊지 않습니다.
+ * 로그인 전에 끊으면 그 실패가 PIN 자동 로그인을 같이 끊습니다.
+ * 학생 자동 로그인이 화면에 붙은 뒤에 선생님 세션만 익명으로 되돌립니다.
+ */
+export function shouldSignOutNonAnonymousForPinLogin({ studentId, classId, isAutoLogin } = {}) {
+    const id = String(studentId || '');
+    if (id === 'gm' || id === 'gm_a') return false;
+    if (isAutoLogin && isOriginalHomeClass(classId)) return false;
+    return true;
+}
 
 export const GM_ONLY_SETTING_KEYS = Object.freeze([
     'shopPrices',

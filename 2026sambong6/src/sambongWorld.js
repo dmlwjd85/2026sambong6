@@ -1,7 +1,8 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
 import {
     getFirestore,
+    connectFirestoreEmulator,
     doc,
     setDoc,
     getDoc,
@@ -380,8 +381,13 @@ import {
 } from './lib/shopDiscount.js';
 import {
     classifyAuthError,
-    GM_IDLE_LOGOUT_MS,
+    isOriginalHomeClass,
     isTeacherProvider,
+    planGmIdleExpiry,
+    readGmIdleLogoutOverride,
+    resolveGmIdleLogoutMs,
+    shouldSignOutNonAnonymousForPinLogin,
+    shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
@@ -19891,14 +19897,39 @@ ${subjectLine}
                     appId: "1:728320769100:web:7510c9a77cca6b87a788e9" 
                 };
                 
+                const useEmulator = shouldUseLocalFirebaseEmulator({
+                    hostname: window.location.hostname,
+                    search: window.location.search,
+                });
+                if (useEmulator) firebaseConfig.projectId = 'demo-sambong';
                 const app = initializeApp(firebaseConfig); 
                 auth = getAuth(app);
+                db = getFirestore(app);
+                if (useEmulator) {
+                    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+                    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+                    window.__sambongE2E = {
+                        projectId: firebaseConfig.projectId,
+                        get appId() { return appId; },
+                        signInTeacher(email, password) {
+                            return signInWithEmailAndPassword(auth, email, password).then(() => refreshTeacherAuthBadge());
+                        },
+                        authSummary() {
+                            const user = auth.currentUser;
+                            return {
+                                anonymous: !!(user && user.isAnonymous),
+                                email: user && user.email ? String(user.email) : '',
+                                uid: user ? user.uid : '',
+                            };
+                        },
+                        armIdleTimer() { resetGmIdleTimer(); },
+                    };
+                }
                 try {
                     await setPersistence(auth, browserSessionPersistence);
                 } catch (e) {
                     console.warn('setPersistence', e);
                 }
-                db = getFirestore(app);
                 if (typeof window.startClassCreateRequestWatch === 'function') {
                     window.startClassCreateRequestWatch();
                 }
@@ -24781,6 +24812,17 @@ ${subjectLine}
             if (recent) localStorage.setItem(RECENT_CLASSES_KEY, recent);
         }
 
+        function currentGmIdleLogoutMs() {
+            let fromUrl;
+            try {
+                fromUrl = readGmIdleLogoutOverride(window.location.search);
+            } catch (_) { /* ignore */ }
+            const override = (fromUrl != null && fromUrl !== '')
+                ? fromUrl
+                : (typeof window.__GM_IDLE_LOGOUT_MS !== 'undefined' ? window.__GM_IDLE_LOGOUT_MS : undefined);
+            return resolveGmIdleLogoutMs(override);
+        }
+
         async function endGmAuthSession() {
             if (!auth) return;
             try {
@@ -24808,7 +24850,7 @@ ${subjectLine}
             if (_gmIdleTimer) clearTimeout(_gmIdleTimer);
             _gmIdleTimer = null;
             if (!window.playerState || !window.playerState.isAdmin) return;
-            _gmIdleTimer = setTimeout(() => { void expireGmSessionForIdle(); }, GM_IDLE_LOGOUT_MS);
+            _gmIdleTimer = setTimeout(() => { void expireGmSessionForIdle(); }, currentGmIdleLogoutMs());
         }
 
         function isGmClassProjectionActive() {
@@ -24818,8 +24860,22 @@ ${subjectLine}
         }
 
         async function expireGmSessionForIdle() {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            if (isGmClassProjectionActive()) {
+            const mode = planGmIdleExpiry({
+                classId: appId,
+                isAdmin: !!(window.playerState && window.playerState.isAdmin),
+                projectionActive: isGmClassProjectionActive(),
+            });
+            if (mode === 'ignore') return;
+            if (mode === 'defer') {
+                resetGmIdleTimer();
+                return;
+            }
+            // 원래 학급(sambong-class-2026): 선생님 인증 배지만 내린다.
+            // PIN localStorage, 화면 로그인, 익명 세션은 그대로 두고 새로고침하지 않는다.
+            if (mode === 'end-teacher-auth') {
+                await endGmAuthSession();
+                try { await refreshTeacherAuthBadge(); } catch (e) { console.warn('refreshTeacherAuthBadge', e); }
+                syncGmLogoutButton();
                 resetGmIdleTimer();
                 return;
             }
@@ -24956,17 +25012,32 @@ ${subjectLine}
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
                 return;
             }
+            const homeClassAutoLogin = !!isAutoLogin && isOriginalHomeClass(appId);
             try {
                 await auth.authStateReady();
-                const loggingInAsGm = studentId === 'gm' || studentId === 'gm_a';
-                // 학생 PIN만 남아 있는 선생님 세션을 끊습니다. gm/gm_a 자동 로그인은 유지합니다.
-                if (!loggingInAsGm && auth.currentUser && !auth.currentUser.isAnonymous) {
+                // 학생 PIN만 남아 있는 선생님 세션을 끊습니다. gm/gm_a 는 유지합니다.
+                // 원래 학급 자동 로그인은 로그인 전에 끊지 않습니다. 실패가 PIN 재접속을 지우지 않게 합니다.
+                const dropTeacher = shouldSignOutNonAnonymousForPinLogin({
+                    studentId,
+                    classId: appId,
+                    isAutoLogin: !!isAutoLogin,
+                });
+                if (dropTeacher && auth.currentUser && !auth.currentUser.isAnonymous) {
                     await signOut(auth);
                 }
                 if (!auth.currentUser) await signInAnonymously(auth);
             } catch (e) {
-                if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
-                return;
+                if (homeClassAutoLogin) {
+                    try {
+                        if (!auth.currentUser) await signInAnonymously(auth);
+                    } catch (retryErr) {
+                        console.warn('home class auto-login auth', retryErr);
+                        return;
+                    }
+                } else {
+                    if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
+                    return;
+                }
             }
             if (!auth.currentUser) {
                 if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
@@ -24975,7 +25046,21 @@ ${subjectLine}
             try {
                 await auth.currentUser.getIdToken();
             } catch (e) {
-                if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
+                if (homeClassAutoLogin) {
+                    try {
+                        if (!auth.currentUser) await signInAnonymously(auth);
+                        if (auth.currentUser) await auth.currentUser.getIdToken();
+                    } catch (retryErr) {
+                        console.warn('home class auto-login token', retryErr);
+                        return;
+                    }
+                } else {
+                    if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
+                    return;
+                }
+            }
+            if (!auth.currentUser) {
+                if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
                 return;
             }
             if (!studentId) {
@@ -25052,6 +25137,12 @@ ${subjectLine}
                 if (isAdmin) void refreshTeacherAuthBadge();
                 syncGmLogoutButton();
                 resetGmIdleTimer();
+                // 원래 학급에서 학생 PIN으로 다시 들어온 뒤에는 선생님 세션만 익명으로 되돌립니다.
+                // 저장소와 화면 로그인은 건드리지 않습니다.
+                if (homeClassAutoLogin && !isAdmin && auth.currentUser && !auth.currentUser.isAnonymous) {
+                    await endGmAuthSession();
+                    try { await refreshTeacherAuthBadge(); } catch (badgeErr) { console.warn('refreshTeacherAuthBadge', badgeErr); }
+                }
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
             }

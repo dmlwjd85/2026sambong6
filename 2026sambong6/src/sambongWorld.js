@@ -373,6 +373,8 @@ import {
     normalizeShopDiscount,
     parseKstDateInput,
     quoteSkinPurchase,
+    reconcileBongAfterCommittedSkinPurchase,
+    skinFieldsFromServerAfterPurchase,
     skinRefundBase,
     skinRefundBong,
 } from './lib/shopDiscount.js';
@@ -25068,6 +25070,7 @@ ${subjectLine}
                 allowLunchBidChanges: false,
                 allowShieldPurchase: false,
                 allowShieldHpDecrease: false,
+                keepServerSkinPurchase: false,
                 operationLabel: '저장',
                 ...options,
             };
@@ -25287,6 +25290,14 @@ ${subjectLine}
                                 dataToSave.bong = normalizeBongValue(bought.bong);
                                 trade.applied = bought;
                             }
+                        } else if (opts.keepServerSkinPurchase && !bankAccrued.changed) {
+                            // 구매 트랜잭션이 봉을 이미 깎았습니다. 로컬 잔액으로 다시 맞추면
+                            // 그 사이 들어온 주급·따봉이 결제액만큼 빠지거나, 점심·다른 구매가 되돌아갑니다.
+                            dataToSave.bong = reconcileBongAfterCommittedSkinPurchase({
+                                serverBong: serverData.bong,
+                                accruedBong: bankAccrued.bong,
+                                accruedChanged: false,
+                            });
                         } else {
                             if (
                                 opts.allowBongDecrease &&
@@ -25331,6 +25342,10 @@ ${subjectLine}
                         }
                         if (Object.prototype.hasOwnProperty.call(serverData, 'ownedSkinInstances') && !Object.prototype.hasOwnProperty.call(dataToSave, 'ownedSkinInstances')) {
                             dataToSave.ownedSkinInstances = serverData.ownedSkinInstances;
+                        }
+                        if (opts.keepServerSkinPurchase) {
+                            // 이 저장의 스킨 목록은 구매 직전 스냅샷입니다. 서버에 있는 보유·결제액·장착을 덮어쓰지 않습니다.
+                            Object.assign(dataToSave, skinFieldsFromServerAfterPurchase(serverData));
                         }
                         if (!opts.allowLunchBidChanges && Object.prototype.hasOwnProperty.call(serverData, 'lunchBid')) {
                             dataToSave.lunchBid = serverData.lunchBid;
@@ -25418,6 +25433,23 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (opts.keepServerSkinPurchase) {
+                    if (dataToSave.ownedSkins && typeof dataToSave.ownedSkins === 'object') {
+                        window.playerState.ownedSkins = { ...dataToSave.ownedSkins };
+                    }
+                    if (dataToSave.ownedSkinPaid && typeof dataToSave.ownedSkinPaid === 'object') {
+                        window.playerState.ownedSkinPaid = { ...dataToSave.ownedSkinPaid };
+                    }
+                    if (dataToSave.ownedSkinInstances && typeof dataToSave.ownedSkinInstances === 'object') {
+                        window.playerState.ownedSkinInstances = { ...dataToSave.ownedSkinInstances };
+                    }
+                    if (dataToSave.equippedSkins && typeof dataToSave.equippedSkins === 'object') {
+                        window.playerState.equippedSkins = { ...dataToSave.equippedSkins };
+                    }
+                    if (Array.isArray(dataToSave.bongChangeLog)) {
+                        window.playerState.bongChangeLog = dataToSave.bongChangeLog;
+                    }
+                }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'dragonBalls')) {
                     window.playerState.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
                 }
@@ -28410,11 +28442,10 @@ ${subjectLine}
                     if (result.bongChangeLog) window.playerState.bongChangeLog = result.bongChangeLog;
                     syncOwnCosmeticToPlazaCache();
                     updateUI();
+                    // 봉·보유·장착·결제액은 commitSkinPurchase 가 이미 썼습니다.
+                    // 이 저장은 다른 로컬 변경만 남기고, 봉과 스킨 필드는 서버 값을 유지합니다.
                     const saved = await saveDataToCloud({
-                        allowBongDecrease: true,
-                        maxBongDecrease: result.paid,
-                        // 할인가 차감·잔액 확인은 위의 트랜잭션에서 이미 끝났습니다.
-                        requireServerBongBalance: false,
+                        keepServerSkinPurchase: true,
                         operationLabel: `${skin.name} ${kindLabel} 구매`,
                     });
                     if (!saved) {

@@ -190,3 +190,31 @@ export function skinRefundBase(originalPrice, paidPrice) {
 export function skinRefundBong(originalPrice, paidPrice) {
     return Math.floor(skinRefundBase(originalPrice, paidPrice) * 0.5);
 }
+
+/**
+ * 구매 트랜잭션 뒤에 학생 문서를 다시 저장할 때 남길 봉.
+ * 서버 잔액(이자가 반영됐으면 그 금액)만 씁니다.
+ * 이미 차감된 로컬 잔액으로 다시 깎거나, 더 높은 로컬 잔액으로 점심·다른 구매를 되돌리지 않습니다.
+ */
+export function reconcileBongAfterCommittedSkinPurchase({ serverBong, accruedBong, accruedChanged } = {}) {
+    const source = accruedChanged ? accruedBong : serverBong;
+    const n = Number(source);
+    if (!Number.isFinite(n)) return 0;
+    return Math.floor(n);
+}
+
+/** 구매 트랜잭션 뒤 저장에서 서버 스킨 소유를 그대로 둘 필드. */
+const SKIN_PURCHASE_SERVER_FIELDS = ['ownedSkins', 'ownedSkinPaid', 'ownedSkinInstances', 'equippedSkins'];
+
+/**
+ * 구매가 이미 서버에 반영된 뒤, 낡은 로컬 보유 목록이 다른 화면의 스킨을 지우지 않게 서버 맵만 고릅니다.
+ * 서버에 없는 필드는 넣지 않습니다.
+ */
+export function skinFieldsFromServerAfterPurchase(serverData) {
+    const src = serverData && typeof serverData === 'object' ? serverData : {};
+    const out = {};
+    SKIN_PURCHASE_SERVER_FIELDS.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(src, key)) out[key] = src[key];
+    });
+    return out;
+}

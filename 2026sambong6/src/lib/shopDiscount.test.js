@@ -12,6 +12,8 @@ import {
     normalizeShopDiscount,
     parseKstDateInput,
     quoteSkinPurchase,
+    reconcileBongAfterCommittedSkinPurchase,
+    skinFieldsFromServerAfterPurchase,
     skinRefundBong,
 } from './shopDiscount.js';
 
@@ -123,5 +125,40 @@ describe('캐릭터 상점 전체 할인', () => {
         assert.equal(skinRefundBong(250, 168), 84);
         assert.equal(skinRefundBong(1, 1), 0);
         assert.equal(skinRefundBong(200, -5), 100);
+    });
+
+    it('구매를 이미 반영한 뒤 저장은 서버 봉과 스킨 보유를 유지한다', () => {
+        assert.equal(reconcileBongAfterCommittedSkinPurchase({
+            serverBong: 960,
+            accruedBong: 860,
+            accruedChanged: false,
+        }), 960);
+        assert.equal(reconcileBongAfterCommittedSkinPurchase({
+            serverBong: 600,
+            accruedBong: 800,
+            accruedChanged: false,
+        }), 600);
+        assert.equal(reconcileBongAfterCommittedSkinPurchase({
+            serverBong: 960,
+            accruedBong: 970.9,
+            accruedChanged: true,
+        }), 970);
+        assert.equal(reconcileBongAfterCommittedSkinPurchase({ serverBong: NaN }), 0);
+        assert.deepEqual(skinFieldsFromServerAfterPurchase({
+            ownedSkins: { a: true, b: true },
+            ownedSkinPaid: { a: 140, b: 200 },
+            ownedSkinInstances: { a: 'ski_a', b: 'ski_b' },
+            equippedSkins: { b: true },
+            bong: 600,
+        }), {
+            ownedSkins: { a: true, b: true },
+            ownedSkinPaid: { a: 140, b: 200 },
+            ownedSkinInstances: { a: 'ski_a', b: 'ski_b' },
+            equippedSkins: { b: true },
+        });
+        assert.deepEqual(skinFieldsFromServerAfterPurchase({ ownedSkins: { a: true } }), {
+            ownedSkins: { a: true },
+        });
+        assert.deepEqual(skinFieldsFromServerAfterPurchase(null), {});
     });
 });

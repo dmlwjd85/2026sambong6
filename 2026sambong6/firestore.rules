@@ -95,6 +95,7 @@ service cloud.firestore {
 
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
     // 학급을 처음 만들 때는 shopDiscount 가 없습니다. 그 생성은 막지 않습니다.
+    // 앱은 이 문서를 지우지 않습니다. 학급 초기화는 학생 문서만 덮고, 여기서는 shieldStock 만 merge 합니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
       allow create: if signedIn() && (
@@ -105,7 +106,7 @@ service cloud.firestore {
         shopDiscountUntouched()
         || shopDiscountChangeIsValid()
       );
-      allow delete: if signedIn();
+      allow delete: if false;
     }
 
     match /artifacts/{appId}/public/{document=**} {

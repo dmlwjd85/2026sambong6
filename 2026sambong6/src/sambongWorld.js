@@ -367,10 +367,14 @@ import {
     formatKstDateInput,
     formatRemainingKst,
     formatShopDiscountStatus,
+    formatSkinPurchaseCharge,
     getDiscountedPrice,
     isShopDiscountActive,
     normalizeShopDiscount,
     parseKstDateInput,
+    quoteSkinPurchase,
+    skinRefundBase,
+    skinRefundBong,
 } from './lib/shopDiscount.js';
 import {
     extractWeatherJson,
@@ -6901,8 +6905,6 @@ ${subjectLine}
             return `❌ 돈이 부족해요. ${need}가 더 필요해요.`;
         }
 
-        /** 착용 중인 구매 스킨 환불 비율 — 목록가의 50% */
-        const EQUIPPED_ITEM_REFUND_RATE = 0.5;
         const BONG_CHANGE_LOG_LIMIT = 80;
         /** 삼봉 금융감독 — 하루 정상 획득 상한을 크게 넘으면 경고 */
         const BONG_ANOMALY_DAILY_GAIN_WARN = 200;
@@ -7374,23 +7376,25 @@ ${subjectLine}
             return getDiscountedPrice(Math.max(0, Number(skin && skin.price) || 0), readShopDiscount(), nowMs);
         }
 
+        function resolveSkinPaidPrice(skin, paidMap) {
+            const map = paidMap && typeof paidMap === 'object' ? paidMap : null;
+            const id = skin && skin.id;
+            if (!map || !id || !Object.prototype.hasOwnProperty.call(map, id)) return undefined;
+            const raw = map[id];
+            if (raw == null || raw === '') return undefined;
+            return raw;
+        }
+
         /** 결제 기록이 있으면 그 금액, 없으면 정가. 환불 기준은 정가를 넘지 않습니다. */
         function skinRefundBasePrice(skin, paidMap) {
             const original = Math.max(0, Number(skin && skin.price) || 0);
-            const map = paidMap && typeof paidMap === 'object' ? paidMap : null;
-            const id = skin && skin.id;
-            if (!map || !id || !Object.prototype.hasOwnProperty.call(map, id)) return original;
-            const raw = map[id];
-            if (raw == null || raw === '') return original;
-            const paid = Number(raw);
-            if (!Number.isFinite(paid) || paid < 0) return original;
-            return Math.min(original, paid);
+            return skinRefundBase(original, resolveSkinPaidPrice(skin, paidMap));
         }
 
         function getEquippedSkinRefundBong(skin, paidMap) {
             const map = paidMap !== undefined ? paidMap : (window.playerState && window.playerState.ownedSkinPaid);
-            const base = skinRefundBasePrice(skin, map);
-            return normalizeBongValue(base * EQUIPPED_ITEM_REFUND_RATE);
+            const original = Math.max(0, Number(skin && skin.price) || 0);
+            return skinRefundBong(original, resolveSkinPaidPrice(skin, map));
         }
 
         function buildSkinShopPriceHtml(skin, nowMs = Date.now()) {
@@ -7402,10 +7406,11 @@ ${subjectLine}
                 return `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border border-slate-700 text-[10px] font-bold text-right">${formatBongAmount(original)}${level}</div>`;
             }
             const price = getDiscountedPrice(original, cfg, nowMs);
+            const priceLabel = formatSkinPurchaseCharge(price, true, formatBongAmount);
             const remain = formatRemainingKst(cfg, nowMs);
             return `<div class="text-right">
                 <div class="text-[9px] font-black text-rose-100 bg-rose-600 rounded px-1.5 py-0.5 inline-block mb-1">-${cfg.percent}%</div>
-                <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold whitespace-nowrap"><s class="text-slate-400 font-normal">${formatBongAmount(original)}</s> ${formatBongAmount(price)}</div>
+                <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold whitespace-normal"><s class="text-slate-400 font-normal">${formatBongAmount(original)}</s> ${priceLabel}</div>
                 ${remain ? `<div class="skin-discount-remain text-[8px] text-amber-200 font-bold mt-0.5">${remain}</div>` : ''}
                 ${level}
             </div>`;
@@ -18586,17 +18591,18 @@ ${subjectLine}
             const percentEl = document.getElementById('gmSkinDiscountPercent');
             const startEl = document.getElementById('gmSkinDiscountStart');
             const endEl = document.getElementById('gmSkinDiscountEnd');
+            const enabled = !!(enabledEl && enabledEl.checked);
             const percentRaw = percentEl ? String(percentEl.value == null ? '' : percentEl.value).trim() : '';
             const percent = /^\d+$/.test(percentRaw) ? Number(percentRaw) : Number.NaN;
             const startAt = parseKstDateInput(startEl ? startEl.value : '', false);
             const endAt = parseKstDateInput(endEl ? endEl.value : '', true);
-            const err = describeShopDiscountSaveError({ percent, startAt, endAt });
+            const err = describeShopDiscountSaveError({ enabled, percent, startAt, endAt });
             if (err) return await window.customAlert(err);
             const shopDiscount = {
-                enabled: !!(enabledEl && enabledEl.checked),
+                enabled,
                 percent,
-                startAt,
-                endAt,
+                startAt: Number.isFinite(startAt) ? startAt : 0,
+                endAt: Number.isFinite(endAt) ? endAt : 0,
                 scope: 'skins',
                 updatedAt: Date.now(),
                 updatedBy: String(localStorage.getItem('sambong_student_id') || 'gm'),
@@ -27804,8 +27810,11 @@ ${subjectLine}
                 if (!studentSnap.exists()) throw new Error('not_found');
                 const settingsData = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
                 const serverCfg = normalizeShopDiscount(settingsData.shopDiscount);
-                const serverPrice = getDiscountedPrice(skin.price, serverCfg, Date.now());
-                if (serverPrice !== displayedPrice) {
+                // 기간은 기기 시각으로 다시 계산합니다. 학생 문서 규칙에 request.time을 넣으면
+                // 가격표가 없고 복구·다른 봉 차감까지 막혀, 서버 시각 강제는 하지 않습니다.
+                const quote = quoteSkinPurchase(skin.price, serverCfg, displayedPrice, Date.now());
+                const serverPrice = quote.price;
+                if (quote.changed) {
                     gate.changedPrice = serverPrice;
                     gate.serverCfg = serverCfg;
                     throw new Error('price_changed');
@@ -27882,9 +27891,11 @@ ${subjectLine}
                 return;
             }
             const saleOn = isShopDiscountActive(cfg, nowMs);
+            const charge = formatSkinPurchaseCharge(displayed, saleOn, formatBongAmount);
+            const askPrice = charge === '무료' ? '무료로' : `${charge}에`;
             const ask = saleOn
-                ? `${kindLabel} '${skin.name}'을(를) ${formatBongAmount(displayed)}에 살까요?\n(정가 ${formatBongAmount(skin.price)} · -${cfg.percent}%)`
-                : `${kindLabel} '${skin.name}'을(를) ${formatBongAmount(displayed)}에 살까요?`;
+                ? `${kindLabel} '${skin.name}'을(를) ${askPrice} 살까요?\n(정가 ${formatBongAmount(skin.price)} · -${cfg.percent}%)`
+                : `${kindLabel} '${skin.name}'을(를) ${askPrice} 살까요?`;
             if (!(await window.customConfirm(ask))) return;
             if (window._skinBuyRunning) return;
             window._skinBuyRunning = true;
@@ -27908,8 +27919,11 @@ ${subjectLine}
                                 };
                             }
                             updateUI();
+                            const shownCharge = formatSkinPurchaseCharge(displayed, true, formatBongAmount);
+                            const nextCharge = formatSkinPurchaseCharge(nextPrice, true, formatBongAmount);
+                            const againPrice = nextCharge === '무료' ? '무료로' : `${nextCharge}에`;
                             const again = await window.customConfirm(
-                                `할인가가 바뀌어 구매를 멈췄습니다.\n표시된 가격 ${formatBongAmount(displayed)}과 서버 가격 ${formatBongAmount(nextPrice)}이 다릅니다.\n${formatBongAmount(nextPrice)}에 다시 살까요?`
+                                `할인가가 바뀌어 구매를 멈췄습니다.\n표시된 가격: ${shownCharge}\n서버 가격: ${nextCharge}\n${againPrice} 다시 살까요?`
                             );
                             if (!again) return;
                             displayed = nextPrice;
@@ -28258,7 +28272,7 @@ ${subjectLine}
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
             'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
-            'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances',
+            'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',
         ];
 

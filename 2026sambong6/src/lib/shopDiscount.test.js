@@ -5,11 +5,14 @@ import {
     formatKstDateInput,
     formatRemainingKst,
     formatShopDiscountStatus,
+    formatSkinPurchaseCharge,
     getDiscountedPrice,
     getShopDiscountPhase,
     isShopDiscountActive,
     normalizeShopDiscount,
     parseKstDateInput,
+    quoteSkinPurchase,
+    skinRefundBong,
 } from './shopDiscount.js';
 
 describe('캐릭터 상점 전체 할인', () => {
@@ -52,6 +55,10 @@ describe('캐릭터 상점 전체 할인', () => {
         assert.equal(describeShopDiscountSaveError({ percent: 10, startAt: NaN, endAt: end }).includes('KST'), true);
         assert.equal(describeShopDiscountSaveError({ percent: 0, startAt: end, endAt: start }), '종료일은 시작일보다 뒤여야 합니다.');
         assert.equal(describeShopDiscountSaveError({ percent: 0, startAt: start, endAt: end }), '');
+        assert.equal(describeShopDiscountSaveError({ enabled: false, percent: 30, startAt: NaN, endAt: NaN }), '');
+        assert.equal(describeShopDiscountSaveError({ enabled: false, percent: 30, startAt: end, endAt: start }), '');
+        assert.equal(describeShopDiscountSaveError({ enabled: false, percent: 10.5, startAt: start, endAt: end }).includes('정수'), true);
+        assert.equal(describeShopDiscountSaveError({ enabled: true, percent: 30, startAt: end, endAt: start }), '종료일은 시작일보다 뒤여야 합니다.');
     });
 
     it('enabled && percent>0 && startAt<=now<endAt 일 때만 활성이다', () => {
@@ -86,5 +93,35 @@ describe('캐릭터 상점 전체 할인', () => {
         assert.equal(formatRemainingKst({ endAt: now + 45 * 60 * 1000 }, now), '45분 남음');
         assert.equal(formatRemainingKst({ endAt: now + 30 * 1000 }, now), '1분 남음');
         assert.equal(formatRemainingKst({ endAt: now }, now), '');
+    });
+
+    it('구매 가격을 다시 계산하고, 화면 가격과 다르면 거절한다', () => {
+        const matched = quoteSkinPurchase(200, cfg, 140, start);
+        assert.deepEqual(matched, { price: 140, changed: false });
+        const staleList = quoteSkinPurchase(200, cfg, 200, start);
+        assert.equal(staleList.price, 140);
+        assert.equal(staleList.changed, true);
+        const outside = quoteSkinPurchase(200, cfg, 140, start - 1);
+        assert.equal(outside.price, 200);
+        assert.equal(outside.changed, true);
+        const free = quoteSkinPurchase(200, { ...cfg, percent: 100 }, 0, start);
+        assert.deepEqual(free, { price: 0, changed: false });
+        assert.equal(formatSkinPurchaseCharge(0, true), '무료');
+        assert.equal(formatSkinPurchaseCharge(0, true, (n) => `${n}B`), '무료');
+        assert.equal(formatSkinPurchaseCharge(140, true, (n) => `${n}B`), '140B');
+        assert.equal(formatSkinPurchaseCharge(0, false, (n) => `${n}B`), '0B');
+    });
+
+    it('환불은 결제액의 50%, 기록이 없으면 정가의 50%이다', () => {
+        assert.equal(skinRefundBong(200, 140), 70);
+        assert.equal(skinRefundBong(200), 100);
+        assert.equal(skinRefundBong(200, undefined), 100);
+        assert.equal(skinRefundBong(200, null), 100);
+        assert.equal(skinRefundBong(200, ''), 100);
+        assert.equal(skinRefundBong(200, 0), 0);
+        assert.equal(skinRefundBong(200, 999), 100);
+        assert.equal(skinRefundBong(250, 168), 84);
+        assert.equal(skinRefundBong(1, 1), 0);
+        assert.equal(skinRefundBong(200, -5), 100);
     });
 });

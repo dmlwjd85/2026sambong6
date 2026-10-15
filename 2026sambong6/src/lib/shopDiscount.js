@@ -136,11 +136,15 @@ export function formatRemainingKst(cfg, nowMs) {
     return `${days}일 ${hours}시간 남음`;
 }
 
-/** 저장 거절 사유. 비어 있으면 저장해도 됩니다. */
-export function describeShopDiscountSaveError({ percent, startAt, endAt } = {}) {
+/**
+ * 저장 거절 사유. 비어 있으면 저장해도 됩니다.
+ * enabled 가 false 이면 날짜는 검사하지 않습니다. enabled 를 생략하면 날짜를 검사합니다.
+ */
+export function describeShopDiscountSaveError({ enabled, percent, startAt, endAt } = {}) {
     if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
         return '할인율은 0부터 100까지의 정수로 입력해 주세요.';
     }
+    if (enabled === false) return '';
     if (!Number.isFinite(startAt) || !Number.isFinite(endAt)) {
         return '시작일과 종료일을 한국 시간(KST)으로 선택해 주세요.';
     }
@@ -148,4 +152,41 @@ export function describeShopDiscountSaveError({ percent, startAt, endAt } = {}) 
         return '종료일은 시작일보다 뒤여야 합니다.';
     }
     return '';
+}
+
+/**
+ * 구매 직전 재계산. 화면에 확인한 가격과 다르면 changed 입니다.
+ * nowMs 는 호출부 시각(기기 시계)입니다.
+ */
+export function quoteSkinPurchase(listPrice, cfg, displayedPrice, nowMs) {
+    const price = getDiscountedPrice(listPrice, cfg, nowMs);
+    return { price, changed: price !== displayedPrice };
+}
+
+/**
+ * 확인창·카드에 쓸 결제 표현.
+ * 할인이 켜져 있고 결제액이 0(100% 포함)이면 '무료'.
+ * formatAmount 가 있으면 그 문자열, 없으면 정수 문자열입니다.
+ */
+export function formatSkinPurchaseCharge(amount, saleOn, formatAmount) {
+    const n = Number(amount);
+    const safe = Number.isFinite(n) ? Math.floor(n) : 0;
+    if (saleOn && safe <= 0) return '무료';
+    if (typeof formatAmount === 'function') return formatAmount(safe);
+    return String(safe);
+}
+
+/** 환불 기준 금액. paidPrice 가 없으면 정가, 있으면 0 이상·정가 이하. */
+export function skinRefundBase(originalPrice, paidPrice) {
+    const original = Number(originalPrice);
+    const safeOriginal = Number.isFinite(original) && original > 0 ? original : 0;
+    if (paidPrice === undefined || paidPrice === null || paidPrice === '') return safeOriginal;
+    const paid = Number(paidPrice);
+    if (!Number.isFinite(paid) || paid < 0) return safeOriginal;
+    return Math.min(safeOriginal, paid);
+}
+
+/** 환불 지급액. 결제 기록이 있으면 그 금액의 50%, 없으면 정가의 50%(내림). */
+export function skinRefundBong(originalPrice, paidPrice) {
+    return Math.floor(skinRefundBase(originalPrice, paidPrice) * 0.5);
 }

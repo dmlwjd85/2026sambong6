@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLASS_XP_END_TIMES, classXpSlotFromTime, kstWallClock } from './classXpSlot.js';
+import {
+    CLASS_XP_END_TIMES,
+    classXpCatchupSlot,
+    classXpGrantDecision,
+    classXpSlotFromTime,
+    kstWallClock,
+    omitClassXpSlot,
+} from './classXpSlot.js';
 
 describe('수업 XP 슬롯 (KST)', () => {
     it('기기 시간대와 상관없이 한국 표준시 종 시각만 슬롯이 된다', () => {
@@ -21,5 +28,45 @@ describe('수업 XP 슬롯 (KST)', () => {
         // 2026-10-17 00:40 UTC = 09:40 KST, 토요일
         assert.equal(classXpSlotFromTime(new Date(Date.UTC(2026, 9, 17, 0, 40, 0))), null);
         assert.equal(classXpSlotFromTime(new Date(Date.UTC(2026, 9, 15, 5, 40, 0))).timeStr, '14:40');
+    });
+
+    it('놓친 종은 오늘 가장 최근 시각만 따라잡는다', () => {
+        const at = (h, m, s = 0, day = 15) => new Date(Date.UTC(2026, 9, day, h - 9, m, s));
+        assert.equal(classXpCatchupSlot(at(9, 39, 45)), null);
+        assert.equal(classXpCatchupSlot(at(9, 40)).key, '2026_10_15_09:40');
+        assert.equal(classXpCatchupSlot(at(9, 41)).key, '2026_10_15_09:40');
+        assert.equal(classXpCatchupSlot(at(9, 41)).slotMs, Date.UTC(2026, 9, 15, 0, 40, 0));
+        const mid = classXpCatchupSlot(at(10, 35));
+        assert.equal(mid.key, '2026_10_15_10:30');
+        assert.notEqual(mid.timeStr, '09:40');
+        assert.equal(classXpCatchupSlot(at(15, 0)).key, '2026_10_15_14:40');
+        assert.equal(classXpCatchupSlot(at(23, 59)).timeStr, '14:40');
+        assert.equal(classXpCatchupSlot(at(9, 40, 0, 17)), null);
+        assert.equal(classXpCatchupSlot(at(14, 40, 0, 18)), null);
+
+        const bell = new Date(Date.UTC(2026, 9, 15, 0, 40, 30));
+        const wall = kstWallClock(bell);
+        const days = Math.floor(Date.UTC(wall.year, wall.month - 1, wall.day) / 86400000);
+        assert.equal((days + 4) % 7, wall.weekday);
+        const saturday = kstWallClock(new Date(Date.UTC(2026, 9, 17, 0, 40, 0)));
+        const satDays = Math.floor(Date.UTC(saturday.year, saturday.month - 1, saturday.day) / 86400000);
+        assert.equal((satDays + 4) % 7, 6);
+    });
+
+    it('학생 저장에서 수업 XP 슬롯을 빼고, 숫자가 아닌 경험치는 지급하지 않는다', () => {
+        const source = { xp: 10, bong: 3, lastClassXpSlot: '2026_10_15_13:50' };
+        const saved = omitClassXpSlot(source);
+        assert.equal(saved.xp, 10);
+        assert.equal(saved.bong, 3);
+        assert.equal(Object.prototype.hasOwnProperty.call(saved, 'lastClassXpSlot'), false);
+        assert.equal(source.lastClassXpSlot, '2026_10_15_13:50');
+        assert.deepEqual(omitClassXpSlot({ xp: 1 }), { xp: 1 });
+
+        assert.equal(classXpGrantDecision('x', '', '2026_10_15_14:40'), 'invalid-xp');
+        assert.equal(classXpGrantDecision(undefined, '', '2026_10_15_14:40'), 'invalid-xp');
+        assert.equal(classXpGrantDecision(Number.NaN, '', '2026_10_15_14:40'), 'invalid-xp');
+        assert.equal(classXpGrantDecision(10, '2026_10_15_14:40', '2026_10_15_14:40'), 'already');
+        assert.equal(classXpGrantDecision(10, '2026_10_15_13:50', '2026_10_15_14:40'), 'grant');
+        assert.equal(classXpGrantDecision(0, '', '2026_10_15_14:40'), 'grant');
     });
 });

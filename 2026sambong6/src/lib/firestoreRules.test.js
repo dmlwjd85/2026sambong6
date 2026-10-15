@@ -2,7 +2,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { deleteDoc, deleteField, doc, getDoc, setDoc } from 'firebase/firestore';
-import { classXpSlotFromTime } from './classXpSlot.js';
+import { classXpCatchupSlot } from './classXpSlot.js';
 import {
     assertFails,
     assertSucceeds,
@@ -251,11 +251,14 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(setDoc(doc(db, path), { ...autoXpPayload(prev), announcement: '선생님: 오늘 숙제 없음' }));
         await assertFails(setDoc(doc(db, path), autoXpPayload(prev + 1000)));
         await assertFails(setDoc(doc(db, path), autoXpPayload(future)));
-        const live = classXpSlotFromTime(new Date());
-        if (live) {
+        const catchup = classXpCatchupSlot(new Date());
+        if (catchup) {
             await assertFails(setDoc(doc(db, path), autoXpPayload(prev)));
-            await assertSucceeds(setDoc(doc(db, path), autoXpPayload(live.slotMs)));
-            await assertFails(setDoc(doc(db, path), autoXpPayload(live.slotMs)));
+            if (recent !== catchup.slotMs) {
+                await assertFails(setDoc(doc(db, path), autoXpPayload(recent)));
+            }
+            await assertSucceeds(setDoc(doc(db, path), autoXpPayload(catchup.slotMs)));
+            await assertFails(setDoc(doc(db, path), autoXpPayload(catchup.slotMs)));
         } else {
             await assertFails(setDoc(doc(db, path), autoXpPayload(prev)));
             await assertFails(setDoc(doc(db, path), autoXpPayload(recent)));
@@ -290,12 +293,26 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             xp: 17,
             lastClassXpSlot: '2099_01_01_09:40',
         }, { merge: true }));
-        const live = classXpSlotFromTime(new Date());
-        if (live) {
+        const catchup = classXpCatchupSlot(new Date());
+        await assertFails(setDoc(doc(db, 'artifacts/class1/public/data/students/student_9'), {
+            xp: 'x',
+            lastClassXpSlot: catchup ? catchup.key : '2026_10_15_14:40',
+        }, { merge: true }));
+        if (catchup) {
+            await assertFails(setDoc(doc(db, studentPath), {
+                xp: 16,
+                lastClassXpSlot: catchup.key,
+            }, { merge: true }));
             await assertSucceeds(setDoc(doc(db, studentPath), {
                 xp: 17,
-                lastClassXpSlot: live.key,
+                lastClassXpSlot: catchup.key,
             }, { merge: true }));
+            if (catchup.timeStr !== '09:40') {
+                await assertFails(setDoc(doc(db, studentPath), {
+                    xp: 22,
+                    lastClassXpSlot: catchup.key.replace(/\d{2}:\d{2}$/, '09:40'),
+                }, { merge: true }));
+            }
             await assertFails(setDoc(doc(db, studentPath), {
                 xp: 22,
                 lastClassXpSlot: '2099_01_01_14:40',

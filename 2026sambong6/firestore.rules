@@ -167,9 +167,42 @@ service cloud.firestore {
         + '_' + twoDigits(kst.hours()) + ':' + twoDigits(kst.minutes());
     }
 
+    function kstNow() {
+      return request.time + duration.value(9, 'h');
+    }
+
+    // 1970-01-01은 목요일. date()는 9시간을 더한 시각의 달력 날짜(한국 표준시)입니다.
+    // 0=일요일 … 6=토요일. rules에 weekday()가 없어 epoch 일로 계산합니다.
+    function kstWeekdaySunday0() {
+      return (math.floor(kstNow().date().toMillis() / 86400000) + 4) % 7;
+    }
+
+    // 오늘 이미 지난 종 가운데 가장 최근 시각. 09:40 이전이면 빈 문자열입니다.
+    function classXpCatchupClock() {
+      let mins = kstNow().hours() * 60 + kstNow().minutes();
+      return mins >= 880 ? '14:40'
+        : mins >= 830 ? '13:50'
+        : mins >= 730 ? '12:10'
+        : mins >= 680 ? '11:20'
+        : mins >= 630 ? '10:30'
+        : mins >= 580 ? '09:40'
+        : '';
+    }
+
+    // 평일에만, 오늘 가장 최근 종 키. 주말·첫 종 이전은 빈 문자열이라 지급이 거부됩니다.
+    // 다음 종 전까지 그 키만 허용하므로, 놓친 이전 종을 한꺼번에 받지 못합니다.
+    function classXpCatchupKeyNow() {
+      let clock = classXpCatchupClock();
+      let kst = kstNow();
+      let weekday = kstWeekdaySunday0();
+      return clock != '' && weekday >= 1 && weekday <= 5
+        ? string(kst.year()) + '_' + twoDigits(kst.month()) + '_' + twoDigits(kst.day()) + '_' + clock
+        : '';
+    }
+
     // 공지 문장은 저장하지 않습니다. 앱이 slotMs로 만듭니다.
     // autoXp는 공지용입니다. 지급 여부는 학생 문서 lastClassXpSlot이 정합니다.
-    // 이 문서는 서버 시각의 한국 표준시 분 그 종 시각에만 쓸 수 있습니다.
+    // 키는 오늘 가장 최근 종(이미 지난 것, 그 1분이 지난 뒤 포함)과 같아야 합니다.
     function autoXpShapeOk() {
       let d = request.resource.data;
       return d.keys().hasOnly(['lastAutoXpTime', 'slotMs'])
@@ -181,38 +214,18 @@ service cloud.firestore {
         && d.slotMs <= request.time.toMillis() + 15000
         && autoXpIsClassEnd(d.slotMs)
         && d.lastAutoXpTime == autoXpKey(d.slotMs)
-        && d.lastAutoXpTime == classXpSlotKeyNow();
+        && d.lastAutoXpTime == classXpCatchupKeyNow();
     }
 
-    function kstNow() {
-      return request.time + duration.value(9, 'h');
-    }
-
-    function classXpMinuteNow() {
-      let kst = kstNow();
-      return (kst.hours() == 9 && kst.minutes() == 40)
-        || (kst.hours() == 10 && kst.minutes() == 30)
-        || (kst.hours() == 11 && kst.minutes() == 20)
-        || (kst.hours() == 12 && kst.minutes() == 10)
-        || (kst.hours() == 13 && kst.minutes() == 50)
-        || (kst.hours() == 14 && kst.minutes() == 40);
-    }
-
-    function classXpSlotKeyNow() {
-      let kst = kstNow();
-      return string(kst.year()) + '_' + twoDigits(kst.month()) + '_' + twoDigits(kst.day())
-        + '_' + twoDigits(kst.hours()) + ':' + twoDigits(kst.minutes());
-    }
-
-    // 슬롯 키는 지금 이 분(KST 종 시각)에 경험치가 정확히 +5일 때만 바꿉니다.
-    // 지우기는 경험치를 0으로 되돌리는 초기화에서만 됩니다.
+    // 슬롯 키는 오늘 가장 최근 종에 경험치가 정확히 +5일 때만 바꿉니다.
+    // xp가 숫자가 아니면 이 분기는 거부됩니다. 지우기는 경험치를 0으로 되돌리는 초기화에서만 됩니다.
     function classXpSlotWriteOk() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       return !changed.hasAny(['lastClassXpSlot'])
         || (
-          classXpMinuteNow()
+          classXpCatchupKeyNow() != ''
           && request.resource.data.lastClassXpSlot is string
-          && request.resource.data.lastClassXpSlot == classXpSlotKeyNow()
+          && request.resource.data.lastClassXpSlot == classXpCatchupKeyNow()
           && request.resource.data.xp is number
           && resource.data.xp is number
           && request.resource.data.xp == resource.data.xp + 5

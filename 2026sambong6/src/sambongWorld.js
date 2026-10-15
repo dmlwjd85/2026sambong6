@@ -498,7 +498,8 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { classXpSlotFromTime } from './lib/classXpSlot.js';
+import { classXpCatchupSlot, classXpGrantDecision, omitClassXpSlot } from './lib/classXpSlot.js';
+import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
     listAllCharacterBases,
@@ -14846,7 +14847,7 @@ ${subjectLine}
             const unsavedText = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
             let autoText = '15:00 이후, 선생님 인증이 있으면 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
             if (!canEdit && canManage) {
-                autoText = '선생님 인증 필요. 슬라이더는 저장되지 않으며, 정산은 인증 후 지금 XP 반영으로 실행합니다.';
+                autoText = '선생님 인증 필요. 슬라이더와 +/- 는 움직일 수 없습니다. 정산은 인증 후 지금 XP 반영으로 실행합니다.';
             } else if (now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR) {
                 autoText = state.settledDate === today
                     ? '오늘 15시 정산 완료'
@@ -14863,32 +14864,14 @@ ${subjectLine}
                 const id = String(sid);
                 const label = getStudentDisplayLabel(id);
                 const value = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[id]) || 0)));
-                const controlHtml = canEdit
-                    ? `<input type="range"
-                            min="${state.min}"
-                            max="${state.max}"
-                            step="1"
-                            value="${value}"
-                            class="learning-thermometer-slider"
-                            onpointerdown="window.beginLearningThermometerEdit()"
-                            onpointerup="window.endLearningThermometerEdit()"
-                            onpointercancel="window.endLearningThermometerEdit()"
-                            ontouchstart="window.beginLearningThermometerEdit()"
-                            ontouchend="window.endLearningThermometerEdit()"
-                            oninput="window.updateLearningThermometerStudent('${escapeHtmlAttr(id)}', this.value, { save: false })"
-                            onchange="window.updateLearningThermometerStudent('${escapeHtmlAttr(id)}', this.value, { save: true })" />
-                        <div id="lt_value_${escapeHtmlAttr(id)}" class="learning-thermometer-value ${getLearningThermometerValueClass(value)}">${value >= 0 ? '+' : ''}${value}</div>
-                        <div class="learning-thermometer-stepper">
-                            <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', -1)">-</button>
-                            <button type="button" onclick="window.setLearningThermometerStudent('${escapeHtmlAttr(id)}', 0)">0</button>
-                            <button type="button" onclick="window.adjustLearningThermometerStudent('${escapeHtmlAttr(id)}', 1)">+</button>
-                        </div>`
-                    : `<div class="learning-thermometer-readonly-track" aria-hidden="true">
-                            <div class="learning-thermometer-readonly-fill ${value >= 0 ? 'from-sky-400 to-cyan-200' : 'from-red-500 to-orange-300'}"
-                                style="${value >= 0 ? `bottom:50%;height:${Math.min(50, Math.abs(value) / Math.max(1, state.max) * 50)}%;` : `top:50%;height:${Math.min(50, Math.abs(value) / Math.max(1, Math.abs(state.min)) * 50)}%;`}"></div>
-                            <div class="learning-thermometer-readonly-zero"></div>
-                        </div>
-                        <div id="lt_value_${escapeHtmlAttr(id)}" class="learning-thermometer-value ${getLearningThermometerValueClass(value)}">${value >= 0 ? '+' : ''}${value}</div>`;
+                const controlHtml = learningThermometerStudentControls({
+                    id,
+                    value,
+                    min: state.min,
+                    max: state.max,
+                    canEdit,
+                    valueClass: getLearningThermometerValueClass(value),
+                });
                 return `
                     <div class="learning-thermometer-card" data-sid="${escapeHtmlAttr(id)}">
                         <div class="learning-thermometer-name truncate" title="${escapeHtmlAttr(label)}">${escapeConvenienceHtml(label)}</div>
@@ -25088,7 +25071,7 @@ ${subjectLine}
                 operationLabel: '저장',
                 ...options,
             };
-            const dataToSave = { ...window.playerState };
+            const dataToSave = omitClassXpSlot({ ...window.playerState });
             delete dataToSave.isGuest;
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
@@ -29430,11 +29413,16 @@ ${subjectLine}
 
         let _classXpWriteNoticeKey = '';
 
-        /** 평일 KST 종 시각마다 전 학생 XP+5. 중복 여부는 학생 문서 lastClassXpSlot으로 판단합니다. */
+        function classXpWriteDenied(error) {
+            const code = String((error && error.code) || '');
+            return code === 'permission-denied' || code.endsWith('/permission-denied');
+        }
+
+        /** 평일 KST. 오늘 가장 최근 종을 학생마다 따로 지급합니다. 중복은 lastClassXpSlot으로 판단합니다. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
             const now = new Date();
-            const slot = classXpSlotFromTime(now);
+            const slot = classXpCatchupSlot(now);
             if (!slot) return;
             if (isVacationAutomationPaused('classXp', slot.ymd)) return;
 
@@ -29442,50 +29430,60 @@ ${subjectLine}
             const autoXpRef = getAutoXpDocRef();
             const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
             const announcement = classEndAutoXpAnnouncement(timeStr);
-
+            const skipped = [];
             let grantedCount = 0;
-            try {
-                grantedCount = await runTransaction(db, async (transaction) => {
-                    const targets = [];
-                    for (const stu of stuList) {
-                        if (studentIsCreditDefault(stu)) continue;
-                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
+            let attempted = 0;
+            let permissionDenied = 0;
+
+            await Promise.all(stuList.map(async (stu) => {
+                if (studentIsCreditDefault(stu)) return;
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
+                attempted += 1;
+                try {
+                    const result = await runTransaction(db, async (transaction) => {
                         const snap = await transaction.get(ref);
-                        if (!snap.exists()) continue;
-                        const prev = String((snap.data() && snap.data().lastClassXpSlot) || '');
-                        if (prev === todayKey) continue;
-                        targets.push({
-                            stu,
-                            ref,
-                            xp: Number(snap.data().xp) || 0,
-                        });
-                    }
-                    targets.forEach((row) => {
-                        transaction.set(row.ref, {
+                        if (!snap.exists()) return 'missing';
+                        const data = snap.data() || {};
+                        const decision = classXpGrantDecision(data.xp, data.lastClassXpSlot, todayKey);
+                        if (decision !== 'grant') return decision;
+                        transaction.set(ref, {
                             xp: increment(5),
                             lastClassXpSlot: todayKey,
-                            xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, row.xp, row.xp + 5, { source: 'class-end-auto' })),
+                            xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, data.xp, data.xp + 5, { source: 'class-end-auto' })),
                         }, { merge: true });
+                        return 'granted';
                     });
-                    return targets.length;
-                });
-            } catch (e) {
-                console.warn('checkAndDistributeClassXP', e);
-                if (_classXpWriteNoticeKey !== todayKey) {
+                    if (result === 'granted') grantedCount += 1;
+                    else if (result === 'invalid-xp') skipped.push({ id: stu.id, reason: 'xp' });
+                } catch (e) {
+                    console.warn('checkAndDistributeClassXP', stu.id, e);
+                    skipped.push({ id: stu.id, reason: 'write' });
+                    if (classXpWriteDenied(e)) permissionDenied += 1;
+                }
+            }));
+
+            skipped.sort((a, b) => String(a.id).localeCompare(String(b.id), 'ko'));
+            const skippedLabel = skipped.map((row) => String(row.id)).join(', ');
+
+            if (!grantedCount) {
+                if (attempted > 0 && permissionDenied === attempted && _classXpWriteNoticeKey !== todayKey) {
                     _classXpWriteNoticeKey = todayKey;
-                    const detail = e && e.message ? `\n(${e.message})` : '';
                     await window.customAlert(
                         '수업 종료 경험치를 기록하지 못했습니다.\n\n' +
-                        '지급은 한국 표준시 종 시각의 그 1분 안에만 기록됩니다.\n' +
+                        '지급은 오늘 한국 표준시로 이미 지난 가장 최근 종 시각에만 기록됩니다.\n' +
                         '이 기기 시계나 시간대가 한국 표준시와 다르면 서버가 거절합니다.\n' +
-                        '시간대를 서울로 맞추고 시각을 자동으로 설정한 뒤, 그 1분 안에 이 화면을 다시 열어 주세요.' +
-                        detail
+                        '시간대를 서울로 맞추고 시각을 자동으로 설정한 뒤 이 화면을 다시 열어 주세요.'
+                    );
+                } else if (skipped.length) {
+                    await window.customAlert(
+                        `⏰ [${timeStr}] 수업 종료 경험치를 넘긴 학생이 있습니다.\n` +
+                        `건너뛴 학생: ${skippedLabel}\n` +
+                        '경험치가 숫자가 아니거나 그 학생 기록만 거절된 경우입니다.'
                     );
                 }
                 return;
             }
 
-            if (!grantedCount) return;
             try {
                 await setDoc(autoXpRef, { lastAutoXpTime: todayKey, slotMs });
             } catch (e) {
@@ -29496,7 +29494,8 @@ ${subjectLine}
             window.globalSettings.lastAutoXpTime = todayKey;
             const npcEl = document.getElementById('npcText');
             if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
-            window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${grantedCount}명에게 경험치 +5 자동 지급을 완료했습니다.`);
+            const skipLine = skipped.length ? `\n\n건너뛴 학생: ${skippedLabel}\n(경험치가 숫자가 아니거나 기록에 실패한 학생입니다.)` : '';
+            window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${grantedCount}명에게 경험치 +5 자동 지급을 완료했습니다.${skipLine}`);
         };
 
         window.checkAndDistributeSalary = async function() {

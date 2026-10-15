@@ -381,7 +381,8 @@ import {
 } from './lib/shopDiscount.js';
 import {
     classifyAuthError,
-    isOriginalHomeClass,
+    HOME_CLASS_IDLE_AUTH_NOTICE,
+    TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
     isTeacherProvider,
     planGmIdleExpiry,
     readGmIdleLogoutOverride,
@@ -24873,9 +24874,14 @@ ${subjectLine}
             // 원래 학급(sambong-class-2026): 선생님 인증 배지만 내린다.
             // PIN localStorage, 화면 로그인, 익명 세션은 그대로 두고 새로고침하지 않는다.
             if (mode === 'end-teacher-auth') {
+                const hadTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
                 await endGmAuthSession();
+                const stillTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
                 try { await refreshTeacherAuthBadge(); } catch (e) { console.warn('refreshTeacherAuthBadge', e); }
                 syncGmLogoutButton();
+                if (hadTeacher && !stillTeacher && typeof window.showToast === 'function') {
+                    window.showToast(HOME_CLASS_IDLE_AUTH_NOTICE, 8000);
+                }
                 resetGmIdleTimer();
                 return;
             }
@@ -25012,32 +25018,40 @@ ${subjectLine}
                 if (!isAutoLogin) await window.customAlert('서버에 연결되지 않았습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
                 return;
             }
-            const homeClassAutoLogin = !!isAutoLogin && isOriginalHomeClass(appId);
+            const dropTeacher = shouldSignOutNonAnonymousForPinLogin({
+                studentId,
+                classId: appId,
+                isAutoLogin: !!isAutoLogin,
+            });
+            let teacherSignOutFailed = false;
             try {
                 await auth.authStateReady();
-                // 학생 PIN만 남아 있는 선생님 세션을 끊습니다. gm/gm_a 는 유지합니다.
-                // 원래 학급 자동 로그인은 로그인 전에 끊지 않습니다. 실패가 PIN 재접속을 지우지 않게 합니다.
-                const dropTeacher = shouldSignOutNonAnonymousForPinLogin({
-                    studentId,
-                    classId: appId,
-                    isAutoLogin: !!isAutoLogin,
-                });
+                // gm/gm_a 가 아니면 학급과 상관없이 학생 문서를 읽기 전에 선생님 세션을 끊습니다.
+                // 실패하면 저장된 PIN은 그대로 두고 로그인을 멈춥니다.
                 if (dropTeacher && auth.currentUser && !auth.currentUser.isAnonymous) {
-                    await signOut(auth);
+                    try {
+                        await signOut(auth);
+                    } catch (signOutErr) {
+                        teacherSignOutFailed = true;
+                        throw signOutErr;
+                    }
+                    if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                        teacherSignOutFailed = true;
+                        throw new Error('teacher-session-remains');
+                    }
                 }
                 if (!auth.currentUser) await signInAnonymously(auth);
             } catch (e) {
-                if (homeClassAutoLogin) {
-                    try {
-                        if (!auth.currentUser) await signInAnonymously(auth);
-                    } catch (retryErr) {
-                        console.warn('home class auto-login auth', retryErr);
-                        return;
-                    }
-                } else {
-                    if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
+                if (teacherSignOutFailed) {
+                    await window.customAlert(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE);
                     return;
                 }
+                if (!isAutoLogin) await window.customAlert('인증 연결에 실패했습니다: ' + (e.message || String(e)));
+                return;
+            }
+            if (dropTeacher && auth.currentUser && !auth.currentUser.isAnonymous) {
+                await window.customAlert(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE);
+                return;
             }
             if (!auth.currentUser) {
                 if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
@@ -25046,21 +25060,7 @@ ${subjectLine}
             try {
                 await auth.currentUser.getIdToken();
             } catch (e) {
-                if (homeClassAutoLogin) {
-                    try {
-                        if (!auth.currentUser) await signInAnonymously(auth);
-                        if (auth.currentUser) await auth.currentUser.getIdToken();
-                    } catch (retryErr) {
-                        console.warn('home class auto-login token', retryErr);
-                        return;
-                    }
-                } else {
-                    if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
-                    return;
-                }
-            }
-            if (!auth.currentUser) {
-                if (!isAutoLogin) await window.customAlert('인증을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                if (!isAutoLogin) await window.customAlert('인증 토큰을 받지 못했습니다. 네트워크 확인 후 다시 시도해 주세요.');
                 return;
             }
             if (!studentId) {
@@ -25137,12 +25137,6 @@ ${subjectLine}
                 if (isAdmin) void refreshTeacherAuthBadge();
                 syncGmLogoutButton();
                 resetGmIdleTimer();
-                // 원래 학급에서 학생 PIN으로 다시 들어온 뒤에는 선생님 세션만 익명으로 되돌립니다.
-                // 저장소와 화면 로그인은 건드리지 않습니다.
-                if (homeClassAutoLogin && !isAdmin && auth.currentUser && !auth.currentUser.isAnonymous) {
-                    await endGmAuthSession();
-                    try { await refreshTeacherAuthBadge(); } catch (badgeErr) { console.warn('refreshTeacherAuthBadge', badgeErr); }
-                }
             } catch (e) { 
                 await window.customAlert("에러: " + e.message); 
             }

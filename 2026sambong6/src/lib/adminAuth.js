@@ -63,18 +63,20 @@ export function shouldUseLocalFirebaseEmulator({ hostname, search } = {}) {
     }
 }
 
+/** 학생 문서 읽기 전에 선생님 세션을 끊지 못했을 때. PIN은 지우지 않습니다. */
+export const TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE = '선생님 인증 세션을 끊지 못해 로그인을 멈췄습니다. 저장된 비밀번호는 그대로 두었습니다. 다시 시도해 주세요.';
+
+/** 원래 학급에서 유휴로 선생님 인증만 풀렸을 때. 화면을 가리지 않는 안내입니다. */
+export const HOME_CLASS_IDLE_AUTH_NOTICE = '오래 사용하지 않아 선생님 인증이 풀렸어요. 관리 기능을 쓰려면 다시 인증해 주세요.';
+
 /**
- * 학생 PIN 로그인이 남아 있는 선생님(비익명) 세션을 로그인 전에 끊을지.
- * gm/gm_a 는 유지합니다.
- * 원래 학급의 자동 로그인(새로고침·브라우저 재실행)은 여기서 끊지 않습니다.
- * 로그인 전에 끊으면 그 실패가 PIN 자동 로그인을 같이 끊습니다.
- * 학생 자동 로그인이 화면에 붙은 뒤에 선생님 세션만 익명으로 되돌립니다.
+ * 학생 PIN 로그인이 남아 있는 선생님(비익명) 세션을 학생 문서를 읽기 전에 끊을지.
+ * gm/gm_a 만 선생님 세션을 유지합니다. 학급과 자동 로그인 여부는 보지 않습니다.
+ * 원래 학급의 학생 자동 로그인도 먼저 끊은 뒤 익명으로 다시 들어가 PIN 로그인을 이어 갑니다.
  */
-export function shouldSignOutNonAnonymousForPinLogin({ studentId, classId, isAutoLogin } = {}) {
+export function shouldSignOutNonAnonymousForPinLogin({ studentId } = {}) {
     const id = String(studentId || '');
-    if (id === 'gm' || id === 'gm_a') return false;
-    if (isAutoLogin && isOriginalHomeClass(classId)) return false;
-    return true;
+    return id !== 'gm' && id !== 'gm_a';
 }
 
 export const GM_ONLY_SETTING_KEYS = Object.freeze([

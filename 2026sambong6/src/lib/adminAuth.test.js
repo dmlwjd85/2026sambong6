@@ -11,6 +11,8 @@ import {
     planGmIdleExpiry,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
+    HOME_CLASS_IDLE_AUTH_NOTICE,
+    TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
     shouldSignOutNonAnonymousForPinLogin,
     shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
@@ -133,7 +135,7 @@ describe('원래 학급 PIN 로그인 유지', () => {
         }), false);
     });
 
-    it('원래 학급 자동 로그인은 선생님 세션 정리로 PIN 로그인을 끊지 않는다', () => {
+    it('gm이 아닌 PIN 로그인은 학급과 상관없이 학생 문서 전에 선생님 세션을 끊는다', () => {
         assert.equal(shouldSignOutNonAnonymousForPinLogin({
             studentId: 'gm',
             classId: 'sambong-class-2026',
@@ -148,7 +150,7 @@ describe('원래 학급 PIN 로그인 유지', () => {
             studentId: '1',
             classId: 'sambong-class-2026',
             isAutoLogin: true,
-        }), false);
+        }), true);
         assert.equal(shouldSignOutNonAnonymousForPinLogin({
             studentId: '1',
             classId: 'sambong-class-2026',
@@ -159,5 +161,8 @@ describe('원래 학급 PIN 로그인 유지', () => {
             classId: 'other-class',
             isAutoLogin: true,
         }), true);
+        assert.equal(shouldSignOutNonAnonymousForPinLogin({ studentId: '13' }), true);
+        assert.match(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE, /저장된 비밀번호는 그대로/);
+        assert.match(HOME_CLASS_IDLE_AUTH_NOTICE, /선생님 인증이 풀렸어요/);
     });
 });

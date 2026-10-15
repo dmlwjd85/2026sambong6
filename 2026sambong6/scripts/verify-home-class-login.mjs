@@ -254,8 +254,14 @@ try {
         await page.evaluate(() => { window.__stay = 1; window.__sambongE2E.armIdleTimer(); });
         await page.waitForFunction(() => {
             const el = document.querySelector('#adminSection .teacher-auth-badge');
+            const toast = document.getElementById('appToast');
             const auth = window.__sambongE2E.authSummary();
-            return !!el && el.textContent.trim() === '미인증' && auth.anonymous === true && !auth.email;
+            return !!el
+                && el.textContent.trim() === '미인증'
+                && auth.anonymous === true
+                && !auth.email
+                && !!toast
+                && toast.textContent.includes('선생님 인증이 풀렸어요');
         }, null, { timeout: 12000 });
         const after = await page.evaluate(() => ({
             stay: window.__stay,
@@ -265,6 +271,7 @@ try {
             name: document.getElementById('playerNameDisplay')?.textContent || '',
             overlayHidden: document.getElementById('loginOverlay')?.classList.contains('hidden') === true,
             badge: document.querySelector('#adminSection .teacher-auth-badge')?.textContent?.trim() || '',
+            notice: document.getElementById('appToast')?.textContent || '',
             logout: document.getElementById('navLogoutButton')?.textContent || '',
             auth: window.__sambongE2E.authSummary(),
         }));
@@ -277,6 +284,7 @@ try {
             && after.classId === HOME
             && after.name.includes('마스터')
             && after.badge === '미인증'
+            && after.notice.includes('선생님 인증이 풀렸어요')
             && after.logout.includes('로그아웃')
             && after.auth.anonymous === true;
         record('b-home-idle-keeps-pin', ok, JSON.stringify({ ...after, navigations, beforeNav }));
@@ -323,7 +331,7 @@ try {
         await context.close();
     }
 
-    // 원래 학급 학생 PIN 자동 로그인은 선생님 세션이 있어도 새로고침 뒤 유지
+    // 원래 학급 학생 PIN + 남아 있는 선생님 세션: 새로고침 뒤 학생은 로그인되고 선생님 세션은 끊긴다
     {
         const context = await browser.newContext();
         await seedPinOnce(context, {

@@ -9,30 +9,312 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // settings/global 의 shopDiscount 만 검사합니다.
-    // 로또·방패 재고·시간표·학급 생성 등 다른 필드는 이 키가 그대로면 통과합니다.
-    // 익명 로그인에는 마스터 토큰이 없어 updatedBy 가 gm / gm_a 인지만 봅니다.
-    // 그 값은 클라이언트가 넣으므로, 수정된 앱은 흉내 낼 수 있습니다.
+    // 선생님 계정은 익명이 아닌 로그인(Google 또는 이메일/비밀번호)이고
+    // admins/{uid} 문서가 있을 때만 인정합니다. updatedBy 문자열은 보지 않습니다.
+    // 학생 익명 세션은 로또·뮤직타임·방패 재고처럼 학생이 쓰는 키만 바꿀 수 있습니다.
     // 스킨 구매 시각(request.time)은 여기서 보지 않습니다. 가격표는 앱에만 있고
     // 규칙에는 반올림이 없으며, 학생 문서는 퀘스트·은행·선생님 복구가 한 번에 덮입니다.
     // {document=**} 는 path 라서 문자열과 바로 비교하지 않습니다.
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token is map
+        && 'firebase' in request.auth.token
+        && request.auth.token.firebase is map
+        && 'sign_in_provider' in request.auth.token.firebase
+        && request.auth.token.firebase.sign_in_provider is string
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function adminRecord() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
+    }
+
+    // 이미 있는 학급 설정은 admins.classIds 에 그 학급 ID가 있을 때만 고칩니다.
+    function isAdminForApp(appId) {
+      return isAdmin()
+        && adminRecord().classIds is list
+        && appId in adminRecord().classIds;
+    }
+
+    function hasApprovedClassGrant(classId) {
+      return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
+    }
+
+    function approvedClassGrant(classId) {
+      return get(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId)).data;
+    }
+
+    // 새 학급 문서는 classIds에 그 ID가 있거나, 시드 학급 선생님이 남긴 승인 표식의 createdBy가
+    // 지금 요청한 선생님 uid와 같을 때만 만듭니다.
+    function canCreateClassSettings(appId) {
+      return isAdminForApp(appId) || (
+        isAdmin()
+        && hasApprovedClassGrant(appId)
+        && approvedClassGrant(appId).createdBy == request.auth.uid
+      );
+    }
+
     function isSettingsGlobalDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/global$');
+    }
+
+    function isAutoXpDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/autoXp$');
+    }
+
+    function isLearningThermometerDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/learningThermometer$');
+    }
+
+    function isLearningThermometerVoteDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/learningThermometer/votes/[^/]+$');
+    }
+
+    function isApprovedClassIdDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
+    }
+
+    function isStudentDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/[^/]+$');
+    }
+
+    // 학생 문서는 공개 와일드카드와 OR 됩니다. 슬롯 키 검사는 이쪽에도 있어야 우회되지 않습니다.
+    function studentClassXpSlotAllowed() {
+      return !isStudentDoc()
+        || request.method == 'delete'
+        || (request.method == 'create' && !('lastClassXpSlot' in request.resource.data))
+        || (request.method == 'update' && classXpSlotWriteOk());
+    }
+
+    // 학생 화면이 쓰지 않는 것이 확인된 키만 둡니다. 애매한 키는 넣지 않습니다.
+    function gmOnlyKeys() {
+      return [
+        'shopPrices',
+        'customShopItems',
+        'convenienceItems',
+        'customQuests',
+        'deletedQuestIds',
+        'customJobs',
+        'jobOverrides',
+        'deletedJobIds',
+        'worldSettings',
+        'raidPassword',
+        'weekendRaidRewardXp',
+        'weekendRaidRewardBong',
+        'constitutionItems',
+        'bankInterestPercent',
+        'bankLoanLimitPerStudent',
+        'bankTransferFeeBong',
+        'dragonBallFindXp',
+        'dragonBallFindBong',
+        'dragonBallCompleteXp',
+        'dragonBallCompleteBong',
+        'convenienceDeliveryFee',
+        'announcement',
+        'morningActivityNotice',
+        'screenNotice',
+        'classTimetable',
+        'birthdayCelebrations',
+        'classModules',
+        'externalPortals',
+        'weatherRegion',
+        'classToolShare',
+        'researchJournal',
+        'researchSurveyUrl',
+        'researchSurveyNote',
+        'classWatchOn',
+        'curriculumTags',
+        'curriculumMapping',
+        'applyDefaultTemplatePending',
+        'season2StartedAt',
+        'season2StartedBy',
+        'season2WeaponsClearedAt',
+        'season2DragonBallsClearedAt',
+        'shieldStockFixedTo5At',
+        'season1ItemsRefundedAt',
+        'raidPasswordNeedsSetup',
+        'learningThermometer'
+      ];
+    }
+
+    function twoDigits(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    // slotMs를 UTC epoch로 읽은 뒤 9시간을 더하면, hours()/minutes()가 한국 표준시 벽시계가 됩니다.
+    function autoXpKst(slotMs) {
+      return timestamp.value(slotMs) + duration.value(9, 'h');
+    }
+
+    function autoXpIsClassEnd(slotMs) {
+      let kst = autoXpKst(slotMs);
+      return kst.seconds() == 0
+        && kst.nanos() == 0
+        && (
+          (kst.hours() == 9 && kst.minutes() == 40)
+          || (kst.hours() == 10 && kst.minutes() == 30)
+          || (kst.hours() == 11 && kst.minutes() == 20)
+          || (kst.hours() == 12 && kst.minutes() == 10)
+          || (kst.hours() == 13 && kst.minutes() == 50)
+          || (kst.hours() == 14 && kst.minutes() == 40)
+        );
+    }
+
+    function autoXpKey(slotMs) {
+      let kst = autoXpKst(slotMs);
+      return string(kst.year()) + '_' + twoDigits(kst.month()) + '_' + twoDigits(kst.day())
+        + '_' + twoDigits(kst.hours()) + ':' + twoDigits(kst.minutes());
+    }
+
+    function kstNow() {
+      return request.time + duration.value(9, 'h');
+    }
+
+    // 1970-01-01은 목요일. date()는 9시간을 더한 시각의 달력 날짜(한국 표준시)입니다.
+    // 0=일요일 … 6=토요일. rules에 weekday()가 없어 epoch 일로 계산합니다.
+    function kstWeekdaySunday0() {
+      return (math.floor(kstNow().date().toMillis() / 86400000) + 4) % 7;
+    }
+
+    // 오늘 이미 지난 종 가운데 가장 최근 시각. 09:40 이전이면 빈 문자열입니다.
+    function classXpCatchupClock() {
+      let mins = kstNow().hours() * 60 + kstNow().minutes();
+      return mins >= 880 ? '14:40'
+        : mins >= 830 ? '13:50'
+        : mins >= 730 ? '12:10'
+        : mins >= 680 ? '11:20'
+        : mins >= 630 ? '10:30'
+        : mins >= 580 ? '09:40'
+        : '';
+    }
+
+    // 평일에만, 오늘 가장 최근 종 키. 주말·첫 종 이전은 빈 문자열이라 지급이 거부됩니다.
+    // 다음 종 전까지 그 키만 허용하므로, 놓친 이전 종을 한꺼번에 받지 못합니다.
+    function classXpCatchupKeyNow() {
+      let clock = classXpCatchupClock();
+      let kst = kstNow();
+      let weekday = kstWeekdaySunday0();
+      return clock != '' && weekday >= 1 && weekday <= 5
+        ? string(kst.year()) + '_' + twoDigits(kst.month()) + '_' + twoDigits(kst.day()) + '_' + clock
+        : '';
+    }
+
+    // 공지 문장은 저장하지 않습니다. 앱이 slotMs로 만듭니다.
+    // autoXp는 공지용입니다. 지급 여부는 학생 문서 lastClassXpSlot이 정합니다.
+    // 키는 오늘 가장 최근 종(이미 지난 것, 그 1분이 지난 뒤 포함)과 같아야 합니다.
+    function autoXpShapeOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['lastAutoXpTime', 'slotMs'])
+        && d.lastAutoXpTime is string
+        && d.slotMs is int
+        && d.slotMs > 1577836800000
+        && d.slotMs < 4102444800000
+        && d.slotMs % 60000 == 0
+        && d.slotMs <= request.time.toMillis() + 15000
+        && autoXpIsClassEnd(d.slotMs)
+        && d.lastAutoXpTime == autoXpKey(d.slotMs)
+        && d.lastAutoXpTime == classXpCatchupKeyNow();
+    }
+
+    // 슬롯 키는 오늘 가장 최근 종에 경험치가 정확히 +5일 때만 바꿉니다.
+    // xp가 숫자가 아니면 이 분기는 거부됩니다. 지우기는 경험치를 0으로 되돌리는 초기화에서만 됩니다.
+    function classXpSlotWriteOk() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return !changed.hasAny(['lastClassXpSlot'])
+        || (
+          classXpCatchupKeyNow() != ''
+          && request.resource.data.lastClassXpSlot is string
+          && request.resource.data.lastClassXpSlot == classXpCatchupKeyNow()
+          && request.resource.data.xp is number
+          && resource.data.xp is number
+          && request.resource.data.xp == resource.data.xp + 5
+        )
+        || (
+          request.resource.data.xp is number
+          && request.resource.data.xp == 0
+          && (
+            !('lastClassXpSlot' in request.resource.data)
+            || request.resource.data.lastClassXpSlot == ''
+          )
+        );
+    }
+
+    function thermometerShapeOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'date', 'min', 'max', 'settledDate', 'lastSettlementAt',
+          'settlementKey', 'settlementStatus', 'settlementStartedAt',
+          'settlementAppliedCount', 'settlementTotalDelta'
+        ])
+        && d.date is string
+        && d.date.size() >= 8
+        && d.date.size() <= 10
+        && d.min is int
+        && d.min >= -500
+        && d.min < 0
+        && d.max is int
+        && d.max > 0
+        && d.max <= 500
+        && d.min < d.max
+        && d.settledDate is string
+        && d.settledDate.size() <= 10
+        && d.lastSettlementAt is number
+        && d.settlementKey is string
+        && d.settlementKey.size() <= 12
+        && d.settlementStatus is string
+        && d.settlementStatus.size() <= 20
+        && d.settlementStartedAt is number
+        && d.settlementAppliedCount is int
+        && d.settlementAppliedCount >= 0
+        && d.settlementAppliedCount <= 40
+        && d.settlementTotalDelta is int
+        && d.settlementTotalDelta >= -20000
+        && d.settlementTotalDelta <= 20000;
+    }
+
+    function thermometerVoteInRange(appId, value) {
+      let parent = get(/databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer).data;
+      return parent.min is int
+        && parent.max is int
+        && value >= parent.min
+        && value <= parent.max;
+    }
+
+    function thermometerVoteOk(appId, studentId) {
+      let d = request.resource.data;
+      return studentId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && d.keys().hasOnly(['value'])
+        && d.value is int
+        && exists(/databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer)
+        && thermometerVoteInRange(appId, d.value)
+        && (isAdminForApp(appId) || studentId == request.auth.uid);
     }
 
     function shopDiscountUntouched() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['shopDiscount']);
     }
 
+    function gmOnlyUntouched() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(gmOnlyKeys());
+    }
+
+    function createHasShopDiscount() {
+      return 'shopDiscount' in request.resource.data;
+    }
+
+    function createTouchesGmOnly() {
+      return request.resource.data.keys().hasAny(gmOnlyKeys());
+    }
+
     function shopDiscountChangeIsValid() {
       let d = request.resource.data.shopDiscount;
       return d is map
-        && d.keys().hasAll(['enabled', 'percent', 'updatedBy'])
+        && d.keys().hasAll(['enabled', 'percent'])
         && d.enabled is bool
         && d.percent is int
         && d.percent >= 0
         && d.percent <= 100
-        && (d.updatedBy == 'gm' || d.updatedBy == 'gm_a')
         && (
           d.enabled == false
           || (
@@ -49,7 +331,8 @@ service cloud.firestore {
         && request.resource.data.xp is number
         && request.resource.data.bong is number
         && request.resource.data.xp >= 0
-        && request.resource.data.bong >= -2000;
+        && request.resource.data.bong >= -2000
+        && !('lastClassXpSlot' in request.resource.data);
     }
 
     function studentUpdateIsSafe() {
@@ -70,7 +353,8 @@ service cloud.firestore {
             || (
               request.resource.data.bong >= -2000
               && request.resource.data.bong >= resource.data.bong - 5050
-            ));
+            ))
+          && classXpSlotWriteOk();
     }
 
     match /artifacts/{appId}/public/data/students/{studentId} {
@@ -94,24 +378,76 @@ service cloud.firestore {
     }
 
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 학급을 처음 만들 때는 shopDiscount 가 없습니다. 그 생성은 막지 않습니다.
-    // 앱은 이 문서를 지우지 않습니다. 학급 초기화는 학생 문서만 덮고, 여기서는 shieldStock 만 merge 합니다.
+    // 생성은 classIds 또는 시드 학급 승인 표식이 있어야 합니다.
+    // shopDiscount 와 GM 전용 키를 바꾸려면 학급 관리자입니다. 앱은 이 문서를 지우지 않습니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
-      allow create: if signedIn() && (
-        !('shopDiscount' in request.resource.data)
-        || shopDiscountChangeIsValid()
-      );
+      allow create: if canCreateClassSettings(appId)
+        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
       allow update: if signedIn() && (
-        shopDiscountUntouched()
-        || shopDiscountChangeIsValid()
+        (shopDiscountUntouched() && gmOnlyUntouched())
+        || (
+          isAdminForApp(appId)
+          && (shopDiscountUntouched() || shopDiscountChangeIsValid())
+        )
       );
       allow delete: if false;
     }
 
+    // 수업 종료 자동 XP 공지. 지급 중복 방지는 학생 문서 lastClassXpSlot입니다.
+    match /artifacts/{appId}/public/data/settings/autoXp {
+      allow read: if true;
+      allow create: if signedIn() && autoXpShapeOk();
+      allow update: if signedIn()
+        && autoXpShapeOk()
+        && resource.data.slotMs is int
+        && request.resource.data.slotMs >= resource.data.slotMs + 2400000;
+      allow delete: if false;
+    }
+
+    // 학습 온도계 부모. 생성·수정은 그 학급 선생님만 합니다. 학생별 값은 votes 하위 문서입니다.
+    match /artifacts/{appId}/public/data/settings/learningThermometer {
+      allow read: if true;
+      allow create: if isAdminForApp(appId) && thermometerShapeOk();
+      allow update: if isAdminForApp(appId) && thermometerShapeOk();
+      allow delete: if false;
+    }
+
+    // 학생 본인 문서는 Firebase uid와 문서 ID가 같을 때만, 선생님은 학번 문서를 씁니다.
+    // 익명 로그인 uid는 학번이 아니므로 학생은 다른 학생 값을 쓰지 못합니다.
+    match /artifacts/{appId}/public/data/settings/learningThermometer/votes/{studentId} {
+      allow read: if true;
+      allow create, update: if signedIn() && thermometerVoteOk(appId, studentId);
+      allow delete: if false;
+    }
+
+    // 학급 개설 직전, 시드 학급 선생님만 만들고 createdBy에 자기 uid를 남깁니다.
+    match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
+      allow read: if signedIn();
+      allow create: if isAdminForApp('sambong-class-2026')
+        && request.resource.data.keys().hasOnly(['classId', 'status', 'createdBy'])
+        && request.resource.data.classId == classId
+        && request.resource.data.status == 'approved'
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
     match /artifacts/{appId}/public/{document=**} {
       allow read: if true;
-      allow write: if signedIn() && !isSettingsGlobalDoc();
+      allow write: if signedIn()
+        && !isSettingsGlobalDoc()
+        && !isAutoXpDoc()
+        && !isLearningThermometerDoc()
+        && !isLearningThermometerVoteDoc()
+        && !isApprovedClassIdDoc()
+        && studentClassXpSlotAllowed();
     }
 
     match /classes/{classId} {

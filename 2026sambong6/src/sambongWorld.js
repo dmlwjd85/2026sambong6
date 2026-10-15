@@ -387,6 +387,7 @@ import {
     planGmIdleExpiry,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
+    shouldApplyTeacherBadgeRead,
     shouldSignOutNonAnonymousForPinLogin,
     shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
@@ -4788,14 +4789,22 @@ function redrawPlazaGrantsUi() {
             }
         }
 
+        let teacherBadgeReadGeneration = 0;
         async function refreshTeacherAuthBadge() {
             if (!auth) return;
+            const generation = ++teacherBadgeReadGeneration;
             const user = auth.currentUser;
             if (!isTeacherProvider(user)) {
                 renderTeacherAuthBadges({ authenticated: false, allowlisted: false, email: '' });
             } else {
-                renderTeacherAuthBadges(await readTeacherAllowlist(user));
+                const state = await readTeacherAllowlist(user);
+                // 학생 PIN 로그인이 그 사이에 선생님 세션을 끊으면, 늦게 도착한 허용 목록으로
+                // "인증됨"을 다시 그리지 않습니다.
+                if (generation !== teacherBadgeReadGeneration) return;
+                if (!shouldApplyTeacherBadgeRead(user, auth.currentUser)) return;
+                renderTeacherAuthBadges(state);
             }
+            if (generation !== teacherBadgeReadGeneration) return;
             if (window.playerState && window.playerState.isAdmin && typeof renderLearningThermometerPanel === 'function') {
                 renderLearningThermometerPanel();
             }
@@ -25134,7 +25143,7 @@ ${subjectLine}
                 void window.applyPersonalLunchDeductionIfNeeded();
                 /** 새로고침·재접속 시 항상 광장 탭(마스터도 동일 — 일괄 지급은 광장 카드 아래 패널) */
                 window.switchTab('plaza');
-                if (isAdmin) void refreshTeacherAuthBadge();
+                void refreshTeacherAuthBadge();
                 syncGmLogoutButton();
                 resetGmIdleTimer();
             } catch (e) { 

@@ -13,6 +13,7 @@ import {
     resolveGmIdleLogoutMs,
     HOME_CLASS_IDLE_AUTH_NOTICE,
     TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
+    shouldApplyTeacherBadgeRead,
     shouldSignOutNonAnonymousForPinLogin,
     shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
@@ -164,5 +165,25 @@ describe('원래 학급 PIN 로그인 유지', () => {
         assert.equal(shouldSignOutNonAnonymousForPinLogin({ studentId: '13' }), true);
         assert.match(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE, /저장된 비밀번호는 그대로/);
         assert.match(HOME_CLASS_IDLE_AUTH_NOTICE, /선생님 인증이 풀렸어요/);
+    });
+
+    it('선생님 허용 목록 조회가 끝난 뒤 세션이 바뀌면 배지에 그리지 않는다', () => {
+        const teacher = {
+            uid: 'teacher-1',
+            isAnonymous: false,
+            providerData: [{ providerId: 'password', email: 'teacher@school.kr' }],
+        };
+        const otherTeacher = {
+            uid: 'teacher-2',
+            isAnonymous: false,
+            providerData: [{ providerId: 'password', email: 'other@school.kr' }],
+        };
+        const anon = { uid: 'anon-1', isAnonymous: true, providerData: [] };
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, teacher), true);
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, anon), false);
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, null), false);
+        assert.equal(shouldApplyTeacherBadgeRead(teacher, otherTeacher), false);
+        assert.equal(shouldApplyTeacherBadgeRead(anon, anon), true);
+        assert.equal(shouldApplyTeacherBadgeRead(null, anon), true);
     });
 });

@@ -146,6 +146,17 @@ export function isTeacherProvider(user) {
 }
 
 /**
+ * 선생님 허용 목록(admins)을 읽는 동안 세션이 바뀌면 그 결과로 배지를 덮지 않습니다.
+ * 학생 PIN 로그인이 선생님 세션을 끊은 뒤, 늦게 도착한 "인증됨"이 배지에 남으면 안 됩니다.
+ * requestUser 는 읽기를 시작한 사용자, currentUser 는 읽기가 끝난 뒤의 사용자입니다.
+ */
+export function shouldApplyTeacherBadgeRead(requestUser, currentUser) {
+    if (!isTeacherProvider(requestUser)) return true;
+    if (!isTeacherProvider(currentUser)) return false;
+    return String(requestUser.uid || '') === String(currentUser.uid || '');
+}
+
+/**
  * popup_blocked | bad_credentials | network | permission_denied | provider_disabled | unknown
  */
 export function classifyAuthError(error) {

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test src/lib/*.test.js",
+    "test:emulator": "npx --yes firebase-tools@14.9.0 emulators:exec --only auth,firestore --project demo-sambong-attendance \"node --test src/lib/attendanceWrite.emulator.test.js\"",
     "deploy:firestore": "firebase deploy --only firestore:rules"
   },
   "dependencies": {

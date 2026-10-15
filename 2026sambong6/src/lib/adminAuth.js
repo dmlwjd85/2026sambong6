@@ -49,7 +49,9 @@ export const GM_ONLY_SETTING_KEYS = Object.freeze([
     'season2WeaponsClearedAt',
     'season2DragonBallsClearedAt',
     'shieldStockFixedTo5At',
-    'lastAutoXpTime',
+    'season1ItemsRefundedAt',
+    'raidPasswordNeedsSetup',
+    'learningThermometer',
 ]);
 
 function providerIds(user) {

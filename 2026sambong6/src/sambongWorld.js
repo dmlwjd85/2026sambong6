@@ -3637,6 +3637,15 @@ function redrawPlazaGrantsUi() {
             // 새 학급은 기존 교실 설정을 복사하지 않습니다. 기본 기능만 켠 깨끗한 시작값만 넣습니다.
             const raidPw = String(raidPassword || '').trim() || createRandomRaidPassword();
             const derivedWorld = deriveWorldNameFromSchool(schoolName) || displayName || 'MATE';
+            try {
+                await setDoc(getApprovedClassIdRef(newClassId), {
+                    classId: newClassId,
+                    status: 'approved',
+                });
+            } catch (e) {
+                const existingGrant = await getDoc(getApprovedClassIdRef(newClassId));
+                if (!existingGrant.exists()) throw e;
+            }
             await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'settings', 'global'), {
                 raidPassword: raidPw,
                 raidPasswordNeedsSetup: !String(raidPassword || '').trim(),
@@ -4688,7 +4697,7 @@ function redrawPlazaGrantsUi() {
         /** 초기화 직전 저장된 학생별 백업 (studentId → { savedAt, data }) */
         window.studentBackupMap = {};
         
-        let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
+        let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeAutoXp = null, unsubscribeThermometer = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let _firestoreListenersReady = false;
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
@@ -5047,6 +5056,18 @@ function redrawPlazaGrantsUi() {
 
         function getGlobalSettingsDocRef() {
             return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+        }
+
+        function getAutoXpDocRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'autoXp');
+        }
+
+        function getLearningThermometerDocRef() {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'learningThermometer');
+        }
+
+        function getApprovedClassIdRef(classId) {
+            return doc(db, 'artifacts', SEED_MASTER_CLASS_ID, 'public', 'data', 'approvedClassIds', String(classId || ''));
         }
 
         /** 학급게시판은 전역 설정 문서와 분리합니다. 생각게시판 그림 때문에 전역 문서가 커져도 저장이 되게 합니다. */
@@ -14822,7 +14843,7 @@ ${subjectLine}
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
                 const state = getLearningThermometerState();
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: state }, { merge: true });
+                await setDoc(getLearningThermometerDocRef(), state);
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 return true;
@@ -14920,27 +14941,28 @@ ${subjectLine}
         /** 배포 직후 1회: 김라희(2번) 온도계 값이 버그로 최고치에 고정된 경우 초기화 */
         async function applyLearningThermometerRahiMaxHotfix() {
             if (!db) return;
-            const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'learning_thermometer_rahi_max_hotfix_v1');
-            try {
+                const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'learning_thermometer_rahi_max_hotfix_v1');
+                const thermoRef = getLearningThermometerDocRef();
+                try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return;
                 await runTransaction(db, async (transaction) => {
                     const markerSnap = await transaction.get(markerRef);
                     if (markerSnap.exists() && markerSnap.data() && markerSnap.data().done) return;
-                    const settingsRef = getGlobalSettingsDocRef();
-                    const settingsSnap = await transaction.get(settingsRef);
-                    const data = settingsSnap.exists() ? settingsSnap.data() || {} : {};
-                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const thermoSnap = await transaction.get(thermoRef);
+                    const settingsSnap = thermoSnap.exists() ? null : await transaction.get(getGlobalSettingsDocRef());
+                    const raw = thermoSnap.exists()
+                        ? (thermoSnap.data() || {})
+                        : ((settingsSnap && settingsSnap.exists() && settingsSnap.data() && settingsSnap.data().learningThermometer) || {});
+                    const state = sanitizeLearningThermometerState(raw);
                     const values = { ...(state.values || {}) };
                     const wasMax = Number(values['2']) === Number(state.max);
                     if (wasMax) delete values['2'];
-                    transaction.set(settingsRef, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: getLocalDateStr(),
-                        },
-                    }, { merge: true });
+                    transaction.set(thermoRef, {
+                        ...state,
+                        values,
+                        date: getLocalDateStr(),
+                    });
                     transaction.set(markerRef, {
                         done: true,
                         touched: wasMax,
@@ -14974,10 +14996,13 @@ ${subjectLine}
                 if (!authOk) throw new Error('auth');
 
                 await runTransaction(db, async (transaction) => {
-                    const ref = getGlobalSettingsDocRef();
+                    const ref = getLearningThermometerDocRef();
                     const snap = await transaction.get(ref);
-                    const data = snap.exists() ? snap.data() || {} : {};
-                    const state = sanitizeLearningThermometerState(data.learningThermometer);
+                    const legacy = snap.exists() ? null : await transaction.get(getGlobalSettingsDocRef());
+                    const raw = snap.exists()
+                        ? (snap.data() || {})
+                        : ((legacy && legacy.exists() && legacy.data() && legacy.data().learningThermometer) || {});
+                    const state = sanitizeLearningThermometerState(raw);
                     const lockIsFresh =
                         state.settlementKey === today &&
                         state.settlementStatus === 'running' &&
@@ -15000,15 +15025,13 @@ ${subjectLine}
                     const values = pendingValues;
                     claimed = { status: 'claimed', state: { ...state, values } };
                     transaction.set(ref, {
-                        learningThermometer: {
-                            ...state,
-                            values,
-                            date: today,
-                            settlementKey: today,
-                            settlementStatus: 'running',
-                            settlementStartedAt: Date.now(),
-                        }
-                    }, { merge: true });
+                        ...state,
+                        values,
+                        date: today,
+                        settlementKey: today,
+                        settlementStatus: 'running',
+                        settlementStartedAt: Date.now(),
+                    });
                 });
 
                 if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
@@ -15071,7 +15094,7 @@ ${subjectLine}
                     settlementAppliedCount: appliedCount,
                     settlementTotalDelta: totalDelta,
                 };
-                await setDoc(getGlobalSettingsDocRef(), { learningThermometer: resetState }, { merge: true });
+                await setDoc(getLearningThermometerDocRef(), resetState);
                 setLocalLearningThermometerState(resetState);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
@@ -19874,14 +19897,38 @@ ${subjectLine}
                             if (typeof refreshRpsLiveUi === 'function') refreshRpsLiveUi();
                         });
 
+                        if (unsubscribeAutoXp) unsubscribeAutoXp();
+                        unsubscribeAutoXp = onSnapshot(getAutoXpDocRef(), (snap) => {
+                            if (!snap.exists()) return;
+                            const data = snap.data() || {};
+                            if (!window.globalSettings) window.globalSettings = {};
+                            window.globalSettings.autoXpAnnouncement = String(data.announcement || '');
+                            if (data.lastAutoXpTime) window.globalSettings.lastAutoXpTime = data.lastAutoXpTime;
+                            const npcEl = document.getElementById('npcText');
+                            const notice = window.globalSettings.announcement || window.globalSettings.autoXpAnnouncement;
+                            if (npcEl && notice) npcEl.innerText = `"[공지] ${notice}"`;
+                        });
+                        if (unsubscribeThermometer) unsubscribeThermometer();
+                        unsubscribeThermometer = onSnapshot(getLearningThermometerDocRef(), (snap) => {
+                            if (!snap.exists()) return;
+                            window._thermometerDocSeen = true;
+                            if (isLearningThermometerLocallyBusy()) return;
+                            setLocalLearningThermometerState(snap.data());
+                            if (window.playerState && window.playerState.isAdmin) renderLearningThermometerPanel();
+                        });
                         if(unsubscribeSettings) unsubscribeSettings();
                         unsubscribeSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), (snap) => {
                             const fromCache = !!(snap.metadata && snap.metadata.fromCache);
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
-                                const keepLocalLearningThermometer = settingsData.learningThermometer !== undefined && isLearningThermometerLocallyBusy();
+                                const keepLocalLearningThermometer = isLearningThermometerLocallyBusy() || window._thermometerDocSeen;
                                 const localLearningThermometer = window.globalSettings && window.globalSettings.learningThermometer;
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
+                                if (keepLocalLearningThermometer && localLearningThermometer) {
+                                    window.globalSettings.learningThermometer = localLearningThermometer;
+                                } else if (settingsData.learningThermometer !== undefined) {
+                                    window.globalSettings.learningThermometer = sanitizeLearningThermometerState(settingsData.learningThermometer);
+                                }
                                 if (settingsData.worldSettings !== undefined) {
                                     window.globalSettings.worldSettings = sanitizeWorldSettings(settingsData.worldSettings);
                                     applyWorldBranding();
@@ -19964,7 +20011,8 @@ ${subjectLine}
                                 
                                 const npcEl = document.getElementById('npcText');
                                 if (npcEl) {
-                                    npcEl.innerText = window.globalSettings.announcement ? `"[공지] ${window.globalSettings.announcement}"` : '"(등록된 공지가 없습니다)"';
+                                    const notice = window.globalSettings.announcement || window.globalSettings.autoXpAnnouncement || '';
+                                    npcEl.innerText = notice ? `"[공지] ${notice}"` : '"(등록된 공지가 없습니다)"';
                                 }
                                 const morningNoticeEl = document.getElementById('gmMorningActivityNoticeInput');
                                 if (morningNoticeEl && document.activeElement !== morningNoticeEl) {
@@ -24627,8 +24675,18 @@ ${subjectLine}
             _gmIdleTimer = setTimeout(() => { void expireGmSessionForIdle(); }, GM_IDLE_LOGOUT_MS);
         }
 
+        function isGmClassProjectionActive() {
+            if (typeof isClassToolFullscreenOpen === 'function' && isClassToolFullscreenOpen()) return true;
+            const share = window.globalSettings && window.globalSettings.classToolShare;
+            return !!(share && share.active);
+        }
+
         async function expireGmSessionForIdle() {
             if (!window.playerState || !window.playerState.isAdmin) return;
+            if (isGmClassProjectionActive()) {
+                resetGmIdleTimer();
+                return;
+            }
             clearLoginStorageKeepingClass();
             await endGmAuthSession();
             location.reload();
@@ -24637,9 +24695,19 @@ ${subjectLine}
         function bindGmIdleWatch() {
             if (window._gmIdleWatchBound) return;
             window._gmIdleWatchBound = true;
-            const bump = () => resetGmIdleTimer();
+            let lastMoveBump = 0;
+            const bumpNow = () => resetGmIdleTimer();
+            const bumpThrottled = () => {
+                const now = Date.now();
+                if (now - lastMoveBump < 5000) return;
+                lastMoveBump = now;
+                resetGmIdleTimer();
+            };
             ['pointerdown', 'keydown', 'touchstart'].forEach((eventName) => {
-                window.addEventListener(eventName, bump, { passive: true });
+                window.addEventListener(eventName, bumpNow, { passive: true });
+            });
+            ['mousemove', 'wheel', 'scroll'].forEach((eventName) => {
+                window.addEventListener(eventName, bumpThrottled, { passive: true });
             });
         }
         bindGmIdleWatch();
@@ -24754,8 +24822,9 @@ ${subjectLine}
             }
             try {
                 await auth.authStateReady();
-                // PIN 로그인은 남아 있는 선생님(Google/이메일) 세션을 쓰지 않습니다.
-                if (auth.currentUser && !auth.currentUser.isAnonymous) {
+                const loggingInAsGm = studentId === 'gm' || studentId === 'gm_a';
+                // 학생 PIN만 남아 있는 선생님 세션을 끊습니다. gm/gm_a 자동 로그인은 유지합니다.
+                if (!loggingInAsGm && auth.currentUser && !auth.currentUser.isAnonymous) {
                     await signOut(auth);
                 }
                 if (!auth.currentUser) await signInAnonymously(auth);
@@ -29198,13 +29267,9 @@ ${subjectLine}
             }
         };
 
-        /** 평일 수업 종료 시각(타임테이블)마다 전 학생 문서에 XP+5. 담임 화면이 켜진 경우에만 트랜잭션 1회 실행. (특정 학번만 아님 — 전원 동일 규칙) */
+        /** 평일 수업 종료 시각마다 전 학생 XP+5. 표식은 settings/autoXp 라 선생님 인증이 없어도 됩니다. */
         window.checkAndDistributeClassXP = async function() {
             if (!window.playerState.isGM || !window.allStudentsData || window.allStudentsData.length === 0) return;
-            if (!isTeacherProvider(auth && auth.currentUser)) {
-                console.warn('checkAndDistributeClassXP: 선생님 인증 세션이 없어 수업 XP 기록을 건너뜁니다.');
-                return;
-            }
             const now = new Date();
             if (isVacationAutomationPaused('classXp', now)) return;
             const day = now.getDay();
@@ -29215,14 +29280,20 @@ ${subjectLine}
             if (!targetTimes.includes(timeStr)) return;
 
             const todayKey = `${now.getFullYear()}_${now.getMonth()+1}_${now.getDate()}_${timeStr}`;
-            const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+            const slotMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0).getTime();
+            const autoXpRef = getAutoXpDocRef();
+            const settingsRef = getGlobalSettingsDocRef();
             const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
+            const announcement = `[${timeStr}] 수업 종료! 모든 학생에게 경험치 +5XP가 자동 지급되었습니다! 🎉`;
 
             let granted = false;
             try {
                 granted = await runTransaction(db, async (transaction) => {
+                    const autoSnap = await transaction.get(autoXpRef);
                     const settingsSnap = await transaction.get(settingsRef);
-                    const last = settingsSnap.exists() ? settingsSnap.data().lastAutoXpTime : null;
+                    const last = autoSnap.exists()
+                        ? autoSnap.data().lastAutoXpTime
+                        : (settingsSnap.exists() ? settingsSnap.data().lastAutoXpTime : null);
                     if (last === todayKey) return false;
 
                     for (const stu of stuList) {
@@ -29233,10 +29304,11 @@ ${subjectLine}
                             xpChangeLog: arrayUnion(buildXpChangeLogEntry(`수업 종료 자동 XP (${timeStr})`, Number(stu.xp) || 0, (Number(stu.xp) || 0) + 5, { source: 'class-end-auto' })),
                         }, { merge: true });
                     }
-                    transaction.set(settingsRef, {
+                    transaction.set(autoXpRef, {
                         lastAutoXpTime: todayKey,
-                        announcement: `[${timeStr}] 수업 종료! 모든 학생에게 경험치 +5XP가 자동 지급되었습니다! 🎉`
-                    }, { merge: true });
+                        announcement,
+                        slotMs,
+                    });
                     return true;
                 });
             } catch (e) {
@@ -29245,6 +29317,11 @@ ${subjectLine}
             }
 
             if (granted) {
+                if (!window.globalSettings) window.globalSettings = {};
+                window.globalSettings.autoXpAnnouncement = announcement;
+                window.globalSettings.lastAutoXpTime = todayKey;
+                const npcEl = document.getElementById('npcText');
+                if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
                 window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${stuList.length}명에게 경험치 +5 자동 지급을 완료했습니다.`);
             }
         };
@@ -29794,8 +29871,8 @@ ${subjectLine}
             if(el) { 
                 el.style.opacity = 0; 
                 setTimeout(() => { 
-                    if (window.globalSettings && window.globalSettings.announcement) {
-                        el.innerText = `"[공지] ${window.globalSettings.announcement}"`;
+                    if (window.globalSettings && (window.globalSettings.announcement || window.globalSettings.autoXpAnnouncement)) {
+                        el.innerText = `"[공지] ${window.globalSettings.announcement || window.globalSettings.autoXpAnnouncement}"`;
                     } else {
                         el.innerText = '"(등록된 공지가 없습니다. 마스터에게 문의하세요.)"';
                     }

@@ -31,15 +31,35 @@ service cloud.firestore {
     }
 
     // 이미 있는 학급 설정은 admins.classIds 에 그 학급 ID가 있을 때만 고칩니다.
-    // 새 settings/global 생성은 학급 ID가 그때 정해지므로 허용목록만 봅니다.
     function isAdminForApp(appId) {
       return isAdmin()
         && adminRecord().classIds is list
         && appId in adminRecord().classIds;
     }
 
+    function hasApprovedClassGrant(classId) {
+      return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
+    }
+
+    // 새 학급 문서는 그 학급 ID가 classIds에 있거나, 시드 학급 선생님이 남긴 승인 표식이 있을 때만 만듭니다.
+    function canCreateClassSettings(appId) {
+      return isAdminForApp(appId) || (isAdmin() && hasApprovedClassGrant(appId));
+    }
+
     function isSettingsGlobalDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/global$');
+    }
+
+    function isAutoXpDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/autoXp$');
+    }
+
+    function isLearningThermometerDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/learningThermometer$');
+    }
+
+    function isApprovedClassIdDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
     // 학생 화면이 쓰지 않는 것이 확인된 키만 둡니다. 애매한 키는 넣지 않습니다.
@@ -87,8 +107,59 @@ service cloud.firestore {
         'season2WeaponsClearedAt',
         'season2DragonBallsClearedAt',
         'shieldStockFixedTo5At',
-        'lastAutoXpTime'
+        'season1ItemsRefundedAt',
+        'raidPasswordNeedsSetup',
+        'learningThermometer'
       ];
+    }
+
+    function autoXpShapeOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['lastAutoXpTime', 'announcement', 'slotMs'])
+        && d.lastAutoXpTime is string
+        && d.lastAutoXpTime.matches('^\\d{4}_\\d{1,2}_\\d{1,2}_(09:40|10:30|11:20|12:10|13:50|14:40)$')
+        && d.announcement is string
+        && d.announcement.size() > 0
+        && d.announcement.size() <= 180
+        && d.slotMs is int
+        && d.slotMs > 0
+        && d.slotMs <= request.time.toMillis() + 180000
+        && d.slotMs >= request.time.toMillis() - 180000;
+    }
+
+    function thermometerShapeOk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'date', 'min', 'max', 'values', 'settledDate', 'lastSettlementAt',
+          'settlementKey', 'settlementStatus', 'settlementStartedAt',
+          'settlementAppliedCount', 'settlementTotalDelta'
+        ])
+        && d.date is string
+        && d.date.size() >= 8
+        && d.date.size() <= 10
+        && d.min is int
+        && d.min >= -500
+        && d.min < 0
+        && d.max is int
+        && d.max > 0
+        && d.max <= 500
+        && d.min < d.max
+        && d.values is map
+        && d.values.size() <= 40
+        && d.settledDate is string
+        && d.settledDate.size() <= 10
+        && d.lastSettlementAt is number
+        && d.settlementKey is string
+        && d.settlementKey.size() <= 12
+        && d.settlementStatus is string
+        && d.settlementStatus.size() <= 20
+        && d.settlementStartedAt is number
+        && d.settlementAppliedCount is int
+        && d.settlementAppliedCount >= 0
+        && d.settlementAppliedCount <= 40
+        && d.settlementTotalDelta is int
+        && d.settlementTotalDelta >= -20000
+        && d.settlementTotalDelta <= 20000;
     }
 
     function shopDiscountUntouched() {
@@ -176,20 +247,12 @@ service cloud.firestore {
     }
 
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // shopDiscount 와 GM 전용 키가 없는 생성·수정은 로그인(익명 포함)만으로 됩니다.
-    // 그 키를 넣거나 바꾸려면 isAdmin() 입니다. 앱은 이 문서를 지우지 않습니다.
+    // 생성은 classIds 또는 시드 학급 승인 표식이 있어야 합니다.
+    // shopDiscount 와 GM 전용 키를 바꾸려면 학급 관리자입니다. 앱은 이 문서를 지우지 않습니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
-      allow create: if signedIn() && (
-        (
-          !createHasShopDiscount()
-          && !createTouchesGmOnly()
-        )
-        || (
-          isAdmin()
-          && (!createHasShopDiscount() || shopDiscountChangeIsValid())
-        )
-      );
+      allow create: if canCreateClassSettings(appId)
+        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
       allow update: if signedIn() && (
         (shopDiscountUntouched() && gmOnlyUntouched())
         || (
@@ -200,6 +263,33 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 수업 종료 자동 XP 표식. 선생님 인증 없이, 시각이 맞고 이전보다 40분 이상 뒤인 슬롯만 기록합니다.
+    match /artifacts/{appId}/public/data/settings/autoXp {
+      allow read: if true;
+      allow create: if signedIn() && autoXpShapeOk();
+      allow update: if signedIn()
+        && autoXpShapeOk()
+        && resource.data.slotMs is int
+        && request.resource.data.slotMs >= resource.data.slotMs + 2400000;
+      allow delete: if false;
+    }
+
+    // 학습 온도계. min/max 와 정산 필드 범위를 검사합니다. values 맵의 개별 숫자는 규칙에서 순회할 수 없습니다.
+    match /artifacts/{appId}/public/data/settings/learningThermometer {
+      allow read: if true;
+      allow create, update: if signedIn() && thermometerShapeOk();
+      allow delete: if false;
+    }
+
+    // 학급 개설 직전, 시드 학급 선생님만 만듭니다. 요청 문서 ID는 임의라 규칙이 조회하지 못합니다.
+    match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
+      allow read: if signedIn();
+      allow create: if isAdminForApp('sambong-class-2026')
+        && request.resource.data.classId == classId
+        && request.resource.data.status == 'approved';
+      allow update, delete: if false;
+    }
+
     // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
     match /admins/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
@@ -208,7 +298,11 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/{document=**} {
       allow read: if true;
-      allow write: if signedIn() && !isSettingsGlobalDoc();
+      allow write: if signedIn()
+        && !isSettingsGlobalDoc()
+        && !isAutoXpDoc()
+        && !isLearningThermometerDoc()
+        && !isApprovedClassIdDoc();
     }
 
     match /classes/{classId} {

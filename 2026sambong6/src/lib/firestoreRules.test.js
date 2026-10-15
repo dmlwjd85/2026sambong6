@@ -1,7 +1,7 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { deleteDoc, deleteField, doc, getDoc, setDoc } from 'firebase/firestore';
+import { deleteDoc, deleteField, doc, getDoc, increment, setDoc } from 'firebase/firestore';
 import { classXpCatchupSlot } from './classXpSlot.js';
 import {
     assertFails,
@@ -272,7 +272,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             await setDoc(doc(context.firestore(), studentPath), {
                 xp: 10,
                 bong: 0,
-                lastClassXpSlot: '2026_10_15_09:40',
+                lastClassXpSlot: '2000_01_03_09:40',
             });
         });
         const db = anon().firestore();
@@ -436,6 +436,277 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             raidPassword: '1234',
             shieldStock: 5,
         }));
+    });
+
+    function studentResetPayload(pin = '1111') {
+        return {
+            pin,
+            xp: 0,
+            xpChangeLog: [],
+            bong: 0.0,
+            quests: {},
+            unlockedQuests: {},
+            jobs: [],
+            ownedSkins: {},
+            equippedSkins: {},
+            hasShield: false,
+            shieldHP: 0,
+            condition: null,
+            statusMessage: '',
+            unlockedFeatures: {},
+            homeLookMode: '',
+            dragonBalls: [],
+            dragonBallWeekendKey: '',
+            earlyBirdCount: 0,
+            inventory: [],
+            equippedWeapon: null,
+            equippedShield: null,
+            equippedShoes: null,
+            gearEnhance: {},
+            lunchBid: { date: '', amount: 0 },
+            lastLunchDeductDate: '',
+            questHistory: [],
+            usedRaidPasswords: [],
+            bankRegularSavings: 0,
+            bankTermDeposits: [],
+            bankDailyBonusLastDate: '',
+            bankLoan: null,
+            creditDefaultUntilYmd: '',
+            bankNegativeSinceYmd: '',
+            loanPenaltyUntilYmd: '',
+            attendanceMark: null,
+            praiseCount: 0,
+            dailyAllClearBonusDate: '',
+            stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
+            stockInvestDaily: { date: '', profit: 0, sells: 0 },
+            catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
+            classEventPurchases: [],
+            conveniencePurchases: [],
+            lottoTickets: [],
+        };
+    }
+
+    async function seedStudent(path, data) {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), path), data);
+        });
+    }
+
+    it('익명 클라이언트는 다른 학생의 봉·경험치를 조작하거나 문서를 지우지 못한다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_4';
+        await seedStudent(path, { xp: 40, bong: 80, pin: '2222', quests: { q1: true } });
+        const db = anon().firestore();
+        await assertFails(setDoc(doc(db, path), { bong: 999999, xp: 'x' }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), { xp: 'x' }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), { bong: 'lots' }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), { xp: 99999 }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), { bong: 999999 }, { merge: true }));
+        await assertFails(setDoc(doc(db, 'artifacts/class1/public/data/students/student_new'), {
+            xp: 'x',
+            bong: 0,
+        }));
+        await assertFails(deleteDoc(doc(db, path)));
+        await assertFails(deleteDoc(doc(teacher().firestore(), path)));
+        await assertFails(setDoc(doc(testEnv.unauthenticatedContext().firestore(), path), { xp: 1 }, { merge: true }));
+        await assertFails(setDoc(doc(db, `${path}/notes/secret`), { text: 'x' }));
+        await assertSucceeds(setDoc(doc(db, path), { pin: '3333' }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/shopGroupBuy/s4'), {
+            contributions: { '4': 30 },
+        }));
+    });
+
+    it('같은 종 슬롯에 경험치 +5를 반복하지 못하고, 첫 지급과 퀘스트 저장은 된다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_5';
+        const catchup = classXpCatchupSlot(new Date());
+        await seedStudent(path, { xp: 10, bong: 3, lastClassXpSlot: '2000_01_03_09:40' });
+        const db = anon().firestore();
+        if (!catchup) {
+            await assertFails(setDoc(doc(db, path), {
+                xp: 15,
+                lastClassXpSlot: '2026_10_15_14:40',
+            }, { merge: true }));
+            await assertSucceeds(setDoc(doc(db, path), { xp: 15 }, { merge: true }));
+            return;
+        }
+        await assertSucceeds(setDoc(doc(db, path), {
+            xp: increment(5),
+            lastClassXpSlot: catchup.key,
+        }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), { xp: 20 }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), {
+            xp: increment(5),
+            lastClassXpSlot: catchup.key,
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(teacher().firestore(), path), { xp: 25 }, { merge: true }));
+        await assertFails(setDoc(doc(otherTeacher().firestore(), path), { xp: 30 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, path), {
+            xp: 41,
+            bong: 6,
+            quests: { q6: true },
+            questHistory: [{ id: 'q6', name: '다리 근력', xp: 16, bong: 3 }],
+        }, { merge: true }));
+    });
+
+    it('잔액이 5050을 넘어도 초기화 모양이면 봉 0을 허용하고, 일부만 0으로 덮는 것은 막는다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_6';
+        await seedStudent(path, {
+            xp: 400,
+            bong: 8000,
+            pin: '1111',
+            quests: { q1: true },
+            lastClassXpSlot: '2000_01_03_09:40',
+            bankRegularSavings: 50,
+        });
+        const db = anon().firestore();
+        await assertFails(setDoc(doc(db, path), { xp: 0, bong: 0 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, path), studentResetPayload('1111')));
+        const snap = await getDoc(doc(db, path));
+        assert.equal(snap.data().xp, 0);
+        assert.equal(snap.data().bong, 0);
+        assert.equal(snap.data().lastClassXpSlot, undefined);
+    });
+
+    it('선생님은 한 번에 650을 넘는 경험치를 고치고, 익명 세션은 고치지 못한다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_7';
+        await seedStudent(path, { xp: 10, bong: 20 });
+        await assertFails(setDoc(doc(anon().firestore(), path), { xp: 5000 }, { merge: true }));
+        await assertFails(setDoc(doc(otherTeacher().firestore(), path), { xp: 5000 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(teacher().firestore(), path), { xp: 5000 }, { merge: true }));
+    });
+
+    it('저장된 경험치가 숫자가 아니면 숫자로 고치는 저장을 허용한다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_11';
+        await seedStudent(path, { xp: 'x', bong: 7, quests: {} });
+        const db = anon().firestore();
+        await assertFails(setDoc(doc(db, path), { xp: 'still-bad' }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, path), { xp: 250, quests: { q1: true } }, { merge: true }));
+        await seedStudent(path, { xp: 250, bong: 'bad' });
+        await assertFails(setDoc(doc(db, path), { bong: 'worse' }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, path), { bong: 12 }, { merge: true }));
+    });
+
+    it('시즌 2 병합은 경험치를 0으로 되돌리고 정산 봉만 더한다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_12';
+        await seedStudent(path, {
+            xp: 20000,
+            bong: 80,
+            lastClassXpSlot: '2000_01_03_14:40',
+            quests: { q1: true },
+            inventory: ['sword'],
+        });
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, path), {
+            seasonNumberApplied: 2,
+            season1Xp: 20000,
+            season1SettledAt: Date.now(),
+            season1BongReward: 200,
+            xp: 0,
+            quests: {},
+            unlockedQuests: {},
+            questHistory: [],
+            dailyAllClearBonusDate: '',
+            earlyBirdCount: 0,
+            usedRaidPasswords: [],
+            dragonBalls: [],
+            dragonBallWeekendKey: '',
+            inventory: [],
+            equippedWeapon: null,
+            equippedShield: null,
+            equippedShoes: null,
+            gearEnhance: {},
+            itemRefundLedger: [],
+            seasonSkinRefundCount: 0,
+            lastSkinRefundDate: '',
+            xpChangeLog: [{ at: 1, reason: '시즌 2 시작', before: 20000, after: 0, delta: -20000 }],
+            bong: increment(200),
+        }, { merge: true }));
+        const snap = await getDoc(doc(db, path));
+        assert.equal(snap.data().xp, 0);
+        assert.equal(snap.data().bong, 280);
+        assert.equal(snap.data().lastClassXpSlot, '2000_01_03_14:40');
+    });
+
+    it('주급 증가, 공동구매, 은행, 상점, 퀘스트 저장을 허용한다', async () => {
+        const salary = 'artifacts/class1/public/data/students/student_13';
+        const buyer = 'artifacts/class1/public/data/students/student_14';
+        const payer = 'artifacts/class1/public/data/students/student_15';
+        const payee = 'artifacts/class1/public/data/students/student_16';
+        const shopper = 'artifacts/class1/public/data/students/student_17';
+        const quester = 'artifacts/class1/public/data/students/student_18';
+        await seedStudent(salary, { xp: 10, bong: 4 });
+        await seedStudent(buyer, { xp: 10, bong: 100 });
+        await seedStudent(payer, { xp: 10, bong: 3000, bankRegularSavings: 0 });
+        await seedStudent(payee, { xp: 10, bong: 20 });
+        await seedStudent(shopper, { xp: 20, bong: 400, ownedSkins: {} });
+        await seedStudent(quester, { xp: 30, bong: 15, quests: {}, questHistory: [] });
+        const db = anon().firestore();
+
+        await assertSucceeds(setDoc(doc(db, salary), { bong: increment(12) }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, buyer), { bong: 70 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, buyer), { bong: increment(27) }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/shopGroupBuy/item_random'), {
+            contributions: { '14': 30 },
+            updatedAt: Date.now(),
+        }));
+
+        await assertSucceeds(setDoc(doc(db, payer), {
+            bong: 1000,
+            bankRegularSavings: 2000,
+            bongChangeLog: [{ reason: '계좌이체', before: 3000, after: 1000, delta: -2000 }],
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, payee), {
+            bong: 2020,
+            bongChangeLog: [{ reason: '계좌이체', before: 20, after: 2020, delta: 2000 }],
+        }, { merge: true }));
+
+        await assertSucceeds(setDoc(doc(db, shopper), {
+            bong: 100,
+            ownedSkins: { f_king: true },
+            shopDailyPurchase: { date: '2026-10-15', item_xp_pack: 1 },
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, shopper), {
+            xp: 45,
+            bong: 50,
+        }, { merge: true }));
+
+        await assertSucceeds(setDoc(doc(db, quester), {
+            xp: 46,
+            bong: 18,
+            quests: { q6: true },
+            questHistory: [{ id: 'q6', name: '다리 근력', xp: 16, bong: 3 }],
+        }, { merge: true }));
+
+        const paid = await getDoc(doc(db, salary));
+        assert.equal(paid.data().bong, 16);
+        const pooled = await getDoc(doc(db, buyer));
+        assert.equal(pooled.data().bong, 97);
+    });
+
+    it('선생님 복구는 큰 경험치·봉과 슬롯 삭제를 허용하고 익명 세션은 막는다', async () => {
+        const path = 'artifacts/class1/public/data/students/student_19';
+        await seedStudent(path, {
+            xp: 10,
+            bong: 9000,
+            pin: '4444',
+            lastClassXpSlot: '2000_01_03_14:40',
+            quests: {},
+        });
+        const restored = {
+            pin: '4444',
+            xp: 8000,
+            bong: 120,
+            quests: { q1: true },
+            questHistory: [{ id: 'q1', xp: 8 }],
+            inventory: ['wand'],
+            jobs: [{ id: 'job1' }],
+            bankRegularSavings: 40,
+        };
+        await assertFails(setDoc(doc(anon().firestore(), path), restored));
+        await assertSucceeds(setDoc(doc(teacher().firestore(), path), restored));
+        const snap = await getDoc(doc(teacher().firestore(), path));
+        assert.equal(snap.data().xp, 8000);
+        assert.equal(snap.data().bong, 120);
+        assert.equal(snap.data().lastClassXpSlot, undefined);
     });
 });
 

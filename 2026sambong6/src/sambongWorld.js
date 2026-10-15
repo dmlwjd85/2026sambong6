@@ -363,6 +363,16 @@ import {
     shopGroupBuySettleExtra,
 } from './lib/shopGroupBuy.js';
 import {
+    describeShopDiscountSaveError,
+    formatKstDateInput,
+    formatRemainingKst,
+    formatShopDiscountStatus,
+    getDiscountedPrice,
+    isShopDiscountActive,
+    normalizeShopDiscount,
+    parseKstDateInput,
+} from './lib/shopDiscount.js';
+import {
     extractWeatherJson,
     isSharedWeatherFresh,
     openMeteoGeocodeUrl,
@@ -4653,7 +4663,7 @@ function redrawPlazaGrantsUi() {
         window.gmData = null; 
         window.gmaData = null;
         window.busSeatState = emptyBusState(); 
-                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), openLesson: emptyOpenLessonState(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, rpsGame: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS } };
+                window.globalSettings = { raidPassword: '', raidPasswordNeedsSetup: true, shieldStock: SHIELD_STOCK_DEFAULT, lastAutoXpTime: '', morningActivityNotice: '', screenNotice: null, classToolShare: null, thoughtBoard: emptyThoughtBoard(), classBoard: emptyClassBoard(), openLesson: emptyOpenLessonState(), customShopItems: [], convenienceItems: [], deletedQuestIds: [], customQuests: [], deletedJobIds: [], customJobs: [], jobOverrides: {}, constitutionItems: [], weekendRaidRewardXp: 40, weekendRaidRewardBong: 20, birthdayCelebrations: [], lotto: null, worldCupBet: null, musicTimeQueue: [], learningThermometer: null, classTimetable: null, classElection: null, rpsGame: null, worldSettings: { ...DEFAULT_WORLD_SETTINGS }, shopDiscount: { enabled: false, percent: 0, startAt: 0, endAt: 0, scope: 'skins' } };
         applyWorldBranding();
         /** 공동구매 풀 스냅샷: shopId → { contributions: { 학번: B } } */
         window.shopGroupBuyPools = {};
@@ -7022,7 +7032,7 @@ ${subjectLine}
         function getMaxSkinRefundBong() {
             let max = 0;
             SKIN_DATA.forEach((skin) => {
-                max = Math.max(max, getEquippedSkinRefundBong(skin));
+                max = Math.max(max, getEquippedSkinRefundBong(skin, {}));
             });
             return normalizeBongValue(max);
         }
@@ -7033,17 +7043,19 @@ ${subjectLine}
             const ownedSkins = { ...(data.ownedSkins || {}) };
             const equippedSkins = { ...(data.equippedSkins || {}) };
             const ownedSkinInstances = { ...(data.ownedSkinInstances || {}) };
+            const ownedSkinPaid = { ...(data.ownedSkinPaid || {}) };
             if (!ownedSkins[skinId] || !equippedSkins[skinId]) throw new Error('not_equipped');
             const instanceId = ownedSkinInstances[skinId] || `legacy_${skinId}`;
             delete ownedSkins[skinId];
             delete equippedSkins[skinId];
             delete ownedSkinInstances[skinId];
+            delete ownedSkinPaid[skinId];
             if (skin && (skin.type === 'aura' || skin.type === 'face')) {
                 SKIN_DATA.forEach((s) => {
                     if (s.type === skin.type) delete equippedSkins[s.id];
                 });
             }
-            return { ownedSkins, equippedSkins, ownedSkinInstances, instanceId };
+            return { ownedSkins, equippedSkins, ownedSkinInstances, ownedSkinPaid, instanceId };
         }
 
         /**
@@ -7072,10 +7084,15 @@ ${subjectLine}
                 if (!refundGate.ok) throw new Error(refundGate.reason === 'season' ? 'season_refund_cap' : 'day_refund_cap');
 
                 const built = buildSkinRefundServerPatch(data, itemId);
+                const skinForRefund = SKIN_DATA.find((s) => s.id === itemId);
+                const expectedRefund = getEquippedSkinRefundBong(skinForRefund, data.ownedSkinPaid || {});
+                if (expectedRefund <= 0 || expectedRefund > maxRefund + 0.001) throw new Error('invalid_refund_amount');
+                if (Math.abs(expectedRefund - amount) > 0.001) throw new Error('refund_mismatch');
                 const itemPatch = {
                     ownedSkins: built.ownedSkins,
                     equippedSkins: built.equippedSkins,
                     ownedSkinInstances: built.ownedSkinInstances,
+                    ownedSkinPaid: built.ownedSkinPaid,
                 };
 
                 const serverBong = normalizeBongValue(Number(data.bong) || 0);
@@ -7116,6 +7133,9 @@ ${subjectLine}
                 purgeRefundedSkinCompletely(itemId);
                 if (synced.itemPatch.ownedSkinInstances) {
                     window.playerState.ownedSkinInstances = { ...(synced.itemPatch.ownedSkinInstances) };
+                }
+                if (synced.itemPatch.ownedSkinPaid) {
+                    window.playerState.ownedSkinPaid = { ...(synced.itemPatch.ownedSkinPaid) };
                 }
             }
             if (!Array.isArray(window.playerState.itemRefundLedger)) window.playerState.itemRefundLedger = [];
@@ -7346,9 +7366,93 @@ ${subjectLine}
         }
         window.maybeAlertStudentBongSupervision = maybeAlertStudentBongSupervision;
 
-        function getEquippedSkinRefundBong(skin) {
-            const price = Math.max(0, Number(skin && skin.price) || 0);
-            return normalizeBongValue(price * EQUIPPED_ITEM_REFUND_RATE);
+        function readShopDiscount() {
+            return normalizeShopDiscount(window.globalSettings && window.globalSettings.shopDiscount);
+        }
+
+        function getSkinShopPrice(skin, nowMs = Date.now()) {
+            return getDiscountedPrice(Math.max(0, Number(skin && skin.price) || 0), readShopDiscount(), nowMs);
+        }
+
+        /** 결제 기록이 있으면 그 금액, 없으면 정가. 환불 기준은 정가를 넘지 않습니다. */
+        function skinRefundBasePrice(skin, paidMap) {
+            const original = Math.max(0, Number(skin && skin.price) || 0);
+            const map = paidMap && typeof paidMap === 'object' ? paidMap : null;
+            const id = skin && skin.id;
+            if (!map || !id || !Object.prototype.hasOwnProperty.call(map, id)) return original;
+            const raw = map[id];
+            if (raw == null || raw === '') return original;
+            const paid = Number(raw);
+            if (!Number.isFinite(paid) || paid < 0) return original;
+            return Math.min(original, paid);
+        }
+
+        function getEquippedSkinRefundBong(skin, paidMap) {
+            const map = paidMap !== undefined ? paidMap : (window.playerState && window.playerState.ownedSkinPaid);
+            const base = skinRefundBasePrice(skin, map);
+            return normalizeBongValue(base * EQUIPPED_ITEM_REFUND_RATE);
+        }
+
+        function buildSkinShopPriceHtml(skin, nowMs = Date.now()) {
+            const cfg = readShopDiscount();
+            const original = Math.max(0, Number(skin && skin.price) || 0);
+            const active = isShopDiscountActive(cfg, nowMs);
+            const level = skin && skin.minLevel ? `<div class="text-[8px] text-slate-400 font-bold">Lv.${skin.minLevel}</div>` : '';
+            if (!active) {
+                return `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border border-slate-700 text-[10px] font-bold text-right">${formatBongAmount(original)}${level}</div>`;
+            }
+            const price = getDiscountedPrice(original, cfg, nowMs);
+            const remain = formatRemainingKst(cfg, nowMs);
+            return `<div class="text-right">
+                <div class="text-[9px] font-black text-rose-100 bg-rose-600 rounded px-1.5 py-0.5 inline-block mb-1">-${cfg.percent}%</div>
+                <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold whitespace-nowrap"><s class="text-slate-400 font-normal">${formatBongAmount(original)}</s> ${formatBongAmount(price)}</div>
+                ${remain ? `<div class="skin-discount-remain text-[8px] text-amber-200 font-bold mt-0.5">${remain}</div>` : ''}
+                ${level}
+            </div>`;
+        }
+
+        /** 스킨 카드 가격·구매 가능 여부. 할인 남은 시간을 1분마다 다시 그립니다. */
+        function applySkinShopCardStates(nowMs = Date.now()) {
+            if (!window.playerState) return;
+            if (!window.playerState.ownedSkins) window.playerState.ownedSkins = {};
+            if (!window.playerState.equippedSkins) window.playerState.equippedSkins = {};
+            SKIN_DATA.forEach((skin) => {
+                const item = document.getElementById(`skin-btn-${skin.id}`);
+                const status = document.getElementById(`skin-status-${skin.id}`);
+                if (!item || !status) return;
+                const isOwned = window.playerState.ownedSkins[skin.id];
+                const isEquipped = window.playerState.equippedSkins[skin.id];
+                if (isOwned) {
+                    item.classList.replace('unaffordable', 'affordable');
+                    item.classList.add('border-pink-500');
+                    const refundB = getEquippedSkinRefundBong(skin);
+                    const canRefundEquipped =
+                        isEquipped
+                        && !window.playerState.isGuest
+                        && !window.playerState.isAdmin
+                        && refundB > 0;
+                    status.innerHTML = isEquipped
+                        ? (canRefundEquipped
+                            ? `<div class="flex flex-col items-end gap-1">
+                                <span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>
+                                <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${formatBongAmount(refundB)}</button>
+                               </div>`
+                            : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>')
+                        : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
+                    return;
+                }
+                item.classList.remove('border-pink-500');
+                const lv = calculateExactLevel(window.playerState.xp || 0);
+                const levelOk = !skin.minLevel || window.playerState.isAdmin || lv >= skin.minLevel;
+                const salePrice = getSkinShopPrice(skin, nowMs);
+                if ((window.playerState.bong >= salePrice && levelOk) || window.playerState.isAdmin) {
+                    item.classList.replace('unaffordable', 'affordable');
+                } else {
+                    item.classList.replace('affordable', 'unaffordable');
+                }
+                status.innerHTML = buildSkinShopPriceHtml(skin, nowMs);
+            });
+            if (typeof syncShopDiscountAdminForm === 'function') syncShopDiscountAdminForm(nowMs);
         }
 
         /** 스킨 환불 시 보유·장착(얼굴/오버레이/테두리 오라) 데이터를 완전히 제거 */
@@ -7359,6 +7463,9 @@ ${subjectLine}
 
             delete window.playerState.ownedSkins[skinId];
             delete window.playerState.equippedSkins[skinId];
+            if (window.playerState.ownedSkinPaid && typeof window.playerState.ownedSkinPaid === 'object') {
+                delete window.playerState.ownedSkinPaid[skinId];
+            }
 
             if (skin && (skin.type === 'aura' || skin.type === 'face')) {
                 SKIN_DATA.forEach((s) => {
@@ -18435,8 +18542,7 @@ ${subjectLine}
 
         function renderShopManagementAdminPanel() {
             const gmShopEl = document.getElementById('gmShopPriceInputs');
-            if (!gmShopEl) return;
-            gmShopEl.innerHTML = getAllShopItems().map((s) => {
+            if (gmShopEl) gmShopEl.innerHTML = getAllShopItems().map((s) => {
                 const safeLabel = String(s.name).replace(/</g, '').replace(/&/g, '');
                 const currentPrice = getEffectiveShopPrice(s.id);
                 const deleteBtn = isCustomShopItem(s)
@@ -18450,7 +18556,64 @@ ${subjectLine}
                         ${deleteBtn}
                     </div>`;
             }).join('');
+            syncShopDiscountAdminForm();
         }
+
+        function syncShopDiscountAdminForm(nowMs = Date.now()) {
+            const panel = document.getElementById('gmSkinDiscountPanel');
+            if (!panel) return;
+            const cfg = readShopDiscount();
+            const status = document.getElementById('gmSkinDiscountStatus');
+            if (status) status.textContent = formatShopDiscountStatus(cfg, nowMs);
+            const focus = document.activeElement;
+            if (focus && panel.contains(focus)) return;
+            const enabledEl = document.getElementById('gmSkinDiscountEnabled');
+            const percentEl = document.getElementById('gmSkinDiscountPercent');
+            const startEl = document.getElementById('gmSkinDiscountStart');
+            const endEl = document.getElementById('gmSkinDiscountEnd');
+            if (enabledEl) enabledEl.checked = !!cfg.enabled;
+            if (percentEl) percentEl.value = String(cfg.percent);
+            if (startEl) startEl.value = cfg.startAt > 0 ? formatKstDateInput(cfg.startAt) : '';
+            if (endEl) endEl.value = cfg.endAt > 0 ? formatKstDateInput(cfg.endAt) : '';
+        }
+
+        window.saveShopDiscountAdmin = async function () {
+            if (!window.playerState || !window.playerState.isGM) {
+                return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
+            }
+            if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const enabledEl = document.getElementById('gmSkinDiscountEnabled');
+            const percentEl = document.getElementById('gmSkinDiscountPercent');
+            const startEl = document.getElementById('gmSkinDiscountStart');
+            const endEl = document.getElementById('gmSkinDiscountEnd');
+            const percentRaw = percentEl ? String(percentEl.value == null ? '' : percentEl.value).trim() : '';
+            const percent = /^\d+$/.test(percentRaw) ? Number(percentRaw) : Number.NaN;
+            const startAt = parseKstDateInput(startEl ? startEl.value : '', false);
+            const endAt = parseKstDateInput(endEl ? endEl.value : '', true);
+            const err = describeShopDiscountSaveError({ percent, startAt, endAt });
+            if (err) return await window.customAlert(err);
+            const shopDiscount = {
+                enabled: !!(enabledEl && enabledEl.checked),
+                percent,
+                startAt,
+                endAt,
+                scope: 'skins',
+                updatedAt: Date.now(),
+                updatedBy: String(localStorage.getItem('sambong_student_id') || 'gm'),
+            };
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                await setDoc(getGlobalSettingsDocRef(), { shopDiscount }, { merge: true });
+                window.globalSettings = { ...(window.globalSettings || {}), shopDiscount };
+                syncShopDiscountAdminForm();
+                if (typeof applySkinShopCardStates === 'function') applySkinShopCardStates();
+                await window.customAlert('✅ 캐릭터 상점 할인이 저장되었습니다.');
+            } catch (e) {
+                console.error('saveShopDiscountAdmin', e);
+                await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
+            }
+        };
 
         function escapeConvenienceHtml(s) {
             return String(s == null ? '' : s)
@@ -19295,9 +19458,7 @@ ${subjectLine}
                         <div class="font-bold text-sm sm:text-base truncate text-white">${skin.name}</div>
                         <div class="text-[11px] sm:text-xs text-slate-100 truncate">${skin.type === 'face' ? '캐릭터 · ' : skin.type === 'aura' ? '오라 · ' : ''}${skin.desc}${skin.minLevel ? ` · Lv.${skin.minLevel}` : ''}${skinStatLabel(skin.id) ? ` · ${skinStatLabel(skin.id)}` : ''}</div>
                     </div>
-                    <div id="skin-status-${skin.id}" class="shrink-0">
-                        <div class="text-pink-200 bg-slate-950 px-2 py-1 rounded border border-pink-300/40 text-[11px] font-bold">${formatBongAmount(skin.price)}</div>
-                    </div>
+                    <div id="skin-status-${skin.id}" class="shrink-0">${buildSkinShopPriceHtml(skin)}</div>
                 </div>`).join('');
 
             document.getElementById('emotionBtns').innerHTML = EMOTIONS.map(e => `
@@ -19916,6 +20077,7 @@ ${subjectLine}
         }
 
         function checkTimeEvents() {
+            if (typeof applySkinShopCardStates === 'function') applySkinShopCardStates();
             checkWeekendTime();
 
             const now = new Date();
@@ -24039,44 +24201,7 @@ ${subjectLine}
 
             if (typeof renderJobGrid === 'function') renderJobGrid();
 
-            SKIN_DATA.forEach(skin => {
-                const item = document.getElementById(`skin-btn-${skin.id}`); 
-                const status = document.getElementById(`skin-status-${skin.id}`);
-                
-                if (item && status) {
-                    const isOwned = window.playerState.ownedSkins[skin.id]; 
-                    const isEquipped = window.playerState.equippedSkins[skin.id];
-                    
-                    if (isOwned) {
-                        item.classList.replace('unaffordable', 'affordable'); 
-                        item.classList.add('border-pink-500');
-                        const refundB = getEquippedSkinRefundBong(skin);
-                        const canRefundEquipped =
-                            isEquipped
-                            && !window.playerState.isGuest
-                            && !window.playerState.isAdmin
-                            && refundB > 0;
-                        status.innerHTML = isEquipped
-                            ? (canRefundEquipped
-                                ? `<div class="flex flex-col items-end gap-1">
-                                    <span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>
-                                    <button type="button" onclick="event.stopPropagation();window.refundEquippedSkin('${skin.id}')" class="text-[9px] bg-amber-700 hover:bg-amber-600 text-white px-2 py-1 rounded font-bold border border-amber-500/60">환불 ${formatBongAmount(refundB)}</button>
-                                   </div>`
-                                : '<span class="text-[9px] bg-pink-500 text-white px-2 py-1 rounded">장착중</span>')
-                            : '<span class="text-[9px] border border-pink-500 text-pink-400 px-2 py-1 rounded">보유중</span>';
-                    } else {
-                        item.classList.remove('border-pink-500');
-                        const lv = calculateExactLevel(window.playerState.xp || 0);
-                        const levelOk = !skin.minLevel || window.playerState.isAdmin || lv >= skin.minLevel;
-                        if ((window.playerState.bong >= skin.price && levelOk) || window.playerState.isAdmin) { 
-                            item.classList.replace('unaffordable', 'affordable'); 
-                        } else { 
-                            item.classList.replace('affordable', 'unaffordable'); 
-                        }
-                        status.innerHTML = `<div class="text-pink-400 bg-slate-900 px-2 py-1 rounded border text-[10px] font-bold">${formatBongAmount(skin.price)}${skin.minLevel ? `<div class="text-[8px] text-slate-400">Lv.${skin.minLevel}</div>` : ''}</div>`;
-                    }
-                }
-            });
+            applySkinShopCardStates();
 
             getAllShopItems().forEach(shop => {
                 const item = document.getElementById('shop-btn-' + shop.id);
@@ -27586,11 +27711,16 @@ ${subjectLine}
                 return await window.customAlert(`환불은 하루에 ${SKIN_REFUND_MAX_PER_DAY}회만 할 수 있어요.`);
             }
 
+            const paidMap = window.playerState.ownedSkinPaid || {};
+            const hasPaid = Object.prototype.hasOwnProperty.call(paidMap, skin.id)
+                && paidMap[skin.id] != null
+                && paidMap[skin.id] !== '';
+            const refundBase = skinRefundBasePrice(skin, paidMap);
             const typeLabel =
                 skin.type === 'aura' ? '테두리(오라)' : skin.type === 'face' ? '캐릭터' : '아이템';
             const ok = await window.customConfirm(
                 `[${skin.name}] ${typeLabel}을(를) 환불할까요?\n\n` +
-                `환불 규정: 구매가 ${formatBongAmount(skin.price)}의 50%\n` +
+                `환불 규정: ${hasPaid ? '결제 금액' : '구매가'} ${formatBongAmount(refundBase)}의 50%\n` +
                 `돌려받는 삼봉: +${formatBongAmount(refundB)}\n` +
                 '환불 시 장착이 즉시 해제되고 아이템이 완전히 삭제됩니다.'
             );
@@ -27622,6 +27752,9 @@ ${subjectLine}
                 if (code === 'day_refund_cap') {
                     return await window.customAlert(`환불은 하루에 ${SKIN_REFUND_MAX_PER_DAY}회만 할 수 있어요.`);
                 }
+                if (code === 'refund_mismatch') {
+                    return await window.customAlert('환불 금액이 서버의 결제 기록과 다릅니다. 새로고침 후 다시 확인해 주세요.');
+                }
                 console.error('refundEquippedSkin', e);
                 await window.customAlert('환불 실패: ' + code);
             } finally {
@@ -27652,6 +27785,186 @@ ${subjectLine}
             if (!list) return;
             const i = list.findIndex((s) => String(s.id) === String(sid));
             if (i >= 0) list[i] = { ...list[i], ...patch };
+        }
+
+        /**
+         * 스킨 구매. settings/global 과 학생 문서를 같이 읽어 할인가를 다시 계산합니다.
+         * 화면에 확인한 가격과 다르면 쓰지 않고 price_changed 를 돌려줍니다.
+         */
+        async function commitSkinPurchase(skin, displayedPrice, kindLabel) {
+            const gate = { changedPrice: null, serverCfg: null };
+            const settingsRef = getGlobalSettingsDocRef();
+            let committed = null;
+            try {
+            await runTransaction(db, async (transaction) => {
+                gate.changedPrice = null;
+                gate.serverCfg = null;
+                const settingsSnap = await transaction.get(settingsRef);
+                const studentSnap = await transaction.get(currentStudentDocRef);
+                if (!studentSnap.exists()) throw new Error('not_found');
+                const settingsData = settingsSnap.exists() ? (settingsSnap.data() || {}) : {};
+                const serverCfg = normalizeShopDiscount(settingsData.shopDiscount);
+                const serverPrice = getDiscountedPrice(skin.price, serverCfg, Date.now());
+                if (serverPrice !== displayedPrice) {
+                    gate.changedPrice = serverPrice;
+                    gate.serverCfg = serverCfg;
+                    throw new Error('price_changed');
+                }
+                const data = studentSnap.data() || {};
+                const ownedSkins = { ...(data.ownedSkins || {}) };
+                if (ownedSkins[skin.id]) throw new Error('already_owned');
+                const serverBong = normalizeBongValue(Number(data.bong) || 0);
+                if (serverBong < serverPrice) throw new Error('insufficient');
+                const nextBong = normalizeBongValue(serverBong - serverPrice);
+                ownedSkins[skin.id] = true;
+                const ownedSkinPaid = { ...(data.ownedSkinPaid || {}) };
+                ownedSkinPaid[skin.id] = serverPrice;
+                const ownedSkinInstances = { ...(data.ownedSkinInstances || {}) };
+                ownedSkinInstances[skin.id] = `ski_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                const equippedSkins = unequipSameSlot(data.equippedSkins || {}, SKIN_DATA, skin);
+                equippedSkins[skin.id] = true;
+                const bongLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
+                if (Math.abs(nextBong - serverBong) > 0.0001) {
+                    bongLogs.push(buildBongChangeLogEntry(`${skin.name} ${kindLabel} 구매`, serverBong, nextBong, {
+                        source: 'skinPurchase',
+                        allowBongDecrease: true,
+                        skinId: skin.id,
+                        paid: serverPrice,
+                    }));
+                }
+                transaction.set(currentStudentDocRef, {
+                    bong: nextBong,
+                    ownedSkins,
+                    ownedSkinPaid,
+                    ownedSkinInstances,
+                    equippedSkins,
+                    bongChangeLog: bongLogs,
+                }, { merge: true });
+                committed = {
+                    paid: serverPrice,
+                    nextBong,
+                    ownedSkins,
+                    ownedSkinPaid,
+                    ownedSkinInstances,
+                    equippedSkins,
+                    bongChangeLog: bongLogs,
+                };
+            });
+            } catch (e) {
+                const code = e && e.message ? String(e.message) : String(e);
+                if (code === 'price_changed' || code.includes('price_changed')) {
+                    const err = new Error('price_changed');
+                    err.serverPrice = gate.changedPrice;
+                    err.serverCfg = gate.serverCfg;
+                    throw err;
+                }
+                throw e;
+            }
+            return committed;
+        }
+
+        async function purchaseDiscountedSkin(skin, kindLabel) {
+            if (!db || !currentStudentDocRef) {
+                await window.customAlert('서버 연결 후 다시 시도해 주세요.');
+                return;
+            }
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                return;
+            }
+            let nowMs = Date.now();
+            let cfg = readShopDiscount();
+            let displayed = getDiscountedPrice(skin.price, cfg, nowMs);
+            const wallet = Number(window.playerState.bong) || 0;
+            if (wallet < displayed) {
+                await window.customAlert(formatInsufficientBongAlert(displayed - wallet));
+                return;
+            }
+            const saleOn = isShopDiscountActive(cfg, nowMs);
+            const ask = saleOn
+                ? `${kindLabel} '${skin.name}'을(를) ${formatBongAmount(displayed)}에 살까요?\n(정가 ${formatBongAmount(skin.price)} · -${cfg.percent}%)`
+                : `${kindLabel} '${skin.name}'을(를) ${formatBongAmount(displayed)}에 살까요?`;
+            if (!(await window.customConfirm(ask))) return;
+            if (window._skinBuyRunning) return;
+            window._skinBuyRunning = true;
+            try {
+                for (let guard = 0; guard < 4; guard += 1) {
+                    let result = null;
+                    try {
+                        result = await commitSkinPurchase(skin, displayed, kindLabel);
+                    } catch (e) {
+                        const code = e && e.message ? e.message : String(e);
+                        if (code === 'price_changed') {
+                            const nextPrice = e && e.serverPrice != null ? e.serverPrice : null;
+                            if (nextPrice == null) {
+                                await window.customAlert('할인가가 바뀌었습니다. 화면을 새로고침한 뒤 다시 확인해 주세요.');
+                                return;
+                            }
+                            if (window.globalSettings) {
+                                window.globalSettings = {
+                                    ...window.globalSettings,
+                                    shopDiscount: e.serverCfg || readShopDiscount(),
+                                };
+                            }
+                            updateUI();
+                            const again = await window.customConfirm(
+                                `할인가가 바뀌어 구매를 멈췄습니다.\n표시된 가격 ${formatBongAmount(displayed)}과 서버 가격 ${formatBongAmount(nextPrice)}이 다릅니다.\n${formatBongAmount(nextPrice)}에 다시 살까요?`
+                            );
+                            if (!again) return;
+                            displayed = nextPrice;
+                            const walletNow = Number(window.playerState.bong) || 0;
+                            if (walletNow < displayed) {
+                                await window.customAlert(formatInsufficientBongAlert(displayed - walletNow));
+                                return;
+                            }
+                            continue;
+                        }
+                        if (code === 'insufficient') {
+                            await window.customAlert(formatInsufficientBongAlert(displayed - (Number(window.playerState.bong) || 0)));
+                            return;
+                        }
+                        if (code === 'already_owned') {
+                            await window.customAlert('이미 보유한 캐릭터입니다. 새로고침 후 장착해 주세요.');
+                            return;
+                        }
+                        console.error('purchaseDiscountedSkin', e);
+                        await window.customAlert('구매 실패: ' + code);
+                        return;
+                    }
+                    window.playerState.bong = result.nextBong;
+                    window.playerState.ownedSkins = result.ownedSkins;
+                    window.playerState.equippedSkins = result.equippedSkins;
+                    window.playerState.ownedSkinInstances = result.ownedSkinInstances;
+                    window.playerState.ownedSkinPaid = result.ownedSkinPaid;
+                    if (result.bongChangeLog) window.playerState.bongChangeLog = result.bongChangeLog;
+                    syncOwnCosmeticToPlazaCache();
+                    updateUI();
+                    const saved = await saveDataToCloud({
+                        allowBongDecrease: true,
+                        maxBongDecrease: result.paid,
+                        // 할인가 차감·잔액 확인은 위의 트랜잭션에서 이미 끝났습니다.
+                        requireServerBongBalance: false,
+                        operationLabel: `${skin.name} ${kindLabel} 구매`,
+                    });
+                    if (!saved) {
+                        window.playerState.bong = result.nextBong;
+                        window.playerState.ownedSkins = result.ownedSkins;
+                        window.playerState.equippedSkins = result.equippedSkins;
+                        window.playerState.ownedSkinInstances = result.ownedSkinInstances;
+                        window.playerState.ownedSkinPaid = result.ownedSkinPaid;
+                        updateUI();
+                        await window.customAlert('캐릭터 구매는 반영되었습니다. 화면이 다르면 새로고침해 주세요.');
+                        return;
+                    }
+                    await window.customAlert(`🎉 획득 완료! 바로 ${kindLabel === '오라' ? '적용' : '내 캐릭터로 사용'}했어요.`);
+                    window.switchTab('plaza');
+                    return;
+                }
+                await window.customAlert('할인가가 계속 바뀌어 구매를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            } finally {
+                window._skinBuyRunning = false;
+            }
         }
 
         window.handleSkin = async function(skinId, stayOnPage) {
@@ -27690,26 +28003,8 @@ ${subjectLine}
                 syncOwnCosmeticToPlazaCache();
                 updateUI(); saveDataToCloud();
                 if (!stayOnPage) window.switchTab('plaza');
-            } else {
-                if (window.playerState.bong >= skin.price || window.playerState.isAdmin) {
-                    const isOk = await window.customConfirm(`${kindLabel} '${skin.name}'을(를) ${formatBongAmount(skin.price)}에 살까요?`);
-                    if (isOk) {
-                        if (!window.playerState.isAdmin) window.playerState.bong -= skin.price;
-                        window.playerState.ownedSkins[skinId] = true;
-                        if (!window.playerState.ownedSkinInstances) window.playerState.ownedSkinInstances = {};
-                        window.playerState.ownedSkinInstances[skinId] = `ski_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-                        
-                        window.playerState.equippedSkins = unequipSameSlot(window.playerState.equippedSkins, SKIN_DATA, skin);
-                        window.playerState.equippedSkins[skinId] = true;
-                        if (window.playerState.isAdmin && skin.type === 'face') window.playerState.homeLookMode = 'student';
-                        syncOwnCosmeticToPlazaCache();
-                        await window.customAlert(`🎉 획득 완료! 바로 ${kindLabel === '오라' ? '적용' : '내 캐릭터로 사용'}했어요.`); 
-                        updateUI();
-                        const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: skin.price, requireServerBongBalance: true, operationLabel: `${skin.name} ${kindLabel} 구매` });
-                        if (!saved) return;
-                        window.switchTab('plaza');
-                    }
-                } else await window.customAlert(formatInsufficientBongAlert(skin.price - (Number(window.playerState.bong) || 0))); 
+            } else if (!window.playerState.isAdmin) {
+                await purchaseDiscountedSkin(skin, kindLabel);
             }
         };
 

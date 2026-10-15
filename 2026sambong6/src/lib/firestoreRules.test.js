@@ -107,10 +107,35 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         });
     }
 
-    function autoXpPayload(slotMs, key = '2026_10_15_09:40') {
+    function autoXpKey(slotMs) {
+        const kst = new Date(slotMs + 9 * 60 * 60 * 1000);
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${kst.getUTCFullYear()}_${pad(kst.getUTCMonth() + 1)}_${pad(kst.getUTCDate())}_${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}`;
+    }
+
+    function kstSlot(year, month, day, hour, minute) {
+        return Date.UTC(year, month - 1, day, hour, minute, 0, 0) - 9 * 60 * 60 * 1000;
+    }
+
+    function shiftKstDate(year, month, day, deltaDays) {
+        const shifted = new Date(Date.UTC(year, month - 1, day) + deltaDays * 86400000);
+        return [shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate()];
+    }
+
+    function classEndSlotsAround(nowMs) {
+        const kst = new Date(nowMs + 9 * 60 * 60 * 1000);
+        const bells = [[9, 40], [10, 30], [11, 20], [12, 10], [13, 50], [14, 40]];
+        const slots = [];
+        for (let day = -2; day <= 2; day += 1) {
+            const [year, month, date] = shiftKstDate(kst.getUTCFullYear(), kst.getUTCMonth() + 1, kst.getUTCDate(), day);
+            bells.forEach(([hour, minute]) => slots.push(kstSlot(year, month, date, hour, minute)));
+        }
+        return slots.sort((a, b) => a - b);
+    }
+
+    function autoXpPayload(slotMs, key = autoXpKey(slotMs)) {
         return {
             lastAutoXpTime: key,
-            announcement: '[09:40] 수업 종료! 모든 학생에게 경험치 +5XP가 자동 지급되었습니다.',
             slotMs,
         };
     }
@@ -120,7 +145,6 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             date: '2026-10-15',
             min: -20,
             max: 20,
-            values: { '2': 3 },
             settledDate: '',
             lastSettlementAt: 0,
             settlementKey: '',
@@ -213,38 +237,87 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }, { merge: true }));
     });
 
-    it('수업 XP 표식은 현재 시각 근처에서만, 그리고 이전보다 늦게만 저장된다', async () => {
+    it('수업 XP 표식은 KST 종 시각과 키가 같고 미래 슬롯은 거절한다', async () => {
         const db = anon().firestore();
         const path = 'artifacts/class1/public/data/settings/autoXp';
         const now = Date.now();
-        await assertSucceeds(setDoc(doc(db, path), autoXpPayload(now)));
-        await assertFails(setDoc(doc(db, path), autoXpPayload(now - 60 * 60 * 1000, '2026_10_15_10:30')));
-        await assertFails(setDoc(doc(db, path), autoXpPayload(now + 60 * 1000, '2026_10_15_10:30')));
+        const slots = classEndSlotsAround(now);
+        const recent = Math.max(...slots.filter((slot) => slot <= now + 15000));
+        const prev = Math.max(...slots.filter((slot) => slot < recent));
+        const future = Math.min(...slots.filter((slot) => slot > now + 15000));
+        assert.ok(recent >= prev + 2400000);
+        await assertFails(setDoc(doc(db, path), autoXpPayload(prev, '2026_01_01_09:40')));
+        await assertFails(setDoc(doc(db, path), { ...autoXpPayload(prev), announcement: '선생님: 오늘 숙제 없음' }));
+        await assertFails(setDoc(doc(db, path), autoXpPayload(prev + 1000)));
+        await assertFails(setDoc(doc(db, path), autoXpPayload(future)));
+        await assertSucceeds(setDoc(doc(db, path), autoXpPayload(prev)));
+        await assertSucceeds(setDoc(doc(db, path), autoXpPayload(recent)));
+        await assertFails(setDoc(doc(db, path), autoXpPayload(recent)));
         await assertFails(deleteDoc(doc(db, path)));
     });
 
-    it('학습 온도계는 범위 안의 문서만 저장한다', async () => {
-        const db = anon().firestore();
+    it('학습 온도계 값은 학생 문서에만, 정산 필드는 선생님만 저장한다', async () => {
+        const anonDb = anon().firestore();
+        const teacherDb = teacher().firestore();
         const path = 'artifacts/class1/public/data/settings/learningThermometer';
-        await assertSucceeds(setDoc(doc(db, path), thermometerPayload()));
-        await assertFails(setDoc(doc(db, path), thermometerPayload({ min: 10, max: 20 })));
-        await assertFails(setDoc(doc(db, path), thermometerPayload({ max: 900 })));
-        await assertFails(deleteDoc(doc(db, path)));
+        const vote = `${path}/votes/2`;
+        await assertFails(setDoc(doc(anonDb, vote), { value: 1 }));
+        await assertFails(setDoc(doc(anonDb, path), thermometerPayload({ max: 100 })));
+        await assertFails(setDoc(doc(anonDb, path), thermometerPayload({ values: { '2': 20 } })));
+        await assertSucceeds(setDoc(doc(anonDb, path), thermometerPayload()));
+        await assertFails(setDoc(doc(anonDb, vote), { value: 5 }));
+        await assertSucceeds(setDoc(doc(teacherDb, vote), { value: 5 }));
+        await assertFails(setDoc(doc(teacherDb, vote), { value: 21 }));
+        await assertFails(setDoc(doc(teacherDb, vote), { value: 5, note: '조작' }));
+        await assertSucceeds(setDoc(doc(anonDb, `${path}/votes/anon-student`), { value: -3 }));
+        await assertFails(setDoc(doc(otherTeacher().firestore(), vote), { value: 1 }));
+        await assertFails(setDoc(doc(anonDb, path), {
+            settlementStatus: 'done',
+            settlementKey: '2026-10-15',
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(teacherDb, path), thermometerPayload({
+            max: 30,
+            settlementStatus: 'done',
+            settlementKey: '2026-10-15',
+            settledDate: '2026-10-15',
+        })));
+        await assertSucceeds(setDoc(doc(teacherDb, vote), { value: 21 }));
+        await assertFails(setDoc(doc(teacherDb, vote), { value: 31 }));
+        await assertFails(deleteDoc(doc(anonDb, path)));
     });
 
-    it('시드 학급 선생님의 승인 표식이 있으면 새 학급 설정을 만들 수 있다', async () => {
+    it('시드 학급 선생님의 승인 표식은 그 선생님 uid로만 새 학급 설정을 만든다', async () => {
         const seed = seedTeacher().firestore();
         const grant = 'artifacts/sambong-class-2026/public/data/approvedClassIds/fresh-class';
         await assertFails(setDoc(doc(otherTeacher().firestore(), grant), {
+            classId: 'fresh-class',
+            status: 'approved',
+            createdBy: 'teacher-other',
+        }));
+        await assertFails(setDoc(doc(seed, grant), {
             classId: 'fresh-class',
             status: 'approved',
         }));
         await assertSucceeds(setDoc(doc(seed, grant), {
             classId: 'fresh-class',
             status: 'approved',
+            createdBy: 'seed-teacher',
         }));
         await assertSucceeds(setDoc(doc(seed, 'artifacts/fresh-class/public/data/settings/global'), {
             raidPassword: '1234',
+            shieldStock: 5,
+        }));
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), 'artifacts/sambong-class-2026/public/data/approvedClassIds/stolen-class'), {
+                classId: 'stolen-class',
+                status: 'approved',
+                createdBy: 'teacher-other',
+            });
+        });
+        await assertFails(setDoc(doc(seed, 'artifacts/stolen-class/public/data/settings/global'), {
+            shieldStock: 5,
+        }));
+        await assertSucceeds(setDoc(doc(otherTeacher().firestore(), 'artifacts/stolen-class/public/data/settings/global'), {
             shieldStock: 5,
         }));
         await assertFails(setDoc(doc(anon().firestore(), 'artifacts/unowned/public/data/settings/global'), {

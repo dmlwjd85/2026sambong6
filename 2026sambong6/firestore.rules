@@ -41,9 +41,18 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
     }
 
-    // 새 학급 문서는 그 학급 ID가 classIds에 있거나, 시드 학급 선생님이 남긴 승인 표식이 있을 때만 만듭니다.
+    function approvedClassGrant(classId) {
+      return get(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId)).data;
+    }
+
+    // 새 학급 문서는 classIds에 그 ID가 있거나, 시드 학급 선생님이 남긴 승인 표식의 createdBy가
+    // 지금 요청한 선생님 uid와 같을 때만 만듭니다.
     function canCreateClassSettings(appId) {
-      return isAdminForApp(appId) || (isAdmin() && hasApprovedClassGrant(appId));
+      return isAdminForApp(appId) || (
+        isAdmin()
+        && hasApprovedClassGrant(appId)
+        && approvedClassGrant(appId).createdBy == request.auth.uid
+      );
     }
 
     function isSettingsGlobalDoc() {
@@ -56,6 +65,10 @@ service cloud.firestore {
 
     function isLearningThermometerDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/learningThermometer$');
+    }
+
+    function isLearningThermometerVoteDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/learningThermometer/votes/[^/]+$');
     }
 
     function isApprovedClassIdDoc() {
@@ -113,24 +126,56 @@ service cloud.firestore {
       ];
     }
 
+    function twoDigits(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+
+    // slotMs를 UTC epoch로 읽은 뒤 9시간을 더하면, hours()/minutes()가 한국 표준시 벽시계가 됩니다.
+    function autoXpKst(slotMs) {
+      return timestamp.value(slotMs) + duration.value(9, 'h');
+    }
+
+    function autoXpIsClassEnd(slotMs) {
+      let kst = autoXpKst(slotMs);
+      return kst.seconds() == 0
+        && kst.nanos() == 0
+        && (
+          (kst.hours() == 9 && kst.minutes() == 40)
+          || (kst.hours() == 10 && kst.minutes() == 30)
+          || (kst.hours() == 11 && kst.minutes() == 20)
+          || (kst.hours() == 12 && kst.minutes() == 10)
+          || (kst.hours() == 13 && kst.minutes() == 50)
+          || (kst.hours() == 14 && kst.minutes() == 40)
+        );
+    }
+
+    function autoXpKey(slotMs) {
+      let kst = autoXpKst(slotMs);
+      return string(kst.year()) + '_' + twoDigits(kst.month()) + '_' + twoDigits(kst.day())
+        + '_' + twoDigits(kst.hours()) + ':' + twoDigits(kst.minutes());
+    }
+
+    // 공지 문장은 저장하지 않습니다. 앱이 slotMs로 만듭니다.
+    // 미래 슬롯은 서버 시각 + 15초까지만 허용합니다. 그 시각의 1분 안에 다른 클라이언트가
+    // 같은 슬롯을 먼저 쓰면 담임 화면은 지급을 건너뜁니다. 근본 해결은 Cloud Scheduler가
+    // Admin SDK로 이 문서를 쓰는 것입니다. 이 저장소 변경에는 함수를 넣지 않습니다.
     function autoXpShapeOk() {
       let d = request.resource.data;
-      return d.keys().hasOnly(['lastAutoXpTime', 'announcement', 'slotMs'])
+      return d.keys().hasOnly(['lastAutoXpTime', 'slotMs'])
         && d.lastAutoXpTime is string
-        && d.lastAutoXpTime.matches('^\\d{4}_\\d{1,2}_\\d{1,2}_(09:40|10:30|11:20|12:10|13:50|14:40)$')
-        && d.announcement is string
-        && d.announcement.size() > 0
-        && d.announcement.size() <= 180
         && d.slotMs is int
-        && d.slotMs > 0
-        && d.slotMs <= request.time.toMillis() + 180000
-        && d.slotMs >= request.time.toMillis() - 180000;
+        && d.slotMs > 1577836800000
+        && d.slotMs < 4102444800000
+        && d.slotMs % 60000 == 0
+        && d.slotMs <= request.time.toMillis() + 15000
+        && autoXpIsClassEnd(d.slotMs)
+        && d.lastAutoXpTime == autoXpKey(d.slotMs);
     }
 
     function thermometerShapeOk() {
       let d = request.resource.data;
       return d.keys().hasOnly([
-          'date', 'min', 'max', 'values', 'settledDate', 'lastSettlementAt',
+          'date', 'min', 'max', 'settledDate', 'lastSettlementAt',
           'settlementKey', 'settlementStatus', 'settlementStartedAt',
           'settlementAppliedCount', 'settlementTotalDelta'
         ])
@@ -144,8 +189,6 @@ service cloud.firestore {
         && d.max > 0
         && d.max <= 500
         && d.min < d.max
-        && d.values is map
-        && d.values.size() <= 40
         && d.settledDate is string
         && d.settledDate.size() <= 10
         && d.lastSettlementAt is number
@@ -160,6 +203,35 @@ service cloud.firestore {
         && d.settlementTotalDelta is int
         && d.settlementTotalDelta >= -20000
         && d.settlementTotalDelta <= 20000;
+    }
+
+    function thermometerSettlementAtRest() {
+      let d = request.resource.data;
+      return d.settledDate == ''
+        && d.lastSettlementAt == 0
+        && d.settlementKey == ''
+        && d.settlementStatus == ''
+        && d.settlementStartedAt == 0
+        && d.settlementAppliedCount == 0
+        && d.settlementTotalDelta == 0;
+    }
+
+    function thermometerVoteInRange(appId, value) {
+      let parent = get(/databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer).data;
+      return parent.min is int
+        && parent.max is int
+        && value >= parent.min
+        && value <= parent.max;
+    }
+
+    function thermometerVoteOk(appId, studentId) {
+      let d = request.resource.data;
+      return studentId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && d.keys().hasOnly(['value'])
+        && d.value is int
+        && exists(/databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer)
+        && thermometerVoteInRange(appId, d.value)
+        && (isAdminForApp(appId) || studentId == request.auth.uid);
     }
 
     function shopDiscountUntouched() {
@@ -263,7 +335,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 수업 종료 자동 XP 표식. 선생님 인증 없이, 시각이 맞고 이전보다 40분 이상 뒤인 슬롯만 기록합니다.
+    // 수업 종료 자동 XP 표식. 선생님 인증 없이, KST 종 시각과 키가 같고 이전보다 40분 이상 뒤인 슬롯만 기록합니다.
     match /artifacts/{appId}/public/data/settings/autoXp {
       allow read: if true;
       allow create: if signedIn() && autoXpShapeOk();
@@ -274,19 +346,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 학습 온도계. min/max 와 정산 필드 범위를 검사합니다. values 맵의 개별 숫자는 규칙에서 순회할 수 없습니다.
+    // 학습 온도계 부모. 학생별 값은 votes 하위 문서입니다.
+    // 정산 필드와 min/max 변경은 그 학급 선생님만 합니다. 기본 -20~20 생성만 로그인 사용자에게 열려 있습니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer {
       allow read: if true;
-      allow create, update: if signedIn() && thermometerShapeOk();
+      allow create: if thermometerShapeOk() && (
+        isAdminForApp(appId)
+        || (
+          signedIn()
+          && thermometerSettlementAtRest()
+          && request.resource.data.min == -20
+          && request.resource.data.max == 20
+        )
+      );
+      allow update: if isAdminForApp(appId) && thermometerShapeOk();
       allow delete: if false;
     }
 
-    // 학급 개설 직전, 시드 학급 선생님만 만듭니다. 요청 문서 ID는 임의라 규칙이 조회하지 못합니다.
+    // 학생 본인 문서는 Firebase uid와 문서 ID가 같을 때만, 선생님은 학번 문서를 씁니다.
+    // 익명 로그인 uid는 학번이 아니므로 학생은 다른 학생 값을 쓰지 못합니다.
+    match /artifacts/{appId}/public/data/settings/learningThermometer/votes/{studentId} {
+      allow read: if true;
+      allow create, update: if signedIn() && thermometerVoteOk(appId, studentId);
+      allow delete: if false;
+    }
+
+    // 학급 개설 직전, 시드 학급 선생님만 만들고 createdBy에 자기 uid를 남깁니다.
     match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
       allow read: if signedIn();
       allow create: if isAdminForApp('sambong-class-2026')
+        && request.resource.data.keys().hasOnly(['classId', 'status', 'createdBy'])
         && request.resource.data.classId == classId
-        && request.resource.data.status == 'approved';
+        && request.resource.data.status == 'approved'
+        && request.resource.data.createdBy is string
+        && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -302,6 +395,7 @@ service cloud.firestore {
         && !isSettingsGlobalDoc()
         && !isAutoXpDoc()
         && !isLearningThermometerDoc()
+        && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc();
     }
 

@@ -512,6 +512,10 @@ import { classXpCatchupSlot, classXpGrantDecision, omitClassXpSlot } from './lib
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
+    createThermometerLockOwner,
+    decideThermometerLockClaim,
+    finishThermometerSettlement,
+    grantThermometerStudentXp,
     thermometerValueSource,
 } from './lib/learningThermometerSettlement.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
@@ -11406,6 +11410,7 @@ ${subjectLine}
         const LEARNING_THERMOMETER_DEFAULT_MAX = 20;
         const LEARNING_THERMOMETER_AUTO_HOUR = 15;
         const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
+        const _thermometerLockOwner = createThermometerLockOwner();
         let _learningThermometerSaveTimer = null;
         let _learningThermometerSettlementRunning = false;
         let _learningThermometerEditActive = false;
@@ -14735,6 +14740,9 @@ ${subjectLine}
                 settlementKey: src.settlementKey ? String(src.settlementKey) : '',
                 settlementStatus: src.settlementStatus ? String(src.settlementStatus) : '',
                 settlementStartedAt: Number(src.settlementStartedAt) || 0,
+                settlementLockOwner: src.settlementLockOwner ? String(src.settlementLockOwner).slice(0, 80) : '',
+                settlementAttempt: Math.max(0, Math.min(1000000, Math.floor(Number(src.settlementAttempt) || 0))),
+                usedStaleValues: src.usedStaleValues === true,
                 settlementAppliedCount: Math.max(0, Math.floor(Number(src.settlementAppliedCount) || 0)),
                 settlementTotalDelta: Math.floor(Number(src.settlementTotalDelta) || 0),
             };
@@ -14760,6 +14768,9 @@ ${subjectLine}
                 settlementKey: String(safe.settlementKey || '').slice(0, 12),
                 settlementStatus: String(safe.settlementStatus || '').slice(0, 20),
                 settlementStartedAt: Math.floor(Number(safe.settlementStartedAt) || 0),
+                settlementLockOwner: String(safe.settlementLockOwner || '').slice(0, 80),
+                settlementAttempt: Math.max(0, Math.min(1000000, Math.floor(Number(safe.settlementAttempt) || 0))),
+                usedStaleValues: safe.usedStaleValues === true,
                 settlementAppliedCount: Math.max(0, Math.min(40, Math.floor(Number(safe.settlementAppliedCount) || 0))),
                 settlementTotalDelta: Math.max(-20000, Math.min(20000, Math.floor(Number(safe.settlementTotalDelta) || 0))),
             };
@@ -15079,12 +15090,6 @@ ${subjectLine}
             }
         }
 
-        function getLearningThermometerStudentSnapshot(sid, serverRows) {
-            const id = String(sid);
-            const row = Array.isArray(serverRows) ? serverRows.find((s) => String(s.id) === id) : null;
-            return row || {};
-        }
-
         async function settleLearningThermometer({ manual = false } = {}) {
             if (_learningThermometerSettlementRunning) return { status: 'running' };
             if (!db) return { status: 'no_db' };
@@ -15122,6 +15127,9 @@ ${subjectLine}
                     const legacyAllowed = allowLegacyThermometerValues({
                         parentExists: snap.exists(),
                         settlementStatus: parentData.settlementStatus,
+                        usedStaleValues: parentData.usedStaleValues === true,
+                        settlementKey: parentData.settlementKey,
+                        today,
                     });
                     // 잠금 문서를 만든 뒤 표 쓰기 전에 끊기면 부모에는 values가 없습니다.
                     // 그때 예전 settings/global 값을 보지 않으면 오늘 정산이 0으로 끝납니다.
@@ -15141,10 +15149,6 @@ ${subjectLine}
                         legacyValues: legacyThermometer && legacyThermometer.values,
                         allowLegacy: legacyAllowed,
                     });
-                    const lockIsFresh =
-                        state.settlementKey === today &&
-                        state.settlementStatus === 'running' &&
-                        Date.now() - Number(state.settlementStartedAt || 0) < LEARNING_THERMOMETER_LOCK_STALE_MS;
                     const pendingValues = {};
                     ids.forEach((sid) => {
                         const id = String(sid);
@@ -15152,21 +15156,43 @@ ${subjectLine}
                         const v = Math.max(state.min, Math.min(state.max, Math.round(Number(source.values[id]) || 0)));
                         if (v !== 0) pendingValues[id] = v;
                     });
-                    if (state.settledDate === today && state.settlementStatus !== 'running') {
-                        const pendingCount = Object.keys(pendingValues).length;
-                        if (!manual || !pendingCount) {
-                            claimed = { status: 'already_done', state };
-                            return;
-                        }
+                    const decision = decideThermometerLockClaim({
+                        settlementKey: state.settlementKey,
+                        settlementStatus: state.settlementStatus,
+                        settlementStartedAt: state.settlementStartedAt,
+                        settlementLockOwner: state.settlementLockOwner,
+                        settlementAttempt: state.settlementAttempt,
+                        settledDate: state.settledDate,
+                        owner: _thermometerLockOwner,
+                        today,
+                        now: Date.now(),
+                        leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
+                        manual,
+                        pendingCount: Object.keys(pendingValues).length,
+                    });
+                    if (decision.action === 'already_done') {
+                        claimed = { status: 'already_done', state };
+                        return;
                     }
-                    if (lockIsFresh) {
+                    if (decision.action === 'locked') {
                         claimed = { status: 'locked', state };
                         return;
                     }
                     const values = pendingValues;
-                    claimed = { status: 'claimed', state: { ...state, values } };
-                    transaction.set(ref, thermometerParentPayload({
+                    const nextState = {
                         ...state,
+                        values,
+                        settlementAttempt: decision.attempt,
+                        settlementLockOwner: _thermometerLockOwner,
+                    };
+                    claimed = {
+                        status: 'claimed',
+                        state: nextState,
+                        usedStaleValues: source.kind === 'legacy',
+                    };
+                    if (decision.action === 'reuse') return;
+                    transaction.set(ref, thermometerParentPayload({
+                        ...nextState,
                         date: today,
                         settlementKey: today,
                         settlementStatus: 'running',
@@ -15178,48 +15204,28 @@ ${subjectLine}
 
                 const values = claimed.state.values || {};
                 const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                let serverRows = [];
-                try {
-                    await refreshStudentsCacheFromServer();
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                } catch (e) {
-                    serverRows = Array.isArray(window.allStudentsData) ? window.allStudentsData : [];
-                }
-
                 let appliedCount = 0;
                 let totalDelta = 0;
-                if (entries.length) {
-                    const batch = writeBatch(db);
-                    entries.forEach(([sid, deltaRaw]) => {
-                        const delta = Math.round(Number(deltaRaw) || 0);
-                        if (!delta) return;
-                        const stu = getLearningThermometerStudentSnapshot(sid, serverRows);
-                        if (delta > 0 && studentIsCreditDefault(stu)) return;
-                        const beforeXp = Math.max(0, Math.floor(Number(stu.xp) || 0));
-                        // 온도계 마이너스는 경험치 차감이므로 절대 방패·장착 방패를 태웁니다.
-                        const shielded = delta < 0
-                            ? applyFullXpDeduct(stu, -delta, applyShieldToXpDeduct)
-                            : { xp: Math.max(0, beforeXp + delta), updates: {}, absorbed: 0 };
-                        const afterXp = Math.max(0, Math.floor(Number(shielded.xp) || 0));
-                        const actualDelta = afterXp - beforeXp;
-                        const shieldUpdates = (delta < 0 && shielded.updates) ? shielded.updates : {};
-                        if (!actualDelta && !Object.keys(shieldUpdates).length) return;
-                        const logs = Array.isArray(stu.xpChangeLog) ? stu.xpChangeLog.slice(-XP_CHANGE_LOG_LIMIT + 1) : [];
-                        logs.push(buildXpChangeLogEntry('학습 온도계 15시 정산', beforeXp, afterXp, {
-                            source: 'learningThermometer',
-                            rawDelta: delta,
-                            settledDate: today,
-                            absorbed: shielded.absorbed || 0,
-                        }));
-                        batch.set(
-                            doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            { ...shieldUpdates, xp: afterXp, xpChangeLog: logs },
-                            { merge: true }
-                        );
-                        appliedCount++;
-                        totalDelta += actualDelta;
+                let skippedApplied = 0;
+                for (const [sid, deltaRaw] of entries) {
+                    const granted = await grantThermometerStudentXp(db, {
+                        studentRef: doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
+                        thermometerRef: getLearningThermometerDocRef(),
+                        delta: deltaRaw,
+                        today,
+                        owner: _thermometerLockOwner,
+                        leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
+                        usedStaleValues: claimed.usedStaleValues === true,
                     });
-                    if (appliedCount > 0) await batch.commit();
+                    if (!granted || granted.status === 'lock_lost') {
+                        return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
+                    }
+                    if (granted.status === 'granted') {
+                        appliedCount += 1;
+                        totalDelta += granted.actualDelta || 0;
+                    } else if (granted.reason === 'already_applied') {
+                        skippedApplied += 1;
+                    }
                 }
 
                 const resetState = {
@@ -15231,20 +15237,27 @@ ${subjectLine}
                     settlementKey: today,
                     settlementStatus: 'done',
                     settlementStartedAt: 0,
+                    settlementLockOwner: '',
                     settlementAppliedCount: appliedCount,
                     settlementTotalDelta: totalDelta,
+                    usedStaleValues: claimed.state.usedStaleValues === true || claimed.usedStaleValues === true,
                 };
-                const clearBatch = writeBatch(db);
-                entries.forEach(([sid]) => {
-                    clearBatch.set(getLearningThermometerVoteRef(sid), { value: 0 });
+                const finished = await finishThermometerSettlement(db, {
+                    thermometerRef: getLearningThermometerDocRef(),
+                    voteRefs: entries.map(([sid]) => getLearningThermometerVoteRef(sid)),
+                    owner: _thermometerLockOwner,
+                    today,
+                    leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
+                    parentPayload: thermometerParentPayload(resetState),
                 });
-                clearBatch.set(getLearningThermometerDocRef(), thermometerParentPayload(resetState));
-                await clearBatch.commit();
+                if (!finished || finished.status !== 'done') {
+                    return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
+                }
                 setLocalLearningThermometerState(resetState);
                 await refreshStudentsCacheFromServer();
                 renderLearningThermometerPanel();
                 updateUI();
-                return { status: 'done', appliedCount, totalDelta };
+                return { status: 'done', appliedCount, totalDelta, skippedApplied };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;
@@ -15291,8 +15304,14 @@ ${subjectLine}
                     return await window.customAlert('반영할 온도계 값이 없습니다.\n(오늘 이미 정산했고, 현재 값이 모두 0이에요.)');
                 }
                 if (result.status === 'locked') return await window.customAlert('다른 화면에서 정산 중입니다. 잠시 후 확인해 주세요.');
+                if (result.status === 'lock_lost') {
+                    return await window.customAlert('정산 잠금이 만료되었거나 다른 화면이 이어받았습니다.\n이미 반영된 경험치는 다시 지급하지 않습니다. 잠시 후 다시 시도해 주세요.');
+                }
+                const skippedLine = result.skippedApplied
+                    ? `\n이미 반영된 ${result.skippedApplied}명은 건너뛰었습니다.`
+                    : '';
                 await window.customAlert(
-                    `정산 완료!\n적용 ${result.appliedCount || 0}명 · 합계 ${result.totalDelta >= 0 ? '+' : ''}${result.totalDelta || 0} XP\n\n온도계가 0으로 초기화되었습니다. 바로 다시 조절할 수 있어요.`
+                    `정산 완료!\n적용 ${result.appliedCount || 0}명 · 합계 ${result.totalDelta >= 0 ? '+' : ''}${result.totalDelta || 0} XP${skippedLine}\n\n온도계가 0으로 초기화되었습니다. 바로 다시 조절할 수 있어요.`
                 );
             } catch (e) {
                 await window.customAlert('정산 실패: ' + (e && e.message ? e.message : String(e)));
@@ -25516,6 +25535,17 @@ ${subjectLine}
                             dataToSave.xpChangeLog = logs;
                         } else if (Object.prototype.hasOwnProperty.call(serverData, 'xpChangeLog')) {
                             dataToSave.xpChangeLog = serverData.xpChangeLog;
+                        }
+                        // 학생 저장이 온도계 정산 표식을 낡은 값으로 되돌리면 같은 시도가 다시 지급됩니다.
+                        if (Object.prototype.hasOwnProperty.call(serverData, 'lastThermometerSettlementKey')) {
+                            dataToSave.lastThermometerSettlementKey = serverData.lastThermometerSettlementKey;
+                        } else {
+                            delete dataToSave.lastThermometerSettlementKey;
+                        }
+                        if (Object.prototype.hasOwnProperty.call(serverData, 'thermometerUsedStaleValues')) {
+                            dataToSave.thermometerUsedStaleValues = serverData.thermometerUsedStaleValues === true;
+                        } else {
+                            delete dataToSave.thermometerUsedStaleValues;
                         }
                     }
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });

@@ -245,6 +245,7 @@ service cloud.firestore {
       return d.keys().hasOnly([
           'date', 'min', 'max', 'settledDate', 'lastSettlementAt',
           'settlementKey', 'settlementStatus', 'settlementStartedAt',
+          'settlementLockOwner', 'settlementAttempt', 'usedStaleValues',
           'settlementAppliedCount', 'settlementTotalDelta'
         ])
         && d.date is string
@@ -265,6 +266,12 @@ service cloud.firestore {
         && d.settlementStatus is string
         && d.settlementStatus.size() <= 20
         && d.settlementStartedAt is number
+        && d.settlementLockOwner is string
+        && d.settlementLockOwner.size() <= 80
+        && d.settlementAttempt is int
+        && d.settlementAttempt >= 0
+        && d.settlementAttempt <= 1000000
+        && d.usedStaleValues is bool
         && d.settlementAppliedCount is int
         && d.settlementAppliedCount >= 0
         && d.settlementAppliedCount <= 40

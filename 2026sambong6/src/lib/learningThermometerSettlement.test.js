@@ -2,7 +2,13 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     allowLegacyThermometerValues,
+    decideThermometerLockClaim,
+    settlementLockHeld,
+    studentSettlementAlreadyApplied,
+    thermometerSettlementMarker,
+    thermometerStudentGrantPlan,
     thermometerValueSource,
+    thermometerXpIncrement,
 } from './learningThermometerSettlement.js';
 
 describe('학습 온도계 정산 값 출처', () => {
@@ -68,5 +74,119 @@ describe('학습 온도계 정산 값 출처', () => {
             allowLegacy: false,
         });
         assert.equal(source.kind, 'empty');
+    });
+
+    it('H1: 이번 정산 키가 있는 학생은 같은 값을 다시 지급하지 않습니다', () => {
+        const marker = thermometerSettlementMarker('2026-10-16', 1);
+        assert.equal(marker, '2026-10-16#1');
+        const first = thermometerStudentGrantPlan({
+            alreadyApplied: false,
+            delta: 3,
+            usedStaleValues: false,
+            marker,
+        });
+        assert.equal(first.action, 'grant');
+        assert.equal(first.markers.lastThermometerSettlementKey, marker);
+        assert.equal(first.markers.thermometerUsedStaleValues, false);
+        assert.equal(studentSettlementAlreadyApplied({ lastThermometerSettlementKey: marker }, marker), true);
+        const again = thermometerStudentGrantPlan({
+            alreadyApplied: true,
+            delta: 3,
+            marker,
+        });
+        assert.equal(again.action, 'skip');
+        assert.equal(again.reason, 'already_applied');
+        assert.equal(thermometerXpIncrement(10, 13), 3);
+        assert.equal(thermometerXpIncrement(10, 0), -10);
+        assert.equal(thermometerXpIncrement(10, 10), null);
+    });
+
+    it('M1: 예전 값으로 이미 반영한 학생은 건너뛰고, 다음 날에는 예전 값을 열지 않습니다', () => {
+        const marker = thermometerSettlementMarker('2026-10-16', 1);
+        const plan = thermometerStudentGrantPlan({
+            alreadyApplied: false,
+            delta: 15,
+            usedStaleValues: true,
+            marker,
+        });
+        assert.equal(plan.action, 'grant');
+        assert.equal(plan.markers.lastThermometerSettlementKey, marker);
+        assert.equal(plan.markers.thermometerUsedStaleValues, true);
+        const replay = thermometerStudentGrantPlan({
+            alreadyApplied: true,
+            delta: 15,
+            usedStaleValues: true,
+            marker,
+        });
+        assert.equal(replay.reason, 'already_applied');
+        assert.equal(allowLegacyThermometerValues({
+            parentExists: true,
+            settlementStatus: 'running',
+            usedStaleValues: true,
+            settlementKey: '2026-10-16',
+            today: '2026-10-16',
+        }), true);
+        assert.equal(allowLegacyThermometerValues({
+            parentExists: true,
+            settlementStatus: 'running',
+            usedStaleValues: true,
+            settlementKey: '2026-10-15',
+            today: '2026-10-16',
+        }), false);
+        const resurrected = thermometerValueSource({
+            voteValues: {},
+            parentValues: {},
+            legacyValues: legacy,
+            allowLegacy: false,
+        });
+        assert.equal(resurrected.kind, 'empty');
+        assert.equal(studentSettlementAlreadyApplied(
+            { lastThermometerSettlementKey: marker },
+            thermometerSettlementMarker('2026-10-16', 2),
+        ), false);
+    });
+
+    it('M2: 임대가 끝났거나 다른 탭이 잠금을 가졌으면 지급하지 않습니다', () => {
+        const leaseMs = 5 * 60 * 1000;
+        const now = 1_000_000;
+        const base = {
+            settlementKey: '2026-10-16',
+            settlementStatus: 'running',
+            settlementStartedAt: now - 1000,
+            settlementLockOwner: 'tabA',
+            settlementAttempt: 1,
+            settledDate: '',
+            today: '2026-10-16',
+            now,
+            leaseMs,
+        };
+        assert.equal(settlementLockHeld({ ...base, owner: 'tabA' }), true);
+        assert.equal(settlementLockHeld({ ...base, owner: 'tabB' }), false);
+        assert.equal(settlementLockHeld({
+            ...base,
+            owner: 'tabA',
+            now: base.settlementStartedAt + leaseMs,
+        }), false);
+        assert.equal(decideThermometerLockClaim({ ...base, owner: 'tabB' }).action, 'locked');
+        assert.equal(decideThermometerLockClaim({ ...base, owner: 'tabA' }).action, 'reuse');
+        const takeover = decideThermometerLockClaim({
+            ...base,
+            owner: 'tabB',
+            now: base.settlementStartedAt + leaseMs,
+        });
+        assert.equal(takeover.action, 'claim');
+        assert.equal(takeover.attempt, 1);
+        const manualAgain = decideThermometerLockClaim({
+            ...base,
+            settlementStatus: 'done',
+            settledDate: '2026-10-16',
+            settlementStartedAt: 0,
+            settlementLockOwner: '',
+            owner: 'tabA',
+            manual: true,
+            pendingCount: 1,
+        });
+        assert.equal(manualAgain.action, 'claim');
+        assert.equal(manualAgain.attempt, 2);
     });
 });

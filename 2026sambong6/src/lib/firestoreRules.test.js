@@ -382,6 +382,67 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertFails(deleteDoc(doc(anonDb, path)));
     });
 
+    function oldThermometerPayload(extra = {}) {
+        const payload = thermometerPayload(extra);
+        delete payload.settlementLockOwner;
+        delete payload.settlementAttempt;
+        delete payload.usedStaleValues;
+        return payload;
+    }
+
+    it('D1: 예전 클라이언트 정산 쓰기는 새 필드 없이도 통과하고, 새 필드는 있을 때만 검사한다', async () => {
+        const teacherDb = teacher().firestore();
+        const path = 'artifacts/class1/public/data/settings/learningThermometer';
+        const oldPayload = oldThermometerPayload({
+            date: '2026-10-16',
+            settlementKey: '2026-10-16',
+            settlementStatus: 'running',
+            settlementStartedAt: 1800000000000,
+        });
+        assert.equal('settlementLockOwner' in oldPayload, false);
+        assert.equal('settlementAttempt' in oldPayload, false);
+        assert.equal('usedStaleValues' in oldPayload, false);
+        await assertFails(setDoc(doc(anon().firestore(), path), oldPayload));
+        await assertSucceeds(setDoc(doc(teacherDb, path), oldPayload));
+        const created = await getDoc(doc(teacherDb, path));
+        assert.equal(created.data().settlementStatus, 'running');
+        assert.equal('settlementLockOwner' in created.data(), false);
+        assert.equal('settlementAttempt' in created.data(), false);
+        assert.equal('usedStaleValues' in created.data(), false);
+
+        await assertSucceeds(setDoc(doc(teacherDb, path), thermometerPayload({
+            date: '2026-10-16',
+            settlementKey: '2026-10-16',
+            settlementStatus: 'running',
+            settlementStartedAt: 1800000000000,
+            settlementLockOwner: 'tabA',
+            settlementAttempt: 1,
+            usedStaleValues: false,
+        })));
+        await assertSucceeds(setDoc(doc(teacherDb, path), oldPayload));
+        const overwritten = await getDoc(doc(teacherDb, path));
+        assert.equal(overwritten.data().settlementStatus, 'running');
+        assert.equal('settlementLockOwner' in overwritten.data(), false);
+
+        await assertSucceeds(setDoc(doc(teacherDb, path), {
+            max: 25,
+        }, { merge: true }));
+        await assertFails(setDoc(doc(teacherDb, path), { settlementLockOwner: 1 }, { merge: true }));
+        await assertFails(setDoc(doc(teacherDb, path), { settlementAttempt: 1.5 }, { merge: true }));
+        await assertFails(setDoc(doc(teacherDb, path), { settlementAttempt: -1 }, { merge: true }));
+        await assertFails(setDoc(doc(teacherDb, path), { usedStaleValues: 'yes' }, { merge: true }));
+        await assertSucceeds(setDoc(doc(teacherDb, path), {
+            settlementLockOwner: 'tabB',
+            settlementAttempt: 3,
+            usedStaleValues: true,
+        }, { merge: true }));
+        const upgraded = await getDoc(doc(teacherDb, path));
+        assert.equal(upgraded.data().settlementLockOwner, 'tabB');
+        assert.equal(upgraded.data().settlementAttempt, 3);
+        assert.equal(upgraded.data().usedStaleValues, true);
+        assert.equal(upgraded.data().max, 25);
+    });
+
     function grantArgs(db, { studentId, owner, now, delta, usedStaleValues = false }) {
         const path = 'artifacts/class1/public/data/settings/learningThermometer';
         return {

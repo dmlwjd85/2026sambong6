@@ -240,6 +240,22 @@ service cloud.firestore {
         );
     }
 
+    // 잠금 소유자·시도 번호·예전 값 표식은 새 클라이언트만 씁니다.
+    // 규칙을 먼저 배포해도, 새로고침 전 화면의 저장은 이 필드 없이 통과합니다.
+    // 필드가 있을 때만 형식을 검사합니다.
+    function thermometerOptionalFieldsOk(d) {
+      return (!('settlementLockOwner' in d) || (
+          d.settlementLockOwner is string
+          && d.settlementLockOwner.size() <= 80
+        ))
+        && (!('settlementAttempt' in d) || (
+          d.settlementAttempt is int
+          && d.settlementAttempt >= 0
+          && d.settlementAttempt <= 1000000
+        ))
+        && (!('usedStaleValues' in d) || d.usedStaleValues is bool);
+    }
+
     function thermometerShapeOk() {
       let d = request.resource.data;
       return d.keys().hasOnly([
@@ -266,12 +282,7 @@ service cloud.firestore {
         && d.settlementStatus is string
         && d.settlementStatus.size() <= 20
         && d.settlementStartedAt is number
-        && d.settlementLockOwner is string
-        && d.settlementLockOwner.size() <= 80
-        && d.settlementAttempt is int
-        && d.settlementAttempt >= 0
-        && d.settlementAttempt <= 1000000
-        && d.usedStaleValues is bool
+        && thermometerOptionalFieldsOk(d)
         && d.settlementAppliedCount is int
         && d.settlementAppliedCount >= 0
         && d.settlementAppliedCount <= 40

@@ -92,6 +92,7 @@ import {
     LOAN_MIN_UNIT,
     applyLoanAction,
     applyLoanLifecycle,
+    bongAfterAccrualWithIntent,
     computeLoanInterest,
     creditDefaultBlockMessage,
     getLoanCalendarFromWorld,
@@ -102,6 +103,7 @@ import {
     loanPenaltyBlockMessage,
     loanStillOutstanding,
     planPartialRepay,
+    readOutstandingLoan,
     planTakeLoan,
     repayLoanFailMessage,
     sanitizeBankLoan,
@@ -235,6 +237,7 @@ import {
     isRoomMember,
     isTurnTimedOut,
     listVisibleBoardRooms,
+    pickAnchoredBoardRoom,
     rejectJoinBoardRoom,
     remainingSeats,
     requestJoinBoardRoom,
@@ -6819,6 +6822,7 @@ ${subjectLine}
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            const prevBoardGameRecords = window.playerState && window.playerState.boardGameRecords;
             window.playerState = {
                 ...myData,
                 isGuest: false,
@@ -6827,6 +6831,7 @@ ${subjectLine}
                 isAdmin: myId === 'gm' || myId === 'gm_a',
                 dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData && myData.dragonBalls),
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData && myData.dragonBallWeekendKey),
+                boardGameRecords: mergeBoardGameRecords(prevBoardGameRecords, myData && myData.boardGameRecords),
             };
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
@@ -11886,14 +11891,16 @@ ${subjectLine}
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
-            const mineActive = rows.find((r) => isRoomMember(r, me) && (r.status === 'waiting' || r.status === 'playing' || r.status === 'finished'));
-            if (mineActive) void vacateOtherBoardRooms(mineActive.id);
+            // 끝난 판은 문서 id가 더 앞이라, 그 방을 기준으로 정리하면 새 대기실이 바로 삭제됩니다.
+            const anchored = pickAnchoredBoardRoom(rows, me);
+            if (anchored) void vacateOtherBoardRooms(anchored.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
-            const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
-            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession) {
-                enterBoardGameTable(minePlaying.id);
+            if (anchored && anchored.status === 'playing' && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession) {
+                enterBoardGameTable(anchored.id);
             }
-            if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
+            rows.forEach((room) => {
+                if (room.status === 'finished' && isRoomMember(room, me)) maybeRecordBoardGameResult(room);
+            });
         }
 
         async function sweepIdleBoardRooms(now = Date.now()) {
@@ -22825,7 +22832,11 @@ ${subjectLine}
                     loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
                 } else if (outstanding) {
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
-                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
+                    const payable = readOutstandingLoan(rawLoan);
+                    const amountLine = payable && (payable.principal > 0 || payable.interest > 0)
+                        ? ` 갚을 금액 ${formatBongAmount(payable.principal + payable.interest)}.`
+                        : '';
+                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '') + amountLine;
                 } else if (cap < LOAN_MIN_UNIT) {
                     loanStatus.textContent = '현재 학급에서는 대출이 닫혀 있습니다.';
                 } else {
@@ -22833,7 +22844,7 @@ ${subjectLine}
                 }
             }
             if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
-            if (repayBtn) repayBtn.classList.toggle('hidden', !loan);
+            if (repayBtn) repayBtn.classList.toggle('hidden', !readOutstandingLoan(rawLoan));
             const partialRow = document.getElementById('bankLoanPartialRow');
             if (partialRow) partialRow.classList.toggle('hidden', !loan);
             if (typeof window.previewBankLoan === 'function') window.previewBankLoan({ silent: true });
@@ -23430,7 +23441,11 @@ ${subjectLine}
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
-                preview.textContent = takeLoanFailMessage('active');
+                const payable = readOutstandingLoan(rawLoan);
+                const amountLine = payable && (payable.principal > 0 || payable.interest > 0)
+                    ? ` 갚을 금액 ${formatBongAmount(payable.principal + payable.interest)}.`
+                    : '';
+                preview.textContent = takeLoanFailMessage('active') + amountLine;
                 return;
             }
             const amtEl = document.getElementById('bankLoanAmountInput');
@@ -23500,9 +23515,9 @@ ${subjectLine}
         window.repayBankLoan = async function() {
             if (_bankLoanBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const loan = sanitizeBankLoan(window.playerState.bankLoan);
+            const loan = readOutstandingLoan(window.playerState.bankLoan);
             if (!loan) return window.customAlert(repayLoanFailMessage('none'));
-            const due = loanDueTotal(loan);
+            const due = loan.principal + loan.interest;
             const ok = await window.customConfirm(
                 `지금 갚으면 약정 이자 ${formatBongAmount(loan.interest)}가 그대로 포함됩니다.\n합계 ${formatBongAmount(due)}를 지갑→일반예금 순으로 갚을까요?\n모자라면 지갑이 마이너스가 됩니다.`
             );
@@ -25303,16 +25318,33 @@ ${subjectLine}
                             dataToSave.bankNegativeSinceYmd = bankAccrued.bankNegativeSinceYmd || '';
                             dataToSave.loanPenaltyUntilYmd = bankAccrued.loanPenaltyUntilYmd || '';
                             // 만기·자동이체·주기 보너스 뒤에는 낡은 잔액으로 되돌리지 않습니다.
+                            // 다만 점심값처럼 이번 저장이 상한을 두고 증감한 금액은 정산 잔액 위에 남깁니다.
                             if (bankAccrued.changed) {
-                                dataToSave.bong = bankAccrued.bong;
+                                dataToSave.bong = bongAfterAccrualWithIntent(
+                                    bankAccrued.bong,
+                                    normalizeBongValue(Number(dataToSave.bong)),
+                                    normalizeBongValue(Number(serverData.bong) || 0),
+                                    {
+                                        allowDecrease: !!opts.allowBongDecrease,
+                                        maxDecrease: opts.maxBongDecrease,
+                                        maxIncrease: opts.maxBongIncrease,
+                                    },
+                                );
                                 dataToSave.bankRegularSavings = bankAccrued.bankRegularSavings;
                             }
                         }
 
+                        const bankAccrualBaseline = bankAccrued.changed
+                            && !opts.allowBankFieldChanges
+                            && opts.loanAction !== 'take'
+                            && opts.loanAction !== 'repay'
+                            && opts.loanAction !== 'partial';
                         const serverBong = Number(
-                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial' || bankAccrued.changed)
-                                ? dataToSave.bong
-                                : serverData.bong
+                            bankAccrualBaseline
+                                ? bankAccrued.bong
+                                : ((opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial' || bankAccrued.changed)
+                                    ? dataToSave.bong
+                                    : serverData.bong)
                         );
                         const nextBong = Number(dataToSave.bong);
                         // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.
@@ -25450,6 +25482,28 @@ ${subjectLine}
                         if (serverRpsPick.move && serverRpsPick.at >= localRpsPick.at) {
                             dataToSave.rpsPick = serverRpsPick;
                         }
+                        // 오목·체스 전적은 절대값입니다. 다른 화면·다른 기기의 낡은 승패가 서버 기록을 지우지 않게 합칩니다.
+                        // 전적이 없는 학생 문서에는 빈 기록을 새로 쓰지 않습니다.
+                        const boardRecordSources = [
+                            dataToSave.boardGameRecords,
+                            serverData.boardGameRecords,
+                            window.playerState && window.playerState.boardGameRecords,
+                        ];
+                        const boardRecordWorthMerging = boardRecordSources.some((raw) => {
+                            if (!raw || typeof raw !== 'object') return false;
+                            const rec = sanitizeBoardGameRecords(raw);
+                            return rec.recentKeys.length > 0
+                                || rec.gomoku.wins || rec.gomoku.losses || rec.gomoku.draws
+                                || rec.chess.wins || rec.chess.losses || rec.chess.draws;
+                        });
+                        if (boardRecordWorthMerging) {
+                            dataToSave.boardGameRecords = mergeBoardGameRecords(
+                                mergeBoardGameRecords(dataToSave.boardGameRecords, window.playerState && window.playerState.boardGameRecords),
+                                serverData.boardGameRecords,
+                            );
+                        } else {
+                            delete dataToSave.boardGameRecords;
+                        }
                         // 캐시·다른 화면의 빈 보관함이 서버 성구를 지우지 않게 합칩니다.
                         if (opts.replaceDragonBalls) {
                             dataToSave.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
@@ -25498,9 +25552,11 @@ ${subjectLine}
                         };
                         const prevBalls = window.playerState.dragonBalls;
                         const prevKey = window.playerState.dragonBallWeekendKey;
+                        const prevBoardGameRecords = window.playerState.boardGameRecords;
                         window.playerState = { ...serverRestoreData, ...roleFlags };
                         window.playerState.dragonBalls = resolveDragonBallsForSnapshot(prevBalls, serverRestoreData.dragonBalls);
                         window.playerState.dragonBallWeekendKey = resolveDragonBallWeekendKey(prevKey, serverRestoreData.dragonBallWeekendKey);
+                        window.playerState.boardGameRecords = mergeBoardGameRecords(prevBoardGameRecords, serverRestoreData.boardGameRecords);
                         if (typeof updateUI === 'function') updateUI();
                     }
                     if (blockedByStaleSeason2) {
@@ -25578,6 +25634,12 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'loanPenaltyUntilYmd')) {
                     window.playerState.loanPenaltyUntilYmd = dataToSave.loanPenaltyUntilYmd || '';
+                }
+                if (dataToSave.boardGameRecords) {
+                    window.playerState.boardGameRecords = mergeBoardGameRecords(
+                        window.playerState.boardGameRecords,
+                        dataToSave.boardGameRecords,
+                    );
                 }
                 return true;
             } catch (e) {

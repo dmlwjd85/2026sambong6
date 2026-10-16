@@ -9,7 +9,9 @@ import {
     addCalendarDaysYmd,
     applyLoanAction,
     applyLoanLifecycle,
+    bongAfterAccrualWithIntent,
     isLoanPenaltyActive,
+    readOutstandingLoan,
     planPartialRepay,
     collectLoanRepayment,
     computeLoanInterest,
@@ -246,5 +248,65 @@ describe('대출 실행·달력', () => {
         assert.equal(broke.reason, 'funds');
         const overdue = applyLoanLifecycle(saved, saved.bankLoan.dueYmd, cal);
         assert.equal(isLoanPenaltyActive(overdue, saved.bankLoan.dueYmd), true);
+    });
+
+    it('형식이 깨진 대출도 갚기와 약정일 자동이체로 비운다', () => {
+        const partial = { principal: 20, interest: 3, dueYmd: '2026-10-20' };
+        const payable = readOutstandingLoan(partial);
+        assert.equal(payable.principal, 20);
+        assert.equal(payable.interest, 3);
+        const early = applyLoanAction({ bong: 50, bankRegularSavings: 10, bankLoan: partial }, 'repay', {
+            todayYmd: '2026-09-15', calendar: cal,
+        });
+        assert.equal(early.ok, true);
+        assert.equal(early.bankLoan, null);
+        assert.equal(early.bong, 27);
+        assert.equal(early.bankRegularSavings, 10);
+
+        const onDue = applyLoanLifecycle({
+            bong: 5,
+            bankRegularSavings: 30,
+            bankLoan: partial,
+        }, '2026-10-20', cal);
+        assert.equal(onDue.bankLoan, null);
+        assert.equal(onDue.bong, 0);
+        assert.equal(onDue.bankRegularSavings, 12);
+        assert.ok(onDue.msgs.some((m) => m.kind === 'repay' && m.due === 23));
+
+        const idOnly = { id: 'loan_ghost' };
+        const held = applyLoanLifecycle({ bong: 40, bankRegularSavings: 0, bankLoan: idOnly }, '2026-10-20', cal);
+        assert.equal(held.bong, 40);
+        assert.equal(held.bankLoan.id, 'loan_ghost');
+        const cleared = applyLoanAction({ bong: 40, bankRegularSavings: 0, bankLoan: idOnly }, 'repay', {
+            todayYmd: '2026-10-20', calendar: cal,
+        });
+        assert.equal(cleared.ok, true);
+        assert.equal(cleared.bankLoan, null);
+        assert.equal(cleared.bong, 40);
+    });
+});
+
+describe('정산 뒤 지갑 증감', () => {
+    it('예금 보너스가 붙어도 점심값 10봉은 정산 잔액에서 빠진다', () => {
+        assert.equal(bongAfterAccrualWithIntent(101, 90, 100, {
+            allowDecrease: true,
+            maxDecrease: 10,
+        }), 91);
+    });
+
+    it('상한이 있는 환급은 정산 잔액 위에 올라간다', () => {
+        assert.equal(bongAfterAccrualWithIntent(101, 110, 100, {
+            maxIncrease: 10,
+        }), 111);
+    });
+
+    it('이번 저장이 깎거나 올리지 않으면 정산 잔액만 남긴다', () => {
+        assert.equal(bongAfterAccrualWithIntent(101, 140, 100, {
+            allowDecrease: true,
+            maxDecrease: 10,
+        }), 101);
+        assert.equal(bongAfterAccrualWithIntent(80, 90, 100, {
+            maxIncrease: 0,
+        }), 80);
     });
 });

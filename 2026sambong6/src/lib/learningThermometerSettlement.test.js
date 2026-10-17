@@ -2,9 +2,11 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     allowLegacyThermometerValues,
+    buildThermometerParentPayload,
     clearedLearningThermometerLegacy,
     decideThermometerLockClaim,
     planThermometerSettlement,
+    priorRunningThermometerSettlementKey,
     settlementLockHeld,
     studentSettlementAlreadyApplied,
     thermometerSettlementMarker,
@@ -305,5 +307,80 @@ describe('학습 온도계 정산 값 출처', () => {
         });
         assert.equal(manualAgain.action, 'claim');
         assert.equal(manualAgain.attempt, 2);
+    });
+
+    it('H2: 어제 키로 running 이면 그 키를 유지한 채 먼저 마무리합니다', () => {
+        assert.equal(priorRunningThermometerSettlementKey({
+            settlementStatus: 'running',
+            settlementKey: '2026-10-16',
+            today: '2026-10-17',
+        }), '2026-10-16');
+        assert.equal(priorRunningThermometerSettlementKey({
+            settlementStatus: 'running',
+            settlementKey: '2026-10-17',
+            today: '2026-10-17',
+        }), '');
+        assert.equal(priorRunningThermometerSettlementKey({
+            settlementStatus: 'done',
+            settlementKey: '2026-10-16',
+            today: '2026-10-17',
+        }), '');
+        assert.equal(priorRunningThermometerSettlementKey({
+            settlementStatus: 'running',
+            settlementKey: '2026-10-18',
+            today: '2026-10-17',
+        }), '');
+        assert.equal(priorRunningThermometerSettlementKey({
+            settlementStatus: 'running',
+            settlementKey: '',
+            today: '2026-10-17',
+        }), '');
+
+        const leaseMs = 5 * 60 * 1000;
+        const now = 1_000_000;
+        const closeYesterday = decideThermometerLockClaim({
+            settlementKey: '2026-10-16',
+            settlementStatus: 'running',
+            settlementStartedAt: now - leaseMs - 1000,
+            settlementLockOwner: 'tabA',
+            settlementAttempt: 1,
+            settledDate: '',
+            owner: 'tabB',
+            today: '2026-10-16',
+            now,
+            leaseMs,
+        });
+        assert.equal(closeYesterday.action, 'claim');
+        assert.equal(closeYesterday.attempt, 1);
+        assert.equal(thermometerSettlementMarker('2026-10-16', closeYesterday.attempt), '2026-10-16#1');
+
+        const stealAsToday = decideThermometerLockClaim({
+            settlementKey: '2026-10-16',
+            settlementStatus: 'running',
+            settlementStartedAt: now - leaseMs - 1000,
+            settlementLockOwner: 'tabA',
+            settlementAttempt: 1,
+            settledDate: '',
+            owner: 'tabB',
+            today: '2026-10-17',
+            now,
+            leaseMs,
+        });
+        assert.equal(stealAsToday.action, 'claim');
+        assert.equal(stealAsToday.attempt, 2);
+
+        const payload = buildThermometerParentPayload({
+            date: '2026-10-16',
+            min: -20,
+            max: 20,
+            values: { '2': 5 },
+            settledDate: '2026-10-16',
+            settlementKey: '2026-10-16',
+            settlementStatus: 'done',
+            settlementAttempt: 1,
+            usedStaleValues: true,
+        }, { today: '2026-10-16' });
+        assert.equal(payload.usedStaleValues, true);
+        assert.equal('values' in payload, false);
     });
 });

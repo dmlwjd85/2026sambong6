@@ -3,7 +3,7 @@
  * 표 문서가 있으면 그 값(0 포함)만 씁니다. 표가 없는 학생만 부모 값, 그다음 예전 settings/global 값을 봅니다.
  * 표가 하나 있다고 해서 표가 없는 다른 학생의 예전 값을 버리지 않습니다.
  */
-import { increment, runTransaction } from 'firebase/firestore';
+import { getDoc, increment, runTransaction, updateDoc } from 'firebase/firestore';
 import { isCreditDefaultOn, isLoanPenaltyActive } from './bankLoan.js';
 import { applyFullXpDeduct } from './gear.js';
 import { applyShieldToXpDeduct } from './season2.js';
@@ -11,6 +11,82 @@ import { pickThermometerSettlementEntry } from './learningThermometerVotes.js';
 
 export const THERMOMETER_XP_LOG_LIMIT = 40;
 export const THERMOMETER_LOCK_CLOCK_SKEW_MS = 15000;
+const THERMOMETER_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 어제(또는 그 이전) 키로 running 인 정산이 있으면 그 키를 돌려줍니다.
+ * 같은 날, 이미 끝난 정산, 오늘보다 앞선 키는 여기서 마무리하지 않습니다.
+ */
+export function priorRunningThermometerSettlementKey({ settlementStatus, settlementKey, today } = {}) {
+    const key = String(settlementKey || '');
+    const day = String(today || '');
+    if (String(settlementStatus || '') !== 'running') return '';
+    if (!THERMOMETER_DAY.test(key) || !THERMOMETER_DAY.test(day)) return '';
+    if (key >= day) return '';
+    return key;
+}
+
+/** 화면과 정산이 같이 쓰는 부모 문서 모양입니다. 날짜가 오늘이 아니면 값은 비웁니다. */
+export function sanitizeThermometerParentState(raw, { today = '', minDefault = -20, maxDefault = 20 } = {}) {
+    const src = raw && typeof raw === 'object' ? raw : {};
+    let min = Math.floor(Number(src.min));
+    let max = Math.floor(Number(src.max));
+    if (!Number.isFinite(min)) min = minDefault;
+    if (!Number.isFinite(max)) max = maxDefault;
+    min = Math.max(-500, Math.min(0, min));
+    max = Math.min(500, Math.max(0, max));
+    if (min >= max) {
+        min = minDefault;
+        max = maxDefault;
+    }
+
+    const values = {};
+    const rawValues = src.values && typeof src.values === 'object' ? src.values : {};
+    Object.keys(rawValues).forEach((sid) => {
+        const id = String(sid);
+        const val = Math.max(min, Math.min(max, Math.round(Number(rawValues[id]) || 0)));
+        if (val !== 0) values[id] = val;
+    });
+
+    const stateDate = src.date ? String(src.date) : today;
+    return {
+        date: stateDate,
+        min,
+        max,
+        values: stateDate === today ? values : {},
+        settledDate: src.settledDate ? String(src.settledDate) : '',
+        lastSettlementAt: Number(src.lastSettlementAt) || 0,
+        settlementKey: src.settlementKey ? String(src.settlementKey) : '',
+        settlementStatus: src.settlementStatus ? String(src.settlementStatus) : '',
+        settlementStartedAt: Number(src.settlementStartedAt) || 0,
+        settlementLockOwner: src.settlementLockOwner ? String(src.settlementLockOwner).slice(0, 80) : '',
+        settlementAttempt: Math.max(0, Math.min(1000000, Math.floor(Number(src.settlementAttempt) || 0))),
+        usedStaleValues: src.usedStaleValues === true,
+        settlementAppliedCount: Math.max(0, Math.floor(Number(src.settlementAppliedCount) || 0)),
+        settlementTotalDelta: Math.floor(Number(src.settlementTotalDelta) || 0),
+    };
+}
+
+/** 규칙이 허용하는 부모 문서 필드만 남깁니다. values 는 학생별 표 문서에 있습니다. */
+export function buildThermometerParentPayload(state, options = {}) {
+    const today = options.today ? String(options.today) : '';
+    const safe = sanitizeThermometerParentState(state, options);
+    return {
+        date: String(safe.date || today).slice(0, 10),
+        min: safe.min,
+        max: safe.max,
+        settledDate: String(safe.settledDate || '').slice(0, 10),
+        lastSettlementAt: Math.floor(Number(safe.lastSettlementAt) || 0),
+        settlementKey: String(safe.settlementKey || '').slice(0, 12),
+        settlementStatus: String(safe.settlementStatus || '').slice(0, 20),
+        settlementStartedAt: Math.floor(Number(safe.settlementStartedAt) || 0),
+        settlementLockOwner: String(safe.settlementLockOwner || '').slice(0, 80),
+        settlementAttempt: Math.max(0, Math.min(1000000, Math.floor(Number(safe.settlementAttempt) || 0))),
+        usedStaleValues: safe.usedStaleValues === true,
+        settlementAppliedCount: Math.max(0, Math.min(40, Math.floor(Number(safe.settlementAppliedCount) || 0))),
+        settlementTotalDelta: Math.max(-20000, Math.min(20000, Math.floor(Number(safe.settlementTotalDelta) || 0))),
+    };
+}
 
 function legacyMap(values) {
     return values && typeof values === 'object' ? values : null;
@@ -429,4 +505,238 @@ export async function finishThermometerSettlement(db, {
         });
         return { status: 'done' };
     });
+}
+
+function settlementClock(now) {
+    return Number.isFinite(Number(now)) ? () => Number(now) : () => Date.now();
+}
+
+async function clearStoredThermometerLegacy(globalSettingsRef) {
+    const snap = await getDoc(globalSettingsRef);
+    if (!snap.exists()) return false;
+    const cleared = clearedLearningThermometerLegacy((snap.data() || {}).learningThermometer);
+    if (!cleared) return false;
+    await updateDoc(globalSettingsRef, { learningThermometer: cleared });
+    return true;
+}
+
+/**
+ * 하루 정산을 잠그고, 학생별 표식을 지키며 지급한 뒤 표를 닫습니다.
+ * today 가 부모의 running 키보다 뒤면 쓰지 않고 prior_running 만 돌려줍니다.
+ */
+export async function runThermometerSettlementPass(db, {
+    thermometerRef,
+    globalSettingsRef,
+    activeIds,
+    voteRefFor,
+    studentRefFor,
+    today,
+    owner,
+    leaseMs,
+    now,
+    manual = false,
+    minDefault = -20,
+    maxDefault = 20,
+} = {}) {
+    const settlementDay = String(today || '');
+    const readNow = settlementClock(now);
+    const shape = { today: settlementDay, minDefault, maxDefault };
+    const claimed = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(thermometerRef);
+        const parentData = snap.exists() ? (snap.data() || {}) : {};
+        const priorKey = priorRunningThermometerSettlementKey({
+            settlementStatus: parentData.settlementStatus,
+            settlementKey: parentData.settlementKey,
+            today: settlementDay,
+        });
+        if (priorKey) return { status: 'prior_running', priorKey };
+
+        const ids = (activeIds || []).map((sid) => String(sid));
+        const voteValues = {};
+        for (const id of ids) {
+            const voteSnap = await tx.get(voteRefFor(id));
+            if (voteSnap.exists() && voteSnap.data() && Object.prototype.hasOwnProperty.call(voteSnap.data(), 'value')) {
+                voteValues[id] = voteSnap.data().value;
+            }
+        }
+        const legacyAllowed = allowLegacyThermometerValues({
+            parentExists: snap.exists(),
+            settlementStatus: parentData.settlementStatus,
+            usedStaleValues: parentData.usedStaleValues === true,
+            settlementKey: parentData.settlementKey,
+            settledDate: parentData.settledDate,
+            today: settlementDay,
+        });
+        const readLegacy = !snap.exists() || legacyAllowed || parentData.usedStaleValues === true;
+        const legacySnap = readLegacy && globalSettingsRef ? await tx.get(globalSettingsRef) : null;
+        const legacyThermometer = legacySnap && legacySnap.exists()
+            ? (legacySnap.data() || {}).learningThermometer
+            : null;
+        const raw = snap.exists() ? parentData : (legacyThermometer || {});
+        const state = sanitizeThermometerParentState(raw, shape);
+        const plan = planThermometerSettlement({
+            activeIds: ids,
+            voteValues,
+            parentExists: snap.exists(),
+            parentData,
+            legacyThermometer,
+            today: settlementDay,
+            min: state.min,
+            max: state.max,
+        });
+        const pendingValues = plan.pendingValues;
+        const startedAt = readNow();
+        const decision = decideThermometerLockClaim({
+            settlementKey: state.settlementKey,
+            settlementStatus: state.settlementStatus,
+            settlementStartedAt: state.settlementStartedAt,
+            settlementLockOwner: state.settlementLockOwner,
+            settlementAttempt: state.settlementAttempt,
+            settledDate: state.settledDate,
+            owner,
+            today: settlementDay,
+            now: startedAt,
+            leaseMs,
+            manual,
+            pendingCount: Object.keys(pendingValues).length,
+        });
+        if (decision.action === 'already_done') return { status: 'already_done', state };
+        if (decision.action === 'locked') return { status: 'locked', state };
+        const nextState = {
+            ...state,
+            values: pendingValues,
+            settlementAttempt: decision.attempt,
+            settlementLockOwner: owner,
+        };
+        if (decision.action !== 'reuse') {
+            tx.set(thermometerRef, buildThermometerParentPayload({
+                ...nextState,
+                date: settlementDay,
+                settlementKey: settlementDay,
+                settlementStatus: 'running',
+                settlementStartedAt: startedAt,
+            }, shape));
+        }
+        return {
+            status: 'claimed',
+            state: nextState,
+            legacyIds: plan.legacyIds,
+            legacyIdsToClose: plan.legacyIdsToClose,
+            consumeLegacy: plan.consumeLegacy === true,
+        };
+    });
+
+    if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
+
+    const values = claimed.state.values || {};
+    const entries = Object.entries(values).filter(([, value]) => Number(value) !== 0);
+    const legacyIdSet = new Set((claimed.legacyIds || []).map((id) => String(id)));
+    let appliedCount = 0;
+    let totalDelta = 0;
+    let skippedApplied = 0;
+    for (const [sid, deltaRaw] of entries) {
+        const granted = await grantThermometerStudentXp(db, {
+            studentRef: studentRefFor(sid),
+            thermometerRef,
+            delta: deltaRaw,
+            today: settlementDay,
+            owner,
+            leaseMs,
+            now: readNow(),
+            usedStaleValues: legacyIdSet.has(String(sid)),
+        });
+        if (!granted || granted.status === 'lock_lost') {
+            return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
+        }
+        if (granted.status === 'granted') {
+            appliedCount += 1;
+            totalDelta += granted.actualDelta || 0;
+        } else if (granted.reason === 'already_applied' || granted.reason === 'stale_consumed') {
+            skippedApplied += 1;
+        }
+    }
+
+    const finishedAt = readNow();
+    const resetState = {
+        ...claimed.state,
+        values: {},
+        date: settlementDay,
+        settledDate: settlementDay,
+        lastSettlementAt: finishedAt,
+        settlementKey: settlementDay,
+        settlementStatus: 'done',
+        settlementStartedAt: 0,
+        settlementLockOwner: '',
+        settlementAppliedCount: appliedCount,
+        settlementTotalDelta: totalDelta,
+        usedStaleValues: claimed.state.usedStaleValues === true || claimed.consumeLegacy === true,
+    };
+    const voteIds = [...new Set([
+        ...entries.map(([sid]) => String(sid)),
+        ...((claimed.legacyIdsToClose || []).map((sid) => String(sid))),
+    ])];
+    const finished = await finishThermometerSettlement(db, {
+        thermometerRef,
+        voteRefs: voteIds.map((sid) => voteRefFor(sid)),
+        owner,
+        today: settlementDay,
+        leaseMs,
+        now: finishedAt,
+        parentPayload: buildThermometerParentPayload(resetState, shape),
+    });
+    if (!finished || finished.status !== 'done') {
+        return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
+    }
+
+    let legacyClearError = null;
+    if (resetState.usedStaleValues && globalSettingsRef) {
+        try {
+            await clearStoredThermometerLegacy(globalSettingsRef);
+        } catch (err) {
+            legacyClearError = err;
+        }
+    }
+    return {
+        status: 'done',
+        appliedCount,
+        totalDelta,
+        skippedApplied,
+        state: resetState,
+        legacyClearError,
+    };
+}
+
+function withPriorSettlement(todayResult, closed) {
+    if (!closed || closed.status !== 'done') return todayResult;
+    const priorApplied = closed.appliedCount || 0;
+    const priorDelta = closed.totalDelta || 0;
+    const priorSkipped = closed.skippedApplied || 0;
+    return {
+        ...todayResult,
+        prior: {
+            status: closed.status,
+            appliedCount: priorApplied,
+            totalDelta: priorDelta,
+            skippedApplied: priorSkipped,
+            settlementKey: closed.state ? closed.state.settlementKey : '',
+        },
+        appliedCount: (todayResult.appliedCount || 0) + priorApplied,
+        totalDelta: (todayResult.totalDelta || 0) + priorDelta,
+        skippedApplied: (todayResult.skippedApplied || 0) + priorSkipped,
+        legacyClearError: todayResult.legacyClearError || closed.legacyClearError || null,
+    };
+}
+
+/**
+ * running 인 정산 키가 오늘이 아니면 그 키로 먼저 마무리합니다.
+ * 이미 지급한 학생은 lastThermometerSettlementKey 로 건너뛰고, 남은 학생만 지급한 뒤 오늘 정산을 시작합니다.
+ * 어제 잠금이 아직 다른 탭 것이면 오늘 정산으로 넘어가지 않습니다.
+ */
+export async function settleThermometerResolvingPrior(db, args = {}) {
+    const opened = await runThermometerSettlementPass(db, args);
+    if (!opened || opened.status !== 'prior_running') return opened;
+    const closed = await runThermometerSettlementPass(db, { ...args, today: opened.priorKey });
+    if (!closed || (closed.status !== 'done' && closed.status !== 'already_done')) return closed;
+    const todayResult = await runThermometerSettlementPass(db, args);
+    return withPriorSettlement(todayResult, closed);
 }

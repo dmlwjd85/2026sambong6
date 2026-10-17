@@ -1,47 +1,174 @@
 /**
- * 학습 온도계 정산이 어느 맵의 값을 쓸지 고릅니다.
- * 표(votes)가 하나라도 있으면 표만 봅니다. 없는 학생은 0이고, 0으로 지운 표를 옛 값으로 되돌리지 않습니다.
- * 표도 없고 부모 문서의 values도 없을 때만, allowLegacy 일 때 예전 settings/global 값을 봅니다.
+ * 학습 온도계 정산이 학생마다 어느 값을 쓸지 고릅니다.
+ * 표 문서가 있으면 그 값(0 포함)만 씁니다. 표가 없는 학생만 부모 값, 그다음 예전 settings/global 값을 봅니다.
+ * 표가 하나 있다고 해서 표가 없는 다른 학생의 예전 값을 버리지 않습니다.
  */
 import { increment, runTransaction } from 'firebase/firestore';
 import { isCreditDefaultOn, isLoanPenaltyActive } from './bankLoan.js';
 import { applyFullXpDeduct } from './gear.js';
 import { applyShieldToXpDeduct } from './season2.js';
+import { pickThermometerSettlementEntry } from './learningThermometerVotes.js';
 
 export const THERMOMETER_XP_LOG_LIMIT = 40;
 export const THERMOMETER_LOCK_CLOCK_SKEW_MS = 15000;
 
+function legacyMap(values) {
+    return values && typeof values === 'object' ? values : null;
+}
+
 export function thermometerValueSource({ voteValues, parentValues, legacyValues, allowLegacy } = {}) {
     const votes = voteValues && typeof voteValues === 'object' ? voteValues : {};
-    if (Object.keys(votes).length > 0) return { kind: 'votes', values: votes };
-    const parent = parentValues && typeof parentValues === 'object' ? parentValues : null;
-    if (parent && Object.keys(parent).length > 0) return { kind: 'parent', values: parent };
-    const legacy = legacyValues && typeof legacyValues === 'object' ? legacyValues : null;
-    if (allowLegacy && legacy && Object.keys(legacy).length > 0) return { kind: 'legacy', values: legacy };
-    return { kind: 'empty', values: {} };
+    const parent = legacyMap(parentValues);
+    const legacy = legacyMap(legacyValues);
+    const ids = new Set([
+        ...Object.keys(votes),
+        ...(parent ? Object.keys(parent) : []),
+        ...(allowLegacy && legacy ? Object.keys(legacy) : []),
+    ]);
+    const values = {};
+    const legacyIds = [];
+    let sawVote = false;
+    let sawParent = false;
+    ids.forEach((id) => {
+        const voteExists = Object.prototype.hasOwnProperty.call(votes, id);
+        const parentValue = parent && Object.prototype.hasOwnProperty.call(parent, id) ? parent[id] : undefined;
+        const hasLegacy = !!(allowLegacy && legacy && Object.prototype.hasOwnProperty.call(legacy, id));
+        const picked = pickThermometerSettlementEntry({
+            voteExists,
+            voteValue: voteExists ? votes[id] : undefined,
+            parentValue,
+            globalValue: hasLegacy ? legacy[id] : undefined,
+            allowLegacy: hasLegacy,
+        });
+        if (!picked) return;
+        values[id] = picked.value;
+        if (picked.kind === 'vote') sawVote = true;
+        else if (picked.kind === 'parent') sawParent = true;
+        else if (picked.kind === 'legacy') legacyIds.push(String(id));
+    });
+    let kind = 'empty';
+    if (legacyIds.length) kind = 'legacy';
+    else if (sawVote) kind = 'votes';
+    else if (sawParent) kind = 'parent';
+    return { kind, values, legacyIds };
+}
+
+function legacyHasNonZero(legacyValues) {
+    const legacy = legacyMap(legacyValues);
+    if (!legacy) return false;
+    return Object.keys(legacy).some((sid) => Math.round(Number(legacy[sid]) || 0) !== 0);
 }
 
 /**
- * 부모 문서가 생긴 뒤에도 옛 값을 볼 수 있는 경우.
- * - 부모 문서가 아직 없음
- * - 잠금만 커밋되고(running) 표는 아직 없음
- * 이미 done 인 기록은 다시 열지 않습니다.
- * 예전 값으로 한 번이라도 지급했다면(usedStaleValues) 그날의 running 재시도만 남기고,
- * 다음 날 running 에서는 되살리지 않습니다. 같은 날 재시도의 중복 지급은 학생별 표식이 막습니다.
+ * 예전 settings/global 값을 학생 표에 보충할 수 있는지.
+ * 허용은 둘 중 하나입니다.
+ * - 정산 중이 아니고, 오늘 아직 끝나지 않았고, usedStaleValues 로 소모하지 않음
+ * - 같은 날 running 재시도 (한번 소모했더라도 그 날의 잠금 재시도만)
+ * 날짜를 모르면 부모 문서가 있는 비-running 상태는 열지 않습니다.
+ * 소모된 값은 다음 날 running 에서도 열지 않습니다.
  */
 export function allowLegacyThermometerValues({
     parentExists,
     settlementStatus,
     usedStaleValues,
     settlementKey,
+    settledDate,
     today,
 } = {}) {
     if (!parentExists) return true;
-    if (settlementStatus !== 'running') return false;
-    if (usedStaleValues === true) {
-        if (!today || String(settlementKey || '') !== String(today)) return false;
+    const status = String(settlementStatus || '');
+    const consumed = usedStaleValues === true;
+    const day = today ? String(today) : '';
+    const running = status === 'running';
+    const sameDayRunning = running && day !== '' && String(settlementKey || '') === day;
+    if (sameDayRunning) return true;
+    if (running) {
+        if (consumed) return false;
+        return true;
     }
+    if (!day) return false;
+    if (String(settledDate || '') === day) return false;
+    if (consumed) return false;
     return true;
+}
+
+/**
+ * 활성 학생의 정산 값과, 예전 global 값을 이번 시도 뒤에 닫을지.
+ * legacyIds 는 표가 없어 예전 값으로 지급하는 활성 학생입니다.
+ * consumeLegacy 는 비활성 학생의 남은 값까지 포함해, 다음 날과 시딩이 다시 주지 않게 합니다.
+ */
+export function planThermometerSettlement({
+    activeIds,
+    voteValues,
+    parentExists,
+    parentData,
+    legacyThermometer,
+    today,
+    min,
+    max,
+} = {}) {
+    const parent = parentData && typeof parentData === 'object' ? parentData : {};
+    const legacyAllowed = allowLegacyThermometerValues({
+        parentExists: !!parentExists,
+        settlementStatus: parent.settlementStatus,
+        usedStaleValues: parent.usedStaleValues === true,
+        settlementKey: parent.settlementKey,
+        settledDate: parent.settledDate,
+        today,
+    });
+    const legacyValues = legacyThermometer && typeof legacyThermometer === 'object'
+        ? legacyThermometer.values
+        : null;
+    const source = thermometerValueSource({
+        voteValues,
+        parentValues: parentExists ? parent.values : null,
+        legacyValues,
+        allowLegacy: legacyAllowed,
+    });
+    const lo = Number.isFinite(Number(min)) ? Math.round(Number(min)) : -20;
+    const hi = Number.isFinite(Number(max)) ? Math.round(Number(max)) : 20;
+    const legacyIdSet = new Set(source.legacyIds || []);
+    const pendingValues = {};
+    const legacyIds = [];
+    (activeIds || []).forEach((sid) => {
+        const id = String(sid);
+        if (!Object.prototype.hasOwnProperty.call(source.values, id)) return;
+        let value = Math.round(Number(source.values[id]) || 0);
+        if (lo < hi) value = Math.max(lo, Math.min(hi, value));
+        if (!value) return;
+        pendingValues[id] = value;
+        if (legacyIdSet.has(id)) legacyIds.push(id);
+    });
+    const leftover = legacyHasNonZero(legacyValues);
+    const consumeLegacy = leftover && (legacyAllowed || parent.usedStaleValues === true);
+    const votes = voteValues && typeof voteValues === 'object' ? voteValues : {};
+    const legacyIdsToClose = [];
+    const legacy = legacyMap(legacyValues);
+    if (legacy) {
+        Object.keys(legacy).forEach((sid) => {
+            const id = String(sid);
+            if (!/^[A-Za-z0-9_-]{1,24}$/.test(id)) return;
+            if (Object.prototype.hasOwnProperty.call(votes, id)) return;
+            if (Math.round(Number(legacy[id]) || 0) === 0) return;
+            legacyIdsToClose.push(id);
+        });
+    }
+    return {
+        legacyAllowed,
+        sourceKind: source.kind,
+        pendingValues,
+        legacyIds,
+        legacyIdsToClose: consumeLegacy ? legacyIdsToClose : [],
+        consumeLegacy,
+    };
+}
+
+/** settings/global 의 learningThermometer.values 를 비웁니다. 다른 필드는 유지합니다. */
+export function clearedLearningThermometerLegacy(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const values = raw.values && typeof raw.values === 'object' ? raw.values : null;
+    if (!values || !Object.keys(values).length) return null;
+    return { ...raw, values: {} };
 }
 
 /** 이 탭이 잠금을 다시 알아보도록 세션 동안 고정하는 소유 토큰입니다. */
@@ -142,12 +269,16 @@ export function studentSettlementAlreadyApplied(student, marker) {
  */
 export function thermometerStudentGrantPlan({
     alreadyApplied,
+    alreadyUsedStale = false,
     delta,
     blockedPositive = false,
     usedStaleValues = false,
     marker,
 } = {}) {
     if (alreadyApplied) return { action: 'skip', reason: 'already_applied' };
+    if (usedStaleValues === true && alreadyUsedStale === true) {
+        return { action: 'skip', reason: 'stale_consumed' };
+    }
     const amount = Math.round(Number(delta) || 0);
     if (!amount) return { action: 'skip', reason: 'zero' };
     if (amount > 0 && blockedPositive) return { action: 'skip', reason: 'credit_default' };
@@ -156,7 +287,7 @@ export function thermometerStudentGrantPlan({
         delta: amount,
         markers: {
             lastThermometerSettlementKey: String(marker || ''),
-            thermometerUsedStaleValues: usedStaleValues === true,
+            thermometerUsedStaleValues: usedStaleValues === true || alreadyUsedStale === true,
         },
     };
 }
@@ -214,6 +345,7 @@ export async function grantThermometerStudentXp(db, {
         const blocked = isCreditDefaultOn(stu, today) || isLoanPenaltyActive(stu, today);
         const plan = thermometerStudentGrantPlan({
             alreadyApplied: studentSettlementAlreadyApplied(stu, marker),
+            alreadyUsedStale: stu.thermometerUsedStaleValues === true,
             delta,
             blockedPositive: blocked,
             usedStaleValues,

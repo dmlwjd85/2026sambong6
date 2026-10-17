@@ -2,7 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     allowLegacyThermometerValues,
+    clearedLearningThermometerLegacy,
     decideThermometerLockClaim,
+    planThermometerSettlement,
     settlementLockHeld,
     studentSettlementAlreadyApplied,
     thermometerSettlementMarker,
@@ -10,6 +12,7 @@ import {
     thermometerValueSource,
     thermometerXpIncrement,
 } from './learningThermometerSettlement.js';
+import { planThermometerLegacyVoteWrites } from './learningThermometerVotes.js';
 
 describe('학습 온도계 정산 값 출처', () => {
     const legacy = { '2': 15, '5': -8 };
@@ -46,16 +49,17 @@ describe('학습 온도계 정산 값 출처', () => {
         assert.equal(source.values['2'], 15);
     });
 
-    it('표가 있으면 0인 학생을 예전 값으로 되돌리지 않습니다', () => {
+    it('표가 0인 학생은 예전 값으로 되돌리지 않고, 표가 없는 학생은 예전 값을 받습니다', () => {
         const source = thermometerValueSource({
             voteValues: { '2': 0 },
             parentValues: {},
             legacyValues: legacy,
             allowLegacy: true,
         });
-        assert.equal(source.kind, 'votes');
+        assert.equal(source.kind, 'legacy');
         assert.equal(source.values['2'], 0);
-        assert.equal(source.values['5'], undefined);
+        assert.equal(source.values['5'], -8);
+        assert.deepEqual(source.legacyIds, ['5']);
     });
 
     it('완료된 정산은 예전 값으로 다시 열지 않습니다', () => {
@@ -144,6 +148,119 @@ describe('학습 온도계 정산 값 출처', () => {
             { lastThermometerSettlementKey: marker },
             thermometerSettlementMarker('2026-10-16', 2),
         ), false);
+        const nextDayStale = thermometerStudentGrantPlan({
+            alreadyApplied: false,
+            alreadyUsedStale: true,
+            delta: 15,
+            usedStaleValues: true,
+            marker: thermometerSettlementMarker('2026-10-17', 1),
+        });
+        assert.equal(nextDayStale.action, 'skip');
+        assert.equal(nextDayStale.reason, 'stale_consumed');
+    });
+
+    it('M3: 표가 있는 학생과 예전 값만 있는 학생을 같은 날 정산합니다', () => {
+        const plan = planThermometerSettlement({
+            activeIds: ['1', '2'],
+            voteValues: { '2': 5 },
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'done',
+                settledDate: '2026-10-16',
+                usedStaleValues: false,
+                settlementKey: '2026-10-16',
+            },
+            legacyThermometer: { values: { '1': 3, '2': 15, '9': 7 } },
+            today: '2026-10-17',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(plan.legacyAllowed, true);
+        assert.equal(plan.pendingValues['1'], 3);
+        assert.equal(plan.pendingValues['2'], 5);
+        assert.equal(plan.pendingValues['9'], undefined);
+        assert.deepEqual(plan.legacyIds, ['1']);
+        assert.deepEqual(plan.legacyIdsToClose, ['1', '9']);
+        assert.equal(plan.consumeLegacy, true);
+        assert.equal(allowLegacyThermometerValues({
+            parentExists: true,
+            settlementStatus: '',
+            settledDate: '',
+            today: '2026-10-17',
+        }), true);
+    });
+
+    it('R1: 예전 값을 소모한 다음 날은 다시 지급하지 않고 시딩도 멈춥니다', () => {
+        const day1 = planThermometerSettlement({
+            activeIds: ['1'],
+            voteValues: {},
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'done',
+                settledDate: '2026-10-15',
+                usedStaleValues: false,
+            },
+            legacyThermometer: { min: -20, max: 20, values: { '1': 3 } },
+            today: '2026-10-16',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(day1.pendingValues['1'], 3);
+        assert.equal(day1.consumeLegacy, true);
+        const cleared = clearedLearningThermometerLegacy({ min: -20, max: 20, values: { '1': 3 } });
+        assert.deepEqual(cleared.values, {});
+        assert.equal(cleared.min, -20);
+
+        const day2 = planThermometerSettlement({
+            activeIds: ['1', '9'],
+            voteValues: {},
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'done',
+                settledDate: '2026-10-16',
+                usedStaleValues: true,
+                settlementKey: '2026-10-16',
+            },
+            legacyThermometer: { values: { '1': 3, '9': 7 } },
+            today: '2026-10-17',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(day2.legacyAllowed, false);
+        assert.equal(day2.pendingValues['1'], undefined);
+        assert.equal(day2.pendingValues['9'], undefined);
+        assert.equal(day2.consumeLegacy, true);
+        const reactivated = planThermometerSettlement({
+            activeIds: ['9'],
+            voteValues: { '9': 0 },
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'done',
+                settledDate: '2026-10-16',
+                usedStaleValues: false,
+            },
+            legacyThermometer: { values: { '9': 7 } },
+            today: '2026-10-17',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(reactivated.pendingValues['9'], undefined);
+        assert.equal(planThermometerLegacyVoteWrites({
+            existingVoteIds: [],
+            legacyValues: { '1': 3, '9': 7 },
+            activeIds: ['1', '9'],
+            allowLegacy: day2.legacyAllowed,
+            min: -20,
+            max: 20,
+        }), null);
+        assert.equal(allowLegacyThermometerValues({
+            parentExists: true,
+            settlementStatus: 'running',
+            usedStaleValues: true,
+            settlementKey: '2026-10-16',
+            settledDate: '2026-10-16',
+            today: '2026-10-17',
+        }), false);
     });
 
     it('M2: 임대가 끝났거나 다른 탭이 잠금을 가졌으면 지급하지 않습니다', () => {

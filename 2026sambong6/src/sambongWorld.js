@@ -508,7 +508,7 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { classXpCatchupSlot, classXpGrantDecision, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
@@ -29459,10 +29459,17 @@ ${subjectLine}
 
             try {
                 const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
-                const restorePayload = { ...backup.data };
-                if (stu.pin) restorePayload.pin = stu.pin;
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
-                await setDoc(docRef, restorePayload);
+                // 백업에는 lastClassXpSlot이 없다. 통째로 덮으면 오늘 수업 XP 슬롯이 지워지고
+                // 규칙이 복구를 거절해, 초기화 직후 자동 지급된 학생을 되돌리지 못한다.
+                let restorePayload = null;
+                await runTransaction(db, async (transaction) => {
+                    const liveSnap = await transaction.get(docRef);
+                    const live = liveSnap.exists() ? (liveSnap.data() || {}) : {};
+                    restorePayload = keepServerClassXpSlot(backup.data, live);
+                    if (stu.pin) restorePayload.pin = stu.pin;
+                    transaction.set(docRef, restorePayload);
+                });
 
                 const myId = localStorage.getItem('sambong_student_id');
                 if (myId === String(stuId) && !window.playerState.isAdmin) {

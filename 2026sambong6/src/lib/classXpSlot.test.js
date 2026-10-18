@@ -5,6 +5,7 @@ import {
     classXpCatchupSlot,
     classXpGrantDecision,
     classXpSlotFromTime,
+    keepServerClassXpSlot,
     kstWallClock,
     omitClassXpSlot,
 } from './classXpSlot.js';
@@ -68,5 +69,26 @@ describe('수업 XP 슬롯 (KST)', () => {
         assert.equal(classXpGrantDecision(10, '2026_10_15_14:40', '2026_10_15_14:40'), 'already');
         assert.equal(classXpGrantDecision(10, '2026_10_15_13:50', '2026_10_15_14:40'), 'grant');
         assert.equal(classXpGrantDecision(0, '', '2026_10_15_14:40'), 'grant');
+    });
+
+    it('복구 문서는 서버의 수업 XP 슬롯을 지우거나 옛 키로 바꾸지 않는다', () => {
+        const backup = { xp: 480, bong: 12, quests: { q1: true } };
+        const kept = keepServerClassXpSlot(backup, { xp: 5, lastClassXpSlot: '2026_10_19_09:40' });
+        assert.equal(kept.xp, 480);
+        assert.equal(kept.bong, 12);
+        assert.equal(kept.lastClassXpSlot, '2026_10_19_09:40');
+        assert.equal(Object.prototype.hasOwnProperty.call(backup, 'lastClassXpSlot'), false);
+
+        const staleBackup = { xp: 480, lastClassXpSlot: '2026_10_01_14:40' };
+        const replaced = keepServerClassXpSlot(staleBackup, { lastClassXpSlot: '2026_10_19_14:40' });
+        assert.equal(replaced.lastClassXpSlot, '2026_10_19_14:40');
+        assert.equal(staleBackup.lastClassXpSlot, '2026_10_01_14:40');
+
+        const cleared = keepServerClassXpSlot(staleBackup, { xp: 0 });
+        assert.equal(Object.prototype.hasOwnProperty.call(cleared, 'lastClassXpSlot'), false);
+        assert.equal(cleared.xp, 480);
+
+        const emptySlot = keepServerClassXpSlot(backup, { lastClassXpSlot: '' });
+        assert.equal(emptySlot.lastClassXpSlot, '');
     });
 });

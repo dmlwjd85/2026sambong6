@@ -6,6 +6,7 @@ import {
     isLunchRankVisible,
     lunchBidClosedReason,
     lunchQueueDisplayName,
+    sortLunchQueue,
 } from './lunchQueue.js';
 
 describe('밥줄 명단', () => {
@@ -44,5 +45,19 @@ describe('밥줄 투자 마감 시각', () => {
         assert.equal(isLunchRankVisible(new Date(2026, 8, 16, 12, 9, 0), false), false);
         assert.equal(isLunchRankVisible(new Date(2026, 8, 16, 12, 10, 0), false), true);
         assert.equal(isLunchRankVisible(new Date(2026, 8, 16, 11, 0, 0), true), true);
+    });
+});
+
+describe('밥줄 신용불량 순서', () => {
+    it('신용불량인 학생은 투자금이 많아도 맨 뒤입니다', () => {
+        const today = '2026-10-16';
+        const rows = [
+            { id: '1', xp: 10, bong: -40, creditDefaultUntilYmd: '2026-10-20', lunchBid: { date: today, amount: 30 } },
+            { id: '2', xp: 5, bong: 20, lunchBid: { date: today, amount: 3 } },
+            { id: '3', xp: 50, bong: 8, lunchBid: { date: today, amount: 1 } },
+            { id: '4', xp: 1, bong: 4, loanPenaltyUntilYmd: '2026-10-18', lunchBid: { date: today, amount: 99 } },
+            { id: '5', xp: 1, bong: -1, lunchBid: { date: today, amount: 200 } },
+        ];
+        assert.deepEqual(sortLunchQueue(rows, today).map((s) => s.id), ['2', '3', '5', '4', '1']);
     });
 });

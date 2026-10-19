@@ -1,7 +1,10 @@
 /**
  * 밥줄에는 학급 명단의 활성 학생만 올립니다.
  * Firestore에만 남은 문서(비활성·삭제된 번호)는 유령으로 보이지 않게 뺍니다.
+ * 신용불량인 학생은 투자금이 많아도 항상 맨 뒤입니다.
  */
+
+import { isStudentCreditDefault } from './bankLoan.js';
 
 export function filterLunchQueueStudents(students, activeIds) {
     const allow = new Set(
@@ -51,4 +54,29 @@ export function isLunchBidOpen() {
 
 export function lunchBidClosedReason() {
     return '';
+}
+
+function lunchBidAmount(student, todayYmd) {
+    const bid = student && student.lunchBid;
+    if (!bid || String(bid.date || '') !== String(todayYmd || '')) return 0;
+    const n = Math.floor(Number(bid.amount) || 0);
+    return n > 0 ? n : 0;
+}
+
+/**
+ * 신용불량인 학생을 맨 뒤로 보냅니다.
+ * 같은 묶음 안에서는 오늘 투자금이 큰 순, 같으면 경험치가 큰 순입니다.
+ */
+export function compareLunchQueue(a, b, todayYmd) {
+    const aLast = isStudentCreditDefault(a, todayYmd) ? 1 : 0;
+    const bLast = isStudentCreditDefault(b, todayYmd) ? 1 : 0;
+    if (aLast !== bLast) return aLast - bLast;
+    const aBid = lunchBidAmount(a, todayYmd);
+    const bBid = lunchBidAmount(b, todayYmd);
+    if (bBid !== aBid) return bBid - aBid;
+    return (Number(b && b.xp) || 0) - (Number(a && a.xp) || 0);
+}
+
+export function sortLunchQueue(students, todayYmd) {
+    return (Array.isArray(students) ? students.slice() : []).sort((a, b) => compareLunchQueue(a, b, todayYmd));
 }

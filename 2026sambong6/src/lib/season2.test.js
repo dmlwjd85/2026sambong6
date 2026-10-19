@@ -20,6 +20,7 @@ import {
     buildAcademicMonthGrid,
     countInstructionalWeekdays,
     holidayDatesOf,
+    KOREA_2026_FALL_HOLIDAYS,
     sanitizeHolidayEntries,
     estimateSeason2QuestXp,
     expectedXpPace,
@@ -43,9 +44,9 @@ import {
 } from './season2.js';
 
 describe('시즌 2 학사·경험치 예산', () => {
-    it('9월 1일~1월 7일 수업일수는 약 80일이다', () => {
+    it('9월 1일~1월 7일 수업일수는 공휴일을 뺀 79일이다', () => {
         const days = season2SchoolDaysTotal();
-        assert.equal(days, 80);
+        assert.equal(days, 79);
     });
 
     it('공휴일을 학사 달력에 표시하고 빈 목록은 비운 채로 둔다', () => {
@@ -59,6 +60,16 @@ describe('시즌 2 학사·경험치 예산', () => {
         assert.equal(cleaned.find((h) => h.date === '2026-10-09').name, '한글날');
         assert.deepEqual(sanitizeHolidayEntries([], { fallback: [] }), []);
         assert.equal(holidayDatesOf(undefined).includes('2026-10-09'), true);
+        [
+            '2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18',
+            '2026-03-01', '2026-03-02', '2026-05-01', '2026-05-05',
+            '2026-05-24', '2026-05-25', '2026-06-03', '2026-06-06',
+            '2026-07-17', '2026-08-15', '2026-08-17', '2026-09-24',
+            '2026-09-25', '2026-09-26', '2026-10-03', '2026-10-05',
+            '2026-10-09', '2026-12-25', '2027-01-01',
+        ].forEach((ymd) => {
+            assert.equal(KOREA_2026_FALL_HOLIDAYS.includes(ymd), true, ymd);
+        });
         const hangul = academicDayKind('2026-10-09', { holidays: cleaned });
         assert.equal(hangul.kind, 'holiday');
         assert.equal(hangul.name, '한글날');

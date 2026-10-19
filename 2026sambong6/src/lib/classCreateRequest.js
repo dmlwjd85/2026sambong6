@@ -55,7 +55,7 @@ export function sanitizeClassCreateRequest(raw, nowMs = Date.now()) {
         homeroom: clampInt(src.homeroom, 1, 20, 1),
         teacherName: clipText(src.teacherName, 20) || '담임 선생님',
         studentCount: clampInt(src.studentCount, 1, 40, 24),
-        teacherPin: /^\d{4}$/.test(pin) ? pin : '',
+        teacherPin: /^\d{4,12}$/.test(pin) ? pin : '',
         seasonLabel: clipText(src.seasonLabel, 30) || '시즌 1',
         seasonTheme: clipText(src.seasonTheme, 60) || '우리 반 모험',
         applyDefaultTemplate: src.applyDefaultTemplate !== false,

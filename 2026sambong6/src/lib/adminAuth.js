@@ -8,25 +8,44 @@ import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
 /** GM 화면을 15분 동안 건드리지 않으면 다른 학급은 로그아웃합니다. */
 export const GM_IDLE_LOGOUT_MS = 15 * 60 * 1000;
 
-/** 서버 세션 만료. 규칙 상한 12시간보다 짧게 잡아 시계가 조금 빨라도 통과합니다. */
-export const GM_SESSION_TTL_MS = 11 * 60 * 60 * 1000;
+/** 서버 세션 만료. 규칙 상한은 10분입니다. 쓸 때는 이 값에서 15초를 빼 시계 차이를 피합니다. */
+export const GM_SESSION_TTL_MS = 10 * 60 * 1000;
 
-/** uid당 PIN 시도. 규칙은 15분에 20번입니다. */
-export const PIN_ATTEMPT_MAX = 20;
-export const PIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+/** 세션 만료 시각을 규칙 상한보다 조금 짧게 씁니다. */
+export const GM_SESSION_SKEW_MS = 15 * 1000;
+
+/** 학급당 연속 실패. 10번째에 잠그고, 잠금은 15분입니다. */
+export const PIN_ATTEMPT_MAX = 10;
+export const PIN_LOCK_MS = 15 * 60 * 1000;
 
 /**
- * 다음 PIN 시도 문서 값.
- * blocked면 규칙을 호출하지 않습니다. 창이 지나면 count를 1로 다시 시작합니다.
+ * 다음 학급 PIN 시도 값.
+ * blocked면 이미 잠겨 있어 규칙을 호출하지 않습니다.
+ * 잠금이 끝난 뒤나 10에 도달한 뒤에는 1부터 다시 셉니다.
+ * 10이 되면 lockedUntilMs를 지금으로부터 15분 뒤로 둡니다.
  */
 export function planPinAttempt(existing, nowMs) {
     const now = Number(nowMs);
-    const windowStartMs = Number(existing && existing.windowStartMs);
     const count = Number(existing && existing.count);
-    const windowOpen = Number.isFinite(windowStartMs) && now - windowStartMs < PIN_ATTEMPT_WINDOW_MS;
-    if (!windowOpen) return { count: 1, windowStartMs: now, blocked: false };
-    if (count >= PIN_ATTEMPT_MAX) return { count, windowStartMs, blocked: true };
-    return { count: count + 1, windowStartMs, blocked: false };
+    const lockedUntilMs = Number(existing && existing.lockedUntilMs);
+    const locked = Number.isFinite(lockedUntilMs) && lockedUntilMs > now;
+    if (locked) {
+        return {
+            count: Number.isFinite(count) ? count : PIN_ATTEMPT_MAX,
+            lockedUntilMs,
+            blocked: true,
+        };
+    }
+    const expired = Number.isFinite(lockedUntilMs) && lockedUntilMs > 0 && lockedUntilMs <= now;
+    const base = !existing || expired || !Number.isFinite(count) || count >= PIN_ATTEMPT_MAX || count < 0
+        ? 0
+        : count;
+    const next = base + 1;
+    return {
+        count: next,
+        lockedUntilMs: next >= PIN_ATTEMPT_MAX ? now + PIN_LOCK_MS : null,
+        blocked: false,
+    };
 }
 
 /**

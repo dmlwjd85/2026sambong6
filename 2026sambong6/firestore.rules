@@ -24,8 +24,8 @@ service cloud.firestore {
       return /databases/$(database)/documents/gmPinProofs/$(request.auth.uid);
     }
 
-    function gmAttemptPath() {
-      return /databases/$(database)/documents/gmPinAttempts/$(request.auth.uid);
+    function gmAttemptPath(classId) {
+      return /databases/$(database)/documents/gmPinAttempts/$(classId);
     }
 
     function secretPath(classId) {
@@ -56,29 +56,113 @@ service cloud.firestore {
     function sessionExpiryOk() {
       return request.resource.data.expiresAt is timestamp
         && request.resource.data.expiresAt > request.time
-        && request.resource.data.expiresAt <= request.time + duration.value(12, 'h');
+        && request.resource.data.expiresAt <= request.time + duration.value(10, 'm');
     }
 
-    function proofBacksSession() {
+    function pinClassLocked(classId) {
+      return exists(gmAttemptPath(classId))
+        && get(gmAttemptPath(classId)).data.lockedUntil is timestamp
+        && get(gmAttemptPath(classId)).data.lockedUntil > request.time;
+    }
+
+    function pinAttemptExpectedCount(classId) {
+      let missing = !exists(gmAttemptPath(classId));
+      let expired = exists(gmAttemptPath(classId))
+        && get(gmAttemptPath(classId)).data.lockedUntil is timestamp
+        && get(gmAttemptPath(classId)).data.lockedUntil <= request.time;
+      return (missing || expired)
+        ? 1
+        : get(gmAttemptPath(classId)).data.count + 1;
+    }
+
+    function pinAttemptShape(count, lockedUntil) {
+      return count is int
+        && count >= 1
+        && count <= 10
+        && (
+          (count < 10 && lockedUntil == null)
+          || (
+            count == 10
+            && lockedUntil is timestamp
+            && lockedUntil > request.time + duration.value(14, 'm')
+            && lockedUntil <= request.time + duration.value(16, 'm')
+          )
+        );
+    }
+
+    function proofForcesAttemptBump() {
+      let classId = request.resource.data.classId;
+      let after = getAfter(gmAttemptPath(classId)).data;
+      return existsAfter(gmAttemptPath(classId))
+        && !pinClassLocked(classId)
+        && after.keys().hasOnly(['count', 'lockedUntil'])
+        && after.count == pinAttemptExpectedCount(classId)
+        && pinAttemptShape(after.count, after.lockedUntil);
+    }
+
+    function attemptPairedWithProof(classId) {
+      let proof = getAfter(gmProofPath()).data;
+      return existsAfter(gmProofPath())
+        && proof.keys().hasOnly(['pin', 'classId', 'expiresAt'])
+        && proof.classId == classId
+        && proof.pin is string
+        && proof.pin.matches('^[0-9]{4,12}$')
+        && proof.expiresAt is timestamp
+        && proof.expiresAt > request.time
+        && proof.expiresAt <= request.time + duration.value(10, 'm');
+    }
+
+    function attemptBumpWriteOk(classId) {
+      let after = request.resource.data;
+      return signedIn()
+        && !pinClassLocked(classId)
+        && after.keys().hasOnly(['count', 'lockedUntil'])
+        && after.count == pinAttemptExpectedCount(classId)
+        && pinAttemptShape(after.count, after.lockedUntil)
+        && attemptPairedWithProof(classId);
+    }
+
+    function attemptResetWriteOk(classId) {
+      return signedIn()
+        && !pinClassLocked(classId)
+        && request.resource.data.keys().hasOnly(['count', 'lockedUntil'])
+        && request.resource.data.count == 0
+        && request.resource.data.lockedUntil == null
+        && existsAfter(gmSessionPath())
+        && getAfter(gmSessionPath()).data.keys().hasOnly(['classId', 'expiresAt'])
+        && getAfter(gmSessionPath()).data.classId == classId
+        && exists(gmProofPath())
+        && get(gmProofPath()).data.classId == classId
+        && exists(secretPath(classId))
+        && get(gmProofPath()).data.pin == get(secretPath(classId)).data.pin
+        && existsAfter(gmProofPath()) == false;
+    }
+
+    function sessionShapeOk() {
+      return request.resource.data.keys().hasOnly(['classId', 'expiresAt'])
+        && request.resource.data.classId is string
+        && request.resource.data.classId.size() > 0
+        && request.resource.data.classId.size() < 80
+        && sessionExpiryOk();
+    }
+
+    // 세션을 만드는 배치에서 증명을 지우고, 학급 잠금 횟수를 0으로 되돌립니다.
+    function proofMatchesSecret() {
+      let classId = request.resource.data.classId;
       return exists(gmProofPath())
         && get(gmProofPath()).data.keys().hasOnly(['pin', 'classId', 'expiresAt'])
         && get(gmProofPath()).data.pin is string
-        && get(gmProofPath()).data.classId == request.resource.data.classId
+        && get(gmProofPath()).data.classId == classId
         && get(gmProofPath()).data.expiresAt == request.resource.data.expiresAt
-        && exists(secretPath(request.resource.data.classId))
-        && get(secretPath(request.resource.data.classId)).data.pin is string
-        && get(gmProofPath()).data.pin == get(secretPath(request.resource.data.classId)).data.pin;
-    }
-
-    function pinAttemptAllows() {
-      return exists(gmAttemptPath())
-        && get(gmAttemptPath()).data.keys().hasOnly(['count', 'windowStart'])
-        && get(gmAttemptPath()).data.count is int
-        && get(gmAttemptPath()).data.count >= 1
-        && get(gmAttemptPath()).data.count <= 20
-        && get(gmAttemptPath()).data.windowStart is timestamp
-        && get(gmAttemptPath()).data.windowStart > request.time - duration.value(15, 'm')
-        && get(gmAttemptPath()).data.windowStart <= request.time + duration.value(2, 'm');
+        && exists(secretPath(classId))
+        && get(secretPath(classId)).data.pin is string
+        && get(gmProofPath()).data.pin == get(secretPath(classId)).data.pin
+        && !pinClassLocked(classId)
+        && existsAfter(gmProofPath()) == false
+        && existsAfter(gmAttemptPath(classId))
+        && getAfter(gmAttemptPath(classId)).data.keys().hasOnly(['count', 'lockedUntil'])
+        && getAfter(gmAttemptPath(classId)).data.count == 0
+        && getAfter(gmAttemptPath(classId)).data.lockedUntil == null;
     }
 
     function isSettingsGlobalDoc() {
@@ -208,6 +292,11 @@ service cloud.firestore {
 
     function kstNow() {
       return request.time + duration.value(9, 'h');
+    }
+
+    function kstDateString() {
+      let kst = kstNow();
+      return string(kst.year()) + '-' + twoDigits(kst.month()) + '-' + twoDigits(kst.day());
     }
 
     // 1970-01-01은 목요일. date()는 9시간을 더한 시각의 달력 날짜(한국 표준시)입니다.
@@ -351,6 +440,122 @@ service cloud.firestore {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['shopDiscount']);
     }
 
+    // 자동 정산이 예전 온도계 값을 비울 때만 GM 키를 세션 없이 바꿉니다.
+    function learningThermometerLegacyClearOnly() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['learningThermometer'])
+        && resource.data.learningThermometer is map
+        && request.resource.data.learningThermometer is map
+        && request.resource.data.learningThermometer.values is map
+        && request.resource.data.learningThermometer.values.size() == 0
+        && request.resource.data.learningThermometer.diff(resource.data.learningThermometer).affectedKeys().hasOnly(['values']);
+    }
+
+    function thermometerDayKey(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && value <= kstDateString();
+    }
+
+    function thermometerLockFresh() {
+      return resource.data.settlementStartedAt is number
+        && resource.data.settlementStartedAt > request.time.toMillis() - 300000
+        && resource.data.settlementStartedAt <= request.time.toMillis() + 15000;
+    }
+
+    // 세션 없는 자동 정산이 잠금을 새로 잡습니다. 범위와 이미 끝난 오늘은 바꾸지 못합니다.
+    function thermometerAutoClaimCreate() {
+      let d = request.resource.data;
+      return thermometerShapeOk()
+        && d.settlementStatus == 'running'
+        && d.settlementLockOwner is string
+        && d.settlementLockOwner.size() > 0
+        && d.settlementKey == d.date
+        && d.date == kstDateString()
+        && d.settlementStartedAt is number
+        && d.settlementStartedAt > request.time.toMillis() - 120000
+        && d.settlementStartedAt <= request.time.toMillis() + 15000
+        && d.settlementAttempt == 1;
+    }
+
+    function thermometerAutoClaimUpdate() {
+      let d = request.resource.data;
+      let continuing = resource.data.settlementStatus == 'running' && resource.data.settlementKey == d.settlementKey;
+      let prevAttempt = ('settlementAttempt' in resource.data && resource.data.settlementAttempt is int)
+        ? resource.data.settlementAttempt
+        : 0;
+      let otherFreshLock = resource.data.settlementStatus == 'running'
+        && resource.data.settlementKey == d.date
+        && resource.data.settlementLockOwner is string
+        && resource.data.settlementLockOwner.size() > 0
+        && resource.data.settlementLockOwner != d.settlementLockOwner
+        && thermometerLockFresh();
+      let alreadyDoneToday = resource.data.settledDate == kstDateString()
+        && resource.data.settlementStatus != 'running';
+      return thermometerShapeOk()
+        && d.settlementStatus == 'running'
+        && d.settlementLockOwner is string
+        && d.settlementLockOwner.size() > 0
+        && d.settlementKey == d.date
+        && thermometerDayKey(d.date)
+        && d.settlementStartedAt is number
+        && d.settlementStartedAt > request.time.toMillis() - 120000
+        && d.settlementStartedAt <= request.time.toMillis() + 15000
+        && d.min == resource.data.min
+        && d.max == resource.data.max
+        && !otherFreshLock
+        && !alreadyDoneToday
+        && (
+          (continuing && (d.settlementAttempt == prevAttempt || (prevAttempt == 0 && d.settlementAttempt == 1)))
+          || (!continuing && d.settlementAttempt == prevAttempt + 1)
+        );
+    }
+
+    // 끝 표시는 running 잠금에서만, 같은 키·같은 소유자(또는 비움), 오늘 또는 그보다 이전 키만.
+    function thermometerAutoDone() {
+      let d = request.resource.data;
+      return thermometerShapeOk()
+        && resource.data.settlementStatus == 'running'
+        && resource.data.settlementLockOwner is string
+        && resource.data.settlementLockOwner.size() > 0
+        && thermometerLockFresh()
+        && d.settlementStatus == 'done'
+        && d.settlementKey == resource.data.settlementKey
+        && d.date == resource.data.settlementKey
+        && d.settledDate == resource.data.settlementKey
+        && thermometerDayKey(d.settlementKey)
+        && (d.settlementLockOwner == '' || d.settlementLockOwner == resource.data.settlementLockOwner)
+        && d.min == resource.data.min
+        && d.max == resource.data.max
+        && d.settlementStartedAt == 0
+        && (
+          !('usedStaleValues' in resource.data)
+          || resource.data.usedStaleValues != true
+          || d.usedStaleValues == true
+        );
+    }
+
+    function thermometerStaleFlagOnly() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['usedStaleValues'])
+        && request.resource.data.usedStaleValues == true
+        && resource.data.settlementStatus == 'running'
+        && resource.data.settlementLockOwner is string
+        && resource.data.settlementLockOwner.size() > 0
+        && thermometerLockFresh();
+    }
+
+    function thermometerVoteResetWhileRunning(appId) {
+      let parentPath = /databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer;
+      let parent = get(parentPath).data;
+      return request.resource.data.value == 0
+        && exists(parentPath)
+        && parent.settlementStatus == 'running'
+        && parent.settlementLockOwner is string
+        && parent.settlementLockOwner.size() > 0
+        && parent.settlementStartedAt is number
+        && parent.settlementStartedAt > request.time.toMillis() - 300000
+        && parent.settlementStartedAt <= request.time.toMillis() + 15000;
+    }
+
     function gmOnlyUntouched() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(gmOnlyKeys());
     }
@@ -436,70 +641,53 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // PIN 시도 횟수. 본인만 읽고, PIN은 저장하지 않습니다.
-    match /gmPinAttempts/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['count', 'windowStart'])
-        && request.resource.data.count == 1
-        && request.resource.data.windowStart is timestamp
-        && request.resource.data.windowStart > request.time - duration.value(2, 'm')
-        && request.resource.data.windowStart <= request.time + duration.value(2, 'm');
-      allow update: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['count', 'windowStart'])
-        && request.resource.data.count is int
-        && request.resource.data.windowStart is timestamp
-        && (
-          (
-            resource.data.windowStart < request.time - duration.value(15, 'm')
-            && request.resource.data.count == 1
-            && request.resource.data.windowStart > request.time - duration.value(2, 'm')
-            && request.resource.data.windowStart <= request.time + duration.value(2, 'm')
-          )
-          || (
-            request.resource.data.windowStart == resource.data.windowStart
-            && request.resource.data.count == resource.data.count + 1
-            && request.resource.data.count <= 20
-            && resource.data.windowStart > request.time - duration.value(15, 'm')
-          )
-        );
+    // 학급 단위 PIN 시도. PIN은 저장하지 않습니다. 로그인한 사용자는 횟수를 읽을 수 있습니다.
+    // 올리기는 같은 배치의 증명과 함께, 정확히 1씩만 됩니다. 10이 되면 잠금 시각을 같이 씁니다.
+    match /gmPinAttempts/{classId} {
+      allow read: if signedIn();
+      allow create, update: if attemptBumpWriteOk(classId) || attemptResetWriteOk(classId);
       allow delete: if false;
     }
 
-    // PIN 확인용 임시 문서. 읽기는 막습니다. 세션을 만든 뒤 앱이 지웁니다.
+    // PIN 확인용 임시 문서. 읽기는 막습니다. 맞는 PIN이 아니어도 만들어져 횟수가 남습니다.
+    // 같은 배치에서 학급 시도 횟수가 1 늘었는지 getAfter로 확인합니다.
     match /gmPinProofs/{uid} {
       allow read: if false;
       allow create: if signedIn()
         && request.auth.uid == uid
-        && pinAttemptAllows()
         && request.resource.data.keys().hasOnly(['pin', 'classId', 'expiresAt'])
         && request.resource.data.pin is string
-        && request.resource.data.pin.size() >= 4
-        && request.resource.data.pin.size() <= 12
+        && request.resource.data.pin.matches('^[0-9]{4,12}$')
         && request.resource.data.classId is string
         && request.resource.data.classId.size() > 0
         && request.resource.data.classId.size() < 80
         && sessionExpiryOk()
-        && exists(secretPath(request.resource.data.classId))
-        && get(secretPath(request.resource.data.classId)).data.pin is string
-        && request.resource.data.pin == get(secretPath(request.resource.data.classId)).data.pin;
+        && proofForcesAttemptBump();
       allow update: if false;
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
     // 교사 쓰기 세션. PIN 필드는 규칙으로 거부합니다. 본인만 읽을 수 있습니다.
+    // 새로 만들거나 만료 뒤 다시 만들 때만 증명의 PIN이 secrets와 같아야 합니다.
+    // 살아 있는 세션은 같은 학급으로 10분 안에서만 늘립니다.
     match /gmSessions/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow create, update: if signedIn()
+      allow create: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['classId', 'expiresAt'])
-        && request.resource.data.classId is string
-        && request.resource.data.classId.size() > 0
-        && request.resource.data.classId.size() < 80
-        && sessionExpiryOk()
-        && proofBacksSession();
+        && sessionShapeOk()
+        && proofMatchesSecret();
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && sessionShapeOk()
+        && (
+          (
+            resource.data.keys().hasOnly(['classId', 'expiresAt'])
+            && resource.data.classId == request.resource.data.classId
+            && resource.data.expiresAt is timestamp
+            && resource.data.expiresAt > request.time
+          )
+          || proofMatchesSecret()
+        );
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
@@ -545,36 +733,37 @@ service cloud.firestore {
       allow create: if settingsCreateByPinMaster(appId) || settingsCreateBySeedGrant(appId);
       allow update: if signedIn()
         && (shopDiscountUntouched() || (shopDiscountChangeIsValid() && isPinMaster(appId)))
-        && (gmOnlyUntouched() || isPinMaster(appId));
+        && (gmOnlyUntouched() || isPinMaster(appId) || learningThermometerLegacyClearOnly());
       allow delete: if false;
     }
 
-    // 수업 종료 자동 XP 공지. 형식 검사와 삭제 금지를 유지하고, 유효한 PIN 세션만 씁니다.
-    // 지급 중복 방지는 학생 문서 lastClassXpSlot입니다.
+    // 수업 종료 자동 XP 공지. GM/TV 탭이 세션 없이 씁니다. 형식과 중복 간격은 그대로입니다.
     match /artifacts/{appId}/public/data/settings/autoXp {
       allow read: if true;
-      allow create: if isPinMaster(appId) && autoXpShapeOk();
-      allow update: if isPinMaster(appId)
+      allow create: if signedIn() && autoXpShapeOk();
+      allow update: if signedIn()
         && autoXpShapeOk()
         && resource.data.slotMs is int
         && request.resource.data.slotMs >= resource.data.slotMs + 2400000;
       allow delete: if false;
     }
 
-    // 학습 온도계 부모. 유효한 PIN 세션과 형식 검사가 둘 다 필요합니다. 삭제는 금지입니다.
+    // 학습 온도계 부모. 수동 저장은 PIN 세션, 자동 정산은 잠금·완료 전이만 세션 없이 됩니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer {
       allow read: if true;
-      allow create: if isPinMaster(appId) && thermometerShapeOk();
-      allow update: if isPinMaster(appId) && thermometerShapeOk();
+      allow create: if (isPinMaster(appId) && thermometerShapeOk())
+        || (signedIn() && thermometerAutoClaimCreate());
+      allow update: if (isPinMaster(appId) && thermometerShapeOk())
+        || (signedIn() && (thermometerAutoClaimUpdate() || thermometerAutoDone() || thermometerStaleFlagOnly()));
       allow delete: if false;
     }
 
-    // 학생 표는 본인 uid이거나 그 학급 PIN 세션만 씁니다. 익명 uid는 학번과 다릅니다.
+    // 수동 표 값은 PIN 세션만. 자동 정산은 잠금이 살아있는 동안 0으로 초기화만 합니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer/votes/{studentId} {
       allow read: if true;
       allow create, update: if signedIn()
         && thermometerVoteOk(appId, studentId)
-        && (isPinMaster(appId) || request.auth.uid == studentId);
+        && (isPinMaster(appId) || thermometerVoteResetWhileRunning(appId));
       allow delete: if false;
     }
 

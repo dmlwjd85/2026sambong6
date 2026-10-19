@@ -11,7 +11,7 @@ import {
     planGmIdleExpiry,
     planPinAttempt,
     PIN_ATTEMPT_MAX,
-    PIN_ATTEMPT_WINDOW_MS,
+    PIN_LOCK_MS,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
     HOME_CLASS_IDLE_AUTH_NOTICE,
@@ -118,20 +118,24 @@ describe('원래 학급 PIN 로그인 유지', () => {
         assert.equal(planGmIdleExpiry({ classId: 'other-class', isAdmin: false, projectionActive: true }), 'ignore');
     });
 
-    it('PIN 시도는 15분에 20번까지이고 창이 지나면 다시 센다', () => {
+    it('PIN 시도는 학급당 10번째에 15분 잠그고, 잠긴 동안은 더하지 않는다', () => {
         const start = 1_000_000;
-        assert.deepEqual(planPinAttempt(null, start), { count: 1, windowStartMs: start, blocked: false });
+        assert.deepEqual(planPinAttempt(null, start), { count: 1, lockedUntilMs: null, blocked: false });
         assert.deepEqual(
-            planPinAttempt({ count: 1, windowStartMs: start }, start + 1000),
-            { count: 2, windowStartMs: start, blocked: false },
+            planPinAttempt({ count: 1, lockedUntilMs: null }, start + 1000),
+            { count: 2, lockedUntilMs: null, blocked: false },
+        );
+        const tenth = planPinAttempt({ count: PIN_ATTEMPT_MAX - 1, lockedUntilMs: null }, start);
+        assert.equal(tenth.count, PIN_ATTEMPT_MAX);
+        assert.equal(tenth.lockedUntilMs, start + PIN_LOCK_MS);
+        assert.equal(tenth.blocked, false);
+        assert.deepEqual(
+            planPinAttempt({ count: PIN_ATTEMPT_MAX, lockedUntilMs: start + PIN_LOCK_MS }, start + 1000),
+            { count: PIN_ATTEMPT_MAX, lockedUntilMs: start + PIN_LOCK_MS, blocked: true },
         );
         assert.deepEqual(
-            planPinAttempt({ count: PIN_ATTEMPT_MAX, windowStartMs: start }, start + 1000),
-            { count: PIN_ATTEMPT_MAX, windowStartMs: start, blocked: true },
-        );
-        assert.deepEqual(
-            planPinAttempt({ count: PIN_ATTEMPT_MAX, windowStartMs: start }, start + PIN_ATTEMPT_WINDOW_MS),
-            { count: 1, windowStartMs: start + PIN_ATTEMPT_WINDOW_MS, blocked: false },
+            planPinAttempt({ count: PIN_ATTEMPT_MAX, lockedUntilMs: start + PIN_LOCK_MS }, start + PIN_LOCK_MS),
+            { count: 1, lockedUntilMs: null, blocked: false },
         );
     });
 

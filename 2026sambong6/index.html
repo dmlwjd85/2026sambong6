@@ -14,20 +14,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <script>
-        const manifest = {
-            "name": "MATE", "short_name": "MATE", "start_url": window.location.pathname,
-            "display": "standalone", "background_color": "#f0f9ff", "theme_color": "#0ea5e9",
-            "icons": [
-                {"src": new URL("%BASE_URL%pwa-192.png", location.href).href, "sizes": "192x192", "type": "image/png", "purpose": "any"},
-                {"src": new URL("%BASE_URL%pwa-512.png", location.href).href, "sizes": "512x512", "type": "image/png", "purpose": "any"},
-                {"src": new URL("%BASE_URL%pwa-maskable-512.png", location.href).href, "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
-            ]
-        };
-        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-        const manifestUrl = URL.createObjectURL(manifestBlob);
-        document.write(`<link rel="manifest" href="${manifestUrl}">`);
-    </script>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('%BASE_URL%sw.js', { scope: '%BASE_URL%' }).catch(() => {}));</script>
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>

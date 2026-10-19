@@ -502,11 +502,27 @@ export function planTakeLoan({
 
 const LUNCH_WEEKDAY = ['', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
 
+/** 괄호·문장부호는 건너뛰고, 소리 나는 마지막 글자를 고릅니다. */
+function lastSpokenChar(text) {
+    const src = String(text || '');
+    for (let i = src.length - 1; i >= 0; i -= 1) {
+        const ch = src[i];
+        if (/[\s()[\]{}.,!?…·'"“”‘’~]/.test(ch)) continue;
+        return ch;
+    }
+    return '';
+}
+
+function hangulBatchim(ch) {
+    const code = String(ch || '').charCodeAt(0);
+    if (code < 0xac00 || code > 0xd7a3) return null;
+    return (code - 0xac00) % 28 !== 0;
+}
+
 function lunchParticle(unit) {
-    const ch = String(unit || 'B').slice(-1);
-    const code = ch.charCodeAt(0);
-    if (code < 0xac00 || code > 0xd7a3) return '를';
-    return (code - 0xac00) % 28 === 0 ? '를' : '을';
+    const batchim = hangulBatchim(lastSpokenChar(unit || 'B'));
+    if (batchim == null) return '를';
+    return batchim ? '을' : '를';
 }
 
 /** 확인창에 남기는 점심값. 금요일은 월요일 점심값처럼 다음 등교일 이름을 씁니다. */
@@ -522,19 +538,24 @@ export function koreanTopicParticle(text) {
     return topicParticle(text);
 }
 
-/** 날짜 끝소리에 맞춰 '예요' 또는 '이에요'를 붙입니다. */
+/** 날짜 끝소리에 맞춰 '예요' 또는 '이에요'를 붙입니다. 요일 괄호 안 글자도 봅니다. */
 export function koreanCopula(text) {
-    const ch = String(text || '').slice(-1);
-    const code = ch.charCodeAt(0);
-    if (code < 0xac00 || code > 0xd7a3) return '이에요';
-    return (code - 0xac00) % 28 === 0 ? '예요' : '이에요';
+    const batchim = hangulBatchim(lastSpokenChar(text));
+    if (batchim == null) return '이에요';
+    return batchim ? '이에요' : '예요';
 }
 
 function topicParticle(unit) {
-    const ch = String(unit || 'B').slice(-1);
-    const code = ch.charCodeAt(0);
-    if (code < 0xac00 || code > 0xd7a3) return '는';
-    return (code - 0xac00) % 28 === 0 ? '는' : '은';
+    const batchim = hangulBatchim(lastSpokenChar(unit || 'B'));
+    if (batchim == null) return '는';
+    return batchim ? '은' : '는';
+}
+
+/** 지난 약속일을 남은 날처럼 말하지 않습니다. */
+export function formatPastPromiseLine(dueLabel) {
+    const when = String(dueLabel || '').trim();
+    if (!when) return '약속한 날이 지났어요.';
+    return `약속한 날이 지났어요. 그날은 ${when}${koreanCopula(when)}.`;
 }
 
 const WEEKDAY_SHORT = ['일', '월', '화', '수', '목', '금', '토'];
@@ -558,8 +579,11 @@ export function formatDebtLeftSentence(left, dueYmd, unit = 'B', opts = {}) {
     const topic = topicParticle(shown);
     const when = formatPromiseDay(dueYmd);
     const done = !!(opts && opts.done);
+    const today = String((opts && opts.todayYmd) || '');
+    const past = !!(opts && opts.past) || (!!(today && dueYmd) && today > String(dueYmd));
     const lines = [done ? `이제 빚이 ${amount}${shown} 남았어요.` : `그러면 빚이 ${amount}${shown} 남아요.`];
-    if (when) lines.push(`이 ${amount}${shown}${topic} ${when}까지 갚으면 돼요.`);
+    if (past) lines.push(formatPastPromiseLine(when));
+    else if (when) lines.push(`이 ${amount}${shown}${topic} ${when}까지 갚으면 돼요.`);
     return lines.join('\n');
 }
 
@@ -589,29 +613,84 @@ export function formatWithheldLunchLine(requested, amount, withheld, unit = 'B')
     return `적은 ${ask}${shown} 중 점심값 ${held}${shown}${topicParticle(shown)} 남기고 ${pay}${shown}만 갚아요.`;
 }
 
-/** 확인창용. 남기는 점심값은 지갑에 둔다고 말합니다. */
-export function formatLunchWalletSentence(parts, unit = 'B') {
+/** 확인창용. 남기는 점심값은 지갑에 둔다고 말합니다. done이면 이미 남겨 둔 뒤입니다. */
+export function formatLunchWalletSentence(parts, unit = 'B', opts = {}) {
     const list = (Array.isArray(parts) ? parts : []).filter((part) => part && part.amount > 0);
     if (!list.length) return '';
     const shown = String(unit || 'B');
+    const verb = opts && opts.done ? '남겨 뒀어요.' : '남겨 둘게요.';
     if (list.length === 1) {
         const only = list[0];
-        return `${only.label} ${only.amount}${shown}${topicParticle(shown)} 지갑에 남겨 둘게요.`;
+        return `${only.label} ${only.amount}${shown}${topicParticle(shown)} 지갑에 ${verb}`;
     }
     const body = list.map((part) => `${part.label} ${part.amount}${shown}`).join(', ');
-    return `${body}${lunchParticle(shown)} 지갑에 남겨 둘게요.`;
+    return `${body}${lunchParticle(shown)} 지갑에 ${verb}`;
 }
 
-export function formatClearRepayConfirm(amount, unit = 'B') {
+/** 다음 등교일 점심. 전부 갚기 계산에는 쓰지 않고, 경고 문장에만 씁니다. */
+export function nextSchoolLunchPart(todayYmd, calendar, lastLunchDeductDate) {
+    const parts = schoolLunchParts(todayYmd, calendar, lastLunchDeductDate);
+    return parts.find((part) => part && part.kind === 'next') || null;
+}
+
+function lunchDayWord(todayYmd, part) {
+    if (!part) return '다음 등교일';
+    const tomorrow = addCalendarDaysYmd(todayYmd, 1);
+    if (tomorrow && part.ymd === tomorrow) return '내일';
+    const name = String(part.label || '').replace(/\s*점심값\s*$/, '').trim();
+    return name || '다음 등교일';
+}
+
+/**
+ * 전부 갚은 뒤 지갑이 다음 점심값보다 적으면 한 줄로 알립니다.
+ * 다음 점심값 이상 남으면 빈 문자열입니다.
+ */
+export function formatClearLunchWarning({
+    walletAfter = 0,
+    todayYmd = '',
+    calendar,
+    lastLunchDeductDate,
+    nextLunch = null,
+    unit = 'B',
+} = {}) {
+    const lunch = nextLunch || nextSchoolLunchPart(todayYmd, calendar, lastLunchDeductDate);
+    if (!lunch || !(lunch.amount > 0)) return '';
+    const left = Math.floor(Number(walletAfter) || 0);
+    const need = Math.floor(Number(lunch.amount) || 0);
+    if (need <= 0 || left >= need) return '';
+    const shown = String(unit || 'B');
+    const when = lunchDayWord(todayYmd, lunch);
+    const walletText = left <= 0
+        ? `지갑이 0${shown}가 돼서`
+        : `지갑이 ${left}${shown}만 남아서`;
+    return `다 갚으면 ${walletText} ${when} 점심값 ${need}${shown}${lunchParticle(shown)} 못 낼 수 있어요. 걱정되면 '점심값만 남기고 갚기'를 눌러 주세요.`;
+}
+
+export function formatClearRepayConfirm(amount, unit = 'B', opts = {}) {
     const shown = String(unit || 'B');
     const pay = Math.max(0, Math.floor(Number(amount) || 0));
-    return `지갑에서 ${pay}${shown}${lunchParticle(shown)} 모두 갚을까요?\n빚은 0이 돼요.\n다음 점심값은 따로 남겨 두지 않아요.`;
+    const lines = [
+        `지갑에서 ${pay}${shown}${lunchParticle(shown)} 모두 갚을까요?`,
+        '빚은 0이 돼요.',
+        '다음 점심값은 따로 남겨 두지 않아요.',
+    ];
+    const warning = formatClearLunchWarning({ ...(opts || {}), unit: shown });
+    if (warning) lines.push(warning);
+    return lines.join('\n');
+}
+
+/** 전부 갚기 완료창. 확인창의 「돼요」와 맞춰 「이제」로 말합니다. */
+export function formatClearRepayDone(amount, unit = 'B') {
+    const shown = String(unit || 'B');
+    const pay = Math.max(0, Math.floor(Number(amount) || 0));
+    return `${pay}${shown}${lunchParticle(shown)} 모두 갚았어요. 이제 빚은 0이에요.`;
 }
 
 export function formatKeepLunchConfirm({
     amount = 0,
     left = 0,
     dueYmd = '',
+    todayYmd = '',
     lunchParts = [],
     unit = 'B',
 } = {}) {
@@ -619,11 +698,69 @@ export function formatKeepLunchConfirm({
     const pay = Math.max(0, Math.floor(Number(amount) || 0));
     const remain = Math.max(0, Math.floor(Number(left) || 0));
     const lines = [`${pay}${shown}${lunchParticle(shown)} 갚을까요?`];
-    if (remain > 0) lines.push(formatDebtLeftSentence(remain, dueYmd, shown));
+    if (remain > 0) lines.push(formatDebtLeftSentence(remain, dueYmd, shown, { todayYmd }));
     else lines.push('빚은 0이 돼요.');
     const hold = formatLunchWalletSentence(lunchParts, shown);
     if (hold) lines.push(hold);
     return lines.join('\n');
+}
+
+/** 점심값만 남기고 갚은 뒤. 확인창의 「그러면」 자리에 「이제」를 씁니다. */
+export function formatKeepLunchDone({
+    amount = 0,
+    left = 0,
+    dueYmd = '',
+    todayYmd = '',
+    lunchParts = [],
+    unit = 'B',
+} = {}) {
+    const shown = String(unit || 'B');
+    const pay = Math.max(0, Math.floor(Number(amount) || 0));
+    const remain = Math.max(0, Math.floor(Number(left) || 0));
+    const lines = [`${pay}${shown}${lunchParticle(shown)} 갚았어요.`];
+    if (remain > 0) lines.push(formatDebtLeftSentence(remain, dueYmd, shown, { done: true, todayYmd }));
+    else lines.push('이제 빚은 0이에요.');
+    const hold = formatLunchWalletSentence(lunchParts, shown, { done: true });
+    if (hold) lines.push(hold);
+    return lines.join('\n');
+}
+
+/** 일부 갚기 완료창. */
+export function formatPartialRepayDone({
+    amount = 0,
+    left = 0,
+    dueYmd = '',
+    todayYmd = '',
+    lunchParts = [],
+    unit = 'B',
+} = {}) {
+    const shown = String(unit || 'B');
+    const pay = Math.max(0, Math.floor(Number(amount) || 0));
+    const remain = Math.max(0, Math.floor(Number(left) || 0));
+    const hold = formatLunchWalletSentence(lunchParts, shown, { done: true });
+    if (remain <= 0) {
+        const head = `${pay}${shown}${lunchParticle(shown)} 모두 갚았어요. 이제 빚은 0이에요.`;
+        return hold ? `${head}\n${hold}` : head;
+    }
+    const lines = [
+        `${pay}${shown}${lunchParticle(shown)} 갚았어요.`,
+        formatDebtLeftSentence(remain, dueYmd, shown, { done: true, todayYmd }),
+    ];
+    if (hold) lines.push(hold);
+    return lines.join('\n');
+}
+
+/** 점심값을 남겨야 해서 일부 갚기가 거절될 때. 금액이 문장에 들어갑니다. */
+export function formatLunchRepayBlocked(parts, unit = 'B') {
+    const list = (Array.isArray(parts) ? parts : []).filter((part) => part && part.amount > 0);
+    const shown = String(unit || 'B');
+    if (!list.length) return '점심값을 남겨 둬야 해서, 지금은 갚을 수 없어요.';
+    if (list.length === 1) {
+        const only = list[0];
+        return `${only.label} ${only.amount}${shown}${lunchParticle(shown)} 남겨 둬야 해서, 지금은 갚을 수 없어요.`;
+    }
+    const body = list.map((part) => `${part.label} ${part.amount}${shown}`).join(', ');
+    return `${body}${lunchParticle(shown)} 남겨 둬야 해서, 지금은 갚을 수 없어요.`;
 }
 
 /**
@@ -1423,7 +1560,13 @@ export function applyLoanAction(state, action, opts = {}) {
             if (action !== 'partial' && !loanStillOutstanding(next.bankLoan) && life.msgs.some((m) => m.kind === 'auto_repay')) {
                 return { ok: true, ...next, due: 0 };
             }
-            return { ok: false, reason: plan.reason, ...next };
+            return {
+                ok: false,
+                reason: plan.reason,
+                ...next,
+                lunchParts: plan.lunchParts,
+                reserveLunch: plan.reserveLunch,
+            };
         }
         if (Math.floor(Number(next.bong) || 0) >= 0) next.creditWalletRecovered = true;
         const paidLoan = sanitizeBankLoan(next.bankLoan);

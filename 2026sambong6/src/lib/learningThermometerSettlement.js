@@ -49,7 +49,7 @@ export function sanitizeThermometerParentState(raw, { today = '', minDefault = -
     });
 
     const stateDate = src.date ? String(src.date) : today;
-    return {
+    const state = {
         date: stateDate,
         min,
         max,
@@ -65,13 +65,63 @@ export function sanitizeThermometerParentState(raw, { today = '', minDefault = -
         settlementAppliedCount: Math.max(0, Math.floor(Number(src.settlementAppliedCount) || 0)),
         settlementTotalDelta: Math.floor(Number(src.settlementTotalDelta) || 0),
     };
+    const settlementPending = sanitizeSettlementPending(src.settlementPending);
+    if (settlementPending) state.settlementPending = settlementPending;
+    return state;
+}
+
+/**
+ * 잠글 때 저장한 학생별 정산 값입니다.
+ * 0과 범위 밖, 학번 형식이 아닌 키는 빼서 규칙에 맞는 맵만 남깁니다.
+ */
+export function sanitizeSettlementPending(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const out = {};
+    Object.keys(raw).forEach((sid) => {
+        const id = String(sid);
+        if (!/^[A-Za-z0-9_-]{1,24}$/.test(id)) return;
+        const value = Math.round(Number(raw[id]) || 0);
+        if (!value || value < -500 || value > 500) return;
+        if (Object.keys(out).length >= 40) return;
+        out[id] = value;
+    });
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * 같은 날 잠금을 이어 받을 때는 처음 잠글 때 저장한 값만 지급합니다.
+ * 그 뒤에 바꾼 표는 이번 정산에 넣지 않습니다.
+ * 저장분이 없으면 지금 표를 씁니다.
+ */
+export function resolveContinuingSettlementValues({ continuing, storedPending, pendingValues } = {}) {
+    const stored = sanitizeSettlementPending(storedPending);
+    if (continuing && stored) return stored;
+    return sanitizeSettlementPending(pendingValues) || {};
+}
+
+/**
+ * 완료 때 0으로 지울 표.
+ * 저장분이 있으면 그 값과 지금 표가 같은 학생만 지웁니다.
+ * 저장분에 없는 요청(예전 값 닫기)은 그대로 지웁니다.
+ * 저장분이 없으면 요청한 표를 모두 지웁니다.
+ */
+export function thermometerVoteIdsToClear({ snapshot, currentVotes, requestedIds } = {}) {
+    const ids = [...new Set((requestedIds || []).map((id) => String(id)))];
+    const stored = sanitizeSettlementPending(snapshot);
+    if (!stored) return ids;
+    const current = currentVotes && typeof currentVotes === 'object' ? currentVotes : {};
+    return ids.filter((id) => {
+        if (!Object.prototype.hasOwnProperty.call(stored, id)) return true;
+        if (!Object.prototype.hasOwnProperty.call(current, id)) return true;
+        return Math.round(Number(current[id]) || 0) === stored[id];
+    });
 }
 
 /** 규칙이 허용하는 부모 문서 필드만 남깁니다. values 는 학생별 표 문서에 있습니다. */
 export function buildThermometerParentPayload(state, options = {}) {
     const today = options.today ? String(options.today) : '';
     const safe = sanitizeThermometerParentState(state, options);
-    return {
+    const payload = {
         date: String(safe.date || today).slice(0, 10),
         min: safe.min,
         max: safe.max,
@@ -86,6 +136,8 @@ export function buildThermometerParentPayload(state, options = {}) {
         settlementAppliedCount: Math.max(0, Math.min(40, Math.floor(Number(safe.settlementAppliedCount) || 0))),
         settlementTotalDelta: Math.max(-20000, Math.min(20000, Math.floor(Number(safe.settlementTotalDelta) || 0))),
     };
+    if (safe.settlementPending) payload.settlementPending = safe.settlementPending;
+    return payload;
 }
 
 function legacyMap(values) {
@@ -475,6 +527,8 @@ export async function grantThermometerStudentXp(db, {
 export async function finishThermometerSettlement(db, {
     thermometerRef,
     voteRefs = [],
+    voteIds = [],
+    snapshot = null,
     owner,
     today,
     leaseMs,
@@ -497,12 +551,33 @@ export async function finishThermometerSettlement(db, {
             leaseMs,
         });
         if (!held) return { status: 'lock_lost' };
-        voteRefs.forEach((ref) => tx.set(ref, { value: 0 }));
-        tx.set(thermometerRef, {
+        const stored = sanitizeSettlementPending(snapshot) || sanitizeSettlementPending(parent.settlementPending);
+        const targets = voteRefs.map((ref, index) => ({
+            ref,
+            id: voteIds[index] != null ? String(voteIds[index]) : '',
+        }));
+        const currentVotes = {};
+        for (const target of targets) {
+            if (!stored || !target.id || !Object.prototype.hasOwnProperty.call(stored, target.id)) continue;
+            const voteSnap = await tx.get(target.ref);
+            const data = voteSnap.exists() ? (voteSnap.data() || {}) : null;
+            if (data && Object.prototype.hasOwnProperty.call(data, 'value')) currentVotes[target.id] = data.value;
+        }
+        const clearIds = new Set(thermometerVoteIdsToClear({
+            snapshot: stored,
+            currentVotes,
+            requestedIds: targets.map((target) => target.id),
+        }));
+        targets.forEach((target) => {
+            if (clearIds.has(target.id)) tx.set(target.ref, { value: 0 });
+        });
+        const donePayload = {
             ...parentPayload,
             usedStaleValues: parent.usedStaleValues === true || parentPayload.usedStaleValues === true,
             settlementAttempt: Math.max(0, Math.floor(Number(parent.settlementAttempt ?? parentPayload.settlementAttempt) || 0)),
-        });
+        };
+        delete donePayload.settlementPending;
+        tx.set(thermometerRef, donePayload);
         return { status: 'done' };
     });
 }
@@ -585,6 +660,13 @@ export async function runThermometerSettlementPass(db, {
             max: state.max,
         });
         const pendingValues = plan.pendingValues;
+        const continuingLock = String(parentData.settlementStatus || '') === 'running'
+            && String(parentData.settlementKey || '') === settlementDay;
+        const grantValues = resolveContinuingSettlementValues({
+            continuing: continuingLock,
+            storedPending: parentData.settlementPending,
+            pendingValues,
+        });
         const startedAt = readNow();
         const decision = decideThermometerLockClaim({
             settlementKey: state.settlementKey,
@@ -598,13 +680,13 @@ export async function runThermometerSettlementPass(db, {
             now: startedAt,
             leaseMs,
             manual,
-            pendingCount: Object.keys(pendingValues).length,
+            pendingCount: Object.keys(grantValues).length,
         });
         if (decision.action === 'already_done') return { status: 'already_done', state };
         if (decision.action === 'locked') return { status: 'locked', state };
         const nextState = {
             ...state,
-            values: pendingValues,
+            values: grantValues,
             settlementAttempt: decision.attempt,
             settlementLockOwner: owner,
         };
@@ -615,6 +697,7 @@ export async function runThermometerSettlementPass(db, {
                 settlementKey: settlementDay,
                 settlementStatus: 'running',
                 settlementStartedAt: startedAt,
+                settlementPending: grantValues,
             }, shape));
         }
         return {
@@ -623,6 +706,7 @@ export async function runThermometerSettlementPass(db, {
             legacyIds: plan.legacyIds,
             legacyIdsToClose: plan.legacyIdsToClose,
             consumeLegacy: plan.consumeLegacy === true,
+            settlementPending: sanitizeSettlementPending(grantValues),
         };
     });
 
@@ -671,6 +755,7 @@ export async function runThermometerSettlementPass(db, {
         settlementTotalDelta: totalDelta,
         usedStaleValues: claimed.state.usedStaleValues === true || claimed.consumeLegacy === true,
     };
+    delete resetState.settlementPending;
     const voteIds = [...new Set([
         ...entries.map(([sid]) => String(sid)),
         ...((claimed.legacyIdsToClose || []).map((sid) => String(sid))),
@@ -678,6 +763,8 @@ export async function runThermometerSettlementPass(db, {
     const finished = await finishThermometerSettlement(db, {
         thermometerRef,
         voteRefs: voteIds.map((sid) => voteRefFor(sid)),
+        voteIds,
+        snapshot: claimed.settlementPending,
         owner,
         today: settlementDay,
         leaseMs,

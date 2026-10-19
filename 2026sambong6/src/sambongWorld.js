@@ -664,10 +664,12 @@ import {
     defaultRebukeConfig,
     isRebukeStaffId,
     planPeerRebuke,
+    planRebukeDue,
     rebukeFailMessage,
     rebukePublicEvent,
     rebukeReasonIssue,
     rebukeRosterEpoch,
+    roundRebukeBong,
     rebukeTodayYmd,
     receivedRebukeCount,
     visibleRebukeReasons,
@@ -19729,8 +19731,13 @@ ${subjectLine}
                 auth = getAuth(app);
                 db = getFirestore(app);
                 if (useEmulator) {
-                    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-                    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+                    const emuParams = new URLSearchParams(window.location.search);
+                    const emuPort = (name, fallback) => {
+                        const port = Number(emuParams.get(name));
+                        return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : fallback;
+                    };
+                    connectAuthEmulator(auth, `http://127.0.0.1:${emuPort('authPort', 9099)}`, { disableWarnings: true });
+                    connectFirestoreEmulator(db, '127.0.0.1', emuPort('fsPort', 8080));
                     window.__sambongE2E = {
                         projectId: firebaseConfig.projectId,
                         get appId() { return appId; },
@@ -23997,6 +24004,17 @@ ${subjectLine}
                     await openRebukeTeacher(target);
                     return;
                 }
+                const settledNow = await settleOwnRebukeCharges();
+                if (settledNow && settledNow.amount > 0) {
+                    window.playerState.bong = roundRebukeBong((Number(window.playerState.bong) || 0) - settledNow.amount);
+                    if (settledNow.blind) {
+                        await window.customAlert(`지난 역따봉 ${settledNow.amount}봉을 정산했어요.`);
+                    }
+                }
+                if (await rebukeDueBlocksSend(fromId)) {
+                    await window.customAlert(rebukeFailMessage('due'));
+                    return;
+                }
                 if (fromId === target) {
                     openRebukeSelf(target);
                     return;
@@ -24088,6 +24106,17 @@ ${subjectLine}
                                 creditDefault: false,
                             });
                             if (!made.ok) return made;
+                            const dueRef = rebukeItemRef('rebukeDue', `${liveCfg.epoch}~${fromId}`);
+                            const dueSnap = await tx.get(dueRef);
+                            const duePlan = planRebukeDue(dueSnap.exists() ? dueSnap.data() : null, {
+                                fromId,
+                                epoch: liveCfg.epoch,
+                                ymd: rebukeTodayYmd(),
+                                payerUid: auth.currentUser.uid,
+                                eventId: made.eventId,
+                            });
+                            if (!duePlan.ok) return duePlan;
+                            tx.set(dueRef, duePlan.due);
                             tx.set(rebukeItemRef('rebukeEvents', made.eventId), made.event);
                             tx.set(rebukeItemRef('rebukeAudit', made.eventId), {
                                 ...made.audit,
@@ -24194,26 +24223,38 @@ ${subjectLine}
             const charge = chargeSnap.data() || {};
             const fromId = String(charge.fromId || '');
             const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+            const dueRef = rebukeItemRef('rebukeDue', `${Math.max(1, Math.floor(Number(charge.epoch) || 1))}~${fromId}`);
             await runTransaction(db, async (tx) => {
-                const settleSnap = await tx.get(rebukeItemRef('rebukeSettlements', eventId));
-                if (settleSnap.exists()) {
+                const dueSnap = await tx.get(dueRef);
+                const due = dueSnap.exists() ? (dueSnap.data() || {}) : null;
+                const paid = !!(due && due.settled === true && Math.floor(Number(due.owed) || 0) === 0);
+                if (paid) {
                     const stuSnap = await tx.get(stuRef);
                     if (!stuSnap.exists()) throw new Error('missing');
                     const before = Number(stuSnap.data().bong);
-                    const afterBong = Math.round((before + 5) * 1000) / 1000;
+                    const afterBong = roundRebukeBong(before + 5);
                     tx.set(rebukeItemRef('rebukePaybacks', eventId), {
                         amount: 5,
                         beforeBong: before,
                         afterBong,
                         authUid: charge.authUid,
                     });
-                    tx.set(stuRef, { bong: afterBong }, { merge: true });
+                    tx.update(stuRef, { bong: afterBong });
                     return;
                 }
                 tx.set(rebukeItemRef('rebukeWaivers', eventId), {
                     authUid: charge.authUid,
                     fromId,
                 });
+                if (due && Math.floor(Number(due.owed) || 0) >= 5 && due.settled !== true) {
+                    const nextN = Math.floor(Number(due.n) || 0) - 1;
+                    tx.update(dueRef, {
+                        owed: Math.floor(Number(due.owed) || 0) - 5,
+                        n: Math.max(0, nextN),
+                        openYmd: nextN <= 0 ? '' : String(due.openYmd || ''),
+                        settled: false,
+                    });
+                }
             });
             return true;
         }
@@ -24255,7 +24296,7 @@ ${subjectLine}
                         beforeBong: before,
                         afterBong,
                     });
-                    tx.set(stuRef, { bong: afterBong }, { merge: true });
+                    tx.update(stuRef, { bong: afterBong });
                 });
             } catch (e) {
                 console.warn('refundRebukeEvent', e);
@@ -24328,52 +24369,96 @@ ${subjectLine}
             if (count) await batch.commit();
         }
 
+        async function commitRebukeDuePayment(fromId, epoch, amount) {
+            const today = rebukeTodayYmd();
+            const dueId = `${epoch}~${fromId}`;
+            const dueRef = rebukeItemRef('rebukeDue', dueId);
+            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+            await runTransaction(db, async (tx) => {
+                const stuSnap = await tx.get(stuRef);
+                if (!stuSnap.exists()) throw new Error('missing');
+                const before = Number(stuSnap.data().bong);
+                if (!Number.isFinite(before)) throw new Error('bong');
+                const after = roundRebukeBong(before - amount);
+                tx.set(rebukeItemRef('rebukeSettlements', `due~${dueId}~${today}`), {
+                    amount,
+                    bongBefore: before,
+                    bongAfter: after,
+                    authUid: auth.currentUser.uid,
+                    epoch,
+                    fromId,
+                });
+                tx.update(dueRef, {
+                    owed: 0,
+                    n: 0,
+                    openYmd: '',
+                    settled: true,
+                    payerUid: auth.currentUser.uid,
+                });
+                // set(merge)는 만들기도 같이 검사해서, 칸이 많은 학생 문서에서 정산이 죽는다.
+                tx.update(stuRef, { bong: after });
+            });
+            return amount;
+        }
+
         async function settleOwnRebukeCharges() {
-            if (window._rebukeSettling || !db || !auth || !auth.currentUser) return 0;
+            if (window._rebukeSettling || !db || !auth || !auth.currentUser) return { amount: 0, blind: false };
             window._rebukeSettling = true;
-            let deducted = 0;
             try {
-                const uid = auth.currentUser.uid;
                 const myId = String(localStorage.getItem('sambong_student_id') || '');
-                const charges = await loadOwnRebukeCharges();
+                if (!myId || myId === 'gm' || myId === 'gm_a') return { amount: 0, blind: false };
+                if (!window._rebukeConfig) {
+                    const cfgSnap = await getDoc(classOpsRef('rebukeConfig')).catch(() => null);
+                    if (cfgSnap && cfgSnap.exists()) window._rebukeConfig = normalizeRebukeConfig(cfgSnap.data());
+                }
+                const epoch = Math.max(1, Math.floor(Number((window._rebukeConfig || defaultRebukeConfig()).epoch) || 1));
+                const dueRef = rebukeItemRef('rebukeDue', `${epoch}~${myId}`);
                 const today = rebukeTodayYmd();
-                for (const charge of charges) {
-                    if (String(charge.ymd || '') >= today) continue;
-                    if (Math.floor(Number(charge.amount) || 0) !== 5) continue;
-                    const fromId = String(charge.fromId || '');
-                    if (!fromId) continue;
+                let known = null;
+                let blind = false;
+                try {
+                    const snap = await getDoc(dueRef);
+                    known = snap.exists() ? (snap.data() || {}) : { owed: 0 };
+                } catch (e) {
+                    if (!firestorePermissionDenied(e)) throw e;
+                    blind = true;
+                }
+                const amounts = [];
+                if (blind) amounts.push(15, 10, 5);
+                else if (known && Math.floor(Number(known.owed) || 0) > 0 && String(known.openYmd || '') < today) {
+                    amounts.push(Math.floor(Number(known.owed) || 0));
+                }
+                for (const amount of amounts) {
                     try {
-                        const dropped = await runTransaction(db, async (tx) => {
-                            const settleRef = rebukeItemRef('rebukeSettlements', charge.id);
-                            const waiverRef = rebukeItemRef('rebukeWaivers', charge.id);
-                            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
-                            const settleSnap = await tx.get(settleRef);
-                            if (settleSnap.exists()) return 0;
-                            const waiverSnap = await tx.get(waiverRef);
-                            if (waiverSnap.exists()) return 0;
-                            const stuSnap = await tx.get(stuRef);
-                            if (!stuSnap.exists()) return 0;
-                            const before = Number(stuSnap.data().bong);
-                            if (!Number.isFinite(before)) return 0;
-                            const after = Math.round((before - 5) * 1000) / 1000;
-                            tx.set(settleRef, {
-                                amount: 5,
-                                bongBefore: before,
-                                bongAfter: after,
-                                authUid: uid,
-                            });
-                            tx.set(stuRef, { bong: after }, { merge: true });
-                            return fromId === myId ? 5 : 0;
-                        });
-                        deducted += dropped;
+                        const dropped = await commitRebukeDuePayment(myId, epoch, amount);
+                        if (dropped > 0) return { amount: dropped, blind };
                     } catch (e) {
-                        console.warn('rebuke settle', charge.id, e);
+                        console.warn('rebuke due settle', amount, e);
                     }
                 }
+                return { amount: 0, blind };
             } finally {
                 window._rebukeSettling = false;
             }
-            return deducted;
+        }
+
+        async function rebukeDueBlocksSend(fromId) {
+            const epoch = Math.max(1, Math.floor(Number((window._rebukeConfig || defaultRebukeConfig()).epoch) || 1));
+            const today = rebukeTodayYmd();
+            try {
+                const snap = await getDoc(rebukeItemRef('rebukeDue', `${epoch}~${fromId}`));
+                if (!snap.exists()) return '';
+                const due = snap.data() || {};
+                const owed = Math.floor(Number(due.owed) || 0);
+                if (owed <= 0) return '';
+                if (String(due.openYmd || '') < today) return 'due';
+                if (due.payerUid && due.payerUid !== auth.currentUser.uid) return 'due';
+                return '';
+            } catch (e) {
+                if (firestorePermissionDenied(e)) return 'due';
+                console.warn('rebuke due read', e);
+                return '';
+            }
         }
 
         window.openClassroomRename = function() {
@@ -25988,10 +26073,11 @@ ${subjectLine}
                     return false;
                 }
                 const settledDebt = await settleOwnRebukeCharges();
-                if (settledDebt > 0) {
-                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - settledDebt);
+                const settledAmount = Math.floor(Number(settledDebt && settledDebt.amount) || 0);
+                if (settledAmount > 0) {
+                    window.playerState.bong = roundRebukeBong((Number(window.playerState.bong) || 0) - settledAmount);
                     if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
-                        dataToSave.bong = normalizeBongValue((Number(dataToSave.bong) || 0) - settledDebt);
+                        dataToSave.bong = roundRebukeBong((Number(dataToSave.bong) || 0) - settledAmount);
                     }
                 }
                 await runTransaction(db, async (transaction) => {

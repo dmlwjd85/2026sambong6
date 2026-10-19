@@ -27,6 +27,8 @@ export const CREDIT_DEFAULT_CALENDAR_DAYS = 3;
  * 만기일에는 지갑과 일반예금에 있는 만큼만 한 번 자동으로 갚고, 그래도 모자라면 그때 신용불량입니다.
  */
 export const CREDIT_DEFAULT_UNIT = 30;
+/** 신용불량 기간은 달력일 기준이고, 한 번에 60일을 넘기지 않습니다. */
+export const CREDIT_DEFAULT_MAX_DAYS = 60;
 /** 평일 점심값. 60일 시뮬레이션에서 같은 값을 씁니다. */
 export const LUNCH_FEE_BONG = 10;
 
@@ -81,7 +83,7 @@ export function personalLoanLimit({
 export function creditDefaultDaysFromAmount(amount) {
     const n = Math.abs(Math.floor(Number(amount) || 0));
     if (!Number.isFinite(n) || n <= 0) return 0;
-    return Math.ceil(n / CREDIT_DEFAULT_UNIT);
+    return Math.min(CREDIT_DEFAULT_MAX_DAYS, Math.ceil(n / CREDIT_DEFAULT_UNIT));
 }
 
 export function sanitizeLoanAmount(raw) {
@@ -400,7 +402,7 @@ export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
 export function repayLoanFailMessage(reason) {
     if (reason === 'none') return '갚을 대출이 없어요.';
     if (reason === 'amount') return '1봉 이상, 남은 빚 이하로 적어 주세요.';
-    if (reason === 'funds') return '지갑이랑 예금을 합쳐도 그 돈보다 적어요. 있는 만큼만 적어 주세요.';
+    if (reason === 'funds') return '지금 가진 돈으로는 그만큼 갚을 수 없어요.';
     return '지금은 갚을 수 없어요.';
 }
 
@@ -475,16 +477,32 @@ export function planTakeLoan({
     return { ok: true, loan, due: principal + interest };
 }
 
+/**
+ * 다 갚기. 지갑에 있는 돈만 쓰고, 지갑을 0 아래로 내리지 않습니다.
+ * 일반예금과 적금은 건드리지 않습니다. 모자라면 갚은 만큼만 빼고 빚은 남깁니다.
+ */
 export function planRepayLoan(state) {
     const loan = sanitizeBankLoan(state && state.bankLoan);
     if (!loan) return { ok: false, reason: 'none' };
     const due = loanDueTotal(loan);
-    const collected = collectLoanRepayment({
-        bong: state && state.bong,
-        regular: state && state.bankRegularSavings,
+    const wallet = Math.floor(Number(state && state.bong) || 0);
+    const regular = Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0));
+    const can = Math.max(0, wallet);
+    if (can <= 0) return { ok: false, reason: 'funds' };
+    const pay = Math.min(can, due);
+    const full = pay >= due;
+    return {
+        ok: true,
+        full,
+        loan: full ? null : reduceLoanByPayment(loan, pay),
         due,
-    });
-    return { ok: true, loan, due, ...collected };
+        amount: pay,
+        left: due - pay,
+        bong: wallet - pay,
+        regular,
+        fromWallet: pay,
+        fromRegular: 0,
+    };
 }
 
 /** 가진 돈(지갑+일반예금) 안에서만 일부를 갚습니다. 남은 빚 이상이면 전액입니다. */
@@ -569,7 +587,8 @@ function validYmdOrEmpty(raw) {
 /**
  * 신용불량 하루 치.
  * 1) 종료일이 되면 상환과 따로 신용불량만 풉니다. 빚과 마이너스는 그대로입니다.
- * 2) 만기일 당일에 지갑·일반예금으로 한 번만 갚습니다. 모자라면 새 연체일 때만 신용불량입니다.
+ * 2) 만기일이 지난 첫 접속에서 지갑·일반예금으로 한 번 갚습니다. 그다음 신용불량을 봅니다.
+ *    신용불량 기간은 접속한 날이 아니라 만기일부터 셉니다.
  * 3) 이미 신용불량인 동안에는 종료일을 다시 밀지 않습니다.
  */
 export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
@@ -608,7 +627,7 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
 
     const inDefault = () => creditStillOn(defaultUntil, today) || creditStillOn(penaltyUntil, today);
 
-    if (!opaqueLoan && loan && today && today === loan.dueYmd) {
+    if (!opaqueLoan && loan && today && today >= loan.dueYmd) {
         const handleKey = `${loan.id}|${loan.dueYmd}`;
         if (dueHandledKey !== handleKey) {
             const due = loanDueTotal(loan);
@@ -642,8 +661,9 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
             const dueLeft = loanDueTotal(loan);
             const shortfall = bong < 0 ? Math.abs(bong) : 0;
             const amount = Math.max(dueLeft, shortfall);
-            const until = creditWindowUntil(today, amount);
-            if (until) {
+            const until = creditWindowUntil(loan.dueYmd, amount);
+            const days = creditDefaultDaysFromAmount(amount);
+            if (until && today < until) {
                 penaltyUntil = until;
                 defaultUntil = until;
                 changed = true;
@@ -652,8 +672,13 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
                     untilYmd: until,
                     dueYmd: loan.dueYmd,
                     amount,
-                    days: creditDefaultDaysFromAmount(amount),
+                    days,
                 });
+            } else if (until && today >= until) {
+                releasedYmd = today;
+                releaseLoanId = loan.id;
+                walletRecovered = bong >= 0;
+                changed = true;
             }
         }
     }
@@ -795,6 +820,54 @@ export function loanFieldsFromLifecycle(result) {
     };
 }
 
+/**
+ * 만기 상환으로 줄어든 지갑을 그 전 잔액으로 되돌리지 않습니다.
+ * 상환 키가 생기기 전의 큰 잔액은 버립니다.
+ * 같은 키로 나중에 늘어난 잔액은 그대로 둡니다.
+ */
+export function resolveBongKeepingLoanRepayment({
+    clientBong,
+    clientKey = '',
+    accruedBong,
+    accruedKey = '',
+    proposedBong,
+    serverBong,
+    serverKey = '',
+} = {}) {
+    const client = Math.floor(Number(clientBong) || 0);
+    const accrued = Math.floor(Number(accruedBong) || 0);
+    const proposed = Number.isFinite(Number(proposedBong)) ? Math.floor(Number(proposedBong)) : client;
+    const server = Math.floor(Number(serverBong) || 0);
+    const cKey = String(clientKey || '');
+    const aKey = String(accruedKey || '');
+    const sKey = String(serverKey || '');
+    if (aKey && aKey !== cKey) return accrued;
+    if (sKey && !cKey && client > server) return server;
+    if (cKey && cKey === aKey) return proposed;
+    if (cKey && cKey !== sKey && client < proposed) return client;
+    return proposed;
+}
+
+/**
+ * 스냅샷이 만기 상환 전의 지갑으로 로컬 결과를 덮지 않게 합칩니다.
+ * 같은 상환 키면 서버에 나중에 늘어난 잔액을 받습니다.
+ */
+export function mergeStudentDocKeepingLoanRepayment(local, remote) {
+    const base = remote && typeof remote === 'object' ? { ...remote } : {};
+    if (!local || typeof local !== 'object') return base;
+    const localKey = String(local.loanDueHandledKey || '');
+    const remoteKey = String(base.loanDueHandledKey || '');
+    if (localKey && localKey !== remoteKey) {
+        base.bong = Math.floor(Number(local.bong) || 0);
+        if (Object.prototype.hasOwnProperty.call(local, 'bankLoan')) base.bankLoan = local.bankLoan;
+        if (Object.prototype.hasOwnProperty.call(local, 'bankRegularSavings')) {
+            base.bankRegularSavings = Math.max(0, Math.floor(Number(local.bankRegularSavings) || 0));
+        }
+        Object.assign(base, copyCreditFields(local));
+    }
+    return base;
+}
+
 /** 거절할 때 약정일과 잔액을 그대로 둡니다. */
 function rejectLoanAction(state, reason) {
     return {
@@ -861,20 +934,22 @@ export function applyLoanAction(state, action, opts = {}) {
             return { ok: false, reason: plan.reason, ...next };
         }
         if (Math.floor(Number(next.bong) || 0) >= 0) next.creditWalletRecovered = true;
+        const paidLoan = sanitizeBankLoan(next.bankLoan);
         next.bong = plan.bong;
         next.bankRegularSavings = plan.regular;
-        next.bankLoan = null;
-        settleCreditAfterLoanCleared(next, today);
+        next.bankLoan = plan.loan;
+        if (!plan.loan) settleCreditAfterLoanCleared(next, today);
         next.changed = true;
         next.msgs.push({
             kind: 'repay_early',
-            principal: plan.loan.principal,
-            interest: plan.loan.interest,
-            due: plan.due,
+            principal: paidLoan ? paidLoan.principal : 0,
+            interest: paidLoan ? paidLoan.interest : 0,
+            due: plan.amount,
+            left: plan.left,
             fromWallet: plan.fromWallet,
             fromRegular: plan.fromRegular,
         });
-        return { ok: true, ...next, due: plan.due };
+        return { ok: true, ...next, due: plan.left };
     }
     if (action === 'partial') {
         const plan = planPartialRepay(next, opts.amount);

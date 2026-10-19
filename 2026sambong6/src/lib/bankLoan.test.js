@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    CREDIT_DEFAULT_MAX_DAYS,
     CREDIT_DEFAULT_UNIT,
     LOAN_LIMIT_DEFAULT,
     LOAN_MIN_INTEREST,
@@ -15,7 +16,10 @@ import {
     isLoanPenaltyActive,
     isStudentCreditDefault,
     personalLoanLimit,
+    mergeStudentDocKeepingLoanRepayment,
     planPartialRepay,
+    planRepayLoan,
+    resolveBongKeepingLoanRepayment,
     collectLoanRepayment,
     computeLoanInterest,
     countBusinessDaysAfter,
@@ -58,6 +62,9 @@ describe('대출 한도·금액', () => {
         assert.equal(creditDefaultDaysFromAmount(31), 2);
         assert.equal(creditDefaultDaysFromAmount(1), 1);
         assert.equal(creditDefaultDaysFromAmount(-61), Math.ceil(61 / CREDIT_DEFAULT_UNIT));
+        assert.equal(creditDefaultDaysFromAmount(10000), CREDIT_DEFAULT_MAX_DAYS);
+        assert.equal(creditDefaultDaysFromAmount(1801), 60);
+        assert.equal(CREDIT_DEFAULT_MAX_DAYS, 60);
         assert.equal(isCreditDefaultOn({ creditDefaultUntilYmd: '곧' }, '2026-10-19'), false);
         assert.equal(isStudentCreditDefault({ bong: -1 }, '2026-10-19'), true);
         assert.equal(isStudentCreditDefault({ bong: '아님' }, '2026-10-19'), false);
@@ -151,6 +158,43 @@ describe('자동이체·신용불량', () => {
         assert.equal(again.creditDefaultUntilYmd, short.creditDefaultUntilYmd);
         assert.equal(again.msgs.filter((m) => m.kind === 'auto_repay').length, 0);
         assert.equal(again.msgs.filter((m) => m.kind === 'penalty_start').length, 0);
+    });
+
+    it('만기일 다음 접속에서도 상환을 먼저 하고, 기간은 만기일부터 센다', () => {
+        const loan = planTakeLoan({
+            amount: 100, days: 1, ratePercent: 0, limit: 200, todayYmd: '2026-09-14', calendar: cal,
+        }).loan;
+        const due = loan.dueYmd;
+        const late = addCalendarDaysYmd(due, 2);
+        const life = applyLoanLifecycle({
+            bong: 5,
+            bankRegularSavings: 12,
+            bankLoan: loan,
+        }, late, cal);
+        const kinds = life.msgs.map((m) => m.kind);
+        assert.equal(kinds[0], 'auto_repay');
+        assert.ok(kinds.indexOf('auto_repay') < kinds.indexOf('penalty_start'));
+        assert.equal(life.bong, 0);
+        assert.equal(life.bankRegularSavings, 0);
+        assert.ok(life.bankLoan);
+        const left = loanDueTotal(life.bankLoan);
+        const days = creditDefaultDaysFromAmount(left);
+        assert.equal(life.creditDefaultUntilYmd, addCalendarDaysYmd(due, days));
+        assert.notEqual(life.creditDefaultUntilYmd, addCalendarDaysYmd(late, days));
+        assert.equal(isStudentCreditDefault(life, late), true);
+        const veryLate = addCalendarDaysYmd(due, 80);
+        const missed = applyLoanLifecycle({
+            bong: 5,
+            bankRegularSavings: 0,
+            bankLoan: loan,
+        }, veryLate, cal);
+        assert.ok(missed.msgs.some((m) => m.kind === 'auto_repay'));
+        assert.equal(missed.msgs.some((m) => m.kind === 'penalty_start'), false);
+        assert.equal(missed.msgs.some((m) => m.kind === 'default_end'), false);
+        assert.equal(missed.creditDefaultUntilYmd, '');
+        assert.equal(missed.creditReleaseLoanId, loan.id);
+        assert.equal(isStudentCreditDefault(missed, veryLate), false);
+        assert.ok(missed.bong >= 0);
     });
 
     it('만기일에 돈이 충분하면 대출이 끝나고 신용불량이 되지 않는다', () => {
@@ -353,10 +397,34 @@ describe('대출 실행·달력', () => {
             creditDefaultUntilYmd: '2026-09-20',
         }, 'repay', { todayYmd: '2026-09-16', calendar: cal });
         assert.equal(short.ok, true);
-        assert.equal(short.bankLoan, null);
-        assert.ok(short.bong < 0);
+        assert.equal(short.bong, 0);
+        assert.ok(short.bankLoan);
+        assert.equal(loanDueTotal(short.bankLoan), loanDueTotal(taken.bankLoan) - 1);
         assert.equal(short.creditDefaultUntilYmd, '2026-09-20');
         assert.equal(short.loanPenaltyUntilYmd, '');
+    });
+
+    it('다 갚기는 지갑 안에서만 갚고 예금은 쓰지 않는다', () => {
+        const loan = planTakeLoan({
+            amount: 40, days: 1, ratePercent: 0, limit: 100, todayYmd: '2026-09-14', calendar: cal,
+        }).loan;
+        const due = loan.principal + loan.interest;
+        assert.ok(due > 10);
+        const plan = planRepayLoan({ bong: 10, bankRegularSavings: 80, bankLoan: loan });
+        assert.equal(plan.ok, true);
+        assert.equal(plan.full, false);
+        assert.equal(plan.amount, 10);
+        assert.equal(plan.bong, 0);
+        assert.equal(plan.regular, 80);
+        assert.equal(plan.fromRegular, 0);
+        assert.ok(plan.bong >= 0);
+        assert.equal(planRepayLoan({ bong: 0, bankRegularSavings: 80, bankLoan: loan }).reason, 'funds');
+        assert.equal(planRepayLoan({ bong: -3, bankRegularSavings: 80, bankLoan: loan }).reason, 'funds');
+        const full = planRepayLoan({ bong: due + 5, bankRegularSavings: 80, bankLoan: loan });
+        assert.equal(full.full, true);
+        assert.equal(full.loan, null);
+        assert.equal(full.bong, 5);
+        assert.equal(full.regular, 80);
     });
 });
 
@@ -434,5 +502,62 @@ describe('신용불량 해제 뒤 같은 이유로는 다시 걸리지 않는다
         const endedAgain = applyLoanLifecycle({ ...stayed, bong: -40 }, dipped.creditDefaultUntilYmd, cal);
         assert.equal(endedAgain.creditDefaultUntilYmd, '');
         assert.equal(isStudentCreditDefault(endedAgain, dipped.creditDefaultUntilYmd), false);
+    });
+});
+
+describe('만기 상환 지갑은 나중 저장이 되돌리지 않는다', () => {
+    it('상환 전 잔액 100이 상환 후 40을 덮지 않고, 같은 키의 나중 수입은 남긴다', () => {
+        const key = 'loan_1|2026-09-16';
+        assert.equal(resolveBongKeepingLoanRepayment({
+            clientBong: 100,
+            clientKey: '',
+            accruedBong: 40,
+            accruedKey: key,
+            proposedBong: 100,
+            serverBong: 100,
+            serverKey: '',
+        }), 40);
+        assert.equal(resolveBongKeepingLoanRepayment({
+            clientBong: 100,
+            clientKey: '',
+            accruedBong: 40,
+            accruedKey: key,
+            proposedBong: 100,
+            serverBong: 40,
+            serverKey: key,
+        }), 40);
+        assert.equal(resolveBongKeepingLoanRepayment({
+            clientBong: 40,
+            clientKey: key,
+            accruedBong: 100,
+            accruedKey: '',
+            proposedBong: 100,
+            serverBong: 100,
+            serverKey: '',
+        }), 40);
+        assert.equal(resolveBongKeepingLoanRepayment({
+            clientBong: 50,
+            clientKey: key,
+            accruedBong: 40,
+            accruedKey: key,
+            proposedBong: 50,
+            serverBong: 40,
+            serverKey: key,
+        }), 50);
+        const staleSnap = mergeStudentDocKeepingLoanRepayment(
+            { bong: 40, loanDueHandledKey: key, bankLoan: null, bankRegularSavings: 3, name: '로컬' },
+            { bong: 100, loanDueHandledKey: '', name: '서버', xp: 7 },
+        );
+        assert.equal(staleSnap.bong, 40);
+        assert.equal(staleSnap.loanDueHandledKey, key);
+        assert.equal(staleSnap.bankRegularSavings, 3);
+        assert.equal(staleSnap.name, '서버');
+        assert.equal(staleSnap.xp, 7);
+        const laterGain = mergeStudentDocKeepingLoanRepayment(
+            { bong: 40, loanDueHandledKey: key },
+            { bong: 50, loanDueHandledKey: key, name: '서버' },
+        );
+        assert.equal(laterGain.bong, 50);
+        assert.equal(laterGain.name, '서버');
     });
 });

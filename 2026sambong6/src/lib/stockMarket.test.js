@@ -21,8 +21,10 @@ import {
     settleStockPosition,
     evaluateStockTradeWindow,
     formatMarketHourSlot,
+    integerIndexPayout,
     isQuoteAdjustmentWindow,
     marketHourSlot,
+    msUntilQuoteUiBoundary,
     shouldFetchLiveMarketQuotes,
     summarizeStudentStockInvest,
 } from './stockMarket.js';
@@ -94,7 +96,7 @@ describe('은행 지수 투자', () => {
         assert.equal(clampedIndexRatio(100, 200, 0, 1000), 1.035);
         const week = clampedIndexRatio(100, 200, 0, 8 * 86400000);
         assert.ok(week <= 1.12 + 1e-9);
-        const pos = { principal: 100, buyIndex: 1000, openedAt: 0 };
+        const pos = { principal: 100, buyIndex: 1000, openedAt: 0, realizedProfit: 7 };
         const up = settleStockPosition(pos, 2000, 1000);
         assert.equal(up.ok, true);
         assert.ok(up.payout <= 104);
@@ -387,5 +389,148 @@ describe('은행 지수 투자', () => {
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').held, true);
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').payout, 40);
         assert.equal(sum.markets.find((m) => m.id === 'nasdaq').buyIndex, 17000);
+    });
+
+    it('매도 대금은 정수이고 지수 소수 오차가 봉을 바꾸지 않는다', () => {
+        const flat = integerIndexPayout(100, 1000, 1000.0000001, 0, 1000, 'floor');
+        assert.equal(flat, 100);
+        assert.equal(Number.isInteger(flat), true);
+        const scaled = integerIndexPayout(33, 1234.56, 1300.01, 0, 86400000, 'round');
+        assert.equal(Number.isInteger(scaled), true);
+        assert.equal(Number.isNaN(scaled), false);
+        const classic = integerIndexPayout(10, 0.1, 0.3, 0, 1000, 'floor');
+        assert.equal(classic, 10);
+        assert.equal(classic, Number(classic));
+    });
+
+    it('날을 나눠 팔아도 같은 보유분의 이익 상한을 넘지 않는다', () => {
+        const openedAt = 0;
+        const day1 = 2 * 86400000;
+        const day2 = 3 * 86400000;
+        const price = 2000;
+        const once = applySellStock(
+            { kospi: { principal: 100, buyIndex: 1000, openedAt } },
+            'kospi',
+            price,
+            { date: '2026-09-03', profit: 0, sells: 0 },
+            '2026-09-03',
+            day2,
+            100
+        );
+        assert.equal(once.ok, true);
+        const first = applySellStock(
+            { kospi: { principal: 100, buyIndex: 1000, openedAt, openedDate: '2026-09-01' } },
+            'kospi',
+            price,
+            { date: '2026-09-02', profit: 0, sells: 0 },
+            '2026-09-02',
+            day1,
+            40
+        );
+        assert.equal(first.ok, true);
+        const second = applySellStock(
+            first.investments,
+            'kospi',
+            price,
+            { date: '2026-09-03', profit: 0, sells: 0 },
+            '2026-09-03',
+            day2,
+            60
+        );
+        assert.equal(second.ok, true);
+        assert.equal(second.investments.kospi, null);
+        const gain = Math.max(0, first.delta) + Math.max(0, second.delta);
+        assert.ok(gain <= STOCK_DAILY_PROFIT_CAP, `gain ${gain}`);
+        assert.ok(first.payout + second.payout <= once.payout, `split ${first.payout + second.payout} once ${once.payout}`);
+        assert.equal(second.daily.date, '2026-09-03');
+        assert.equal(second.daily.profit, Math.max(0, second.delta));
+        assert.ok(first.investments.kospi.realizedProfit >= Math.max(0, first.delta));
+    });
+
+    it('장 밖에는 마지막 시세로 체결하고 정각 전후만 막는다', () => {
+        const t1529 = Date.parse('2026-09-02T06:29:00.000Z');
+        const t1531 = Date.parse('2026-09-02T06:31:00.000Z');
+        const t1802 = Date.parse('2026-09-02T09:02:00.000Z');
+        const t1800 = Date.parse('2026-09-02T09:00:30.000Z');
+        const t1559 = Date.parse('2026-09-02T06:59:30.000Z');
+        const t1600 = Date.parse('2026-09-02T07:00:30.000Z');
+        const friEve = Date.parse('2026-09-04T09:02:00.000Z');
+        const monBefore = Date.parse('2026-09-06T23:58:00.000Z');
+        const monAdjust = Date.parse('2026-09-07T00:00:30.000Z');
+        const monOpen = Date.parse('2026-09-07T00:02:00.000Z');
+        assert.equal(isKoreanStockSession(t1529), true);
+        assert.equal(isKoreanStockSession(t1531), false);
+        assert.equal(marketHourSlot(t1529), '2026-09-02T15');
+        assert.equal(marketHourSlot(t1531), '2026-09-02T15');
+        const q15 = { hourSlot: '2026-09-02T15', kospi: { price: 2500 } };
+        const ok1529 = evaluateStockTradeWindow({
+            nowMs: t1529, confirmSlot: '2026-09-02T15', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        });
+        assert.equal(ok1529.ok, true);
+        assert.equal(ok1529.price, 2500);
+        const ok1531 = evaluateStockTradeWindow({
+            nowMs: t1531, confirmSlot: '2026-09-02T15', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        });
+        assert.equal(ok1531.ok, true);
+        assert.equal(ok1531.slot, '2026-09-02T15');
+        const ok1802 = evaluateStockTradeWindow({
+            nowMs: t1802, confirmSlot: '2026-09-02T15', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        });
+        assert.equal(ok1802.ok, true);
+        assert.equal(ok1802.price, 2500);
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: t1800, confirmSlot: '2026-09-02T15', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        }).reason, 'adjusting');
+        const badSlot = evaluateStockTradeWindow({
+            nowMs: t1802, confirmSlot: '2026-09-02T18', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        });
+        assert.equal(badSlot.reason, 'slot');
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: t1559, confirmSlot: '2026-09-02T15', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        }).reason, 'adjusting');
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: t1600, confirmSlot: '2026-09-02T15', confirmPrice: 2500, quotes: q15, marketId: 'kospi',
+        }).reason, 'adjusting');
+        const friQ = { hourSlot: '2026-09-04T15', kospi: { price: 2510 } };
+        const fri = evaluateStockTradeWindow({
+            nowMs: friEve, confirmSlot: '2026-09-04T15', confirmPrice: 2510, quotes: friQ, marketId: 'kospi',
+        });
+        assert.equal(fri.ok, true);
+        assert.equal(fri.slot, '2026-09-04T15');
+        assert.equal(fri.price, 2510);
+        const monEarly = evaluateStockTradeWindow({
+            nowMs: monBefore, confirmSlot: '2026-09-04T15', confirmPrice: 2510, quotes: friQ, marketId: 'kospi',
+        });
+        assert.equal(monEarly.ok, true);
+        assert.equal(monEarly.slot, '2026-09-04T15');
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: monAdjust,
+            confirmSlot: '2026-09-07T09',
+            confirmPrice: 2600,
+            quotes: { hourSlot: '2026-09-07T09', kospi: { price: 2600 } },
+            marketId: 'kospi',
+        }).reason, 'adjusting');
+        const monOk = evaluateStockTradeWindow({
+            nowMs: monOpen,
+            confirmSlot: '2026-09-07T09',
+            confirmPrice: 2600,
+            quotes: { hourSlot: '2026-09-07T09', kospi: { price: 2600 } },
+            marketId: 'kospi',
+        });
+        assert.equal(monOk.ok, true);
+        assert.equal(monOk.slot, '2026-09-07T09');
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: monOpen,
+            confirmSlot: '2026-09-04T15',
+            confirmPrice: 2510,
+            quotes: { hourSlot: '2026-09-07T09', kospi: { price: 2600 } },
+            marketId: 'kospi',
+        }).reason, 'slot');
+        const ten = Date.parse('2026-09-02T01:00:30.000Z');
+        const mid = Date.parse('2026-09-02T01:30:00.000Z');
+        const last = Date.parse('2026-09-02T01:59:30.000Z');
+        assert.equal(msUntilQuoteUiBoundary(ten), 30 * 1000);
+        assert.equal(msUntilQuoteUiBoundary(mid), (59 * 60 - 30 * 60) * 1000);
+        assert.equal(msUntilQuoteUiBoundary(last), 30 * 1000);
     });
 });

@@ -101,6 +101,20 @@ export function isQuoteAdjustmentWindow(nowMs) {
 }
 
 /**
+ * 시세 조정 안내가 다음으로 바뀌기까지 기다릴 시간.
+ * 정각 1분 전, 정각, 정각 1분 뒤에 화면을 다시 그립니다.
+ */
+export function msUntilQuoteUiBoundary(nowMs) {
+    const p = seoulParts(nowMs);
+    const sec = p.minute * 60 + p.second;
+    let target = 59 * 60;
+    if (sec < 60) target = 60;
+    else if (sec >= 59 * 60) target = 3600;
+    const delta = target - sec;
+    return Math.max(1, delta) * 1000;
+}
+
+/**
  * 시세는 서버 시간으로 정한 시간대에 한 번만 다시 읽습니다.
  * 같은 시간대 문서는 다시 갱신하지 않습니다.
  * 시세가 하나도 없으면 장 여부와 관계없이 한 번은 가져옵니다.
@@ -125,8 +139,10 @@ function sameQuotePrice(a, b) {
 }
 
 /**
- * 확인창에 보인 시간대·가격이 지금 서버 시세와 같은지 확인합니다.
- * 조정 중이거나 시간대·가격이 다르면 체결하지 않습니다.
+ * 확인창에 보인 시간대·가격이 체결 가격과 같은지 확인합니다.
+ * 정각 전후 1분은 막습니다.
+ * 장중에는 지금 시각의 시간대와 시세 문서가 같아야 합니다.
+ * 장 밖에는 마지막 시세 시간대 가격으로 체결합니다.
  */
 export function evaluateStockTradeWindow({
     nowMs,
@@ -136,15 +152,20 @@ export function evaluateStockTradeWindow({
     marketId,
 } = {}) {
     if (isQuoteAdjustmentWindow(nowMs)) return { ok: false, reason: 'adjusting' };
-    const slot = marketHourSlot(nowMs);
     const storedSlot = String(quotes && quotes.hourSlot || '');
     const shownSlot = String(confirmSlot || '');
-    if (!shownSlot || shownSlot !== slot || storedSlot !== slot) {
-        return { ok: false, reason: 'slot' };
-    }
     const row = quotes && quotes[marketId];
     const price = Number(row && row.price);
+    if (!storedSlot || !shownSlot) return { ok: false, reason: 'slot' };
+    if (isKoreanStockSession(nowMs)) {
+        const slot = marketHourSlot(nowMs);
+        if (shownSlot !== slot || storedSlot !== slot) return { ok: false, reason: 'slot' };
+    } else if (shownSlot !== storedSlot) {
+        return { ok: false, reason: 'slot' };
+    }
+    if (!Number.isFinite(price) || price <= 0) return { ok: false, reason: 'price' };
     if (!sameQuotePrice(confirmPrice, price)) return { ok: false, reason: 'price' };
+    const slot = isKoreanStockSession(nowMs) ? marketHourSlot(nowMs) : storedSlot;
     return { ok: true, reason: '', slot, price };
 }
 
@@ -220,6 +241,7 @@ export function sanitizeStockPosition(raw) {
         buyIndex,
         openedAt,
         openedDate: String(src.openedDate || '').slice(0, 10),
+        realizedProfit: Math.max(0, Math.floor(Number(src.realizedProfit) || 0)),
     };
 }
 
@@ -314,6 +336,39 @@ export function sanitizeStockInvestDaily(raw, today) {
     };
 }
 
+function holdingDayCount(openedAt, nowMs) {
+    const elapsed = Math.max(0, Number(nowMs) || 0) - Math.max(0, Number(openedAt) || 0);
+    return Math.max(1, Math.ceil(elapsed / 86400000));
+}
+
+function indexScaleUnits(n) {
+    const x = Number(n);
+    if (!Number.isFinite(x) || x <= 0) return 0n;
+    return BigInt(Math.round(x * 10000));
+}
+
+/**
+ * 매도 대금을 정수로 계산합니다.
+ * 지수 비율의 소수 오차가 봉을 바꾸지 않게 1만 배 정수로 나눕니다.
+ * rounding이 round면 가진 원금을 한 번에 팔 때, floor면 일부 매도입니다.
+ */
+export function integerIndexPayout(principal, buyIndex, currentIndex, openedAt, nowMs, rounding) {
+    const p = BigInt(Math.max(0, Math.floor(Number(principal) || 0)));
+    const buy = indexScaleUnits(buyIndex);
+    const cur = indexScaleUnits(currentIndex);
+    if (p <= 0n || buy <= 0n || cur <= 0n) return 0;
+    const capBps = BigInt(Math.min(1200, holdingDayCount(openedAt, nowMs) * 350));
+    const bps = 10000n;
+    const lo = (buy * (bps - capBps)) / bps;
+    const hi = (buy * (bps + capBps)) / bps;
+    let used = cur;
+    if (used < lo) used = lo;
+    if (used > hi) used = hi;
+    const num = p * used;
+    if (rounding === 'round') return Number((num + (buy / 2n)) / buy);
+    return Number(num / buy);
+}
+
 export function clampedIndexRatio(buyIndex, currentIndex, openedAt, nowMs) {
     const buy = Number(buyIndex);
     const cur = Number(currentIndex);
@@ -329,9 +384,9 @@ export function clampedIndexRatio(buyIndex, currentIndex, openedAt, nowMs) {
 export function settleStockPosition(pos, currentIndex, nowMs = Date.now()) {
     const row = sanitizeStockPosition(pos);
     if (!row) return { ok: false, reason: 'none' };
-    const ratio = clampedIndexRatio(row.buyIndex, currentIndex, row.openedAt, nowMs);
-    const payout = Math.max(0, Math.round(row.principal * ratio));
+    const payout = integerIndexPayout(row.principal, row.buyIndex, currentIndex, row.openedAt, nowMs, 'round');
     const delta = payout - row.principal;
+    const ratio = row.principal > 0 ? payout / row.principal : 1;
     return { ok: true, principal: row.principal, payout, delta, ratio };
 }
 
@@ -390,6 +445,7 @@ export function applyBuyStock(investments, marketId, amount, buyIndex, nowMs, to
             buyIndex: blendStockBuyIndex(held.principal, held.buyIndex, amt, idx),
             openedAt: held.openedAt,
             openedDate: held.openedDate,
+            realizedProfit: Math.max(0, Math.floor(Number(held.realizedProfit) || 0)),
         };
         return { ok: true, investments: bag, added: true, amount: amt };
     }
@@ -434,23 +490,28 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
     const held = bag[market.id];
     const gate = canSellStock({ existing: held, amount });
     if (!gate.ok) return { ok: false, reason: gate.reason };
-    const ratio = clampedIndexRatio(held.buyIndex, currentIndex, held.openedAt, nowMs);
     const sellPrincipal = gate.amount;
     // 일부 매도는 학생에게 불리하게 내림합니다. 지금 가진 원금을 한 번에 팔 때만 반올림합니다.
-    const rawPayout = sellPrincipal * ratio;
-    let payout = gate.remaining === 0
-        ? Math.max(0, Math.round(rawPayout))
-        : Math.max(0, Math.floor(rawPayout));
+    let payout = integerIndexPayout(
+        sellPrincipal,
+        held.buyIndex,
+        currentIndex,
+        held.openedAt,
+        nowMs,
+        gate.remaining === 0 ? 'round' : 'floor'
+    );
     let delta = payout - sellPrincipal;
     const uncappedDelta = delta;
     const day = sanitizeStockInvestDaily(daily, today);
+    const taken = Math.max(0, Math.floor(Number(held.realizedProfit) || 0));
     if (delta > 0) {
-        const room = Math.max(0, STOCK_DAILY_PROFIT_CAP - day.profit);
+        const room = Math.max(0, STOCK_DAILY_PROFIT_CAP - taken);
         if (delta > room) {
             payout = sellPrincipal + room;
             delta = room;
         }
     }
+    const nextTaken = taken + Math.max(0, delta);
     if (gate.remaining === 0) {
         bag[market.id] = null;
     } else {
@@ -459,6 +520,7 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
             buyIndex: held.buyIndex,
             openedAt: held.openedAt,
             openedDate: held.openedDate,
+            realizedProfit: nextTaken,
         };
     }
     return {

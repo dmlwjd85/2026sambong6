@@ -1951,7 +1951,7 @@
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-rose-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="loan">
                     <h3 class="text-rose-200 font-bold text-sm"><i class="fa-solid fa-file-invoice-dollar"></i> 대출</h3>
-                    <p class="text-xs text-slate-300 leading-relaxed">10봉씩, 학교 가는 날 1일에서 5일 동안 빌릴 수 있어요. 이자는 적금보다 더 세요. 갚기 전에는 또 빌릴 수 없어요. 약속한 날 전날까지 갚아요. 그날 지갑이랑 예금에 있는 돈은 먼저 갚아요. 그래도 모자라면 신용불량이에요. 부족한 30봉마다 1일이에요. 31봉이면 2일이에요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 점심값이 더 빠져도 기간은 늘어나지 않아요. 그날이 되면 신용불량은 풀려요. 남은 빚은 그대로예요. 풀린 뒤에는 같은 빚이나 그때의 마이너스로는 다시 안 걸려요. 새로 빌린 돈이 약속한 날을 넘기거나, 지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요. 적금은 빼지 않아요.</p>
+                    <p id="bankLoanHelp" class="text-xs text-slate-300 leading-relaxed">10봉씩, 학교 가는 날 최대 5일 빌릴 수 있어요. 약속한 날에는 있는 돈으로 먼저 갚아요. 모자라면 신용불량이고, 30봉마다 1일, 최대 60일이에요. 끝나는 날이면 풀려요. 남은 빚은 그대로고, 같은 빚으로는 바로 다시 안 걸려요. 그동안 밥줄은 맨 뒤이고 주급·수업 점수는 안 들어와요.</p>
                     <div id="bankLoanStatus" class="text-xs text-slate-200 leading-relaxed break-words border border-slate-700 rounded-xl p-3 bg-slate-950/50" role="status"></div>
                     <div id="bankLoanPreview" class="text-xs text-rose-100 font-bold leading-relaxed break-words"></div>
                     <div id="bankLoanForm" class="space-y-2">
@@ -1976,7 +1976,7 @@
                         <input type="number" id="bankLoanPartialInput" min="1" step="1" placeholder="일부 납입" class="w-28 bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold min-h-[44px]">
                         <button type="button" onclick="void window.repayBankLoanPartial()" class="js-bank-loan-btn bg-rose-800 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-xl text-xs min-h-[44px]">일부 갚기</button>
                     </div>
-                    <button type="button" id="bankLoanRepayBtn" onclick="void window.repayBankLoan()" class="js-bank-loan-btn hidden bg-rose-900 hover:bg-rose-800 text-rose-50 font-bold py-2 px-4 rounded-xl text-xs border border-rose-600">지금 갚기 (이자 포함)</button>
+                    <button type="button" id="bankLoanRepayBtn" onclick="void window.repayBankLoan()" class="js-bank-loan-btn hidden bg-rose-900 hover:bg-rose-800 text-rose-50 font-bold py-2 px-4 rounded-xl text-xs border border-rose-600">다 갚기</button>
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-cyan-500/35 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="regular">
                     <h3 class="text-sky-200 font-bold text-sm"><i class="fa-solid fa-piggy-bank"></i> 일반예금</h3>
@@ -3824,7 +3824,7 @@
                 </div>
             </div>
             <p id="loanMorningBody" class="text-sm text-red-50 leading-relaxed whitespace-pre-wrap font-bold"></p>
-            <p class="text-xs text-amber-100 leading-relaxed">약속한 날 전날까지 갚아요. 그날 있는 돈은 먼저 갚고, 모자라면 신용불량이에요. 부족한 30봉마다 1일이에요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 그날이 되면 신용불량은 풀려요. 남은 빚은 그대로예요. 풀린 뒤에는 같은 빚이나 그때의 마이너스로는 다시 안 걸려요. 새로 빌린 돈이 약속한 날을 넘기거나, 지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요. 빌린 돈을 다 갚고 지갑이 0 이상이면 그 자리에서 풀려요.</p>
+            <p class="text-xs text-amber-100 leading-relaxed">약속한 날에는 있는 돈으로 먼저 갚아요. 모자라면 신용불량이고, 30봉마다 1일, 최대 60일이에요. 끝나는 날이면 풀려요.</p>
             <div class="flex gap-2">
                 <button type="button" onclick="window.dismissLoanMorningNotice(true)" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-black py-2 rounded-xl text-xs min-h-[44px]">은행으로 가서 갚기</button>
                 <button type="button" onclick="window.dismissLoanMorningNotice(false)" class="flex-1 bg-slate-800 text-slate-200 font-bold py-2 rounded-xl text-xs min-h-[44px]">오늘은 알았음</button>

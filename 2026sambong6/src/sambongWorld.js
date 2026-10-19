@@ -103,9 +103,11 @@ import {
     loanFieldsFromLifecycle,
     loanPenaltyBlockMessage,
     loanStillOutstanding,
+    mergeStudentDocKeepingLoanRepayment,
     planPartialRepay,
     planTakeLoan,
     repayLoanFailMessage,
+    resolveBongKeepingLoanRepayment,
     sanitizeBankLoan,
     sanitizeLoanAmount,
     sanitizeLoanDays,
@@ -354,6 +356,7 @@ import {
     isQuoteAdjustmentWindow,
     MARKET_REFRESH_MS,
     marketHourSlot,
+    msUntilQuoteUiBoundary,
     parseYahooChart,
     sanitizeStockHistory,
     sanitizeStockInvestDaily,
@@ -1779,6 +1782,9 @@ function redrawPlazaGrantsUi() {
         let _serverClockOffsetMs = 0;
 
         function getServerNowMs() {
+            if (import.meta.env.DEV && Number.isFinite(Number(window.__SAMBONG_NOW_MS))) {
+                return Number(window.__SAMBONG_NOW_MS);
+            }
             return Date.now() + _serverClockOffsetMs;
         }
 
@@ -1837,7 +1843,7 @@ function redrawPlazaGrantsUi() {
                 } else if (isKoreanStockSession(getServerNowMs())) {
                     meta.textContent = '시세는 1시간에 한 번, 정각에 바뀌어요.';
                 } else {
-                    meta.textContent = '장이 끝났어요. 마지막 시세를 보여 줘요.';
+                    meta.textContent = '장이 끝났어요. 마지막 시세로 사고팔 수 있어요.';
                 }
             }
             if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
@@ -1926,6 +1932,21 @@ function redrawPlazaGrantsUi() {
         window.refreshMarketQuotes = refreshMarketQuotes;
         void refreshMarketQuotes(true);
         _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(true); }, MARKET_REFRESH_MS);
+
+        let _quoteUiTimer = 0;
+        function scheduleQuoteUiRefresh() {
+            if (_quoteUiTimer) clearTimeout(_quoteUiTimer);
+            const wait = msUntilQuoteUiBoundary(getServerNowMs());
+            _quoteUiTimer = setTimeout(() => {
+                renderMarketTicker();
+                scheduleQuoteUiRefresh();
+            }, wait);
+        }
+        window.refreshQuoteClockUi = function() {
+            renderMarketTicker();
+            scheduleQuoteUiRefresh();
+        };
+        scheduleQuoteUiRefresh();
 
         window.searchSchoolWeatherRegion = async function() {
             const inp = document.getElementById('schoolWeatherSearch');
@@ -6907,8 +6928,9 @@ ${subjectLine}
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            const merged = mergeStudentDocKeepingLoanRepayment(window.playerState, myData);
             window.playerState = {
-                ...myData,
+                ...merged,
                 isGuest: false,
                 isGM: myId === 'gm',
                 isGMA: myId === 'gm_a',
@@ -20647,7 +20669,7 @@ ${subjectLine}
                     }
                     formatBankLoanLifecycleAlerts(loanLife.msgs);
                     void saveDataToCloud({
-                        operationLabel: termRes.changed ? '보물상자 적금 만기' : '은행 대출 만기 자동이체',
+                        operationLabel: termRes.changed ? '보물상자 적금 만기' : '대출 만기 상환',
                         bongLogSource: termRes.changed ? 'bankTermMaturity' : 'bankLoanDue',
                     });
                     if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
@@ -22766,8 +22788,12 @@ ${subjectLine}
             return out;
         }
 
+        const _loanAlertSeen = new Set();
         function formatBankLoanLifecycleAlerts(msgs) {
             (msgs || []).forEach((m) => {
+                const alertKey = `${m.kind}|${m.releasedYmd || ''}|${m.untilYmd || ''}|${m.paid || ''}|${m.unpaid || ''}|${m.dueYmd || ''}`;
+                if (_loanAlertSeen.has(alertKey)) return;
+                _loanAlertSeen.add(alertKey);
                 if (m.kind === 'repay') {
                     setTimeout(() => {
                         void window.customAlert(
@@ -23114,7 +23140,9 @@ ${subjectLine}
             const line = document.getElementById('bankInvestQuoteLine');
             const box = document.getElementById('bankInvestPositions');
             const adjustNote = document.getElementById('bankInvestAdjustNote');
-            const adjusting = isQuoteAdjustmentWindow(getServerNowMs());
+            const quoteNow = getServerNowMs();
+            const adjusting = isQuoteAdjustmentWindow(quoteNow);
+            const marketClosed = !adjusting && !isKoreanStockSession(quoteNow);
             const slotLabel = _marketQuotes.hourSlot ? formatMarketHourSlot(_marketQuotes.hourSlot) : '';
             if (line) {
                 const bits = STOCK_MARKETS.map((m) => {
@@ -23124,8 +23152,10 @@ ${subjectLine}
                 line.textContent = `${adjusting ? '시세 조정 중 · ' : ''}${slotLabel ? `${slotLabel} · ` : ''}${bits.join(' · ')}`;
             }
             if (adjustNote) {
-                adjustNote.classList.toggle('hidden', !adjusting);
-                adjustNote.textContent = adjusting ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.' : '';
+                adjustNote.classList.toggle('hidden', !(adjusting || marketClosed));
+                adjustNote.textContent = adjusting
+                    ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.'
+                    : (marketClosed ? '장이 끝났어요. 마지막 시세로 사고팔 수 있어요.' : '');
             }
             if (!box || !window.playerState) return;
             const sellDrafts = {};
@@ -23197,9 +23227,11 @@ ${subjectLine}
                 const again = document.getElementById(focusedSellId);
                 if (again) again.focus();
             }
-            if (adjusting) {
+            if (!_stockTradeBusy) {
                 document.querySelectorAll('.js-stock-trade-btn').forEach((el) => {
-                    el.disabled = true;
+                    el.disabled = adjusting;
+                    el.classList.toggle('opacity-50', adjusting);
+                    el.classList.toggle('pointer-events-none', adjusting);
                 });
             }
         }
@@ -23629,7 +23661,7 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                preview.textContent = `약속한 날 ${loan.dueYmd}. 그 전날까지 갚아요. 그날 있는 돈은 먼저 갚고, 모자라면 신용불량이에요. 기간이 끝나면 남은 빚은 그대로예요. 같은 빚으로는 다시 안 걸려요.`;
+                preview.textContent = `약속한 날 ${loan.dueYmd}. 있는 돈으로 먼저 갚아요. 모자라면 신용불량이고, 최대 60일이에요.`;
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
@@ -23706,8 +23738,13 @@ ${subjectLine}
             const loan = sanitizeBankLoan(window.playerState.bankLoan);
             if (!loan) return window.customAlert(repayLoanFailMessage('none'));
             const due = loanDueTotal(loan);
+            const wallet = Math.max(0, Math.floor(Number(window.playerState.bong) || 0));
+            if (wallet <= 0) return window.customAlert('지갑에 갚을 돈이 없어요.');
+            const pay = Math.min(wallet, due);
             const ok = await window.customConfirm(
-                `지금 갚으면 약정 이자 ${formatBongAmount(loan.interest)}가 그대로 포함됩니다.\n합계 ${formatBongAmount(due)}를 지갑→일반예금 순으로 갚을까요?\n모자라면 지갑이 마이너스가 됩니다.`
+                pay < due
+                    ? `지갑에 있는 ${formatBongAmount(pay)}만 갚을까요?\n남은 ${formatBongAmount(due - pay)}는 빚으로 남고, 지갑은 0 밑으로 안 내려가요.`
+                    : `지갑에서 ${formatBongAmount(due)}를 다 갚을까요?\n이자 ${formatBongAmount(loan.interest)}가 포함돼요.`
             );
             if (!ok) return;
             _bankLoanBusy = true;
@@ -23722,7 +23759,11 @@ ${subjectLine}
                 });
                 if (!saved) return;
                 updateUI();
-                await window.customAlert(`대출 ${formatBongAmount(due)}를 갚았습니다.`);
+                await window.customAlert(
+                    pay < due
+                        ? `${formatBongAmount(pay)}를 갚았어요. 남은 빚은 ${formatBongAmount(due - pay)}예요.`
+                        : `대출 ${formatBongAmount(due)}를 다 갚았어요.`
+                );
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -24454,9 +24495,9 @@ ${subjectLine}
                 const loanLife = applyBankLoanLifecycleLocal();
                 if (loanLife.changed) {
                     bankProcessingNeedSave = true;
-                    const dueMsg = (loanLife.msgs || []).find((m) => m.kind === 'repay');
+                    const dueMsg = (loanLife.msgs || []).find((m) => m.kind === 'auto_repay');
                     if (dueMsg) {
-                        bankSaveOperationLabel = bankSaveOperationLabel || '은행 대출 만기 자동이체';
+                        bankSaveOperationLabel = bankSaveOperationLabel || '대출 만기 상환';
                         bankSaveBongLogSource = bankSaveBongLogSource || 'bankLoanDue';
                     }
                     formatBankLoanLifecycleAlerts(loanLife.msgs);
@@ -25477,6 +25518,8 @@ ${subjectLine}
                     }
                     if (snap.exists()) {
                         const serverData = snap.data() || {};
+                        const clientBongAtStart = Number(dataToSave.bong);
+                        const clientLoanKeyAtStart = String(dataToSave.loanDueHandledKey || '');
                         const serverSeason = Math.floor(Number(serverData.seasonNumberApplied) || 0);
                         const localSeason = Math.floor(Number(dataToSave.seasonNumberApplied) || 0);
                         if (serverSeason >= 2 && localSeason < 2) {
@@ -25716,6 +25759,17 @@ ${subjectLine}
                             ) {
                                 dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
                             }
+                        }
+                        if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy'))) {
+                            dataToSave.bong = normalizeBongValue(resolveBongKeepingLoanRepayment({
+                                clientBong: clientBongAtStart,
+                                clientKey: clientLoanKeyAtStart,
+                                accruedBong: bankAccrued.bong,
+                                accruedKey: bankAccrued.loanDueHandledKey,
+                                proposedBong: dataToSave.bong,
+                                serverBong: serverData.bong,
+                                serverKey: serverData.loanDueHandledKey,
+                            }));
                         }
                         if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && Array.isArray(serverData.stockInvestHistory)) {
                             dataToSave.stockInvestHistory = sanitizeStockHistory(serverData.stockInvestHistory);

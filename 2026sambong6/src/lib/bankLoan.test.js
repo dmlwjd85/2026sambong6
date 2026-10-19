@@ -1,6 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { planServerLunchDeduction, capBongIncrease, laterLunchDate } from './lunchDeduct.js';
+import {
+    planServerLunchDeduction,
+    capBongIncrease,
+    laterLunchDate,
+    bongPreservingCommittedLunch,
+    settleLunchAndLoan,
+    repayBeforeLunch,
+} from './lunchDeduct.js';
 import {
     CREDIT_DEFAULT_MAX_DAYS,
     CREDIT_DEFAULT_UNIT,
@@ -25,6 +32,14 @@ import {
     planLoanRepayment,
     planPartialRepay,
     planRepayLoan,
+    planClearLoan,
+    collectShieldedDebtFromSalary,
+    formatPromiseDay,
+    formatDebtLeftSentence,
+    formatWithheldLunchLine,
+    formatLunchWalletSentence,
+    formatClearRepayConfirm,
+    formatKeepLunchConfirm,
     repayAmountsMatch,
     creditJudgedOnFinalBong,
     walletCreditAfterFinalBong,
@@ -423,27 +438,31 @@ describe('대출 실행·달력', () => {
         assert.equal(short.loanPenaltyUntilYmd, '');
     });
 
-    it('다 갚기는 지갑 안에서만 갚고 예금은 쓰지 않는다', () => {
+    it('전부 갚기는 빚을 0으로 만들고, 모자라면 예금도 쓰지 않는다', () => {
         const loan = planTakeLoan({
             amount: 40, days: 1, ratePercent: 0, limit: 100, todayYmd: '2026-09-14', calendar: cal,
         }).loan;
         const due = loan.principal + loan.interest;
         assert.ok(due > 10);
-        const plan = planRepayLoan({ bong: 10, bankRegularSavings: 80, bankLoan: loan });
-        assert.equal(plan.ok, true);
-        assert.equal(plan.full, false);
-        assert.equal(plan.amount, 10);
-        assert.equal(plan.bong, 0);
-        assert.equal(plan.regular, 80);
-        assert.equal(plan.fromRegular, 0);
-        assert.ok(plan.bong >= 0);
-        assert.equal(planRepayLoan({ bong: 0, bankRegularSavings: 80, bankLoan: loan }).reason, 'funds');
-        assert.equal(planRepayLoan({ bong: -3, bankRegularSavings: 80, bankLoan: loan }).reason, 'funds');
-        const full = planRepayLoan({ bong: due + 5, bankRegularSavings: 80, bankLoan: loan });
+        const short = planClearLoan({ bong: 10, bankRegularSavings: 80, bankLoan: loan });
+        assert.equal(short.ok, false);
+        assert.equal(short.reason, 'funds');
+        assert.equal(short.regular, 80);
+        assert.equal(planClearLoan({ bong: 0, bankRegularSavings: 80, bankLoan: loan }).reason, 'funds');
+        assert.equal(planClearLoan({ bong: -3, bankRegularSavings: 80, bankLoan: loan }).reason, 'funds');
+        const full = planClearLoan({ bong: due + 5, bankRegularSavings: 80, bankLoan: loan });
+        assert.equal(full.ok, true);
         assert.equal(full.full, true);
         assert.equal(full.loan, null);
         assert.equal(full.bong, 5);
         assert.equal(full.regular, 80);
+        assert.equal(full.fromRegular, 0);
+        const keep = planRepayLoan({ bong: 10, bankRegularSavings: 80, bankLoan: loan });
+        assert.equal(keep.ok, true);
+        assert.equal(keep.full, false);
+        assert.equal(keep.amount, 10);
+        assert.equal(keep.bong, 0);
+        assert.equal(keep.regular, 80);
     });
 
     it('갚을 수 있는 연체는 접속 전에 신용불량이 아니고, 다 갚기는 점심값을 남긴다', () => {
@@ -750,12 +769,12 @@ describe('확인창 금액과 서버 상환 금액', () => {
         const today = '2026-10-21';
         const yesterday = '2026-10-20';
         const loan = loanOf(101, '2026-10-22', 'loan_stale');
-        const screen = planRepayLoan({
+        const screen = planPartialRepay({
             bong: 101,
             bankRegularSavings: 0,
             bankLoan: loan,
             lastLunchDeductDate: today,
-        }, { todayYmd: today, calendar: cal });
+        }, 101, { todayYmd: today, calendar: cal });
         assert.equal(screen.amount, 91);
         assert.equal(screen.left, 10);
 
@@ -765,7 +784,7 @@ describe('확인창 금액과 서버 상환 금액', () => {
             bankLoan: loan,
             lastLunchDeductDate: yesterday,
         };
-        const server = planRepayLoan(serverState, {
+        const server = planPartialRepay(serverState, 101, {
             todayYmd: today,
             calendar: cal,
             lastLunchDeductDate: yesterday,
@@ -776,7 +795,7 @@ describe('확인창 금액과 서버 상환 금액', () => {
         assert.equal(repayAmountsMatch(screen.amount, server.amount), false);
         assert.equal(repayAmountsMatch(81, server.amount), true);
 
-        const acted = applyLoanAction(serverState, 'repay', { todayYmd: today, calendar: cal });
+        const acted = applyLoanAction(serverState, 'partial', { amount: 101, todayYmd: today, calendar: cal });
         assert.equal(acted.amount, 81);
         assert.equal(acted.bong, 20);
         assert.equal(loanDueTotal(acted.bankLoan), 20);
@@ -882,13 +901,18 @@ describe('점심값을 남긴 상환은 다음 날 신용불량이 아니다', (
     it('금요일에는 월요일 점심값이라고 적는다', () => {
         const friday = '2026-10-16';
         const loan = loanOf(101, friday, 'loan_fri');
-        const plan = planRepayLoan({
+        const plan = planLoanRepayment({
             bong: 101, bankLoan: loan, lastLunchDeductDate: '',
-        }, { todayYmd: friday, calendar: cal });
+        }, { mode: 'auto', todayYmd: friday, calendar: cal });
         assert.equal(plan.amount, 81);
         assert.equal(plan.left, 20);
         assert.equal(plan.bong, 20);
         assert.deepEqual(plan.lunchParts.map((part) => part.label), ['오늘 점심값', '월요일 점심값']);
+        const keepMonday = planRepayLoan({
+            bong: 101, bankLoan: loan, lastLunchDeductDate: '',
+        }, { todayYmd: friday, calendar: cal });
+        assert.deepEqual(keepMonday.lunchParts.map((part) => part.label), ['월요일 점심값']);
+        assert.equal(keepMonday.amount, 91);
         const sentence = formatLunchHoldSentence(plan.lunchParts, 'B');
         assert.equal(sentence, '오늘 점심값 10B, 월요일 점심값 10B를 남겨 둘게요.');
         assert.match(sentence, /월요일 점심값/);
@@ -1042,5 +1066,213 @@ describe('점심값을 남긴 상환은 다음 날 신용불량이 아니다', (
         const twice = claimLoanNoticesForSave(once.merged, once.merged, ['auto|a']);
         assert.deepEqual(twice.claimed, []);
         assert.deepEqual(twice.merged, once.merged);
+    });
+});
+
+describe('만기일 점심과 상환은 순서가 달라도 같다', () => {
+    const noon = Date.parse('2026-10-21T03:30:00.000Z');
+    const nextNoon = Date.parse('2026-10-22T03:30:00.000Z');
+
+    function sameEnd(start, today, nextDay) {
+        const opts = { nowMs: noon, todayYmd: today, calendar: cal };
+        const lunchFirst = settleLunchAndLoan(start, opts);
+        const repayFirst = repayBeforeLunch(start, opts);
+        assert.equal(lunchFirst.bong, repayFirst.bong);
+        assert.equal(lunchFirst.lastLunchDeductDate, repayFirst.lastLunchDeductDate);
+        assert.equal(loanDueTotal(lunchFirst.bankLoan), loanDueTotal(repayFirst.bankLoan));
+        assert.equal(lunchFirst.loanLunchShieldAmount, repayFirst.loanLunchShieldAmount);
+        assert.equal(isStudentCreditDefault(lunchFirst, today), isStudentCreditDefault(repayFirst, today));
+        const nextOpts = { nowMs: nextNoon, todayYmd: nextDay, calendar: cal };
+        const nextLunch = settleLunchAndLoan(lunchFirst, nextOpts);
+        const nextRepay = settleLunchAndLoan(repayFirst, nextOpts);
+        assert.equal(nextLunch.bong, nextRepay.bong);
+        return { due: lunchFirst, next: nextLunch };
+    }
+
+    it('D: 지갑 101, 빚 101이면 만기일 10, 다음 날 0이고 신용불량이 아니다', () => {
+        const today = '2026-10-21';
+        const end = sameEnd({
+            bong: 101,
+            bankRegularSavings: 0,
+            bankLoan: loanOf(101, today, 'loan_d'),
+            lastLunchDeductDate: '2026-10-20',
+        }, today, '2026-10-22');
+        assert.equal(end.due.bong, 10);
+        assert.equal(loanDueTotal(end.due.bankLoan), 20);
+        assert.equal(end.due.loanLunchShieldAmount, 20);
+        assert.equal(end.due.lastLunchDeductDate, today);
+        assert.equal(isStudentCreditDefault(end.due, today), false);
+        assert.equal(end.next.bong, 0);
+        assert.equal(isStudentCreditDefault(end.next, '2026-10-22'), false);
+    });
+
+    it('C: 지갑 50, 예금 60이면 만기일 10, 다음 날 0이다', () => {
+        const today = '2026-10-21';
+        const end = sameEnd({
+            bong: 50,
+            bankRegularSavings: 60,
+            bankLoan: loanOf(101, today, 'loan_c'),
+            lastLunchDeductDate: '2026-10-20',
+        }, today, '2026-10-22');
+        assert.equal(end.due.bong, 10);
+        assert.equal(end.due.bankRegularSavings, 0);
+        assert.equal(loanDueTotal(end.due.bankLoan), 11);
+        assert.equal(end.due.loanLunchShieldAmount, 11);
+        assert.equal(isStudentCreditDefault(end.due, today), false);
+        assert.equal(end.next.bong, 0);
+        assert.equal(isStudentCreditDefault(end.next, '2026-10-22'), false);
+    });
+
+    it('AD: 금요일 점심이 한 번만 빠져 지갑이 0이고 신용불량이 아니다', () => {
+        const friday = '2026-10-23';
+        const fridayNoon = Date.parse('2026-10-23T03:30:00.000Z');
+        const start = {
+            bong: 10,
+            bankRegularSavings: 0,
+            bankLoan: loanOf(10, friday, 'loan_ad'),
+            lastLunchDeductDate: '2026-10-22',
+            loanLunchShieldLoanId: 'loan_ad',
+            loanLunchShieldAmount: 10,
+        };
+        const opts = { nowMs: fridayNoon, todayYmd: friday, calendar: cal };
+        const lunchFirst = settleLunchAndLoan(start, opts);
+        const repayFirst = repayBeforeLunch(start, opts);
+        [lunchFirst, repayFirst].forEach((end) => {
+            assert.equal(end.bong, 0);
+            assert.equal(end.lastLunchDeductDate, friday);
+            assert.equal(loanDueTotal(end.bankLoan), 10);
+            assert.equal(end.loanLunchShieldAmount, 10);
+            assert.equal(isStudentCreditDefault(end, friday), false);
+            assert.equal(end.lunchDeducted, true);
+        });
+        const again = settleLunchAndLoan(lunchFirst, opts);
+        assert.equal(again.lunchDeducted, false);
+        assert.equal(again.bong, 0);
+    });
+
+    it('M1: 점심을 이미 낸 지갑 91, 빚 101은 신용불량이 아니고 방패가 20이다', () => {
+        const today = '2026-10-21';
+        const start = {
+            bong: 91,
+            bankRegularSavings: 0,
+            bankLoan: loanOf(101, today, 'loan_m1'),
+            lastLunchDeductDate: today,
+        };
+        const life = applyLoanLifecycle(start, today, cal);
+        assert.equal(life.bong, 10);
+        assert.equal(loanDueTotal(life.bankLoan), 20);
+        assert.equal(life.loanLunchShieldAmount, 20);
+        assert.equal(life.msgs.some((m) => m.kind === 'penalty_start'), false);
+        assert.equal(isStudentCreditDefault(life, today), false);
+        const opts = { nowMs: noon, todayYmd: today, calendar: cal };
+        const lunchFirst = settleLunchAndLoan(start, opts);
+        const repayFirst = repayBeforeLunch(start, opts);
+        assert.equal(lunchFirst.bong, 10);
+        assert.equal(repayFirst.bong, 10);
+        assert.equal(lunchFirst.loanLunchShieldAmount, 20);
+        assert.equal(repayFirst.loanLunchShieldAmount, 20);
+        assert.equal(isStudentCreditDefault(lunchFirst, today), false);
+        assert.equal(isStudentCreditDefault(repayFirst, today), false);
+    });
+
+    it('오래된 화면의 20이 점심을 뺀 10을 되돌리지 않는다', () => {
+        const today = '2026-10-21';
+        assert.equal(bongPreservingCommittedLunch({
+            serverBong: 10,
+            proposedBong: 20,
+            serverLunchDate: today,
+            clientLunchDate: '2026-10-20',
+            todayYmd: today,
+        }), 10);
+        assert.equal(bongPreservingCommittedLunch({
+            serverBong: 0,
+            proposedBong: -10,
+            serverLunchDate: '2026-10-23',
+            clientLunchDate: '2026-10-22',
+            todayYmd: '2026-10-23',
+        }), 0);
+        assert.equal(bongPreservingCommittedLunch({
+            serverBong: 10,
+            proposedBong: 20,
+            serverLunchDate: today,
+            clientLunchDate: today,
+            todayYmd: today,
+            allowedIncrease: 10,
+        }), 20);
+    });
+});
+
+describe('점심값으로 남긴 빚은 주급에서 조금씩 걷는다', () => {
+    it('만기가 지나도 신용불량이 아니고, 주급을 받을 때 다음 점심값은 남긴다', () => {
+        const due = '2026-10-21';
+        const shielded = applyLoanLifecycle({
+            bong: 91,
+            bankRegularSavings: 0,
+            bankLoan: loanOf(101, due, 'loan_m8'),
+            lastLunchDeductDate: due,
+        }, due, cal);
+        assert.equal(shielded.loanLunchShieldAmount, 20);
+        const later = '2026-11-20';
+        const still = applyLoanLifecycle({
+            ...shielded,
+            lastLunchDeductDate: '2026-11-19',
+        }, later, cal);
+        assert.equal(isStudentCreditDefault(still, later), false);
+        assert.equal(loanDueTotal(still.bankLoan), 20);
+
+        const friday = '2026-10-23';
+        const small = collectShieldedDebtFromSalary({
+            ...shielded,
+            bong: 10,
+            lastLunchDeductDate: friday,
+        }, { salary: 15, todayYmd: friday, calendar: cal });
+        assert.equal(small.salaryPaid, 15);
+        assert.equal(small.collected, 15);
+        assert.equal(small.bong, 10);
+        assert.equal(loanDueTotal(small.bankLoan), 5);
+        assert.equal(small.loanLunchShieldAmount, 5);
+        assert.equal(isStudentCreditDefault({ ...shielded, ...small }, friday), false);
+
+        const done = collectShieldedDebtFromSalary({
+            ...shielded,
+            bong: 10,
+            lastLunchDeductDate: friday,
+        }, { salary: 30, todayYmd: friday, calendar: cal });
+        assert.equal(done.collected, 20);
+        assert.equal(done.bong, 20);
+        assert.equal(done.bankLoan, null);
+        assert.equal(done.loanLunchShieldAmount, 0);
+    });
+
+    it('전부 갚기와 점심값만 남기고 갚기 확인 문장이 다르다', () => {
+        const today = '2026-10-20';
+        const loan = loanOf(101, '2026-10-23', 'loan_btn');
+        const clear = planClearLoan({
+            bong: 101, bankLoan: loan, lastLunchDeductDate: today,
+        }, { todayYmd: today, calendar: cal });
+        assert.equal(clear.amount, 101);
+        assert.equal(clear.left, 0);
+        assert.equal(clear.bong, 0);
+        assert.equal(clear.reserveLunch, 0);
+        assert.equal(formatClearRepayConfirm(clear.amount, 'B'), '지갑에서 101B를 모두 갚을까요?\n빚은 0이 돼요.\n다음 점심값은 따로 남겨 두지 않아요.');
+
+        const keep = planRepayLoan({
+            bong: 101, bankLoan: loan, lastLunchDeductDate: today,
+        }, { todayYmd: today, calendar: cal });
+        assert.equal(keep.amount, 91);
+        assert.equal(keep.left, 10);
+        assert.equal(keep.bong, 10);
+        assert.deepEqual(keep.lunchParts.map((part) => part.label), ['수요일 점심값']);
+        assert.equal(formatPromiseDay('2026-10-23'), '10월 23일(금)');
+        assert.equal(formatKeepLunchConfirm({
+            amount: keep.amount,
+            left: keep.left,
+            dueYmd: '2026-10-23',
+            lunchParts: keep.lunchParts,
+            unit: 'B',
+        }), '91B를 갚을까요?\n그러면 빚이 10B 남아요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.\n수요일 점심값 10B는 지갑에 남겨 둘게요.');
+        assert.equal(formatWithheldLunchLine(20, 10, 10, 'B'), '적은 20B 중 점심값 10B는 남기고 10B만 갚아요.');
+        assert.equal(formatDebtLeftSentence(10, '2026-10-23', 'B'), '그러면 빚이 10B 남아요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.');
+        assert.equal(formatLunchWalletSentence([{ label: '수요일 점심값', amount: 10 }], 'B'), '수요일 점심값 10B는 지갑에 남겨 둘게요.');
     });
 });

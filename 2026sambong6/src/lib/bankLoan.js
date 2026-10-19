@@ -329,25 +329,22 @@ export function loanPenaltyBlockMessage(untilYmd) {
     const when = creditUntilLine(untilYmd);
     return [
         when ? `신용불량이에요. ${when}` : '신용불량이에요.',
-        '약속한 날 다 갚지 못해서 그래요.',
         '밥줄에서는 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.',
-        '남은 빚은 그대로예요.',
-        '풀린 뒤에는 같은 빚으로는 다시 안 걸려요.',
-        '새로 빌린 돈이 약속한 날을 넘기면 다시 걸려요.',
+        '약속한 날 다 갚지 못해서 그래요. 남은 빚은 그대로예요.',
+        '이 빚 때문에 다시 신용불량이 되지는 않아요. 새로 빌린 돈이 약속한 날을 넘기면 다시 걸려요.',
         '빌린 돈을 다 갚고 지갑이 0 이상이면 그 자리에서 풀려요.',
     ].join('\n');
 }
 
-export function creditDefaultBlockMessage(untilYmd) {
+export function creditDefaultBlockMessage(untilYmd, unit = 'B') {
     const when = creditUntilLine(untilYmd);
+    const shown = String(unit || 'B');
     return [
         when ? `신용불량이에요. ${when}` : '신용불량이에요.',
-        '지갑이 마이너스예요. 부족한 30봉마다 1일이에요.',
         '밥줄에서는 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.',
-        '점심값이 더 빠져도 기간은 늘어나지 않아요.',
-        '그날 아침이 되면 마이너스여도 신용불량은 풀려요.',
-        '풀린 뒤 같은 마이너스로는 다시 안 걸려요.',
-        '지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요.',
+        `지갑이 마이너스라서 그래요. 부족한 30${shown}마다 1일이에요.`,
+        '점심값이 더 빠져도 기간은 늘어나지 않아요. 끝나는 날 아침이면 마이너스여도 풀려요.',
+        '이 마이너스 때문에 다시 신용불량이 되지는 않아요. 지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요.',
     ].join('\n');
 }
 
@@ -426,7 +423,7 @@ export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
 
 export function repayLoanFailMessage(reason) {
     if (reason === 'none') return '갚을 대출이 없어요.';
-    if (reason === 'amount') return '1봉 이상, 남은 빚 이하로 적어 주세요.';
+    if (reason === 'amount') return '1 이상, 남은 빚 이하로 적어 주세요.';
     if (reason === 'funds') return '지금 가진 돈으로는 그만큼 갚을 수 없어요.';
     if (reason === 'lunch') return '점심값을 남겨 둘게요. 그래서 지금은 갚을 수 없어요.';
     return '지금은 갚을 수 없어요.';
@@ -528,6 +525,78 @@ function topicParticle(unit) {
     return (code - 0xac00) % 28 === 0 ? '는' : '은';
 }
 
+const WEEKDAY_SHORT = ['일', '월', '화', '수', '목', '금', '토'];
+
+/** 2026-10-23 → 10월 23일(금). 확인창이 날짜 한가운데서 끊기지 않게 짧게 씁니다. */
+export function formatPromiseDay(ymd) {
+    const src = String(ymd || '');
+    if (!isYmd(src)) return '';
+    const parts = src.split('-').map(Number);
+    const month = parts[1];
+    const day = parts[2];
+    const weekday = weekdayOfYmd(src);
+    const mark = weekday == null ? '' : `(${WEEKDAY_SHORT[weekday]})`;
+    return `${month}월 ${day}일${mark}`;
+}
+
+/** 남은 것이 빚이라는 것을 먼저 말합니다. */
+export function formatDebtLeftSentence(left, dueYmd, unit = 'B') {
+    const shown = String(unit || 'B');
+    const amount = Math.max(0, Math.floor(Number(left) || 0));
+    const topic = topicParticle(shown);
+    const when = formatPromiseDay(dueYmd);
+    const lines = [`그러면 빚이 ${amount}${shown} 남아요.`];
+    if (when) lines.push(`이 ${amount}${shown}${topic} ${when}까지 갚으면 돼요.`);
+    return lines.join('\n');
+}
+
+/** 점심값 때문에 적은 돈보다 덜 갚을 때 이유를 한 줄로 말합니다. */
+export function formatWithheldLunchLine(requested, amount, withheld, unit = 'B') {
+    const ask = Math.floor(Number(requested) || 0);
+    const pay = Math.floor(Number(amount) || 0);
+    const held = Math.max(0, Math.floor(Number(withheld) || 0));
+    if (held <= 0 || ask <= pay) return '';
+    const shown = String(unit || 'B');
+    return `적은 ${ask}${shown} 중 점심값 ${held}${shown}${topicParticle(shown)} 남기고 ${pay}${shown}만 갚아요.`;
+}
+
+/** 확인창용. 남기는 점심값은 지갑에 둔다고 말합니다. */
+export function formatLunchWalletSentence(parts, unit = 'B') {
+    const list = (Array.isArray(parts) ? parts : []).filter((part) => part && part.amount > 0);
+    if (!list.length) return '';
+    const shown = String(unit || 'B');
+    if (list.length === 1) {
+        const only = list[0];
+        return `${only.label} ${only.amount}${shown}${topicParticle(shown)} 지갑에 남겨 둘게요.`;
+    }
+    const body = list.map((part) => `${part.label} ${part.amount}${shown}`).join(', ');
+    return `${body}${lunchParticle(shown)} 지갑에 남겨 둘게요.`;
+}
+
+export function formatClearRepayConfirm(amount, unit = 'B') {
+    const shown = String(unit || 'B');
+    const pay = Math.max(0, Math.floor(Number(amount) || 0));
+    return `지갑에서 ${pay}${shown}${lunchParticle(shown)} 모두 갚을까요?\n빚은 0이 돼요.\n다음 점심값은 따로 남겨 두지 않아요.`;
+}
+
+export function formatKeepLunchConfirm({
+    amount = 0,
+    left = 0,
+    dueYmd = '',
+    lunchParts = [],
+    unit = 'B',
+} = {}) {
+    const shown = String(unit || 'B');
+    const pay = Math.max(0, Math.floor(Number(amount) || 0));
+    const remain = Math.max(0, Math.floor(Number(left) || 0));
+    const lines = [`${pay}${shown}${lunchParticle(shown)} 갚을까요?`];
+    if (remain > 0) lines.push(formatDebtLeftSentence(remain, dueYmd, shown));
+    else lines.push('빚은 0이 돼요.');
+    const hold = formatLunchWalletSentence(lunchParts, shown);
+    if (hold) lines.push(hold);
+    return lines.join('\n');
+}
+
 /**
  * 만기일에 자동으로 갚았을 때 학생에게 보여주는 문장.
  * 금액은 호출하는 쪽이 넘긴 갚은 돈·남은 빚·남겨 둔 점심값으로 만듭니다.
@@ -601,14 +670,17 @@ function repayPlanBase(extra = {}) {
 
 /**
  * 빚을 갚는 모든 길.
- * full: 다 갚기. 지갑만 쓰고 예금은 쓰지 않습니다.
- * partial: 일부 갚기. 적어 둔 금액까지, 점심값을 뺀 지갑을 먼저 쓰고 그다음 일반예금입니다.
- * auto: 만기 자동 상환과 접속 후 상환. 일반예금을 먼저 쓰고 그다음 지갑입니다.
- * 적금은 쓰지 않고, 지갑은 점심값 아래로 내리지 않습니다.
+ * clear: 전부 갚기. 빚을 0으로 만들고, 지갑만 씁니다. 모자라면 갚지 않습니다.
+ * keepLunch: 점심값만 남기고 갚기. 다음 등교일 점심값만 지갑에 남기고, 예금은 쓰지 않습니다.
+ * partial: 일부 갚기. 적어 둔 금액까지, 오늘·다음 점심값을 뺀 지갑을 먼저 쓰고 그다음 일반예금입니다.
+ * auto: 만기 자동 상환. 일반예금을 먼저 쓰고, 오늘 점심을 안 냈으면 오늘 것도 남깁니다.
+ * 적금은 쓰지 않습니다.
  * 적어 둔 돈보다 남길 점심값 때문에 덜 갚으면, 실제로 갚는 금액을 돌려줍니다.
  */
 export function planLoanRepayment(state, opts = {}) {
-    const mode = opts.mode === 'partial' || opts.mode === 'auto' ? opts.mode : 'full';
+    const mode = opts.mode === 'partial' || opts.mode === 'auto' || opts.mode === 'clear' || opts.mode === 'keepLunch'
+        ? opts.mode
+        : 'keepLunch';
     const loan = sanitizeBankLoan(state && state.bankLoan);
     if (!loan) return repayPlanBase({ reason: 'none', mode });
     const due = loanDueTotal(loan);
@@ -617,7 +689,9 @@ export function planLoanRepayment(state, opts = {}) {
     const lastLunch = Object.prototype.hasOwnProperty.call(opts, 'lastLunchDeductDate')
         ? opts.lastLunchDeductDate
         : (state && state.lastLunchDeductDate);
-    const lunchParts = schoolLunchParts(opts.todayYmd, opts.calendar, lastLunch);
+    let lunchParts = schoolLunchParts(opts.todayYmd, opts.calendar, lastLunch);
+    if (mode === 'clear') lunchParts = [];
+    if (mode === 'keepLunch') lunchParts = lunchParts.filter((part) => part && part.kind === 'next');
     const reserveLunch = lunchParts.reduce((sum, part) => sum + part.amount, 0);
     const spendable = Math.max(0, wallet - reserveLunch);
     const requested = Math.floor(Number(opts.amount) || 0);
@@ -629,11 +703,19 @@ export function planLoanRepayment(state, opts = {}) {
     let fromWallet = 0;
     let fromRegular = 0;
     let pay = 0;
-    if (mode === 'auto') {
+    if (mode === 'clear') {
+        if (wallet < due) {
+            return repayPlanBase({
+                reason: 'funds', mode, due, left: due, bong: wallet, regular, reserveLunch, lunchParts,
+            });
+        }
+        pay = due;
+        fromWallet = due;
+    } else if (mode === 'auto') {
         fromRegular = Math.min(regular, due);
         fromWallet = Math.min(spendable, due - fromRegular);
         pay = fromRegular + fromWallet;
-    } else if (mode === 'full') {
+    } else if (mode === 'keepLunch') {
         pay = Math.min(spendable, due);
         fromWallet = pay;
     } else {
@@ -656,7 +738,7 @@ export function planLoanRepayment(state, opts = {}) {
     }
     const canIgnoreReserve = Math.min(
         mode === 'partial' ? requested : due,
-        Math.max(0, wallet) + (mode === 'full' ? 0 : regular),
+        Math.max(0, wallet) + (mode === 'keepLunch' || mode === 'clear' ? 0 : regular),
     );
     const withheld = Math.max(0, canIgnoreReserve - pay);
     const full = pay >= due;
@@ -687,9 +769,14 @@ export function repayAmountsMatch(confirmed, actual) {
     return Number.isFinite(left) && Number.isFinite(right) && left === right;
 }
 
-/** 다 갚기. planLoanRepayment의 full과 같습니다. */
+/** 점심값만 남기고 갚기. 다음 등교일 점심값만 지갑에 둡니다. */
 export function planRepayLoan(state, opts = {}) {
-    return planLoanRepayment(state, { ...opts, mode: 'full' });
+    return planLoanRepayment(state, { ...opts, mode: 'keepLunch' });
+}
+
+/** 전부 갚기. 빚을 0으로 만들고, 모자라면 갚지 않습니다. */
+export function planClearLoan(state, opts = {}) {
+    return planLoanRepayment(state, { ...opts, mode: 'clear' });
 }
 
 /** 일부 갚기. planLoanRepayment의 partial과 같습니다. */
@@ -748,8 +835,10 @@ function validYmdOrEmpty(raw) {
 }
 
 /**
- * 오늘 점심값이 이미 빠진 뒤의 부족분.
- * 빠진 10봉은 갚지 못한 돈이 아니라 남겨 둔 점심값이라, 신용불량 판단에서 다시 더합니다.
+ * 신용불량으로 볼 모자람.
+ * 오늘 이미 낸 점심값은 지갑에 없어도 남겨 둔 돈이라 다시 더합니다.
+ * 계획이 지갑에 남겨 둔 점심값은 wallet 안에 있어서 한 번만 셉니다.
+ * reserveLunch는 그 계획이 얼마인지 기록만 하고, 지갑 밖 돈처럼 더하지 않습니다.
  */
 function lunchAdjustedShortfall({
     due,
@@ -758,12 +847,16 @@ function lunchAdjustedShortfall({
     lastLunchDeductDate,
     todayYmd,
     calendar,
+    reserveLunch = 0,
 } = {}) {
     const today = String(todayYmd || '');
     const already = lunchAlreadyRecorded(lastLunchDeductDate, today) && isBankBusinessDay(today, calendar || {})
         ? LUNCH_FEE_BONG
         : 0;
-    const funds = Math.max(0, Math.floor(Number(wallet) || 0)) + already + Math.max(0, Math.floor(Number(regular) || 0));
+    void reserveLunch;
+    const funds = Math.max(0, Math.floor(Number(wallet) || 0))
+        + already
+        + Math.max(0, Math.floor(Number(regular) || 0));
     return Math.max(0, Math.floor(Number(due) || 0) - funds);
 }
 
@@ -833,6 +926,7 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
                 lastLunchDeductDate: serverLunchDate,
                 todayYmd: today,
                 calendar,
+                reserveLunch: plan.reserveLunch,
             });
             if (plan.ok && plan.amount > 0) {
                 bong = plan.bong;
@@ -977,6 +1071,7 @@ export function simulateCreditDays({
         bong: Math.floor(Number(state && state.bong) || 0),
         bankRegularSavings: Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0)),
         bankLoan: state && state.bankLoan ? state.bankLoan : null,
+        lastLunchDeductDate: String(state && state.lastLunchDeductDate || ''),
         ...copyCreditFields(state),
     };
     const rows = [];
@@ -998,12 +1093,21 @@ export function simulateCreditDays({
         const dow = weekdayMon1(ymd);
         let salaryPaid = 0;
         if (dow === 5 && salary > 0 && !isStudentCreditDefault(cur, ymd)) {
-            cur.bong += salary;
+            const collected = collectShieldedDebtFromSalary(cur, {
+                salary,
+                todayYmd: ymd,
+                calendar,
+            });
+            cur.bong = collected.bong;
+            cur.bankLoan = collected.bankLoan;
+            cur.loanLunchShieldLoanId = collected.loanLunchShieldLoanId;
+            cur.loanLunchShieldAmount = collected.loanLunchShieldAmount;
             salaryPaid = salary;
         }
         let lunchPaid = 0;
         if (dow >= 1 && dow <= 5 && lunchFee) {
             cur.bong -= lunchFee;
+            cur.lastLunchDeductDate = ymd;
             lunchPaid = lunchFee;
         }
         rows.push({
@@ -1170,6 +1274,44 @@ export function mergeStudentDocKeepingLoanRepayment(local, remote) {
     return base;
 }
 
+/**
+ * 점심값 때문에 남겨 둔 빚을 주급에서 조금씩 걷습니다.
+ * 신용불량으로 보지 않고, 다음 등교일 점심값과 아직 안 낸 오늘 점심값은 지갑에 둡니다.
+ * 방패가 없는 빚은 건드리지 않습니다.
+ */
+export function collectShieldedDebtFromSalary(state, { salary = 0, todayYmd = '', calendar = {} } = {}) {
+    const pay = Math.max(0, Math.floor(Number(salary) || 0));
+    const start = Math.floor(Number(state && state.bong) || 0);
+    const withPay = start + pay;
+    const loan = sanitizeBankLoan(state && state.bankLoan);
+    const shieldId = String(state && state.loanLunchShieldLoanId || '');
+    const shieldAmt = Math.max(0, Math.floor(Number(state && state.loanLunchShieldAmount) || 0));
+    const untouched = {
+        bong: withPay,
+        bankLoan: state && state.bankLoan ? state.bankLoan : null,
+        loanLunchShieldLoanId: shieldId,
+        loanLunchShieldAmount: shieldAmt,
+        collected: 0,
+        salaryPaid: pay,
+    };
+    if (pay <= 0 || !loan || !lunchShieldCoversLoan(state, loan)) return untouched;
+    const reserve = schoolLunchParts(todayYmd, calendar, state && state.lastLunchDeductDate)
+        .reduce((sum, part) => sum + part.amount, 0);
+    const spendable = Math.max(0, withPay - reserve);
+    const due = loanDueTotal(loan);
+    const collected = Math.min(spendable, due);
+    if (collected <= 0) return untouched;
+    const nextLoan = collected >= due ? null : reduceLoanByPayment(loan, collected);
+    return {
+        bong: withPay - collected,
+        bankLoan: nextLoan,
+        loanLunchShieldLoanId: nextLoan ? nextLoan.id : '',
+        loanLunchShieldAmount: nextLoan ? loanDueTotal(nextLoan) : 0,
+        collected,
+        salaryPaid: pay,
+    };
+}
+
 /** 거절할 때 약정일과 잔액을 그대로 둡니다. */
 function rejectLoanAction(state, reason) {
     return {
@@ -1227,7 +1369,7 @@ export function applyLoanAction(state, action, opts = {}) {
         next.msgs.push({ kind: 'take', principal: plan.loan.principal, interest: plan.loan.interest, dueYmd: plan.loan.dueYmd });
         return { ok: true, ...next, loan: plan.loan, due: plan.due };
     }
-    if (action === 'repay' || action === 'partial') {
+    if (action === 'repay' || action === 'keepLunch' || action === 'clear' || action === 'partial') {
         const handledNow = String(life.loanDueHandledKey || '') !== ''
             && String(life.loanDueHandledKey || '') !== String(state && state.loanDueHandledKey || '');
         if (handledNow) {
@@ -1239,19 +1381,18 @@ export function applyLoanAction(state, action, opts = {}) {
                 amount: autoMsg ? autoMsg.paid : 0,
             };
         }
-        const plan = action === 'repay'
-            ? planRepayLoan(next, {
-                todayYmd: today,
-                calendar,
-                lastLunchDeductDate: state && state.lastLunchDeductDate,
-            })
-            : planPartialRepay(next, opts.amount, {
-                todayYmd: today,
-                calendar,
-                lastLunchDeductDate: state && state.lastLunchDeductDate,
-            });
+        const planOpts = {
+            todayYmd: today,
+            calendar,
+            lastLunchDeductDate: state && state.lastLunchDeductDate,
+        };
+        const plan = action === 'partial'
+            ? planPartialRepay(next, opts.amount, planOpts)
+            : action === 'clear'
+                ? planClearLoan(next, planOpts)
+                : planRepayLoan(next, planOpts);
         if (!plan.ok) {
-            if (action === 'repay' && !loanStillOutstanding(next.bankLoan) && life.msgs.some((m) => m.kind === 'auto_repay')) {
+            if (action !== 'partial' && !loanStillOutstanding(next.bankLoan) && life.msgs.some((m) => m.kind === 'auto_repay')) {
                 return { ok: true, ...next, due: 0 };
             }
             return { ok: false, reason: plan.reason, ...next };
@@ -1268,6 +1409,7 @@ export function applyLoanAction(state, action, opts = {}) {
             lastLunchDeductDate: state && state.lastLunchDeductDate,
             todayYmd: today,
             calendar,
+            reserveLunch: plan.reserveLunch,
         });
         next.bong = plan.bong;
         next.bankRegularSavings = plan.regular;
@@ -1281,12 +1423,15 @@ export function applyLoanAction(state, action, opts = {}) {
             next.loanLunchShieldAmount = plan.left;
         }
         next.changed = true;
-        next.msgs.push(action === 'repay' ? {
+        const early = action === 'repay' || action === 'keepLunch' || action === 'clear';
+        next.msgs.push(early ? {
             kind: 'repay_early',
             principal: paidLoan ? paidLoan.principal : 0,
             interest: paidLoan ? paidLoan.interest : 0,
             due: plan.amount,
             left: plan.left,
+            requested: plan.requested,
+            withheld: plan.withheld,
             fromWallet: plan.fromWallet,
             fromRegular: plan.fromRegular,
             reserveLunch: plan.reserveLunch,
@@ -1295,6 +1440,8 @@ export function applyLoanAction(state, action, opts = {}) {
             kind: 'repay_partial',
             amount: plan.amount,
             left: plan.left,
+            requested: plan.requested,
+            withheld: plan.withheld,
             fromWallet: plan.fromWallet,
             fromRegular: plan.fromRegular,
             reserveLunch: plan.reserveLunch,

@@ -3,7 +3,7 @@
  * 날짜와 휴일은 schoolClock 한 곳을 쓰고, 넘긴 시각은 서버 시각입니다.
  */
 
-import { LUNCH_FEE_BONG } from './bankLoan.js';
+import { LUNCH_FEE_BONG, applyLoanLifecycle, copyCreditFields } from './bankLoan.js';
 import {
     isSchoolYmd,
     lunchAlreadyRecorded,
@@ -124,5 +124,116 @@ export function planServerLunchDeduction({
         today,
         fee: amount,
         holiday: false,
+    };
+}
+
+/**
+ * 서버에 오늘 점심이 이미 적혀 있는데, 그 전 화면의 잔액으로 덮지 않습니다.
+ * 허용한 증가(보상·입금)만 서버 잔액 위로 올라갑니다.
+ * 오래된 화면이 점심값을 한 번 더 뺀 값이면 서버 잔액을 유지합니다.
+ */
+export function bongPreservingCommittedLunch({
+    serverBong,
+    proposedBong,
+    serverLunchDate = '',
+    clientLunchDate = '',
+    todayYmd = '',
+    allowedIncrease = 0,
+    fee = LUNCH_FEE_BONG,
+} = {}) {
+    const server = Math.floor(Number(serverBong) || 0);
+    let proposed = Number.isFinite(Number(proposedBong)) ? Math.floor(Number(proposedBong)) : server;
+    const serverLunch = isLunchYmd(serverLunchDate) ? String(serverLunchDate).trim() : '';
+    const clientLunch = isLunchYmd(clientLunchDate) ? String(clientLunchDate).trim() : '';
+    const today = isLunchYmd(todayYmd) ? String(todayYmd).trim() : '';
+    const staleScreen = !!(today && serverLunch >= today && (!clientLunch || clientLunch < serverLunch));
+    if (!staleScreen) return proposed;
+    const room = Math.max(0, Math.floor(Number(allowedIncrease) || 0));
+    if (proposed > server) return Math.min(proposed, server + room);
+    const lunch = Math.max(0, Math.floor(Number(fee) || 0));
+    if (lunch > 0 && server - proposed === lunch) return server;
+    return proposed;
+}
+
+/**
+ * 만기일 저장은 점심값과 대출 상환을 같은 계산으로 끝냅니다.
+ * 점심을 먼저 뺀 뒤 남은 돈으로 갚습니다.
+ */
+export function settleLunchAndLoan(state, {
+    nowMs,
+    serverNowMs,
+    todayYmd = '',
+    calendar = {},
+    classHolidays,
+    vacationPaused = false,
+} = {}) {
+    const src = state && typeof state === 'object' ? state : {};
+    const lunch = planServerLunchDeduction({
+        serverBong: src.bong,
+        serverLunchDate: src.lastLunchDeductDate,
+        serverNowMs: Number.isFinite(Number(serverNowMs)) ? Number(serverNowMs) : nowMs,
+        vacationPaused,
+        classHolidays,
+    });
+    const today = String(todayYmd || lunch.today || '');
+    const afterLunch = {
+        ...src,
+        bong: lunch.deduct ? lunch.bong : Math.floor(Number(src.bong) || 0),
+        lastLunchDeductDate: lunch.deduct ? lunch.lastLunchDeductDate : (src.lastLunchDeductDate || ''),
+    };
+    const life = applyLoanLifecycle(afterLunch, today, calendar || {});
+    return {
+        bong: life.bong,
+        bankRegularSavings: life.bankRegularSavings,
+        bankLoan: life.bankLoan,
+        lastLunchDeductDate: String(afterLunch.lastLunchDeductDate || ''),
+        ...copyCreditFields(life),
+        lunchDeducted: !!lunch.deduct,
+        lunchFee: Math.max(0, Math.floor(Number(lunch.fee) || 0)),
+        loanMsgs: life.msgs || [],
+        changed: !!lunch.deduct || !!life.changed,
+    };
+}
+
+/**
+ * 상환을 먼저 하고 점심을 나중에 빼도, 같은 날의 최종 봉·빚·점심 날짜를 비교할 때 씁니다.
+ */
+export function repayBeforeLunch(state, opts = {}) {
+    const src = state && typeof state === 'object' ? state : {};
+    const probe = planServerLunchDeduction({
+        serverBong: src.bong,
+        serverLunchDate: src.lastLunchDeductDate,
+        serverNowMs: Number.isFinite(Number(opts.serverNowMs)) ? Number(opts.serverNowMs) : opts.nowMs,
+        vacationPaused: opts.vacationPaused,
+        classHolidays: opts.classHolidays,
+    });
+    const today = String(opts.todayYmd || probe.today || '');
+    const life = applyLoanLifecycle(src, today, opts.calendar || {});
+    const lunch = planServerLunchDeduction({
+        serverBong: life.bong,
+        serverLunchDate: src.lastLunchDeductDate,
+        serverNowMs: Number.isFinite(Number(opts.serverNowMs)) ? Number(opts.serverNowMs) : opts.nowMs,
+        vacationPaused: opts.vacationPaused,
+        classHolidays: opts.classHolidays,
+    });
+    const bong = lunch.deduct ? lunch.bong : life.bong;
+    const lastLunchDeductDate = lunch.deduct ? lunch.lastLunchDeductDate : (src.lastLunchDeductDate || '');
+    const replay = applyLoanLifecycle({
+        ...life,
+        bong,
+        lastLunchDeductDate,
+        bankLoan: life.bankLoan,
+        bankRegularSavings: life.bankRegularSavings,
+    }, today, opts.calendar || {});
+    return {
+        bong: replay.bong,
+        bankRegularSavings: replay.bankRegularSavings,
+        bankLoan: replay.bankLoan,
+        lastLunchDeductDate: String(lastLunchDeductDate || ''),
+        ...copyCreditFields(replay),
+        lunchDeducted: !!lunch.deduct,
+        lunchFee: Math.max(0, Math.floor(Number(lunch.fee) || 0)),
+        loanMsgs: life.msgs || [],
+        changed: !!lunch.deduct || !!life.changed,
     };
 }

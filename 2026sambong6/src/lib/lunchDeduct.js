@@ -50,6 +50,30 @@ export function laterLunchDate(serverDate, clientDate, todayYmd) {
  * 일반 저장이 서버 잔액보다 봉을 올리지 못하게 막습니다.
  * maxBongIncrease 를 넘기지 않으면 0이라, 보상처럼 허용한 증가만 통과합니다.
  */
+/**
+ * 저장 상한의 기준 잔액.
+ * 갚기·출금·적금처럼 이번 저장이 지갑을 옮기면 그 결과를 기준으로 삼아 되돌리지 않습니다.
+ * 점심·만기 자동 처리가 이미 반영됐으면 그 잔액이 기준이고, 그 외에는 서버 잔액입니다.
+ */
+export function walletSaveBaseline({
+    serverBong,
+    proposedBong,
+    accruedBong,
+    accruedChanged = false,
+    lunchDeducted = false,
+    manualBank = false,
+} = {}) {
+    if (manualBank) {
+        const proposed = Number(proposedBong);
+        return Number.isFinite(proposed) ? Math.floor(proposed) : Math.floor(Number(serverBong) || 0);
+    }
+    if (accruedChanged || lunchDeducted) {
+        const accrued = Number(accruedBong);
+        return Number.isFinite(accrued) ? Math.floor(accrued) : Math.floor(Number(serverBong) || 0);
+    }
+    return Math.floor(Number(serverBong) || 0);
+}
+
 export function capBongIncrease(serverBong, proposedBong, maxBongIncrease = 0) {
     const server = Number(serverBong);
     const proposed = Number(proposedBong);

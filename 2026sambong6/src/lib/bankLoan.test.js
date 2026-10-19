@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     planServerLunchDeduction,
     capBongIncrease,
+    walletSaveBaseline,
     laterLunchDate,
     bongPreservingCommittedLunch,
     settleLunchAndLoan,
@@ -36,6 +37,7 @@ import {
     collectShieldedDebtFromSalary,
     formatPromiseDay,
     formatDebtLeftSentence,
+    formatSalaryCollectionNotice,
     formatWithheldLunchLine,
     formatLunchWalletSentence,
     formatClearRepayConfirm,
@@ -911,8 +913,9 @@ describe('점심값을 남긴 상환은 다음 날 신용불량이 아니다', (
         const keepMonday = planRepayLoan({
             bong: 101, bankLoan: loan, lastLunchDeductDate: '',
         }, { todayYmd: friday, calendar: cal });
-        assert.deepEqual(keepMonday.lunchParts.map((part) => part.label), ['월요일 점심값']);
-        assert.equal(keepMonday.amount, 91);
+        assert.deepEqual(keepMonday.lunchParts.map((part) => part.label), ['오늘 점심값', '월요일 점심값']);
+        assert.equal(keepMonday.amount, 81);
+        assert.equal(keepMonday.bong, 20);
         const sentence = formatLunchHoldSentence(plan.lunchParts, 'B');
         assert.equal(sentence, '오늘 점심값 10B, 월요일 점심값 10B를 남겨 둘게요.');
         assert.match(sentence, /월요일 점심값/);
@@ -1273,6 +1276,36 @@ describe('점심값으로 남긴 빚은 주급에서 조금씩 걷는다', () =>
         }), '91B를 갚을까요?\n그러면 빚이 10B 남아요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.\n수요일 점심값 10B는 지갑에 남겨 둘게요.');
         assert.equal(formatWithheldLunchLine(20, 10, 10, 'B'), '적은 20B 중 점심값 10B는 남기고 10B만 갚아요.');
         assert.equal(formatDebtLeftSentence(10, '2026-10-23', 'B'), '그러면 빚이 10B 남아요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.');
+        assert.equal(formatDebtLeftSentence(10, '2026-10-23', 'B', { done: true }), '이제 빚이 10B 남았어요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.');
         assert.equal(formatLunchWalletSentence([{ label: '수요일 점심값', amount: 10 }], 'B'), '수요일 점심값 10B는 지갑에 남겨 둘게요.');
+
+        const beforeLunch = planRepayLoan({
+            bong: 101, bankLoan: loan, lastLunchDeductDate: '2026-10-19',
+        }, { todayYmd: today, calendar: cal });
+        assert.deepEqual(beforeLunch.lunchParts.map((part) => part.label), ['오늘 점심값', '수요일 점심값']);
+        assert.equal(beforeLunch.amount, 81);
+        assert.equal(beforeLunch.bong, 20);
+        assert.equal(beforeLunch.left, 20);
+        const noon = Date.parse('2026-10-20T03:30:00.000Z');
+        const afterLunch = settleLunchAndLoan({
+            bong: beforeLunch.bong,
+            bankRegularSavings: 0,
+            bankLoan: beforeLunch.loan,
+            lastLunchDeductDate: '2026-10-19',
+            loanLunchShieldLoanId: beforeLunch.loan && beforeLunch.loan.id,
+            loanLunchShieldAmount: beforeLunch.left,
+        }, { nowMs: noon, todayYmd: today, calendar: cal });
+        assert.equal(afterLunch.bong, 10);
+        assert.equal(afterLunch.lastLunchDeductDate, today);
+        assert.equal(isStudentCreditDefault(afterLunch, today), false);
+        const nextDay = '2026-10-21';
+        const next = settleLunchAndLoan(afterLunch, {
+            nowMs: Date.parse('2026-10-21T03:30:00.000Z'),
+            todayYmd: nextDay,
+            calendar: cal,
+        });
+        assert.equal(next.bong, 0);
+        assert.equal(isStudentCreditDefault(next, nextDay), false);
+        assert.equal(formatSalaryCollectionNotice({ salary: 12, collected: 2, left: 8, unit: 'B' }), '주급 12B가 들어왔어요.\n점심값으로 남겨 둔 빚 2B를 주급에서 갚았어요. 남은 빚은 8B예요.');
     });
 });

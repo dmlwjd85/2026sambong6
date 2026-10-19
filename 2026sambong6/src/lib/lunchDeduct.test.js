@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     LUNCH_FEE_BONG,
     capBongIncrease,
+    walletSaveBaseline,
     isLunchDeductWindow,
     laterLunchDate,
     lunchHolidayDates,
@@ -186,6 +187,28 @@ describe('일반 저장의 봉 상한', () => {
     });
 
     it('보상에 적어 둔 증가만 허용한다', () => {
+        const stick = (baseline, next, { allowDecrease = false, maxDrop = 0, maxRise = 0 } = {}) => {
+            let bong = next;
+            if (next < baseline) {
+                bong = allowDecrease ? Math.max(next, baseline - maxDrop) : baseline;
+            }
+            return capBongIncrease(baseline, bong, maxRise);
+        };
+        const repayBaseline = walletSaveBaseline({
+            serverBong: 101, proposedBong: 10, manualBank: true,
+        });
+        assert.equal(repayBaseline, 10);
+        assert.equal(stick(repayBaseline, 10, { allowDecrease: true, maxDrop: 0 }), 10);
+        const withdrawBaseline = walletSaveBaseline({
+            serverBong: 100, proposedBong: 150, manualBank: true,
+        });
+        assert.equal(withdrawBaseline, 150);
+        assert.equal(stick(withdrawBaseline, 150), 150);
+        const lunchBaseline = walletSaveBaseline({
+            serverBong: 20, proposedBong: 20, accruedBong: 10, lunchDeducted: true,
+        });
+        assert.equal(lunchBaseline, 10);
+        assert.equal(stick(lunchBaseline, 20), 10);
         assert.equal(capBongIncrease(100, 140, 40), 140);
         assert.equal(capBongIncrease(100, 160, 40), 140);
     });

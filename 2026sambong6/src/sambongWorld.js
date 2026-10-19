@@ -114,8 +114,13 @@ import {
     formatClearRepayConfirm,
     formatKeepLunchConfirm,
     formatDebtLeftSentence,
+    formatSalaryCollectionNotice,
+    formatPromiseDay,
+    koreanTopicParticle,
+    koreanCopula,
     formatWithheldLunchLine,
     formatLunchWalletSentence,
+    lunchShieldCoversLoan,
     collectShieldedDebtFromSalary,
     planPartialRepay,
     planRepayLoan,
@@ -131,6 +136,7 @@ import {
 } from './lib/bankLoan.js';
 import {
     capBongIncrease,
+    walletSaveBaseline,
     isLunchYmd,
     laterLunchDate,
     lunchAlreadyRecorded,
@@ -1816,6 +1822,7 @@ function redrawPlazaGrantsUi() {
 
         let _serverClockOffsetMs = 0;
         let _serverClockReady = false;
+        let _serverClockSyncedAt = 0;
 
         function getServerNowMs() {
             if (import.meta.env.DEV && Number.isFinite(Number(window.__SAMBONG_NOW_MS))) {
@@ -1833,8 +1840,42 @@ function redrawPlazaGrantsUi() {
             return Date.now() + _serverClockOffsetMs;
         }
 
+        function isClockPingOnlyChange(prev, next) {
+            if (!prev || !next || typeof prev !== 'object' || typeof next !== 'object') return false;
+            const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+            let sawClock = false;
+            for (const key of keys) {
+                if (key === 'serverClockPing' || key === 'serverClockClientMs') {
+                    sawClock = true;
+                    continue;
+                }
+                const left = prev[key];
+                const right = next[key];
+                if (left === right) continue;
+                const leftMs = left && typeof left.toMillis === 'function' ? left.toMillis() : null;
+                const rightMs = right && typeof right.toMillis === 'function' ? right.toMillis() : null;
+                if (leftMs != null && leftMs === rightMs) continue;
+                try {
+                    if (JSON.stringify(left) === JSON.stringify(right)) continue;
+                } catch (_) { /* 비교할 수 없으면 다른 변경으로 봅니다. */ }
+                return false;
+            }
+            return sawClock;
+        }
+
+        function applyServerClockSample(data) {
+            const ping = data && data.serverClockPing;
+            const writtenClient = Number(data && data.serverClockClientMs);
+            if (ping && typeof ping.toMillis === 'function' && Number.isFinite(writtenClient)) {
+                _serverClockOffsetMs = ping.toMillis() - writtenClient;
+                _serverClockReady = true;
+                _serverClockSyncedAt = Date.now();
+            }
+        }
+
         async function syncServerClock() {
             if (!db) return lunchClockMs();
+            if (_serverClockReady && Date.now() - _serverClockSyncedAt < 60000) return lunchClockMs();
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) return lunchClockMs();
@@ -1850,6 +1891,7 @@ function redrawPlazaGrantsUi() {
                 if (ping && typeof ping.toMillis === 'function') {
                     _serverClockOffsetMs = ping.toMillis() - writtenClient;
                     _serverClockReady = true;
+                    _serverClockSyncedAt = Date.now();
                 }
             } catch (e) {
                 console.warn('server clock', e);
@@ -20159,6 +20201,15 @@ ${subjectLine}
                             const fromCache = !!(snap.metadata && snap.metadata.fromCache);
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
+                                if (isClockPingOnlyChange(window.globalSettings, settingsData)) {
+                                    applyServerClockSample(settingsData);
+                                    window.globalSettings = {
+                                        ...window.globalSettings,
+                                        serverClockPing: settingsData.serverClockPing,
+                                        serverClockClientMs: settingsData.serverClockClientMs,
+                                    };
+                                    return;
+                                }
                                 const keepLocalLearningThermometer = isLearningThermometerLocallyBusy() || window._thermometerDocSeen;
                                 const localLearningThermometer = window.globalSettings && window.globalSettings.learningThermometer;
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
@@ -22945,13 +22996,24 @@ ${subjectLine}
             const loanHelp = document.getElementById('bankLoanHelp');
             if (loanHelp) {
                 const unit = getCurrencyUnit();
-                loanHelp.textContent = `${formatBongAmount(10)}씩, 학교 가는 날 최대 ${LOAN_MAX_BUSINESS_DAYS}일 빌릴 수 있어요. 약속한 날에는 지갑과 예금에 있는 돈으로 먼저 갚아요. 모자라면 신용불량이 되고, 30${unit}마다 1일, 최대 60일이에요. 끝나는 날이면 풀려요. 남은 빚은 그대로고, 같은 빚으로는 바로 다시 안 걸려요. 그동안 밥줄은 맨 뒤이고 주급·수업 점수는 안 들어와요.`;
+                loanHelp.textContent = `${formatBongAmount(10)}씩, 학교 가는 날 최대 ${LOAN_MAX_BUSINESS_DAYS}일 빌릴 수 있어요. 약속한 날에는 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고, 주급에서 조금씩 갚아요. 그보다 많이 모자라면 신용불량이 되고, 30${unit}마다 1일, 최대 60일이에요. 끝나는 날이면 풀려요. 남은 빚은 그대로고, 같은 빚으로는 바로 다시 안 걸려요. 그동안 밥줄은 맨 뒤이고 주급·수업 점수는 안 들어와요.`;
             }
             if (loanStatus) {
                 if (inDefault) {
                     loanStatus.innerHTML = `<span class="text-red-300 font-bold">${playerCreditDefaultMessage().replace(/\n/g, '<br>')}</span>`;
                 } else if (loan) {
-                    loanStatus.innerHTML = `지금 빌린 돈 <b class="text-white">${formatBongAmountHtml(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmountHtml(loan.interest)}</b><br>약속한 날 <b class="text-amber-200">${loan.dueYmd}</b> · 합계 ${formatBongAmountHtml(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 또 빌릴 수 없어요.</span>`;
+                    const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
+                    const dueTopic = koreanTopicParticle(dueLabel);
+                    const todayLoan = loanPlanToday();
+                    const pastDue = !!(loan.dueYmd && todayLoan && todayLoan > loan.dueYmd);
+                    const shielded = lunchShieldCoversLoan(window.playerState, loan);
+                    if (shielded && pastDue) {
+                        loanStatus.innerHTML = `점심값으로 남겨 둔 빚 <b class="text-white">${formatBongAmountHtml(loanDueTotal(loan))}</b><br>약속한 날 <b class="text-amber-200">${dueLabel}</b>${dueTopic} 지났어요. 주급을 받을 때 조금씩 갚아요. 신용불량은 아니에요.`;
+                    } else if (shielded) {
+                        loanStatus.innerHTML = `점심값으로 남겨 둔 빚 <b class="text-white">${formatBongAmountHtml(loanDueTotal(loan))}</b><br>약속한 날 <b class="text-amber-200">${dueLabel}</b>까지 갚으면 돼요. 그 빚은 신용불량이 아니고, 주급에서 조금씩 갚아요.`;
+                    } else {
+                        loanStatus.innerHTML = `지금 빌린 돈 <b class="text-white">${formatBongAmountHtml(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmountHtml(loan.interest)}</b><br>약속한 날 <b class="text-amber-200">${dueLabel}</b> · 합계 ${formatBongAmountHtml(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 또 빌릴 수 없어요.</span>`;
+                    }
                 } else if (outstanding) {
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
                     loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약속한 날 ${dueLeft})` : '');
@@ -23692,7 +23754,8 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                preview.textContent = `약속한 날 ${loan.dueYmd}. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 모자라면 신용불량이 돼요.`;
+                const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
+                preview.textContent = `약속한 날 ${dueLabel}. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.`;
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
@@ -23713,7 +23776,8 @@ ${subjectLine}
             const dueYmd = planTakeLoan({
                 amount, days, ratePercent: rate, limit: cap, todayYmd: loanPlanToday(), calendar: getBankLoanCalendar(), nowMs: 1,
             }).loan?.dueYmd || '';
-            preview.textContent = `${formatBongAmount(amount)} · 학교 가는 날 ${days}일 · 이자 ${formatBongAmount(interest)} · 갚을 돈 ${formatBongAmount(amount + interest)}${dueYmd ? ` · 약속한 날 ${dueYmd}` : ''}`;
+            const dueLabel = dueYmd ? (formatPromiseDay(dueYmd) || dueYmd) : '';
+            preview.textContent = `${formatBongAmount(amount)} · 학교 가는 날 ${days}일 · 이자 ${formatBongAmount(interest)} · 갚을 돈 ${formatBongAmount(amount + interest)}${dueLabel ? ` · 약속한 날 ${dueLabel}` : ''}`;
         };
 
         window.takeBankLoan = async function() {
@@ -23742,7 +23806,7 @@ ${subjectLine}
                 const ok = await window.customConfirm(
                     `${formatBongAmount(plan.loan.principal)}를 학교 가는 날 ${plan.loan.days}일 동안 빌릴까요?\n` +
                     `이자는 ${formatBongAmount(plan.loan.interest)}예요.\n` +
-                    `약속한 날은 ${plan.loan.dueYmd}예요. 그날까지 갚아요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 모자라면 신용불량이 돼요.\n적금은 빼지 않아요.`
+                    `약속한 날은 ${formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd}${koreanCopula(formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd)} 그날까지 갚아요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.\n적금은 빼지 않아요.`
                 );
                 if (!ok) return;
                 const saved = await saveDataToCloud({
@@ -23756,7 +23820,8 @@ ${subjectLine}
                 if (!saved) return;
                 if (amtEl) amtEl.value = '';
                 updateUI();
-                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔어요.\n약속한 날은 ${plan.loan.dueYmd}예요. 이자는 ${formatBongAmount(plan.loan.interest)}예요.`);
+                const promiseDay = formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd;
+                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔어요.\n약속한 날은 ${promiseDay}${koreanCopula(promiseDay)} 이자는 ${formatBongAmount(plan.loan.interest)}예요.`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -23890,7 +23955,7 @@ ${subjectLine}
                     doneText(quote) {
                         const hold = formatLunchWalletSentence(quote.lunchParts, getCurrencyUnit());
                         if (quote.left > 0) {
-                            return `${formatBongAmount(quote.amount)}를 갚았어요.\n${formatDebtLeftSentence(quote.left, quote.loan ? quote.loan.dueYmd : '', getCurrencyUnit())}${hold ? `\n${hold}` : ''}`;
+                            return `${formatBongAmount(quote.amount)}를 갚았어요.\n${formatDebtLeftSentence(quote.left, quote.loan ? quote.loan.dueYmd : '', getCurrencyUnit(), { done: true })}${hold ? `\n${hold}` : ''}`;
                         }
                         return `${formatBongAmount(quote.amount)}를 갚았어요. 빚은 0이에요.`;
                     },
@@ -24300,13 +24365,38 @@ ${subjectLine}
             if (!body || !loan) return;
             const due = loanDueTotal(loan);
             const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
+            const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
+            const dueTopic = koreanTopicParticle(dueLabel);
+            const todayLoan = loanPlanToday();
+            const pastDue = !!(loan.dueYmd && todayLoan && todayLoan > loan.dueYmd);
+            const shielded = lunchShieldCoversLoan(window.playerState, loan);
+            const follow = penalty
+                ? loanPenaltyBlockMessage(window.playerState && window.playerState.loanPenaltyUntilYmd)
+                : (shielded
+                    ? `점심값으로 남겨 둔 빚이에요. 약속한 날 ${dueLabel}${dueTopic} ${pastDue ? '지났어요' : '까지 갚으면 돼요'}. 주급을 받을 때 조금씩 갚고, 신용불량은 아니에요.`
+                    : '약속한 날까지 갚아 주세요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요.');
             body.textContent =
                 `아직 갚지 않은 대출이 있어요.\n` +
                 `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
-                `약속한 날 ${loan.dueYmd}\n\n` +
-                (penalty
-                    ? loanPenaltyBlockMessage(window.playerState && window.playerState.loanPenaltyUntilYmd)
-                    : '약속한 날까지 갚아 주세요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요.');
+                `약속한 날 ${dueLabel}\n\n` +
+                follow;
+        }
+
+        function showUnseenMoneyNotices() {
+            const list = window.playerState && Array.isArray(window.playerState.moneyNotices)
+                ? window.playerState.moneyNotices
+                : [];
+            list.forEach((notice) => {
+                if (!notice || !notice.id || !notice.text) return;
+                const key = `sambong_money_notice_${appId}_${notice.id}`;
+                try {
+                    if (localStorage.getItem(key) === '1') return;
+                    localStorage.setItem(key, '1');
+                } catch (_) {
+                    return;
+                }
+                void window.customAlert(String(notice.text));
+            });
         }
 
         window.maybeShowLoanMorningNotice = function() {
@@ -25121,6 +25211,7 @@ ${subjectLine}
             if (typeof window.renderAttendanceBoard === 'function') window.renderAttendanceBoard();
             if (typeof window.renderChecklistBoard === 'function') window.renderChecklistBoard();
             if (typeof window.maybeShowLoanMorningNotice === 'function') window.maybeShowLoanMorningNotice();
+            showUnseenMoneyNotices();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) {
                 saveDataToCloud({
@@ -26107,11 +26198,22 @@ ${subjectLine}
                             }
                         }
 
-                        const serverBong = Number(
-                            (bankAccrued.changed || bankAccrued.lunchDeducted)
-                                ? bankAccrued.bong
-                                : serverData.bong
+                        const manualBank = !!(
+                            opts.allowBankFieldChanges
+                            || opts.loanAction === 'take'
+                            || opts.loanAction === 'repay'
+                            || opts.loanAction === 'keepLunch'
+                            || opts.loanAction === 'clear'
+                            || opts.loanAction === 'partial'
                         );
+                        const serverBong = walletSaveBaseline({
+                            serverBong: serverData.bong,
+                            proposedBong: dataToSave.bong,
+                            accruedBong: bankAccrued.bong,
+                            accruedChanged: !!bankAccrued.changed,
+                            lunchDeducted: !!bankAccrued.lunchDeducted,
+                            manualBank,
+                        });
                         const nextBong = Number(dataToSave.bong);
                         // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.
                         const bongBeforeSpend = Number(bankAccrued.changed ? bankAccrued.bong : serverData.bong);
@@ -26248,7 +26350,7 @@ ${subjectLine}
                                 allowedRise,
                             ));
                         }
-                        if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy'))) {
+                        if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && !manualBank) {
                             dataToSave.bong = normalizeBongValue(resolveBongKeepingLoanRepayment({
                                 clientBong: clientBongAtStart,
                                 clientKey: clientLoanKeyAtStart,
@@ -26307,15 +26409,16 @@ ${subjectLine}
                                 logExtra.principal = Math.max(0, Math.floor(Number(trade.applied.principal) || 0));
                                 logExtra.profit = Math.max(0, Math.floor(Number(trade.applied.delta) || 0));
                             }
-                            if (bankAccrued.lunchDeducted && opts.bongLogSource === 'bankLoanDue') {
+                            if (bankAccrued.lunchDeducted) {
                                 const afterLunch = normalizeBongValue(logBeforeBong - Math.max(0, Number(bankAccrued.lunchFee) || 0));
                                 bongLogs.push(buildBongChangeLogEntry('점심값', logBeforeBong, afterLunch, {
                                     source: 'lunchDeduct',
                                     allowBongDecrease: true,
                                 }));
                                 if (Math.abs(finalBong - afterLunch) > 0.0001) {
-                                    bongLogs.push(buildBongChangeLogEntry('대출 만기 상환', afterLunch, finalBong, {
-                                        source: 'bankLoanDue',
+                                    const repaid = (bankAccrued.loanMsgs || []).some((row) => row && row.kind === 'auto_repay' && Math.floor(Number(row.paid) || 0) > 0);
+                                    bongLogs.push(buildBongChangeLogEntry(repaid ? '대출 만기 상환' : (opts.operationLabel || '저장'), afterLunch, finalBong, {
+                                        source: repaid ? 'bankLoanDue' : (opts.bongLogSource || 'saveDataToCloud'),
                                         allowBongDecrease: true,
                                     }));
                                 }
@@ -30673,7 +30776,38 @@ ${subjectLine}
                             todayYmd: todayPay,
                             calendar: getBankLoanCalendar(),
                         });
-                        const salaryPatch = { bong: normalizeBongValue(collected.bong) };
+                        const beforePay = normalizeBongValue(Number(data.bong) || 0);
+                        const afterPay = normalizeBongValue(beforePay + Math.max(0, Math.floor(Number(plan.pay) || 0)));
+                        const salaryLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-(BONG_CHANGE_LOG_LIMIT - 2)) : [];
+                        salaryLogs.push(buildBongChangeLogEntry('주급', beforePay, afterPay, {
+                            source: 'salary',
+                            allowBongDecrease: false,
+                        }));
+                        if (collected.collected > 0) {
+                            salaryLogs.push(buildBongChangeLogEntry('주급에서 빚 갚기', afterPay, collected.bong, {
+                                source: 'salaryDebt',
+                                allowBongDecrease: true,
+                            }));
+                        }
+                        const salaryLeft = collected.bankLoan ? loanDueTotal(collected.bankLoan) : 0;
+                        const salaryText = formatSalaryCollectionNotice({
+                            salary: plan.pay,
+                            collected: collected.collected,
+                            left: salaryLeft,
+                            unit: getCurrencyUnit(),
+                        });
+                        const salaryNotices = (Array.isArray(data.moneyNotices) ? data.moneyNotices : [])
+                            .filter((notice) => notice && notice.id && notice.text)
+                            .slice(-8);
+                        const salaryNoticeId = `${wId}:${row.stu.id}`;
+                        if (salaryText && !salaryNotices.some((notice) => notice.id === salaryNoticeId)) {
+                            salaryNotices.push({ id: salaryNoticeId, text: salaryText });
+                        }
+                        const salaryPatch = {
+                            bong: normalizeBongValue(collected.bong),
+                            bongChangeLog: salaryLogs.slice(-BONG_CHANGE_LOG_LIMIT),
+                            moneyNotices: salaryNotices.slice(-8),
+                        };
                         if (collected.collected > 0) {
                             salaryPatch.bankLoan = collected.bankLoan;
                             salaryPatch.loanLunchShieldLoanId = collected.loanLunchShieldLoanId;
@@ -30708,7 +30842,7 @@ ${subjectLine}
             if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef || !db) return;
             if (window.playerState.isAdmin) return;
 
-            await syncServerClock();
+            if (!_serverClockReady) await syncServerClock();
             let nowMs = lunchClockMs();
             if (nowMs == null) {
                 await syncServerClock();

@@ -294,7 +294,7 @@ function overdueIsFreshCause(state, todayYmd) {
 }
 
 /** 점심값을 남기느라 남은 빚이면 연체로 보지 않습니다. */
-function lunchShieldCoversLoan(state, loan) {
+export function lunchShieldCoversLoan(state, loan) {
     const clean = loan || sanitizeBankLoan(state && state.bankLoan);
     if (!clean) return false;
     const id = String(clean.id || '').trim();
@@ -518,6 +518,18 @@ export function formatLunchHoldSentence(parts, unit = 'B') {
     return `${body}${lunchParticle(shown)} 남겨 둘게요.`;
 }
 
+export function koreanTopicParticle(text) {
+    return topicParticle(text);
+}
+
+/** 날짜 끝소리에 맞춰 '예요' 또는 '이에요'를 붙입니다. */
+export function koreanCopula(text) {
+    const ch = String(text || '').slice(-1);
+    const code = ch.charCodeAt(0);
+    if (code < 0xac00 || code > 0xd7a3) return '이에요';
+    return (code - 0xac00) % 28 === 0 ? '예요' : '이에요';
+}
+
 function topicParticle(unit) {
     const ch = String(unit || 'B').slice(-1);
     const code = ch.charCodeAt(0);
@@ -539,14 +551,31 @@ export function formatPromiseDay(ymd) {
     return `${month}월 ${day}일${mark}`;
 }
 
-/** 남은 것이 빚이라는 것을 먼저 말합니다. */
-export function formatDebtLeftSentence(left, dueYmd, unit = 'B') {
+/** 남은 것이 빚이라는 것을 먼저 말합니다. done이면 이미 갚은 뒤의 말투입니다. */
+export function formatDebtLeftSentence(left, dueYmd, unit = 'B', opts = {}) {
     const shown = String(unit || 'B');
     const amount = Math.max(0, Math.floor(Number(left) || 0));
     const topic = topicParticle(shown);
     const when = formatPromiseDay(dueYmd);
-    const lines = [`그러면 빚이 ${amount}${shown} 남아요.`];
+    const done = !!(opts && opts.done);
+    const lines = [done ? `이제 빚이 ${amount}${shown} 남았어요.` : `그러면 빚이 ${amount}${shown} 남아요.`];
     if (when) lines.push(`이 ${amount}${shown}${topic} ${when}까지 갚으면 돼요.`);
+    return lines.join('\n');
+}
+
+/** 주급에서 점심 빚을 걷었을 때 학생에게 보여주는 문장입니다. */
+export function formatSalaryCollectionNotice({ salary = 0, collected = 0, left = 0, unit = 'B' } = {}) {
+    const shown = String(unit || 'B');
+    const pay = Math.max(0, Math.floor(Number(salary) || 0));
+    const took = Math.max(0, Math.floor(Number(collected) || 0));
+    const remain = Math.max(0, Math.floor(Number(left) || 0));
+    const lines = [];
+    if (pay > 0) lines.push(`주급 ${pay}${shown}가 들어왔어요.`);
+    if (took > 0 && remain > 0) {
+        lines.push(`점심값으로 남겨 둔 빚 ${took}${shown}${lunchParticle(shown)} 주급에서 갚았어요. 남은 빚은 ${remain}${shown}예요.`);
+    } else if (took > 0) {
+        lines.push(`점심값으로 남겨 둔 빚 ${took}${shown}${lunchParticle(shown)} 주급에서 다 갚았어요.`);
+    }
     return lines.join('\n');
 }
 
@@ -671,7 +700,7 @@ function repayPlanBase(extra = {}) {
 /**
  * 빚을 갚는 모든 길.
  * clear: 전부 갚기. 빚을 0으로 만들고, 지갑만 씁니다. 모자라면 갚지 않습니다.
- * keepLunch: 점심값만 남기고 갚기. 다음 등교일 점심값만 지갑에 남기고, 예금은 쓰지 않습니다.
+ * keepLunch: 점심값만 남기고 갚기. 오늘 점심을 아직 안 냈으면 오늘과 다음 등교일을, 이미 냈으면 다음 등교일만 지갑에 남깁니다. 예금은 쓰지 않습니다.
  * partial: 일부 갚기. 적어 둔 금액까지, 오늘·다음 점심값을 뺀 지갑을 먼저 쓰고 그다음 일반예금입니다.
  * auto: 만기 자동 상환. 일반예금을 먼저 쓰고, 오늘 점심을 안 냈으면 오늘 것도 남깁니다.
  * 적금은 쓰지 않습니다.
@@ -691,7 +720,6 @@ export function planLoanRepayment(state, opts = {}) {
         : (state && state.lastLunchDeductDate);
     let lunchParts = schoolLunchParts(opts.todayYmd, opts.calendar, lastLunch);
     if (mode === 'clear') lunchParts = [];
-    if (mode === 'keepLunch') lunchParts = lunchParts.filter((part) => part && part.kind === 'next');
     const reserveLunch = lunchParts.reduce((sum, part) => sum + part.amount, 0);
     const spendable = Math.max(0, wallet - reserveLunch);
     const requested = Math.floor(Number(opts.amount) || 0);

@@ -658,6 +658,15 @@ import {
     sanitizePraiseBoard,
 } from './lib/peerPraise.js';
 import {
+    anonymousRebukeReasons,
+    planPeerRebuke,
+    rebukeCountOf,
+    rebukeFailMessage,
+    sanitizeRebukeBoard,
+    teacherRebukeReasons,
+    REBUKE_COST_BONG,
+} from './lib/peerRebuke.js';
+import {
     buildScreenNotice,
     closeScreenNotice,
     readDismissedScreenNoticeId,
@@ -20777,6 +20786,18 @@ ${subjectLine}
             return Math.max(0, Math.floor(Number(storedCount) || 0));
         }
 
+        function plazaRebukeCount(studentId, storedCount) {
+            if (window._classOpsReady) return rebukeCountOf(window._rebukeBoard, studentId);
+            if (!window._classOpsLoading && typeof db !== 'undefined' && db) {
+                void ensureClassOpsLoaded().then(() => {
+                    if (typeof window.renderPlaza === 'function') {
+                        window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                    }
+                });
+            }
+            return Math.max(0, Math.floor(Number(storedCount) || 0));
+        }
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
@@ -20909,7 +20930,17 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
+                const rebukeCount = plazaRebukeCount(targetId, displayData.rebukeCount);
+                const myRebukeId = String(localStorage.getItem('sambong_student_id') || '');
+                const rebukeTitle = (window.playerState && window.playerState.isAdmin)
+                    ? '역따봉 이유와 보낸 사람 보기'
+                    : (myRebukeId === String(targetId)
+                        ? '내가 받은 역따봉 이유 보기'
+                        : `역따봉. 이유가 필요하고 내 돈 ${REBUKE_COST_BONG}${getCurrencyUnit()}이 빠져요`);
+                const praiseBtn = `<div class="plaza-praise-row">
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉. 나와 친구에게 칭찬이 들어가요"><span class="plaza-react-ico" aria-hidden="true">👍</span><span>따봉 ${praiseCount}</span></button>
+                    <button type="button" class="rebuke-btn" onclick="event.stopPropagation(); void window.givePeerRebuke('${targetId}')" title="${escapeHtmlAttr(rebukeTitle)}"><span class="plaza-react-ico" aria-hidden="true">👎</span><span>역따봉 ${rebukeCount}</span></button>
+                </div>`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
@@ -23517,14 +23548,16 @@ ${subjectLine}
             if (window._classOpsReady && !force) return;
             window._classOpsLoading = (async () => {
                 try {
-                    const [att, checks, praise] = await Promise.all([
+                    const [att, checks, praise, rebuke] = await Promise.all([
                         getDoc(classOpsRef('attendance')),
                         getDoc(classOpsRef('checklists')),
                         getDoc(classOpsRef('praise')),
+                        getDoc(classOpsRef('rebuke')),
                     ]);
                     window._attendanceDays = (att.exists() && att.data() && att.data().days) || {};
                     window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
                     window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
+                    window._rebukeBoard = sanitizeRebukeBoard(rebuke.exists() ? rebuke.data() : {});
                     window._classOpsReady = true;
                     await maybeRollPraiseAtMidnight();
                 } finally {
@@ -23821,6 +23854,154 @@ ${subjectLine}
             } catch (e) {
                 console.error('givePeerPraise', e);
                 await window.customAlert('따봉을 저장하지 못했습니다.');
+            }
+        };
+
+        function formatRebukeYmd(ymd) {
+            const parts = String(ymd || '').split('-');
+            if (parts.length !== 3) return String(ymd || '');
+            return `${Number(parts[1])}월 ${Number(parts[2])}일`;
+        }
+
+        function rebukeMoneyUnit() {
+            return escapeConvenienceHtml(getCurrencyUnit());
+        }
+
+        window.openRebukeReasons = async function(toId) {
+            const target = String(toId || '');
+            const myId = String(localStorage.getItem('sambong_student_id') || '');
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            if (!target || (!admin && myId !== target)) return;
+            await ensureClassOpsLoaded();
+            const modal = document.getElementById('rebukeReasonModal');
+            const title = document.getElementById('rebukeReasonTitle');
+            const hint = document.getElementById('rebukeReasonHint');
+            const list = document.getElementById('rebukeReasonList');
+            if (!modal || !title || !hint || !list) return;
+            const rows = admin
+                ? teacherRebukeReasons(window._rebukeBoard, target)
+                : anonymousRebukeReasons(window._rebukeBoard, target);
+            const who = getStudentDisplayLabel(target);
+            title.textContent = myId === target ? '내가 받은 역따봉' : `${who} 역따봉`;
+            hint.textContent = admin
+                ? '선생님은 누가 보냈는지 볼 수 있어요. 학생 화면에는 이유만 나와요.'
+                : '누가 보냈는지는 알 수 없어요. 이유만 보여요.';
+            list.replaceChildren();
+            if (!rows.length) {
+                const empty = document.createElement('li');
+                empty.className = 'rounded-2xl bg-slate-950 border border-rose-900 px-3 py-3 text-sm text-rose-50 font-bold';
+                empty.textContent = '아직 받은 역따봉이 없어요.';
+                list.appendChild(empty);
+            } else {
+                rows.forEach((row) => {
+                    const item = document.createElement('li');
+                    item.className = 'rounded-2xl bg-slate-950 border border-rose-900 px-3 py-2';
+                    const date = document.createElement('p');
+                    date.className = 'text-[11px] text-rose-200 font-bold';
+                    date.textContent = formatRebukeYmd(row.ymd);
+                    const body = document.createElement('p');
+                    body.className = 'text-sm text-white font-bold leading-relaxed';
+                    body.textContent = row.reason;
+                    item.append(date, body);
+                    if (admin && row.fromId) {
+                        const sender = document.createElement('p');
+                        sender.className = 'text-[11px] text-amber-200 font-bold mt-1';
+                        sender.textContent = `보낸 사람: ${getStudentDisplayLabel(row.fromId)}`;
+                        item.appendChild(sender);
+                    }
+                    list.appendChild(item);
+                });
+            }
+            modal.classList.remove('hidden');
+        };
+
+        window.givePeerRebuke = async function(toId) {
+            const target = String(toId || '');
+            const fromId = String(localStorage.getItem('sambong_student_id') || '');
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            if (admin || (fromId && fromId === target)) return window.openRebukeReasons(target);
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('로그인 후 역따봉을 보낼 수 있어요.');
+            if (!fromId) return;
+            if (studentIsCreditDefault(window.playerState)) return window.customAlert(playerCreditDefaultMessage());
+            const typed = await window.customPrompt(
+                `왜 역따봉을 보내나요?\n이유를 적어야 해요.\n친구는 이유만 보고, 내 이름은 못 봐요.\n보내면 내 돈에서 ${REBUKE_COST_BONG}${rebukeMoneyUnit()}가 빠져요.`,
+                'text'
+            );
+            if (typed == null) return;
+            await ensureClassOpsLoaded();
+            const today = getLocalDateStr();
+            const allowedIds = getActiveStudentIds();
+            const plan = planPeerRebuke(window._rebukeBoard, {
+                fromId,
+                toId: target,
+                today,
+                reason: typed,
+                senderBong: Number(window.playerState.bong) || 0,
+                receiverBong: 0,
+                allowedIds,
+            });
+            if (!plan.ok) return window.customAlert(rebukeFailMessage(plan.reason, rebukeMoneyUnit()));
+            const shownReason = escapeConvenienceHtml(plan.board.entries[plan.board.entries.length - 1].reason);
+            const ok = await window.customConfirm(
+                `이 친구에게 역따봉을 보낼까요?\n이유: ${shownReason}\n내 돈에서 ${REBUKE_COST_BONG}${rebukeMoneyUnit()}가 빠져요.\n친구는 이유만 보고, 내 이름은 못 봐요.`
+            );
+            if (!ok) return;
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const rebukeRef = classOpsRef('rebuke');
+            try {
+                const result = await runTransaction(db, async (tx) => {
+                    const rebukeSnap = await tx.get(rebukeRef);
+                    const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+                    const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + target);
+                    const fromSnap = await tx.get(fromRef);
+                    const toSnap = await tx.get(toRef);
+                    const fromData = fromSnap.exists() ? (fromSnap.data() || {}) : {};
+                    const toData = toSnap.exists() ? (toSnap.data() || {}) : {};
+                    const fresh = planPeerRebuke(rebukeSnap.exists() ? rebukeSnap.data() : {}, {
+                        fromId,
+                        toId: target,
+                        today,
+                        reason: typed,
+                        senderBong: Number(fromData.bong) || 0,
+                        receiverBong: Number(toData.bong) || 0,
+                        allowedIds,
+                    });
+                    if (!fresh.ok) return fresh;
+                    const fromXp = Math.max(0, Math.floor(Number(fromData.xp) || 0));
+                    const toXp = Math.max(0, Math.floor(Number(toData.xp) || 0));
+                    tx.set(fromRef, { xp: fromXp, bong: fresh.senderBong }, { merge: true });
+                    const toPatch = { xp: toXp, rebukeCount: fresh.received };
+                    if (fresh.receiverDelta !== 0 || !toSnap.exists()) toPatch.bong = fresh.receiverBong;
+                    tx.set(toRef, toPatch, { merge: true });
+                    tx.set(rebukeRef, fresh.board, { merge: false });
+                    return {
+                        ok: true,
+                        fresh,
+                        fromNext: { ...fromData, bong: fresh.senderBong },
+                        toNext: { ...toData, ...toPatch },
+                    };
+                });
+                if (!result || !result.ok) return window.customAlert(rebukeFailMessage(result && result.reason, rebukeMoneyUnit()));
+                window._rebukeBoard = result.fresh.board;
+                mergeStudentDocIntoPlazaCache(fromId, { ...result.fromNext, id: fromId });
+                mergeStudentDocIntoPlazaCache(target, { ...result.toNext, id: target });
+                if (window.playerState) {
+                    window.playerState.bong = result.fromNext.bong;
+                }
+                if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                updateUI();
+                const unit = getCurrencyUnit();
+                let toast = `역따봉을 보냈어요. 내 돈에서 ${REBUKE_COST_BONG}${unit}가 빠졌어요.`;
+                if (result.fresh.penaltySteps > 0 && result.fresh.receiverDelta < 0) {
+                    toast += ` 이 친구는 역따봉 ${result.fresh.received}개가 되어서 돈 ${Math.abs(result.fresh.receiverDelta)}${unit}이 더 빠졌어요.`;
+                } else if (result.fresh.penaltySteps > 0) {
+                    toast += ` 이 친구는 역따봉 ${result.fresh.received}개가 되었어요. 돈이 더 내려갈 수 없어 이번 감점은 없어요.`;
+                }
+                window.showToast && window.showToast(toast);
+            } catch (e) {
+                console.error('givePeerRebuke', e);
+                await window.customAlert('역따봉을 저장하지 못했어요.');
             }
         };
 
@@ -28817,7 +28998,7 @@ ${subjectLine}
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
+            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount', 'rebukeCount',
             'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
@@ -29331,6 +29512,7 @@ ${subjectLine}
                 loanPenaltyUntilYmd: '',
                 attendanceMark: null,
                 praiseCount: 0,
+                rebukeCount: 0,
                 dailyAllClearBonusDate: '',
                 stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
                 stockInvestDaily: { date: '', profit: 0, sells: 0 },

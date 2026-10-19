@@ -22819,10 +22819,9 @@ ${subjectLine}
                     if (text) setTimeout(() => { void window.customAlert(text); }, 80);
                     return;
                 }
-                if (wroteNotices) {
-                    markLoanNoticeShown(row.key);
-                    return;
-                }
+                // 같은 접속의 다른 저장이 키를 먼저 적었을 수 있습니다.
+                // 여기서 본 것으로 처리하면, 키를 차지한 저장이 문장을 띄우지 못합니다.
+                if (wroteNotices && loanNoticeAlreadyShown(row.key)) return;
                 next.push(row);
             });
             _pendingLoanNotices = next;
@@ -26535,10 +26534,10 @@ ${subjectLine}
                     window.playerState.loanPenaltyUntilYmd = dataToSave.loanPenaltyUntilYmd || '';
                 }
                 Object.assign(window.playerState, copyCreditFields(dataToSave));
+                if (opts.wroteLoanNotices) flushClaimedLoanNotices(opts.claimedLoanNoticeKeys, true);
                 if (Array.isArray(dataToSave.loanNoticeShownKeys)) {
                     window.playerState.loanNoticeShownKeys = dataToSave.loanNoticeShownKeys;
                 }
-                if (opts.wroteLoanNotices) flushClaimedLoanNotices(opts.claimedLoanNoticeKeys, true);
                 if (opts.lunchJustDeducted && opts.lunchFeeJustDeducted && !_lunchAlertYmd.has(loanPlanToday())) {
                     _lunchAlertYmd.add(loanPlanToday());
                     const paid = formatBongAmount(opts.lunchFeeJustDeducted);

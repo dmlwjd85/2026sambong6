@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
 import {
     getFirestore,
     connectFirestoreEmulator,
@@ -383,15 +383,12 @@ import {
     classifyAuthError,
     HOME_CLASS_IDLE_AUTH_NOTICE,
     TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
-    isTeacherProvider,
     planGmIdleExpiry,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
-    shouldApplyTeacherBadgeRead,
     shouldSignOutNonAnonymousForPinLogin,
     shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
-    teacherAuthStatusText,
 } from './lib/adminAuth.js';
 import {
     extractWeatherJson,
@@ -4784,179 +4781,43 @@ function redrawPlazaGrantsUi() {
             return (error && error.message) ? error.message : String(error);
         }
 
-        function renderTeacherAuthBadges(state) {
-            const text = teacherAuthStatusText(state);
+        function renderTeacherAuthBadges() {
+            const gm = !!(window.playerState && window.playerState.isAdmin);
+            const text = gm ? '마스터 PIN으로 저장' : '학생 화면';
             document.querySelectorAll('.teacher-auth-badge').forEach((el) => {
                 el.textContent = text;
-                el.classList.toggle('text-emerald-300', !!(state && state.allowlisted));
-                el.classList.toggle('text-rose-300', !!(state && state.authenticated && !state.allowlisted));
-                el.classList.toggle('text-slate-300', !(state && state.authenticated));
+                el.classList.toggle('text-emerald-300', gm);
+                el.classList.toggle('text-rose-300', false);
+                el.classList.toggle('text-slate-300', !gm);
             });
         }
 
-        async function readTeacherAllowlist(user) {
-            if (!db || !isTeacherProvider(user)) {
-                return { authenticated: false, allowlisted: false, email: '' };
-            }
-            const email = String(user.email || (user.providerData && user.providerData[0] && user.providerData[0].email) || '');
-            try {
-                const snap = await getDoc(doc(db, 'admins', user.uid));
-                return { authenticated: true, allowlisted: snap.exists(), email };
-            } catch (e) {
-                console.warn('admins read', e);
-                return { authenticated: true, allowlisted: false, email };
-            }
-        }
-
-        let teacherBadgeReadGeneration = 0;
         async function refreshTeacherAuthBadge() {
-            if (!auth) return;
-            const generation = ++teacherBadgeReadGeneration;
-            const user = auth.currentUser;
-            if (!isTeacherProvider(user)) {
-                renderTeacherAuthBadges({ authenticated: false, allowlisted: false, email: '' });
-            } else {
-                const state = await readTeacherAllowlist(user);
-                // 학생 PIN 로그인이 그 사이에 선생님 세션을 끊으면, 늦게 도착한 허용 목록으로
-                // "인증됨"을 다시 그리지 않습니다.
-                if (generation !== teacherBadgeReadGeneration) return;
-                if (shouldApplyTeacherBadgeRead(user, auth.currentUser)) {
-                    renderTeacherAuthBadges(state);
-                }
-            }
-            if (generation !== teacherBadgeReadGeneration) return;
-            // 배지 조회가 끝난 시점의 isAdmin 으로 도구 목록을 다시 그립니다.
-            // 마스터 표시가 로그인보다 늦어도 온도계 버튼이 숨은 채로 남지 않습니다.
+            renderTeacherAuthBadges();
             if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
             if (window.playerState && window.playerState.isAdmin && typeof renderLearningThermometerPanel === 'function') {
                 renderLearningThermometerPanel();
             }
         }
 
-        async function ensureTeacherAuth(options = {}) {
-            if (!auth || !db) {
-                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown') };
-            }
-            await auth.authStateReady();
-            let user = auth.currentUser;
-            const email = String(options.email || '').trim();
-            const password = String(options.password || '');
-            if (email && password) {
-                try {
-                    const cred = await signInWithEmailAndPassword(auth, email, password);
-                    user = cred.user;
-                } catch (e) {
-                    const reason = classifyAuthError(e);
-                    return { ok: false, reason, message: teacherAuthFailureMessage(reason), showEmail: true };
-                }
-            } else if (!isTeacherProvider(user)) {
-                try {
-                    const provider = new GoogleAuthProvider();
-                    provider.setCustomParameters({ prompt: 'select_account' });
-                    const cred = await signInWithPopup(auth, provider);
-                    user = cred.user;
-                } catch (e) {
-                    const reason = classifyAuthError(e);
-                    return {
-                        ok: false,
-                        reason,
-                        message: teacherAuthFailureMessage(reason),
-                        showEmail: reason === 'popup_blocked',
-                    };
-                }
-            }
-            if (!isTeacherProvider(user)) {
-                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown'), showEmail: true };
-            }
-            const state = await readTeacherAllowlist(user);
-            renderTeacherAuthBadges(state);
-            try {
-                await user.getIdToken(true);
-            } catch (e) {
-                console.warn('teacher getIdToken', e);
-            }
-            if (!state.allowlisted) {
-                return { ok: false, reason: 'not_allowlisted', message: teacherAuthFailureMessage('not_allowlisted') };
-            }
-            if (window.playerState && window.playerState.isAdmin) void runAdminOneShotMigrations();
-            if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
-            return { ok: true, email: state.email };
-        }
-
+        /** 마스터 PIN 화면의 저장. Google 계정이나 admins 문서를 요구하지 않습니다. */
         async function requireGmSettingsAuth() {
-            const result = await ensureTeacherAuth();
-            if (!result.ok) {
-                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
-                    window.openTeacherAuthModal({ showEmail: true });
-                }
-                await window.customAlert(result.message);
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('로그인 세션을 준비하지 못했습니다. 다시 시도해 주세요.');
                 return false;
             }
             return true;
         }
 
         async function assertGmSettingsAuth() {
-            const result = await ensureTeacherAuth();
-            if (!result.ok) {
-                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
-                    window.openTeacherAuthModal({ showEmail: true });
-                }
-                const err = new Error(result.message);
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                const err = new Error('로그인 세션을 준비하지 못했습니다. 다시 시도해 주세요.');
                 err.teacherAuth = true;
                 throw err;
             }
         }
-
-        window.openTeacherAuthModal = function(options = {}) {
-            const modal = document.getElementById('teacherAuthModal');
-            const form = document.getElementById('teacherAuthEmailForm');
-            const hint = document.getElementById('teacherAuthModalHint');
-            if (form) form.classList.toggle('hidden', !options.showEmail);
-            if (hint) {
-                hint.textContent = options.showEmail
-                    ? 'Google 창을 열 수 없습니다. 이메일과 비밀번호로 인증해 주세요.'
-                    : 'Google 계정으로 인증합니다. 창이 막히면 이메일과 비밀번호를 사용하세요.';
-            }
-            if (modal) modal.classList.remove('hidden');
-        };
-
-        window.closeTeacherAuthModal = function() {
-            const modal = document.getElementById('teacherAuthModal');
-            if (modal) modal.classList.add('hidden');
-        };
-
-        window.showTeacherEmailFallback = function() {
-            const form = document.getElementById('teacherAuthEmailForm');
-            if (form) form.classList.remove('hidden');
-        };
-
-        window.startTeacherGoogleAuth = async function() {
-            const result = await ensureTeacherAuth();
-            if (!result.ok) {
-                if (result.showEmail) window.openTeacherAuthModal({ showEmail: true });
-                await window.customAlert(result.message);
-                return;
-            }
-            window.closeTeacherAuthModal();
-            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
-        };
-
-        window.startTeacherEmailAuth = async function() {
-            const email = String(document.getElementById('teacherAuthEmail')?.value || '').trim();
-            const password = String(document.getElementById('teacherAuthPassword')?.value || '');
-            if (!email || !password) {
-                await window.customAlert('이메일과 비밀번호를 입력해 주세요.');
-                return;
-            }
-            const result = await ensureTeacherAuth({ email, password });
-            if (!result.ok) {
-                window.openTeacherAuthModal({ showEmail: true });
-                await window.customAlert(result.message);
-                return;
-            }
-            window.closeTeacherAuthModal();
-            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
-        };
 
         /** 전역 로딩 스피너 / 에러 표시 */
         window.showGlobalLoading = function(msg) {
@@ -11432,8 +11293,6 @@ ${subjectLine}
         let _learningThermometerEditActive = false;
         let _learningThermometerSavePending = false;
         let _learningThermometerIgnoreRemoteUntil = 0;
-        let _thermometerAuthPromptAt = 0;
-        let _thermometerSettleAuthNoticeDate = '';
         let _thermometerUnsaved = false;
         const _thermometerPendingVoteIds = new Set();
 
@@ -11446,7 +11305,7 @@ ${subjectLine}
         }
 
         function canEditLearningThermometer() {
-            return canManageLearningThermometer() && isTeacherProvider(auth && auth.currentUser);
+            return canManageLearningThermometer();
         }
 
         function learningThermometerHasUnsavedEdits() {
@@ -11817,8 +11676,7 @@ ${subjectLine}
 
         function updateClassToolsPanelVisibility() {
             const grid = document.getElementById('classtoolsAppGrid');
-            // 목록 표시는 마스터 로그인(isAdmin)만 본다. 온도계 편집에 필요한
-            // 선생님 인증이 아직 없어도 마스터에게는 온도계 버튼을 숨기지 않는다.
+            // 목록 표시와 편집은 마스터 PIN 로그인(isAdmin)만 본다.
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             const masterBar = document.getElementById('classtoolsMasterBar');
             if (masterBar) masterBar.classList.toggle('hidden', !isAdmin);
@@ -14749,13 +14607,6 @@ ${subjectLine}
             });
         }
 
-        async function ensureThermometerTeacher() {
-            if (isTeacherProvider(auth && auth.currentUser)) return true;
-            if (Date.now() - _thermometerAuthPromptAt < 20000) return false;
-            _thermometerAuthPromptAt = Date.now();
-            return requireGmSettingsAuth();
-        }
-
         async function ensureLearningThermometerParent(state) {
             const ref = getLearningThermometerDocRef();
             const snap = await getDoc(ref);
@@ -14892,13 +14743,13 @@ ${subjectLine}
             const now = new Date();
             const today = getLocalDateStr();
             const unsavedText = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
-            let autoText = '15:00 이후, 선생님 인증이 있으면 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
+            let autoText = '15:00 이후 마스터 화면에서 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
             if (!canEdit && canManage) {
-                autoText = '선생님 인증 필요. 슬라이더와 +/- 는 움직일 수 없습니다. 정산은 인증 후 지금 XP 반영으로 실행합니다.';
+                autoText = '마스터 PIN으로 다시 들어오면 슬라이더를 저장할 수 있습니다.';
             } else if (now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR) {
                 autoText = state.settledDate === today
                     ? '오늘 15시 정산 완료'
-                    : '15시 이후입니다. 선생님 인증이 있으면 자동 정산되고, 아니면 지금 XP 반영을 누르세요.';
+                    : '15시 이후입니다. 마스터 화면에서 자동 정산되거나, 지금 XP 반영을 누르세요.';
             }
             status.innerHTML = `
                 <span class="font-bold text-sky-100">${today}</span>
@@ -14943,12 +14794,6 @@ ${subjectLine}
                 _learningThermometerSavePending = true;
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
-                if (!isTeacherProvider(auth && auth.currentUser)) {
-                    _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
-                    if (!silent) await ensureThermometerTeacher();
-                    renderLearningThermometerPanel();
-                    return false;
-                }
                 const state = getLearningThermometerState();
                 await ensureLearningThermometerParent(state);
                 await seedMissingThermometerVotesFromLegacy(state);
@@ -15064,7 +14909,7 @@ ${subjectLine}
 
         /** 배포 직후 1회: 김라희(2번) 온도계 값이 버그로 최고치에 고정된 경우 초기화 */
         async function applyLearningThermometerRahiMaxHotfix() {
-            if (!db || !isTeacherProvider(auth && auth.currentUser)) return;
+            if (!db || !auth || !auth.currentUser) return;
             const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'learning_thermometer_rahi_max_hotfix_v1');
             const thermoRef = getLearningThermometerDocRef();
             try {
@@ -15112,12 +14957,8 @@ ${subjectLine}
             const now = new Date();
             if (!manual && now.getHours() < LEARNING_THERMOMETER_AUTO_HOUR) return { status: 'too_early' };
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
-
-            if (!isTeacherProvider(auth && auth.currentUser)) {
-                if (!manual) return { status: 'auth' };
-                const teacherOk = await ensureThermometerTeacher();
-                if (!teacherOk) return { status: 'auth' };
-            }
+            const sessionOk = await ensureAnonAuthReady();
+            if (!sessionOk) return { status: 'auth' };
 
             _learningThermometerSettlementRunning = true;
             try {
@@ -15164,14 +15005,6 @@ ${subjectLine}
             const state = getLearningThermometerState();
             const today = getLocalDateStr();
             if (state.settledDate === today && state.settlementStatus !== 'running') return;
-            if (!isTeacherProvider(auth && auth.currentUser)) {
-                if (_thermometerSettleAuthNoticeDate !== today) {
-                    _thermometerSettleAuthNoticeDate = today;
-                    renderLearningThermometerPanel();
-                    void window.customAlert('학습 온도계 자동 정산을 실행하지 못했습니다.\n\n선생님 계정 인증이 없습니다. 슬라이더 값은 저장되지 않습니다.\n학습 온도계의 지금 XP 반영 버튼으로 인증한 뒤 정산해 주세요.');
-                }
-                return;
-            }
             void settleLearningThermometer({ manual: false });
         }
 
@@ -20058,7 +19891,7 @@ ${subjectLine}
                                         window.renderWorldSettingsPanel();
                                     }
                                 }
-                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate && isTeacherProvider(auth && auth.currentUser)) {
+                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate) {
                                     window._appliedPendingTemplate = true;
                                     void (async () => {
                                         try {
@@ -24828,7 +24661,7 @@ ${subjectLine}
                 resetGmIdleTimer();
                 return;
             }
-            // 원래 학급(sambong-class-2026): 선생님 인증 배지만 내린다.
+            // 원래 학급(sambong-class-2026): 남아 있는 Google 계정만 끊는다.
             // PIN localStorage, 화면 로그인, 익명 세션은 그대로 두고 새로고침하지 않는다.
             if (mode === 'end-teacher-auth') {
                 const hadTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
@@ -28988,7 +28821,6 @@ ${subjectLine}
         /** 마스터 접속 시 1회 마이그레이션은 서버 설정을 확인한 뒤에만 돌립니다. */
         async function runAdminOneShotMigrations() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
-            if (!isTeacherProvider(auth && auth.currentUser)) return;
             if (window._adminOneShotMigrationsDone || window._adminOneShotMigrationsRunning) return;
             window._adminOneShotMigrationsRunning = true;
             try {

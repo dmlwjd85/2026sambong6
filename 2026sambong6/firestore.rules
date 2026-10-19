@@ -9,51 +9,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 선생님 계정은 익명이 아닌 로그인(Google 또는 이메일/비밀번호)이고
-    // admins/{uid} 문서가 있을 때만 인정합니다. updatedBy 문자열은 보지 않습니다.
-    // 학생 익명 세션은 로또·뮤직타임·방패 재고처럼 학생이 쓰는 키만 바꿀 수 있습니다.
+    // 마스터 PIN 로그인은 익명 Firebase 인증입니다.
+    // Google 로그인이나 admins/{uid} 는 보지 않습니다. 로그인한 세션이면 형식이 맞을 때 씁니다.
+    // PIN 대조는 브라우저에서만 하므로, 학생 익명 세션도 같은 쓰기 규칙을 탑니다.
     // 스킨 구매 시각(request.time)은 여기서 보지 않습니다. 가격표는 앱에만 있고
     // 규칙에는 반올림이 없으며, 학생 문서는 퀘스트·은행·선생님 복구가 한 번에 덮입니다.
     // {document=**} 는 path 라서 문자열과 바로 비교하지 않습니다.
-    function isAdmin() {
-      return signedIn()
-        && request.auth.token is map
-        && 'firebase' in request.auth.token
-        && request.auth.token.firebase is map
-        && 'sign_in_provider' in request.auth.token.firebase
-        && request.auth.token.firebase.sign_in_provider is string
-        && request.auth.token.firebase.sign_in_provider != 'anonymous'
-        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
-
-    function adminRecord() {
-      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
-    }
-
-    // 이미 있는 학급 설정은 admins.classIds 에 그 학급 ID가 있을 때만 고칩니다.
-    function isAdminForApp(appId) {
-      return isAdmin()
-        && adminRecord().classIds is list
-        && appId in adminRecord().classIds;
-    }
-
-    function hasApprovedClassGrant(classId) {
-      return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
-    }
-
-    function approvedClassGrant(classId) {
-      return get(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId)).data;
-    }
-
-    // 새 학급 문서는 classIds에 그 ID가 있거나, 시드 학급 선생님이 남긴 승인 표식의 createdBy가
-    // 지금 요청한 선생님 uid와 같을 때만 만듭니다.
-    function canCreateClassSettings(appId) {
-      return isAdminForApp(appId) || (
-        isAdmin()
-        && hasApprovedClassGrant(appId)
-        && approvedClassGrant(appId).createdBy == request.auth.uid
-      );
-    }
 
     function isSettingsGlobalDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/global$');
@@ -87,7 +48,8 @@ service cloud.firestore {
         || (request.method == 'update' && classXpSlotWriteOk());
     }
 
-    // 학생 화면이 쓰지 않는 것이 확인된 키만 둡니다. 애매한 키는 넣지 않습니다.
+    // 선생님 화면이 주로 쓰는 키 목록입니다. 권한으로 막지는 않고, 할인 형식처럼
+    // 따로 검사하는 필드만 규칙을 탑니다. 목록은 앱의 GM_ONLY_SETTING_KEYS 와 맞춥니다.
     function gmOnlyKeys() {
       return [
         'shopPrices',
@@ -305,8 +267,7 @@ service cloud.firestore {
         && d.keys().hasOnly(['value'])
         && d.value is int
         && exists(/databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer)
-        && thermometerVoteInRange(appId, d.value)
-        && (isAdminForApp(appId) || studentId == request.auth.uid);
+        && thermometerVoteInRange(appId, d.value);
     }
 
     function shopDiscountUntouched() {
@@ -396,19 +357,14 @@ service cloud.firestore {
     }
 
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 생성은 classIds 또는 시드 학급 승인 표식이 있어야 합니다.
-    // shopDiscount 와 GM 전용 키를 바꾸려면 학급 관리자입니다. 앱은 이 문서를 지우지 않습니다.
+    // 로그인한 세션(마스터 PIN 익명 포함)이면 만들고 고칩니다.
+    // 할인이 있으면 형식만 검사합니다. 앱은 이 문서를 지우지 않습니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
-      allow create: if canCreateClassSettings(appId)
+      allow create: if signedIn()
         && (!createHasShopDiscount() || shopDiscountChangeIsValid());
-      allow update: if signedIn() && (
-        (shopDiscountUntouched() && gmOnlyUntouched())
-        || (
-          isAdminForApp(appId)
-          && (shopDiscountUntouched() || shopDiscountChangeIsValid())
-        )
-      );
+      allow update: if signedIn()
+        && (shopDiscountUntouched() || shopDiscountChangeIsValid());
       allow delete: if false;
     }
 
@@ -423,26 +379,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 학습 온도계 부모. 생성·수정은 그 학급 선생님만 합니다. 학생별 값은 votes 하위 문서입니다.
+    // 학습 온도계 부모. 로그인한 세션이 형식을 지키면 만들고 고칩니다. 학생별 값은 votes 하위 문서입니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer {
       allow read: if true;
-      allow create: if isAdminForApp(appId) && thermometerShapeOk();
-      allow update: if isAdminForApp(appId) && thermometerShapeOk();
+      allow create: if signedIn() && thermometerShapeOk();
+      allow update: if signedIn() && thermometerShapeOk();
       allow delete: if false;
     }
 
-    // 학생 본인 문서는 Firebase uid와 문서 ID가 같을 때만, 선생님은 학번 문서를 씁니다.
-    // 익명 로그인 uid는 학번이 아니므로 학생은 다른 학생 값을 쓰지 못합니다.
+    // 학번 문서를 마스터 PIN(익명 uid)도 쓸 수 있게, 문서 ID와 uid가 달라도 형식만 맞으면 허용합니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer/votes/{studentId} {
       allow read: if true;
       allow create, update: if signedIn() && thermometerVoteOk(appId, studentId);
       allow delete: if false;
     }
 
-    // 학급 개설 직전, 시드 학급 선생님만 만들고 createdBy에 자기 uid를 남깁니다.
+    // 학급 개설 표식. 로그인한 세션이 자기 uid를 createdBy에 남기고 필드 형식이 맞을 때만 만듭니다.
     match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
       allow read: if signedIn();
-      allow create: if isAdminForApp('sambong-class-2026')
+      allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['classId', 'status', 'createdBy'])
         && request.resource.data.classId == classId
         && request.resource.data.status == 'approved'
@@ -451,7 +406,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
+    // 예전 허용목록. 저장 권한에는 쓰지 않습니다. 클라이언트는 만들거나 고치지 못합니다.
     match /admins/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow write: if false;

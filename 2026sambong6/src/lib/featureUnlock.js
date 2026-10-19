@@ -71,7 +71,7 @@ export function canOpenClassTool(playerState, toolId) {
 /**
  * 수업 탭 도구 버튼의 숨김·잠금.
  * 온도계를 포함한 마스터 전용 도구는 playerState.isAdmin 이면 목록에 둡니다.
- * 선생님 계정 인증(Google·이메일)은 값을 고치는 권한이고, 버튼을 보여줄 조건이 아닙니다.
+ * 값을 고치는 조건도 마스터 PIN 로그인(isAdmin)입니다. Google 계정은 보지 않습니다.
  * isAdmin 이 나중에 true 가 되면 이 함수를 다시 호출해 온도계를 그리면 됩니다.
  */
 export function classToolButtonState(playerState, toolId, activeToolId = '') {

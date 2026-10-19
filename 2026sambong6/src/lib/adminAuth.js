@@ -211,7 +211,7 @@ export function teacherAuthFailureMessage(reason) {
         case 'provider_disabled':
             return '이 로그인 방식이 아직 켜져 있지 않습니다. Firebase 콘솔에서 Google 또는 이메일/비밀번호를 사용 설정해 주세요.';
         case 'permission_denied':
-            return '저장이 거부되었습니다. 선생님 계정 인증, admins 문서, classIds에 이 학급 ID가 있는지 확인해 주세요.';
+            return '저장이 거부되었습니다. 로그인 세션이 없거나 값 형식이 규칙과 맞지 않습니다.';
         default:
             return '선생님 계정 인증에 실패했습니다. 다시 시도해 주세요.';
     }

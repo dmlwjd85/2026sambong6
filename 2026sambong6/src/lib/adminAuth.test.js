@@ -63,10 +63,11 @@ describe('선생님 인증 판별', () => {
         assert.equal(teacherAuthStatusText({ allowlisted: true, email: '' }), '인증됨');
         assert.match(teacherAuthFailureMessage('popup_blocked'), /이메일/);
         assert.match(teacherAuthFailureMessage('not_allowlisted'), /권한 없음/);
-        assert.match(teacherAuthFailureMessage('permission_denied'), /admins/);
+        assert.match(teacherAuthFailureMessage('permission_denied'), /값 형식/);
+        assert.doesNotMatch(teacherAuthFailureMessage('permission_denied'), /admins/);
     });
 
-    it('규칙의 GM 전용 키 목록과 맞고 updatedBy 검사는 없다', () => {
+    it('규칙의 GM 전용 키 목록은 남고 Google·admins 조건은 없다', () => {
         const rules = fs.readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8');
         const listed = [...rules.matchAll(/'([A-Za-z0-9_]+)'/g)].map((match) => match[1]);
         GM_ONLY_SETTING_KEYS.forEach((key) => {
@@ -74,10 +75,14 @@ describe('선생님 인증 판별', () => {
         });
         assert.equal(GM_IDLE_LOGOUT_MS, 15 * 60 * 1000);
         assert.equal(ORIGINAL_HOME_CLASS_ID, 'sambong-class-2026');
-        assert.match(rules, /function isAdmin\(\)/);
-        assert.match(rules, /function isAdminForApp\(appId\)/);
-        assert.match(rules, /sign_in_provider != 'anonymous'/);
-        assert.match(rules, /documents\/admins\/\$\(request\.auth\.uid\)/);
+        assert.match(rules, /function gmOnlyKeys\(\)/);
+        assert.match(rules, /function shopDiscountChangeIsValid\(\)/);
+        assert.match(rules, /function autoXpShapeOk\(\)/);
+        assert.match(rules, /function thermometerShapeOk\(\)/);
+        assert.doesNotMatch(rules, /function isAdmin\(\)/);
+        assert.doesNotMatch(rules, /function isAdminForApp\(/);
+        assert.doesNotMatch(rules, /sign_in_provider != 'anonymous'/);
+        assert.doesNotMatch(rules, /documents\/admins\/\$\(request\.auth\.uid\)/);
         assert.doesNotMatch(rules, /updatedBy\s*==/);
         assert.doesNotMatch(rules, /\.updatedBy/);
         assert.match(rules, /allow delete: if false;/);

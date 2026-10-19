@@ -1431,10 +1431,9 @@
                 <div id="gmSkinDiscountPanel" class="inner-pane-gm hidden glass-panel p-4 rounded-xl border border-pink-500/50 bg-slate-900/80 mt-3">
                     <div class="teacher-auth-card flex flex-wrap items-center justify-between gap-2 mb-3 pb-3 border-b border-pink-500/30">
                         <div>
-                            <p class="text-[11px] font-black text-amber-100">선생님 계정 인증</p>
-                            <p class="teacher-auth-badge text-[10px] font-bold text-slate-300">미인증</p>
+                            <p class="text-[11px] font-black text-amber-100">마스터 PIN 저장</p>
+                            <p class="teacher-auth-badge text-[10px] font-bold text-slate-300">마스터 PIN으로 저장</p>
                         </div>
-                        <button type="button" onclick="window.openTeacherAuthModal()" class="bg-amber-500 hover:bg-amber-400 text-stone-900 font-black py-2 px-3 rounded-xl text-[10px]">선생님 계정 인증</button>
                     </div>
                     <h3 class="text-white font-bold text-sm mb-1"><i class="fa-solid fa-tags text-pink-400"></i> 캐릭터 상점 전체 할인</h3>
                     <p class="text-[9px] text-slate-400 mb-3 leading-relaxed">스킨(캐릭터·오라)에만 적용됩니다. 아이템 상점, 학급 아이템, 편의점, 복권, 공동구매 가격은 바뀌지 않습니다. 날짜는 한국 시간(KST)이며 종료일은 그날 23:59까지입니다.</p>
@@ -2185,14 +2184,14 @@
                                 <p class="text-[10px] font-black tracking-[0.35em] text-sky-300/90 hidden sm:block">CLASS TEMPERATURE</p>
                                 <h2 class="text-xl sm:text-2xl font-display text-sky-50 tracking-wide">학습 온도계</h2>
                                 <div class="mt-1 flex flex-wrap gap-1">
-                                    <span id="learningThermometerAuthBadge" class="hidden text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-100 border border-amber-300/50">선생님 인증 필요</span>
+                                    <span id="learningThermometerAuthBadge" class="hidden text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-100 border border-amber-300/50">마스터 PIN 필요</span>
                                     <span id="learningThermometerUnsavedBadge" class="hidden text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-100 border border-rose-300/50">미저장</span>
                                 </div>
                             </div>
                         </div>
                         <div class="text-[9px] sm:text-[10px] text-sky-100/70 leading-relaxed lg:text-right hidden md:block">
                             학생별 수업태도·과제 결과를 위아래로 조절합니다.<br>
-                            선생님 인증 전에는 슬라이더와 +/- 가 움직이지 않습니다. 15:00 이후 인증된 화면에서 자동 정산되고, 그 전에는 지금 XP 반영을 누릅니다.
+                            마스터 PIN으로 들어오면 슬라이더와 +/- 를 저장합니다. 15:00 이후 마스터 화면에서 자동 정산되고, 그 전에는 지금 XP 반영을 누릅니다.
                         </div>
                     </div>
 
@@ -2749,12 +2748,11 @@
             <div class="teacher-auth-card glass-panel p-3 rounded-xl border border-amber-400/50 bg-slate-900/80 mb-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <p class="text-[11px] font-black text-amber-100">선생님 계정 인증</p>
-                        <p class="teacher-auth-badge text-[10px] font-bold text-slate-300">미인증</p>
+                        <p class="text-[11px] font-black text-amber-100">마스터 PIN 저장</p>
+                        <p class="teacher-auth-badge text-[10px] font-bold text-slate-300">마스터 PIN으로 저장</p>
                     </div>
-                    <button type="button" onclick="window.openTeacherAuthModal()" class="bg-amber-500 hover:bg-amber-400 text-stone-900 font-black py-2 px-3 rounded-xl text-[10px]">선생님 계정 인증</button>
                 </div>
-                <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">할인, 상점, 퀘스트, 직업, 월드 설정처럼 선생님만 저장하는 항목은 Google 계정 또는 이메일 인증이 필요합니다. 학생 로그인은 바꾸지 않습니다.</p>
+                <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">할인, 상점, 퀘스트, 직업, 월드 설정은 마스터 PIN으로 들어온 화면에서 저장합니다. Google 계정은 필요 없습니다. 학생 로그인은 바꾸지 않습니다.</p>
             </div>
             <div class="js-season2-start-card mb-3 rounded-2xl border-2 border-yellow-300 bg-amber-500 p-4 space-y-2 shadow-[0_6px_0_#92400e]">
                 <p class="text-base font-black text-stone-900"><i class="fa-solid fa-flag-checkered"></i> 시즌 2 시작</p>
@@ -3001,12 +2999,11 @@
             <div class="teacher-auth-card glass-panel p-3 rounded-xl border border-amber-400/50 bg-slate-900/80">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <p class="text-[11px] font-black text-amber-100">선생님 계정 인증</p>
-                        <p class="teacher-auth-badge text-[10px] font-bold text-slate-300">미인증</p>
+                        <p class="text-[11px] font-black text-amber-100">마스터 PIN 저장</p>
+                        <p class="teacher-auth-badge text-[10px] font-bold text-slate-300">마스터 PIN으로 저장</p>
                     </div>
-                    <button type="button" onclick="window.openTeacherAuthModal()" class="bg-amber-500 hover:bg-amber-400 text-stone-900 font-black py-2 px-3 rounded-xl text-[10px]">선생님 계정 인증</button>
                 </div>
-                <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">월드 이름, 레이드 비밀번호, 주말 레이드 보상을 저장하려면 인증된 선생님 계정이 필요합니다.</p>
+                <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">월드 이름, 레이드 비밀번호, 주말 레이드 보상은 마스터 PIN으로 들어온 뒤 저장합니다.</p>
             </div>
             <div class="js-season2-start-card mb-3 rounded-2xl border-2 border-yellow-300 bg-amber-500 p-4 space-y-2 shadow-[0_6px_0_#92400e]">
                 <p class="text-base font-black text-stone-900"><i class="fa-solid fa-flag-checkered"></i> 시즌 2 시작</p>
@@ -3835,20 +3832,6 @@
             <h3 class="text-amber-200 font-black text-xl">빵빠레!</h3>
             <p id="praiseFanfareBody" class="text-sm text-amber-50 font-bold leading-relaxed"></p>
             <button type="button" onclick="document.getElementById('praiseFanfareModal').classList.add('hidden')" class="w-full bg-amber-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
-        </div>
-    </div>
-    <div id="teacherAuthModal" class="hidden fixed inset-0 z-[860] bg-black/75 flex items-center justify-center p-4">
-        <div class="bg-slate-900 border border-amber-400/60 rounded-2xl p-4 w-full max-w-sm space-y-3 shadow-2xl">
-            <h3 class="text-amber-100 font-black text-sm">선생님 계정 인증</h3>
-            <p id="teacherAuthModalHint" class="text-[11px] text-slate-300 leading-relaxed">Google 계정으로 인증합니다. 창이 막히면 이메일과 비밀번호를 사용하세요.</p>
-            <button type="button" onclick="window.startTeacherGoogleAuth()" class="w-full bg-white text-slate-900 font-black py-2.5 rounded-xl text-xs min-h-[44px]">Google로 인증</button>
-            <button type="button" onclick="window.showTeacherEmailFallback()" class="w-full bg-slate-800 text-slate-100 font-bold py-2 rounded-xl text-[11px] border border-slate-600 min-h-[44px]">이메일로 로그인</button>
-            <form id="teacherAuthEmailForm" class="hidden space-y-2" onsubmit="return false;">
-                <input id="teacherAuthEmail" type="email" autocomplete="username" placeholder="이메일" class="w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs min-h-[44px]">
-                <input id="teacherAuthPassword" type="password" autocomplete="current-password" placeholder="비밀번호" class="w-full bg-slate-950 border border-slate-600 text-white rounded-xl px-3 py-2 text-xs min-h-[44px]">
-                <button type="button" onclick="window.startTeacherEmailAuth()" class="w-full bg-amber-500 text-stone-900 font-black py-2 rounded-xl text-xs min-h-[44px]">이메일로 인증</button>
-            </form>
-            <button type="button" onclick="window.closeTeacherAuthModal()" class="w-full text-slate-400 text-[11px] py-1 min-h-[44px]">닫기</button>
         </div>
     </div>
     <script type="module" src="/src/main.jsx"></script>

@@ -512,12 +512,10 @@ import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitCl
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
-    clearedLearningThermometerLegacy,
+    buildThermometerParentPayload,
     createThermometerLockOwner,
-    decideThermometerLockClaim,
-    finishThermometerSettlement,
-    grantThermometerStudentXp,
-    planThermometerSettlement,
+    sanitizeThermometerParentState,
+    settleThermometerResolvingPrior,
 } from './lib/learningThermometerSettlement.js';
 import {
     pickThermometerDisplayValues,
@@ -14727,44 +14725,11 @@ ${subjectLine}
         };
 
         function sanitizeLearningThermometerState(raw) {
-            const today = getLocalDateStr();
-            const src = raw && typeof raw === 'object' ? raw : {};
-            let min = Math.floor(Number(src.min));
-            let max = Math.floor(Number(src.max));
-            if (!Number.isFinite(min)) min = LEARNING_THERMOMETER_DEFAULT_MIN;
-            if (!Number.isFinite(max)) max = LEARNING_THERMOMETER_DEFAULT_MAX;
-            min = Math.max(-500, Math.min(0, min));
-            max = Math.min(500, Math.max(0, max));
-            if (min >= max) {
-                min = LEARNING_THERMOMETER_DEFAULT_MIN;
-                max = LEARNING_THERMOMETER_DEFAULT_MAX;
-            }
-
-            const values = {};
-            const rawValues = src.values && typeof src.values === 'object' ? src.values : {};
-            Object.keys(rawValues).forEach((sid) => {
-                const id = String(sid);
-                const val = Math.max(min, Math.min(max, Math.round(Number(rawValues[id]) || 0)));
-                if (val !== 0) values[id] = val;
+            return sanitizeThermometerParentState(raw, {
+                today: getLocalDateStr(),
+                minDefault: LEARNING_THERMOMETER_DEFAULT_MIN,
+                maxDefault: LEARNING_THERMOMETER_DEFAULT_MAX,
             });
-
-            const stateDate = src.date ? String(src.date) : today;
-            return {
-                date: stateDate,
-                min,
-                max,
-                values: stateDate === today ? values : {},
-                settledDate: src.settledDate ? String(src.settledDate) : '',
-                lastSettlementAt: Number(src.lastSettlementAt) || 0,
-                settlementKey: src.settlementKey ? String(src.settlementKey) : '',
-                settlementStatus: src.settlementStatus ? String(src.settlementStatus) : '',
-                settlementStartedAt: Number(src.settlementStartedAt) || 0,
-                settlementLockOwner: src.settlementLockOwner ? String(src.settlementLockOwner).slice(0, 80) : '',
-                settlementAttempt: Math.max(0, Math.min(1000000, Math.floor(Number(src.settlementAttempt) || 0))),
-                usedStaleValues: src.usedStaleValues === true,
-                settlementAppliedCount: Math.max(0, Math.floor(Number(src.settlementAppliedCount) || 0)),
-                settlementTotalDelta: Math.floor(Number(src.settlementTotalDelta) || 0),
-            };
         }
 
         function getLearningThermometerState() {
@@ -14777,22 +14742,11 @@ ${subjectLine}
         }
 
         function thermometerParentPayload(state) {
-            const safe = sanitizeLearningThermometerState(state);
-            return {
-                date: String(safe.date || getLocalDateStr()).slice(0, 10),
-                min: safe.min,
-                max: safe.max,
-                settledDate: String(safe.settledDate || '').slice(0, 10),
-                lastSettlementAt: Math.floor(Number(safe.lastSettlementAt) || 0),
-                settlementKey: String(safe.settlementKey || '').slice(0, 12),
-                settlementStatus: String(safe.settlementStatus || '').slice(0, 20),
-                settlementStartedAt: Math.floor(Number(safe.settlementStartedAt) || 0),
-                settlementLockOwner: String(safe.settlementLockOwner || '').slice(0, 80),
-                settlementAttempt: Math.max(0, Math.min(1000000, Math.floor(Number(safe.settlementAttempt) || 0))),
-                usedStaleValues: safe.usedStaleValues === true,
-                settlementAppliedCount: Math.max(0, Math.min(40, Math.floor(Number(safe.settlementAppliedCount) || 0))),
-                settlementTotalDelta: Math.max(-20000, Math.min(20000, Math.floor(Number(safe.settlementTotalDelta) || 0))),
-            };
+            return buildThermometerParentPayload(state, {
+                today: getLocalDateStr(),
+                minDefault: LEARNING_THERMOMETER_DEFAULT_MIN,
+                maxDefault: LEARNING_THERMOMETER_DEFAULT_MAX,
+            });
         }
 
         async function ensureThermometerTeacher() {
@@ -14851,15 +14805,6 @@ ${subjectLine}
                 _thermometerPendingVoteIds.add(String(sid));
             });
             setLocalLearningThermometerState(state);
-        }
-
-        async function clearStoredThermometerLegacyValues() {
-            const ref = getGlobalSettingsDocRef();
-            const snap = await getDoc(ref);
-            if (!snap.exists()) return;
-            const cleared = clearedLearningThermometerLegacy((snap.data() || {}).learningThermometer);
-            if (!cleared) return;
-            await updateDoc(ref, { learningThermometer: cleared });
         }
 
         function getLearningThermometerValueClass(value) {
@@ -15175,169 +15120,34 @@ ${subjectLine}
             }
 
             _learningThermometerSettlementRunning = true;
-            let claimed = null;
             try {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
-
-                await runTransaction(db, async (transaction) => {
-                    const ref = getLearningThermometerDocRef();
-                    const snap = await transaction.get(ref);
-                    const ids = getActiveStudentIds();
-                    const voteValues = {};
-                    for (const sid of ids) {
-                        const id = String(sid);
-                        const voteSnap = await transaction.get(getLearningThermometerVoteRef(id));
-                        if (voteSnap.exists() && voteSnap.data() && Object.prototype.hasOwnProperty.call(voteSnap.data(), 'value')) {
-                            voteValues[id] = voteSnap.data().value;
-                        }
-                    }
-                    const parentData = snap.exists() ? (snap.data() || {}) : {};
-                    const legacyAllowed = allowLegacyThermometerValues({
-                        parentExists: snap.exists(),
-                        settlementStatus: parentData.settlementStatus,
-                        usedStaleValues: parentData.usedStaleValues === true,
-                        settlementKey: parentData.settlementKey,
-                        settledDate: parentData.settledDate,
-                        today,
-                    });
-                    // 표가 일부만 있어도, 표가 없는 학생은 예전 settings/global 값을 봅니다.
-                    // 잠금만 커밋된 같은 날 재시도와, 아직 소모하지 않은 날만 허용합니다.
-                    const readLegacy = !snap.exists() || legacyAllowed || parentData.usedStaleValues === true;
-                    const legacySnap = readLegacy ? await transaction.get(getGlobalSettingsDocRef()) : null;
-                    const legacyThermometer = legacySnap && legacySnap.exists()
-                        ? (legacySnap.data() || {}).learningThermometer
-                        : null;
-                    const raw = snap.exists()
-                        ? parentData
-                        : (legacyThermometer || {});
-                    const state = sanitizeLearningThermometerState(raw);
-                    const plan = planThermometerSettlement({
-                        activeIds: ids,
-                        voteValues,
-                        parentExists: snap.exists(),
-                        parentData,
-                        legacyThermometer,
-                        today,
-                        min: state.min,
-                        max: state.max,
-                    });
-                    const pendingValues = plan.pendingValues;
-                    const decision = decideThermometerLockClaim({
-                        settlementKey: state.settlementKey,
-                        settlementStatus: state.settlementStatus,
-                        settlementStartedAt: state.settlementStartedAt,
-                        settlementLockOwner: state.settlementLockOwner,
-                        settlementAttempt: state.settlementAttempt,
-                        settledDate: state.settledDate,
-                        owner: _thermometerLockOwner,
-                        today,
-                        now: Date.now(),
-                        leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
-                        manual,
-                        pendingCount: Object.keys(pendingValues).length,
-                    });
-                    if (decision.action === 'already_done') {
-                        claimed = { status: 'already_done', state };
-                        return;
-                    }
-                    if (decision.action === 'locked') {
-                        claimed = { status: 'locked', state };
-                        return;
-                    }
-                    const values = pendingValues;
-                    const nextState = {
-                        ...state,
-                        values,
-                        settlementAttempt: decision.attempt,
-                        settlementLockOwner: _thermometerLockOwner,
-                    };
-                    claimed = {
-                        status: 'claimed',
-                        state: nextState,
-                        legacyIds: plan.legacyIds,
-                        legacyIdsToClose: plan.legacyIdsToClose,
-                        consumeLegacy: plan.consumeLegacy === true,
-                    };
-                    if (decision.action === 'reuse') return;
-                    transaction.set(ref, thermometerParentPayload({
-                        ...nextState,
-                        date: today,
-                        settlementKey: today,
-                        settlementStatus: 'running',
-                        settlementStartedAt: Date.now(),
-                    }));
-                });
-
-                if (!claimed || claimed.status !== 'claimed') return claimed || { status: 'not_claimed' };
-
-                const values = claimed.state.values || {};
-                const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
-                const legacyIdSet = new Set((claimed.legacyIds || []).map((id) => String(id)));
-                let appliedCount = 0;
-                let totalDelta = 0;
-                let skippedApplied = 0;
-                for (const [sid, deltaRaw] of entries) {
-                    const granted = await grantThermometerStudentXp(db, {
-                        studentRef: doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                        thermometerRef: getLearningThermometerDocRef(),
-                        delta: deltaRaw,
-                        today,
-                        owner: _thermometerLockOwner,
-                        leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
-                        usedStaleValues: legacyIdSet.has(String(sid)),
-                    });
-                    if (!granted || granted.status === 'lock_lost') {
-                        return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
-                    }
-                    if (granted.status === 'granted') {
-                        appliedCount += 1;
-                        totalDelta += granted.actualDelta || 0;
-                    } else if (granted.reason === 'already_applied' || granted.reason === 'stale_consumed') {
-                        skippedApplied += 1;
-                    }
-                }
-
-                const resetState = {
-                    ...claimed.state,
-                    values: {},
-                    date: today,
-                    settledDate: today,
-                    lastSettlementAt: Date.now(),
-                    settlementKey: today,
-                    settlementStatus: 'done',
-                    settlementStartedAt: 0,
-                    settlementLockOwner: '',
-                    settlementAppliedCount: appliedCount,
-                    settlementTotalDelta: totalDelta,
-                    usedStaleValues: claimed.state.usedStaleValues === true || claimed.consumeLegacy === true,
-                };
-                const finished = await finishThermometerSettlement(db, {
+                const result = await settleThermometerResolvingPrior(db, {
                     thermometerRef: getLearningThermometerDocRef(),
-                    voteRefs: [...new Set([
-                        ...entries.map(([sid]) => String(sid)),
-                        ...((claimed.legacyIdsToClose || []).map((sid) => String(sid))),
-                    ])].map((sid) => getLearningThermometerVoteRef(sid)),
-                    owner: _thermometerLockOwner,
+                    globalSettingsRef: getGlobalSettingsDocRef(),
+                    activeIds: getActiveStudentIds(),
+                    voteRefFor: (sid) => getLearningThermometerVoteRef(sid),
+                    studentRefFor: (sid) => doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
                     today,
+                    owner: _thermometerLockOwner,
                     leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
-                    parentPayload: thermometerParentPayload(resetState),
+                    manual,
+                    minDefault: LEARNING_THERMOMETER_DEFAULT_MIN,
+                    maxDefault: LEARNING_THERMOMETER_DEFAULT_MAX,
                 });
-                if (!finished || finished.status !== 'done') {
-                    return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
+                if (result && result.legacyClearError) {
+                    console.warn('clearStoredThermometerLegacyValues', result.legacyClearError);
                 }
-                if (resetState.usedStaleValues) {
-                    try {
-                        await clearStoredThermometerLegacyValues();
-                    } catch (clearErr) {
-                        console.warn('clearStoredThermometerLegacyValues', clearErr);
-                    }
+                if (result && result.status === 'done' && result.state) {
+                    setLocalLearningThermometerState(result.state);
                 }
-                setLocalLearningThermometerState(resetState);
-                await refreshStudentsCacheFromServer();
-                renderLearningThermometerPanel();
-                updateUI();
-                return { status: 'done', appliedCount, totalDelta, skippedApplied };
+                if (result && (result.status === 'done' || (result.appliedCount || 0) > 0)) {
+                    await refreshStudentsCacheFromServer();
+                    renderLearningThermometerPanel();
+                    updateUI();
+                }
+                return result || { status: 'not_claimed' };
             } catch (e) {
                 console.error('settleLearningThermometer', e);
                 throw e;

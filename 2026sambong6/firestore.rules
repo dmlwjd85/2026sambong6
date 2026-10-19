@@ -9,12 +9,77 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 마스터 PIN 로그인은 익명 Firebase 인증입니다.
-    // Google 로그인이나 admins/{uid} 는 보지 않습니다. 로그인한 세션이면 형식이 맞을 때 씁니다.
-    // PIN 대조는 브라우저에서만 하므로, 학생 익명 세션도 같은 쓰기 규칙을 탑니다.
+    // 마스터 PIN은 secrets/{학급}에만 있고 클라이언트는 읽지 못합니다.
+    // gmSessions에는 PIN을 넣지 않습니다. 비교는 읽기 금지인 gmPinProofs에서만 합니다.
+    // Google 로그인이나 admins/{uid} 는 저장 권한에 쓰지 않습니다.
     // 스킨 구매 시각(request.time)은 여기서 보지 않습니다. 가격표는 앱에만 있고
     // 규칙에는 반올림이 없으며, 학생 문서는 퀘스트·은행·선생님 복구가 한 번에 덮입니다.
     // {document=**} 는 path 라서 문자열과 바로 비교하지 않습니다.
+
+    function gmSessionPath() {
+      return /databases/$(database)/documents/gmSessions/$(request.auth.uid);
+    }
+
+    function gmProofPath() {
+      return /databases/$(database)/documents/gmPinProofs/$(request.auth.uid);
+    }
+
+    function gmAttemptPath() {
+      return /databases/$(database)/documents/gmPinAttempts/$(request.auth.uid);
+    }
+
+    function secretPath(classId) {
+      return /databases/$(database)/documents/secrets/$(classId);
+    }
+
+    function gmSession() {
+      return get(gmSessionPath()).data;
+    }
+
+    function isLiveGmSession() {
+      return signedIn()
+        && exists(gmSessionPath())
+        && gmSession().keys().hasOnly(['classId', 'expiresAt'])
+        && gmSession().classId is string
+        && gmSession().expiresAt is timestamp
+        && gmSession().expiresAt > request.time;
+    }
+
+    function isPinMaster(appId) {
+      return isLiveGmSession() && gmSession().classId == appId;
+    }
+
+    function isSeedPinMaster() {
+      return isPinMaster('sambong-class-2026');
+    }
+
+    function sessionExpiryOk() {
+      return request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(12, 'h');
+    }
+
+    function proofBacksSession() {
+      return exists(gmProofPath())
+        && get(gmProofPath()).data.keys().hasOnly(['pin', 'classId', 'expiresAt'])
+        && get(gmProofPath()).data.pin is string
+        && get(gmProofPath()).data.classId == request.resource.data.classId
+        && get(gmProofPath()).data.expiresAt == request.resource.data.expiresAt
+        && exists(secretPath(request.resource.data.classId))
+        && get(secretPath(request.resource.data.classId)).data.pin is string
+        && get(gmProofPath()).data.pin == get(secretPath(request.resource.data.classId)).data.pin;
+    }
+
+    function pinAttemptAllows() {
+      return exists(gmAttemptPath())
+        && get(gmAttemptPath()).data.keys().hasOnly(['count', 'windowStart'])
+        && get(gmAttemptPath()).data.count is int
+        && get(gmAttemptPath()).data.count >= 1
+        && get(gmAttemptPath()).data.count <= 20
+        && get(gmAttemptPath()).data.windowStart is timestamp
+        && get(gmAttemptPath()).data.windowStart > request.time - duration.value(15, 'm')
+        && get(gmAttemptPath()).data.windowStart <= request.time + duration.value(2, 'm');
+    }
 
     function isSettingsGlobalDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/settings/global$');
@@ -40,6 +105,18 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/[^/]+$');
     }
 
+    // 마스터 문서의 PIN은 공개되면 안 됩니다. 와일드카드와 OR 되므로 양쪽에서 막습니다.
+    function isMasterStudentDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm$')
+        || string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm_a$');
+    }
+
+    function masterStudentPinAbsent() {
+      return !isMasterStudentDoc()
+        || request.method == 'delete'
+        || !('pin' in request.resource.data);
+    }
+
     // 학생 문서는 공개 와일드카드와 OR 됩니다. 슬롯 키 검사는 이쪽에도 있어야 우회되지 않습니다.
     function studentClassXpSlotAllowed() {
       return !isStudentDoc()
@@ -48,8 +125,8 @@ service cloud.firestore {
         || (request.method == 'update' && classXpSlotWriteOk());
     }
 
-    // 선생님 화면이 주로 쓰는 키 목록입니다. 권한으로 막지는 않고, 할인 형식처럼
-    // 따로 검사하는 필드만 규칙을 탑니다. 목록은 앱의 GM_ONLY_SETTING_KEYS 와 맞춥니다.
+    // 선생님 화면이 주로 쓰는 키. 유효한 gmSessions가 있을 때만 바꿉니다.
+    // 목록은 앱의 GM_ONLY_SETTING_KEYS 와 맞춥니다.
     function gmOnlyKeys() {
       return [
         'shopPrices',
@@ -338,9 +415,92 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/data/students/{studentId} {
       allow read: if true;
-      allow create: if studentCreateIsSafe();
-      allow update: if studentUpdateIsSafe();
+      allow create: if studentCreateIsSafe() && masterStudentPinAbsent();
+      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent();
       allow delete: if false;
+    }
+
+    // 마스터 PIN. 클라이언트는 읽지 못합니다. 콘솔에서 문자열로 만듭니다.
+    // 시드 마스터 세션만 다른 학급 문서를 처음 만들고, 그 학급 세션이나 시드 세션이 값을 바꿉니다.
+    match /secrets/{appId} {
+      allow read: if false;
+      allow create: if isSeedPinMaster()
+        && appId != 'sambong-class-2026'
+        && request.resource.data.keys().hasOnly(['pin'])
+        && request.resource.data.pin is string
+        && request.resource.data.pin.matches('^[0-9]{4,12}$');
+      allow update: if (isPinMaster(appId) || isSeedPinMaster())
+        && request.resource.data.keys().hasOnly(['pin'])
+        && request.resource.data.pin is string
+        && request.resource.data.pin.matches('^[0-9]{4,12}$');
+      allow delete: if false;
+    }
+
+    // PIN 시도 횟수. 본인만 읽고, PIN은 저장하지 않습니다.
+    match /gmPinAttempts/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['count', 'windowStart'])
+        && request.resource.data.count == 1
+        && request.resource.data.windowStart is timestamp
+        && request.resource.data.windowStart > request.time - duration.value(2, 'm')
+        && request.resource.data.windowStart <= request.time + duration.value(2, 'm');
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['count', 'windowStart'])
+        && request.resource.data.count is int
+        && request.resource.data.windowStart is timestamp
+        && (
+          (
+            resource.data.windowStart < request.time - duration.value(15, 'm')
+            && request.resource.data.count == 1
+            && request.resource.data.windowStart > request.time - duration.value(2, 'm')
+            && request.resource.data.windowStart <= request.time + duration.value(2, 'm')
+          )
+          || (
+            request.resource.data.windowStart == resource.data.windowStart
+            && request.resource.data.count == resource.data.count + 1
+            && request.resource.data.count <= 20
+            && resource.data.windowStart > request.time - duration.value(15, 'm')
+          )
+        );
+      allow delete: if false;
+    }
+
+    // PIN 확인용 임시 문서. 읽기는 막습니다. 세션을 만든 뒤 앱이 지웁니다.
+    match /gmPinProofs/{uid} {
+      allow read: if false;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && pinAttemptAllows()
+        && request.resource.data.keys().hasOnly(['pin', 'classId', 'expiresAt'])
+        && request.resource.data.pin is string
+        && request.resource.data.pin.size() >= 4
+        && request.resource.data.pin.size() <= 12
+        && request.resource.data.classId is string
+        && request.resource.data.classId.size() > 0
+        && request.resource.data.classId.size() < 80
+        && sessionExpiryOk()
+        && exists(secretPath(request.resource.data.classId))
+        && get(secretPath(request.resource.data.classId)).data.pin is string
+        && request.resource.data.pin == get(secretPath(request.resource.data.classId)).data.pin;
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // 교사 쓰기 세션. PIN 필드는 규칙으로 거부합니다. 본인만 읽을 수 있습니다.
+    match /gmSessions/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['classId', 'expiresAt'])
+        && request.resource.data.classId is string
+        && request.resource.data.classId.size() > 0
+        && request.resource.data.classId.size() < 80
+        && sessionExpiryOk()
+        && proofBacksSession();
+      allow delete: if signedIn() && request.auth.uid == uid;
     }
 
     // 보드게임 방: 로그인(익명 인증)한 학급 화면에서만 만들고 고칩니다.
@@ -356,48 +516,72 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
+    function approvedClassGrant(classId) {
+      return get(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId)).data;
+    }
+
+    function hasApprovedClassGrant(classId) {
+      return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
+    }
+
+    function settingsCreateByPinMaster(appId) {
+      return isPinMaster(appId)
+        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
+    }
+
+    // 시드 마스터가 승인한 새 학급의 첫 설정. 그 학급 세션은 아직 없습니다.
+    function settingsCreateBySeedGrant(appId) {
+      return isSeedPinMaster()
+        && appId != 'sambong-class-2026'
+        && hasApprovedClassGrant(appId)
+        && approvedClassGrant(appId).createdBy == request.auth.uid
+        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
+    }
+
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 로그인한 세션(마스터 PIN 익명 포함)이면 만들고 고칩니다.
-    // 할인이 있으면 형식만 검사합니다. 앱은 이 문서를 지우지 않습니다.
+    // 할인·GM 전용 키는 그 학급의 유효한 PIN 세션만 바꿉니다. 삭제는 금지입니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
-      allow create: if signedIn()
-        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
+      allow create: if settingsCreateByPinMaster(appId) || settingsCreateBySeedGrant(appId);
       allow update: if signedIn()
-        && (shopDiscountUntouched() || shopDiscountChangeIsValid());
+        && (shopDiscountUntouched() || (shopDiscountChangeIsValid() && isPinMaster(appId)))
+        && (gmOnlyUntouched() || isPinMaster(appId));
       allow delete: if false;
     }
 
-    // 수업 종료 자동 XP 공지. 지급 중복 방지는 학생 문서 lastClassXpSlot입니다.
+    // 수업 종료 자동 XP 공지. 형식 검사와 삭제 금지를 유지하고, 유효한 PIN 세션만 씁니다.
+    // 지급 중복 방지는 학생 문서 lastClassXpSlot입니다.
     match /artifacts/{appId}/public/data/settings/autoXp {
       allow read: if true;
-      allow create: if signedIn() && autoXpShapeOk();
-      allow update: if signedIn()
+      allow create: if isPinMaster(appId) && autoXpShapeOk();
+      allow update: if isPinMaster(appId)
         && autoXpShapeOk()
         && resource.data.slotMs is int
         && request.resource.data.slotMs >= resource.data.slotMs + 2400000;
       allow delete: if false;
     }
 
-    // 학습 온도계 부모. 로그인한 세션이 형식을 지키면 만들고 고칩니다. 학생별 값은 votes 하위 문서입니다.
+    // 학습 온도계 부모. 유효한 PIN 세션과 형식 검사가 둘 다 필요합니다. 삭제는 금지입니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer {
       allow read: if true;
-      allow create: if signedIn() && thermometerShapeOk();
-      allow update: if signedIn() && thermometerShapeOk();
+      allow create: if isPinMaster(appId) && thermometerShapeOk();
+      allow update: if isPinMaster(appId) && thermometerShapeOk();
       allow delete: if false;
     }
 
-    // 학번 문서를 마스터 PIN(익명 uid)도 쓸 수 있게, 문서 ID와 uid가 달라도 형식만 맞으면 허용합니다.
+    // 학생 표는 본인 uid이거나 그 학급 PIN 세션만 씁니다. 익명 uid는 학번과 다릅니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer/votes/{studentId} {
       allow read: if true;
-      allow create, update: if signedIn() && thermometerVoteOk(appId, studentId);
+      allow create, update: if signedIn()
+        && thermometerVoteOk(appId, studentId)
+        && (isPinMaster(appId) || request.auth.uid == studentId);
       allow delete: if false;
     }
 
-    // 학급 개설 표식. 로그인한 세션이 자기 uid를 createdBy에 남기고 필드 형식이 맞을 때만 만듭니다.
+    // 학급 개설 표식. 시드 학급 PIN 세션만, 자기 uid를 createdBy에 남길 때만 만듭니다.
     match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
       allow read: if signedIn();
-      allow create: if signedIn()
+      allow create: if isSeedPinMaster()
         && request.resource.data.keys().hasOnly(['classId', 'status', 'createdBy'])
         && request.resource.data.classId == classId
         && request.resource.data.status == 'approved'
@@ -420,7 +604,8 @@ service cloud.firestore {
         && !isLearningThermometerDoc()
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
-        && studentClassXpSlotAllowed();
+        && studentClassXpSlotAllowed()
+        && masterStudentPinAbsent();
     }
 
     match /classes/{classId} {

@@ -1,12 +1,33 @@
 /**
- * 선생님 계정 인증 판별.
- * Firestore 규칙의 isAdmin() 과 맞춥니다. 익명 로그인은 선생님이 아닙니다.
+ * 마스터 PIN 세션과 유휴 로그아웃.
+ * 저장 권한은 gmSessions 문서이고, Google 계정은 요구하지 않습니다.
  */
 
 import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
 
-/** GM 화면을 15분 동안 건드리지 않으면 선생님 세션을 끊습니다. */
+/** GM 화면을 15분 동안 건드리지 않으면 다른 학급은 로그아웃합니다. */
 export const GM_IDLE_LOGOUT_MS = 15 * 60 * 1000;
+
+/** 서버 세션 만료. 규칙 상한 12시간보다 짧게 잡아 시계가 조금 빨라도 통과합니다. */
+export const GM_SESSION_TTL_MS = 11 * 60 * 60 * 1000;
+
+/** uid당 PIN 시도. 규칙은 15분에 20번입니다. */
+export const PIN_ATTEMPT_MAX = 20;
+export const PIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * 다음 PIN 시도 문서 값.
+ * blocked면 규칙을 호출하지 않습니다. 창이 지나면 count를 1로 다시 시작합니다.
+ */
+export function planPinAttempt(existing, nowMs) {
+    const now = Number(nowMs);
+    const windowStartMs = Number(existing && existing.windowStartMs);
+    const count = Number(existing && existing.count);
+    const windowOpen = Number.isFinite(windowStartMs) && now - windowStartMs < PIN_ATTEMPT_WINDOW_MS;
+    if (!windowOpen) return { count: 1, windowStartMs: now, blocked: false };
+    if (count >= PIN_ATTEMPT_MAX) return { count, windowStartMs, blocked: true };
+    return { count: count + 1, windowStartMs, blocked: false };
+}
 
 /**
  * 담임 원래 학급(시드).
@@ -24,7 +45,7 @@ export function isOriginalHomeClass(classId) {
  * GM 유휴 만료.
  * - ignore: GM이 아니라 아무것도 하지 않음
  * - defer: 수업 화면 공유 중이라 타이머만 다시 켬
- * - end-teacher-auth: 원래 학급. 선생님 인증(비익명)만 종료. PIN·localStorage·화면 로그인은 유지하고 새로고침하지 않음
+ * - end-teacher-auth: 원래 학급. 비익명 로그인만 종료. PIN 세션·localStorage·화면 로그인은 유지하고 새로고침하지 않음
  * - full-logout: 다른 학급. 로그인 저장소 삭제, 선생님 세션 종료, 새로고침
  */
 export function planGmIdleExpiry({ classId, isAdmin, projectionActive }) {

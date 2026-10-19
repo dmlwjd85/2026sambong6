@@ -9,6 +9,9 @@ import {
     isOriginalHomeClass,
     isTeacherProvider,
     planGmIdleExpiry,
+    planPinAttempt,
+    PIN_ATTEMPT_MAX,
+    PIN_ATTEMPT_WINDOW_MS,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
     HOME_CLASS_IDLE_AUTH_NOTICE,
@@ -79,6 +82,11 @@ describe('선생님 인증 판별', () => {
         assert.match(rules, /function shopDiscountChangeIsValid\(\)/);
         assert.match(rules, /function autoXpShapeOk\(\)/);
         assert.match(rules, /function thermometerShapeOk\(\)/);
+        assert.match(rules, /function isPinMaster\(appId\)/);
+        assert.match(rules, /match \/secrets\/\{appId\}/);
+        assert.match(rules, /match \/gmSessions\/\{uid\}/);
+        assert.match(rules, /match \/gmPinProofs\/\{uid\}/);
+        assert.match(rules, /allow read: if false;/);
         assert.doesNotMatch(rules, /function isAdmin\(\)/);
         assert.doesNotMatch(rules, /function isAdminForApp\(/);
         assert.doesNotMatch(rules, /sign_in_provider != 'anonymous'/);
@@ -108,6 +116,23 @@ describe('원래 학급 PIN 로그인 유지', () => {
         }), 'defer');
         assert.equal(planGmIdleExpiry({ classId: 'sambong-class-2026', isAdmin: false }), 'ignore');
         assert.equal(planGmIdleExpiry({ classId: 'other-class', isAdmin: false, projectionActive: true }), 'ignore');
+    });
+
+    it('PIN 시도는 15분에 20번까지이고 창이 지나면 다시 센다', () => {
+        const start = 1_000_000;
+        assert.deepEqual(planPinAttempt(null, start), { count: 1, windowStartMs: start, blocked: false });
+        assert.deepEqual(
+            planPinAttempt({ count: 1, windowStartMs: start }, start + 1000),
+            { count: 2, windowStartMs: start, blocked: false },
+        );
+        assert.deepEqual(
+            planPinAttempt({ count: PIN_ATTEMPT_MAX, windowStartMs: start }, start + 1000),
+            { count: PIN_ATTEMPT_MAX, windowStartMs: start, blocked: true },
+        );
+        assert.deepEqual(
+            planPinAttempt({ count: PIN_ATTEMPT_MAX, windowStartMs: start }, start + PIN_ATTEMPT_WINDOW_MS),
+            { count: 1, windowStartMs: start + PIN_ATTEMPT_WINDOW_MS, blocked: false },
+        );
     });
 
     it('유휴 시간은 운영 한도보다 짧게만 덮어쓴다', () => {

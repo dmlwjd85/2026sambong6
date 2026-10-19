@@ -23856,7 +23856,7 @@ ${subjectLine}
                 const ok = await window.customConfirm(
                     `${formatBongAmount(plan.loan.principal)}를 학교 가는 날 ${plan.loan.days}일 동안 빌릴까요?\n` +
                     `이자는 ${formatBongAmount(plan.loan.interest)}예요.\n` +
-                    `약속한 날은 ${formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd}${koreanCopula(formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd)} 그날까지 갚아요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.\n적금은 빼지 않아요.`
+                    `약속한 날은 ${formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd}${koreanCopula(formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd)}. 그날까지 갚아요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.\n적금은 빼지 않아요.`
                 );
                 if (!ok) return;
                 const saved = await saveDataToCloud({
@@ -23871,7 +23871,7 @@ ${subjectLine}
                 if (amtEl) amtEl.value = '';
                 updateUI();
                 const promiseDay = formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd;
-                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔어요.\n약속한 날은 ${promiseDay}${koreanCopula(promiseDay)} 이자는 ${formatBongAmount(plan.loan.interest)}예요.`);
+                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔어요.\n약속한 날은 ${promiseDay}${koreanCopula(promiseDay)}. 이자는 ${formatBongAmount(plan.loan.interest)}예요.`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);

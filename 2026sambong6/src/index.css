@@ -5,6 +5,62 @@
         body { color: #f8fafc; overflow-x: hidden; transition: background 0.5s ease-in-out; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
+        /* 상단 헤더: 좁은 화면에서도 학급·이름·로그아웃이 한 줄입니다. */
+        .app-top-nav-row {
+            flex-wrap: nowrap;
+            white-space: nowrap;
+            min-width: 0;
+            overflow: hidden;
+        }
+        .app-top-nav-lead,
+        .app-top-nav-user,
+        .app-class-switch,
+        #navLogoutButton,
+        #saveStatus,
+        #playerNameDisplay,
+        .nav-class-name,
+        .nav-class-kicker,
+        .nav-logout-label {
+            white-space: nowrap;
+        }
+        .app-class-switch {
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
+        }
+        .nav-class-name,
+        #playerNameDisplay {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .nav-class-name { display: block; }
+        #playerNameDisplay { display: inline-block; max-width: 6.5rem; }
+        #saveStatus { flex-wrap: nowrap; }
+        @media (min-width: 640px) {
+            #playerNameDisplay { max-width: 10rem; }
+        }
+        @media (max-width: 639px) {
+            .app-top-brand { letter-spacing: 0; font-size: 0.95rem; }
+            #navVersionBadge { display: none; }
+            .nav-class-kicker,
+            .nav-class-sep,
+            .nav-logout-label {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+        }
+        @media (max-width: 400px) {
+            .app-top-nav-mark { display: none; }
+        }
+
         /* ★ 탭별 배경 — 채도는 유지하고 끝을 밝혀 화면이 덜 어둡게 합니다 ★ */
         .bg-theme-dashboard { background-color: #0284c7; background-image: radial-gradient(ellipse 110% 70% at 50% -12%, #38bdf8 0%, #0ea5e9 46%, #0369a1 100%); }
         .bg-theme-constitution { background-color: #ea580c; background-image: radial-gradient(circle at 50% -8%, #fb923c 0%, #f97316 48%, #c2410c 100%); }

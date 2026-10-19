@@ -20942,7 +20942,7 @@ ${subjectLine}
                         : `역따봉. 이유가 필요하고 내 돈 ${REBUKE_COST_BONG}${getCurrencyUnit()}이 빠져요`);
                 const praiseBtn = `<div class="plaza-praise-row">
                     <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉. 나와 친구에게 칭찬이 들어가요"><span class="plaza-react-ico" aria-hidden="true">👍</span><span>따봉 ${praiseCount}</span></button>
-                    <button type="button" class="rebuke-btn" onclick="event.stopPropagation(); void window.givePeerRebuke('${targetId}')" title="${escapeHtmlAttr(rebukeTitle)}"><span class="plaza-react-ico" aria-hidden="true">👎</span><span>역따봉 ${rebukeCount}</span></button>
+                    <button type="button" class="rebuke-btn" onclick="event.stopPropagation(); void window.givePeerRebuke('${targetId}')" title="${escapeHtmlAttr(rebukeTitle)}" aria-label="${escapeHtmlAttr(rebukeTitle)}"><span class="plaza-react-ico" aria-hidden="true">👎</span><span>역따봉 ${rebukeCount}</span></button>
                 </div>`;
 
                 return `
@@ -23879,6 +23879,20 @@ ${subjectLine}
             return escapeConvenienceHtml(getCurrencyUnit());
         }
 
+        function rebukeHiddenNames() {
+            const names = [];
+            const push = (value) => {
+                const name = String(value || '').trim();
+                if (name.length < 2 || names.includes(name)) return;
+                names.push(name);
+            };
+            Object.keys(STUDENT_NAMES).forEach((id) => push(STUDENT_NAMES[id]));
+            (window.allStudentsData || []).forEach((row) => {
+                if (row && typeof row === 'object') push(row.name);
+            });
+            return names;
+        }
+
         window.openRebukeReasons = async function(toId) {
             const target = String(toId || '');
             const myId = String(localStorage.getItem('sambong_student_id') || '');
@@ -23934,9 +23948,12 @@ ${subjectLine}
             const fromId = String(localStorage.getItem('sambong_student_id') || '');
             const admin = !!(window.playerState && window.playerState.isAdmin);
             if (admin || (fromId && fromId === target)) return window.openRebukeReasons(target);
+            if (window._givingRebuke) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('로그인 후 역따봉을 보낼 수 있어요.');
             if (!fromId) return;
             if (studentIsCreditDefault(window.playerState)) return window.customAlert(playerCreditDefaultMessage());
+            window._givingRebuke = true;
+            try {
             const typed = await window.customPrompt(
                 `왜 역따봉을 보내나요?\n이유를 적어야 해요.\n친구는 이유만 보고, 내 이름은 못 봐요.\n보내면 내 돈에서 ${REBUKE_COST_BONG}${rebukeMoneyUnit()}가 빠져요.`,
                 'text'
@@ -23945,6 +23962,7 @@ ${subjectLine}
             await ensureClassOpsLoaded();
             const today = getLocalDateStr();
             const allowedIds = getActiveStudentIds();
+            const hiddenNames = rebukeHiddenNames();
             const plan = planPeerRebuke(window._rebukeBoard, {
                 fromId,
                 toId: target,
@@ -23953,6 +23971,7 @@ ${subjectLine}
                 senderBong: Number(window.playerState.bong) || 0,
                 receiverBong: 0,
                 allowedIds,
+                hiddenNames,
             });
             if (!plan.ok) return window.customAlert(rebukeFailMessage(plan.reason, rebukeMoneyUnit()));
             const shownReason = escapeConvenienceHtml(plan.board.entries[plan.board.entries.length - 1].reason);
@@ -23980,6 +23999,7 @@ ${subjectLine}
                         senderBong: Number(fromData.bong) || 0,
                         receiverBong: Number(toData.bong) || 0,
                         allowedIds,
+                        hiddenNames,
                     });
                     if (!fresh.ok) return fresh;
                     const fromXp = Math.max(0, Math.floor(Number(fromData.xp) || 0));
@@ -24017,6 +24037,9 @@ ${subjectLine}
             } catch (e) {
                 console.error('givePeerRebuke', e);
                 await window.customAlert('역따봉을 저장하지 못했어요.');
+            }
+            } finally {
+                window._givingRebuke = false;
             }
         };
 

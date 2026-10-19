@@ -10,6 +10,7 @@ import {
     rebukeCountOf,
     rebukeFailMessage,
     rebukePenaltyForCount,
+    rebukeReasonIssue,
     rebukePublicView,
     teacherRebukeReasons,
     REBUKE_BONG_FLOOR,
@@ -28,12 +29,17 @@ function hasKey(value, key) {
 
 describe('역따봉', () => {
     it('이유가 없으면 보내지 않고 나에게도 보내지 못한다', () => {
-        assert.equal(normalizeRebukeReason('  '), '');
-        assert.equal(normalizeRebukeReason('아'), '');
-        assert.equal(normalizeRebukeReason('..'), '');
+        assert.equal(rebukeReasonIssue('  '), 'short');
+        assert.equal(rebukeReasonIssue('아'), 'short');
+        assert.equal(rebukeReasonIssue('..'), 'symbol');
+        assert.equal(rebukeReasonIssue('ㅋㅋ'), 'symbol');
+        assert.equal(rebukeReasonIssue('싫어'), '');
+        assert.equal(rebukeReasonIssue(`${'가'.repeat(80)}`), '');
+        assert.equal(rebukeReasonIssue(`${'가'.repeat(81)}`), 'long');
+        assert.equal(rebukeReasonIssue('김라희가 떠들었어요', ['김라희']), 'name');
+        assert.equal(rebukeReasonIssue('떠들어서 수업이 멈췄어요', ['김라희']), '');
+        assert.equal(normalizeRebukeReason('  \n떠들었어요  '), '떠들었어요');
         assert.equal(normalizeRebukeReason('ㅋㅋ'), '');
-        assert.equal(normalizeRebukeReason('싫어'), '싫어');
-        assert.equal(normalizeRebukeReason(`${'가'.repeat(81)}`), '');
         const self = planPeerRebuke({}, {
             fromId: '1',
             toId: '1',
@@ -51,8 +57,10 @@ describe('역따봉', () => {
             senderBong: 20,
             receiverBong: 20,
         });
-        assert.equal(blank.reason, 'reason');
-        assert.match(rebukeFailMessage('reason'), /이유/);
+        assert.equal(blank.reason, 'short');
+        assert.match(rebukeFailMessage('short'), /2글자/);
+        assert.match(rebukeFailMessage('symbol'), /ㅋㅋ/);
+        assert.match(rebukeFailMessage('name'), /이름/);
         assert.match(rebukeFailMessage('self'), /나/);
     });
 
@@ -309,7 +317,9 @@ describe('역따봉', () => {
         assert.equal(hasKey(pub.entries, 'fromId'), false);
         assert.equal(JSON.stringify(pub.entries).includes('7'), false);
         const patch = rebukeAuditPatch(step.entry);
+        assert.equal(patch.lastId, step.entry.id);
         assert.equal(patch.entries[step.entry.id].fromId, '7');
+        assert.deepEqual(Object.keys(patch.entries[step.entry.id]).sort(), ['fromId', 'toId', 'ymd']);
         const joined = attachRebukeAudit(pub, patch);
         assert.equal(teacherRebukeReasons(joined, '2')[0].fromId, '7');
         assert.equal(hasKey(anonymousRebukeReasons(joined, '2'), 'fromId'), false);
@@ -362,5 +372,86 @@ describe('역따봉', () => {
             reason: '날짜 없음',
             senderBong: 10,
         }).reason, 'who');
+        assert.equal(planPeerRebuke({}, {
+            fromId: '1>2',
+            toId: '3',
+            today: '2026-10-19',
+            reason: '이상한 번호',
+            senderBong: 10,
+        }).reason, 'who');
+    });
+
+    it('소수 봉은 버림하고 이유에 이름이 있으면 거절하며 같은 번호의 옛 이유는 새 이유로 바뀐다', () => {
+        const named = planPeerRebuke({}, {
+            fromId: '1',
+            toId: '2',
+            today: '2026-10-19',
+            reason: '김라희가 떠들었어요',
+            senderBong: 10,
+            hiddenNames: ['김라희', '나'],
+        });
+        assert.equal(named.reason, 'name');
+        const fraction = planPeerRebuke({}, {
+            fromId: '1',
+            toId: '2',
+            today: '2026-10-19',
+            reason: '떠들어서 수업이 멈췄어요',
+            senderBong: 5.9,
+            receiverBong: 8.2,
+        });
+        assert.equal(fraction.ok, true);
+        assert.equal(fraction.senderBong, 0);
+        const again = planPeerRebuke({
+            received: {},
+            entries: [{
+                id: 'rb_2026-10-19_2_1',
+                toId: '2',
+                fromId: '9',
+                reason: '옛 이유입니다',
+                ymd: '2026-10-19',
+            }],
+        }, {
+            fromId: '1',
+            toId: '2',
+            today: '2026-10-19',
+            reason: '새 이유입니다',
+            senderBong: 9.9,
+            receiverBong: 8.2,
+        });
+        assert.equal(again.ok, true);
+        assert.equal(again.senderBong, 4);
+        const pub = rebukePublicView(again.board);
+        const same = pub.entries.filter((row) => row.id === 'rb_2026-10-19_2_1');
+        assert.equal(same.length, 1);
+        assert.equal(same[0].reason, '새 이유입니다');
+        assert.equal(hasKey(same, 'fromId'), false);
+    });
+
+    it('한 친구의 이유가 많아도 다른 친구 이유는 남는다', () => {
+        let board = {
+            received: { '3': 1 },
+            entries: [{
+                id: 'keep-3',
+                toId: '3',
+                fromId: '8',
+                reason: '다른 친구 이유',
+                ymd: '2026-10-01',
+            }],
+        };
+        for (let day = 1; day <= REBUKE_REASONS_KEPT + 1; day += 1) {
+            const step = planPeerRebuke(board, {
+                fromId: '1',
+                toId: '2',
+                today: `2026-11-${String(day).padStart(2, '0')}`,
+                reason: `이번${day}번째이유`,
+                senderBong: 10,
+                receiverBong: 100,
+            });
+            assert.equal(step.ok, true, step.reason);
+            board = step.board;
+        }
+        assert.equal(board.entries.some((row) => row.id === 'keep-3' && row.reason === '다른 친구 이유'), true);
+        assert.equal(anonymousRebukeReasons(board, '3')[0].reason, '다른 친구 이유');
+        assert.equal(board.received['2'], 31);
     });
 });

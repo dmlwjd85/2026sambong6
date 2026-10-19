@@ -458,14 +458,17 @@ service cloud.firestore {
     }
 
     match /artifacts/{appId}/public/{document=**} {
-      allow read: if true;
+      // REBUKE_WILDCARD_READ 역따봉 감사 문서만 이 공개 읽기에서 뺀다.
+      allow read: if rebukePublicReadOk();
       allow write: if signedIn()
         && !isSettingsGlobalDoc()
         && !isAutoXpDoc()
         && !isLearningThermometerDoc()
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
-        && studentClassXpSlotAllowed();
+        && studentClassXpSlotAllowed()
+        // REBUKE_WILDCARD_WRITE #48과 합칠 때 이 줄은 남긴다.
+        && rebukeKeptOutOfPublicWildcard();
     }
 
     match /classes/{classId} {
@@ -543,5 +546,186 @@ service cloud.firestore {
       allow read: if true;
       allow write: if request.auth != null;
     }
+
+    // REBUKE_RULES_BEGIN
+    // 역따봉만 다룬다. 비밀번호, 틀린 횟수, 학습 온도, 학급 설정 함수를 부르지 않는다.
+    // #48의 그 부분이 바뀌어도 이 블록은 통째로 남기면 된다.
+    // 선생님 읽기만 허용목록과 gmSessions 문서를 직접 본다. isAdmin, isPinMaster는 부르지 않는다.
+    function rebukeBoardPath() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/classOps/rebuke$');
+    }
+
+    function rebukeAuditPath() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/classOps/rebukeAudit$');
+    }
+
+    function rebukePublicReadOk() {
+      return !rebukeAuditPath();
+    }
+
+    function rebukeKeptOutOfPublicWildcard() {
+      return !rebukeBoardPath() && !rebukeAuditPath();
+    }
+
+    function rebukeAllowlistTeacher(appId) {
+      return signedIn()
+        && request.auth.token is map
+        && 'firebase' in request.auth.token
+        && request.auth.token.firebase is map
+        && 'sign_in_provider' in request.auth.token.firebase
+        && request.auth.token.firebase.sign_in_provider is string
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.classIds is list
+        && appId in get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.classIds;
+    }
+
+    function rebukePinSessionTeacher(appId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/gmSessions/$(request.auth.uid))
+        && get(/databases/$(database)/documents/gmSessions/$(request.auth.uid)).data.classId == appId
+        && get(/databases/$(database)/documents/gmSessions/$(request.auth.uid)).data.expiresAt is timestamp
+        && get(/databases/$(database)/documents/gmSessions/$(request.auth.uid)).data.expiresAt > request.time;
+    }
+
+    function rebukeAuditReadable(appId) {
+      return rebukeAllowlistTeacher(appId) || rebukePinSessionTeacher(appId);
+    }
+
+    function rebukePublicEntryOk(entry) {
+      return entry is map
+        && entry.keys().hasOnly(['id', 'toId', 'reason', 'ymd'])
+        && entry.id is string
+        && entry.id.size() > 0
+        && entry.id.size() <= 80
+        && entry.toId is string
+        && entry.toId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && entry.reason is string
+        && entry.reason.size() >= 2
+        && entry.reason.size() <= 80
+        && entry.reason.matches('.*[0-9A-Za-z가-힣].*')
+        && entry.ymd is string
+        && entry.ymd.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function rebukeBoardShapeOk() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['received', 'penaltyThrough', 'sentDaily', 'pairDay', 'entries'])
+        && data.received is map
+        && data.penaltyThrough is map
+        && data.sentDaily is map
+        && data.pairDay is map
+        && data.entries is list
+        && data.entries.size() <= 1200
+        && data.entries.size() > 0
+        && rebukePublicEntryOk(data.entries[data.entries.size() - 1]);
+    }
+
+    function rebukeBoardCreateOk() {
+      let data = request.resource.data;
+      let id = data.entries[0].toId;
+      return rebukeBoardShapeOk()
+        && data.entries.size() == 1
+        && data.received.size() == 1
+        && id in data.received
+        && data.received[id] is int
+        && data.received[id] == 1
+        && data.penaltyThrough.size() <= 1;
+    }
+
+    function rebukeReceivedStepOk() {
+      let data = request.resource.data;
+      let prev = resource.data;
+      let id = data.entries[data.entries.size() - 1].toId;
+      let before = id in prev.received ? prev.received[id] : 0;
+      return prev.received is map
+        && data.received.diff(prev.received).affectedKeys().hasOnly([id])
+        && before is int
+        && data.received[id] is int
+        && data.received[id] == before + 1;
+    }
+
+    function rebukePenaltyStepOk() {
+      let data = request.resource.data;
+      let prev = resource.data;
+      let id = data.entries[data.entries.size() - 1].toId;
+      let affected = data.penaltyThrough.diff(prev.penaltyThrough).affectedKeys();
+      return prev.penaltyThrough is map
+        && (
+          affected.size() == 0
+          || (
+            affected.hasOnly([id])
+            && data.penaltyThrough[id] is int
+            && data.penaltyThrough[id] % 10 == 0
+            && data.penaltyThrough[id] > 0
+            && data.penaltyThrough[id] >= (id in prev.penaltyThrough ? prev.penaltyThrough[id] : 0)
+          )
+        );
+    }
+
+    function rebukeBoardUpdateOk() {
+      let data = request.resource.data;
+      let prev = resource.data;
+      return rebukeBoardShapeOk()
+        && prev.keys().hasOnly(['received', 'penaltyThrough', 'sentDaily', 'pairDay', 'entries'])
+        && prev.entries is list
+        && data.entries.size() <= prev.entries.size() + 1
+        && rebukeReceivedStepOk()
+        && rebukePenaltyStepOk();
+    }
+
+    function rebukeAuditEntryOk(entry) {
+      return entry is map
+        && entry.keys().hasOnly(['toId', 'fromId', 'ymd'])
+        && entry.toId is string
+        && entry.toId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && entry.fromId is string
+        && entry.fromId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && entry.fromId != entry.toId
+        && entry.ymd is string
+        && entry.ymd.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function rebukeAuditCreateOk() {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['entries', 'lastId'])
+        && data.lastId is string
+        && data.lastId.size() > 0
+        && data.lastId.size() <= 80
+        && data.entries is map
+        && data.entries.size() == 1
+        && data.lastId in data.entries
+        && rebukeAuditEntryOk(data.entries[data.lastId]);
+    }
+
+    function rebukeAuditUpdateOk() {
+      let data = request.resource.data;
+      let prev = resource.data;
+      let added = data.entries.diff(prev.entries).addedKeys();
+      return prev.entries is map
+        && (prev.keys().hasOnly(['entries']) || prev.keys().hasOnly(['entries', 'lastId']))
+        && data.keys().hasOnly(['entries', 'lastId'])
+        && data.lastId is string
+        && data.entries.diff(prev.entries).removedKeys().size() == 0
+        && data.entries.diff(prev.entries).changedKeys().size() == 0
+        && added.size() == 1
+        && added.hasOnly([data.lastId])
+        && rebukeAuditEntryOk(data.entries[data.lastId]);
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebuke {
+      allow read: if true;
+      allow create: if signedIn() && rebukeBoardCreateOk();
+      allow update: if signedIn() && rebukeBoardUpdateOk();
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebukeAudit {
+      allow read: if rebukeAuditReadable(appId);
+      allow create: if signedIn() && rebukeAuditCreateOk();
+      allow update: if signedIn() && rebukeAuditUpdateOk();
+      allow delete: if false;
+    }
+    // REBUKE_RULES_END
   }
 }

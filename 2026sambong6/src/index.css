@@ -674,12 +674,12 @@
             align-items: center;
             justify-content: center;
             width: 100%;
-            min-height: 2rem;
+            min-height: 44px;
             border-radius: 999px;
-            font-size: 9px;
+            font-size: 12px;
             font-weight: 900;
             line-height: 1.1;
-            padding: 0.08rem 0.05rem;
+            padding: 0.15rem 0.2rem;
             word-break: keep-all;
         }
         .plaza-react-ico {

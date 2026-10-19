@@ -9,7 +9,9 @@
  *
  * 막는 것
  * - 나에게 보내기
+ * - 학번에 `>` `.` `/` 가 있거나 너무 긴 번호
  * - 이유가 없음. 앞뒤 공백을 지운 뒤 2~80자이고, 한글·영문·숫자 중 하나는 있어야 한다.
+ * - 이유에 친구 이름(2글자 이상)이 들어 있음
  * - 봉이 5개보다 적음 (보낸 사람 지갑)
  * - 같은 친구에게 하루에 한 번
  * - 한 사람이 하루에 3번
@@ -45,6 +47,17 @@ function isYmd(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
 }
 
+function isSafeStudentId(value) {
+    return /^[A-Za-z0-9_-]{1,24}$/.test(asId(value));
+}
+
+function collapsedReason(raw) {
+    return String(raw || '')
+        .replace(/[\u0000-\u001F\u007F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 function pairKey(fromId, toId) {
     return `${asId(fromId)}>${asId(toId)}`;
 }
@@ -59,13 +72,26 @@ export function emptyRebukeBoard() {
     };
 }
 
+/**
+ * 이유가 왜 안 되는지 돌려준다. 괜찮으면 빈 문자열.
+ * hiddenNames에 2글자 이상 이름이 있으면 그 이름이 이유에 들어갈 때 name.
+ */
+export function rebukeReasonIssue(raw, hiddenNames) {
+    const text = collapsedReason(raw);
+    if (text.length < REBUKE_REASON_MIN) return 'short';
+    if (text.length > REBUKE_REASON_MAX) return 'long';
+    if (!/[0-9A-Za-z가-힣]/.test(text)) return 'symbol';
+    const names = Array.isArray(hiddenNames) ? hiddenNames : [];
+    for (let i = 0; i < names.length; i += 1) {
+        const name = String(names[i] || '').trim();
+        if (name.length >= 2 && text.includes(name)) return 'name';
+    }
+    return '';
+}
+
 export function normalizeRebukeReason(raw) {
-    const text = String(raw || '')
-        .replace(/[\u0000-\u001F\u007F]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-    if (text.length < REBUKE_REASON_MIN || text.length > REBUKE_REASON_MAX) return '';
-    if (!/[0-9A-Za-z가-힣]/.test(text)) return '';
+    const text = collapsedReason(raw);
+    if (rebukeReasonIssue(text)) return '';
     return text;
 }
 
@@ -113,7 +139,7 @@ export function sanitizeRebukeBoard(raw) {
         board.pairDay[String(key)] = ymd;
     });
     const entries = Array.isArray(src.entries) ? src.entries : [];
-    const seen = new Set();
+    const indexById = new Map();
     entries.forEach((row) => {
         if (!row || typeof row !== 'object') return;
         const id = asId(row.id);
@@ -121,10 +147,14 @@ export function sanitizeRebukeBoard(raw) {
         const fromId = asId(row.fromId);
         const reason = normalizeRebukeReason(row.reason);
         const ymd = String(row.ymd || '');
-        if (!id || !toId || !reason || !isYmd(ymd) || seen.has(id)) return;
-        seen.add(id);
+        if (!id || !toId || !reason || !isYmd(ymd)) return;
         const entry = { id, toId, reason, ymd };
-        if (fromId) entry.fromId = fromId;
+        if (fromId && isSafeStudentId(fromId)) entry.fromId = fromId;
+        if (indexById.has(id)) {
+            board.entries[indexById.get(id)] = entry;
+            return;
+        }
+        indexById.set(id, board.entries.length);
         board.entries.push(entry);
     });
     board.entries = capReasons(board.entries);
@@ -175,17 +205,20 @@ export function planPeerRebuke(board, {
     senderBong,
     receiverBong,
     allowedIds,
+    hiddenNames,
 } = {}) {
     const from = asId(fromId);
     const to = asId(toId);
     const date = String(today || '');
-    if (!from || !to || !isYmd(date)) return { ok: false, reason: 'who' };
+    if (!isSafeStudentId(from) || !isSafeStudentId(to) || !isYmd(date)) return { ok: false, reason: 'who' };
     if (from === to) return { ok: false, reason: 'self' };
     if (Array.isArray(allowedIds) && !allowedIds.map(asId).includes(to)) {
         return { ok: false, reason: 'who' };
     }
+    const issue = rebukeReasonIssue(reason, hiddenNames);
+    if (issue) return { ok: false, reason: issue };
     const cleanReason = normalizeRebukeReason(reason);
-    if (!cleanReason) return { ok: false, reason: 'reason' };
+    if (!cleanReason) return { ok: false, reason: 'short' };
     const senderBefore = asBong(senderBong);
     if (senderBefore < REBUKE_COST_BONG) return { ok: false, reason: 'balance' };
 
@@ -215,6 +248,7 @@ export function planPeerRebuke(board, {
         reason: cleanReason,
         ymd: date,
     };
+    next.entries = next.entries.filter((row) => row.id !== entry.id);
     next.entries.push(entry);
     next.entries = capReasons(next.entries);
 
@@ -245,12 +279,14 @@ export function rebukePublicView(board) {
     };
 }
 
-/** 새 역따봉 하나의 보낸 사람 기록. 기존 감사 문서에 끼워 넣는다. */
+/** 새 역따봉 하나의 보낸 사람 기록. 기존 감사 문서에 끼워 넣는다. lastId는 규칙이 새 칸만 검사하게 한다. */
 export function rebukeAuditPatch(entry) {
-    if (!entry || !entry.id || !entry.fromId) return { entries: {} };
+    if (!entry || !entry.id || !entry.fromId) return { entries: {}, lastId: '' };
+    const id = asId(entry.id);
     return {
+        lastId: id,
         entries: {
-            [entry.id]: {
+            [id]: {
                 toId: asId(entry.toId),
                 fromId: asId(entry.fromId),
                 ymd: String(entry.ymd || ''),
@@ -299,10 +335,14 @@ export function teacherRebukeReasons(board, studentId) {
 export function rebukeFailMessage(reason, unit = '봉') {
     const money = `${REBUKE_COST_BONG}${unit}`;
     if (reason === 'self') return '나에게는 역따봉을 보낼 수 없어요.';
-    if (reason === 'reason') return `이유를 ${REBUKE_REASON_MIN}글자 이상 적어야 보낼 수 있어요.`;
+    if (reason === 'short') return `이유를 ${REBUKE_REASON_MIN}글자 이상 적어 주세요.`;
+    if (reason === 'long') return `이유는 ${REBUKE_REASON_MAX}글자까지 적을 수 있어요.`;
+    if (reason === 'symbol') return 'ㅋㅋ나 기호만으로는 안 돼요. 무슨 일인지 적어 주세요.';
+    if (reason === 'name') return '이유에 이름은 적지 마세요. 누가 보냈는지 숨겨야 해요.';
+    if (reason === 'reason') return `이유를 ${REBUKE_REASON_MIN}글자 이상 적어 주세요.`;
     if (reason === 'balance') return `돈이 ${money}보다 적어요. 역따봉은 보낼 수 없어요.`;
-    if (reason === 'pair') return '오늘은 이미 이 친구에게 역따봉을 보냈어요.';
-    if (reason === 'daily') return `오늘은 역따봉을 ${REBUKE_DAILY_CAP}번 다 썼어요. 내일 다시 보낼 수 있어요.`;
+    if (reason === 'pair') return '오늘은 이미 이 친구에게 역따봉을 보냈어요. 내일 다시 보낼 수 있어요.';
+    if (reason === 'daily') return `오늘은 역따봉을 ${REBUKE_DAILY_CAP}번 다 보냈어요. 내일 다시 보낼 수 있어요.`;
     if (reason === 'who') return '역따봉을 보낼 친구를 찾지 못했어요.';
     return '역따봉을 보내지 못했어요.';
 }

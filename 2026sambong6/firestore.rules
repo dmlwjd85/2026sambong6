@@ -458,7 +458,11 @@ service cloud.firestore {
           && d.settlementAttempt >= 0
           && d.settlementAttempt <= 1000000
         ))
-        && (!('usedStaleValues' in d) || d.usedStaleValues is bool);
+        && (!('usedStaleValues' in d) || d.usedStaleValues is bool)
+        && (!('settlementPending' in d) || (
+          d.settlementPending is map
+          && d.settlementPending.size() <= 40
+        ));
     }
 
     function thermometerShapeOk() {
@@ -467,6 +471,7 @@ service cloud.firestore {
           'date', 'min', 'max', 'settledDate', 'lastSettlementAt',
           'settlementKey', 'settlementStatus', 'settlementStartedAt',
           'settlementLockOwner', 'settlementAttempt', 'usedStaleValues',
+          'settlementPending',
           'settlementAppliedCount', 'settlementTotalDelta'
         ])
         && d.date is string

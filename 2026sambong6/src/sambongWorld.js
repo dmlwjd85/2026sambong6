@@ -25794,6 +25794,9 @@ ${subjectLine}
                             isAdmin: !!window.playerState.isAdmin,
                         });
                         let creditBasis = bankAccrued;
+                        if ((bankAccrued.loanMsgs || []).length) {
+                            formatBankLoanLifecycleAlerts(bankAccrued.loanMsgs);
+                        }
                         if ((bankAccrued.loanMsgs || []).some((m) => m && m.kind === 'auto_repay')) {
                             opts.operationLabel = '대출 만기 상환';
                             opts.bongLogSource = 'bankLoanDue';

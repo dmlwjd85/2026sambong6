@@ -9,6 +9,9 @@ import {
     lunchHolidayDates,
     lunchAlreadyRecorded,
     planServerLunchDeduction,
+    lunchAlertStorageKey,
+    claimLunchAlertShown,
+    claimLunchAlertShownOnce,
     seoulDateParts,
     seoulSchoolDay,
     seoulYmdFromMs,
@@ -451,5 +454,30 @@ describe('점심 날짜', () => {
         assert.equal(laterLunchDate('', YESTERDAY, TODAY), YESTERDAY);
         assert.equal(laterLunchDate('2099-01-01', YESTERDAY, TODAY), '2099-01-01');
         assert.equal(laterLunchDate(YESTERDAY, '2099-01-01', TODAY), YESTERDAY);
+    });
+});
+
+describe('점심값 알림은 학생·날짜마다 한 번', () => {
+    function memoryStorage() {
+        const box = new Map();
+        return {
+            getItem(key) { return box.has(key) ? box.get(key) : null; },
+            setItem(key, value) { box.set(key, String(value)); },
+        };
+    }
+
+    it('같은 학생이 같은 날 알림을 두 번 가져가지 않는다', async () => {
+        const storage = memoryStorage();
+        const key = lunchAlertStorageKey('class1', '13', '2026-10-22');
+        assert.equal(await claimLunchAlertShownOnce(storage, key), true);
+        assert.equal(await claimLunchAlertShownOnce(storage, key), false);
+        assert.equal(claimLunchAlertShown(storage, key), false);
+        assert.equal(await claimLunchAlertShownOnce(storage, lunchAlertStorageKey('class1', '14', '2026-10-22')), true);
+        assert.equal(await claimLunchAlertShownOnce(storage, lunchAlertStorageKey('class1', '13', '2026-10-23')), true);
+    });
+
+    it('학생을 모르면 알림을 막지 않는다', () => {
+        assert.equal(lunchAlertStorageKey('class1', '', '2026-10-22'), '');
+        assert.equal(claimLunchAlertShown(memoryStorage(), ''), true);
     });
 });

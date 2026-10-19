@@ -41,7 +41,15 @@ import {
     formatWithheldLunchLine,
     formatLunchWalletSentence,
     formatClearRepayConfirm,
+    formatClearRepayDone,
+    formatClearLunchWarning,
     formatKeepLunchConfirm,
+    formatKeepLunchDone,
+    formatPartialRepayDone,
+    formatPastPromiseLine,
+    formatLunchRepayBlocked,
+    koreanTopicParticle,
+    koreanCopula,
     repayAmountsMatch,
     creditJudgedOnFinalBong,
     walletCreditAfterFinalBong,
@@ -1307,5 +1315,118 @@ describe('점심값으로 남긴 빚은 주급에서 조금씩 걷는다', () =>
         assert.equal(next.bong, 0);
         assert.equal(isStudentCreditDefault(next, nextDay), false);
         assert.equal(formatSalaryCollectionNotice({ salary: 12, collected: 2, left: 8, unit: 'B' }), '주급 12B가 들어왔어요.\n점심값으로 남겨 둔 빚 2B를 주급에서 갚았어요. 남은 빚은 8B예요.');
+    });
+});
+
+describe('갚기 안내 문장', () => {
+    it('전부 갚아 지갑이 다음 점심값보다 적으면 경고하고, 충분하면 경고하지 않는다', () => {
+        const today = '2026-10-22';
+        const loan = loanOf(101, '2026-10-23', 'loan_warn');
+        const clear = planClearLoan({
+            bong: 101,
+            bankLoan: loan,
+            lastLunchDeductDate: today,
+        }, { todayYmd: today, calendar: cal });
+        assert.equal(clear.ok, true);
+        assert.equal(clear.amount, 101);
+        assert.equal(clear.bong, 0);
+        assert.equal(clear.left, 0);
+        assert.equal(clear.reserveLunch, 0);
+        const warned = formatClearRepayConfirm(clear.amount, 'B', {
+            walletAfter: clear.bong,
+            todayYmd: today,
+            calendar: cal,
+            lastLunchDeductDate: today,
+        });
+        assert.equal(warned, '지갑에서 101B를 모두 갚을까요?\n빚은 0이 돼요.\n다음 점심값은 따로 남겨 두지 않아요.\n다 갚으면 지갑이 0B가 돼서 내일 점심값 10B를 못 낼 수 있어요. 걱정되면 \'점심값만 남기고 갚기\'를 눌러 주세요.');
+        const short = formatClearLunchWarning({
+            walletAfter: 4,
+            todayYmd: today,
+            calendar: cal,
+            lastLunchDeductDate: today,
+            unit: 'B',
+        });
+        assert.match(short, /지갑이 4B만 남아서 내일 점심값 10B를 못 낼 수 있어요/);
+        const safe = formatClearRepayConfirm(80, 'B', {
+            walletAfter: 10,
+            todayYmd: today,
+            calendar: cal,
+            lastLunchDeductDate: today,
+        });
+        assert.equal(safe, '지갑에서 80B를 모두 갚을까요?\n빚은 0이 돼요.\n다음 점심값은 따로 남겨 두지 않아요.');
+        const friday = formatClearLunchWarning({
+            walletAfter: 0,
+            todayYmd: '2026-10-23',
+            calendar: cal,
+            lastLunchDeductDate: '2026-10-23',
+            unit: 'B',
+        });
+        assert.match(friday, /월요일 점심값 10B를 못 낼 수 있어요/);
+        assert.doesNotMatch(friday, /내일/);
+    });
+
+    it('일부 갚기가 점심값 때문에 거절되면 금액과 이유를 말한다', () => {
+        const today = '2026-10-22';
+        const blocked = applyLoanAction({
+            bong: 10,
+            bankRegularSavings: 0,
+            bankLoan: loanOf(50, '2026-10-23', 'loan_block'),
+            lastLunchDeductDate: today,
+        }, 'partial', { todayYmd: today, calendar: cal, amount: 10 });
+        assert.equal(blocked.ok, false);
+        assert.equal(blocked.reason, 'lunch');
+        assert.equal(blocked.bong, 10);
+        assert.equal(loanDueTotal(blocked.bankLoan), 50);
+        assert.equal(blocked.lunchParts[0].amount, 10);
+        assert.equal(formatLunchRepayBlocked(blocked.lunchParts, 'B'), '금요일 점심값 10B를 남겨 둬야 해서, 지금은 갚을 수 없어요.');
+        const two = planPartialRepay({
+            bong: 15,
+            bankLoan: loanOf(50, '2026-10-23', 'loan_two'),
+            lastLunchDeductDate: '2026-10-21',
+        }, 15, { todayYmd: today, calendar: cal });
+        assert.equal(two.ok, false);
+        assert.equal(two.reason, 'lunch');
+        assert.equal(formatLunchRepayBlocked(two.lunchParts, 'B'), '오늘 점심값 10B, 금요일 점심값 10B를 남겨 둬야 해서, 지금은 갚을 수 없어요.');
+    });
+
+    it('완료창은 이제로 말하고, 지난 약속일은 지났다고 말한다', () => {
+        assert.equal(formatClearRepayDone(101, 'B'), '101B를 모두 갚았어요. 이제 빚은 0이에요.');
+        assert.equal(formatKeepLunchDone({
+            amount: 91,
+            left: 10,
+            dueYmd: '2026-10-23',
+            lunchParts: [{ label: '수요일 점심값', amount: 10 }],
+            unit: 'B',
+        }), '91B를 갚았어요.\n이제 빚이 10B 남았어요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.\n수요일 점심값 10B는 지갑에 남겨 뒀어요.');
+        assert.equal(formatPartialRepayDone({
+            amount: 10,
+            left: 40,
+            dueYmd: '2026-10-23',
+            unit: 'B',
+        }), '10B를 갚았어요.\n이제 빚이 40B 남았어요.\n이 40B는 10월 23일(금)까지 갚으면 돼요.');
+        assert.equal(formatPartialRepayDone({ amount: 50, left: 0, unit: 'B' }), '50B를 모두 갚았어요. 이제 빚은 0이에요.');
+        assert.equal(formatPastPromiseLine('10월 21일(수)'), '약속한 날이 지났어요. 그날은 10월 21일(수)예요.');
+        assert.equal(
+            formatDebtLeftSentence(10, '2026-10-21', 'B', { done: true, todayYmd: '2026-10-22' }),
+            '이제 빚이 10B 남았어요.\n약속한 날이 지났어요. 그날은 10월 21일(수)예요.',
+        );
+        assert.doesNotMatch(formatPastPromiseLine('10월 21일(수)'), /까지 갚으면 돼요/);
+    });
+
+    it('날짜와 요일 괄호 뒤 조사는 끝소리 받침에 맞춘다', () => {
+        assert.equal(formatPromiseDay('2026-10-21'), '10월 21일(수)');
+        assert.equal(koreanTopicParticle('10월 21일'), '은');
+        assert.equal(koreanTopicParticle('10월 21일(일)'), '은');
+        assert.equal(koreanTopicParticle('10월 21일(월)'), '은');
+        assert.equal(koreanTopicParticle('10월 21일(화)'), '는');
+        assert.equal(koreanTopicParticle('10월 21일(수)'), '는');
+        assert.equal(koreanTopicParticle('10월 21일(목)'), '은');
+        assert.equal(koreanTopicParticle('10월 23일(금)'), '은');
+        assert.equal(koreanTopicParticle('10월 21일(토)'), '는');
+        assert.equal(koreanTopicParticle('B'), '는');
+        assert.equal(koreanCopula('10월 21일(수)'), '예요');
+        assert.equal(koreanCopula('10월 23일(금)'), '이에요');
+        assert.equal(koreanCopula('10월 21일'), '이에요');
+        assert.equal(koreanCopula('B'), '이에요');
     });
 });

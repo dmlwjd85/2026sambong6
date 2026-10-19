@@ -603,14 +603,31 @@ export function formatSalaryCollectionNotice({ salary = 0, collected = 0, left =
     return lines.join('\n');
 }
 
-/** 점심값 때문에 적은 돈보다 덜 갚을 때 이유를 한 줄로 말합니다. */
-export function formatWithheldLunchLine(requested, amount, withheld, unit = 'B') {
+/**
+ * 점심값 때문에 적은 돈보다 덜 갚을 때 이유를 한 줄로 말합니다.
+ * 세 번째 값은 적게 갚는 차이이고, 점심값 자체가 아닙니다.
+ * 점심값 금액은 lunch에 숫자나 점심 칸 목록으로 넘깁니다.
+ */
+export function formatWithheldLunchLine(requested, amount, withheld, unit = 'B', lunch) {
     const ask = Math.floor(Number(requested) || 0);
     const pay = Math.floor(Number(amount) || 0);
     const held = Math.max(0, Math.floor(Number(withheld) || 0));
     if (held <= 0 || ask <= pay) return '';
     const shown = String(unit || 'B');
-    return `적은 ${ask}${shown} 중 점심값 ${held}${shown}${topicParticle(shown)} 남기고 ${pay}${shown}만 갚아요.`;
+    const parts = (Array.isArray(lunch) ? lunch : []).filter((part) => part && Math.floor(Number(part.amount) || 0) > 0);
+    if (parts.length === 1) {
+        const only = parts[0];
+        const need = Math.floor(Number(only.amount) || 0);
+        const label = String(only.label || '점심값').trim() || '점심값';
+        return `${label} ${need}${shown}${lunchParticle(shown)} 남기려고 ${pay}${shown}만 갚아요.`;
+    }
+    if (parts.length > 1) {
+        const body = parts.map((part) => `${part.label} ${Math.floor(Number(part.amount) || 0)}${shown}`).join(', ');
+        return `${body}${lunchParticle(shown)} 남기려고 ${pay}${shown}만 갚아요.`;
+    }
+    const need = Math.max(0, Math.floor(Number(lunch) || 0));
+    if (need > 0) return `점심값 ${need}${shown}${lunchParticle(shown)} 남기려고 ${pay}${shown}만 갚아요.`;
+    return `점심값을 남기려고 ${pay}${shown}만 갚아요.`;
 }
 
 /** 확인창용. 남기는 점심값은 지갑에 둔다고 말합니다. done이면 이미 남겨 둔 뒤입니다. */
@@ -642,8 +659,10 @@ function lunchDayWord(todayYmd, part) {
 }
 
 /**
- * 전부 갚은 뒤 지갑이 다음 점심값보다 적으면 한 줄로 알립니다.
- * 다음 점심값 이상 남으면 빈 문자열입니다.
+ * 전부 갚은 뒤 지갑으로 오늘(아직 안 냈으면)과 다음 등교일 점심값을 낼 수 있는지 알립니다.
+ * 오늘 몫도 모자라면 오늘 점심값만 말하고, 오늘은 되지만 다음 날이 모자라면 둘 다 말합니다.
+ * 이미 낸 뒤에는 다음 등교일만 봅니다. 돈이 충분하면 빈 문자열입니다.
+ * 날짜와 휴일은 schoolLunchParts가 쓰던 서버 날짜·휴일 목록 그대로입니다.
  */
 export function formatClearLunchWarning({
     walletAfter = 0,
@@ -653,17 +672,34 @@ export function formatClearLunchWarning({
     nextLunch = null,
     unit = 'B',
 } = {}) {
-    const lunch = nextLunch || nextSchoolLunchPart(todayYmd, calendar, lastLunchDeductDate);
-    if (!lunch || !(lunch.amount > 0)) return '';
+    const parts = schoolLunchParts(todayYmd, calendar, lastLunchDeductDate);
+    const todayPart = parts.find((part) => part && part.kind === 'today' && part.amount > 0) || null;
+    const foundNext = parts.find((part) => part && part.kind === 'next' && part.amount > 0) || null;
+    const nextPart = nextLunch && nextLunch.amount > 0 ? nextLunch : foundNext;
+    const todayNeed = todayPart ? Math.floor(Number(todayPart.amount) || 0) : 0;
+    const nextNeed = nextPart ? Math.floor(Number(nextPart.amount) || 0) : 0;
     const left = Math.floor(Number(walletAfter) || 0);
-    const need = Math.floor(Number(lunch.amount) || 0);
-    if (need <= 0 || left >= need) return '';
     const shown = String(unit || 'B');
-    const when = lunchDayWord(todayYmd, lunch);
+    let when = '';
+    let need = 0;
+    let both = false;
+    if (todayNeed > 0 && left < todayNeed) {
+        when = '오늘';
+        need = todayNeed;
+    } else if (todayNeed > 0 && nextNeed > 0 && left < todayNeed + nextNeed) {
+        when = `오늘이랑 ${lunchDayWord(todayYmd, nextPart)}`;
+        need = todayNeed + nextNeed;
+        both = true;
+    } else if (nextNeed > 0 && left < nextNeed) {
+        when = lunchDayWord(todayYmd, nextPart);
+        need = nextNeed;
+    }
+    if (need <= 0 || !when) return '';
     const walletText = left <= 0
         ? `지갑이 0${shown}가 돼서`
         : `지갑이 ${left}${shown}만 남아서`;
-    return `다 갚으면 ${walletText} ${when} 점심값 ${need}${shown}${lunchParticle(shown)} 못 낼 수 있어요. 걱정되면 '점심값만 남기고 갚기'를 눌러 주세요.`;
+    const all = both ? '다 ' : '';
+    return `다 갚으면 ${walletText} ${when} 점심값 ${need}${shown}${lunchParticle(shown)} ${all}못 낼 수 있어요. 걱정되면 '점심값만 남기고 갚기'를 눌러 주세요.`;
 }
 
 export function formatClearRepayConfirm(amount, unit = 'B', opts = {}) {
@@ -672,11 +708,22 @@ export function formatClearRepayConfirm(amount, unit = 'B', opts = {}) {
     const lines = [
         `지갑에서 ${pay}${shown}${lunchParticle(shown)} 모두 갚을까요?`,
         '빚은 0이 돼요.',
-        '다음 점심값은 따로 남겨 두지 않아요.',
     ];
     const warning = formatClearLunchWarning({ ...(opts || {}), unit: shown });
     if (warning) lines.push(warning);
+    else lines.push('다음 점심값은 따로 남겨 두지 않아요.');
     return lines.join('\n');
+}
+
+/** 대출이 있을 때 굵은 안내. 점심 빚의 약속일이 지났으면 위 칸과 같은 말로 바꿉니다. */
+export function formatExistingLoanPreview(dueYmd, opts = {}) {
+    const dueLabel = formatPromiseDay(dueYmd) || String(dueYmd || '');
+    const today = String((opts && opts.todayYmd) || '');
+    const past = !!(today && dueYmd && today > String(dueYmd));
+    if (past && opts && opts.shielded) {
+        return `${formatPastPromiseLine(dueLabel)} 주급을 받을 때 조금씩 갚아요. 신용불량은 아니에요.`;
+    }
+    return `약속한 날 ${dueLabel}. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.`;
 }
 
 /** 전부 갚기 완료창. 확인창의 「돼요」와 맞춰 「이제」로 말합니다. */

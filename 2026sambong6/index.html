@@ -3841,7 +3841,7 @@
             <h3 class="text-rose-100 font-black text-lg">역따봉 관리</h3>
             <button type="button" id="rebukeToggleBtn" onclick="void window.toggleRebukeClass()" class="w-full bg-slate-800 text-rose-50 font-black py-2 rounded-xl min-h-[44px] border border-rose-400">반 전체 역따봉 끄기</button>
             <div id="rebukeTeacherList" class="space-y-2 max-h-80 overflow-y-auto"></div>
-            <button type="button" onclick="document.getElementById('rebukeTeacherModal').classList.add('hidden')" class="w-full bg-rose-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
+            <button type="button" onclick="window.closeRebukeTeacher && window.closeRebukeTeacher()" class="w-full bg-rose-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
         </div>
     </div>
     <script type="module" src="/src/main.jsx"></script>

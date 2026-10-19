@@ -33,6 +33,22 @@ function refundPath(id) {
     return `artifacts/class1/public/data/classOps/rebukeRefunds/items/${id}`;
 }
 
+function chargePath(id) {
+    return `artifacts/class1/public/data/classOps/rebukeCharges/items/${id}`;
+}
+
+function settlementPath(id) {
+    return `artifacts/class1/public/data/classOps/rebukeSettlements/items/${id}`;
+}
+
+function waiverPath(id) {
+    return `artifacts/class1/public/data/classOps/rebukeWaivers/items/${id}`;
+}
+
+function paybackPath(id) {
+    return `artifacts/class1/public/data/classOps/rebukePaybacks/items/${id}`;
+}
+
 const configPath = 'artifacts/class1/public/data/classOps/rebukeConfig';
 
 describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {
@@ -63,7 +79,7 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
                 email: 'teacher@school.kr',
                 classIds: ['class1'],
             });
-            await setDoc(doc(db, configPath), defaultRebukeConfig());
+            await setDoc(doc(db, configPath), { ...defaultRebukeConfig(), enabled: true });
         });
     });
 
@@ -85,6 +101,13 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         return testEnv.unauthenticatedContext().firestore();
     }
 
+    function other() {
+        return testEnv.authenticatedContext('other-student', {
+            provider_id: 'anonymous',
+            firebase: { sign_in_provider: 'anonymous' },
+        }).firestore();
+    }
+
     async function seedStudent(id, extra = {}) {
         await testEnv.withSecurityRulesDisabled(async (context) => {
             await setDoc(doc(context.firestore(), studentPath(id)), {
@@ -99,10 +122,10 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         const batch = writeBatch(db);
         batch.set(doc(db, eventPath(made.eventId)), made.event);
         batch.set(doc(db, auditPath(made.eventId)), { ...made.audit, authUid: uid });
+        batch.set(doc(db, chargePath(made.eventId)), { ...made.charge, authUid: uid });
         batch.set(doc(db, dailyPath(made.daily.pairId)), { eventId: made.eventId });
         batch.set(doc(db, dailyPath(made.daily.sentId)), { eventId: made.eventId });
         batch.set(doc(db, dailyPath(made.daily.recvId)), { eventId: made.eventId });
-        batch.set(doc(db, studentPath(made.audit.fromId)), { bong: made.senderBong }, { merge: true });
         batch.set(doc(db, studentPath(made.event.toId)), {
             bong: made.receiverBong,
             rebukeSeq: made.seq,
@@ -114,7 +137,7 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
 
     function makePlan(extra = {}) {
         return planPeerRebuke({
-            config: defaultRebukeConfig(),
+            config: { ...defaultRebukeConfig(), enabled: true },
             fromId: '1',
             toId: '2',
             reason: '떠들어서 수업이 멈췄어요',
@@ -142,6 +165,11 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         const event = await getDoc(doc(anon(), eventPath(made.eventId)));
         assert.equal(event.data().fromId, undefined);
         assert.equal(event.data().reason, '떠들어서 수업이 멈췄어요');
+        const sender = await getDoc(doc(anon(), studentPath('1')));
+        assert.equal(sender.data().bong, 50);
+        await assertSucceeds(getDoc(doc(anon(), chargePath(made.eventId))));
+        await assertFails(getDoc(doc(other(), chargePath(made.eventId))));
+        await assertSucceeds(getDoc(doc(teacher(), chargePath(made.eventId))));
     });
 
     it('감사 문서와 하루 제한 문서는 고치거나 지울 수 없다', async () => {
@@ -202,11 +230,11 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
     it('같은 날 네 번째 받기와 기능이 꺼진 보내기는 거절한다', async () => {
         await seedStudent('9', { bong: 80 });
         for (let n = 1; n <= 3; n += 1) {
-            await seedStudent(String(n), { bong: 50 - (n - 1) * 5 });
+            await seedStudent(String(n), { bong: 50 });
             const made = makePlan({
                 fromId: String(n),
                 toId: '9',
-                senderBong: 50 - (n - 1) * 5,
+                senderBong: 50,
                 receiverBong: 80,
                 receiverSeq: n - 1,
                 receiverEpoch: n === 1 ? undefined : 1,
@@ -270,6 +298,7 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         await assertFails(setDoc(doc(anon(), eventPath(made.eventId)), {
             hidden: true,
             reason: '',
+            reasonFold: '',
         }, { merge: true }));
         const anonDb = anon();
         const studentRefund = writeBatch(anonDb);
@@ -279,6 +308,7 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         await assertSucceeds(setDoc(doc(teacher(), eventPath(made.eventId)), {
             hidden: true,
             reason: '',
+            reasonFold: '',
         }, { merge: true }));
         const hidden = await getDoc(doc(anon(), eventPath(made.eventId)));
         assert.equal(hidden.data().reason, '');
@@ -330,5 +360,186 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         const saved = await getDoc(doc(anon(), studentPath('7')));
         assert.equal(saved.data().rebukeSeq, 2);
         assert.equal(saved.data().bong, 11);
+    });
+
+    it('기본으로 꺼져 있고, 학생은 켜지 못한다', async () => {
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await deleteDoc(doc(context.firestore(), configPath));
+        });
+        await assertFails(setDoc(doc(anon(), configPath), { enabled: true, epoch: 1, roster: {} }));
+        await assertSucceeds(setDoc(doc(anon(), configPath), defaultRebukeConfig()));
+        await seedStudent('1');
+        await seedStudent('2');
+        await assertFails(commitSend(anon(), makePlan()));
+        const teacherDb = teacher();
+        await assertSucceeds(setDoc(doc(teacherDb, configPath), { enabled: true, epoch: 1, roster: {} }));
+        await assertSucceeds(commitSend(anon(), makePlan()));
+    });
+
+    it('금칙어는 화면 정규화와 원문 둘 다에서 거절한다', async () => {
+        await seedStudent('1');
+        await seedStudent('2');
+        const samples = ['바 보', '바.보', '바1보', '멍청이', '좆같아', '시1발놈', 'ㅅ ㅂ', 'qkqh', 'tlqkf', '꺼져 돼지야'];
+        for (const reason of samples) {
+            const made = makePlan();
+            made.event.reason = reason;
+            made.event.reasonFold = '수업좋아요';
+            made.audit.reason = reason;
+            made.audit.reasonFold = '수업좋아요';
+            await assertFails(commitSend(anon(), made));
+        }
+    });
+
+    it('소수 봉도 역따봉을 받을 수 있다', async () => {
+        await seedStudent('1', { bong: 100.5 });
+        await seedStudent('2', { bong: 100.5 });
+        const made = makePlan({ senderBong: 100.5, receiverBong: 100.5 });
+        assert.equal(made.ok, true);
+        assert.equal(made.receiverBong, 100.5);
+        await assertSucceeds(commitSend(anon(), made));
+        const receiver = await getDoc(doc(anon(), studentPath('2')));
+        assert.equal(receiver.data().bong, 100.5);
+    });
+
+    it('선생님에게 보내거나 선생님 이름으로 보내지 못한다', async () => {
+        await seedStudent('1');
+        await seedStudent('2');
+        await seedStudent('gm', { bong: 50 });
+        const asTeacher = makePlan();
+        asTeacher.audit.fromId = 'gm';
+        asTeacher.charge.fromId = 'gm';
+        await assertFails(commitSend(anon(), asTeacher));
+        const toTeacher = makePlan();
+        toTeacher.event.toId = 'gm';
+        toTeacher.eventId = 'e~1~1~student_gm~1';
+        toTeacher.audit.toId = 'gm';
+        toTeacher.charge.toId = 'gm';
+        toTeacher.daily.pairId = 'p~1~' + today() + '~1~gm';
+        toTeacher.daily.recvId = 'r~1~' + today() + '~gm~1';
+        await assertFails(commitSend(anon(), toTeacher));
+    });
+
+    it('감점 뒤에 봉이 바뀌어도 지금 값에 더해 되돌린다', async () => {
+        await seedStudent('1');
+        await seedStudent('2', { bong: 40, rebukeSeq: 9, rebukeEpoch: 1, rebukeRoster: 1 });
+        const made = makePlan({
+            receiverSeq: 9,
+            receiverEpoch: 1,
+            receiverRoster: 1,
+            receiverBong: 40,
+        });
+        await assertSucceeds(commitSend(anon(), made));
+        await assertSucceeds(setDoc(doc(anon(), studentPath('2')), { bong: 41 }, { merge: true }));
+        const teacherDb = teacher();
+        const refund = writeBatch(teacherDb);
+        refund.set(doc(teacherDb, refundPath(made.eventId)), { amount: 10, beforeBong: 41, afterBong: 51 });
+        refund.set(doc(teacherDb, studentPath('2')), { bong: 51 }, { merge: true });
+        await assertSucceeds(refund.commit());
+        const saved = await getDoc(doc(teacherDb, studentPath('2')));
+        assert.equal(saved.data().bong, 51);
+    });
+
+    it('같은 날에는 5봉을 빼지 않고 다음 날에만 정산한다', async () => {
+        await seedStudent('1', { bong: 50 });
+        await seedStudent('2');
+        const made = makePlan();
+        await assertSucceeds(commitSend(anon(), made));
+        const senderDb = anon();
+        const todaySettle = writeBatch(senderDb);
+        todaySettle.set(doc(senderDb, settlementPath(made.eventId)), {
+            amount: 5,
+            bongBefore: 50,
+            bongAfter: 45,
+            authUid: 'anon-student',
+        });
+        todaySettle.set(doc(senderDb, studentPath('1')), { bong: 45 }, { merge: true });
+        await assertFails(todaySettle.commit());
+        const kept = await getDoc(doc(anon(), studentPath('1')));
+        assert.equal(kept.data().bong, 50);
+
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), chargePath('old-fee')), {
+                fromId: '1',
+                toId: '2',
+                authUid: 'anon-student',
+                ymd: '2000-01-01',
+                amount: 5,
+                epoch: 1,
+            });
+        });
+        const db = anon();
+        const settle = writeBatch(db);
+        settle.set(doc(db, settlementPath('old-fee')), {
+            amount: 5,
+            bongBefore: 50,
+            bongAfter: 45,
+            authUid: 'anon-student',
+        });
+        settle.set(doc(db, studentPath('1')), { bong: 45 }, { merge: true });
+        await assertSucceeds(settle.commit());
+        const paid = await getDoc(doc(anon(), studentPath('1')));
+        assert.equal(paid.data().bong, 45);
+
+        const teacherDb = teacher();
+        const payback = writeBatch(teacherDb);
+        payback.set(doc(teacherDb, paybackPath('old-fee')), {
+            amount: 5,
+            beforeBong: 45,
+            afterBong: 50,
+            authUid: 'anon-student',
+        });
+        payback.set(doc(teacherDb, studentPath('1')), { bong: 50 }, { merge: true });
+        await assertSucceeds(payback.commit());
+    });
+
+    it('정산 전에 면제하면 5봉을 빼지 않는다', async () => {
+        await seedStudent('1', { bong: 20 });
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), chargePath('waived')), {
+                fromId: '1',
+                toId: '2',
+                authUid: 'anon-student',
+                ymd: '2000-01-01',
+                amount: 5,
+                epoch: 1,
+            });
+        });
+        const teacherDb = teacher();
+        await assertSucceeds(setDoc(doc(teacherDb, waiverPath('waived')), {
+            authUid: 'anon-student',
+            fromId: '1',
+        }));
+        const blockedDb = anon();
+        const blocked = writeBatch(blockedDb);
+        blocked.set(doc(blockedDb, settlementPath('waived')), {
+            amount: 5,
+            bongBefore: 20,
+            bongAfter: 15,
+            authUid: 'anon-student',
+        });
+        blocked.set(doc(blockedDb, studentPath('1')), { bong: 15 }, { merge: true });
+        await assertFails(blocked.commit());
+        const kept = await getDoc(doc(anon(), studentPath('1')));
+        assert.equal(kept.data().bong, 20);
+    });
+
+    it('시즌이 바뀌면 옛 이유를 비운다', async () => {
+        await seedStudent('1');
+        await seedStudent('2');
+        const made = makePlan();
+        await assertSucceeds(commitSend(anon(), made));
+        await assertFails(setDoc(doc(anon(), eventPath(made.eventId)), {
+            reason: '',
+            reasonFold: '',
+        }, { merge: true }));
+        const teacherDb = teacher();
+        await assertSucceeds(setDoc(doc(teacherDb, configPath), { enabled: true, epoch: 2, roster: {} }));
+        await assertSucceeds(setDoc(doc(teacherDb, eventPath(made.eventId)), {
+            reason: '',
+            reasonFold: '',
+        }, { merge: true }));
+        const cleared = await getDoc(doc(anon(), eventPath(made.eventId)));
+        assert.equal(cleared.data().reason, '');
+        assert.equal(cleared.data().reasonFold, '');
     });
 });

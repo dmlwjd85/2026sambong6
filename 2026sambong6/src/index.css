@@ -660,16 +660,46 @@
             opacity: 0.38;
             filter: grayscale(0.65);
         }
-        .praise-btn {
+        .plaza-praise-row {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.2rem;
+            width: 100%;
             margin-top: 0.2rem;
-            min-height: 1.6rem;
+        }
+        .praise-btn,
+        .rebuke-btn {
+            width: 100%;
+            min-height: 40px;
             border-radius: 999px;
+            font-size: 12px;
+            font-weight: 900;
+            line-height: 1.2;
+            padding: 0 0.35rem;
+            white-space: nowrap;
+            overflow: visible;
+        }
+        .praise-btn {
             border: 1px solid #fbbf24;
             background: #422006;
             color: #fde68a;
-            font-size: 9px;
-            font-weight: 900;
-            padding: 0 0.4rem;
+        }
+        .rebuke-btn {
+            border: 1px solid #fb7185;
+            background: #4c0519;
+            color: #ffe4e6;
+        }
+        @media (min-width: 1400px) {
+            .plaza-praise-row {
+                flex-direction: row;
+            }
+            .praise-btn,
+            .rebuke-btn {
+                width: auto;
+                flex: 1 1 0;
+                min-height: 40px;
+            }
         }
         .checklist-grid {
             display: grid;

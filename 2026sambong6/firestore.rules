@@ -273,8 +273,7 @@ service cloud.firestore {
 
     // 마스터 문서의 PIN은 공개되면 안 됩니다. 와일드카드와 OR 되므로 양쪽에서 막습니다.
     function isMasterStudentDoc() {
-      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm$')
-        || string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm_a$');
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm(_a)?$');
     }
 
     function masterStudentPinAbsent() {
@@ -470,11 +469,6 @@ service cloud.firestore {
       return 'stockInvestDaily' in d && d.stockInvestDaily is map ? d.stockInvestDaily : {};
     }
 
-    function dailyDate(d) {
-      let day = dailyMap(d);
-      return 'date' in day && day.date is string ? day.date : '';
-    }
-
     function dailyProfit(d) {
       let day = dailyMap(d);
       return 'profit' in day && day.profit is number ? day.profit : 0;
@@ -484,42 +478,24 @@ service cloud.firestore {
       return 'bankTermDeposits' in d && d.bankTermDeposits is list ? d.bankTermDeposits : [];
     }
 
-    function termItemBad(list, i) {
-      return !(list[i] is map)
-        || !('amount' in list[i])
-        || !(list[i].amount is number)
-        || list[i].amount < 1
-        || list[i].amount > 1000000;
-    }
-
     function termAmt(list, i) {
-      return list.size() <= i ? 0 : (termItemBad(list, i) ? -1000000 : list[i].amount);
+      return list.size() <= i
+        ? 0
+        : list[i].amount is number && list[i].amount >= 1 && list[i].amount <= 1000000
+          ? list[i].amount
+          : -10000000;
     }
 
-    // 적금은 반복문이 없어 12개까지만 더합니다. 그보다 길면 -1이라, 목록이 그대로일 때만 통과합니다.
+    // 적금은 반복문이 없어 4개까지만 더합니다. 그보다 길거나 금액이 이상하면 음수라, 목록이 그대로일 때만 통과합니다.
     function termSum(list) {
-      return list.size() > 12
+      return list.size() > 4
         ? -1
-        : termAmt(list, 0) + termAmt(list, 1) + termAmt(list, 2) + termAmt(list, 3)
-          + termAmt(list, 4) + termAmt(list, 5) + termAmt(list, 6) + termAmt(list, 7)
-          + termAmt(list, 8) + termAmt(list, 9) + termAmt(list, 10) + termAmt(list, 11);
+        : termAmt(list, 0) + termAmt(list, 1) + termAmt(list, 2) + termAmt(list, 3);
     }
 
     function posPrincipal(bag, market) {
-      return market in bag
-        && bag[market] is map
-        && 'principal' in bag[market]
-        && bag[market].principal is number
+      return market in bag && bag[market] is map && bag[market].principal is number
         ? bag[market].principal
-        : 0;
-    }
-
-    function posRealized(bag, market) {
-      return market in bag
-        && bag[market] is map
-        && 'realizedProfit' in bag[market]
-        && bag[market].realizedProfit is number
-        ? bag[market].realizedProfit
         : 0;
     }
 
@@ -529,21 +505,39 @@ service cloud.firestore {
 
     function kstMondayString() {
       let wd = kstWeekdaySunday0();
-      let back = wd == 0 ? 6 : wd - 1;
-      let monday = back == 0 ? kstNow().date() : kstNow().date() - duration.value(back, 'd');
+      let monday = wd == 1
+        ? kstNow().date()
+        : wd == 2
+          ? kstNow().date() - duration.value(1, 'd')
+          : wd == 3
+            ? kstNow().date() - duration.value(2, 'd')
+            : wd == 4
+              ? kstNow().date() - duration.value(3, 'd')
+              : wd == 5
+                ? kstNow().date() - duration.value(4, 'd')
+                : wd == 6
+                  ? kstNow().date() - duration.value(5, 'd')
+                  : kstNow().date() - duration.value(6, 'd');
       return string(monday.year()) + '-' + twoDigits(monday.month()) + '-' + twoDigits(monday.day());
     }
 
     // 이번 주 주급 잠금. 월~금은 그 주 금요일, 토·일은 막 지나간 금요일입니다.
+    // 요일 차이는 실수가 되므로 duration에는 정수 글자만 넣습니다.
     function salaryLockIdNow() {
       let wd = kstWeekdaySunday0();
       let friday = wd == 5
         ? kstNow().date()
-        : wd == 6
-          ? kstNow().date() - duration.value(1, 'd')
-          : wd == 0
-            ? kstNow().date() - duration.value(2, 'd')
-            : kstNow().date() + duration.value(5 - wd, 'd');
+        : wd == 4
+          ? kstNow().date() + duration.value(1, 'd')
+          : wd == 3
+            ? kstNow().date() + duration.value(2, 'd')
+            : wd == 2
+              ? kstNow().date() + duration.value(3, 'd')
+              : wd == 1
+                ? kstNow().date() + duration.value(4, 'd')
+                : wd == 6
+                  ? kstNow().date() - duration.value(1, 'd')
+                  : kstNow().date() - duration.value(2, 'd');
       return 'SALARY_' + string(friday.year()) + '_' + twoDigits(friday.month()) + '_' + twoDigits(friday.day());
     }
 
@@ -637,134 +631,16 @@ service cloud.firestore {
         );
     }
 
-    function positionOk(bag, market) {
-      return !(market in bag) || bag[market] == null || (
-        bag[market] is map
-        && bag[market].principal is int
-        && bag[market].principal >= 10
-        && bag[market].principal <= 1000
-        && (
-          !('realizedProfit' in bag[market])
-          || (
-            bag[market].realizedProfit is int
-            && bag[market].realizedProfit >= 0
-            && bag[market].realizedProfit <= 8
-          )
-        )
-      );
-    }
-
-    function realizedNotReduced(market) {
-      let prevBag = stockBag(resource.data);
-      let nextBag = stockBag(request.resource.data);
-      let prevP = posPrincipal(prevBag, market);
-      let nextP = posPrincipal(nextBag, market);
-      return nextP == 0 || prevP == 0 || posRealized(nextBag, market) >= posRealized(prevBag, market);
-    }
-
-    function partialRealizedGain(market) {
-      let prevBag = stockBag(resource.data);
-      let nextBag = stockBag(request.resource.data);
-      let prevP = posPrincipal(prevBag, market);
-      let nextP = posPrincipal(nextBag, market);
-      let prevR = posRealized(prevBag, market);
-      let nextR = posRealized(nextBag, market);
-      return nextP > 0 && prevP > nextP && nextR > prevR ? nextR - prevR : 0;
-    }
-
-    function fullSellRoom(market) {
-      let prevBag = stockBag(resource.data);
-      let nextBag = stockBag(request.resource.data);
-      let prevP = posPrincipal(prevBag, market);
-      let nextP = posPrincipal(nextBag, market);
-      let room = 8 - posRealized(prevBag, market);
-      return prevP > 0 && nextP == 0 && room > 0 ? room : 0;
-    }
-
-    function stockProfitBudget() {
-      return partialRealizedGain('kospi') + partialRealizedGain('kosdaq') + partialRealizedGain('nasdaq')
-        + fullSellRoom('kospi') + fullSellRoom('kosdaq') + fullSellRoom('nasdaq');
-    }
-
-    function takenProfit() {
-      let same = dailyDate(resource.data) == dailyDate(request.resource.data);
-      let prevProfit = dailyProfit(resource.data);
-      let nextProfit = dailyProfit(request.resource.data);
-      let delta = same ? nextProfit - prevProfit : nextProfit;
-      return delta > 0 ? delta : 0;
-    }
-
-    function stockDailyOk() {
-      let prevDate = dailyDate(resource.data);
-      let nextDate = dailyDate(request.resource.data);
-      let prevProfit = dailyProfit(resource.data);
-      let nextProfit = dailyProfit(request.resource.data);
-      return nextProfit >= 0
-        && nextProfit <= 8
-        && (
-          nextDate == ''
-          || (
-            nextDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-            && nextDate <= kstDateString()
-          )
-        )
-        && (nextDate == prevDate ? nextProfit >= prevProfit : nextDate >= prevDate);
-    }
-
-    function stockShapeOk() {
-      return (
-          stockBag(resource.data) == stockBag(request.resource.data)
-          && dailyMap(resource.data) == dailyMap(request.resource.data)
-        )
-        || (
-          positionOk(stockBag(request.resource.data), 'kospi')
-          && positionOk(stockBag(request.resource.data), 'kosdaq')
-          && positionOk(stockBag(request.resource.data), 'nasdaq')
-          && realizedNotReduced('kospi')
-          && realizedNotReduced('kosdaq')
-          && realizedNotReduced('nasdaq')
-          && stockDailyOk()
-          && takenProfit() <= stockProfitBudget()
-        );
-    }
-
-    function termDownAmount() {
-      let prev = termSum(termList(resource.data));
-      let next = termSum(termList(request.resource.data));
-      return prev >= 0 && next >= 0 && prev > next ? prev - next : 0;
-    }
-
-    function stockDownAmount() {
-      let prev = stockSum(stockBag(resource.data));
-      let next = stockSum(stockBag(request.resource.data));
-      return prev > next ? prev - next : 0;
-    }
-
-    function stockUpAmount() {
-      let prev = stockSum(stockBag(resource.data));
-      let next = stockSum(stockBag(request.resource.data));
-      return next > prev ? next - prev : 0;
-    }
-
-    // 출금·만기(원금의 최대 2배)·매도 원금·그날 기록된 이익·대출 실행·보너스 1봉.
-    // 설명 없는 800봉은 여기 넣지 않습니다. 은행이 움직인 저장에 보상을 섞어 넣지 못하게 합니다.
-    function wealthCredits() {
-      let savPrev = savingsOf(resource.data);
-      let savNext = savingsOf(request.resource.data);
-      let savDown = savPrev > savNext ? savPrev - savNext : 0;
-      let loanPrev = loanPrincipalOf(resource.data);
-      let loanNext = loanPrincipalOf(request.resource.data);
-      let loanUp = loanNext > loanPrev ? loanNext - loanPrev : 0;
-      let down = termList(resource.data) == termList(request.resource.data) ? 0 : termDownAmount();
-      let stockDown = stockBag(resource.data) == stockBag(request.resource.data) ? 0 : stockDownAmount();
-      return savDown + down + down + stockDown + takenProfit() + loanUp + 1;
-    }
-
-    function needsTightBongCeiling() {
-      return savingsOf(resource.data) != savingsOf(request.resource.data)
-        || termList(resource.data) != termList(request.resource.data)
-        || stockBag(resource.data) != stockBag(request.resource.data)
-        || loanPrincipalOf(request.resource.data) > loanPrincipalOf(resource.data);
+    // 같은 날 이익이 줄거나 8을 넘으면 -1. 날짜가 뒤로 가는 것도 -1입니다.
+    function dayGain() {
+      let prev = dailyMap(resource.data);
+      let next = dailyMap(request.resource.data);
+      let prevP = prev.profit is number ? prev.profit : 0;
+      let nextP = next.profit is number ? next.profit : 0;
+      let same = prev.date == next.date;
+      return nextP < 0 || nextP > 8 || (same ? nextP < prevP : next.date < prev.date)
+        ? -1
+        : (same ? (nextP > prevP ? nextP - prevP : 0) : (nextP > 0 ? nextP : 0));
     }
 
     function bongFloorOk() {
@@ -773,69 +649,109 @@ service cloud.firestore {
       return next >= -2000 && next >= prev - 5050;
     }
 
-    // 은행·적금·지수가 그대로면 봉은 한 번에 800까지 오를 수 있습니다.
-    // 그 칸이 움직이면, 늘어난 봉은 출금·만기·매도·대출 실행으로 설명되어야 합니다.
-    function bongRiseOk() {
-      let rise = bongOf(request.resource.data) - bongOf(resource.data);
-      return (!needsTightBongCeiling() && rise <= 800)
-        || rise <= wealthCredits();
-    }
-
-    function storeNeed() {
-      let savUp = savingsOf(request.resource.data) - savingsOf(resource.data);
-      let upSav = savUp > 0 ? savUp : 0;
-      let prevTerm = termList(resource.data) == termList(request.resource.data) ? 0 : termSum(termList(resource.data));
-      let nextTerm = termList(resource.data) == termList(request.resource.data) ? 0 : termSum(termList(request.resource.data));
-      let upTerm = prevTerm >= 0 && nextTerm > prevTerm ? nextTerm - prevTerm : 0;
-      let upStock = stockBag(resource.data) == stockBag(request.resource.data) ? 0 : stockUpAmount();
-      return prevTerm < 0 || nextTerm < 0 ? -1 : upSav + upTerm + upStock;
-    }
-
-    function bankStoresOk() {
-      return (
-          savingsOf(resource.data) == savingsOf(request.resource.data)
-          && termList(resource.data) == termList(request.resource.data)
-          && stockBag(resource.data) == stockBag(request.resource.data)
-        )
-        || (
-          savingsOf(request.resource.data) >= 0
-          && storeNeed() >= 0
-          && storeNeed() <= storeFund()
-        );
-    }
-
-    function storeFund() {
-      let drop = bongOf(resource.data) - bongOf(request.resource.data);
-      let wallet = drop > 0 ? drop : 0;
-      let rise = bongOf(request.resource.data) - bongOf(resource.data);
-      let risePos = rise > 0 ? rise : 0;
-      let credits = wealthCredits();
-      let left = credits > risePos ? credits - risePos : 0;
-      return wallet + left;
-    }
-
-    // 담보 없이 대출 원금과 지갑을 함께 부풀리지 못하게, 실행액은 기존 예금·적금·지수 원금과 기본 한도 500을 넘지 않습니다.
-    function loanSizeOk() {
-      let prev = loanPrincipalOf(resource.data);
-      let next = loanPrincipalOf(request.resource.data);
-      return next <= prev || next - prev <= loanRoom();
-    }
-
-    function loanRoom() {
-      let terms = termSum(termList(resource.data));
-      let stock = stockSum(stockBag(resource.data));
-      return savingsOf(resource.data) + (terms > 0 ? terms : 0) + stock + stock + 500;
-    }
-
     function createWealthEmpty() {
       return savingsOf(request.resource.data) == 0
         && loanPrincipalOf(request.resource.data) == 0
-        && termSum(termList(request.resource.data)) == 0
+        && termList(request.resource.data).size() == 0
         && stockSum(stockBag(request.resource.data)) == 0
         && dailyProfit(request.resource.data) == 0
         && salaryEpochOf(request.resource.data) == 0
         && salaryWeekOf(request.resource.data) == ''
         && bongOf(request.resource.data) <= 800;
+    }
+
+    // 예금·적금·지수·대출이 그대로고 봉이 800 이하면 합계를 세지 않습니다.
+    // 합계가 필요할 때는 은행과 지수를 갈라, 안 쓰는 쪽 함수는 아예 부르지 않습니다.
+    function moneyWriteOk() {
+      let rise = bongOf(request.resource.data) - bongOf(resource.data);
+      let savSame = savingsOf(resource.data) == savingsOf(request.resource.data);
+      let termSame = termList(resource.data) == termList(request.resource.data);
+      let stockSame = stockBag(resource.data) == stockBag(request.resource.data);
+      let daySame = dailyMap(resource.data) == dailyMap(request.resource.data);
+      let loanUp = loanPrincipalOf(request.resource.data) > loanPrincipalOf(resource.data);
+      return savSame && termSame && stockSame && daySame && !loanUp && rise <= 800
+        ? true
+        : stockSame && daySame
+          ? bankFlow(rise, savSame, termSame, 0, 0, 0)
+          : stockFlow(rise, savSame, termSame);
+    }
+
+    // 출금·만기·대출 실행. 지수 원금이 바뀔 때는 stockFlow가 줄어든 원금과 하루 이익을 넘겨 줍니다.
+    // 적금이 줄면 원금의 두 배까지 봉으로 돌아옵니다(이자는 설정값이라 규칙에서 다시 계산하지 않습니다).
+    function bankFlow(rise, savSame, termSame, stockDown, stockUp, profit) {
+      let prevSav = savingsOf(resource.data);
+      let nextSav = savSame ? prevSav : savingsOf(request.resource.data);
+      let loanCredit = loanPrincipalOf(request.resource.data) > loanPrincipalOf(resource.data)
+        ? loanPrincipalOf(request.resource.data) - loanPrincipalOf(resource.data)
+        : 0;
+      let prevTerm = termSame && loanCredit <= 0 ? 0 : termSum(termList(resource.data));
+      let nextTerm = termSame ? prevTerm : termSum(termList(request.resource.data));
+      let savDown = prevSav > nextSav ? prevSav - nextSav : 0;
+      let termDown = prevTerm > nextTerm ? prevTerm - nextTerm : 0;
+      let credits = savDown + termDown + termDown + stockDown + profit + loanCredit + 1;
+      let need = (nextSav > prevSav ? nextSav - prevSav : 0)
+        + (nextTerm > prevTerm ? nextTerm - prevTerm : 0)
+        + stockUp;
+      let spend = rise < 0 ? 0 - rise : 0;
+      return nextSav >= 0
+        && prevTerm >= 0
+        && nextTerm >= 0
+        && profit >= 0
+        && profit <= 8
+        && (profit == 0 || stockDown > 0)
+        && rise <= credits
+        && need <= spend + credits - (rise > 0 ? rise : 0)
+        && (
+          loanCredit <= prevSav + (prevTerm > 0 ? prevTerm : 0) + 500
+          || loanCredit <= prevSav + (prevTerm > 0 ? prevTerm : 0) + stockSum(stockBag(resource.data)) + stockSum(stockBag(resource.data)) + 500
+        );
+    }
+
+    function heldProfitOk(prevBag, nextBag, market, prevP, nextP) {
+      return prevP == 0 || nextP == 0 || nextBag[market].realizedProfit >= prevBag[market].realizedProfit;
+    }
+
+    // 지수만 바뀔 때. 시장은 세 개뿐이고, 하루 이익은 8, 원금은 10~1000입니다.
+    function stockFlow(rise, savSame, termSame) {
+      let prev = stockBag(resource.data);
+      let next = stockBag(request.resource.data);
+      let prevK = posPrincipal(prev, 'kospi');
+      let nextK = posPrincipal(next, 'kospi');
+      let prevQ = posPrincipal(prev, 'kosdaq');
+      let nextQ = posPrincipal(next, 'kosdaq');
+      let prevN = posPrincipal(prev, 'nasdaq');
+      let nextN = posPrincipal(next, 'nasdaq');
+      let down = (prevK > nextK ? prevK - nextK : 0)
+        + (prevQ > nextQ ? prevQ - nextQ : 0)
+        + (prevN > nextN ? prevN - nextN : 0);
+      let up = (nextK > prevK ? nextK - prevK : 0)
+        + (nextQ > prevQ ? nextQ - prevQ : 0)
+        + (nextN > prevN ? nextN - prevN : 0);
+      return next.keys().hasOnly(['kospi', 'kosdaq', 'nasdaq'])
+        && (nextK == 0 || (nextK >= 10 && nextK <= 1000))
+        && (nextQ == 0 || (nextQ >= 10 && nextQ <= 1000))
+        && (nextN == 0 || (nextN >= 10 && nextN <= 1000))
+        && heldProfitOk(prev, next, 'kospi', prevK, nextK)
+        && heldProfitOk(prev, next, 'kosdaq', prevQ, nextQ)
+        && heldProfitOk(prev, next, 'nasdaq', prevN, nextN)
+        && (savSame && termSame
+          ? stockMoney(rise, down, up, dayGain())
+          : bankFlow(rise, savSame, termSame, down, up, dayGain()));
+    }
+
+    // 예금·적금이 그대로인 매수·매도. 은행 합계를 다시 세지 않습니다.
+    function stockMoney(rise, down, up, profit) {
+      let loanCredit = loanPrincipalOf(request.resource.data) > loanPrincipalOf(resource.data)
+        ? loanPrincipalOf(request.resource.data) - loanPrincipalOf(resource.data)
+        : 0;
+      let credits = down + profit + loanCredit + 1;
+      return profit >= 0
+        && profit <= 8
+        && (profit == 0 || down > 0)
+        && loanCredit <= 500
+        && rise <= credits
+        && up <= (rise < 0 ? 0 - rise : 0)
+          + (credits > (rise > 0 ? rise : 0) ? credits - (rise > 0 ? rise : 0) : 0);
     }
 
     // 잠금 소유자·시도 번호·예전 값 표식은 새 클라이언트만 씁니다.
@@ -1069,12 +985,16 @@ service cloud.firestore {
         && get(parentPath).data.settlementStartedAt <= request.time.toMillis() + 15000;
     }
 
+    function studentMarkerOk(appId) {
+      return thermometerMarkerUnchanged()
+        || isPinMaster(appId)
+        || thermometerMarkerLockedIn(appId);
+    }
+
     function studentThermometerMarkerAllowed(appId) {
       return !isStudentDoc()
         || request.method == 'delete'
-        || thermometerMarkerUnchanged()
-        || isPinMaster(appId)
-        || thermometerMarkerLockedIn(appId);
+        || studentMarkerOk(appId);
     }
 
     function shopDiscountSame() {
@@ -1133,7 +1053,9 @@ service cloud.firestore {
     }
 
     function studentCreateIsSafe() {
-      return signedIn()
+      return resource == null
+        && request.method == 'create'
+        && signedIn()
         && request.resource.data.xp is number
         && request.resource.data.bong is number
         && request.resource.data.xp >= 0
@@ -1151,16 +1073,13 @@ service cloud.firestore {
         && salarySlotWriteOk()
         && lunchDateOk()
         && bongFloorOk()
-        && bongRiseOk()
-        && bankStoresOk()
-        && stockShapeOk()
-        && loanSizeOk();
+        && moneyWriteOk();
     }
 
     match /artifacts/{appId}/public/data/students/{studentId} {
       allow read: if true;
       allow create: if studentCreateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId) && rebukeCreateAbsent();
-      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId) && rebukeStudentOk(appId, studentId);
+      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent() && studentMarkerOk(appId) && rebukeStudentOk(appId, studentId);
       allow delete: if false;
     }
 
@@ -1378,16 +1297,16 @@ service cloud.firestore {
     // 만들기는 횟수 필드가 없고, 지우기는 기존과 같이 둡니다.
     // 고치기는 횟수·세대·명단이 그대로일 때만 참입니다. diff()는 큰 문서에서 식 한도를 넘깁니다.
     function rebukeSeqHeld() {
-      return request.method == 'delete'
+      return (
+          request.method == 'update'
+          && !('rebukeSeq' in resource.data)
+          && !('rebukeSeq' in request.resource.data)
+        )
+        || request.method == 'delete'
         || (request.method == 'create' && rebukeCreateAbsent())
         || (
           request.method == 'update'
           && (
-            (
-              !('rebukeSeq' in resource.data)
-              && !('rebukeSeq' in request.resource.data)
-            )
-            || (
               'rebukeSeq' in resource.data
               && 'rebukeSeq' in request.resource.data
               && request.resource.data.rebukeSeq == resource.data.rebukeSeq
@@ -1406,8 +1325,7 @@ service cloud.firestore {
                 )
               )
             )
-          )
-        );
+          );
     }
 
     function rebukeEventPathForStudent(appId, studentId) {
@@ -1896,15 +1814,15 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/{document=**} {
       allow read: if !isRebukeOpsPath();
-      // 학생 문서는 아래 전용 match만 통과합니다. 여기서 다시 검사하면 식 1000개를 넘습니다.
-      allow write: if signedIn()
+      // 학생 문서는 전용 match만 통과합니다. 학생이면 여기서 바로 끊어야 식 1000개에 닿지 않습니다.
+      allow write: if !isStudentDoc()
+        && signedIn()
         && !isSettingsGlobalDoc()
         && !isAutoXpDoc()
         && !isLearningThermometerDoc()
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
         && !isRebukeOpsPath()
-        && !isStudentDoc()
         && studentClassXpSlotAllowed()
         && masterStudentPinAbsent()
         && studentThermometerMarkerAllowed(appId);

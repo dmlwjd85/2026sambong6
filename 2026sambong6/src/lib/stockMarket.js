@@ -159,7 +159,8 @@ export function evaluateStockTradeWindow({
     if (!storedSlot || !shownSlot) return { ok: false, reason: 'slot' };
     if (isKoreanStockSession(nowMs)) {
         const slot = marketHourSlot(nowMs);
-        if (shownSlot !== slot || storedSlot !== slot) return { ok: false, reason: 'slot' };
+        if (storedSlot !== slot) return { ok: false, reason: 'unavailable' };
+        if (shownSlot !== slot) return { ok: false, reason: 'slot' };
     } else if (shownSlot !== storedSlot) {
         return { ok: false, reason: 'slot' };
     }
@@ -504,8 +505,12 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
     const uncappedDelta = delta;
     const day = sanitizeStockInvestDaily(daily, today);
     const taken = Math.max(0, Math.floor(Number(held.realizedProfit) || 0));
+    const dayTaken = Math.max(0, Math.floor(Number(day.profit) || 0));
     if (delta > 0) {
-        const room = Math.max(0, STOCK_DAILY_PROFIT_CAP - taken);
+        const room = Math.min(
+            Math.max(0, STOCK_DAILY_PROFIT_CAP - taken),
+            Math.max(0, STOCK_DAILY_PROFIT_CAP - dayTaken)
+        );
         if (delta > room) {
             payout = sellPrincipal + room;
             delta = room;

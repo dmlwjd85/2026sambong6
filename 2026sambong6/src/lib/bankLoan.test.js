@@ -24,6 +24,7 @@ import {
     computeLoanInterest,
     countBusinessDaysAfter,
     creditDefaultBlockMessage,
+    loanPenaltyBlockMessage,
     getLoanCalendarFromWorld,
     isBankBusinessDay,
     isCreditDefaultOn,
@@ -391,13 +392,13 @@ describe('대출 실행·달력', () => {
             }), todayYmd: '2026-09-15', calendar: cal,
         }).ok, true);
         const short = applyLoanAction({
-            bong: 1,
+            bong: 11,
             bankRegularSavings: 0,
             bankLoan: taken.bankLoan,
             creditDefaultUntilYmd: '2026-09-20',
         }, 'repay', { todayYmd: '2026-09-16', calendar: cal });
         assert.equal(short.ok, true);
-        assert.equal(short.bong, 0);
+        assert.equal(short.bong, 10);
         assert.ok(short.bankLoan);
         assert.equal(loanDueTotal(short.bankLoan), loanDueTotal(taken.bankLoan) - 1);
         assert.equal(short.creditDefaultUntilYmd, '2026-09-20');
@@ -425,6 +426,53 @@ describe('대출 실행·달력', () => {
         assert.equal(full.loan, null);
         assert.equal(full.bong, 5);
         assert.equal(full.regular, 80);
+    });
+
+    it('갚을 수 있는 연체는 접속 전에 신용불량이 아니고, 다 갚기는 점심값을 남긴다', () => {
+        const loan = planTakeLoan({
+            amount: 100, days: 1, ratePercent: 0, limit: 200, todayYmd: '2026-10-01', calendar: cal,
+        }).loan;
+        const due = loanDueTotal(loan);
+        const today = '2026-10-21';
+        assert.ok(due > 90);
+        assert.equal(isStudentCreditDefault({ bong: 500, bankRegularSavings: 0, bankLoan: loan }, today), false);
+        assert.equal(isStudentCreditDefault({ bong: 60, bankRegularSavings: 50, bankLoan: loan }, today), false);
+        assert.equal(isStudentCreditDefault({ bong: 60, bankRegularSavings: 30, bankLoan: loan }, today), true);
+        assert.equal(isStudentCreditDefault({ bong: 0, bankLoan: loan }, today), true);
+        assert.equal(isStudentCreditDefault({
+            bong: -5, bankRegularSavings: 5000, bankLoan: loan,
+        }, today), true);
+        assert.equal(isStudentCreditDefault({
+            bong: 500,
+            bankLoan: loan,
+            loanPenaltyUntilYmd: '2026-12-19',
+        }, today), true);
+        const penalty = loanPenaltyBlockMessage('2026-12-19');
+        assert.match(penalty, /12월 19일에 풀려요/);
+        assert.match(penalty, /약속한 날 다 갚지 못해서/);
+        assert.doesNotMatch(penalty, /12-18까지|적힌 날|전날까지/);
+        const negative = creditDefaultBlockMessage('2026-12-19');
+        assert.match(negative, /12월 19일에 풀려요/);
+        assert.match(negative, /밥줄/);
+        assert.doesNotMatch(negative, /적힌 날/);
+
+        const keep = planRepayLoan({ bong: 20, bankLoan: loan }, { todayYmd: '2026-10-21', calendar: cal });
+        assert.equal(keep.ok, true);
+        assert.equal(keep.amount, 10);
+        assert.equal(keep.bong, 10);
+        assert.equal(keep.reserveLunch, 10);
+        assert.equal(keep.withheldLunch, true);
+        assert.equal(keep.regular, 0);
+        const enough = planRepayLoan({ bong: 200, bankLoan: loan }, { todayYmd: '2026-10-21', calendar: cal });
+        assert.equal(enough.full, true);
+        assert.equal(enough.bong, 200 - due);
+        assert.equal(enough.withheldLunch, false);
+        const blocked = planRepayLoan({ bong: 8, bankLoan: loan }, { todayYmd: '2026-10-21', calendar: cal });
+        assert.equal(blocked.ok, false);
+        assert.equal(blocked.reason, 'lunch');
+        const friday = planRepayLoan({ bong: 20, bankLoan: loan }, { todayYmd: '2026-10-16', calendar: cal });
+        assert.equal(friday.reserveLunch, 10);
+        assert.equal(friday.bong, 10);
     });
 });
 

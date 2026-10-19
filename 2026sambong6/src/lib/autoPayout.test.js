@@ -27,6 +27,29 @@ describe('신용불량 자동 지급', () => {
         const minusOnly = weeklySalaryGrantPlan({ jobs, bong: -5 }, catalog, '2026-10-16');
         assert.equal(minusOnly.grant, false);
         assert.equal(minusOnly.reason, 'credit-default');
+        const loan = {
+            id: 'loan_cover',
+            principal: 100,
+            interest: 1,
+            days: 1,
+            startYmd: '2026-10-01',
+            dueYmd: '2026-10-02',
+        };
+        const canRepay = weeklySalaryGrantPlan({
+            jobs,
+            bong: 500,
+            bankRegularSavings: 0,
+            bankLoan: loan,
+        }, catalog, '2026-10-21');
+        assert.equal(canRepay.grant, true);
+        assert.equal(canRepay.reason, 'grant');
+        const cannot = weeklySalaryGrantPlan({
+            jobs,
+            bong: 0,
+            bankLoan: loan,
+        }, catalog, '2026-10-21');
+        assert.equal(cannot.grant, false);
+        assert.equal(cannot.reason, 'credit-default');
     });
 
     it('예금 주기 보너스도 신용불량 중에는 막습니다', () => {

@@ -526,11 +526,63 @@ describe('은행 지수 투자', () => {
             quotes: { hourSlot: '2026-09-07T09', kospi: { price: 2600 } },
             marketId: 'kospi',
         }).reason, 'slot');
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: monOpen,
+            confirmSlot: '2026-09-04T15',
+            confirmPrice: 2510,
+            quotes: friQ,
+            marketId: 'kospi',
+        }).reason, 'unavailable');
+        const tenPast = Date.parse('2026-09-02T01:02:00.000Z');
+        assert.equal(evaluateStockTradeWindow({
+            nowMs: tenPast,
+            confirmSlot: '2026-09-02T09',
+            confirmPrice: 2500,
+            quotes: { hourSlot: '2026-09-02T09', kospi: { price: 2500 } },
+            marketId: 'kospi',
+        }).reason, 'unavailable');
         const ten = Date.parse('2026-09-02T01:00:30.000Z');
         const mid = Date.parse('2026-09-02T01:30:00.000Z');
         const last = Date.parse('2026-09-02T01:59:30.000Z');
         assert.equal(msUntilQuoteUiBoundary(ten), 30 * 1000);
         assert.equal(msUntilQuoteUiBoundary(mid), (59 * 60 - 30 * 60) * 1000);
         assert.equal(msUntilQuoteUiBoundary(last), 30 * 1000);
+    });
+
+    it('세 시장과 다시 사기를 합쳐도 하루 이익은 8봉이다', () => {
+        const nowMs = 8 * 86400000;
+        const today = '2026-09-02';
+        const pos = { principal: 1000, buyIndex: 1000, openedAt: 0 };
+        let bag = { kospi: { ...pos }, kosdaq: { ...pos }, nasdaq: { ...pos } };
+        let daily = { date: today, profit: 0, sells: 0 };
+        let gain = 0;
+        ['kospi', 'kosdaq', 'nasdaq'].forEach((id) => {
+            const sold = applySellStock(bag, id, 2000, daily, today, nowMs, 1000);
+            assert.equal(sold.ok, true);
+            gain += Math.max(0, sold.delta);
+            bag = sold.investments;
+            daily = sold.daily;
+        });
+        assert.equal(gain, STOCK_DAILY_PROFIT_CAP);
+        assert.equal(daily.profit, STOCK_DAILY_PROFIT_CAP);
+        const bought = applyBuyStock(bag, 'kospi', 100, 1000, nowMs, today);
+        assert.equal(bought.ok, true);
+        assert.equal(bought.investments.kospi.realizedProfit || 0, 0);
+        const again = applySellStock(bought.investments, 'kospi', 2000, daily, today, nowMs, 100);
+        assert.equal(again.ok, true);
+        assert.equal(again.delta, 0);
+        assert.equal(again.payout, 100);
+        assert.equal(again.daily.profit, STOCK_DAILY_PROFIT_CAP);
+        const dayOnly = applySellStock(
+            { nasdaq: { principal: 100, buyIndex: 1000, openedAt: 0, realizedProfit: 0 } },
+            'nasdaq',
+            2000,
+            { date: today, profit: 7, sells: 1 },
+            today,
+            nowMs,
+            100
+        );
+        assert.equal(dayOnly.delta, 1);
+        assert.equal(dayOnly.payout, 101);
     });
 });

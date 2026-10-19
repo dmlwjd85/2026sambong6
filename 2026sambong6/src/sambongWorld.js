@@ -103,6 +103,8 @@ import {
     loanFieldsFromLifecycle,
     loanPenaltyBlockMessage,
     loanStillOutstanding,
+    creditJudgedOnFinalBong,
+    walletCreditAfterFinalBong,
     mergeStudentDocKeepingLoanRepayment,
     planPartialRepay,
     planRepayLoan,
@@ -115,6 +117,14 @@ import {
     sanitizeLoanLimit,
     takeLoanFailMessage,
 } from './lib/bankLoan.js';
+import {
+    capBongIncrease,
+    isLunchDeductWindow,
+    laterLunchDate,
+    planServerLunchDeduction,
+    seoulDateParts,
+    seoulYmdFromMs,
+} from './lib/lunchDeduct.js';
 import {
     MAX_CANDIDATES_PER_POSITION,
     MAX_POSITIONS,
@@ -6940,6 +6950,8 @@ ${subjectLine}
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
+            const prevLunchDate = window.playerState && window.playerState.lastLunchDeductDate;
+            const prevBong = window.playerState && window.playerState.bong;
             const merged = mergeStudentDocKeepingLoanRepayment(window.playerState, myData);
             window.playerState = {
                 ...merged,
@@ -6950,6 +6962,20 @@ ${subjectLine}
                 dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData && myData.dragonBalls),
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData && myData.dragonBallWeekendKey),
             };
+            const lunchToday = seoulYmdFromMs(getServerNowMs());
+            window.playerState.lastLunchDeductDate = laterLunchDate(
+                merged.lastLunchDeductDate,
+                prevLunchDate,
+                lunchToday,
+            );
+            // 캐시 스냅샷이 점심을 빼기 전의 큰 잔액으로 되돌리지 않습니다.
+            const snapLunch = String(merged.lastLunchDeductDate || '');
+            const keptLunch = String(prevLunchDate || '');
+            if (keptLunch && snapLunch && keptLunch > snapLunch) {
+                const localBong = normalizeBongValue(prevBong);
+                const snapBong = normalizeBongValue(window.playerState.bong);
+                if (snapBong > localBong) window.playerState.bong = localBong;
+            }
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
             if (prevRpsPick.move && prevRpsPick.at >= nextRpsPick.at) {
@@ -25522,6 +25548,7 @@ ${subjectLine}
                 allowBongDecrease: false,
                 maxXpDecrease: 0,
                 maxBongDecrease: 0,
+                maxBongIncrease: 0,
                 requireServerBongBalance: false,
                 allowBankFieldChanges: false,
                 allowJobChanges: false,
@@ -25610,6 +25637,7 @@ ${subjectLine}
                         const bankAccrued = applyServerBankAccrual(serverData, window.globalSettings, {
                             isAdmin: !!window.playerState.isAdmin,
                         });
+                        let creditBasis = bankAccrued;
                         // 신용불량 중 학생 추가 XP는 막습니다. 교사 광장 지급(isAdmin)은 그대로 둡니다.
                         if (
                             !window.playerState.isAdmin
@@ -25662,6 +25690,7 @@ ${subjectLine}
                             dataToSave.bankDailyBonusLastDate = reconciled.bankDailyBonusLastDate;
                             dataToSave.bankLoan = reconciled.bankLoan;
                             Object.assign(dataToSave, copyCreditFields(reconciled));
+                            creditBasis = reconciled;
                         } else {
                             dataToSave.bankRegularSavings = bankAccrued.bankRegularSavings;
                             dataToSave.bankTermDeposits = bankAccrued.bankTermDeposits;
@@ -25811,15 +25840,12 @@ ${subjectLine}
                                     dataToSave.bong = normalizeBongValue(serverBong);
                                 }
                             }
-                            const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
-                            if (
-                                maxBongRise > 0 &&
-                                Number.isFinite(serverBong) &&
-                                Number.isFinite(Number(dataToSave.bong)) &&
-                                Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
-                            ) {
-                                dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
-                            }
+                            // 기본 증가 허용량은 0입니다. 보상·판매처럼 경로에 적힌 값만 서버보다 올라갑니다.
+                            dataToSave.bong = normalizeBongValue(capBongIncrease(
+                                serverBong,
+                                dataToSave.bong,
+                                opts.maxBongIncrease,
+                            ));
                         }
                         if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy'))) {
                             dataToSave.bong = normalizeBongValue(resolveBongKeepingLoanRepayment({
@@ -25835,7 +25861,28 @@ ${subjectLine}
                         if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && Array.isArray(serverData.stockInvestHistory)) {
                             dataToSave.stockInvestHistory = sanitizeStockHistory(serverData.stockInvestHistory);
                         }
-                        const finalBong = normalizeBongValue(Number(dataToSave.bong));
+                        dataToSave.lastLunchDeductDate = laterLunchDate(
+                            serverData.lastLunchDeductDate,
+                            dataToSave.lastLunchDeductDate,
+                            seoulYmdFromMs(getServerNowMs()),
+                        );
+                        const judgedBong = normalizeBongValue(creditBasis && creditBasis.bong != null ? creditBasis.bong : serverData.bong);
+                        const settledBong = normalizeBongValue(dataToSave.bong);
+                        if (settledBong !== judgedBong) {
+                            Object.assign(dataToSave, creditJudgedOnFinalBong({
+                                beforeState: serverData,
+                                lifecycle: {
+                                    ...creditBasis,
+                                    bong: judgedBong,
+                                    bankRegularSavings: dataToSave.bankRegularSavings,
+                                    bankLoan: dataToSave.bankLoan,
+                                },
+                                finalBong: settledBong,
+                                todayYmd: todaySave,
+                                calendar: getBankLoanCalendar(),
+                            }));
+                        }
+                        const finalBong = settledBong;
                         const logBeforeBong = normalizeBongValue(Number(serverData.bong) || 0);
                         if (Math.abs(finalBong - logBeforeBong) > 0.0001) {
                             const bongLogs = Array.isArray(serverData.bongChangeLog) ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
@@ -25962,6 +26009,9 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'lastLunchDeductDate')) {
+                    window.playerState.lastLunchDeductDate = dataToSave.lastLunchDeductDate || '';
+                }
                 if (opts.keepServerSkinPurchase) {
                     if (dataToSave.ownedSkins && typeof dataToSave.ownedSkins === 'object') {
                         window.playerState.ownedSkins = { ...dataToSave.ownedSkins };
@@ -27375,7 +27425,13 @@ ${subjectLine}
                 playSfx('bong', win);
                 if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, id);
                 updateUI();
-                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: bet, requireServerBongBalance: true, operationLabel: '미스테리 박스 투자' });
+                const saved = await saveDataToCloud({
+                    allowBongDecrease: true,
+                    maxBongDecrease: bet,
+                    maxBongIncrease: window.playerState.isAdmin ? payout : Math.max(0, payout - bet),
+                    requireServerBongBalance: true,
+                    operationLabel: '미스테리 박스 투자',
+                });
                 if (!saved) {
                     if (!window.playerState.isAdmin) {
                         const used = getShopDailyPurchaseUsed(window.playerState, id);
@@ -30148,26 +30204,96 @@ ${subjectLine}
             }
         };
 
-        // 평일 12시(정오) 이후, 학생 계정당 하루 1회 점심값 10B 차감 (잔액 부족 시 마이너스 허용)
-        window.applyPersonalLunchDeductionIfNeeded = async function() {
-            if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef) return;
+        // 평일 12시(서울, 서버 시각 우선) 이후 점심값. 서버 문서 트랜잭션에서 하루 1회만 뺍니다.
+        let _lunchDeductChain = Promise.resolve();
+        const _lunchAlertYmd = new Set();
+        window.applyPersonalLunchDeductionIfNeeded = function() {
+            const run = _lunchDeductChain.then(() => deductPersonalLunchOnce());
+            _lunchDeductChain = run.then(() => {}, () => {});
+            return run;
+        };
+
+        async function deductPersonalLunchOnce() {
+            if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef || !db) return;
             if (window.playerState.isAdmin) return;
 
-            const now = new Date();
-            if (isVacationAutomationPaused('lunch', now)) return;
-            const day = now.getDay();
-            if (day < 1 || day > 5) return;
-            if (now.getHours() < 12) return;
+            const nowMs = getServerNowMs();
+            const parts = seoulDateParts(nowMs);
+            if (!parts || !isLunchDeductWindow(parts)) return;
+            if (isVacationAutomationPaused('lunch', parts.ymd)) return;
+            if (window.playerState.lastLunchDeductDate === parts.ymd) return;
 
-            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            if (window.playerState.lastLunchDeductDate === todayYmd) return;
-
-            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - 10);
-            window.playerState.lastLunchDeductDate = todayYmd;
-            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: 10 });
-            updateUI();
-            await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
-        };
+            let outcome = null;
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return;
+                await runTransaction(db, async (transaction) => {
+                    const snap = await transaction.get(currentStudentDocRef);
+                    const serverData = snap.exists() ? (snap.data() || {}) : {};
+                    const plan = planServerLunchDeduction({
+                        serverBong: serverData.bong,
+                        serverLunchDate: serverData.lastLunchDeductDate,
+                        nowMs: getServerNowMs(),
+                        vacationPaused: isVacationAutomationPaused('lunch', seoulYmdFromMs(getServerNowMs())),
+                    });
+                    if (!plan.deduct) {
+                        outcome = {
+                            deducted: false,
+                            bong: normalizeBongValue(serverData.bong),
+                            lastLunchDeductDate: plan.lastLunchDeductDate || '',
+                            today: plan.today,
+                        };
+                        return;
+                    }
+                    const beforeBong = normalizeBongValue(serverData.bong);
+                    const logs = Array.isArray(serverData.bongChangeLog)
+                        ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1)
+                        : [];
+                    logs.push(buildBongChangeLogEntry('점심값', beforeBong, plan.bong, {
+                        source: 'lunchDeduct',
+                        allowBongDecrease: true,
+                    }));
+                    // 신용은 차감이 반영된 최종 봉으로만 다시 봅니다. 대출 상환 키는 그대로 둡니다.
+                    const credit = walletCreditAfterFinalBong(serverData, plan.bong, plan.today);
+                    transaction.set(currentStudentDocRef, {
+                        bong: normalizeBongValue(plan.bong),
+                        lastLunchDeductDate: plan.lastLunchDeductDate,
+                        bongChangeLog: logs,
+                        ...credit,
+                    }, { merge: true });
+                    outcome = {
+                        deducted: true,
+                        bong: normalizeBongValue(plan.bong),
+                        lastLunchDeductDate: plan.lastLunchDeductDate,
+                        today: plan.today,
+                        credit,
+                    };
+                });
+            } catch (e) {
+                console.warn('applyPersonalLunchDeductionIfNeeded', e);
+                return;
+            }
+            if (!outcome || !window.playerState) return;
+            if (outcome.deducted) {
+                window.playerState.bong = outcome.bong;
+                window.playerState.lastLunchDeductDate = outcome.lastLunchDeductDate;
+                if (outcome.credit) Object.assign(window.playerState, outcome.credit);
+                if (typeof updateUI === 'function') updateUI();
+                if (outcome.today && !_lunchAlertYmd.has(outcome.today)) {
+                    _lunchAlertYmd.add(outcome.today);
+                    await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
+                }
+                return;
+            }
+            if (outcome.today && outcome.lastLunchDeductDate === outcome.today) {
+                window.playerState.lastLunchDeductDate = outcome.today;
+                const serverBong = normalizeBongValue(outcome.bong);
+                if (normalizeBongValue(window.playerState.bong) > serverBong) {
+                    window.playerState.bong = serverBong;
+                    if (typeof updateUI === 'function') updateUI();
+                }
+            }
+        }
 
         // 이전 버전 호환용 (일괄 차감). 현재는 applyPersonalLunchDeductionIfNeeded 로 개별 처리합니다.
         window.checkAndDeductLunch = async function() {};

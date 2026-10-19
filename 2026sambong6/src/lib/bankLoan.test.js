@@ -19,6 +19,8 @@ import {
     mergeStudentDocKeepingLoanRepayment,
     planPartialRepay,
     planRepayLoan,
+    creditJudgedOnFinalBong,
+    walletCreditAfterFinalBong,
     resolveBongKeepingLoanRepayment,
     collectLoanRepayment,
     computeLoanInterest,
@@ -550,6 +552,85 @@ describe('신용불량 해제 뒤 같은 이유로는 다시 걸리지 않는다
         const endedAgain = applyLoanLifecycle({ ...stayed, bong: -40 }, dipped.creditDefaultUntilYmd, cal);
         assert.equal(endedAgain.creditDefaultUntilYmd, '');
         assert.equal(isStudentCreditDefault(endedAgain, dipped.creditDefaultUntilYmd), false);
+    });
+});
+
+describe('신용불량은 트랜잭션 뒤의 봉으로 본다', () => {
+    it('순간 -10으로 걸린 하루 신용불량은 최종 지갑이 0이면 없다', () => {
+        const today = '2026-10-19';
+        const before = {
+            bong: 0,
+            bankLoan: null,
+            bankRegularSavings: 0,
+            creditDefaultUntilYmd: '',
+            bankNegativeSinceYmd: '',
+            loanDueHandledKey: '',
+        };
+        const dipped = applyLoanLifecycle({ ...before, bong: -10 }, today, {});
+        assert.equal(isStudentCreditDefault(dipped, today), true);
+        assert.equal(dipped.creditDefaultUntilYmd, addCalendarDaysYmd(today, 1));
+        const judged = creditJudgedOnFinalBong({
+            beforeState: before,
+            lifecycle: dipped,
+            finalBong: 0,
+            todayYmd: today,
+        });
+        assert.equal(judged.creditDefaultUntilYmd, '');
+        assert.equal(judged.bankNegativeSinceYmd, '');
+        assert.equal(isStudentCreditDefault({ ...judged, bong: 0 }, today), false);
+    });
+
+    it('최종 봉이 그대로 -10이면 신용불량을 유지한다', () => {
+        const today = '2026-10-19';
+        const before = { bong: 0, bankLoan: null, creditDefaultUntilYmd: '' };
+        const dipped = applyLoanLifecycle({ ...before, bong: -10 }, today, {});
+        const judged = creditJudgedOnFinalBong({
+            beforeState: before,
+            lifecycle: dipped,
+            finalBong: -10,
+            todayYmd: today,
+        });
+        assert.equal(judged.creditDefaultUntilYmd, dipped.creditDefaultUntilYmd);
+        assert.equal(isStudentCreditDefault({ ...judged, bong: -10 }, today), true);
+    });
+
+    it('이미 서버에 있던 신용불량은 최종 봉이 0이어도 그날로 지우지 않는다', () => {
+        const today = '2026-10-19';
+        const before = {
+            bong: -10,
+            bankLoan: null,
+            creditDefaultUntilYmd: '2026-10-21',
+            bankNegativeSinceYmd: '2026-10-19',
+            creditWalletRecovered: false,
+            loanDueHandledKey: '',
+        };
+        const life = applyLoanLifecycle(before, today, {});
+        const judged = creditJudgedOnFinalBong({
+            beforeState: before,
+            lifecycle: life,
+            finalBong: 0,
+            todayYmd: today,
+        });
+        assert.equal(judged.creditDefaultUntilYmd, '2026-10-21');
+        assert.equal(isStudentCreditDefault({ ...judged, bong: 0 }, today), true);
+    });
+
+    it('점심값으로 지갑만 -10이 되면 상환 키는 유지하고 하루 신용불량을 시작한다', () => {
+        const today = '2026-10-20';
+        const state = {
+            bong: 0,
+            bankLoan: { id: 'L1', principal: 11, interest: 0, days: 1, startYmd: '2026-10-13', dueYmd: '2026-10-20', rateAtStart: 0 },
+            loanDueHandledKey: 'L1|2026-10-20',
+            creditDefaultUntilYmd: '',
+            bankNegativeSinceYmd: '',
+        };
+        const credit = walletCreditAfterFinalBong(state, -10, today);
+        assert.equal(credit.loanDueHandledKey, 'L1|2026-10-20');
+        assert.equal(credit.creditDefaultUntilYmd, addCalendarDaysYmd(today, 1));
+        assert.equal(isStudentCreditDefault({ ...credit, bong: -10 }, today), true);
+        const again = walletCreditAfterFinalBong({ ...state, ...credit, bong: -10 }, -10, today);
+        assert.equal(again.creditDefaultUntilYmd, credit.creditDefaultUntilYmd);
+        assert.equal(again.loanDueHandledKey, 'L1|2026-10-20');
     });
 });
 

@@ -891,6 +891,64 @@ export function resolveBongKeepingLoanRepayment({
 }
 
 /**
+ * 신용불량은 트랜잭션이 끝난 봉으로 다시 봅니다.
+ * 같은 저장 안에서 봉이 신용 판정 뒤에 바뀌면, 순간 마이너스로 걸린 새 신용불량은 버립니다.
+ * 서버에 이미 있던 기간은 최종 봉이 0 이상이어도 그날로 지우지 않습니다.
+ * 만기 상환 키는 유지해서 갚기를 한 번 더 하지 않습니다.
+ */
+export function creditJudgedOnFinalBong({
+    beforeState,
+    lifecycle,
+    finalBong,
+    todayYmd,
+    calendar = {},
+} = {}) {
+    const final = Math.floor(Number(finalBong) || 0);
+    const seen = Math.floor(Number(lifecycle && lifecycle.bong) || 0);
+    if (final === seen) return copyCreditFields(lifecycle || beforeState);
+    const before = beforeState && typeof beforeState === 'object' ? beforeState : {};
+    const life = lifecycle && typeof lifecycle === 'object' ? lifecycle : {};
+    const replay = applyLoanLifecycle({
+        bong: final,
+        bankRegularSavings: Math.max(0, Math.floor(Number(
+            life.bankRegularSavings != null ? life.bankRegularSavings : before.bankRegularSavings
+        ) || 0)),
+        bankLoan: Object.prototype.hasOwnProperty.call(life, 'bankLoan') ? life.bankLoan : (before.bankLoan || null),
+        ...copyCreditFields(before),
+        loanDueHandledKey: String(life.loanDueHandledKey || before.loanDueHandledKey || ''),
+    }, String(todayYmd || ''), calendar || {});
+    return copyCreditFields(replay);
+}
+
+/**
+ * 점심값처럼 지갑만 바뀐 뒤의 신용입니다.
+ * 대출 상환 키와 연체 기간은 서버에 있던 값을 유지합니다.
+ */
+export function walletCreditAfterFinalBong(state, finalBong, todayYmd) {
+    const src = state && typeof state === 'object' ? state : {};
+    const kept = copyCreditFields(src);
+    const life = applyLoanLifecycle({
+        bong: Math.floor(Number(finalBong) || 0),
+        bankRegularSavings: 0,
+        bankLoan: null,
+        creditDefaultUntilYmd: kept.creditDefaultUntilYmd,
+        bankNegativeSinceYmd: kept.bankNegativeSinceYmd,
+        loanPenaltyUntilYmd: '',
+        creditReleasedYmd: kept.creditReleasedYmd,
+        creditReleaseLoanId: '',
+        creditWalletRecovered: kept.creditWalletRecovered,
+        loanDueHandledKey: '',
+    }, String(todayYmd || ''), {});
+    return {
+        ...kept,
+        creditDefaultUntilYmd: String(life.creditDefaultUntilYmd || ''),
+        bankNegativeSinceYmd: String(life.bankNegativeSinceYmd || ''),
+        creditWalletRecovered: life.creditWalletRecovered === true,
+        creditReleasedYmd: String(life.creditReleasedYmd || kept.creditReleasedYmd || ''),
+    };
+}
+
+/**
  * 스냅샷이 만기 상환 전의 지갑으로 로컬 결과를 덮지 않게 합칩니다.
  * 같은 상환 키면 서버에 나중에 늘어난 잔액을 받습니다.
  */

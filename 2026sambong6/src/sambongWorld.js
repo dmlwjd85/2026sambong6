@@ -659,9 +659,12 @@ import {
 } from './lib/peerPraise.js';
 import {
     anonymousRebukeReasons,
+    attachRebukeAudit,
     planPeerRebuke,
+    rebukeAuditPatch,
     rebukeCountOf,
     rebukeFailMessage,
+    rebukePublicView,
     sanitizeRebukeBoard,
     teacherRebukeReasons,
     REBUKE_COST_BONG,
@@ -23557,7 +23560,16 @@ ${subjectLine}
                     window._attendanceDays = (att.exists() && att.data() && att.data().days) || {};
                     window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
                     window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
-                    window._rebukeBoard = sanitizeRebukeBoard(rebuke.exists() ? rebuke.data() : {});
+                    let rebukeAudit = null;
+                    try {
+                        rebukeAudit = await getDoc(classOpsRef('rebukeAudit'));
+                    } catch (e) {
+                        rebukeAudit = null;
+                    }
+                    window._rebukeBoard = attachRebukeAudit(
+                        sanitizeRebukeBoard(rebuke.exists() ? rebuke.data() : {}),
+                        rebukeAudit && rebukeAudit.exists() ? rebukeAudit.data() : {}
+                    );
                     window._classOpsReady = true;
                     await maybeRollPraiseAtMidnight();
                 } finally {
@@ -23903,10 +23915,12 @@ ${subjectLine}
                     body.className = 'text-sm text-white font-bold leading-relaxed';
                     body.textContent = row.reason;
                     item.append(date, body);
-                    if (admin && row.fromId) {
+                    if (admin) {
                         const sender = document.createElement('p');
                         sender.className = 'text-[11px] text-amber-200 font-bold mt-1';
-                        sender.textContent = `보낸 사람: ${getStudentDisplayLabel(row.fromId)}`;
+                        sender.textContent = row.fromId
+                            ? `보낸 사람: ${getStudentDisplayLabel(row.fromId)}`
+                            : '보낸 사람 기록을 아직 못 읽었어요.';
                         item.appendChild(sender);
                     }
                     list.appendChild(item);
@@ -23974,7 +23988,8 @@ ${subjectLine}
                     const toPatch = { xp: toXp, rebukeCount: fresh.received };
                     if (fresh.receiverDelta !== 0 || !toSnap.exists()) toPatch.bong = fresh.receiverBong;
                     tx.set(toRef, toPatch, { merge: true });
-                    tx.set(rebukeRef, fresh.board, { merge: false });
+                    tx.set(rebukeRef, rebukePublicView(fresh.board), { merge: false });
+                    tx.set(classOpsRef('rebukeAudit'), rebukeAuditPatch(fresh.entry), { merge: true });
                     return {
                         ok: true,
                         fresh,

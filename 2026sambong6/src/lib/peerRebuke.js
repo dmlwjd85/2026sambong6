@@ -15,7 +15,8 @@
  * - 한 사람이 하루에 3번
  *
  * 받는 학생에게 보여주는 이유에는 보낸 사람 이름이 없다.
- * 선생님용 목록에만 보낸 학번이 있다.
+ * 공개 문서(classOps/rebuke)의 이유에는 학번을 넣지 않는다.
+ * 보낸 학번은 classOps/rebukeAudit 에만 추가한다. 선생님 화면에서 그 문서를 읽어 이름을 붙인다.
  * 학생당 이유는 최근 30개만 남긴다. 받은 수와 감점 기록은 그때도 지우지 않는다.
  * 받는 학생의 봉은 -2000보다 내려가지 않는다. 더 못 빼도 그 구간은 이미 뺀 것으로 적는다.
  * 하루 횟수 기록만 날짜가 바뀌면 다음 역따봉을 저장할 때 치운다. 받은 수는 치우지 않는다.
@@ -120,9 +121,11 @@ export function sanitizeRebukeBoard(raw) {
         const fromId = asId(row.fromId);
         const reason = normalizeRebukeReason(row.reason);
         const ymd = String(row.ymd || '');
-        if (!id || !toId || !fromId || !reason || !isYmd(ymd) || seen.has(id)) return;
+        if (!id || !toId || !reason || !isYmd(ymd) || seen.has(id)) return;
         seen.add(id);
-        board.entries.push({ id, toId, fromId, reason, ymd });
+        const entry = { id, toId, reason, ymd };
+        if (fromId) entry.fromId = fromId;
+        board.entries.push(entry);
     });
     board.entries = capReasons(board.entries);
     return board;
@@ -205,18 +208,20 @@ export function planPeerRebuke(board, {
     if (penalty.through > 0) next.penaltyThrough[to] = penalty.through;
     next.sentDaily[from] = { ymd: date, n: sentTodayCount(src, from, date) + 1 };
     next.pairDay[pair] = date;
-    next.entries.push({
+    const entry = {
         id: `rb_${date}_${to}_${received}`,
         toId: to,
         fromId: from,
         reason: cleanReason,
         ymd: date,
-    });
+    };
+    next.entries.push(entry);
     next.entries = capReasons(next.entries);
 
     return {
         ok: true,
         board: next,
+        entry,
         received,
         senderBong: senderBefore - REBUKE_COST_BONG,
         senderDelta: -REBUKE_COST_BONG,
@@ -226,6 +231,45 @@ export function planPeerRebuke(board, {
         penaltySteps: penalty.steps,
         thresholds: penalty.thresholds,
     };
+}
+
+/** 학생 화면에 저장하는 판. 이유에 보낸 학번을 넣지 않는다. */
+export function rebukePublicView(board) {
+    const src = sanitizeRebukeBoard(board);
+    return {
+        received: src.received,
+        penaltyThrough: src.penaltyThrough,
+        sentDaily: src.sentDaily,
+        pairDay: src.pairDay,
+        entries: src.entries.map(({ id, toId, reason, ymd }) => ({ id, toId, reason, ymd })),
+    };
+}
+
+/** 새 역따봉 하나의 보낸 사람 기록. 기존 감사 문서에 끼워 넣는다. */
+export function rebukeAuditPatch(entry) {
+    if (!entry || !entry.id || !entry.fromId) return { entries: {} };
+    return {
+        entries: {
+            [entry.id]: {
+                toId: asId(entry.toId),
+                fromId: asId(entry.fromId),
+                ymd: String(entry.ymd || ''),
+            },
+        },
+    };
+}
+
+/** 공개 판에 선생님용 감사 기록의 학번을 붙인다. 감사가 없으면 이유만 남긴다. */
+export function attachRebukeAudit(board, auditRaw) {
+    const src = sanitizeRebukeBoard(board);
+    const bag = auditRaw && auditRaw.entries && typeof auditRaw.entries === 'object' ? auditRaw.entries : {};
+    src.entries = src.entries.map((entry) => {
+        const extra = bag[entry.id];
+        const fromId = asId(entry.fromId || (extra && extra.fromId));
+        if (!fromId) return { id: entry.id, toId: entry.toId, reason: entry.reason, ymd: entry.ymd };
+        return { ...entry, fromId };
+    });
+    return src;
 }
 
 export function rebukeCountOf(board, studentId) {

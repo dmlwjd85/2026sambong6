@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 import {
     anonymousRebukeReasons,
     applyRebukeBongDelta,
+    attachRebukeAudit,
     normalizeRebukeReason,
     planPeerRebuke,
+    rebukeAuditPatch,
     rebukeCountOf,
     rebukeFailMessage,
     rebukePenaltyForCount,
+    rebukePublicView,
     teacherRebukeReasons,
     REBUKE_BONG_FLOOR,
     REBUKE_COST_BONG,
@@ -301,6 +304,17 @@ describe('역따봉', () => {
         const named = teacherRebukeReasons(step.board, '2');
         assert.equal(named[0].fromId, '7');
         assert.equal(named[0].reason, '자리 양보를 안 했어요');
+
+        const pub = rebukePublicView(step.board);
+        assert.equal(hasKey(pub.entries, 'fromId'), false);
+        assert.equal(JSON.stringify(pub.entries).includes('7'), false);
+        const patch = rebukeAuditPatch(step.entry);
+        assert.equal(patch.entries[step.entry.id].fromId, '7');
+        const joined = attachRebukeAudit(pub, patch);
+        assert.equal(teacherRebukeReasons(joined, '2')[0].fromId, '7');
+        assert.equal(hasKey(anonymousRebukeReasons(joined, '2'), 'fromId'), false);
+        const noAudit = attachRebukeAudit(pub, {});
+        assert.equal(teacherRebukeReasons(noAudit, '2')[0].fromId, undefined);
     });
 
     it('이유가 많아져도 받은 수와 감점 기록은 남는다', () => {

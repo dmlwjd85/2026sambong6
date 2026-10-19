@@ -560,7 +560,7 @@ import {
     melodyForClassBell,
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
-import { bankBonusBlocked, weeklySalaryGrantPlan } from './lib/autoPayout.js';
+import { bankBonusBlocked, salaryClaimFields, salaryWeekMonday, weeklySalaryGrantPlan } from './lib/autoPayout.js';
 import { MONEY_NEGATIVE_CLASS, formatMoneyHtml, isNegativeMoney, splitNegativeMoney } from './lib/moneyFormat.js';
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
@@ -31658,6 +31658,7 @@ ${subjectLine}
             if (isVacationAutomationPaused('salary', dDate)) return;
 
             const wId = `SALARY_${dDate.getFullYear()}_${String(dDate.getMonth() + 1).padStart(2, '0')}_${String(dDate.getDate()).padStart(2, '0')}`;
+            const salaryMonday = salaryWeekMonday(dDate);
 
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
             const stuList = window.allStudentsData.filter(s => s.id !== 'gm' && s.id !== 'gm_a');
@@ -31680,6 +31681,8 @@ ${subjectLine}
                         const data = row.snap.exists() ? (row.snap.data() || {}) : row.stu;
                         const plan = weeklySalaryGrantPlan(data, catalog, todayPay);
                         if (!plan.grant) continue;
+                        const claim = salaryClaimFields(data, salaryMonday);
+                        if (!claim.claim) continue;
                         const collected = collectShieldedDebtFromSalary(data, {
                             salary: plan.pay,
                             todayYmd: todayPay,
@@ -31716,6 +31719,8 @@ ${subjectLine}
                             bong: normalizeBongValue(collected.bong),
                             bongChangeLog: salaryLogs.slice(-BONG_CHANGE_LOG_LIMIT),
                             moneyNotices: salaryNotices.slice(-8),
+                            salaryWeek: claim.salaryWeek,
+                            salaryEpoch: claim.salaryEpoch,
                         };
                         if (collected.collected > 0) {
                             salaryPatch.bankLoan = collected.bankLoan;

@@ -512,12 +512,18 @@ import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitCl
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
+    clearedLearningThermometerLegacy,
     createThermometerLockOwner,
     decideThermometerLockClaim,
     finishThermometerSettlement,
     grantThermometerStudentXp,
-    thermometerValueSource,
+    planThermometerSettlement,
 } from './lib/learningThermometerSettlement.js';
+import {
+    pickThermometerDisplayValues,
+    planThermometerLegacyVoteWrites,
+    thermometerVotesShouldReplaceValues,
+} from './lib/learningThermometerVotes.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
 import {
     listAllCharacterBases,
@@ -14806,6 +14812,56 @@ ${subjectLine}
             });
         }
 
+        /**
+         * 표를 처음 만들 때 settings/global 에만 있는 다른 활성 학생 값을 함께 적습니다.
+         * 소모 표식(usedStaleValues)이 있거나 오늘 정산이 끝났으면 예전 값을 다시 넣지 않습니다.
+         * 비활성 학생은 적지 않아, 나중에 다시 켜져도 옛 값을 받지 않습니다.
+         */
+        async function seedMissingThermometerVotesFromLegacy(state) {
+            const parentSnap = await getDoc(getLearningThermometerDocRef());
+            const parent = parentSnap.exists() ? (parentSnap.data() || {}) : {};
+            const today = getLocalDateStr();
+            if (!allowLegacyThermometerValues({
+                parentExists: parentSnap.exists(),
+                settlementStatus: parent.settlementStatus,
+                usedStaleValues: parent.usedStaleValues === true,
+                settlementKey: parent.settlementKey,
+                settledDate: parent.settledDate,
+                today,
+            })) return;
+            const votesSnap = await getDocs(getLearningThermometerVotesCol());
+            const existingVoteIds = [];
+            votesSnap.forEach((voteDoc) => existingVoteIds.push(voteDoc.id));
+            const settingsSnap = await getDoc(getGlobalSettingsDocRef());
+            const legacyValues = settingsSnap.exists()
+                ? ((settingsSnap.data() || {}).learningThermometer || {}).values
+                : null;
+            const seeds = planThermometerLegacyVoteWrites({
+                existingVoteIds,
+                legacyValues,
+                explicitIds: [..._thermometerPendingVoteIds],
+                activeIds: getActiveStudentIds(),
+                allowLegacy: true,
+                min: state.min,
+                max: state.max,
+            });
+            if (!seeds) return;
+            Object.entries(seeds).forEach(([sid, value]) => {
+                state.values[sid] = value;
+                _thermometerPendingVoteIds.add(String(sid));
+            });
+            setLocalLearningThermometerState(state);
+        }
+
+        async function clearStoredThermometerLegacyValues() {
+            const ref = getGlobalSettingsDocRef();
+            const snap = await getDoc(ref);
+            if (!snap.exists()) return;
+            const cleared = clearedLearningThermometerLegacy((snap.data() || {}).learningThermometer);
+            if (!cleared) return;
+            await updateDoc(ref, { learningThermometer: cleared });
+        }
+
         function getLearningThermometerValueClass(value) {
             if (value > 0) return 'text-sky-200';
             if (value < 0) return 'text-red-200';
@@ -14950,6 +15006,7 @@ ${subjectLine}
                 }
                 const state = getLearningThermometerState();
                 await ensureLearningThermometerParent(state);
+                await seedMissingThermometerVotesFromLegacy(state);
                 if (writeParent) await setDoc(getLearningThermometerDocRef(), thermometerParentPayload(state));
                 const ids = [..._thermometerPendingVoteIds];
                 await Promise.all(ids.map(async (sid) => {
@@ -15136,19 +15193,18 @@ ${subjectLine}
                         }
                     }
                     const parentData = snap.exists() ? (snap.data() || {}) : {};
-                    const noVotes = Object.keys(voteValues).length === 0;
                     const legacyAllowed = allowLegacyThermometerValues({
                         parentExists: snap.exists(),
                         settlementStatus: parentData.settlementStatus,
                         usedStaleValues: parentData.usedStaleValues === true,
                         settlementKey: parentData.settlementKey,
+                        settledDate: parentData.settledDate,
                         today,
                     });
-                    // 잠금 문서를 만든 뒤 표 쓰기 전에 끊기면 부모에는 values가 없습니다.
-                    // 그때 예전 settings/global 값을 보지 않으면 오늘 정산이 0으로 끝납니다.
-                    const legacySnap = (!snap.exists() || (noVotes && legacyAllowed))
-                        ? await transaction.get(getGlobalSettingsDocRef())
-                        : null;
+                    // 표가 일부만 있어도, 표가 없는 학생은 예전 settings/global 값을 봅니다.
+                    // 잠금만 커밋된 같은 날 재시도와, 아직 소모하지 않은 날만 허용합니다.
+                    const readLegacy = !snap.exists() || legacyAllowed || parentData.usedStaleValues === true;
+                    const legacySnap = readLegacy ? await transaction.get(getGlobalSettingsDocRef()) : null;
                     const legacyThermometer = legacySnap && legacySnap.exists()
                         ? (legacySnap.data() || {}).learningThermometer
                         : null;
@@ -15156,19 +15212,17 @@ ${subjectLine}
                         ? parentData
                         : (legacyThermometer || {});
                     const state = sanitizeLearningThermometerState(raw);
-                    const source = thermometerValueSource({
+                    const plan = planThermometerSettlement({
+                        activeIds: ids,
                         voteValues,
-                        parentValues: snap.exists() ? parentData.values : null,
-                        legacyValues: legacyThermometer && legacyThermometer.values,
-                        allowLegacy: legacyAllowed,
+                        parentExists: snap.exists(),
+                        parentData,
+                        legacyThermometer,
+                        today,
+                        min: state.min,
+                        max: state.max,
                     });
-                    const pendingValues = {};
-                    ids.forEach((sid) => {
-                        const id = String(sid);
-                        if (!Object.prototype.hasOwnProperty.call(source.values, id)) return;
-                        const v = Math.max(state.min, Math.min(state.max, Math.round(Number(source.values[id]) || 0)));
-                        if (v !== 0) pendingValues[id] = v;
-                    });
+                    const pendingValues = plan.pendingValues;
                     const decision = decideThermometerLockClaim({
                         settlementKey: state.settlementKey,
                         settlementStatus: state.settlementStatus,
@@ -15201,7 +15255,9 @@ ${subjectLine}
                     claimed = {
                         status: 'claimed',
                         state: nextState,
-                        usedStaleValues: source.kind === 'legacy',
+                        legacyIds: plan.legacyIds,
+                        legacyIdsToClose: plan.legacyIdsToClose,
+                        consumeLegacy: plan.consumeLegacy === true,
                     };
                     if (decision.action === 'reuse') return;
                     transaction.set(ref, thermometerParentPayload({
@@ -15217,6 +15273,7 @@ ${subjectLine}
 
                 const values = claimed.state.values || {};
                 const entries = Object.entries(values).filter(([, v]) => Number(v) !== 0);
+                const legacyIdSet = new Set((claimed.legacyIds || []).map((id) => String(id)));
                 let appliedCount = 0;
                 let totalDelta = 0;
                 let skippedApplied = 0;
@@ -15228,7 +15285,7 @@ ${subjectLine}
                         today,
                         owner: _thermometerLockOwner,
                         leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
-                        usedStaleValues: claimed.usedStaleValues === true,
+                        usedStaleValues: legacyIdSet.has(String(sid)),
                     });
                     if (!granted || granted.status === 'lock_lost') {
                         return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
@@ -15236,7 +15293,7 @@ ${subjectLine}
                     if (granted.status === 'granted') {
                         appliedCount += 1;
                         totalDelta += granted.actualDelta || 0;
-                    } else if (granted.reason === 'already_applied') {
+                    } else if (granted.reason === 'already_applied' || granted.reason === 'stale_consumed') {
                         skippedApplied += 1;
                     }
                 }
@@ -15253,11 +15310,14 @@ ${subjectLine}
                     settlementLockOwner: '',
                     settlementAppliedCount: appliedCount,
                     settlementTotalDelta: totalDelta,
-                    usedStaleValues: claimed.state.usedStaleValues === true || claimed.usedStaleValues === true,
+                    usedStaleValues: claimed.state.usedStaleValues === true || claimed.consumeLegacy === true,
                 };
                 const finished = await finishThermometerSettlement(db, {
                     thermometerRef: getLearningThermometerDocRef(),
-                    voteRefs: entries.map(([sid]) => getLearningThermometerVoteRef(sid)),
+                    voteRefs: [...new Set([
+                        ...entries.map(([sid]) => String(sid)),
+                        ...((claimed.legacyIdsToClose || []).map((sid) => String(sid))),
+                    ])].map((sid) => getLearningThermometerVoteRef(sid)),
                     owner: _thermometerLockOwner,
                     today,
                     leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
@@ -15265,6 +15325,13 @@ ${subjectLine}
                 });
                 if (!finished || finished.status !== 'done') {
                     return { status: 'lock_lost', appliedCount, totalDelta, skippedApplied };
+                }
+                if (resetState.usedStaleValues) {
+                    try {
+                        await clearStoredThermometerLegacyValues();
+                    } catch (clearErr) {
+                        console.warn('clearStoredThermometerLegacyValues', clearErr);
+                    }
                 }
                 setLocalLearningThermometerState(resetState);
                 await refreshStudentsCacheFromServer();
@@ -20126,23 +20193,26 @@ ${subjectLine}
                             if (isLearningThermometerLocallyBusy()) return;
                             const data = snap.data() || {};
                             const prev = getLearningThermometerState();
-                            // 새 부모 문서에는 values가 없습니다. 표가 오기 전에 화면 값을 비우면
-                            // 예전 settings/global 온도가 정산 전에 사라집니다.
-                            const parentHasValues = !!(data.values && typeof data.values === 'object' && Object.keys(data.values).length);
-                            const keepPrevValues = window._thermometerVotesSeen || !parentHasValues;
+                            // 부모 문서에는 값이 없습니다. 빈 values로 예전 화면을 지우면
+                            // 다음 저장이 일부 학생만 표로 남깁니다.
+                            const displayValues = pickThermometerDisplayValues({
+                                votesSeen: !!window._thermometerVotesSeen,
+                                parentValues: data.values,
+                                previousValues: prev.values,
+                            });
                             const next = sanitizeLearningThermometerState({
                                 ...data,
-                                values: keepPrevValues ? prev.values : data.values,
+                                values: displayValues,
                             });
-                            if (keepPrevValues) next.values = { ...prev.values };
+                            next.values = { ...displayValues };
                             if (!window.globalSettings) window.globalSettings = {};
                             window.globalSettings.learningThermometer = next;
                             if (window.playerState && window.playerState.isAdmin) renderLearningThermometerPanel();
                         });
                         if (unsubscribeThermometerVotes) unsubscribeThermometerVotes();
                         unsubscribeThermometerVotes = onSnapshot(getLearningThermometerVotesCol(), (snap) => {
-                            // 부모 문서가 생기기 전 빈 표 스냅샷은 예전 전역 값을 지우면 안 됩니다.
-                            if (snap.empty && !window._thermometerDocSeen) return;
+                            // 문서가 하나도 없으면 "모두 0"이 아닙니다. settings/global 값을 유지합니다.
+                            if (!thermometerVotesShouldReplaceValues(snap.size)) return;
                             const values = {};
                             snap.forEach((voteDoc) => {
                                 const value = Math.round(Number((voteDoc.data() || {}).value) || 0);

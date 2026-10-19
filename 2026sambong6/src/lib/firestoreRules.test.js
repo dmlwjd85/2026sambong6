@@ -1,12 +1,15 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { deleteDoc, deleteField, doc, getDoc, setDoc } from 'firebase/firestore';
+import { deleteDoc, deleteField, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { classXpCatchupSlot } from './classXpSlot.js';
 import {
+    clearedLearningThermometerLegacy,
     finishThermometerSettlement,
     grantThermometerStudentXp,
+    planThermometerSettlement,
 } from './learningThermometerSettlement.js';
+import { planThermometerLegacyVoteWrites } from './learningThermometerVotes.js';
 import {
     assertFails,
     assertSucceeds,
@@ -625,6 +628,165 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         assert.equal(stillA.status, 'lock_lost');
         const finalXp = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_1'));
         assert.equal(finalXp.data().xp, 16);
+    });
+
+    it('M3: 표가 있는 학생과 예전 값만 있는 학생을 한 번씩 지급한다', async () => {
+        const now = 1_800_000_000_000;
+        const path = 'artifacts/class1/public/data/settings/learningThermometer';
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            await setDoc(doc(db, settingsPath), {
+                learningThermometer: { min: -20, max: 20, values: { '1': 3, '2': 15, '9': 7 } },
+            }, { merge: true });
+            await setDoc(doc(db, path), thermometerPayload({
+                date: '2026-10-16',
+                settledDate: '2026-10-15',
+                settlementKey: '2026-10-15',
+                settlementStatus: 'done',
+                usedStaleValues: false,
+            }));
+            await setDoc(doc(db, `${path}/votes/2`), { value: 5 });
+            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_1'), { xp: 10 });
+            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_2'), { xp: 10 });
+            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_9'), { xp: 10 });
+        });
+        const plan = planThermometerSettlement({
+            activeIds: ['1', '2'],
+            voteValues: { '2': 5 },
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'done',
+                settledDate: '2026-10-15',
+                settlementKey: '2026-10-15',
+                usedStaleValues: false,
+            },
+            legacyThermometer: { values: { '1': 3, '2': 15, '9': 7 } },
+            today: '2026-10-16',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(plan.pendingValues['1'], 3);
+        assert.equal(plan.pendingValues['2'], 5);
+        assert.equal(plan.pendingValues['9'], undefined);
+        assert.deepEqual(plan.legacyIds, ['1']);
+
+        await seedRunningSettlement({
+            now,
+            students: [],
+        });
+        const db = teacher().firestore();
+        const legacyGrant = await grantThermometerStudentXp(db, grantArgs(db, {
+            studentId: '1', owner: 'tabA', now, delta: plan.pendingValues['1'], usedStaleValues: true,
+        }));
+        const voteGrant = await grantThermometerStudentXp(db, grantArgs(db, {
+            studentId: '2', owner: 'tabA', now, delta: plan.pendingValues['2'], usedStaleValues: false,
+        }));
+        assert.equal(legacyGrant.status, 'granted');
+        assert.equal(voteGrant.status, 'granted');
+        const stu1 = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_1'));
+        const stu2 = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_2'));
+        const inactive = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_9'));
+        assert.equal(stu1.data().xp, 13);
+        assert.equal(stu1.data().thermometerUsedStaleValues, true);
+        assert.equal(stu2.data().xp, 15);
+        assert.equal(stu2.data().thermometerUsedStaleValues, false);
+        assert.equal(inactive.data().xp, 10);
+        const parent = await getDoc(doc(db, path));
+        assert.equal(parent.data().usedStaleValues, true);
+    });
+
+    it('R1: 예전 값 지급 뒤 다음 날은 다시 주지 않고 global 값을 비운다', async () => {
+        const now = 1_800_000_000_000;
+        const path = 'artifacts/class1/public/data/settings/learningThermometer';
+        const stored = { min: -20, max: 20, date: '2026-10-15', values: { '1': 3 } };
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            await setDoc(doc(db, settingsPath), { learningThermometer: stored }, { merge: true });
+        });
+        await seedRunningSettlement({
+            now,
+            students: [{ id: '1', xp: 10 }],
+        });
+        const db = teacher().firestore();
+        const first = await grantThermometerStudentXp(db, grantArgs(db, {
+            studentId: '1', owner: 'tabA', now, delta: 3, usedStaleValues: true,
+        }));
+        assert.equal(first.status, 'granted');
+        assert.equal((await getDoc(doc(db, 'artifacts/class1/public/data/students/student_1'))).data().xp, 13);
+
+        const day1Plan = planThermometerSettlement({
+            activeIds: ['1'],
+            voteValues: {},
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'running',
+                settlementKey: '2026-10-16',
+                usedStaleValues: true,
+            },
+            legacyThermometer: stored,
+            today: '2026-10-16',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(day1Plan.legacyAllowed, true);
+        assert.equal(day1Plan.pendingValues['1'], 3);
+        const replay = await grantThermometerStudentXp(db, grantArgs(db, {
+            studentId: '1', owner: 'tabA', now, delta: 3, usedStaleValues: true,
+        }));
+        assert.equal(replay.reason, 'already_applied');
+
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), path), {
+                date: '2026-10-17',
+                settlementKey: '2026-10-17',
+                settlementStatus: 'running',
+                settlementStartedAt: now - 1000,
+                settlementLockOwner: 'tabA',
+                settlementAttempt: 1,
+                usedStaleValues: true,
+            }, { merge: true });
+        });
+        const day2Plan = planThermometerSettlement({
+            activeIds: ['1'],
+            voteValues: {},
+            parentExists: true,
+            parentData: {
+                settlementStatus: 'running',
+                settlementKey: '2026-10-16',
+                settledDate: '2026-10-16',
+                usedStaleValues: true,
+            },
+            legacyThermometer: stored,
+            today: '2026-10-17',
+            min: -20,
+            max: 20,
+        });
+        assert.equal(day2Plan.legacyAllowed, false);
+        assert.equal(day2Plan.pendingValues['1'], undefined);
+        assert.equal(planThermometerLegacyVoteWrites({
+            existingVoteIds: [],
+            legacyValues: stored.values,
+            activeIds: ['1'],
+            allowLegacy: day2Plan.legacyAllowed,
+            min: -20,
+            max: 20,
+        }), null);
+        const nextDay = await grantThermometerStudentXp(db, {
+            ...grantArgs(db, { studentId: '1', owner: 'tabA', now, delta: 3, usedStaleValues: true }),
+            today: '2026-10-17',
+        });
+        assert.equal(nextDay.status, 'skipped');
+        assert.equal(nextDay.reason, 'stale_consumed');
+        assert.equal((await getDoc(doc(db, 'artifacts/class1/public/data/students/student_1'))).data().xp, 13);
+
+        const cleared = clearedLearningThermometerLegacy(stored);
+        await assertSucceeds(updateDoc(doc(db, settingsPath), { learningThermometer: cleared }));
+        const globalSnap = await getDoc(doc(db, settingsPath));
+        assert.deepEqual(globalSnap.data().learningThermometer.values, {});
+        assert.equal(globalSnap.data().learningThermometer.min, -20);
+        await assertFails(updateDoc(doc(anon().firestore(), settingsPath), {
+            learningThermometer: { ...stored, values: { '1': 9 } },
+        }));
     });
 
     it('시드 학급 선생님의 승인 표식은 그 선생님 uid로만 새 학급 설정을 만든다', async () => {

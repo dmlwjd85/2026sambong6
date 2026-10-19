@@ -47,7 +47,7 @@ describe('학급 개설 인증 요청', () => {
     it('로그인 개설은 학급명과 PIN이 있어야 요청된다', () => {
         const noName = validateClassCreateRequestDraft({
             requesterHint: 'login',
-            teacherPin: '1234',
+            teacherPin: '123456',
         });
         assert.equal(noName.ok, false);
         assert.equal(noName.reason, 'displayName');
@@ -65,13 +65,14 @@ describe('학급 개설 인증 요청', () => {
             homeroom: 2,
             teacherName: '김선생',
             studentCount: 24,
-            teacherPin: '4321',
+            teacherPin: '432100',
             requesterHint: 'login',
         }, 100);
         assert.equal(built.ok, true);
         assert.equal(built.request.status, 'pending');
         assert.match(built.request.id, /^ccr_/);
-        assert.equal(built.request.teacherPin, '4321');
+        assert.equal(built.request.teacherPin, '432100');
+        assert.equal(sanitizeClassCreateRequest({ teacherPin: '1234' }).teacherPin, '');
         assert.equal(built.request.requestedAt, 100);
         assert.equal(built.request.newClassId, '');
     });
@@ -80,7 +81,7 @@ describe('학급 개설 인증 요청', () => {
         const pending = sanitizeClassCreateRequest({
             id: 'ccr_1',
             displayName: '새 반',
-            teacherPin: '1111',
+            teacherPin: '111111',
             status: 'pending',
             copyFromClassId: 'src-class',
         });
@@ -107,7 +108,7 @@ describe('학급 개설 인증 요청', () => {
         assert.equal(payload.displayName, '새 반');
         assert.equal(payload.copyFromClassId, 'src-class');
         assert.equal(payload.copySettingsFromCurrent, false);
-        assert.equal(payload.teacherPin, '1111');
+        assert.equal(payload.teacherPin, '111111');
         assert.equal(classCreateRequestStatusLabel('pending'), '승인 대기');
         assert.equal(classCreateRequestStatusLabel('approved'), '허락됨');
         assert.equal(pendingClassCreateRequests([pending, approved.request]).length, 1);

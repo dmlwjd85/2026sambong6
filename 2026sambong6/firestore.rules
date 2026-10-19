@@ -121,25 +121,35 @@ service cloud.firestore {
         );
     }
 
-    function proofPinIsWrong(classId) {
-      return exists(secretPath(classId))
-        && get(secretPath(classId)).data.pin is string
-        && getAfter(gmProofPath()).data.pin != get(secretPath(classId)).data.pin;
+    // PIN이 맞는지는 보지 않습니다. 맞든 틀리든 같은 배치에서 횟수와 시도 문서가 생겨야 합니다.
+    function proofDataOk(proof, classId) {
+      return proof.keys().hasOnly(['pin', 'classId', 'expiresAt', 'attemptCount', 'generation'])
+        && proof.pin is string
+        && proof.pin.matches('^[0-9]{6}$')
+        && proof.classId == classId
+        && proof.expiresAt is timestamp
+        && proof.expiresAt > request.time
+        && proof.expiresAt <= request.time + duration.value(10, 'm')
+        && proof.attemptCount is int
+        && proof.generation is int;
+    }
+
+    function attemptAfterOk(classId, after) {
+      return after.keys().hasOnly(['count', 'generation', 'lockedUntil'])
+        && after.count == pinAttemptExpectedCount(classId)
+        && after.generation == pinAttemptExpectedGeneration(classId)
+        && pinAttemptShape(after.count, after.generation, after.lockedUntil);
     }
 
     function proofForcesAttemptBump() {
       let classId = request.resource.data.classId;
-      return existsAfter(gmAttemptPath(classId))
-        && !pinClassLocked(classId)
-        && proofPinIsWrong(classId)
-        && getAfter(gmAttemptPath(classId)).data.keys().hasOnly(['count', 'generation', 'lockedUntil'])
-        && getAfter(gmAttemptPath(classId)).data.count == pinAttemptExpectedCount(classId)
-        && getAfter(gmAttemptPath(classId)).data.generation == pinAttemptExpectedGeneration(classId)
-        && pinAttemptShape(
-          getAfter(gmAttemptPath(classId)).data.count,
-          getAfter(gmAttemptPath(classId)).data.generation,
-          getAfter(gmAttemptPath(classId)).data.lockedUntil
-        )
+      return !pinClassLocked(classId)
+        && existsAfter(gmAttemptPath(classId))
+        && existsAfter(gmProofPath())
+        && attemptAfterOk(classId, getAfter(gmAttemptPath(classId)).data)
+        && proofDataOk(getAfter(gmProofPath()).data, classId)
+        && getAfter(gmProofPath()).data.attemptCount == getAfter(gmAttemptPath(classId)).data.count
+        && getAfter(gmProofPath()).data.generation == getAfter(gmAttemptPath(classId)).data.generation
         && existsAfter(pinTryPath(
           classId,
           getAfter(gmAttemptPath(classId)).data.generation,
@@ -147,46 +157,15 @@ service cloud.firestore {
         ));
     }
 
-    // 맞는 PIN은 실패 횟수를 올리지 않습니다. 그래서 10번째 시도가 맞아도 잠기지 않습니다.
-    function proofAcceptsCorrectPin() {
-      let classId = request.resource.data.classId;
-      let untouched = pinAttemptMissing(classId)
-        ? !existsAfter(gmAttemptPath(classId))
-        : (
-          existsAfter(gmAttemptPath(classId))
-          && getAfter(gmAttemptPath(classId)).data.count == get(gmAttemptPath(classId)).data.count
-          && getAfter(gmAttemptPath(classId)).data.generation == get(gmAttemptPath(classId)).data.generation
-          && getAfter(gmAttemptPath(classId)).data.lockedUntil == get(gmAttemptPath(classId)).data.lockedUntil
-        );
-      return !pinClassLocked(classId)
-        && untouched
-        && exists(secretPath(classId))
-        && get(secretPath(classId)).data.pin is string
-        && request.resource.data.pin == get(secretPath(classId)).data.pin;
-    }
-
-    function attemptPairedWithProof(classId) {
-      let proof = getAfter(gmProofPath()).data;
-      return existsAfter(gmProofPath())
-        && proof.keys().hasOnly(['pin', 'classId', 'expiresAt'])
-        && proof.classId == classId
-        && proof.pin is string
-        && proof.pin.matches('^[0-9]{4,12}$')
-        && proof.expiresAt is timestamp
-        && proof.expiresAt > request.time
-        && proof.expiresAt <= request.time + duration.value(10, 'm');
-    }
-
     function attemptBumpWriteOk(classId) {
       let after = request.resource.data;
       return signedIn()
         && !pinClassLocked(classId)
-        && after.keys().hasOnly(['count', 'generation', 'lockedUntil'])
-        && after.count == pinAttemptExpectedCount(classId)
-        && after.generation == pinAttemptExpectedGeneration(classId)
-        && pinAttemptShape(after.count, after.generation, after.lockedUntil)
-        && attemptPairedWithProof(classId)
-        && proofPinIsWrong(classId)
+        && attemptAfterOk(classId, after)
+        && existsAfter(gmProofPath())
+        && proofDataOk(getAfter(gmProofPath()).data, classId)
+        && getAfter(gmProofPath()).data.attemptCount == after.count
+        && getAfter(gmProofPath()).data.generation == after.generation
         && existsAfter(pinTryPath(classId, after.generation, after.count));
     }
 
@@ -200,17 +179,33 @@ service cloud.firestore {
         && after.generation == beforeGen + 1;
     }
 
+    // 잠금은 이 요청 전의 상태를 봅니다. 그래서 9번까지 틀린 뒤의 10번째 정답도 증명 배치는 통과합니다.
+    // 그 10번째가 맞으면 세션 배치에서만 횟수를 0으로 되돌립니다.
+    function proofPinMatchesSecret(classId) {
+      return exists(gmProofPath())
+        && exists(gmAttemptPath(classId))
+        && exists(secretPath(classId))
+        && get(gmProofPath()).data.keys().hasOnly(['pin', 'classId', 'expiresAt', 'attemptCount', 'generation'])
+        && get(secretPath(classId)).data.pin is string
+        && get(gmProofPath()).data.pin is string
+        && get(gmProofPath()).data.classId == classId
+        && get(gmProofPath()).data.pin == get(secretPath(classId)).data.pin
+        && get(gmProofPath()).data.attemptCount == get(gmAttemptPath(classId)).data.count
+        && get(gmProofPath()).data.generation == get(gmAttemptPath(classId)).data.generation
+        && (
+          !pinClassLocked(classId)
+          || get(gmAttemptPath(classId)).data.count == 10
+        );
+    }
+
     function attemptResetWriteOk(classId) {
       return signedIn()
-        && !pinClassLocked(classId)
+        && proofPinMatchesSecret(classId)
         && attemptResetShape(classId)
         && existsAfter(gmSessionPath())
         && getAfter(gmSessionPath()).data.keys().hasOnly(['classId', 'expiresAt'])
         && getAfter(gmSessionPath()).data.classId == classId
-        && exists(gmProofPath())
-        && get(gmProofPath()).data.classId == classId
-        && exists(secretPath(classId))
-        && get(gmProofPath()).data.pin == get(secretPath(classId)).data.pin
+        && get(gmProofPath()).data.expiresAt == getAfter(gmSessionPath()).data.expiresAt
         && existsAfter(gmProofPath()) == false;
     }
 
@@ -219,14 +214,14 @@ service cloud.firestore {
       return signedIn()
         && !pinClassLocked(classId)
         && existsAfter(gmAttemptPath(classId))
+        && existsAfter(gmProofPath())
         && tryId == pinTryId(after.generation, after.count)
         && request.resource.data.keys().hasOnly(['n'])
         && request.resource.data.n == after.count
-        && after.count == pinAttemptExpectedCount(classId)
-        && after.generation == pinAttemptExpectedGeneration(classId)
-        && pinAttemptShape(after.count, after.generation, after.lockedUntil)
-        && attemptPairedWithProof(classId)
-        && proofPinIsWrong(classId);
+        && attemptAfterOk(classId, after)
+        && proofDataOk(getAfter(gmProofPath()).data, classId)
+        && getAfter(gmProofPath()).data.attemptCount == after.count
+        && getAfter(gmProofPath()).data.generation == after.generation;
     }
 
     function sessionShapeOk() {
@@ -237,18 +232,12 @@ service cloud.firestore {
         && sessionExpiryOk();
     }
 
-    // 세션을 만드는 배치에서 증명을 지우고, 학급 잠금 횟수를 0으로 되돌립니다.
+    // 세션을 만드는 배치에서만 증명을 지우고 횟수를 0으로 되돌립니다.
+    // 이 허용/거부가 PIN을 알려 주지만, 그 전 배치에서 횟수가 이미 1 올랐습니다.
     function proofMatchesSecret() {
       let classId = request.resource.data.classId;
-      return exists(gmProofPath())
-        && get(gmProofPath()).data.keys().hasOnly(['pin', 'classId', 'expiresAt'])
-        && get(gmProofPath()).data.pin is string
-        && get(gmProofPath()).data.classId == classId
+      return proofPinMatchesSecret(classId)
         && get(gmProofPath()).data.expiresAt == request.resource.data.expiresAt
-        && exists(secretPath(classId))
-        && get(secretPath(classId)).data.pin is string
-        && get(gmProofPath()).data.pin == get(secretPath(classId)).data.pin
-        && !pinClassLocked(classId)
         && existsAfter(gmProofPath()) == false
         && attemptResetShape(classId);
     }
@@ -632,21 +621,85 @@ service cloud.firestore {
         && thermometerLockFresh();
     }
 
-    function thermometerVoteResetWhileRunning(appId) {
+    // 표를 0으로 만드는 것은 완료로 바꾸는 같은 배치에서만 됩니다.
+    function thermometerVoteResetInFinish(appId) {
       let parentPath = /databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer;
-      let parent = get(parentPath).data;
-      let todayKey = parent.settlementKey == kstDateString() && parent.date == kstDateString();
-      let priorKey = parent.settlementKey < kstDateString()
-        && parent.settlementKey == parent.date
-        && thermometerDayKey(parent.settlementKey);
-      return request.resource.data.value == 0
+      let before = get(parentPath).data;
+      let after = getAfter(parentPath).data;
+      let todayKey = before.settlementKey == kstDateString() && before.date == kstDateString();
+      let priorKey = before.settlementKey < kstDateString()
+        && before.settlementKey == before.date
+        && thermometerDayKey(before.settlementKey);
+      return request.resource.data.keys().hasOnly(['value'])
+        && request.resource.data.value == 0
         && exists(parentPath)
-        && parent.settlementStatus == 'running'
-        && parent.settlementLockOwner == request.auth.uid
+        && existsAfter(parentPath)
+        && before.settlementStatus == 'running'
+        && before.settlementLockOwner == request.auth.uid
         && (todayKey || priorKey)
-        && parent.settlementStartedAt is number
-        && parent.settlementStartedAt > request.time.toMillis() - 300000
-        && parent.settlementStartedAt <= request.time.toMillis() + 15000;
+        && before.settlementStartedAt is number
+        && before.settlementStartedAt > request.time.toMillis() - 300000
+        && before.settlementStartedAt <= request.time.toMillis() + 15000
+        && after.settlementStatus == 'done'
+        && after.settlementKey == before.settlementKey
+        && after.date == before.settlementKey
+        && after.settledDate == before.settlementKey
+        && after.settlementStartedAt == 0;
+    }
+
+    function thermometerMarkerUnchanged() {
+      return !('lastThermometerSettlementKey' in request.resource.data)
+        || (
+          request.method == 'update'
+          && ('lastThermometerSettlementKey' in resource.data)
+          && request.resource.data.lastThermometerSettlementKey == resource.data.lastThermometerSettlementKey
+        );
+    }
+
+    function thermometerMarkerLockedIn(appId) {
+      let parentPath = /databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer;
+      let marker = request.resource.data.lastThermometerSettlementKey;
+      return marker is string
+        && exists(parentPath)
+        && get(parentPath).data.settlementStatus == 'running'
+        && get(parentPath).data.settlementLockOwner == request.auth.uid
+        && get(parentPath).data.settlementKey is string
+        && get(parentPath).data.settlementAttempt is int
+        && marker == get(parentPath).data.settlementKey + '#' + string(get(parentPath).data.settlementAttempt)
+        && get(parentPath).data.settlementStartedAt is number
+        && get(parentPath).data.settlementStartedAt > request.time.toMillis() - 300000
+        && get(parentPath).data.settlementStartedAt <= request.time.toMillis() + 15000;
+    }
+
+    function studentThermometerMarkerAllowed(appId) {
+      return !isStudentDoc()
+        || request.method == 'delete'
+        || thermometerMarkerUnchanged()
+        || isPinMaster(appId)
+        || thermometerMarkerLockedIn(appId);
+    }
+
+    function shopDiscountSame() {
+      return (
+          !('shopDiscount' in resource.data)
+          && !('shopDiscount' in request.resource.data)
+        )
+        || (
+          'shopDiscount' in resource.data
+          && 'shopDiscount' in request.resource.data
+          && resource.data.shopDiscount == request.resource.data.shopDiscount
+        );
+    }
+
+    // 세션이 있으면 문서 전체를 비교하지 않습니다. 식 한도를 넘기지 않기 위해서입니다.
+    function settingsGlobalPinMasterUpdate(appId) {
+      return isPinMaster(appId) && (shopDiscountSame() || shopDiscountChangeIsValid());
+    }
+
+    function settingsGlobalOpenUpdate() {
+      return signedIn()
+        && shopDiscountSame()
+        && (gmOnlyUntouched() || learningThermometerLegacyClearOnly());
     }
 
     function gmOnlyUntouched() {
@@ -713,8 +766,8 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/data/students/{studentId} {
       allow read: if true;
-      allow create: if studentCreateIsSafe() && masterStudentPinAbsent();
-      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent();
+      allow create: if studentCreateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId);
+      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId);
       allow delete: if false;
     }
 
@@ -726,11 +779,11 @@ service cloud.firestore {
         && appId != 'sambong-class-2026'
         && request.resource.data.keys().hasOnly(['pin'])
         && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{4,12}$');
+        && request.resource.data.pin.matches('^[0-9]{6}$');
       allow update: if (isPinMaster(appId) || isSeedPinMaster())
         && request.resource.data.keys().hasOnly(['pin'])
         && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{4,12}$');
+        && request.resource.data.pin.matches('^[0-9]{6}$');
       allow delete: if false;
     }
 
@@ -749,20 +802,17 @@ service cloud.firestore {
       }
     }
 
-    // PIN 확인용 임시 문서. 읽기는 막습니다.
-    // 틀린 PIN은 같은 배치에서 횟수와 시도 문서를 만듭니다. 맞는 PIN은 횟수를 올리지 않습니다.
+    // PIN 확인용 임시 문서. 읽기·수정·목록은 막습니다.
+    // 맞든 틀리든 같은 배치에서 시도 문서와 횟수 +1이 있어야 만들어집니다. 잠금 중에는 거부합니다.
     match /gmPinProofs/{uid} {
       allow read: if false;
       allow create: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['pin', 'classId', 'expiresAt'])
-        && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{4,12}$')
         && request.resource.data.classId is string
         && request.resource.data.classId.size() > 0
         && request.resource.data.classId.size() < 80
-        && sessionExpiryOk()
-        && (proofForcesAttemptBump() || proofAcceptsCorrectPin());
+        && proofDataOk(request.resource.data, request.resource.data.classId)
+        && proofForcesAttemptBump();
       allow update: if false;
       allow delete: if signedIn() && request.auth.uid == uid;
     }
@@ -831,9 +881,7 @@ service cloud.firestore {
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
       allow create: if settingsCreateByPinMaster(appId) || settingsCreateBySeedGrant(appId);
-      allow update: if signedIn()
-        && (shopDiscountUntouched() || (shopDiscountChangeIsValid() && isPinMaster(appId)))
-        && (gmOnlyUntouched() || isPinMaster(appId) || learningThermometerLegacyClearOnly());
+      allow update: if settingsGlobalPinMasterUpdate(appId) || settingsGlobalOpenUpdate();
       allow delete: if false;
     }
 
@@ -863,7 +911,7 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if signedIn()
         && thermometerVoteOk(appId, studentId)
-        && (isPinMaster(appId) || thermometerVoteResetWhileRunning(appId));
+        && (isPinMaster(appId) || thermometerVoteResetInFinish(appId));
       allow delete: if false;
     }
 
@@ -894,7 +942,8 @@ service cloud.firestore {
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
         && studentClassXpSlotAllowed()
-        && masterStudentPinAbsent();
+        && masterStudentPinAbsent()
+        && studentThermometerMarkerAllowed(appId);
     }
 
     match /classes/{classId} {

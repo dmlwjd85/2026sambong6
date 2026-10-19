@@ -3731,7 +3731,7 @@ function redrawPlazaGrantsUi() {
 
             if (teacherPin) {
                 const pin = String(teacherPin).trim();
-                if (/^\d{4,12}$/.test(pin)) {
+                if (/^\d{6}$/.test(pin)) {
                     await setDoc(doc(db, 'secrets', newClassId), { pin });
                     await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'students', 'student_gm'), {
                         xp: 0,
@@ -24869,7 +24869,7 @@ ${subjectLine}
                     <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-3 shadow-2xl">
                         <h3 class="text-xl font-display text-sb-gold">저장하려면 PIN</h3>
                         <p class="text-xs text-slate-300 leading-relaxed">바꾼 내용을 저장하려면 마스터 PIN이 필요해요. 화면을 연 것만으로는 묻지 않아요.</p>
-                        <input id="gmSavePinInput" type="password" maxlength="12" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="PIN" class="w-full bg-slate-800 text-white rounded-xl px-4 py-3 text-center font-bold tracking-[0.4em] min-h-[44px]">
+                        <input id="gmSavePinInput" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="••••••" class="w-full bg-slate-800 text-white rounded-xl px-4 py-3 text-center font-bold tracking-[0.4em] min-h-[44px]">
                         <div class="flex gap-3 pt-1">
                             <button type="button" data-act="no" class="bg-slate-700 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">취소</button>
                             <button type="button" data-act="yes" class="bg-emerald-500 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">저장</button>
@@ -24925,8 +24925,8 @@ ${subjectLine}
 
         async function openGmPinSession(classId, pin, { quiet = false } = {}) {
             const code = String(pin || '').trim();
-            if (!gmAuthUid() || !/^\d{4,12}$/.test(code)) {
-                if (!quiet) await window.customAlert('PIN이 달라서 저장하지 않았어요');
+            if (!gmAuthUid() || !/^\d{6}$/.test(code)) {
+                if (!quiet) await window.customAlert('PIN은 숫자 6자리로 입력해 주세요.');
                 return false;
             }
             const uid = gmAuthUid();
@@ -24936,69 +24936,48 @@ ${subjectLine}
             const expiresAt = gmSessionExpiresAt();
             await deleteDoc(proofRef).catch(() => {});
 
-            let wrongCommit = null;
+            let planned = null;
             try {
-                wrongCommit = await runTransaction(db, async (tx) => {
+                planned = await runTransaction(db, async (tx) => {
                     const snap = await tx.get(attemptRef);
-                    const planned = planPinAttempt(
+                    const next = planPinAttempt(
                         pinAttemptSnapshot(snap.exists() ? (snap.data() || {}) : null),
                         Date.now(),
                     );
-                    if (planned.blocked) {
+                    if (next.blocked) {
                         const err = new Error('pin_locked');
                         err.code = 'pin-locked';
                         throw err;
                     }
-                    const tryRef = doc(db, 'gmPinAttempts', classId, 'tries', `${planned.generation}_${planned.count}`);
+                    const tryRef = doc(db, 'gmPinAttempts', classId, 'tries', `${next.generation}_${next.count}`);
                     tx.set(attemptRef, {
-                        count: planned.count,
-                        generation: planned.generation,
-                        lockedUntil: planned.lockedUntilMs ? Timestamp.fromMillis(planned.lockedUntilMs) : null,
+                        count: next.count,
+                        generation: next.generation,
+                        lockedUntil: next.lockedUntilMs ? Timestamp.fromMillis(next.lockedUntilMs) : null,
                     });
-                    tx.set(tryRef, { n: planned.count });
-                    tx.set(proofRef, { pin: code, classId, expiresAt });
-                    return planned;
+                    tx.set(tryRef, { n: next.count });
+                    tx.set(proofRef, {
+                        pin: code,
+                        classId,
+                        expiresAt,
+                        attemptCount: next.count,
+                        generation: next.generation,
+                    });
+                    return next;
                 });
             } catch (e) {
-                if (e && e.code === 'pin-locked') {
-                    if (!quiet) await window.customAlert(pinLockMessage());
-                    return false;
-                }
-                const codeName = String((e && e.code) || '');
-                const mayBeCorrect = firestorePermissionDenied(e)
-                    || codeName.includes('already-exists')
-                    || codeName.includes('aborted')
-                    || codeName.includes('failed-precondition');
-                if (!mayBeCorrect) {
-                    if (!quiet) await window.customAlert('PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                    return false;
-                }
-                wrongCommit = null;
-            }
-
-            if (wrongCommit) {
-                await deleteDoc(proofRef).catch(() => {});
                 if (!quiet) {
-                    await window.customAlert(wrongCommit.count >= PIN_ATTEMPT_MAX
+                    await window.customAlert(e && e.code === 'pin-locked'
                         ? pinLockMessage()
-                        : 'PIN이 달라서 저장하지 않았어요');
+                        : 'PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
                 }
                 return false;
             }
 
             try {
-                await setDoc(proofRef, { pin: code, classId, expiresAt });
                 await runTransaction(db, async (tx) => {
                     const snap = await tx.get(attemptRef);
                     const data = snap.exists() ? (snap.data() || {}) : null;
-                    const lockedUntilMs = data && data.lockedUntil && typeof data.lockedUntil.toMillis === 'function'
-                        ? data.lockedUntil.toMillis()
-                        : 0;
-                    if (lockedUntilMs > Date.now()) {
-                        const err = new Error('pin_locked');
-                        err.code = 'pin-locked';
-                        throw err;
-                    }
                     const generation = (data && Number(data.generation) >= 1 ? Number(data.generation) : 0) + 1;
                     tx.set(sessionRef, { classId, expiresAt });
                     tx.delete(proofRef);
@@ -25008,14 +24987,11 @@ ${subjectLine}
             } catch (e) {
                 await deleteDoc(proofRef).catch(() => {});
                 if (!quiet) {
-                    const codeName = String((e && e.code) || '');
-                    if (e && e.code === 'pin-locked') {
-                        await window.customAlert(pinLockMessage());
-                    } else if (firestorePermissionDenied(e) || codeName.includes('already-exists')) {
-                        await window.customAlert('PIN이 달라서 저장하지 않았어요');
-                    } else {
-                        await window.customAlert('PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                    }
+                    await window.customAlert(planned && planned.count >= PIN_ATTEMPT_MAX
+                        ? pinLockMessage()
+                        : (firestorePermissionDenied(e)
+                            ? 'PIN이 달라서 저장하지 않았어요'
+                            : 'PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'));
                 }
                 return false;
             }

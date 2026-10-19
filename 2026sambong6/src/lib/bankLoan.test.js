@@ -43,6 +43,7 @@ import {
     formatClearRepayConfirm,
     formatClearRepayDone,
     formatClearLunchWarning,
+    formatExistingLoanPreview,
     formatKeepLunchConfirm,
     formatKeepLunchDone,
     formatPartialRepayDone,
@@ -1282,7 +1283,7 @@ describe('점심값으로 남긴 빚은 주급에서 조금씩 걷는다', () =>
             lunchParts: keep.lunchParts,
             unit: 'B',
         }), '91B를 갚을까요?\n그러면 빚이 10B 남아요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.\n수요일 점심값 10B는 지갑에 남겨 둘게요.');
-        assert.equal(formatWithheldLunchLine(20, 10, 10, 'B'), '적은 20B 중 점심값 10B는 남기고 10B만 갚아요.');
+        assert.equal(formatWithheldLunchLine(20, 10, 10, 'B', 10), '점심값 10B를 남기려고 10B만 갚아요.');
         assert.equal(formatDebtLeftSentence(10, '2026-10-23', 'B'), '그러면 빚이 10B 남아요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.');
         assert.equal(formatDebtLeftSentence(10, '2026-10-23', 'B', { done: true }), '이제 빚이 10B 남았어요.\n이 10B는 10월 23일(금)까지 갚으면 돼요.');
         assert.equal(formatLunchWalletSentence([{ label: '수요일 점심값', amount: 10 }], 'B'), '수요일 점심값 10B는 지갑에 남겨 둘게요.');
@@ -1338,7 +1339,8 @@ describe('갚기 안내 문장', () => {
             calendar: cal,
             lastLunchDeductDate: today,
         });
-        assert.equal(warned, '지갑에서 101B를 모두 갚을까요?\n빚은 0이 돼요.\n다음 점심값은 따로 남겨 두지 않아요.\n다 갚으면 지갑이 0B가 돼서 내일 점심값 10B를 못 낼 수 있어요. 걱정되면 \'점심값만 남기고 갚기\'를 눌러 주세요.');
+        assert.equal(warned, '지갑에서 101B를 모두 갚을까요?\n빚은 0이 돼요.\n다 갚으면 지갑이 0B가 돼서 내일 점심값 10B를 못 낼 수 있어요. 걱정되면 \'점심값만 남기고 갚기\'를 눌러 주세요.');
+        assert.equal((warned.match(/다음 점심값은 따로 남겨 두지 않아요/g) || []).length, 0);
         const short = formatClearLunchWarning({
             walletAfter: 4,
             todayYmd: today,
@@ -1363,6 +1365,80 @@ describe('갚기 안내 문장', () => {
         });
         assert.match(friday, /월요일 점심값 10B를 못 낼 수 있어요/);
         assert.doesNotMatch(friday, /내일/);
+    });
+
+    it('점심 전에는 오늘 점심값부터 경고하고, 경고가 있으면 남겨 두지 않는다는 말은 한 번만 한다', () => {
+        const today = '2026-10-20';
+        const before = { todayYmd: today, calendar: cal, lastLunchDeductDate: '2026-10-19', unit: 'B' };
+        const noneLeft = formatClearLunchWarning({ walletAfter: 0, ...before });
+        assert.match(noneLeft, /지갑이 0B가 돼서 오늘 점심값 10B를 못 낼 수 있어요/);
+        assert.doesNotMatch(noneLeft, /내일|수요일/);
+        const short = formatClearLunchWarning({ walletAfter: 14, ...before });
+        assert.equal(short, '다 갚으면 지갑이 14B만 남아서 오늘이랑 내일 점심값 20B를 다 못 낼 수 있어요. 걱정되면 \'점심값만 남기고 갚기\'를 눌러 주세요.');
+        assert.match(formatClearLunchWarning({ walletAfter: 9, ...before }), /지갑이 9B만 남아서 오늘 점심값 10B를 못 낼 수 있어요/);
+        assert.equal(formatClearLunchWarning({ walletAfter: 10, ...before }), '다 갚으면 지갑이 10B만 남아서 오늘이랑 내일 점심값 20B를 다 못 낼 수 있어요. 걱정되면 \'점심값만 남기고 갚기\'를 눌러 주세요.');
+        assert.equal(formatClearLunchWarning({ walletAfter: 20, ...before }), '');
+        assert.equal(formatClearLunchWarning({ walletAfter: 24, ...before }), '');
+        const confirmZero = formatClearRepayConfirm(101, 'B', { walletAfter: 0, ...before });
+        assert.match(confirmZero, /오늘 점심값 10B를 못 낼 수 있어요/);
+        assert.equal((confirmZero.match(/다음 점심값은 따로 남겨 두지 않아요/g) || []).length, 0);
+        assert.equal((confirmZero.match(/못 낼 수 있어요/g) || []).length, 1);
+        const confirmShort = formatClearRepayConfirm(101, 'B', { walletAfter: 14, ...before });
+        assert.match(confirmShort, /오늘이랑 내일 점심값 20B를 다 못 낼 수 있어요/);
+        assert.equal((confirmShort.match(/따로 남겨 두지 않아요/g) || []).length, 0);
+        const holidayEve = { todayYmd: '2026-10-08', calendar: cal, lastLunchDeductDate: '2026-10-07', unit: 'B' };
+        assert.match(formatClearLunchWarning({ walletAfter: 0, ...holidayEve }), /오늘 점심값 10B를 못 낼 수 있어요/);
+        assert.match(formatClearLunchWarning({ walletAfter: 14, ...holidayEve }), /오늘이랑 월요일 점심값 20B를 다 못 낼 수 있어요/);
+        assert.match(formatClearLunchWarning({
+            walletAfter: 0,
+            todayYmd: '2026-10-08',
+            calendar: cal,
+            lastLunchDeductDate: '2026-10-08',
+            unit: 'B',
+        }), /월요일 점심값 10B를 못 낼 수 있어요/);
+        const fridayBefore = { todayYmd: '2026-10-23', calendar: cal, lastLunchDeductDate: '2026-10-22', unit: 'B' };
+        assert.match(formatClearLunchWarning({ walletAfter: 14, ...fridayBefore }), /오늘이랑 월요일 점심값 20B를 다 못 낼 수 있어요/);
+        const clear = planClearLoan({
+            bong: 115,
+            bankLoan: loanOf(101, '2026-10-23', 'loan_before_lunch'),
+            lastLunchDeductDate: '2026-10-19',
+        }, { todayYmd: today, calendar: cal });
+        assert.equal(clear.ok, true);
+        assert.equal(clear.amount, 101);
+        assert.equal(clear.bong, 14);
+        assert.equal(clear.reserveLunch, 0);
+    });
+
+    it('약속일이 지난 굵은 줄은 위 칸처럼 지났고 신용불량은 아니라고 말한다', () => {
+        const past = formatExistingLoanPreview('2026-10-20', { todayYmd: '2026-10-22', shielded: true });
+        assert.equal(past, '약속한 날이 지났어요. 그날은 10월 20일(화)예요. 주급을 받을 때 조금씩 갚아요. 신용불량은 아니에요.');
+        assert.doesNotMatch(past, /신용불량이 돼요|먼저 갚아요/);
+        const upcoming = formatExistingLoanPreview('2026-10-23', { todayYmd: '2026-10-22', shielded: true });
+        assert.match(upcoming, /약속한 날 10월 23일\(금\)/);
+        assert.match(upcoming, /신용불량이 돼요/);
+        const plainPast = formatExistingLoanPreview('2026-10-20', { todayYmd: '2026-10-22', shielded: false });
+        assert.match(plainPast, /신용불량이 돼요/);
+    });
+
+    it('일부 갚기 안내는 남기는 차이를 점심값인 것처럼 말하지 않는다', () => {
+        assert.equal(
+            formatWithheldLunchLine(10, 5, 5, 'B', 10),
+            '점심값 10B를 남기려고 5B만 갚아요.',
+        );
+        assert.doesNotMatch(formatWithheldLunchLine(10, 5, 5, 'B', 10), /점심값 5B/);
+        assert.equal(
+            formatWithheldLunchLine(10, 5, 5, 'B', [{ label: '금요일 점심값', amount: 10 }]),
+            '금요일 점심값 10B를 남기려고 5B만 갚아요.',
+        );
+        assert.equal(
+            formatWithheldLunchLine(10, 5, 5, 'B', [
+                { label: '오늘 점심값', amount: 10 },
+                { label: '수요일 점심값', amount: 10 },
+            ]),
+            '오늘 점심값 10B, 수요일 점심값 10B를 남기려고 5B만 갚아요.',
+        );
+        assert.equal(formatWithheldLunchLine(20, 10, 10, 'B'), '점심값을 남기려고 10B만 갚아요.');
+        assert.equal(formatWithheldLunchLine(10, 10, 5, 'B', 10), '');
     });
 
     it('일부 갚기가 점심값 때문에 거절되면 금액과 이유를 말한다', () => {

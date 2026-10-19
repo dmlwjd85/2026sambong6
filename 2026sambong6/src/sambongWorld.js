@@ -122,6 +122,7 @@ import {
     formatLunchRepayBlocked,
     koreanCopula,
     formatWithheldLunchLine,
+    formatExistingLoanPreview,
     formatLunchWalletSentence,
     lunchShieldCoversLoan,
     collectShieldedDebtFromSalary,
@@ -23804,8 +23805,10 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
-                preview.textContent = `약속한 날 ${dueLabel}. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.`;
+                preview.textContent = formatExistingLoanPreview(loan.dueYmd, {
+                    todayYmd: loanPlanToday(),
+                    shielded: lunchShieldCoversLoan(window.playerState, loan),
+                });
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
@@ -24041,7 +24044,13 @@ ${subjectLine}
                         const unit = getCurrencyUnit();
                         const dueYmd = quote.loan ? quote.loan.dueYmd : '';
                         const todayYmd = quote.todayYmd || loanPlanToday();
-                        const reason = formatWithheldLunchLine(quote.requested || 0, quote.amount, quote.withheld || 0, unit);
+                        const reason = formatWithheldLunchLine(
+                            quote.requested || 0,
+                            quote.amount,
+                            quote.withheld || 0,
+                            unit,
+                            quote.lunchParts,
+                        );
                         const lines = [`${formatBongAmount(quote.amount)}${moneyObjectParticle()} 갚을까요?`];
                         if (reason) lines.push(reason);
                         if (quote.left > 0) lines.push(formatDebtLeftSentence(quote.left, dueYmd, unit, { todayYmd }));

@@ -3,7 +3,7 @@ function escapeHtmlAttr(value) {
 }
 
 /**
- * 선생님 인증 전에는 range와 +/- 가 포커스·포인터로 값을 바꾸지 못합니다.
+ * 마스터가 아니면 range와 +/- 가 포커스·포인터로 값을 바꾸지 못합니다.
  * canEdit가 아닐 때 oninput/onclick을 넣지 않습니다.
  */
 export function learningThermometerStudentControls({ id, value, min, max, canEdit, valueClass }) {

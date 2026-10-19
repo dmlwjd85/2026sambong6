@@ -17,13 +17,18 @@ export const NEGATIVE_BUSINESS_DAYS_BEFORE_DEFAULT = 5;
 export const CREDIT_DEFAULT_CALENDAR_DAYS = 3;
 /**
  * 신용불량 기간(달력일) = ceil(부족액 또는 연체액 / 30).
- * 예전에는 연체 후 5영업일 정지, 마이너스는 5영업일이 지난 뒤 3일이었습니다.
- * 지금은 연체나 마이너스가 보이는 그 순간부터 이 공식으로 바로 셉니다.
- * 이미 신용불량인 동안에는 날짜를 다시 밀지 않습니다.
- * 기간이 끝난 뒤에도 이유가 남아 있으면 그날 금액으로 다시 시작합니다.
- * 연체 정지가 끝나면 예전처럼 남은 빚의 50%를 걷고 약정일을 5영업일 뒤로 미룹니다.
+ * 기간은 시작할 때 정한 종료일까지이고, 그 안의 점심값으로 늘어나지 않습니다.
+ * 종료일이 되면 빚이 남거나 지갑이 마이너스여도 신용불량만 풉니다. 남은 빚은 그대로입니다.
+ * 절반을 걷던 규칙은 남은 빚을 그대로 둔다는 결정과 맞지 않아 뺐습니다.
+ * 풀린 뒤 같은 대출·같은 마이너스로는 다시 걸리지 않습니다.
+ * 다시 걸리는 경우는 둘뿐입니다.
+ * 1) 해제 뒤에 새로 받은 대출이 연체될 때
+ * 2) 지갑이 0 이상으로 회복했다가 다시 마이너스가 될 때
+ * 만기일에는 지갑과 일반예금에 있는 만큼만 한 번 자동으로 갚고, 그래도 모자라면 그때 신용불량입니다.
  */
 export const CREDIT_DEFAULT_UNIT = 30;
+/** 평일 점심값. 60일 시뮬레이션에서 같은 값을 씁니다. */
+export const LUNCH_FEE_BONG = 10;
 
 function pad2(n) {
     return String(n).padStart(2, '0');
@@ -239,15 +244,51 @@ function loanIsOverdue(state, todayYmd) {
     return isYmd(due) && today >= due;
 }
 
+function releasedYmdOf(state) {
+    const ymd = String(state && state.creditReleasedYmd || '').trim();
+    return isYmd(ymd) ? ymd : '';
+}
+
+function releaseLoanIdOf(state) {
+    return String(state && state.creditReleaseLoanId || '').trim();
+}
+
+/** 해제 뒤에 지갑이 0 이상으로 올라온 적이 있는지. */
+function walletRecoveredSinceRelease(state) {
+    return !!(state && state.creditWalletRecovered === true);
+}
+
 /**
- * 연체 도장, 마이너스 도장, 지갑 마이너스, 약속한 날이 된 대출 중 하나면 신용불량입니다.
- * 도장이 저장되기 전에도 밥줄과 자동 지급이 같은 기준으로 움직입니다.
+ * 마이너스가 새 사유인지.
+ * 한 번도 풀린 적이 없거나, 풀린 뒤 0 이상으로 회복했다가 다시 내려간 경우입니다.
+ * 풀릴 때 이미 마이너스였고 그 뒤로 0을 못 넘겼으면 같은 마이너스입니다.
+ */
+function negativeIsFreshCause(state) {
+    if (!walletIsNegative(state)) return false;
+    if (!releasedYmdOf(state)) return true;
+    return walletRecoveredSinceRelease(state);
+}
+
+/** 연체가 새 사유인지. 해제 때 적어 둔 대출과 같은 빚이면 아닙니다. */
+function overdueIsFreshCause(state, todayYmd) {
+    if (!loanIsOverdue(state, todayYmd)) return false;
+    const raw = state && state.bankLoan;
+    const clean = sanitizeBankLoan(raw);
+    const id = String((clean && clean.id) || (raw && raw.id) || '').trim();
+    const releasedId = releaseLoanIdOf(state);
+    if (releasedId && id === releasedId) return false;
+    return true;
+}
+
+/**
+ * 신용불량 도장이 살아 있거나, 해제 뒤의 새 사유(새 연체·다시 난 마이너스)가 있으면 신용불량입니다.
+ * 기간이 끝난 같은 빚·같은 마이너스는 신용불량이 아닙니다.
  */
 export function isStudentCreditDefault(state, todayYmd) {
     return isCreditDefaultOn(state, todayYmd)
         || isLoanPenaltyActive(state, todayYmd)
-        || walletIsNegative(state)
-        || loanIsOverdue(state, todayYmd);
+        || negativeIsFreshCause(state)
+        || overdueIsFreshCause(state, todayYmd);
 }
 
 function creditUntilLine(untilYmd) {
@@ -261,9 +302,12 @@ export function loanPenaltyBlockMessage(untilYmd) {
     const when = creditUntilLine(untilYmd);
     return [
         when ? `신용불량이에요. ${when}` : '신용불량이에요.',
-        '빌린 돈을 약속한 날까지 갚지 않아서 그래요.',
+        '빌린 돈을 약속한 날 전날까지 갚지 않아서 그래요.',
         '밥줄에서는 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.',
-        '빌린 돈을 다 갚고 지갑이 0 이상이면 바로 풀려요.',
+        '적힌 날이 되면 신용불량은 풀려요. 남은 빚은 그대로예요.',
+        '풀린 뒤에는 같은 빚으로는 다시 안 걸려요.',
+        '새로 빌린 돈이 약속한 날을 넘기면 다시 걸려요.',
+        '빌린 돈을 다 갚고 지갑이 0 이상이면 그 자리에서 풀려요.',
     ].join('\n');
 }
 
@@ -271,9 +315,12 @@ export function creditDefaultBlockMessage(untilYmd) {
     const when = creditUntilLine(untilYmd);
     return [
         when ? `신용불량이에요. ${when}` : '신용불량이에요.',
-        '지갑이 마이너스이거나, 빌린 돈을 제때 갚지 않았어요.',
+        '지갑이 마이너스예요. 부족한 30봉마다 1일이에요.',
         '밥줄에서는 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.',
-        '지갑이 다시 0 이상이어도, 적힌 날까지는 신용불량이에요.',
+        '점심값이 더 빠져도 기간은 늘어나지 않아요.',
+        '적힌 날이 되면 마이너스여도 신용불량은 풀려요.',
+        '풀린 뒤 같은 마이너스로는 다시 안 걸려요.',
+        '지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요.',
     ].join('\n');
 }
 
@@ -305,6 +352,35 @@ export function collectLoanRepayment({ bong, regular, due }) {
     return { bong: wallet, regular: reg, fromWallet, fromRegular };
 }
 
+/**
+ * 만기일에 있는 돈만 갚습니다. 지갑을 마이너스로 만들지 않고, 적금은 쓰지 않습니다.
+ */
+export function collectAvailableRepayment({ bong, regular, due }) {
+    let wallet = Math.floor(Number(bong) || 0);
+    let reg = Math.max(0, Math.floor(Number(regular) || 0));
+    let remain = Math.max(0, Math.floor(Number(due) || 0));
+    let fromWallet = 0;
+    let fromRegular = 0;
+    if (remain > 0 && wallet > 0) {
+        fromWallet = Math.min(wallet, remain);
+        wallet -= fromWallet;
+        remain -= fromWallet;
+    }
+    if (remain > 0 && reg > 0) {
+        fromRegular = Math.min(reg, remain);
+        reg -= fromRegular;
+        remain -= fromRegular;
+    }
+    return {
+        bong: wallet,
+        regular: reg,
+        fromWallet,
+        fromRegular,
+        paid: fromWallet + fromRegular,
+        unpaid: remain,
+    };
+}
+
 export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
     if (reason === 'default') return '신용불량인 동안에는 빌릴 수 없어요.';
     if (reason === 'penalty') return loanPenaltyBlockMessage();
@@ -316,6 +392,7 @@ export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
         return `지금 빌릴 수 있는 돈은 ${shown}${unit}예요.\n기본 한도에 예금, 적금, 지수 투자를 더한 값이에요.`;
     }
     if (reason === 'days') return `기간은 학교 가는 날 1일에서 ${LOAN_MAX_BUSINESS_DAYS}일이에요.`;
+    if (reason === 'settled') return '오늘 빌린 돈을 있는 만큼 갚았어요. 오늘은 새로 빌릴 수 없어요.';
     if (reason === 'date') return '날짜를 몰라서 지금은 빌릴 수 없어요.';
     return '지금은 빌릴 수 없어요.';
 }
@@ -451,22 +528,29 @@ function creditStillOn(until, today) {
 
 /**
  * 대출을 전부 갚은 뒤의 신용불량.
- * 지갑이 0 이상이면 그 자리에서 끝내, 연체 도장은 갚으면 풀린다는 약속을 지킵니다.
- * 지갑이 아직 마이너스면 기간을 유지하고, 기간이 이미 끝났으면 부족액으로 다시 시작합니다.
+ * 지갑이 0 이상이면 그 자리에서 풉니다.
+ * 지갑이 마이너스면 이미 시작된 기간은 유지합니다.
+ * 기간이 없고, 마이너스가 새 사유일 때만 새로 시작합니다.
  */
 function settleCreditAfterLoanCleared(next, today) {
     next.loanPenaltyUntilYmd = '';
+    next.creditReleaseLoanId = '';
     const bong = Math.floor(Number(next.bong) || 0);
     if (bong >= 0) {
         next.creditDefaultUntilYmd = '';
         next.bankNegativeSinceYmd = '';
+        next.creditReleasedYmd = String(today || '');
+        next.creditWalletRecovered = true;
         return;
     }
     if (!next.bankNegativeSinceYmd) next.bankNegativeSinceYmd = String(today || '');
     if (!creditStillOn(next.creditDefaultUntilYmd, today)) {
+        const fresh = !releasedYmdOf(next) || walletRecoveredSinceRelease(next);
+        if (!fresh) return;
         const until = creditWindowUntil(today, Math.abs(bong));
         if (until) {
             next.creditDefaultUntilYmd = until;
+            next.creditWalletRecovered = false;
             next.msgs.push({
                 kind: 'default_start',
                 untilYmd: until,
@@ -477,66 +561,92 @@ function settleCreditAfterLoanCleared(next, today) {
     }
 }
 
+function validYmdOrEmpty(raw) {
+    const ymd = String(raw || '').trim();
+    return isYmd(ymd) ? ymd : '';
+}
+
 /**
- * 신용불량 시작: 대출 약정일을 넘겼거나 지갑이 마이너스인 그 순간.
- * 기간은 ceil(연체액 또는 부족액 / 30) 달력일입니다. 둘 다이면 더 큰 금액으로 셉니다.
- * 이미 신용불량인 동안에는 시계를 다시 돌리지 않습니다.
- * 연체로 시작한 정지가 끝나면 남은 빚의 50%를 걷고, 약정일은 5영업일 뒤로 미룹니다.
+ * 신용불량 하루 치.
+ * 1) 종료일이 되면 상환과 따로 신용불량만 풉니다. 빚과 마이너스는 그대로입니다.
+ * 2) 만기일 당일에 지갑·일반예금으로 한 번만 갚습니다. 모자라면 새 연체일 때만 신용불량입니다.
+ * 3) 이미 신용불량인 동안에는 종료일을 다시 밀지 않습니다.
  */
 export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
     const today = String(todayYmd || '');
-    const loan0 = sanitizeBankLoan(state && state.bankLoan);
+    const rawLoan = state && state.bankLoan;
+    let loan = sanitizeBankLoan(rawLoan);
+    const opaqueLoan = !loan && loanStillOutstanding(rawLoan);
     let bong = Math.floor(Number(state && state.bong) || 0);
     let regular = Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0));
-    let loan = loan0;
-    let defaultUntil = String(state && state.creditDefaultUntilYmd || '').trim();
-    let negSince = String(state && state.bankNegativeSinceYmd || '').trim();
-    if (negSince && !/^\d{4}-\d{2}-\d{2}$/.test(negSince)) negSince = '';
-    if (defaultUntil && !/^\d{4}-\d{2}-\d{2}$/.test(defaultUntil)) defaultUntil = '';
+    let defaultUntil = validYmdOrEmpty(state && state.creditDefaultUntilYmd);
+    let penaltyUntil = loan ? penaltySnapshot(state) : '';
+    let negSince = validYmdOrEmpty(state && state.bankNegativeSinceYmd);
+    let releasedYmd = releasedYmdOf(state);
+    let releaseLoanId = releaseLoanIdOf(state);
+    let walletRecovered = walletRecoveredSinceRelease(state);
+    let dueHandledKey = String(state && state.loanDueHandledKey || '');
     const msgs = [];
     let changed = false;
 
-    let penaltyUntil = penaltySnapshot(state);
-    if (!loan) penaltyUntil = '';
-
     if (defaultUntil && today && today >= defaultUntil) {
+        releasedYmd = today;
+        releaseLoanId = loan ? loan.id : '';
+        walletRecovered = bong >= 0;
         defaultUntil = '';
+        penaltyUntil = '';
         changed = true;
-        msgs.push({ kind: 'default_end' });
+        msgs.push({ kind: 'default_end', releasedYmd: today });
+    } else if (penaltyUntil && today && today >= penaltyUntil) {
+        releasedYmd = today;
+        releaseLoanId = loan ? loan.id : releaseLoanId;
+        walletRecovered = bong >= 0;
+        penaltyUntil = '';
+        changed = true;
+        msgs.push({ kind: 'default_end', releasedYmd: today });
     }
 
-    if (loan && today && today >= loan.dueYmd) {
-        const inFreeze = !!(penaltyUntil && today < penaltyUntil);
-        const freezeEnded = !!(penaltyUntil && today >= penaltyUntil);
-        if (inFreeze) {
-            // 신용불량 기간입니다. 빚과 약정일은 그대로 둡니다.
-        } else if (freezeEnded) {
+    const inDefault = () => creditStillOn(defaultUntil, today) || creditStillOn(penaltyUntil, today);
+
+    if (!opaqueLoan && loan && today && today === loan.dueYmd) {
+        const handleKey = `${loan.id}|${loan.dueYmd}`;
+        if (dueHandledKey !== handleKey) {
             const due = loanDueTotal(loan);
-            const charge = Math.ceil(due / 2);
-            const paid = collectLoanRepayment({ bong, regular, due: charge });
-            bong = paid.bong;
-            regular = paid.regular;
-            const left = reduceLoanByPayment(loan, charge);
-            const nextDue = addBusinessDaysYmd(today, 5, calendar);
-            msgs.push({
-                kind: 'penalty_half',
-                due,
-                charge,
-                fromWallet: paid.fromWallet,
-                fromRegular: paid.fromRegular,
-                nextDue,
-            });
-            loan = left ? { ...left, dueYmd: nextDue, days: 5 } : null;
-            penaltyUntil = '';
+            const paid = collectAvailableRepayment({ bong, regular, due });
+            if (paid.paid > 0) {
+                bong = paid.bong;
+                regular = paid.regular;
+                loan = reduceLoanByPayment(loan, paid.paid);
+                msgs.push({
+                    kind: 'auto_repay',
+                    paid: paid.paid,
+                    unpaid: loan ? loanDueTotal(loan) : 0,
+                    fromWallet: paid.fromWallet,
+                    fromRegular: paid.fromRegular,
+                });
+            }
+            dueHandledKey = handleKey;
             changed = true;
-        } else {
-            const due = loanDueTotal(loan);
+            if (!loan && bong >= 0) {
+                defaultUntil = '';
+                penaltyUntil = '';
+                walletRecovered = true;
+                releasedYmd = releasedYmd || today;
+            }
+        }
+    }
+
+    if (!opaqueLoan && !inDefault() && loan && today && today >= loan.dueYmd) {
+        const sameLoan = !!(releaseLoanId && loan.id === releaseLoanId);
+        if (!sameLoan) {
+            const dueLeft = loanDueTotal(loan);
             const shortfall = bong < 0 ? Math.abs(bong) : 0;
-            const amount = Math.max(due, shortfall);
+            const amount = Math.max(dueLeft, shortfall);
             const until = creditWindowUntil(today, amount);
             if (until) {
                 penaltyUntil = until;
                 defaultUntil = until;
+                changed = true;
                 msgs.push({
                     kind: 'penalty_start',
                     untilYmd: until,
@@ -544,13 +654,12 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
                     amount,
                     days: creditDefaultDaysFromAmount(amount),
                 });
-                changed = true;
             }
         }
     }
 
-    if (loan && creditStillOn(penaltyUntil, today) && (!defaultUntil || defaultUntil < penaltyUntil)) {
-        defaultUntil = penaltyUntil;
+    if (releasedYmd && !inDefault() && bong >= 0 && !walletRecovered) {
+        walletRecovered = true;
         changed = true;
     }
 
@@ -559,10 +668,12 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
             negSince = today;
             changed = true;
         }
-        if (!creditStillOn(defaultUntil, today)) {
+        const freshNegative = !releasedYmd || walletRecovered;
+        if (freshNegative && !inDefault()) {
             const until = creditWindowUntil(today, Math.abs(bong));
             if (until) {
                 defaultUntil = until;
+                walletRecovered = false;
                 changed = true;
                 msgs.push({
                     kind: 'default_start',
@@ -577,15 +688,101 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
         changed = true;
     }
 
+    if (!loan) penaltyUntil = '';
+
     return {
         changed,
         msgs,
         bong,
         bankRegularSavings: regular,
-        bankLoan: loan,
+        bankLoan: opaqueLoan ? rawLoan : loan,
         creditDefaultUntilYmd: defaultUntil || '',
         bankNegativeSinceYmd: negSince || '',
         loanPenaltyUntilYmd: loan ? (penaltyUntil || '') : '',
+        creditReleasedYmd: releasedYmd || '',
+        creditReleaseLoanId: loan ? (releaseLoanId || '') : '',
+        creditWalletRecovered: walletRecovered === true,
+        loanDueHandledKey: dueHandledKey || '',
+    };
+}
+
+function weekdayMon1(ymd) {
+    const [y, m, d] = String(ymd || '').split('-').map(Number);
+    if (!y || !m || !d) return 0;
+    const dt = new Date(y, m - 1, d);
+    const day = dt.getDay();
+    return day === 0 ? 7 : day;
+}
+
+/**
+ * 여러 날을 아침마다 넘기며 점심값·주급·대출을 같이 굴립니다.
+ * 평일에는 점심값을 빼고, 금요일에는 신용불량이 아니면 주급을 넣습니다.
+ */
+export function simulateCreditDays({
+    startYmd,
+    days = 60,
+    state,
+    calendar = {},
+    lunchFee = LUNCH_FEE_BONG,
+    salary = 0,
+    onMorning,
+} = {}) {
+    let cur = {
+        bong: Math.floor(Number(state && state.bong) || 0),
+        bankRegularSavings: Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0)),
+        bankLoan: state && state.bankLoan ? state.bankLoan : null,
+        ...copyCreditFields(state),
+    };
+    const rows = [];
+    const total = Math.max(0, Math.floor(Number(days) || 0));
+    for (let i = 0; i < total; i += 1) {
+        const ymd = i === 0 ? String(startYmd || '') : addCalendarDaysYmd(startYmd, i);
+        if (typeof onMorning === 'function') {
+            const patched = onMorning(ymd, cur, i) || cur;
+            cur = { ...cur, ...patched };
+        }
+        const life = applyLoanLifecycle(cur, ymd, calendar);
+        cur = {
+            ...cur,
+            bong: life.bong,
+            bankRegularSavings: life.bankRegularSavings,
+            bankLoan: life.bankLoan,
+            ...copyCreditFields(life),
+        };
+        const dow = weekdayMon1(ymd);
+        let salaryPaid = 0;
+        if (dow === 5 && salary > 0 && !isStudentCreditDefault(cur, ymd)) {
+            cur.bong += salary;
+            salaryPaid = salary;
+        }
+        let lunchPaid = 0;
+        if (dow >= 1 && dow <= 5 && lunchFee) {
+            cur.bong -= lunchFee;
+            lunchPaid = lunchFee;
+        }
+        rows.push({
+            ymd,
+            bong: cur.bong,
+            credit: isStudentCreditDefault(cur, ymd),
+            until: cur.creditDefaultUntilYmd || '',
+            loanId: cur.bankLoan && cur.bankLoan.id ? cur.bankLoan.id : '',
+            salaryPaid,
+            lunchPaid,
+        });
+    }
+    return { state: cur, rows };
+}
+
+/** 저장·화면에 같이 실어야 하는 신용불량 기록입니다. */
+export function copyCreditFields(src) {
+    return {
+        creditDefaultUntilYmd: String(src && src.creditDefaultUntilYmd || ''),
+        bankNegativeSinceYmd: String(src && src.bankNegativeSinceYmd || ''),
+        loanPenaltyUntilYmd: String(src && src.loanPenaltyUntilYmd || ''),
+        creditReleasedYmd: String(src && src.creditReleasedYmd || ''),
+        creditReleaseLoanId: String(src && src.creditReleaseLoanId || ''),
+        creditWalletRecovered: !!(src && src.creditWalletRecovered),
+        loanDueHandledKey: String(src && src.loanDueHandledKey || ''),
     };
 }
 
@@ -594,9 +791,7 @@ export function loanFieldsFromLifecycle(result) {
         bong: result.bong,
         bankRegularSavings: result.bankRegularSavings,
         bankLoan: result.bankLoan,
-        creditDefaultUntilYmd: result.creditDefaultUntilYmd || '',
-        bankNegativeSinceYmd: result.bankNegativeSinceYmd || '',
-        loanPenaltyUntilYmd: result.loanPenaltyUntilYmd || '',
+        ...copyCreditFields(result),
     };
 }
 
@@ -610,9 +805,8 @@ function rejectLoanAction(state, reason) {
         bong: Math.floor(Number(state && state.bong) || 0),
         bankRegularSavings: Math.max(0, Math.floor(Number(state && state.bankRegularSavings) || 0)),
         bankLoan: state && state.bankLoan ? state.bankLoan : null,
-        creditDefaultUntilYmd: String(state && state.creditDefaultUntilYmd || ''),
-        bankNegativeSinceYmd: String(state && state.bankNegativeSinceYmd || ''),
-        loanPenaltyUntilYmd: penaltySnapshot(state),
+        ...copyCreditFields(state),
+        loanPenaltyUntilYmd: penaltySnapshot(state) || String(state && state.loanPenaltyUntilYmd || ''),
     };
 }
 
@@ -624,11 +818,7 @@ function rejectLoanAction(state, reason) {
 export function applyLoanAction(state, action, opts = {}) {
     const today = String(opts.todayYmd || '');
     const calendar = opts.calendar || {};
-    // 약정일 자동이체가 대출을 지운 뒤에 같은 요청으로 다시 빌리면 납부일이 밀립니다.
-    if (action === 'take' && loanStillOutstanding(state && state.bankLoan)) {
-        const reason = isStudentCreditDefault(state, today) ? 'default' : 'active';
-        return rejectLoanAction(state, reason);
-    }
+    const hadLoanAtStart = loanStillOutstanding(state && state.bankLoan) || !!opts.blockTakeBecauseLoan;
     const life = applyLoanLifecycle(state, today, calendar);
     const next = {
         ...loanFieldsFromLifecycle(life),
@@ -637,6 +827,13 @@ export function applyLoanAction(state, action, opts = {}) {
     };
     if (!action) return { ok: true, ...next };
     if (action === 'take') {
+        // 이 요청이 시작될 때 대출이 있었으면, 만기 상환으로 비워진 뒤에도 같은 요청으로 다시 빌리지 않습니다.
+        if (hadLoanAtStart || loanStillOutstanding(next.bankLoan)) {
+            const reason = isStudentCreditDefault(next, today)
+                ? 'default'
+                : loanStillOutstanding(next.bankLoan) ? 'active' : 'settled';
+            return { ok: false, reason, ...next };
+        }
         const plan = planTakeLoan({
             existingLoan: next.bankLoan,
             inDefault: isStudentCreditDefault(next, today),
@@ -657,7 +854,13 @@ export function applyLoanAction(state, action, opts = {}) {
     }
     if (action === 'repay') {
         const plan = planRepayLoan(next);
-        if (!plan.ok) return { ok: false, reason: plan.reason, ...next };
+        if (!plan.ok) {
+            if (!loanStillOutstanding(next.bankLoan) && life.msgs.some((m) => m.kind === 'auto_repay')) {
+                return { ok: true, ...next, due: 0 };
+            }
+            return { ok: false, reason: plan.reason, ...next };
+        }
+        if (Math.floor(Number(next.bong) || 0) >= 0) next.creditWalletRecovered = true;
         next.bong = plan.bong;
         next.bankRegularSavings = plan.regular;
         next.bankLoan = null;
@@ -676,6 +879,7 @@ export function applyLoanAction(state, action, opts = {}) {
     if (action === 'partial') {
         const plan = planPartialRepay(next, opts.amount);
         if (!plan.ok) return { ok: false, reason: plan.reason, ...next };
+        if (Math.floor(Number(next.bong) || 0) >= 0) next.creditWalletRecovered = true;
         next.bong = plan.bong;
         next.bankRegularSavings = plan.regular;
         next.bankLoan = plan.loan;

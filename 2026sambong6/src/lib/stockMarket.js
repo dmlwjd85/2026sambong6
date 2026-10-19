@@ -17,6 +17,8 @@ export const TICKER_MARKETS = STOCK_MARKETS;
 export const MARKET_REFRESH_MS = 60 * 60 * 1000;
 /** 공유·로컬 캐시가 이 시간보다 짧으면 다시 치지 않습니다. */
 export const MARKET_CACHE_TTL_MS = 50 * 60 * 1000;
+/** 정각 전후 1분은 시세를 맞추는 시간이라 사고팔 수 없습니다. */
+export const QUOTE_ADJUST_MS = 60 * 1000;
 
 export const STOCK_INVEST_MIN = 10;
 /** 지수 사고팔기 기록은 최근 30건만 남깁니다. */
@@ -53,19 +55,97 @@ export function isKoreanStockSession(nowMs = Date.now()) {
     return minutes >= 9 * 60 && minutes < 15 * 60 + 30;
 }
 
+function seoulParts(nowMs) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(new Date(nowMs));
+    const map = {};
+    parts.forEach((p) => {
+        if (p.type !== 'literal') map[p.type] = p.value;
+    });
+    return {
+        year: map.year || '',
+        month: map.month || '',
+        day: map.day || '',
+        hour: map.hour || '00',
+        minute: Number(map.minute) || 0,
+        second: Number(map.second) || 0,
+    };
+}
+
+/** 서버 시각 기준 정시 시간대. 예: 2026-09-02T10 */
+export function marketHourSlot(nowMs) {
+    const p = seoulParts(nowMs);
+    return `${p.year}-${p.month}-${p.day}T${p.hour}`;
+}
+
+/** 학생에게 보여줄 시세 시간. */
+export function formatMarketHourSlot(slot) {
+    const m = String(slot || '').match(/^(\d{4}-\d{2}-\d{2})T(\d{2})$/);
+    if (!m) return '이번 시세';
+    return `${m[1]} ${Number(m[2])}시 시세`;
+}
+
+/** 정각 1분 전과 1분 뒤는 시세 조정 중입니다. */
+export function isQuoteAdjustmentWindow(nowMs) {
+    const p = seoulParts(nowMs);
+    const sec = p.minute * 60 + p.second;
+    return sec < QUOTE_ADJUST_MS / 1000 || sec >= 59 * 60;
+}
+
 /**
- * 장중에는 캐시가 오래되면 다시 읽고, 장 마감 뒤에는 마지막 시세를 유지합니다.
+ * 시세는 서버 시간으로 정한 시간대에 한 번만 다시 읽습니다.
+ * 같은 시간대 문서는 다시 갱신하지 않습니다.
  * 시세가 하나도 없으면 장 여부와 관계없이 한 번은 가져옵니다.
+ * 장 마감 뒤에는 마지막 시세를 유지합니다.
  */
 export function shouldFetchLiveMarketQuotes(nowMs, opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
-    const force = !!o.force;
-    const cacheAgeMs = Number.isFinite(Number(o.cacheAgeMs)) ? Number(o.cacheAgeMs) : Infinity;
     const hasAnyQuote = !!o.hasAnyQuote;
-    const fresh = hasAnyQuote && cacheAgeMs < MARKET_CACHE_TTL_MS;
-    if (fresh && !force) return false;
-    if (!hasAnyQuote) return true;
-    return isKoreanStockSession(nowMs);
+    const storedSlot = String(o.storedSlot || '');
+    const slot = marketHourSlot(nowMs);
+    if (hasAnyQuote && storedSlot && storedSlot === slot) return false;
+    if (!hasAnyQuote || !storedSlot) return true;
+    if (!isKoreanStockSession(nowMs)) return false;
+    return storedSlot !== slot;
+}
+
+function sameQuotePrice(a, b) {
+    const x = Number(a);
+    const y = Number(b);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    return Math.abs(x - y) < 0.000001;
+}
+
+/**
+ * 확인창에 보인 시간대·가격이 지금 서버 시세와 같은지 확인합니다.
+ * 조정 중이거나 시간대·가격이 다르면 체결하지 않습니다.
+ */
+export function evaluateStockTradeWindow({
+    nowMs,
+    confirmSlot,
+    confirmPrice,
+    quotes,
+    marketId,
+} = {}) {
+    if (isQuoteAdjustmentWindow(nowMs)) return { ok: false, reason: 'adjusting' };
+    const slot = marketHourSlot(nowMs);
+    const storedSlot = String(quotes && quotes.hourSlot || '');
+    const shownSlot = String(confirmSlot || '');
+    if (!shownSlot || shownSlot !== slot || storedSlot !== slot) {
+        return { ok: false, reason: 'slot' };
+    }
+    const row = quotes && quotes[marketId];
+    const price = Number(row && row.price);
+    if (!sameQuotePrice(confirmPrice, price)) return { ok: false, reason: 'price' };
+    return { ok: true, reason: '', slot, price };
 }
 
 export function yahooChartUrl(symbol) {
@@ -323,17 +403,24 @@ export function applyBuyStock(investments, marketId, amount, buyIndex, nowMs, to
 }
 
 /**
- * 원금 중 팔 금액. 비우면 전액. 남기려면 최소 매수 단위 이상이어야 합니다.
+ * 원금 중 팔 금액. 빈칸·0은 전액이 아닙니다.
+ * 일부만 팔 때는 최소 10봉이고, 남기려면 10봉 이상이어야 합니다.
+ * 가진 원금을 그대로 적으면 전부 팝니다.
  */
 export function canSellStock({ existing, amount } = {}) {
     const held = sanitizeStockPosition(existing);
     if (!held) return { ok: false, reason: 'none' };
     const blank = amount == null || amount === '';
-    const raw = blank ? held.principal : Math.floor(Number(amount) || 0);
-    if (!Number.isFinite(raw) || raw < 1 || raw > held.principal) {
-        return { ok: false, reason: 'amount', max: held.principal };
+    if (blank) return { ok: false, reason: 'empty', min: STOCK_INVEST_MIN, max: held.principal };
+    const raw = Math.floor(Number(amount) || 0);
+    if (!Number.isFinite(raw) || raw <= 0) {
+        return { ok: false, reason: 'empty', min: STOCK_INVEST_MIN, max: held.principal };
     }
+    if (raw > held.principal) return { ok: false, reason: 'amount', max: held.principal };
     const remaining = held.principal - raw;
+    if (remaining > 0 && raw < STOCK_INVEST_MIN) {
+        return { ok: false, reason: 'min', min: STOCK_INVEST_MIN, max: held.principal };
+    }
     if (remaining > 0 && remaining < STOCK_INVEST_MIN) {
         return { ok: false, reason: 'remainder', remaining, min: STOCK_INVEST_MIN, max: held.principal };
     }
@@ -349,7 +436,11 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
     if (!gate.ok) return { ok: false, reason: gate.reason };
     const ratio = clampedIndexRatio(held.buyIndex, currentIndex, held.openedAt, nowMs);
     const sellPrincipal = gate.amount;
-    let payout = Math.max(0, Math.round(sellPrincipal * ratio));
+    // 일부 매도는 학생에게 불리하게 내림합니다. 지금 가진 원금을 한 번에 팔 때만 반올림합니다.
+    const rawPayout = sellPrincipal * ratio;
+    let payout = gate.remaining === 0
+        ? Math.max(0, Math.round(rawPayout))
+        : Math.max(0, Math.floor(rawPayout));
     let delta = payout - sellPrincipal;
     const uncappedDelta = delta;
     const day = sanitizeStockInvestDaily(daily, today);

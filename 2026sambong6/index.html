@@ -1627,9 +1627,9 @@
                 
                 <div class="inner-pane glass-panel p-3 rounded-2xl border border-orange-500/30" data-pane-group="lunch" data-pane="invest">
                     <h3 class="font-bold text-xs text-white mb-2">식권 투자하기</h3>
-                    <div class="flex gap-2">
-                        <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" data-currency-placeholder="추가 투자할 {u} 입력" class="flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
-                        <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition transform hover:scale-105 disabled:opacity-40 disabled:pointer-events-none">입찰</button>
+                    <div class="flex gap-2 min-w-0">
+                        <input type="number" id="lunchBidInput" placeholder="추가 투자할 B 입력" data-currency-placeholder="추가 투자할 {u} 입력" class="min-w-0 flex-1 bg-slate-900 border border-slate-700 text-white px-3 py-2 rounded-xl text-sm font-bold focus:outline-none focus:border-orange-500">
+                        <button id="lunchBidSubmitBtn" onclick="window.submitLunchBid()" class="shrink-0 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold py-2 px-4 sm:px-6 rounded-xl shadow-lg disabled:opacity-40 disabled:pointer-events-none">입찰</button>
                     </div>
                     <p id="lunchMyBidStatus" class="text-[10px] text-orange-200 font-bold mt-2">오늘 내가 넣은 금액: 0B</p>
                 </div>
@@ -1951,20 +1951,20 @@
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-rose-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="loan">
                     <h3 class="text-rose-200 font-bold text-sm"><i class="fa-solid fa-file-invoice-dollar"></i> 대출</h3>
-                    <p class="text-xs text-slate-300 leading-relaxed">10봉씩, 학교 가는 날 1일에서 5일 동안 빌릴 수 있어요. 이자는 적금보다 더 세요. 갚기 전에는 또 빌릴 수 없어요. 약속한 날이 되거나 지갑이 마이너스면 신용불량이에요. 기간은 모자란 돈이나 안 갚은 돈을 30으로 나눈 뒤 올린 날수예요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 그 기간이 끝나면 남은 빚의 절반을 지갑이랑 예금에서 내요. 적금은 빼지 않아요.</p>
+                    <p class="text-xs text-slate-300 leading-relaxed">10봉씩, 학교 가는 날 1일에서 5일 동안 빌릴 수 있어요. 이자는 적금보다 더 세요. 갚기 전에는 또 빌릴 수 없어요. 약속한 날 전날까지 갚아요. 그날 지갑이랑 예금에 있는 돈은 먼저 갚아요. 그래도 모자라면 신용불량이에요. 부족한 30봉마다 1일이에요. 31봉이면 2일이에요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 점심값이 더 빠져도 기간은 늘어나지 않아요. 그날이 되면 신용불량은 풀려요. 남은 빚은 그대로예요. 풀린 뒤에는 같은 빚이나 그때의 마이너스로는 다시 안 걸려요. 새로 빌린 돈이 약속한 날을 넘기거나, 지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요. 적금은 빼지 않아요.</p>
                     <div id="bankLoanStatus" class="text-xs text-slate-200 leading-relaxed break-words border border-slate-700 rounded-xl p-3 bg-slate-950/50" role="status"></div>
                     <div id="bankLoanPreview" class="text-xs text-rose-100 font-bold leading-relaxed break-words"></div>
                     <div id="bankLoanForm" class="space-y-2">
                         <label class="block text-[10px] text-slate-400 font-bold">금액 (10봉 단위)
                             <input type="number" id="bankLoanAmountInput" min="10" step="10" inputmode="numeric" placeholder="빌릴 B" data-currency-placeholder="빌릴 {u}" class="mt-1 w-full min-h-[44px] bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-rose-300" oninput="window.previewBankLoan && window.previewBankLoan()" />
                         </label>
-                        <label class="block text-[10px] text-slate-400 font-bold">기간 (영업일)
+                        <label class="block text-[10px] text-slate-400 font-bold">기간 (학교 가는 날)
                             <select id="bankLoanDaysInput" class="mt-1 w-full min-h-[44px] bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-rose-300" onchange="window.previewBankLoan && window.previewBankLoan()">
-                                <option value="1">1영업일</option>
-                                <option value="2">2영업일</option>
-                                <option value="3" selected>3영업일</option>
-                                <option value="4">4영업일</option>
-                                <option value="5">5영업일</option>
+                                <option value="1">학교 가는 날 1일</option>
+                                <option value="2">학교 가는 날 2일</option>
+                                <option value="3" selected>학교 가는 날 3일</option>
+                                <option value="4">학교 가는 날 4일</option>
+                                <option value="5">학교 가는 날 5일</option>
                             </select>
                         </label>
                         <div class="flex gap-2 flex-wrap items-center">
@@ -2015,8 +2015,9 @@
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-400/45 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="invest">
                     <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-chart-line"></i> 코스피 · 코스닥 · 나스닥 투자</h3>
-                    <p class="text-xs text-slate-300 leading-relaxed">지갑에서 10봉에서 1000봉까지 넣을 수 있어요. 실제 지수가 오르내리면 받을 돈도 조금 달라져요. 같은 시장에 더 살 수 있고, 산 가격은 평균으로 합쳐져요. 팔 때는 얼마를 팔지 숫자를 적어요. 칸을 비우면 전부 팔아요. 일부를 남기려면 10봉 이상 남아야 해요. 판 돈은 지갑으로 들어와요. 하루 이익은 최대 8봉이에요. 사고팔기 기록은 아래에 남아요.</p>
-                    <div id="bankInvestQuoteLine" class="text-[10px] text-amber-100 font-bold">지수를 불러오는 중…</div>
+                    <p class="text-xs text-slate-300 leading-relaxed">지갑에서 10봉에서 1000봉까지 넣을 수 있어요. 시세는 1시간에 한 번, 정각에 바뀌어요. 정각 전후 1분은 시세 조정 중이라 사고팔 수 없어요. 팔 때는 얼마를 팔지 숫자를 적어요. 10봉 이상이에요. 전부 팔려면 가진 원금을 그대로 적어요. 일부를 남기려면 10봉 이상 남아야 해요. 판 돈은 지갑으로 들어와요. 하루 이익은 최대 8봉이에요.</p>
+                    <p id="bankInvestAdjustNote" class="hidden text-xs text-amber-200 font-bold" role="status"></p>
+                    <div id="bankInvestQuoteLine" class="text-[10px] text-amber-100 font-bold break-words">지수를 불러오는 중…</div>
                     <div class="flex gap-2 flex-wrap items-center">
                         <input type="number" id="bankInvestAmount" min="10" max="1000" step="1" placeholder="투자 B" data-currency-placeholder="투자 {u}" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
                         <button type="button" onclick="void window.buyStockIndex('kospi')" class="js-stock-trade-btn min-h-[44px] bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-xl text-sm shrink-0 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300">코스피 사기</button>
@@ -3145,7 +3146,7 @@
                 </div>
                 <div class="pt-2 border-t border-slate-800 space-y-2">
                     <h4 class="text-[11px] text-emerald-200 font-bold">공휴일</h4>
-                    <p class="text-[9px] text-slate-400 leading-relaxed">날짜와 이름을 넣으면 아래 학사 달력에 빨간색으로 표시됩니다. 대출 영업일·수업일수에도 반영됩니다.</p>
+                    <p class="text-[9px] text-slate-400 leading-relaxed">날짜와 이름을 넣으면 아래 학사 달력에 빨간색으로 표시됩니다. 학교 가는 날과 수업일수에도 반영됩니다.</p>
                     <div id="wsHolidayList" class="space-y-1.5"></div>
                     <div class="flex flex-wrap items-end gap-2">
                         <label class="text-[10px] text-slate-300 font-bold">날짜
@@ -3823,7 +3824,7 @@
                 </div>
             </div>
             <p id="loanMorningBody" class="text-sm text-red-50 leading-relaxed whitespace-pre-wrap font-bold"></p>
-            <p class="text-xs text-amber-100 leading-relaxed">약속한 날이 되면 바로 신용불량이에요. 기간은 안 갚은 돈을 30으로 나눈 뒤 올린 날수예요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 기간이 끝나면 남은 빚의 절반을 내고, 나머지는 학교 가는 날 5일 안에 갚아야 해요. 빌린 돈을 다 갚고 지갑이 0 이상이면 바로 풀려요.</p>
+            <p class="text-xs text-amber-100 leading-relaxed">약속한 날 전날까지 갚아요. 그날 있는 돈은 먼저 갚고, 모자라면 신용불량이에요. 부족한 30봉마다 1일이에요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 그날이 되면 신용불량은 풀려요. 남은 빚은 그대로예요. 풀린 뒤에는 같은 빚이나 그때의 마이너스로는 다시 안 걸려요. 새로 빌린 돈이 약속한 날을 넘기거나, 지갑이 0 이상이 됐다가 다시 마이너스가 되면 다시 걸려요. 빌린 돈을 다 갚고 지갑이 0 이상이면 그 자리에서 풀려요.</p>
             <div class="flex gap-2">
                 <button type="button" onclick="window.dismissLoanMorningNotice(true)" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-black py-2 rounded-xl text-xs min-h-[44px]">은행으로 가서 갚기</button>
                 <button type="button" onclick="window.dismissLoanMorningNotice(false)" class="flex-1 bg-slate-800 text-slate-200 font-bold py-2 rounded-xl text-xs min-h-[44px]">오늘은 알았음</button>

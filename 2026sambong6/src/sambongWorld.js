@@ -93,6 +93,7 @@ import {
     applyLoanAction,
     applyLoanLifecycle,
     computeLoanInterest,
+    copyCreditFields,
     creditDefaultBlockMessage,
     getLoanCalendarFromWorld,
     isLoanPenaltyActive,
@@ -343,12 +344,16 @@ import {
     applyStockSellFromServer,
     canBuyStock,
     canSellStock,
+    evaluateStockTradeWindow,
     extractYahooChartJson,
     formatChangePct,
     formatIndexPrice,
+    formatMarketHourSlot,
     getStockMarket,
     isKoreanStockSession,
+    isQuoteAdjustmentWindow,
     MARKET_REFRESH_MS,
+    marketHourSlot,
     parseYahooChart,
     sanitizeStockHistory,
     sanitizeStockInvestDaily,
@@ -1768,6 +1773,36 @@ function redrawPlazaGrantsUi() {
                 }
             });
             if (Number(src.fetchedAt) > 0) _marketQuotes.fetchedAt = Number(src.fetchedAt);
+            if (src.hourSlot) _marketQuotes.hourSlot = String(src.hourSlot);
+        }
+
+        let _serverClockOffsetMs = 0;
+
+        function getServerNowMs() {
+            return Date.now() + _serverClockOffsetMs;
+        }
+
+        async function syncServerClock() {
+            if (!db) return getServerNowMs();
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return getServerNowMs();
+                const clientMs = Date.now();
+                await setDoc(getGlobalSettingsDocRef(), {
+                    serverClockPing: serverTimestamp(),
+                    serverClockClientMs: clientMs,
+                }, { merge: true });
+                const snap = await getDoc(getGlobalSettingsDocRef());
+                const data = snap.exists() ? (snap.data() || {}) : {};
+                const ping = data.serverClockPing;
+                const writtenClient = Number(data.serverClockClientMs) || clientMs;
+                if (ping && typeof ping.toMillis === 'function') {
+                    _serverClockOffsetMs = ping.toMillis() - writtenClient;
+                }
+            } catch (e) {
+                console.warn('server clock', e);
+            }
+            return getServerNowMs();
         }
 
         function hasAnyMarketQuote(src) {
@@ -1797,10 +1832,12 @@ function redrawPlazaGrantsUi() {
                 const ok = _marketQuotes.kospi || _marketQuotes.kosdaq || _marketQuotes.nasdaq;
                 if (!ok) {
                     meta.textContent = '지수를 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
-                } else if (isKoreanStockSession()) {
-                    meta.textContent = '코스피·코스닥은 장중 1시간마다 갱신 · 은행에서 투자할 수 있습니다.';
+                } else if (isQuoteAdjustmentWindow(getServerNowMs())) {
+                    meta.textContent = '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.';
+                } else if (isKoreanStockSession(getServerNowMs())) {
+                    meta.textContent = '시세는 1시간에 한 번, 정각에 바뀌어요.';
                 } else {
-                    meta.textContent = '장마감 · 마지막 시세를 보여 줍니다.';
+                    meta.textContent = '장이 끝났어요. 마지막 시세를 보여 줘요.';
                 }
             }
             if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
@@ -1827,15 +1864,18 @@ function redrawPlazaGrantsUi() {
         }
 
         async function refreshMarketQuotes(force) {
-            const now = Date.now();
             const shared = window.globalSettings && window.globalSettings.marketQuotes;
             if (shared && hasAnyMarketQuote(shared)) {
                 applySharedMarketQuotes(shared);
             }
+            await syncServerClock();
+            const now = getServerNowMs();
+            const slot = marketHourSlot(now);
             const cacheAgeMs = now - (Number(_marketQuotes.fetchedAt) || 0);
             const fetchLive = shouldFetchLiveMarketQuotes(now, {
                 force,
                 cacheAgeMs,
+                storedSlot: _marketQuotes.hourSlot || '',
                 hasAnyQuote: hasAnyMarketQuote(_marketQuotes),
             });
             if (!fetchLive) {
@@ -1848,28 +1888,31 @@ function redrawPlazaGrantsUi() {
                 if (q) got[m.id] = q;
             }
             if (hasAnyMarketQuote(got)) {
-                _marketQuotes = { ..._marketQuotes, ...got, fetchedAt: now };
+                const nextQuotes = {
+                    kospi: got.kospi || _marketQuotes.kospi || null,
+                    kosdaq: got.kosdaq || _marketQuotes.kosdaq || null,
+                    nasdaq: got.nasdaq || _marketQuotes.nasdaq || null,
+                    hourSlot: slot,
+                    fetchedAt: now,
+                };
+                _marketQuotes = { ..._marketQuotes, ...nextQuotes };
                 renderMarketTicker();
                 if (db) {
                     try {
                         const authOk = await ensureAnonAuthReady();
                         if (authOk) {
-                            await setDoc(getGlobalSettingsDocRef(), {
-                                marketQuotes: {
-                                    kospi: _marketQuotes.kospi || null,
-                                    kosdaq: _marketQuotes.kosdaq || null,
-                                    nasdaq: _marketQuotes.nasdaq || null,
-                                    fetchedAt: now,
-                                },
-                            }, { merge: true });
-                            if (window.globalSettings) {
-                                window.globalSettings.marketQuotes = {
-                                    kospi: _marketQuotes.kospi || null,
-                                    kosdaq: _marketQuotes.kosdaq || null,
-                                    nasdaq: _marketQuotes.nasdaq || null,
-                                    fetchedAt: now,
-                                };
-                            }
+                            await runTransaction(db, async (transaction) => {
+                                const ref = getGlobalSettingsDocRef();
+                                const snap = await transaction.get(ref);
+                                const prev = snap.exists() ? (snap.data() || {}).marketQuotes : null;
+                                if (prev && String(prev.hourSlot || '') === slot) return;
+                                transaction.set(ref, {
+                                    marketQuotes: nextQuotes,
+                                    serverClockPing: serverTimestamp(),
+                                    serverClockClientMs: Date.now(),
+                                }, { merge: true });
+                            });
+                            if (window.globalSettings) window.globalSettings.marketQuotes = { ...nextQuotes };
                         }
                     } catch (e) {
                         console.warn('marketQuotes save', e);
@@ -4724,7 +4767,7 @@ function redrawPlazaGrantsUi() {
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
             condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
-            bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
+            bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', creditReleasedYmd: '', creditReleaseLoanId: '', creditWalletRecovered: false, loanDueHandledKey: '', dailyAllClearBonusDate: '',
             stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [],
             catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
@@ -9433,17 +9476,14 @@ ${subjectLine}
                 bong,
                 bankRegularSavings: regular,
                 bankLoan: serverData.bankLoan,
-                creditDefaultUntilYmd: serverData.creditDefaultUntilYmd,
-                bankNegativeSinceYmd: serverData.bankNegativeSinceYmd,
-                loanPenaltyUntilYmd: serverData.loanPenaltyUntilYmd,
+                ...copyCreditFields(serverData),
             }, today, getBankLoanCalendar());
             bong = life.bong;
             regular = life.bankRegularSavings;
             const creditBlocksBonus = bankBonusBlocked({
                 bong,
                 bankLoan: life.bankLoan,
-                creditDefaultUntilYmd: life.creditDefaultUntilYmd,
-                loanPenaltyUntilYmd: life.loanPenaltyUntilYmd,
+                ...copyCreditFields(life),
             }, today);
             if (!isAdmin && !isVacationAutomationPaused('bankBonus') && !creditBlocksBonus) {
                 const totalDep = normalizeBongValue(regular + sumBankTermDeposits(terms));
@@ -9463,9 +9503,7 @@ ${subjectLine}
                 bankTermDeposits: terms,
                 bankDailyBonusLastDate: bonusDate,
                 bankLoan: life.bankLoan,
-                creditDefaultUntilYmd: life.creditDefaultUntilYmd || '',
-                bankNegativeSinceYmd: life.bankNegativeSinceYmd || '',
-                loanPenaltyUntilYmd: life.loanPenaltyUntilYmd || '',
+                ...copyCreditFields(life),
                 maturityMsgs,
                 maturityCredit,
                 bonusGranted,
@@ -9482,14 +9520,12 @@ ${subjectLine}
                 const acted = applyLoanAction({
                     bong: accrued.bong,
                     bankRegularSavings: accrued.bankRegularSavings,
-                    // 새 대출은 만기 처리로 비우기 전의 서버 대출을 기준으로 막습니다.
-                    bankLoan: loanAction === 'take' ? serverData.bankLoan : accrued.bankLoan,
-                    creditDefaultUntilYmd: accrued.creditDefaultUntilYmd,
-                    bankNegativeSinceYmd: accrued.bankNegativeSinceYmd,
-                    loanPenaltyUntilYmd: loanAction === 'take' ? serverData.loanPenaltyUntilYmd : accrued.loanPenaltyUntilYmd,
+                    bankLoan: accrued.bankLoan,
+                    ...copyCreditFields(accrued),
                 }, loanAction, {
                     todayYmd: today,
                     calendar: getBankLoanCalendar(),
+                    blockTakeBecauseLoan: loanAction === 'take' && loanStillOutstanding(serverData.bankLoan),
                     amount: loanAmount,
                     days: loanDays,
                     ratePercent: Number(globalSettings && globalSettings.bankInterestPercent) || 0,
@@ -9501,20 +9537,18 @@ ${subjectLine}
                     }),
                 });
                 if (!acted.ok) {
-                    const keepLoan = loanAction === 'take' && loanStillOutstanding(serverData.bankLoan);
                     return {
                         ...accrued,
+                        bong: acted.bong,
+                        bankRegularSavings: acted.bankRegularSavings,
+                        bankLoan: acted.bankLoan,
+                        ...copyCreditFields(acted),
+                        loanMsgs: acted.msgs,
+                        loanChanged: true,
+                        changed: true,
                         rejected: true,
+                        keepLifecycle: true,
                         loanReason: acted.reason,
-                        // 거절된 대출은 서버에 적힌 약정일을 화면에 그대로 둡니다.
-                        ...(keepLoan ? {
-                            bong: normalizeBongValue(Number(serverData.bong) || 0),
-                            bankRegularSavings: normalizeBongValue(Number(serverData.bankRegularSavings) || 0),
-                            bankLoan: serverData.bankLoan,
-                            creditDefaultUntilYmd: serverData.creditDefaultUntilYmd || '',
-                            bankNegativeSinceYmd: serverData.bankNegativeSinceYmd || '',
-                            loanPenaltyUntilYmd: serverData.loanPenaltyUntilYmd || '',
-                        } : {}),
                     };
                 }
                 return {
@@ -9522,9 +9556,7 @@ ${subjectLine}
                     bong: acted.bong,
                     bankRegularSavings: acted.bankRegularSavings,
                     bankLoan: acted.bankLoan,
-                    creditDefaultUntilYmd: acted.creditDefaultUntilYmd || '',
-                    bankNegativeSinceYmd: acted.bankNegativeSinceYmd || '',
-                    loanPenaltyUntilYmd: acted.loanPenaltyUntilYmd || '',
+                    ...copyCreditFields(acted),
                     loanMsgs: acted.msgs,
                     loanChanged: true,
                     changed: true,
@@ -9559,9 +9591,7 @@ ${subjectLine}
                 bong: normalizeBongValue(accrued.bong + bongDelta),
                 bankDailyBonusLastDate: bonusDate,
                 bankLoan: accrued.bankLoan,
-                creditDefaultUntilYmd: accrued.creditDefaultUntilYmd || '',
-                bankNegativeSinceYmd: accrued.bankNegativeSinceYmd || '',
-                loanPenaltyUntilYmd: accrued.loanPenaltyUntilYmd || '',
+                ...copyCreditFields(accrued),
                 maturityMsgs: accrued.maturityMsgs,
                 maturityCredit: accrued.maturityCredit,
                 bonusGranted: accrued.bonusGranted,
@@ -21832,7 +21862,7 @@ ${subjectLine}
                         <div class="text-2xl relative">${crown}${face}</div>
                         <div>
                             <div class="font-bold text-xs text-white">${displayName}</div>
-                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}${studentIsCreditDefault(s, todayStr) ? ' · <span class="money-negative">신용불량 · 맨 뒤</span>' : ''}</div>
+                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}${studentIsCreditDefault(s, todayStr) ? ' · <span class="text-amber-200">신용 회복 중</span>' : ''}</div>
                         </div>
                     </div>
                     <div class="bg-slate-900 px-2 py-1 rounded-lg border border-slate-600 text-right min-w-[52px]">
@@ -22752,12 +22782,18 @@ ${subjectLine}
                     setTimeout(() => {
                         void window.customAlert(loanPenaltyBlockMessage(m.untilYmd));
                     }, 180);
-                } else if (m.kind === 'penalty_half') {
+                } else if (m.kind === 'auto_repay') {
                     setTimeout(() => {
                         void window.customAlert(
-                            `신용불량 기간이 끝났어요.\n남은 빚의 절반인 ${formatBongAmount(m.charge)}를 냈어요.\n나머지는 ${m.nextDue}까지 갚아야 해요.`
+                            m.unpaid > 0
+                                ? `약속한 날이에요. 있는 돈 ${formatBongAmount(m.paid)}를 갚았어요.\n아직 ${formatBongAmount(m.unpaid)}가 남았어요.`
+                                : `약속한 날이에요. 빌린 돈 ${formatBongAmount(m.paid)}를 다 갚았어요.`
                         );
                     }, 200);
+                } else if (m.kind === 'default_end') {
+                    setTimeout(() => {
+                        void window.customAlert('신용불량 기간이 끝났어요. 남은 빚은 그대로예요.\n같은 빚이나 그때의 마이너스로는 다시 안 걸려요.');
+                    }, 220);
                 }
             });
         }
@@ -22888,7 +22924,7 @@ ${subjectLine}
                 } else if (cap < LOAN_MIN_UNIT) {
                     loanStatus.textContent = '지금 빌릴 수 있는 돈이 없어요. 예금, 적금, 지수 투자가 생기면 그 만큼 더해져요.';
                 } else {
-                    loanStatus.textContent = `지금 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 최대 ${LOAN_MAX_BUSINESS_DAYS}영업일. 기본 한도에 예금, 적금, 지수 투자 가치를 더한 값이에요. 갚기 전에는 다시 빌릴 수 없어요.`;
+                    loanStatus.textContent = `지금 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 학교 가는 날 최대 ${LOAN_MAX_BUSINESS_DAYS}일. 기본 한도에 예금, 적금, 지수 투자 가치를 더한 값이에요. 갚기 전에는 다시 빌릴 수 없어요.`;
                 }
             }
             if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
@@ -23024,7 +23060,7 @@ ${subjectLine}
         function formatBankAdminInvestCell(row) {
             if (!row || !row.held) return '<span class="text-slate-600">—</span>';
             const delta = Number(row.delta) || 0;
-            const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
+            const cls = delta > 0 ? 'text-emerald-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
             const deltaTxt = delta > 0 ? formatMoneyHtml(`+${formatBongAmount(delta)}`, 1) : formatBongAmountHtml(delta);
             return `<div class="text-right leading-tight">
                 <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
@@ -23053,7 +23089,7 @@ ${subjectLine}
                 const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(sid)) || {};
                 const sum = summarizeStudentStockInvest(stu, _marketQuotes);
                 const name = STUDENT_NAMES[String(sid)] || sid;
-                const totalCls = sum.delta > 0 ? 'text-rose-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const totalCls = sum.delta > 0 ? 'text-emerald-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const totalDelta = sum.delta > 0 ? `+${formatBongAmount(sum.delta)}` : formatBongAmount(sum.delta);
                 const kospi = sum.markets.find((m) => m.id === 'kospi');
                 const kosdaq = sum.markets.find((m) => m.id === 'kosdaq');
@@ -23077,14 +23113,29 @@ ${subjectLine}
         function renderBankInvestPanel() {
             const line = document.getElementById('bankInvestQuoteLine');
             const box = document.getElementById('bankInvestPositions');
+            const adjustNote = document.getElementById('bankInvestAdjustNote');
+            const adjusting = isQuoteAdjustmentWindow(getServerNowMs());
+            const slotLabel = _marketQuotes.hourSlot ? formatMarketHourSlot(_marketQuotes.hourSlot) : '';
             if (line) {
                 const bits = STOCK_MARKETS.map((m) => {
                     const q = _marketQuotes[m.id];
                     return q ? `${m.name} ${formatIndexPrice(q.price)} (${formatChangePct(q.changePct)})` : `${m.name} —`;
                 });
-                line.textContent = bits.join(' · ');
+                line.textContent = `${adjusting ? '시세 조정 중 · ' : ''}${slotLabel ? `${slotLabel} · ` : ''}${bits.join(' · ')}`;
+            }
+            if (adjustNote) {
+                adjustNote.classList.toggle('hidden', !adjusting);
+                adjustNote.textContent = adjusting ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.' : '';
             }
             if (!box || !window.playerState) return;
+            const sellDrafts = {};
+            let focusedSellId = '';
+            STOCK_MARKETS.forEach((m) => {
+                const el = document.getElementById(`bankInvestSell_${m.id}`);
+                if (!el) return;
+                sellDrafts[m.id] = el.value;
+                if (document.activeElement === el) focusedSellId = el.id;
+            });
             const bag = sanitizeStockInvestments(window.playerState.stockInvestments);
             const rows = STOCK_MARKETS.map((m) => {
                 const pos = bag[m.id];
@@ -23096,7 +23147,7 @@ ${subjectLine}
                 const deltaTxt = settled.delta > 0
                     ? formatMoneyHtml(`+${formatBongAmount(settled.delta)}`, 1)
                     : formatBongAmountHtml(settled.delta);
-                const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const deltaCls = settled.delta > 0 ? 'text-emerald-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
                 const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
                 const room = stockInvestRoom(pos);
@@ -23113,7 +23164,7 @@ ${subjectLine}
                         </div>
                     </div>
                     <label class="block text-xs text-slate-200 font-bold mt-2" for="bankInvestSell_${m.id}">얼마를 팔까요?
-                        <span class="block font-normal text-slate-400 mt-0.5">비우면 전부 팔아요. 남기려면 10봉 이상 남아야 해요.</span>
+                        <span class="block font-normal text-slate-400 mt-0.5">10봉 이상 적어요. 전부 팔려면 가진 원금을 그대로 적어요. 남기려면 10봉 이상 남아야 해요.</span>
                         <span class="flex gap-2 flex-wrap items-center mt-1">
                             <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" inputmode="numeric" aria-label="${m.name} 팔 원금" placeholder="예: 30" class="flex-1 min-w-[8rem] min-h-[44px] bg-slate-950 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300" />
                             <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn shrink-0 min-h-[44px] min-w-[44px] bg-amber-800 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300"${_stockTradeBusy ? ' disabled' : ''}>팔기</button>
@@ -23138,6 +23189,19 @@ ${subjectLine}
                 </div>`
                 : '<p class="text-xs text-slate-500">아직 사고팔기 기록이 없어요. 일부를 팔면 여기에 남아요.</p>';
             box.innerHTML = `${rows.join('')}<div id="bankInvestHistory" class="pt-1">${historyHtml}</div>`;
+            STOCK_MARKETS.forEach((m) => {
+                const el = document.getElementById(`bankInvestSell_${m.id}`);
+                if (el && Object.prototype.hasOwnProperty.call(sellDrafts, m.id)) el.value = sellDrafts[m.id];
+            });
+            if (focusedSellId) {
+                const again = document.getElementById(focusedSellId);
+                if (again) again.focus();
+            }
+            if (adjusting) {
+                document.querySelectorAll('.js-stock-trade-btn').forEach((el) => {
+                    el.disabled = true;
+                });
+            }
         }
 
         /** 지수 매수·매도가 겹치면 같은 원금을 여러 번 정산할 수 있어 한 건씩만 처리합니다. */
@@ -23157,25 +23221,45 @@ ${subjectLine}
         }
         function stockSellFailMessage(reason, max) {
             return reason === 'none' ? '팔 투자가 없어요.'
+                : reason === 'empty' ? '얼마를 팔지 숫자로 적어 주세요. 빈칸이나 0은 전부 팔기가 아니에요.'
+                : reason === 'min' ? `한 번에 ${formatBongAmount(STOCK_INVEST_MIN)}부터 팔 수 있어요. 전부 팔려면 가진 원금을 적어요.`
                 : reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 해요. 전부 팔거나 더 남겨 주세요.`
-                : `팔 돈은 1에서 ${formatBongAmount(max || 0)}까지예요. 칸을 비우면 전부 팔아요.`;
+                : reason === 'adjusting' ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.'
+                : reason === 'slot' || reason === 'price' ? '확인창에 나온 시세와 지금 시세가 달라요. 다시 확인해 주세요.'
+                : reason === 'amount' ? '확인할 때 본 금액과 달라서 팔지 않았어요. 다시 눌러 주세요.'
+                : `팔 돈은 ${formatBongAmount(STOCK_INVEST_MIN)}에서 ${formatBongAmount(max || 0)}까지예요.`;
+        }
+
+        function stockTradeWindowMessage(reason) {
+            return stockSellFailMessage(reason);
         }
 
         window.buyStockIndex = async function(marketId) {
             if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const inp = document.getElementById('bankInvestAmount');
+            const typedAmount = inp ? inp.value : '';
             _stockTradeBusy = true;
             setStockTradeButtonsDisabled(true);
             try {
+                await syncServerClock();
+                if (isQuoteAdjustmentWindow(getServerNowMs())) {
+                    await window.customAlert(stockTradeWindowMessage('adjusting'));
+                    return;
+                }
                 await refreshMarketQuotes(false);
+                if (isQuoteAdjustmentWindow(getServerNowMs())) {
+                    await window.customAlert(stockTradeWindowMessage('adjusting'));
+                    return;
+                }
                 const market = getStockMarket(marketId);
                 const q = market && _marketQuotes[market.id];
-                if (!q) {
+                const slot = String(_marketQuotes.hourSlot || '');
+                if (!q || !slot) {
                     await window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
                     return;
                 }
-                const inp = document.getElementById('bankInvestAmount');
-                const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
+                const amt = parseBankAmountInput(typedAmount !== '' ? typedAmount : NaN);
                 if (amt == null) {
                     await window.customAlert(`${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 사이 금액을 입력하세요.`);
                     return;
@@ -23192,40 +23276,52 @@ ${subjectLine}
                 }
                 const ok = await window.customConfirm(
                     gate.adding
-                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 추가 매수할까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)} → ${formatBongAmount(gate.nextPrincipal)}\n현재 지수 ${formatIndexPrice(q.price)}로 평균 매수가에 합산됩니다.`
-                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`
+                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 더 넣을까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)}에서 ${formatBongAmount(gate.nextPrincipal)}\n${formatMarketHourSlot(slot)} ${formatIndexPrice(q.price)}`
+                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n${formatMarketHourSlot(slot)} ${formatIndexPrice(q.price)}`
                 );
                 if (!ok) return;
-                // 확인 뒤에 최신 잔액·원금으로 다시 검사합니다. 창이 겹쳐도 같은 매수를 두 번 넣지 않습니다.
+                await syncServerClock();
+                const quoteGate = evaluateStockTradeWindow({
+                    nowMs: getServerNowMs(),
+                    confirmSlot: slot,
+                    confirmPrice: q.price,
+                    quotes: _marketQuotes,
+                    marketId: market.id,
+                });
+                if (!quoteGate.ok) {
+                    await window.customAlert(stockTradeWindowMessage(quoteGate.reason));
+                    return;
+                }
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
-                const qNow = _marketQuotes[market.id] || q;
                 const gateNow = canBuyStock({
                     wallet: Number(window.playerState.bong) || 0,
                     amount: gate.amount,
                     existing: window.playerState.stockInvestments[market.id],
                 });
-                if (!gateNow.ok) {
-                    await window.customAlert(stockBuyFailMessage(gateNow.reason, gateNow.room));
+                if (!gateNow.ok || gateNow.amount !== gate.amount) {
+                    await window.customAlert(gateNow.ok ? stockTradeWindowMessage('amount') : stockBuyFailMessage(gateNow.reason, gateNow.room));
                     return;
                 }
-                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, qNow.price, Date.now(), getLocalDateStr());
-                if (!bought.ok) {
-                    await window.customAlert('매수에 실패했습니다.');
+                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, quoteGate.price, getServerNowMs(), getLocalDateStr());
+                if (!bought.ok || bought.amount !== gate.amount) {
+                    await window.customAlert('확인할 때 본 금액과 달라서 사지 않았어요. 다시 눌러 주세요.');
                     return;
                 }
                 const trade = {
                     kind: 'buy',
                     marketId: market.id,
-                    amount: gateNow.amount,
-                    currentIndex: qNow.price,
+                    amount: gate.amount,
+                    currentIndex: quoteGate.price,
+                    confirmSlot: slot,
+                    confirmPrice: quoteGate.price,
                     today: getLocalDateStr(),
-                    nowMs: Date.now(),
+                    nowMs: getServerNowMs(),
                 };
                 const saved = await saveDataToCloud({
                     allowBongDecrease: true,
-                    maxBongDecrease: gateNow.amount,
+                    maxBongDecrease: gate.amount,
                     requireServerBongBalance: true,
-                    operationLabel: gateNow.adding ? `${market.name} 추가 매수` : `${market.name} 매수`,
+                    operationLabel: gateNow.adding ? `${market.name} 더 사기` : `${market.name} 사기`,
                     stockTrade: trade,
                 });
                 if (!saved) return;
@@ -23237,8 +23333,8 @@ ${subjectLine}
                     : gateNow.nextPrincipal;
                 await window.customAlert(
                     gateNow.adding
-                        ? `${market.name} ${formatBongAmount(gateNow.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(nextPrincipal)}.`
-                        : `${market.name} ${formatBongAmount(gateNow.amount)} 매수했습니다.`
+                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 더 넣었어요. 원금 ${formatBongAmount(nextPrincipal)}.`
+                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣었어요.`
                 );
             } finally {
                 _stockTradeBusy = false;
@@ -23249,21 +23345,35 @@ ${subjectLine}
         window.sellStockIndex = async function(marketId) {
             if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const sellInpEarly = document.getElementById(`bankInvestSell_${marketId}`);
+            const typed = sellInpEarly ? String(sellInpEarly.value || '').trim() : '';
+            if (typed === '' || Number(typed) === 0) {
+                await window.customAlert(stockSellFailMessage('empty'));
+                return;
+            }
             _stockTradeBusy = true;
             setStockTradeButtonsDisabled(true);
             try {
-                await refreshMarketQuotes(true);
+                await syncServerClock();
+                if (isQuoteAdjustmentWindow(getServerNowMs())) {
+                    await window.customAlert(stockTradeWindowMessage('adjusting'));
+                    return;
+                }
+                await refreshMarketQuotes(false);
+                if (isQuoteAdjustmentWindow(getServerNowMs())) {
+                    await window.customAlert(stockTradeWindowMessage('adjusting'));
+                    return;
+                }
                 const market = getStockMarket(marketId);
                 const q = market && _marketQuotes[market.id];
-                if (!q) {
+                const slot = String(_marketQuotes.hourSlot || '');
+                if (!q || !slot) {
                     await window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
                     return;
                 }
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
                 const held = window.playerState.stockInvestments[market.id];
-                const sellInp = document.getElementById(`bankInvestSell_${market.id}`);
-                const sellRaw = sellInp && String(sellInp.value || '').trim() !== '' ? sellInp.value : '';
-                const gate = canSellStock({ existing: held, amount: sellRaw === '' ? null : sellRaw });
+                const gate = canSellStock({ existing: held, amount: typed });
                 if (!gate.ok) {
                     await window.customAlert(stockSellFailMessage(gate.reason, gate.max));
                     return;
@@ -23275,65 +23385,78 @@ ${subjectLine}
                     q.price,
                     window.playerState.stockInvestDaily,
                     today,
-                    Date.now(),
+                    getServerNowMs(),
                     gate.amount
                 );
                 if (!preview.ok) {
-                    await window.customAlert('매도할 투자가 없습니다.');
+                    await window.customAlert('팔 투자가 없어요.');
                     return;
                 }
                 const remainTxt = preview.full
-                    ? '전액 매도합니다.'
+                    ? '가진 원금을 전부 팔아요.'
                     : `남은 원금 ${formatBongAmount(preview.remaining)}.`;
                 const ok = await window.customConfirm(
-                    `${market.name} 원금 ${formatBongAmount(preview.principal)}를 매도할까요?\n정산 ${formatBongAmount(preview.payout)}`
-                    + `\n${remainTxt}`
-                    + (preview.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
+                    `${market.name} ${formatBongAmount(preview.principal)}을 팔까요?\n받을 돈 ${formatBongAmount(preview.payout)}\n${formatMarketHourSlot(slot)} ${formatIndexPrice(q.price)}\n${remainTxt}`
+                    + (preview.capped ? '\n오늘 이익은 8봉까지만 받아요.' : '')
                 );
                 if (!ok) return;
-                // 확인 뒤에 서버 원금 기준으로 다시 정산합니다. 아래 창이 남아 있어도 같은 매도를 두 번 넣지 않습니다.
+                await syncServerClock();
+                const quoteGate = evaluateStockTradeWindow({
+                    nowMs: getServerNowMs(),
+                    confirmSlot: slot,
+                    confirmPrice: q.price,
+                    quotes: _marketQuotes,
+                    marketId: market.id,
+                });
+                if (!quoteGate.ok) {
+                    await window.customAlert(stockTradeWindowMessage(quoteGate.reason));
+                    return;
+                }
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
-                const qNow = _marketQuotes[market.id] || q;
                 const heldNow = window.playerState.stockInvestments[market.id];
-                const gateNow = canSellStock({ existing: heldNow, amount: gate.amount });
-                if (!gateNow.ok) {
-                    await window.customAlert(stockSellFailMessage(gateNow.reason, gateNow.max));
+                const gateNow = canSellStock({ existing: heldNow, amount: typed });
+                if (!gateNow.ok || gateNow.amount !== gate.amount) {
+                    await window.customAlert(gateNow.ok ? stockTradeWindowMessage('amount') : stockSellFailMessage(gateNow.reason, gateNow.max));
                     return;
                 }
                 const sold = applySellStock(
                     window.playerState.stockInvestments,
                     market.id,
-                    qNow.price,
+                    quoteGate.price,
                     window.playerState.stockInvestDaily,
                     getLocalDateStr(),
-                    Date.now(),
+                    getServerNowMs(),
                     gateNow.amount
                 );
-                if (!sold.ok) {
-                    await window.customAlert('이미 매도되었거나 매도할 수 없습니다.');
+                if (!sold.ok || sold.payout !== preview.payout || sold.principal !== preview.principal) {
+                    await window.customAlert(stockTradeWindowMessage('amount'));
                     return;
                 }
                 const trade = {
                     kind: 'sell',
                     marketId: market.id,
                     amount: gateNow.amount,
-                    currentIndex: qNow.price,
+                    currentIndex: quoteGate.price,
+                    confirmSlot: slot,
+                    confirmPrice: quoteGate.price,
+                    confirmPayout: preview.payout,
                     today: getLocalDateStr(),
-                    nowMs: Date.now(),
+                    nowMs: getServerNowMs(),
                 };
                 const saved = await saveDataToCloud({
                     maxBongIncrease: Math.max(1, sold.payout),
-                    operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
+                    operationLabel: sold.full ? `${market.name} 전부 팔기` : `${market.name} 일부 팔기`,
                     stockTrade: trade,
                 });
                 if (!saved) return;
-                if (sellInp) sellInp.value = '';
+                const liveInp = document.getElementById(`bankInvestSell_${market.id}`);
+                if (liveInp) liveInp.value = '';
                 updateUI();
                 const applied = trade.applied || sold;
                 await window.customAlert(
                     applied.full
-                        ? `매도 완료. 지갑으로 ${formatBongAmount(applied.payout)}를 받았습니다.`
-                        : `일부 매도 완료. 지갑으로 ${formatBongAmount(applied.payout)}를 받고, 원금 ${formatBongAmount(applied.remaining)}가 남았습니다.`
+                        ? `다 팔았어요. 지갑으로 ${formatBongAmount(applied.payout)}가 들어왔어요.`
+                        : `일부를 팔았어요. 지갑으로 ${formatBongAmount(applied.payout)}가 들어왔고, 원금 ${formatBongAmount(applied.remaining)}가 남았어요.`
                 );
             } finally {
                 _stockTradeBusy = false;
@@ -23506,7 +23629,7 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                preview.textContent = `약속한 날 ${loan.dueYmd}. 이 날이 되면 신용불량이에요. 기간이 끝나면 남은 빚의 절반을 내요. 갚기 전에는 또 빌릴 수 없어요.`;
+                preview.textContent = `약속한 날 ${loan.dueYmd}. 그 전날까지 갚아요. 그날 있는 돈은 먼저 갚고, 모자라면 신용불량이에요. 기간이 끝나면 남은 빚은 그대로예요. 같은 빚으로는 다시 안 걸려요.`;
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
@@ -23556,7 +23679,7 @@ ${subjectLine}
                 const ok = await window.customConfirm(
                     `${formatBongAmount(plan.loan.principal)}를 학교 가는 날 ${plan.loan.days}일 동안 빌릴까요?\n` +
                     `이자는 ${formatBongAmount(plan.loan.interest)}예요.\n` +
-                    `약속한 날은 ${plan.loan.dueYmd}예요. 그날이 되면 신용불량이 시작되고, 기간이 끝나면 남은 빚의 절반을 내요.\n적금은 빼지 않아요.`
+                    `약속한 날은 ${plan.loan.dueYmd}예요. 그 전날까지 갚아요. 그날 있는 돈은 먼저 갚고, 모자라면 신용불량이에요.\n적금은 빼지 않아요.`
                 );
                 if (!ok) return;
                 const saved = await saveDataToCloud({
@@ -24013,8 +24136,8 @@ ${subjectLine}
                 `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
                 `약속한 날 ${loan.dueYmd}\n\n` +
                 (penalty
-                    ? '약속한 날이 됐어요. 신용불량이라 밥줄에서 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.'
-                    : '약속한 날부터 신용불량이에요. 그 전에 갚아 주세요. 일부만 갚아도 돼요.');
+                    ? '약속한 날이 지났어요. 신용불량이라 밥줄에서 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요. 적힌 날이 되면 풀려요. 남은 빚은 그대로예요. 같은 빚으로는 다시 안 걸려요.'
+                    : '약속한 날 전날까지 갚아 주세요. 그날 있는 돈은 먼저 갚아요.');
             modal.classList.remove('hidden');
         };
 
@@ -24883,7 +25006,7 @@ ${subjectLine}
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
                 inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, gearEnhance: { wp1: 1 }, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 dragonBalls: [], dragonBallWeekendKey: '',
-                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
+                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', creditReleasedYmd: '', creditReleaseLoanId: '', creditWalletRecovered: false, loanDueHandledKey: '', dailyAllClearBonusDate: '',
                 stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [],
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
@@ -25197,7 +25320,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [], catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', creditReleasedYmd: '', creditReleaseLoanId: '', creditWalletRecovered: false, loanDueHandledKey: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [], catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -25244,6 +25367,53 @@ ${subjectLine}
         }
 
         async function saveDataToCloud(options = {}) {
+            // 화면 확인용. 배포 빌드에서는 빠집니다. 실제 저장은 서버 거래를 그대로 탑니다.
+            if (import.meta.env.DEV && window.__SAMBONG_LOCAL_SAVE === true && options && options.stockTrade) {
+                const trade = options.stockTrade;
+                const tradeNow = Number(trade.nowMs) || Date.now();
+                const tradeToday = String(trade.today || '');
+                if (trade.kind === 'sell') {
+                    const sold = applyStockSellFromServer({
+                        serverInvestments: window.playerState.stockInvestments,
+                        serverDaily: window.playerState.stockInvestDaily,
+                        serverBong: Number(window.playerState.bong) || 0,
+                        serverHistory: window.playerState.stockInvestHistory,
+                        marketId: trade.marketId,
+                        amount: trade.amount,
+                        currentIndex: Number(trade.currentIndex),
+                        today: tradeToday,
+                        nowMs: tradeNow,
+                    });
+                    if (!sold.ok) return false;
+                    if (Number(trade.confirmPayout) !== sold.payout || Number(trade.amount) !== sold.principal) return false;
+                    window.playerState.stockInvestments = sold.investments;
+                    window.playerState.stockInvestDaily = sold.daily;
+                    window.playerState.stockInvestHistory = sold.history;
+                    window.playerState.bong = normalizeBongValue(sold.bong);
+                    trade.applied = sold;
+                    return true;
+                }
+                if (trade.kind === 'buy') {
+                    const bought = applyStockBuyFromServer({
+                        serverInvestments: window.playerState.stockInvestments,
+                        serverBong: Number(window.playerState.bong) || 0,
+                        serverHistory: window.playerState.stockInvestHistory,
+                        marketId: trade.marketId,
+                        amount: trade.amount,
+                        buyIndex: Number(trade.currentIndex),
+                        today: tradeToday,
+                        nowMs: tradeNow,
+                    });
+                    if (!bought.ok) return false;
+                    if (Number(trade.amount) !== bought.amount) return false;
+                    window.playerState.stockInvestments = bought.investments;
+                    window.playerState.stockInvestHistory = bought.history;
+                    window.playerState.bong = normalizeBongValue(bought.bong);
+                    trade.applied = bought;
+                    return true;
+                }
+                return false;
+            }
             if (window.playerState.isGuest || !currentStudentDocRef) return;
             const opts = {
                 allowXpDecrease: false,
@@ -25284,6 +25454,8 @@ ${subjectLine}
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
             let blockedLoanReason = '';
+            let keepLoanLifecycle = false;
+            let blockedStockTradeReason = '';
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
             let blockedByStockTrade = false;
@@ -25362,7 +25534,7 @@ ${subjectLine}
                                 loanAmount: opts.loanAmount,
                                 loanDays: opts.loanDays,
                             });
-                            if (reconciled.rejected) {
+                            if (reconciled.rejected && !reconciled.keepLifecycle) {
                                 blockedByBankReconcile = true;
                                 blockedLoanReason = String(reconciled.loanReason || '');
                                 serverRestoreData = {
@@ -25372,28 +25544,26 @@ ${subjectLine}
                                     bankTermDeposits: reconciled.bankTermDeposits,
                                     bankDailyBonusLastDate: reconciled.bankDailyBonusLastDate,
                                     bankLoan: reconciled.bankLoan,
-                                    creditDefaultUntilYmd: reconciled.creditDefaultUntilYmd,
-                                    bankNegativeSinceYmd: reconciled.bankNegativeSinceYmd,
-                                    loanPenaltyUntilYmd: reconciled.loanPenaltyUntilYmd || '',
+                                    ...copyCreditFields(reconciled),
                                 };
                                 return;
+                            }
+                            if (reconciled.keepLifecycle) {
+                                keepLoanLifecycle = true;
+                                blockedLoanReason = String(reconciled.loanReason || '');
                             }
                             dataToSave.bong = reconciled.bong;
                             dataToSave.bankRegularSavings = reconciled.bankRegularSavings;
                             dataToSave.bankTermDeposits = reconciled.bankTermDeposits;
                             dataToSave.bankDailyBonusLastDate = reconciled.bankDailyBonusLastDate;
                             dataToSave.bankLoan = reconciled.bankLoan;
-                            dataToSave.creditDefaultUntilYmd = reconciled.creditDefaultUntilYmd || '';
-                            dataToSave.bankNegativeSinceYmd = reconciled.bankNegativeSinceYmd || '';
-                            dataToSave.loanPenaltyUntilYmd = reconciled.loanPenaltyUntilYmd || '';
+                            Object.assign(dataToSave, copyCreditFields(reconciled));
                         } else {
                             dataToSave.bankRegularSavings = bankAccrued.bankRegularSavings;
                             dataToSave.bankTermDeposits = bankAccrued.bankTermDeposits;
                             dataToSave.bankDailyBonusLastDate = bankAccrued.bankDailyBonusLastDate;
                             dataToSave.bankLoan = bankAccrued.bankLoan;
-                            dataToSave.creditDefaultUntilYmd = bankAccrued.creditDefaultUntilYmd || '';
-                            dataToSave.bankNegativeSinceYmd = bankAccrued.bankNegativeSinceYmd || '';
-                            dataToSave.loanPenaltyUntilYmd = bankAccrued.loanPenaltyUntilYmd || '';
+                            Object.assign(dataToSave, copyCreditFields(bankAccrued));
                             // 만기·자동이체·주기 보너스 뒤에는 낡은 잔액으로 되돌리지 않습니다.
                             if (bankAccrued.changed) {
                                 dataToSave.bong = bankAccrued.bong;
@@ -25434,9 +25604,26 @@ ${subjectLine}
                         const trade = opts.stockTrade;
                         if (trade && (trade.kind === 'sell' || trade.kind === 'buy')) {
                             // 지수 매수·매도는 서버에 남은 원금·잔액만 정산합니다. 같은 포지션을 두 번 넣지 않습니다.
-                            const tradeNow = Math.floor(Number(trade.nowMs) || Date.now());
+                            // 확인창의 시세 시간대와 가격이 서버 시세와 같아야 하고, 정각 전후 1분은 막습니다.
+                            const tradeNow = getServerNowMs();
                             const tradeToday = String(trade.today || getLocalDateStr());
-                            const tradeIndex = Number(trade.currentIndex);
+                            let tradeIndex = Number(trade.currentIndex);
+                            const settingsSnap = await transaction.get(getGlobalSettingsDocRef());
+                            const serverQuotes = settingsSnap.exists() ? ((settingsSnap.data() || {}).marketQuotes || null) : null;
+                            const quoteGate = evaluateStockTradeWindow({
+                                nowMs: tradeNow,
+                                confirmSlot: trade.confirmSlot,
+                                confirmPrice: trade.confirmPrice,
+                                quotes: serverQuotes,
+                                marketId: trade.marketId,
+                            });
+                            if (!quoteGate.ok) {
+                                blockedByStockTrade = true;
+                                blockedStockTradeReason = quoteGate.reason;
+                                serverRestoreData = serverData;
+                                return;
+                            }
+                            tradeIndex = quoteGate.price;
                             if (trade.kind === 'sell') {
                                 const sold = applyStockSellFromServer({
                                     serverInvestments: serverData.stockInvestments,
@@ -25451,6 +25638,13 @@ ${subjectLine}
                                 });
                                 if (!sold.ok) {
                                     blockedByStockTrade = true;
+                                    blockedStockTradeReason = sold.reason || 'none';
+                                    serverRestoreData = serverData;
+                                    return;
+                                }
+                                if (Number(trade.confirmPayout) !== sold.payout || Number(trade.amount) !== sold.principal) {
+                                    blockedByStockTrade = true;
+                                    blockedStockTradeReason = 'amount';
                                     serverRestoreData = serverData;
                                     return;
                                 }
@@ -25472,6 +25666,13 @@ ${subjectLine}
                                 });
                                 if (!bought.ok) {
                                     blockedByStockTrade = true;
+                                    blockedStockTradeReason = bought.reason || 'buy';
+                                    serverRestoreData = serverData;
+                                    return;
+                                }
+                                if (Number(trade.amount) !== bought.amount) {
+                                    blockedByStockTrade = true;
+                                    blockedStockTradeReason = 'amount';
                                     serverRestoreData = serverData;
                                     return;
                                 }
@@ -25629,7 +25830,13 @@ ${subjectLine}
                                 ? repayLoanFailMessage(blockedLoanReason)
                                 : '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.')
                             : blockedByStockTrade
-                            ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
+                            ? (blockedStockTradeReason === 'adjusting'
+                                ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.'
+                                : blockedStockTradeReason === 'slot' || blockedStockTradeReason === 'price'
+                                ? '확인창에 나온 시세와 지금 시세가 달라요. 다시 확인해 주세요.'
+                                : blockedStockTradeReason === 'amount'
+                                ? '확인할 때 본 금액과 달라서 체결하지 않았어요. 다시 눌러 주세요.'
+                                : '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.')
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
                                 '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
                     );
@@ -25691,6 +25898,15 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'loanPenaltyUntilYmd')) {
                     window.playerState.loanPenaltyUntilYmd = dataToSave.loanPenaltyUntilYmd || '';
+                }
+                Object.assign(window.playerState, copyCreditFields(dataToSave));
+                if (keepLoanLifecycle && blockedLoanReason) {
+                    const notice = blockedLoanReason === 'settled' || blockedLoanReason === 'default' || blockedLoanReason === 'active' || blockedLoanReason === 'limit' || blockedLoanReason === 'amount' || blockedLoanReason === 'days' || blockedLoanReason === 'disabled'
+                        ? takeLoanFailMessage(blockedLoanReason, { limit: getPersonalLoanLimit(window.playerState), unit: getCurrencyUnit() })
+                        : repayLoanFailMessage(blockedLoanReason);
+                    if (typeof updateUI === 'function') updateUI();
+                    await window.customAlert(notice);
+                    return false;
                 }
                 return true;
             } catch (e) {
@@ -28969,7 +29185,7 @@ ${subjectLine}
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
+            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'creditReleasedYmd', 'creditReleaseLoanId', 'creditWalletRecovered', 'loanDueHandledKey', 'attendanceMark', 'praiseCount',
             'stockInvestments', 'stockInvestDaily', 'stockInvestHistory', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
@@ -29481,6 +29697,10 @@ ${subjectLine}
                 creditDefaultUntilYmd: '',
                 bankNegativeSinceYmd: '',
                 loanPenaltyUntilYmd: '',
+                creditReleasedYmd: '',
+                creditReleaseLoanId: '',
+                creditWalletRecovered: false,
+                loanDueHandledKey: '',
                 attendanceMark: null,
                 praiseCount: 0,
                 dailyAllClearBonusDate: '',

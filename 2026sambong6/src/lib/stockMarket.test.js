@@ -105,6 +105,7 @@ describe('은행 지수 투자', () => {
 
     it('원금 일부를 매도하고 남은 원금·매수가를 지킨다', () => {
         const pos = { principal: 100, buyIndex: 1000, openedAt: 0, openedDate: '2026-09-02' };
+        assert.equal(canSellStock({ existing: pos, amount: '' }).full, true);
         assert.equal(canSellStock({ existing: pos, amount: 40 }).ok, true);
         assert.equal(canSellStock({ existing: pos, amount: 40 }).remaining, 60);
         assert.equal(canSellStock({ existing: pos, amount: 95 }).ok, false);

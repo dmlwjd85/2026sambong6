@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     MONEY_NEGATIVE_CLASS,
+    escapeMoneyText,
     formatMoneyHtml,
     isNegativeMoney,
     moneyToneClass,
@@ -19,6 +20,8 @@ describe('음수 금액 표시', () => {
         assert.equal(moneyToneClass(3), '');
         assert.equal(formatMoneyHtml('-3B', -3), `<span class="${MONEY_NEGATIVE_CLASS}">-3B</span>`);
         assert.equal(formatMoneyHtml('3B', 3), '3B');
+        assert.equal(formatMoneyHtml('-1<봉>', -1), `<span class="${MONEY_NEGATIVE_CLASS}">${escapeMoneyText('-1<봉>')}</span>`);
+        assert.equal(escapeMoneyText('A&B'), 'A&amp;B');
     });
 
     it('문장 안의 음수 금액만 나누고 다른 글자는 그대로 둡니다', () => {

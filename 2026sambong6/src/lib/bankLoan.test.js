@@ -54,7 +54,19 @@ describe('대출 한도·금액', () => {
         assert.equal(creditDefaultDaysFromAmount(0), 0);
         assert.equal(creditDefaultDaysFromAmount(30), 1);
         assert.equal(creditDefaultDaysFromAmount(31), 2);
+        assert.equal(creditDefaultDaysFromAmount(1), 1);
         assert.equal(creditDefaultDaysFromAmount(-61), Math.ceil(61 / CREDIT_DEFAULT_UNIT));
+        assert.equal(isCreditDefaultOn({ creditDefaultUntilYmd: '곧' }, '2026-10-19'), false);
+        assert.equal(isStudentCreditDefault({ bong: -1 }, '2026-10-19'), true);
+        assert.equal(isStudentCreditDefault({ bong: '아님' }, '2026-10-19'), false);
+        assert.equal(isStudentCreditDefault({
+            bong: 3,
+            bankLoan: { id: 'x', principal: 10, interest: 1, days: 1, startYmd: '2026-10-01', dueYmd: '2026-10-19' },
+        }, '2026-10-19'), true);
+        assert.equal(isStudentCreditDefault({
+            bong: 3,
+            bankLoan: { id: 'x', principal: 10, interest: 1, days: 1, startYmd: '2026-10-01', dueYmd: '2026-10-20' },
+        }, '2026-10-19'), false);
     });
 });
 
@@ -246,7 +258,7 @@ describe('대출 실행·달력', () => {
             amount: 40, days: 5, ratePercent: 10, limit: 50, todayYmd: due, calendar: cal, nowMs: 3,
         });
         assert.equal(onDue.ok, false);
-        assert.equal(onDue.reason, 'active');
+        assert.equal(onDue.reason, 'default');
         assert.equal(onDue.bankLoan.dueYmd, due);
         assert.equal(onDue.bankLoan.id, first.bankLoan.id);
         assert.equal(onDue.bong, 100);
@@ -303,5 +315,16 @@ describe('대출 실행·달력', () => {
                 baseLimit: 50, regularSavings: 20, termSavings: 0, indexValue: 0,
             }), todayYmd: '2026-09-15', calendar: cal,
         }).ok, true);
+        const short = applyLoanAction({
+            bong: 1,
+            bankRegularSavings: 0,
+            bankLoan: taken.bankLoan,
+            creditDefaultUntilYmd: '2026-09-20',
+        }, 'repay', { todayYmd: '2026-09-16', calendar: cal });
+        assert.equal(short.ok, true);
+        assert.equal(short.bankLoan, null);
+        assert.ok(short.bong < 0);
+        assert.equal(short.creditDefaultUntilYmd, '2026-09-20');
+        assert.equal(short.loanPenaltyUntilYmd, '');
     });
 });

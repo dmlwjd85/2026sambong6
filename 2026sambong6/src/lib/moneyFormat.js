@@ -41,9 +41,18 @@ export function splitNegativeMoney(text, unit) {
     return out;
 }
 
+/** 화면 HTML에 넣을 때 단위 글자가 태그가 되지 않게 바꿉니다. */
+export function escapeMoneyText(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 /** 음수 금액 글자를 빨간 클래스로 감쌉니다. 0 이상은 그대로 둡니다. */
 export function formatMoneyHtml(amountText, value) {
-    const text = String(amountText ?? '');
+    const text = escapeMoneyText(amountText);
     if (!isNegativeMoney(value)) return text;
     return `<span class="${MONEY_NEGATIVE_CLASS}">${text}</span>`;
 }

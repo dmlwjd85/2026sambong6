@@ -685,7 +685,7 @@
                         <div id="dashRankBg" class="dash-rank-bg" aria-hidden="true"></div>
                         <div id="dashJobBadge" class="absolute top-4 left-4 flex gap-1 flex-col z-20"></div>
                         <div id="dashShield" class="absolute top-4 right-4 text-2xl z-20"></div>
-                        <div id="dashCreditStamp" class="credit-default-stamp hidden" aria-hidden="true">신용불량</div>
+                        <div id="dashCreditStamp" class="credit-default-stamp hidden" role="status" aria-hidden="true">신용불량</div>
                         <div class="dash-figure">
                             <div id="dashAvatar" class="text-6xl sm:text-7xl relative z-10 drop-shadow-xl avatar-bounce">👦</div>
                             <div id="dashLevelName" class="text-xs font-bold text-sb-blue z-10 bg-slate-900 px-3 py-1 rounded-full border border-slate-700">Lv.1 새내기</div>
@@ -1908,7 +1908,7 @@
             <div class="max-w-6xl mx-auto grid gap-4 lg:grid-cols-3 lg:items-start px-1 pb-8">
                 <div class="mb-2 lg:col-span-3">
                     <h2 class="text-xl sm:text-2xl font-display text-sky-400"><i class="fa-solid fa-building-columns"></i> 삼봉 은행</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">일반예금은 이자가 없어요. 예금과 적금을 합쳐 100 <span data-currency-unit>B</span> 이상이면 3일에 1 <span data-currency-unit>B</span>가 들어와요. 신용불량인 동안에는 이 보너스와 주급, 수업 경험치가 들어오지 않아요. 적금은 30일 잠그고, 끝나면 이자가 붙어요. 대출 한도는 기본 한도에 예금, 적금, 지수 투자 가치를 더한 값이에요.</p>
+                    <p class="text-xs sm:text-sm text-slate-300 mt-1 leading-relaxed">일반예금은 이자가 없어요. 예금과 적금을 합쳐 100 <span data-currency-unit>B</span> 이상이면 3일에 1 <span data-currency-unit>B</span>가 들어와요. 신용불량인 동안에는 이 보너스와 주급, 수업 점수가 안 들어와요. 적금은 30일 잠그고, 끝나면 이자가 붙어요. 빌릴 수 있는 돈은 기본 한도에 예금, 적금, 지수 투자를 더한 값이에요.</p>
                     <div class="app-sub-dock cols-6 mt-3">
                         <button type="button" class="app-sub-item inner-pane-btn is-active" data-pane-group="bank" data-pane="summary" onclick="window.switchInnerPane('bank','summary')">
                             <span class="app-sub-fa"><i class="fa-solid fa-wallet"></i></span>
@@ -1945,21 +1945,21 @@
                     <div class="flex justify-between text-sm"><span class="text-slate-400">일반예금 잔액</span><span id="bankRegularDisplay" class="font-bold text-sky-300">0</span></div>
                     <div class="flex justify-between text-xs border-t border-slate-700 pt-2"><span class="text-slate-500">적금 만기 이자율 (마스터 설정)</span><span class="text-slate-300"><span id="bankRateDisplay">0</span>%</span></div>
                     <div class="flex justify-between text-xs"><span class="text-slate-500">지금 빌릴 수 있는 돈</span><span class="text-slate-300"><span id="bankLoanLimitDisplay">50B</span></span></div>
-                    <p id="bankLoanLimitDetail" class="text-[9px] text-slate-500 leading-snug">기본 한도 + 예금 + 적금 + 지수 투자 가치</p>
-                    <p id="bankDailyBonusLine" class="text-[9px] sm:text-[10px] text-emerald-300/90 leading-snug border-t border-slate-700/80 pt-2"></p>
-                    <p id="bankCreditDefaultLine" class="hidden text-[10px] text-red-300 font-bold leading-snug border-t border-red-800/60 pt-2"></p>
+                    <p id="bankLoanLimitDetail" class="text-xs text-slate-400 leading-relaxed break-words">기본 한도 + 예금 + 적금 + 지수 투자</p>
+                    <p id="bankDailyBonusLine" class="text-xs text-emerald-300/90 leading-relaxed border-t border-slate-700/80 pt-2"></p>
+                    <p id="bankCreditDefaultLine" class="hidden text-xs text-red-200 font-bold leading-relaxed whitespace-pre-line break-words border-t border-red-800/60 pt-2" role="status"></p>
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-rose-500/40 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="loan">
                     <h3 class="text-rose-200 font-bold text-sm"><i class="fa-solid fa-file-invoice-dollar"></i> 대출</h3>
-                    <p class="text-[9px] text-slate-500 leading-relaxed">10봉씩, 학교 가는 날 1일에서 5일 동안 빌릴 수 있어요. 이자는 적금보다 더 세요. 약속한 날이 되면 지갑과 예금에서 자동으로 갚아요. 적금은 빼지 않아요. 갚기 전에는 또 빌릴 수 없어요. 약속한 날을 넘기거나 지갑이 마이너스면 신용불량이에요. 기간은 모자란 돈이나 안 갚은 돈을 30으로 나눈 뒤 올린 날수예요. 그동안 밥줄에서 맨 뒤이고, 주급이나 수업 경험치처럼 자동으로 들어오는 보상은 없어요.</p>
-                    <div id="bankLoanStatus" class="text-[11px] text-slate-300 leading-relaxed border border-slate-700 rounded-xl p-3 bg-slate-950/50"></div>
-                    <div id="bankLoanPreview" class="text-[10px] text-rose-100/90 font-bold"></div>
+                    <p class="text-xs text-slate-300 leading-relaxed">10봉씩, 학교 가는 날 1일에서 5일 동안 빌릴 수 있어요. 이자는 적금보다 더 세요. 갚기 전에는 또 빌릴 수 없어요. 약속한 날이 되거나 지갑이 마이너스면 신용불량이에요. 기간은 모자란 돈이나 안 갚은 돈을 30으로 나눈 뒤 올린 날수예요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 그 기간이 끝나면 남은 빚의 절반을 지갑이랑 예금에서 내요. 적금은 빼지 않아요.</p>
+                    <div id="bankLoanStatus" class="text-xs text-slate-200 leading-relaxed break-words border border-slate-700 rounded-xl p-3 bg-slate-950/50" role="status"></div>
+                    <div id="bankLoanPreview" class="text-xs text-rose-100 font-bold leading-relaxed break-words"></div>
                     <div id="bankLoanForm" class="space-y-2">
                         <label class="block text-[10px] text-slate-400 font-bold">금액 (10봉 단위)
-                            <input type="number" id="bankLoanAmountInput" min="10" step="10" placeholder="빌릴 B" data-currency-placeholder="빌릴 {u}" class="mt-1 w-full bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" oninput="window.previewBankLoan && window.previewBankLoan()" />
+                            <input type="number" id="bankLoanAmountInput" min="10" step="10" inputmode="numeric" placeholder="빌릴 B" data-currency-placeholder="빌릴 {u}" class="mt-1 w-full min-h-[44px] bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-rose-300" oninput="window.previewBankLoan && window.previewBankLoan()" />
                         </label>
                         <label class="block text-[10px] text-slate-400 font-bold">기간 (영업일)
-                            <select id="bankLoanDaysInput" class="mt-1 w-full bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" onchange="window.previewBankLoan && window.previewBankLoan()">
+                            <select id="bankLoanDaysInput" class="mt-1 w-full min-h-[44px] bg-slate-900 border border-rose-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-rose-300" onchange="window.previewBankLoan && window.previewBankLoan()">
                                 <option value="1">1영업일</option>
                                 <option value="2">2영업일</option>
                                 <option value="3" selected>3영업일</option>
@@ -1968,8 +1968,8 @@
                             </select>
                         </label>
                         <div class="flex gap-2 flex-wrap items-center">
-                            <button type="button" onclick="window.previewBankLoan()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl text-xs">이자 미리보기</button>
-                            <button type="button" onclick="void window.takeBankLoan()" class="js-bank-loan-btn bg-rose-700 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-xl text-xs">대출 받기</button>
+                            <button type="button" onclick="window.previewBankLoan()" class="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-xl text-sm focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-slate-300">이자 미리보기</button>
+                            <button type="button" onclick="void window.takeBankLoan()" class="js-bank-loan-btn min-h-[44px] bg-rose-700 hover:bg-rose-600 text-white font-bold py-2 px-4 rounded-xl text-sm focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-rose-300">대출 받기</button>
                         </div>
                     </div>
                     <div id="bankLoanPartialRow" class="hidden flex gap-2 flex-wrap items-center">
@@ -2015,13 +2015,13 @@
                 </div>
                 <div class="inner-pane hidden glass-panel p-4 sm:p-5 rounded-2xl border border-amber-400/45 space-y-3 lg:col-span-3" data-pane-group="bank" data-pane="invest">
                     <h3 class="text-amber-200 font-bold text-sm"><i class="fa-solid fa-chart-line"></i> 코스피 · 코스닥 · 나스닥 투자</h3>
-                    <p class="text-[9px] text-slate-400 leading-relaxed">지갑에서 10봉에서 1000봉까지 넣을 수 있어요. 실제 지수가 오르내리면 받을 돈도 조금 달라져요. 같은 시장에 더 살 수 있고, 산 가격은 평균으로 합쳐져요. 팔 때는 원금 중 얼마를 팔지 숫자를 적어요. 칸을 비우면 전부 팔아요. 일부를 남기려면 10봉 이상 남아야 해요. 판 돈은 지갑으로 들어와요. 하루 이익은 최대 8봉이에요. 사고팔기 기록은 아래에 남아요.</p>
+                    <p class="text-xs text-slate-300 leading-relaxed">지갑에서 10봉에서 1000봉까지 넣을 수 있어요. 실제 지수가 오르내리면 받을 돈도 조금 달라져요. 같은 시장에 더 살 수 있고, 산 가격은 평균으로 합쳐져요. 팔 때는 얼마를 팔지 숫자를 적어요. 칸을 비우면 전부 팔아요. 일부를 남기려면 10봉 이상 남아야 해요. 판 돈은 지갑으로 들어와요. 하루 이익은 최대 8봉이에요. 사고팔기 기록은 아래에 남아요.</p>
                     <div id="bankInvestQuoteLine" class="text-[10px] text-amber-100 font-bold">지수를 불러오는 중…</div>
                     <div class="flex gap-2 flex-wrap items-center">
                         <input type="number" id="bankInvestAmount" min="10" max="1000" step="1" placeholder="투자 B" data-currency-placeholder="투자 {u}" class="flex-1 min-w-[120px] bg-slate-900 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-sm font-bold" />
-                        <button type="button" onclick="void window.buyStockIndex('kospi')" class="js-stock-trade-btn bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">코스피 매수</button>
-                        <button type="button" onclick="void window.buyStockIndex('kosdaq')" class="js-stock-trade-btn bg-lime-700 hover:bg-lime-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">코스닥 매수</button>
-                        <button type="button" onclick="void window.buyStockIndex('nasdaq')" class="js-stock-trade-btn bg-sky-700 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-xl text-xs shrink-0">나스닥 매수</button>
+                        <button type="button" onclick="void window.buyStockIndex('kospi')" class="js-stock-trade-btn min-h-[44px] bg-amber-700 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-xl text-sm shrink-0 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300">코스피 사기</button>
+                        <button type="button" onclick="void window.buyStockIndex('kosdaq')" class="js-stock-trade-btn min-h-[44px] bg-lime-700 hover:bg-lime-600 text-white font-bold py-2 px-3 rounded-xl text-sm shrink-0 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-lime-300">코스닥 사기</button>
+                        <button type="button" onclick="void window.buyStockIndex('nasdaq')" class="js-stock-trade-btn min-h-[44px] bg-sky-700 hover:bg-sky-600 text-white font-bold py-2 px-3 rounded-xl text-sm shrink-0 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-sky-300">나스닥 사기</button>
                     </div>
                     <div id="bankInvestPositions" class="space-y-2"></div>
                 </div>
@@ -3823,7 +3823,7 @@
                 </div>
             </div>
             <p id="loanMorningBody" class="text-sm text-red-50 leading-relaxed whitespace-pre-wrap font-bold"></p>
-            <p class="text-[11px] text-amber-100 leading-relaxed">약속한 날을 넘기면 바로 신용불량이에요. 기간은 안 갚은 돈을 30으로 나눈 뒤 올린 날수예요. 그동안 밥줄에서 맨 뒤이고, 주급이나 수업 경험치가 자동으로 들어오지 않아요. 기간이 끝나면 남은 빚의 절반을 내고, 나머지는 학교 가는 날 5일 안에 갚아야 해요. 대출을 다 갚고 지갑이 0 이상이면 이 정지는 풀려요.</p>
+            <p class="text-xs text-amber-100 leading-relaxed">약속한 날이 되면 바로 신용불량이에요. 기간은 안 갚은 돈을 30으로 나눈 뒤 올린 날수예요. 그동안 밥줄에서 맨 뒤이고, 주급이랑 수업 점수는 자동으로 안 들어와요. 기간이 끝나면 남은 빚의 절반을 내고, 나머지는 학교 가는 날 5일 안에 갚아야 해요. 빌린 돈을 다 갚고 지갑이 0 이상이면 바로 풀려요.</p>
             <div class="flex gap-2">
                 <button type="button" onclick="window.dismissLoanMorningNotice(true)" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-black py-2 rounded-xl text-xs min-h-[44px]">은행으로 가서 갚기</button>
                 <button type="button" onclick="window.dismissLoanMorningNotice(false)" class="flex-1 bg-slate-800 text-slate-200 font-bold py-2 rounded-xl text-xs min-h-[44px]">오늘은 알았음</button>

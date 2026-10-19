@@ -24,6 +24,9 @@ describe('신용불량 자동 지급', () => {
         assert.equal(blocked.reason, 'credit-default');
         assert.equal(blocked.pay, 10);
         assert.equal(weeklySalaryGrantPlan({ jobs: [] }, catalog, '2026-10-16').reason, 'no-pay');
+        const minusOnly = weeklySalaryGrantPlan({ jobs, bong: -5 }, catalog, '2026-10-16');
+        assert.equal(minusOnly.grant, false);
+        assert.equal(minusOnly.reason, 'credit-default');
     });
 
     it('예금 주기 보너스도 신용불량 중에는 막습니다', () => {
@@ -35,5 +38,6 @@ describe('신용불량 자동 지급', () => {
         assert.equal(bankBonusBlocked({
             loanPenaltyUntilYmd: '2026-10-18',
         }, '2026-10-18'), false);
+        assert.equal(bankBonusBlocked({ bong: -2 }, '2026-10-16'), true);
     });
 });

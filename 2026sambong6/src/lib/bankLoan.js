@@ -206,10 +206,14 @@ export function loanDueTotal(loan) {
     return clean.principal + clean.interest;
 }
 
+function isYmd(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+}
+
 export function isCreditDefaultOn(state, todayYmd) {
     const until = String(state && state.creditDefaultUntilYmd || '').trim();
     const today = String(todayYmd || '');
-    return !!(until && today && today < until);
+    return !!(isYmd(until) && isYmd(today) && today < until);
 }
 
 /** 대출 연체로 시작한 신용불량입니다. today < until 인 동안 유지됩니다. */
@@ -219,25 +223,58 @@ export function isLoanPenaltyActive(state, todayYmd) {
     return !!(until && /^\d{4}-\d{2}-\d{2}$/.test(until) && today && today < until);
 }
 
-/** 연체 또는 마이너스 잔액으로 신용불량인 날입니다. */
+function walletIsNegative(state) {
+    const n = Number(state && state.bong);
+    return Number.isFinite(n) && Math.floor(n) < 0;
+}
+
+/** 도장이 없어도, 약속한 날이 된 대출은 신용불량으로 봅니다. */
+function loanIsOverdue(state, todayYmd) {
+    const today = String(todayYmd || '');
+    if (!isYmd(today)) return false;
+    const raw = state && state.bankLoan;
+    if (!loanStillOutstanding(raw)) return false;
+    const clean = sanitizeBankLoan(raw);
+    const due = String((clean && clean.dueYmd) || (raw && raw.dueYmd) || '').trim();
+    return isYmd(due) && today >= due;
+}
+
+/**
+ * 연체 도장, 마이너스 도장, 지갑 마이너스, 약속한 날이 된 대출 중 하나면 신용불량입니다.
+ * 도장이 저장되기 전에도 밥줄과 자동 지급이 같은 기준으로 움직입니다.
+ */
 export function isStudentCreditDefault(state, todayYmd) {
-    return isCreditDefaultOn(state, todayYmd) || isLoanPenaltyActive(state, todayYmd);
+    return isCreditDefaultOn(state, todayYmd)
+        || isLoanPenaltyActive(state, todayYmd)
+        || walletIsNegative(state)
+        || loanIsOverdue(state, todayYmd);
+}
+
+function creditUntilLine(untilYmd) {
+    const until = String(untilYmd || '').trim();
+    if (!isYmd(until)) return '';
+    const last = addCalendarDaysYmd(until, -1);
+    return last ? `${last}까지예요.` : '';
 }
 
 export function loanPenaltyBlockMessage(untilYmd) {
-    const until = String(untilYmd || '');
-    const last = until ? addCalendarDaysYmd(until, -1) : '';
-    return last
-        ? `신용불량입니다. ${last}까지예요.\n빌린 돈을 약속한 날까지 갚지 않아서 그래요.\n밥줄에서는 항상 맨 뒤이고, 주급이나 수업 경험치처럼 자동으로 들어오는 보상은 없어요.\n대출을 다 갚으면 이 정지는 풀려요.`
-        : '신용불량입니다.\n밥줄에서는 항상 맨 뒤이고, 자동으로 들어오는 보상은 없어요.\n대출을 다 갚으면 이 정지는 풀려요.';
+    const when = creditUntilLine(untilYmd);
+    return [
+        when ? `신용불량이에요. ${when}` : '신용불량이에요.',
+        '빌린 돈을 약속한 날까지 갚지 않아서 그래요.',
+        '밥줄에서는 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.',
+        '빌린 돈을 다 갚고 지갑이 0 이상이면 바로 풀려요.',
+    ].join('\n');
 }
 
 export function creditDefaultBlockMessage(untilYmd) {
-    const until = String(untilYmd || '');
-    const last = until ? addCalendarDaysYmd(until, -1) : '';
-    return last
-        ? `신용불량입니다. ${last}까지예요.\n지갑이 마이너스이거나, 빌린 돈을 제때 갚지 않았어요.\n밥줄에서는 항상 맨 뒤이고, 주급이나 수업 경험치처럼 자동으로 들어오는 보상은 없어요.`
-        : '신용불량입니다.\n밥줄에서는 항상 맨 뒤이고, 자동으로 들어오는 보상은 없어요.';
+    const when = creditUntilLine(untilYmd);
+    return [
+        when ? `신용불량이에요. ${when}` : '신용불량이에요.',
+        '지갑이 마이너스이거나, 빌린 돈을 제때 갚지 않았어요.',
+        '밥줄에서는 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.',
+        '지갑이 다시 0 이상이어도, 적힌 날까지는 신용불량이에요.',
+    ].join('\n');
 }
 
 /**
@@ -269,25 +306,25 @@ export function collectLoanRepayment({ bong, regular, due }) {
 }
 
 export function takeLoanFailMessage(reason, { limit, unit = 'B' } = {}) {
-    if (reason === 'default') return '신용불량인 동안에는 대출을 받을 수 없어요.';
+    if (reason === 'default') return '신용불량인 동안에는 빌릴 수 없어요.';
     if (reason === 'penalty') return loanPenaltyBlockMessage();
-    if (reason === 'active') return '이미 진행 중인 대출이 있습니다. 갚은 뒤에 다시 신청하세요.';
-    if (reason === 'disabled') return '현재 학급에서는 대출이 닫혀 있습니다.';
-    if (reason === 'amount') return `대출은 ${LOAN_MIN_UNIT}${unit} 단위이며 최소 ${LOAN_MIN_UNIT}${unit}입니다.`;
+    if (reason === 'active') return '아직 갚지 않은 대출이 있어요. 다 갚은 뒤에 또 빌릴 수 있어요.';
+    if (reason === 'disabled') return '지금은 빌릴 수 있는 돈이 없어요.';
+    if (reason === 'amount') return `${LOAN_MIN_UNIT}${unit}씩만 빌릴 수 있어요.`;
     if (reason === 'limit') {
         const shown = normalizeLoanCap(limit);
-        return `지금 빌릴 수 있는 한도는 ${shown}${unit}예요.\n선생님이 정한 기본 한도에 예금, 적금, 지수 투자 가치를 더한 값입니다.`;
+        return `지금 빌릴 수 있는 돈은 ${shown}${unit}예요.\n기본 한도에 예금, 적금, 지수 투자를 더한 값이에요.`;
     }
-    if (reason === 'days') return `대출 기간은 1~${LOAN_MAX_BUSINESS_DAYS}영업일입니다.`;
-    if (reason === 'date') return '날짜를 확인할 수 없어 대출을 진행하지 못했습니다.';
-    return '대출을 진행할 수 없습니다.';
+    if (reason === 'days') return `기간은 학교 가는 날 1일에서 ${LOAN_MAX_BUSINESS_DAYS}일이에요.`;
+    if (reason === 'date') return '날짜를 몰라서 지금은 빌릴 수 없어요.';
+    return '지금은 빌릴 수 없어요.';
 }
 
 export function repayLoanFailMessage(reason) {
-    if (reason === 'none') return '갚을 대출이 없습니다.';
-    if (reason === 'amount') return '갚을 금액을 1봉 이상, 남은 빚 이하로 입력하세요.';
-    if (reason === 'funds') return '지갑과 일반예금이 그 금액보다 적습니다. 있는 만큼만 입력하세요.';
-    return '대출을 갚을 수 없습니다.';
+    if (reason === 'none') return '갚을 대출이 없어요.';
+    if (reason === 'amount') return '1봉 이상, 남은 빚 이하로 적어 주세요.';
+    if (reason === 'funds') return '지갑이랑 예금을 합쳐도 그 돈보다 적어요. 있는 만큼만 적어 주세요.';
+    return '지금은 갚을 수 없어요.';
 }
 
 /** 이자를 먼저 줄이고, 남으면 원금을 줄입니다. 둘 다 0이면 대출이 끝납니다. */

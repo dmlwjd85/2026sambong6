@@ -9440,6 +9440,8 @@ ${subjectLine}
             bong = life.bong;
             regular = life.bankRegularSavings;
             const creditBlocksBonus = bankBonusBlocked({
+                bong,
+                bankLoan: life.bankLoan,
                 creditDefaultUntilYmd: life.creditDefaultUntilYmd,
                 loanPenaltyUntilYmd: life.loanPenaltyUntilYmd,
             }, today);
@@ -22879,10 +22881,10 @@ ${subjectLine}
                 if (inDefault) {
                     loanStatus.innerHTML = `<span class="text-red-300 font-bold">${playerCreditDefaultMessage().replace(/\n/g, '<br>')}</span>`;
                 } else if (loan) {
-                    loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
+                    loanStatus.innerHTML = `지금 빌린 돈 <b class="text-white">${formatBongAmountHtml(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmountHtml(loan.interest)}</b><br>약속한 날 <b class="text-amber-200">${loan.dueYmd}</b> · 합계 ${formatBongAmountHtml(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 또 빌릴 수 없어요.</span>`;
                 } else if (outstanding) {
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
-                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
+                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약속한 날 ${dueLeft})` : '');
                 } else if (cap < LOAN_MIN_UNIT) {
                     loanStatus.textContent = '지금 빌릴 수 있는 돈이 없어요. 예금, 적금, 지수 투자가 생기면 그 만큼 더해져요.';
                 } else {
@@ -23023,7 +23025,7 @@ ${subjectLine}
             if (!row || !row.held) return '<span class="text-slate-600">—</span>';
             const delta = Number(row.delta) || 0;
             const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
-            const deltaTxt = delta > 0 ? `+${formatBongAmount(delta)}` : formatBongAmount(delta);
+            const deltaTxt = delta > 0 ? formatMoneyHtml(`+${formatBongAmount(delta)}`, 1) : formatBongAmountHtml(delta);
             return `<div class="text-right leading-tight">
                 <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
                 <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
@@ -23091,45 +23093,50 @@ ${subjectLine}
                     return `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/50 text-[10px] text-slate-400">${m.name} 보유 없음 · ${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 매수</div>`;
                 }
                 const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
-                const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
+                const deltaTxt = settled.delta > 0
+                    ? formatMoneyHtml(`+${formatBongAmount(settled.delta)}`, 1)
+                    : formatBongAmountHtml(settled.delta);
                 const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
                 const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
                 const room = stockInvestRoom(pos);
                 const roomTxt = room >= STOCK_INVEST_MIN
-                    ? `추가 매수 가능 ${formatBongAmount(room)}`
-                    : '추가 매수 한도 가득';
+                    ? `더 살 수 있는 돈 ${formatBongAmountHtml(room)}`
+                    : '더 살 수 있는 한도가 가득 찼어요';
                 return `<div class="border border-amber-500/35 rounded-xl p-3 bg-slate-900/70">
                     <div class="flex justify-between gap-2 items-start">
                         <div class="min-w-0">
                             <div class="text-amber-100 font-bold text-sm">${m.name}</div>
-                            <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
-                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
-                            <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
+                            <div class="text-xs text-slate-400 mt-0.5">원금 ${formatBongAmountHtml(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
+                            <div class="text-xs ${deltaCls} font-bold mt-1">평가 ${formatBongAmountHtml(settled.payout)} (${deltaTxt} · ${retTxt})</div>
+                            <div class="text-xs text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
                     </div>
-                    <div class="flex gap-2 flex-wrap items-center mt-2">
-                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
-                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
-                    </div>
+                    <label class="block text-xs text-slate-200 font-bold mt-2" for="bankInvestSell_${m.id}">얼마를 팔까요?
+                        <span class="block font-normal text-slate-400 mt-0.5">비우면 전부 팔아요. 남기려면 10봉 이상 남아야 해요.</span>
+                        <span class="flex gap-2 flex-wrap items-center mt-1">
+                            <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" inputmode="numeric" aria-label="${m.name} 팔 원금" placeholder="예: 30" class="flex-1 min-w-[8rem] min-h-[44px] bg-slate-950 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300" />
+                            <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn shrink-0 min-h-[44px] min-w-[44px] bg-amber-800 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300"${_stockTradeBusy ? ' disabled' : ''}>팔기</button>
+                        </span>
+                    </label>
                 </div>`;
             });
             const history = sanitizeStockHistory(window.playerState.stockInvestHistory);
             const historyHtml = history.length
                 ? `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/40">
-                    <div class="text-[10px] font-bold text-slate-200 mb-1">사고팔기 기록</div>
+                    <div class="text-xs font-bold text-slate-200 mb-1">사고팔기 기록</div>
                     ${history.slice().reverse().slice(0, 8).map((row) => {
                         const market = getStockMarket(row.marketId);
                         const name = market ? market.name : row.marketId;
                         const when = row.date || '';
                         if (row.kind === 'sell') {
-                            const left = row.full ? '전부 팔았어요' : `남은 원금 ${formatBongAmount(row.remaining)}`;
-                            return `<div class="text-[10px] text-slate-300 leading-snug py-0.5">${when} · ${name} ${formatBongAmount(row.amount)} 팔기 · 지갑 ${formatBongAmountHtml(row.payout)} · ${left}</div>`;
+                            const left = row.full ? '전부 팔았어요' : `남은 원금 ${formatBongAmountHtml(row.remaining)}`;
+                            return `<div class="text-xs text-slate-300 leading-snug py-0.5 break-words">${when} · ${name} ${formatBongAmountHtml(row.amount)} 팔기 · 지갑 ${formatBongAmountHtml(row.payout)} · ${left}</div>`;
                         }
-                        return `<div class="text-[10px] text-slate-300 leading-snug py-0.5">${when} · ${name} ${formatBongAmount(row.amount)} 사기</div>`;
+                        return `<div class="text-xs text-slate-300 leading-snug py-0.5 break-words">${when} · ${name} ${formatBongAmountHtml(row.amount)} 사기</div>`;
                     }).join('')}
                 </div>`
-                : '<p class="text-[10px] text-slate-500">아직 사고팔기 기록이 없어요. 일부를 팔면 여기에 남아요.</p>';
+                : '<p class="text-xs text-slate-500">아직 사고팔기 기록이 없어요. 일부를 팔면 여기에 남아요.</p>';
             box.innerHTML = `${rows.join('')}<div id="bankInvestHistory" class="pt-1">${historyHtml}</div>`;
         }
 
@@ -23149,9 +23156,9 @@ ${subjectLine}
                 : `${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉만 투자할 수 있습니다.`;
         }
         function stockSellFailMessage(reason, max) {
-            return reason === 'none' ? '매도할 투자가 없습니다.'
-                : reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 합니다. 전액을 팔거나 원금을 더 남겨 주세요.`
-                : `팔 원금은 1~${formatBongAmount(max || 0)}만 입력할 수 있습니다. 칸을 비우면 전액 매도입니다.`;
+            return reason === 'none' ? '팔 투자가 없어요.'
+                : reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 해요. 전부 팔거나 더 남겨 주세요.`
+                : `팔 돈은 1에서 ${formatBongAmount(max || 0)}까지예요. 칸을 비우면 전부 팔아요.`;
         }
 
         window.buyStockIndex = async function(marketId) {
@@ -23476,8 +23483,8 @@ ${subjectLine}
                 if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
                 await window.customAlert(
                     cap < LOAN_MIN_UNIT
-                        ? '1인당 대출 한도를 0으로 저장했습니다. 대출이 닫힙니다.'
-                        : `1인당 대출 한도를 ${formatBongAmount(cap)}로 저장했습니다.`
+                        ? '기본 한도를 0으로 저장했어요. 예금, 적금, 지수 투자가 있으면 그 합만큼은 빌릴 수 있어요.'
+                        : `기본 한도를 ${formatBongAmount(cap)}로 저장했어요. 학생 한도는 여기에 예금, 적금, 지수 투자를 더한 값이에요.`
                 );
             } catch (e) {
                 window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -23499,7 +23506,7 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                preview.textContent = `약정일 ${loan.dueYmd}에 ${formatBongAmount(loanDueTotal(loan))}가 자동이체됩니다. 갚기 전에는 새 대출이 되지 않습니다.`;
+                preview.textContent = `약속한 날 ${loan.dueYmd}. 이 날이 되면 신용불량이에요. 기간이 끝나면 남은 빚의 절반을 내요. 갚기 전에는 또 빌릴 수 없어요.`;
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
@@ -23513,14 +23520,14 @@ ${subjectLine}
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
             const cap = getPersonalLoanLimit(window.playerState);
             if (!amount) {
-                preview.textContent = opts.silent ? `한도 ${formatBongAmount(cap)} · 이자율 ${rate}% · 최소 이자 1봉` : `금액을 ${LOAN_MIN_UNIT}봉 단위로 입력하세요.`;
+                preview.textContent = opts.silent ? `한도 ${formatBongAmount(cap)} · 이자 ${rate}% · 이자는 최소 1봉` : '10봉씩 적어 주세요.';
                 return;
             }
             const interest = computeLoanInterest(amount, days, rate);
             const dueYmd = planTakeLoan({
                 amount, days, ratePercent: rate, limit: cap, todayYmd: getLocalDateStr(), calendar: getBankLoanCalendar(), nowMs: 1,
             }).loan?.dueYmd || '';
-            preview.textContent = `${formatBongAmount(amount)} / ${days}영업일 → 이자 ${formatBongAmount(interest)} · 약정 합계 ${formatBongAmount(amount + interest)}${dueYmd ? ` · 약정일 ${dueYmd}` : ''}`;
+            preview.textContent = `${formatBongAmount(amount)} · 학교 가는 날 ${days}일 · 이자 ${formatBongAmount(interest)} · 갚을 돈 ${formatBongAmount(amount + interest)}${dueYmd ? ` · 약속한 날 ${dueYmd}` : ''}`;
         };
 
         window.takeBankLoan = async function() {
@@ -23547,9 +23554,9 @@ ${subjectLine}
                 });
                 if (!plan.ok) return window.customAlert(takeLoanFailMessage(plan.reason, { limit: cap, unit: getCurrencyUnit() }));
                 const ok = await window.customConfirm(
-                    `대출 ${formatBongAmount(plan.loan.principal)}를 ${plan.loan.days}영업일 받을까요?\n` +
-                    `이자 ${formatBongAmount(plan.loan.interest)} (적금 이율 ${rate}% × 1.5배 · 최소 1봉)\n` +
-                    `약정일 ${plan.loan.dueYmd}에 합계 ${formatBongAmount(plan.due)}가 지갑→일반예금 순으로 자동이체됩니다.\n적금은 건드리지 않습니다.`
+                    `${formatBongAmount(plan.loan.principal)}를 학교 가는 날 ${plan.loan.days}일 동안 빌릴까요?\n` +
+                    `이자는 ${formatBongAmount(plan.loan.interest)}예요.\n` +
+                    `약속한 날은 ${plan.loan.dueYmd}예요. 그날이 되면 신용불량이 시작되고, 기간이 끝나면 남은 빚의 절반을 내요.\n적금은 빼지 않아요.`
                 );
                 if (!ok) return;
                 const saved = await saveDataToCloud({
@@ -24006,8 +24013,8 @@ ${subjectLine}
                 `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
                 `약속한 날 ${loan.dueYmd}\n\n` +
                 (penalty
-                    ? '약속한 날을 넘겼어요. 신용불량이라 밥줄에서 맨 뒤이고, 자동으로 들어오는 보상은 없어요.'
-                    : '이 날이 지나기 전에 갚아 주세요. 일부만 갚아도 돼요. 미루면 신용불량이 됩니다.');
+                    ? '약속한 날이 됐어요. 신용불량이라 밥줄에서 맨 뒤예요. 주급이랑 수업 점수는 자동으로 안 들어와요.'
+                    : '약속한 날부터 신용불량이에요. 그 전에 갚아 주세요. 일부만 갚아도 돼요.');
             modal.classList.remove('hidden');
         };
 
@@ -24499,7 +24506,11 @@ ${subjectLine}
                 dashCard.classList.toggle('is-credit-default', studentIsCreditDefault(window.playerState));
             }
             const dashStamp = document.getElementById('dashCreditStamp');
-            if (dashStamp) dashStamp.classList.toggle('hidden', !studentIsCreditDefault(window.playerState));
+            if (dashStamp) {
+                const creditOn = studentIsCreditDefault(window.playerState);
+                dashStamp.classList.toggle('hidden', !creditOn);
+                dashStamp.setAttribute('aria-hidden', creditOn ? 'false' : 'true');
+            }
             const dashRankBg = document.getElementById('dashRankBg');
             if (dashRankBg) {
                 // 등급 그림은 원형 캐릭터 뒤에만 두고, 카드 배경은 원래 그라데이션을 유지합니다.

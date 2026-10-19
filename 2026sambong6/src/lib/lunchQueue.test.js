@@ -56,7 +56,8 @@ describe('밥줄 신용불량 순서', () => {
             { id: '2', xp: 5, bong: 20, lunchBid: { date: today, amount: 3 } },
             { id: '3', xp: 50, bong: 8, lunchBid: { date: today, amount: 1 } },
             { id: '4', xp: 1, bong: 4, loanPenaltyUntilYmd: '2026-10-18', lunchBid: { date: today, amount: 99 } },
+            { id: '5', xp: 1, bong: -1, lunchBid: { date: today, amount: 200 } },
         ];
-        assert.deepEqual(sortLunchQueue(rows, today).map((s) => s.id), ['2', '3', '4', '1']);
+        assert.deepEqual(sortLunchQueue(rows, today).map((s) => s.id), ['2', '3', '5', '4', '1']);
     });
 });

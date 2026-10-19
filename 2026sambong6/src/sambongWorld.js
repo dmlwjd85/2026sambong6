@@ -662,6 +662,7 @@ import {
 import {
     countRebukeReceivedToday,
     defaultRebukeConfig,
+    isRebukeStaffId,
     planPeerRebuke,
     rebukeFailMessage,
     rebukePublicEvent,
@@ -671,6 +672,7 @@ import {
     receivedRebukeCount,
     visibleRebukeReasons,
 } from './lib/peerRebuke.js';
+import { QUEST_DROP_SAVES_SEPARATELY, resolveSavedBong } from './lib/saveBong.js';
 import {
     buildScreenNotice,
     closeScreenNotice,
@@ -3329,7 +3331,7 @@ function redrawPlazaGrantsUi() {
             const batch = writeBatch(db);
             if (rebukeSeason) {
                 batch.set(classOpsRef('rebukeConfig'), {
-                    enabled: rebukeSeason.enabled !== false,
+                    enabled: rebukeSeason.enabled === true,
                     epoch: nextRebukeEpoch,
                     roster: rebukeSeason.roster || {},
                 });
@@ -3360,6 +3362,7 @@ function redrawPlazaGrantsUi() {
                 batch.set(doc(db, 'secrets', id), { pin: newPin });
             }
             await batch.commit();
+            if (rebukeSeason) await clearOldRebukeReasons(id, nextRebukeEpoch);
             return { newPin, displayName: classData.displayName || id, inviteCode: classData.inviteCode || '' };
         }
 
@@ -20787,11 +20790,12 @@ ${subjectLine}
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
                 const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉" aria-label="따봉 ${praiseCount}개">👍 ${praiseCount}</button>`;
                 const rebukeBtn = `<button type="button" class="rebuke-btn" onclick="event.stopPropagation(); void window.givePeerRebuke('${targetId}')" title="역따봉" aria-label="역따봉">역따봉</button>`;
-                const praiseRow = `<div class="plaza-praise-row">${praiseBtn}${rebukeBtn}</div>`;
+                const teacherCard = canEdit && !isGMCard;
+                const praiseRow = `<div class="plaza-praise-row${teacherCard ? ' is-teacher' : ''}">${praiseBtn}${rebukeBtn}</div>`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
-                    <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
+                    <div class="plaza-card-core${teacherCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">
                             ${shieldHtml}${jobHtml}${condHtml}
@@ -20802,7 +20806,7 @@ ${subjectLine}
                                 <div class="plaza-card-lv text-[8px] font-bold ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             </div>
                             <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
-                            ${praiseRow}
+                            ${teacherCard ? '' : praiseRow}
                             ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
                         ${gmBongSide}
@@ -20814,6 +20818,7 @@ ${subjectLine}
                         ${buildPlazaLearningThermometerHtml(targetId)}
                         <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
+                    ${teacherCard ? praiseRow : ''}
                 </div>`;
             };
 
@@ -23417,10 +23422,18 @@ ${subjectLine}
             const src = data && typeof data === 'object' ? data : {};
             const roster = src.roster && typeof src.roster === 'object' ? { ...src.roster } : {};
             return {
-                enabled: src.enabled !== false,
+                enabled: src.enabled === true,
                 epoch: Math.max(1, Math.floor(Number(src.epoch) || 1)),
                 roster,
             };
+        }
+
+        function rebukeEventForViewer(raw) {
+            const row = rebukePublicEvent(raw);
+            const me = String(localStorage.getItem('sambong_student_id') || '');
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            if (admin || row.toId === me) return row;
+            return { ...row, reason: '' };
         }
 
         function applyRebukePublicLoad(cfgSnap, eventSnap) {
@@ -23429,7 +23442,7 @@ ${subjectLine}
                 : defaultRebukeConfig();
             const entries = [];
             if (eventSnap && typeof eventSnap.forEach === 'function') {
-                eventSnap.forEach((row) => entries.push(rebukePublicEvent(row.data())));
+                eventSnap.forEach((row) => entries.push(rebukeEventForViewer(row.data())));
             }
             window._rebukeEvents = entries;
             window._rebukeBoard = { entries };
@@ -23809,6 +23822,64 @@ ${subjectLine}
             document.getElementById('rebukeSelfModal')?.classList.remove('hidden');
         }
 
+        function rebukeSentMemoryKey(ymd) {
+            return `sambong_rebuke_sent_${ymd}`;
+        }
+
+        function readRebukeSentMemory(ymd) {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(rebukeSentMemoryKey(ymd)) || '[]');
+                return Array.isArray(parsed) ? parsed.map((id) => String(id)) : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function rememberRebukeSent(ymd, toId) {
+            const cur = readRebukeSentMemory(ymd);
+            const id = String(toId || '');
+            if (!id || cur.includes(id)) return;
+            cur.push(id);
+            localStorage.setItem(rebukeSentMemoryKey(ymd), JSON.stringify(cur));
+        }
+
+        async function loadOwnRebukeCharges() {
+            if (!db || !auth || !auth.currentUser) return [];
+            const snap = await getDocs(query(
+                collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeCharges', 'items'),
+                where('authUid', '==', auth.currentUser.uid)
+            ));
+            const rows = [];
+            snap.forEach((row) => rows.push({ id: row.id, ...(row.data() || {}) }));
+            return rows;
+        }
+
+        function rebukeLimitReason(target, cfg, charges) {
+            const day = rebukeTodayYmd();
+            const epoch = Math.floor(Number(cfg && cfg.epoch) || 0);
+            const todayCharges = (Array.isArray(charges) ? charges : []).filter((row) => (
+                String(row.ymd || '') === day && Math.floor(Number(row.epoch) || 0) === epoch
+            ));
+            const memory = readRebukeSentMemory(day);
+            const id = String(target || '');
+            if (todayCharges.some((row) => String(row.toId || '') === id) || memory.includes(id)) return 'pair';
+            if (todayCharges.length >= 3 || memory.length >= 3) return 'send';
+            const rosterEpoch = rebukeRosterEpoch(cfg || defaultRebukeConfig(), id);
+            if (countRebukeReceivedToday(window._rebukeEvents || [], id, day, epoch, rosterEpoch) >= 3) return 'receive';
+            return '';
+        }
+
+        function rebukeWriteFailureMessage(error, fallback) {
+            if (error && error.alreadyNotified) return '';
+            if (firestorePermissionDenied(error)) return '선생님 비밀번호 세션이 없어 저장하지 못했어요. 비밀번호를 다시 확인해 주세요.';
+            return fallback;
+        }
+
+        async function rebukeTeacherWriteAuth() {
+            if (!window.playerState || !window.playerState.isAdmin) return false;
+            return requireGmSettingsAuth();
+        }
+
         async function loadRebukeAudit() {
             const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeAudit', 'items'));
             const map = {};
@@ -23823,15 +23894,40 @@ ${subjectLine}
             return ids;
         }
 
-        async function openRebukeTeacher(toId) {
-            window._rebukeTeacherFocus = String(toId || '');
-            const modal = document.getElementById('rebukeTeacherModal');
-            const list = document.getElementById('rebukeTeacherList');
+        function syncRebukeToggleLabel() {
             const toggle = document.getElementById('rebukeToggleBtn');
-            if (modal) modal.classList.remove('hidden');
             const cfg = window._rebukeConfig || defaultRebukeConfig();
-            if (toggle) toggle.textContent = cfg.enabled === false ? '반 전체 역따봉 켜기' : '반 전체 역따봉 끄기';
-            if (list) list.innerHTML = '<p class="text-sm text-slate-300">불러오는 중이에요.</p>';
+            if (toggle) toggle.textContent = cfg.enabled === true ? '반 전체 역따봉 끄기' : '반 전체 역따봉 켜기';
+        }
+
+        function watchRebukeTeacher() {
+            if (window._rebukeTeacherUnsub || !db) return;
+            const col = collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeEvents', 'items');
+            window._rebukeTeacherUnsub = onSnapshot(col, (snap) => {
+                const entries = [];
+                snap.forEach((row) => entries.push(rebukeEventForViewer(row.data())));
+                window._rebukeEvents = entries;
+                window._rebukeBoard = { entries };
+                const modal = document.getElementById('rebukeTeacherModal');
+                if (modal && !modal.classList.contains('hidden')) void renderRebukeTeacherList();
+            });
+        }
+
+        window.closeRebukeTeacher = function() {
+            document.getElementById('rebukeTeacherModal')?.classList.add('hidden');
+            if (typeof window._rebukeTeacherUnsub === 'function') {
+                window._rebukeTeacherUnsub();
+                window._rebukeTeacherUnsub = null;
+            }
+        };
+
+        async function renderRebukeTeacherList() {
+            const list = document.getElementById('rebukeTeacherList');
+            const focus = String(window._rebukeTeacherFocus || '');
+            syncRebukeToggleLabel();
+            if (!list) return;
+            const token = (window._rebukeTeacherRender || 0) + 1;
+            window._rebukeTeacherRender = token;
             let audit = {};
             let refunds = new Set();
             try {
@@ -23840,13 +23936,12 @@ ${subjectLine}
                     [audit, refunds] = await Promise.all([loadRebukeAudit(), loadRebukeRefunds()]);
                 }
             } catch (e) {
-                console.warn('openRebukeTeacher', e);
+                console.warn('renderRebukeTeacherList', e);
             }
-            const focus = String(toId || '');
+            if (token !== window._rebukeTeacherRender) return;
             const rows = (window._rebukeEvents || [])
                 .filter((row) => String(row.toId || '') === focus)
                 .sort((a, b) => Math.floor(Number(b.seq) || 0) - Math.floor(Number(a.seq) || 0));
-            if (!list) return;
             if (!rows.length) {
                 list.innerHTML = '<p class="text-sm text-slate-400">이 친구에게 온 역따봉이 없어요.</p>';
                 return;
@@ -23856,19 +23951,33 @@ ${subjectLine}
                 const from = audit[eventId] || {};
                 const sender = from.fromId ? rebukeStudentLabel(from.fromId) : null;
                 const senderLine = sender ? `${escapeRebukeHtml(sender.id)}번 ${escapeRebukeHtml(sender.name)}` : '보낸 사람 확인 중';
-                const uid = from.authUid ? `<span class="block text-[10px] text-slate-500 break-all">로그인 ${escapeRebukeHtml(from.authUid)}</span>` : '';
+                const uidShort = from.authUid ? String(from.authUid).slice(0, 6) : '';
+                const uid = uidShort ? `<span class="block text-[10px] text-slate-500">로그인 기기 번호 ${escapeRebukeHtml(uidShort)}</span>` : '';
                 const reason = row.hidden ? '숨긴 글' : escapeRebukeHtml(row.reason || from.reason || '');
-                const hideBtn = row.hidden ? '' : `<button type="button" class="min-h-[40px] px-2 rounded-lg bg-slate-800 text-rose-50 text-xs font-bold" onclick="void window.hideRebukeEvent('${escapeRebukeHtml(eventId)}')">숨기기</button>`;
+                const hideBtn = row.hidden ? '' : `<button type="button" class="min-h-[44px] px-3 rounded-lg bg-slate-800 text-rose-50 text-xs font-bold" onclick="void window.hideRebukeEvent('${escapeRebukeHtml(eventId)}')">숨기기</button>`;
                 const refundBtn = row.took > 0 && !refunds.has(eventId)
-                    ? `<button type="button" class="min-h-[40px] px-2 rounded-lg bg-amber-700 text-stone-950 text-xs font-bold" onclick="void window.refundRebukeEvent('${escapeRebukeHtml(eventId)}','${escapeRebukeHtml(row.toId)}')">감점 되돌리기</button>`
+                    ? `<button type="button" class="min-h-[44px] px-3 rounded-lg bg-amber-700 text-stone-950 text-xs font-bold" onclick="void window.refundRebukeEvent('${escapeRebukeHtml(eventId)}','${escapeRebukeHtml(row.toId)}')">감점 되돌리기</button>`
                     : '';
+                const feeBtn = `<button type="button" class="min-h-[44px] px-3 rounded-lg bg-sky-700 text-white text-xs font-bold" onclick="void window.returnRebukeSenderFee('${escapeRebukeHtml(eventId)}')">보낸 5봉 돌려주기</button>`;
                 return `<article class="rounded-xl border border-rose-900 bg-slate-950 px-3 py-2 space-y-1">
                     <p class="text-xs text-rose-100 font-bold">${senderLine} → ${escapeRebukeHtml(rebukeStudentLabel(row.toId).name)}</p>
                     ${uid}
                     <p class="text-sm text-slate-100">${reason}</p>
-                    <div class="flex flex-wrap gap-2">${hideBtn}${refundBtn}</div>
+                    <div class="flex flex-wrap gap-2">${hideBtn}${refundBtn}${feeBtn}</div>
                 </article>`;
             }).join('');
+        }
+
+        async function openRebukeTeacher(toId) {
+            window._rebukeTeacherFocus = String(toId || '');
+            const modal = document.getElementById('rebukeTeacherModal');
+            const list = document.getElementById('rebukeTeacherList');
+            if (modal) modal.classList.remove('hidden');
+            syncRebukeToggleLabel();
+            if (list) list.innerHTML = '<p class="text-sm text-slate-300">불러오는 중이에요.</p>';
+            await ensureClassOpsLoaded(true);
+            watchRebukeTeacher();
+            await renderRebukeTeacherList();
         }
 
         window.givePeerRebuke = async function(toId) {
@@ -23892,8 +24001,20 @@ ${subjectLine}
                     openRebukeSelf(target);
                     return;
                 }
-                if (cfg.enabled === false) {
+                if (isRebukeStaffId(fromId) || isRebukeStaffId(target)) {
+                    await window.customAlert(rebukeFailMessage('staff'));
+                    return;
+                }
+                if (cfg.enabled !== true) {
                     await window.customAlert(rebukeFailMessage('off'));
+                    return;
+                }
+                if (isLoanPenaltyActive(window.playerState, rebukeTodayYmd())) {
+                    await window.customAlert(rebukeFailMessage('loan'));
+                    return;
+                }
+                if (studentIsCreditDefault(window.playerState, rebukeTodayYmd())) {
+                    await window.customAlert(rebukeFailMessage('credit'));
                     return;
                 }
                 const who = rebukeStudentLabel(target);
@@ -23916,15 +24037,24 @@ ${subjectLine}
                     await window.customAlert('인증에 실패했습니다.');
                     return;
                 }
-                await ensureRebukeConfigDoc();
-                let sentN = 1;
+                const ownCharges = await loadOwnRebukeCharges().catch(() => []);
+                const earlyLimit = rebukeLimitReason(target, cfg, ownCharges);
+                if (earlyLimit === 'pair' || earlyLimit === 'send' || earlyLimit === 'receive') {
+                    await window.customAlert(escapeRebukeHtml(rebukeFailMessage(earlyLimit)));
+                    return;
+                }
+                const todayCharges = (ownCharges || []).filter((row) => (
+                    String(row.ymd || '') === rebukeTodayYmd()
+                    && Math.floor(Number(row.epoch) || 0) === Math.floor(Number(cfg.epoch) || 0)
+                ));
+                let sentN = Math.max(1, todayCharges.length + 1);
                 let lastReason = '';
                 for (let attempt = 0; attempt < 4 && sentN <= 3; attempt += 1) {
                     try {
                         const result = await runTransaction(db, async (tx) => {
                             const cfgSnap = await tx.get(classOpsRef('rebukeConfig'));
                             const liveCfg = cfgSnap.exists() ? normalizeRebukeConfig(cfgSnap.data()) : defaultRebukeConfig();
-                            if (liveCfg.enabled === false) return { ok: false, reason: 'off' };
+                            if (liveCfg.enabled !== true) return { ok: false, reason: 'off' };
                             const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
                             const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + target);
                             const fromSnap = await tx.get(fromRef);
@@ -23933,7 +24063,10 @@ ${subjectLine}
                             const fromData = fromSnap.data() || {};
                             const toData = toSnap.data() || {};
                             if (studentIsCreditDefault(fromData, rebukeTodayYmd())) {
-                                return { ok: false, reason: 'credit', stu: fromData };
+                                return {
+                                    ok: false,
+                                    reason: isLoanPenaltyActive(fromData, rebukeTodayYmd()) ? 'loan' : 'credit',
+                                };
                             }
                             const epoch = liveCfg.epoch;
                             const rosterEpoch = rebukeRosterEpoch(liveCfg, target);
@@ -23960,6 +24093,10 @@ ${subjectLine}
                                 ...made.audit,
                                 authUid: auth.currentUser.uid,
                             });
+                            tx.set(rebukeItemRef('rebukeCharges', made.eventId), {
+                                ...made.charge,
+                                authUid: auth.currentUser.uid,
+                            });
                             tx.set(rebukeItemRef('rebukeDaily', made.daily.pairId), { eventId: made.eventId });
                             tx.set(rebukeItemRef('rebukeDaily', made.daily.sentId), { eventId: made.eventId });
                             tx.set(rebukeItemRef('rebukeDaily', made.daily.recvId), { eventId: made.eventId });
@@ -23969,13 +24106,12 @@ ${subjectLine}
                                 rebukeEpoch: made.event.epoch,
                                 rebukeRoster: made.event.rosterEpoch,
                             }, { merge: true });
-                            tx.set(fromRef, { bong: made.senderBong }, { merge: true });
-                            return { ok: true, made, fromBong: made.senderBong, toBong: made.receiverBong, toData, fromData };
+                            return { ok: true, made, toBong: made.receiverBong, toData };
                         });
                         if (result && result.ok) {
-                            window._rebukeEvents = [...(window._rebukeEvents || []), rebukePublicEvent(result.made.event)];
+                            rememberRebukeSent(rebukeTodayYmd(), target);
+                            window._rebukeEvents = [...(window._rebukeEvents || []), rebukeEventForViewer(result.made.event)];
                             window._rebukeBoard = { entries: window._rebukeEvents };
-                            mergeStudentDocIntoPlazaCache(fromId, { ...result.fromData, bong: result.fromBong, id: fromId });
                             mergeStudentDocIntoPlazaCache(target, {
                                 ...result.toData,
                                 bong: result.toBong,
@@ -23984,22 +24120,19 @@ ${subjectLine}
                                 rebukeRoster: result.made.event.rosterEpoch,
                                 id: target,
                             });
-                            if (fromId === String(localStorage.getItem('sambong_student_id') || '') && window.playerState) {
-                                window.playerState.bong = result.fromBong;
-                            }
                             if (typeof window.renderPlaza === 'function') {
                                 window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
                             }
                             if (typeof updateUI === 'function') updateUI();
                             const took = result.made.took;
-                            window.showToast && window.showToast(took > 0 ? `역따봉을 보냈습니다. 친구 봉이 ${took}개 줄었어요.` : '역따봉을 보냈습니다.');
+                            window.showToast && window.showToast(took > 0
+                                ? `역따봉을 보냈습니다. 친구 봉이 ${took}개 줄었어요. 내 5봉은 다음 날 빠집니다.`
+                                : '역따봉을 보냈습니다. 내 5봉은 다음 날 빠집니다.');
                             return;
                         }
                         lastReason = result && result.reason ? result.reason : '';
-                        if (result && result.reason === 'credit') {
-                            await window.customAlert(escapeRebukeHtml(isLoanPenaltyActive(result.stu, rebukeTodayYmd())
-                                ? loanPenaltyBlockMessage(result.stu && result.stu.loanPenaltyUntilYmd)
-                                : creditDefaultBlockMessage(result.stu && result.stu.creditDefaultUntilYmd)));
+                        if (result && (result.reason === 'credit' || result.reason === 'loan')) {
+                            await window.customAlert(escapeRebukeHtml(rebukeFailMessage(result.reason)));
                             return;
                         }
                         if (lastReason && lastReason !== 'send') {
@@ -24008,6 +24141,12 @@ ${subjectLine}
                         }
                     } catch (e) {
                         console.warn('givePeerRebuke', e);
+                        const failedCharges = await loadOwnRebukeCharges().catch(() => ownCharges);
+                        const why = rebukeLimitReason(target, window._rebukeConfig || cfg, failedCharges);
+                        if (why === 'pair' || why === 'send' || why === 'receive') {
+                            await window.customAlert(escapeRebukeHtml(rebukeFailMessage(why)));
+                            return;
+                        }
                         sentN += 1;
                         try {
                             const eventSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeEvents', 'items'));
@@ -24027,36 +24166,90 @@ ${subjectLine}
         };
 
         window.hideRebukeEvent = async function(eventId) {
-            if (!window.playerState || !window.playerState.isAdmin) return;
+            if (!await rebukeTeacherWriteAuth()) return;
             const ok = await window.customConfirm('이 역따봉 글을 학생 화면에서 숨길까요?\n깎인 봉은 그대로입니다.');
             if (!ok) return;
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
-            await updateDoc(rebukeItemRef('rebukeEvents', eventId), { hidden: true, reason: '' });
+            try {
+                await updateDoc(rebukeItemRef('rebukeEvents', eventId), { hidden: true, reason: '', reasonFold: '' });
+            } catch (e) {
+                console.warn('hideRebukeEvent', e);
+                const msg = rebukeWriteFailureMessage(e, '글을 숨기지 못했어요.');
+                if (msg) await window.customAlert(msg);
+                return;
+            }
             window._rebukeEvents = (window._rebukeEvents || []).map((row) => {
                 const id = `e~${row.epoch}~${row.rosterEpoch}~student_${row.toId}~${row.seq}`;
                 return id === eventId ? { ...row, hidden: true, reason: '' } : row;
             });
             window._rebukeBoard = { entries: window._rebukeEvents };
-            await openRebukeTeacher(window._rebukeTeacherFocus || '');
+            await renderRebukeTeacherList();
+        };
+
+        async function returnRebukeFee(eventId) {
+            const chargeSnap = await getDoc(rebukeItemRef('rebukeCharges', eventId));
+            if (!chargeSnap.exists()) {
+                await window.customAlert('보낸 사람 기록을 찾지 못했어요.');
+                return false;
+            }
+            const charge = chargeSnap.data() || {};
+            const fromId = String(charge.fromId || '');
+            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+            await runTransaction(db, async (tx) => {
+                const settleSnap = await tx.get(rebukeItemRef('rebukeSettlements', eventId));
+                if (settleSnap.exists()) {
+                    const stuSnap = await tx.get(stuRef);
+                    if (!stuSnap.exists()) throw new Error('missing');
+                    const before = Number(stuSnap.data().bong);
+                    const afterBong = Math.round((before + 5) * 1000) / 1000;
+                    tx.set(rebukeItemRef('rebukePaybacks', eventId), {
+                        amount: 5,
+                        beforeBong: before,
+                        afterBong,
+                        authUid: charge.authUid,
+                    });
+                    tx.set(stuRef, { bong: afterBong }, { merge: true });
+                    return;
+                }
+                tx.set(rebukeItemRef('rebukeWaivers', eventId), {
+                    authUid: charge.authUid,
+                    fromId,
+                });
+            });
+            return true;
+        }
+
+        window.returnRebukeSenderFee = async function(eventId) {
+            if (!await rebukeTeacherWriteAuth()) return;
+            const ok = await window.customConfirm('보낸 사람이 낸 5봉을 돌려줄까요?\n누명을 쓴 학생을 구제할 때 써요.');
+            if (!ok) return;
+            try {
+                const done = await returnRebukeFee(eventId);
+                if (!done) return;
+            } catch (e) {
+                console.warn('returnRebukeSenderFee', e);
+                const msg = rebukeWriteFailureMessage(e, '5봉을 돌려주지 못했어요. 이미 돌려줬을 수 있어요.');
+                if (msg) await window.customAlert(msg);
+                return;
+            }
+            await window.customAlert('보낸 사람의 5봉을 돌려줬어요.');
+            await renderRebukeTeacherList();
         };
 
         window.refundRebukeEvent = async function(eventId, toId) {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            const ok = await window.customConfirm('이 역따봉으로 깎인 봉을 친구에게 되돌릴까요?');
+            if (!await rebukeTeacherWriteAuth()) return;
+            const ok = await window.customConfirm('이 역따봉으로 깎인 봉을 지금 봉에 더해 되돌릴까요?');
             if (!ok) return;
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const giveBack = await window.customConfirm('보낸 사람이 낸 5봉도 돌려줄까요?\n누명을 쓴 학생을 구제할 때 써요.');
             const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + toId);
             try {
                 await runTransaction(db, async (tx) => {
                     const evSnap = await tx.get(rebukeItemRef('rebukeEvents', eventId));
                     const stuSnap = await tx.get(stuRef);
                     if (!evSnap.exists() || !stuSnap.exists()) throw new Error('missing');
-                    const took = Math.floor(Number(evSnap.data().took) || 0);
-                    if (took < 1) throw new Error('zero');
-                    const before = Math.floor(Number(stuSnap.data().bong) || 0);
-                    const afterBong = normalizeBongValue(before + took);
+                    const took = Number(evSnap.data().took);
+                    if (!Number.isFinite(took) || took < 1) throw new Error('zero');
+                    const before = Number(stuSnap.data().bong);
+                    const afterBong = Math.round((before + took) * 1000) / 1000;
                     tx.set(rebukeItemRef('rebukeRefunds', eventId), {
                         amount: took,
                         beforeBong: before,
@@ -24066,25 +24259,122 @@ ${subjectLine}
                 });
             } catch (e) {
                 console.warn('refundRebukeEvent', e);
-                return window.customAlert('감점을 되돌리지 못했어요. 이미 되돌렸을 수 있어요.');
+                if (e && e.message === 'zero') return window.customAlert('되돌릴 감점이 없어요.');
+                const refundSnap = await getDoc(rebukeItemRef('rebukeRefunds', eventId)).catch(() => null);
+                if (refundSnap && refundSnap.exists && refundSnap.exists()) {
+                    return window.customAlert('이미 감점을 되돌렸어요.');
+                }
+                const msg = rebukeWriteFailureMessage(e, '감점을 되돌리지 못했어요.');
+                if (msg) await window.customAlert(msg);
+                return;
             }
-            await openRebukeTeacher(window._rebukeTeacherFocus || toId);
+            if (giveBack) {
+                try {
+                    const done = await returnRebukeFee(eventId);
+                    if (done === false) return;
+                } catch (e) {
+                    console.warn('refund fee', e);
+                    const msg = rebukeWriteFailureMessage(e, '감점은 되돌렸지만, 보낸 사람의 5봉은 돌려주지 못했어요.');
+                    if (msg) await window.customAlert(msg);
+                    return;
+                }
+            }
+            await window.customAlert(giveBack
+                ? '감점을 지금 봉에 더해 되돌렸고, 보낸 사람의 5봉도 돌려줬어요.'
+                : '감점을 지금 봉에 더해 되돌렸어요.');
+            await renderRebukeTeacherList();
         };
 
         window.toggleRebukeClass = async function() {
-            if (!window.playerState || !window.playerState.isAdmin) return;
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
-            const cfg = await ensureRebukeConfigDoc();
-            const enabled = cfg.enabled === false;
-            await setDoc(classOpsRef('rebukeConfig'), {
-                enabled,
-                epoch: cfg.epoch,
-                roster: cfg.roster || {},
-            });
-            window._rebukeConfig = { ...cfg, enabled };
-            await openRebukeTeacher(window._rebukeTeacherFocus || '');
+            if (!await rebukeTeacherWriteAuth()) return;
+            const ref = classOpsRef('rebukeConfig');
+            let cfg = defaultRebukeConfig();
+            try {
+                const snap = await getDoc(ref);
+                if (snap.exists()) cfg = normalizeRebukeConfig(snap.data());
+                const enabled = cfg.enabled !== true;
+                await setDoc(ref, {
+                    enabled,
+                    epoch: cfg.epoch,
+                    roster: cfg.roster || {},
+                });
+                window._rebukeConfig = { ...cfg, enabled };
+            } catch (e) {
+                console.warn('toggleRebukeClass', e);
+                const msg = rebukeWriteFailureMessage(e, '역따봉 설정을 바꾸지 못했어요.');
+                if (msg) await window.customAlert(msg);
+                return;
+            }
+            syncRebukeToggleLabel();
+            await renderRebukeTeacherList();
         };
+
+        async function clearOldRebukeReasons(classId, nextEpoch) {
+            const snap = await getDocs(collection(db, 'artifacts', classId, 'public', 'data', 'classOps', 'rebukeEvents', 'items'));
+            let batch = writeBatch(db);
+            let count = 0;
+            for (const row of snap.docs) {
+                const data = row.data() || {};
+                if (Math.floor(Number(data.epoch) || 0) >= Math.floor(Number(nextEpoch) || 0)) continue;
+                if (!String(data.reason || '') && !String(data.reasonFold || '')) continue;
+                batch.update(row.ref, { reason: '', reasonFold: '' });
+                count += 1;
+                if (count >= 400) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    count = 0;
+                }
+            }
+            if (count) await batch.commit();
+        }
+
+        async function settleOwnRebukeCharges() {
+            if (window._rebukeSettling || !db || !auth || !auth.currentUser) return 0;
+            window._rebukeSettling = true;
+            let deducted = 0;
+            try {
+                const uid = auth.currentUser.uid;
+                const myId = String(localStorage.getItem('sambong_student_id') || '');
+                const charges = await loadOwnRebukeCharges();
+                const today = rebukeTodayYmd();
+                for (const charge of charges) {
+                    if (String(charge.ymd || '') >= today) continue;
+                    if (Math.floor(Number(charge.amount) || 0) !== 5) continue;
+                    const fromId = String(charge.fromId || '');
+                    if (!fromId) continue;
+                    try {
+                        const dropped = await runTransaction(db, async (tx) => {
+                            const settleRef = rebukeItemRef('rebukeSettlements', charge.id);
+                            const waiverRef = rebukeItemRef('rebukeWaivers', charge.id);
+                            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+                            const settleSnap = await tx.get(settleRef);
+                            if (settleSnap.exists()) return 0;
+                            const waiverSnap = await tx.get(waiverRef);
+                            if (waiverSnap.exists()) return 0;
+                            const stuSnap = await tx.get(stuRef);
+                            if (!stuSnap.exists()) return 0;
+                            const before = Number(stuSnap.data().bong);
+                            if (!Number.isFinite(before)) return 0;
+                            const after = Math.round((before - 5) * 1000) / 1000;
+                            tx.set(settleRef, {
+                                amount: 5,
+                                bongBefore: before,
+                                bongAfter: after,
+                                authUid: uid,
+                            });
+                            tx.set(stuRef, { bong: after }, { merge: true });
+                            return fromId === myId ? 5 : 0;
+                        });
+                        deducted += dropped;
+                    } catch (e) {
+                        console.warn('rebuke settle', charge.id, e);
+                    }
+                }
+            } finally {
+                window._rebukeSettling = false;
+            }
+            return deducted;
+        }
 
         window.openClassroomRename = function() {
             if (!window.playerState || !window.playerState.isGM) return window.customAlert('담임교사만 교실 이름을 바꿀 수 있습니다.');
@@ -25697,6 +25987,13 @@ ${subjectLine}
                     }
                     return false;
                 }
+                const settledDebt = await settleOwnRebukeCharges();
+                if (settledDebt > 0) {
+                    window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - settledDebt);
+                    if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
+                        dataToSave.bong = normalizeBongValue((Number(dataToSave.bong) || 0) - settledDebt);
+                    }
+                }
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(currentStudentDocRef);
                     if (opts.stockTrade && !snap.exists()) {
@@ -25806,7 +26103,6 @@ ${subjectLine}
                                 ? dataToSave.bong
                                 : serverData.bong
                         );
-                        const nextBong = Number(dataToSave.bong);
                         // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.
                         const bongBeforeSpend = Number(
                             (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial')
@@ -25895,20 +26191,15 @@ ${subjectLine}
                                 serverRestoreData = serverData;
                                 return;
                             }
-                            if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
-                                if (opts.allowBongDecrease) {
-                                    dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
-                                } else {
-                                    dataToSave.bong = normalizeBongValue(serverBong);
-                                }
-                            }
-                            const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
-                            if (
-                                Number.isFinite(serverBong) &&
-                                Number.isFinite(Number(dataToSave.bong)) &&
-                                Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
-                            ) {
-                                dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                            if (Number.isFinite(serverBong) && Number.isFinite(Number(dataToSave.bong))) {
+                                const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
+                                dataToSave.bong = normalizeBongValue(resolveSavedBong({
+                                    serverBong,
+                                    nextBong: Number(dataToSave.bong),
+                                    maxBongIncrease: maxBongRise,
+                                    allowBongDecrease: !!opts.allowBongDecrease,
+                                    maxBongDecrease: maxBongDrop,
+                                }));
                             }
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));
@@ -26672,7 +26963,7 @@ ${subjectLine}
             if (!applied.ok) return;
             window.playerState.inventory = applied.inventory;
             window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
-            if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
+            if (QUEST_DROP_SAVES_SEPARATELY && !window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
             const slotName = gearSlotLabel(g && g.slot);
             const n = applied.count;
             const lv = gearEnhanceOf(window.playerState, dropped);
@@ -29527,7 +29818,7 @@ ${subjectLine}
                     });
                     if (rebukeSeason) {
                         batch.set(classOpsRef('rebukeConfig'), {
-                            enabled: rebukeSeason.enabled !== false,
+                            enabled: rebukeSeason.enabled === true,
                             epoch: nextRebukeEpoch,
                             roster: rebukeSeason.roster || {},
                         });
@@ -29547,6 +29838,7 @@ ${subjectLine}
                         window.globalSettings.season2WeaponsClearedAt = nowMs;
                     }
                 }, '시즌 2 시작');
+                if (rebukeSeason) await clearOldRebukeReasons(appId, nextRebukeEpoch);
 
                 applyWorldBranding();
                 const paid = rows.filter((r) => !r.built.skip);
@@ -29944,6 +30236,7 @@ ${subjectLine}
             if (!ok2) return;
 
             try {
+                await assertGmSettingsAuth();
                 window.showGlobalLoading(`[${label}] 초기화 중…`);
                 const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
                 await runWithNetworkRetry(async () => {
@@ -29963,7 +30256,7 @@ ${subjectLine}
                         payload.rebukeEpoch = live.epoch;
                         payload.rebukeRoster = prev + 1;
                         tx.set(classOpsRef('rebukeConfig'), {
-                            enabled: live.enabled !== false,
+                            enabled: live.enabled === true,
                             epoch: live.epoch,
                             roster,
                         });
@@ -29982,7 +30275,9 @@ ${subjectLine}
                 await window.customAlert(`✅ [${label}] 학생 데이터 초기화가 완료되었습니다.\n(직전 상태는 복구 버튼으로 되돌릴 수 있습니다.)`);
             } catch (e) {
                 console.error('resetStudentData', e);
-                await window.customAlert('초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
+                if (e && e.alreadyNotified) return;
+                const msg = rebukeWriteFailureMessage(e, '초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
+                if (msg) await window.customAlert(msg);
             } finally {
                 window.hideGlobalLoading();
             }
@@ -30075,13 +30370,14 @@ ${subjectLine}
             if (!ok2) return;
             
             try {
+                await assertGmSettingsAuth();
                 window.showGlobalLoading('이 학급 초기화 실행 중…');
                 const rebukeSeason = await ensureRebukeConfigDoc();
                 const nextRebukeEpoch = rebukeSeason.epoch + 1;
                 await runWithNetworkRetry(async () => {
                     const batch = writeBatch(db);
                     batch.set(classOpsRef('rebukeConfig'), {
-                        enabled: rebukeSeason.enabled !== false,
+                        enabled: rebukeSeason.enabled === true,
                         epoch: nextRebukeEpoch,
                         roster: rebukeSeason.roster || {},
                     });
@@ -30107,9 +30403,12 @@ ${subjectLine}
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: SHIELD_STOCK_DEFAULT }, { merge: true });
                     await batch.commit();
                 }, '학급 초기화');
+                await clearOldRebukeReasons(appId, nextRebukeEpoch);
                 await window.customAlert(`✅ 「${classLabel}」 학급 초기화가 완료되었습니다.\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.`);
             } catch(e) {
-                window.customAlert("초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
+                if (e && e.alreadyNotified) return;
+                const msg = rebukeWriteFailureMessage(e, "초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
+                if (msg) window.customAlert(msg);
             } finally {
                 window.hideGlobalLoading();
             }

@@ -6,10 +6,13 @@ import {
     isLunchDeductWindow,
     laterLunchDate,
     lunchHolidayDates,
+    lunchAlreadyRecorded,
     planServerLunchDeduction,
     seoulDateParts,
+    seoulSchoolDay,
     seoulYmdFromMs,
 } from './lunchDeduct.js';
+import { isBankBusinessDay } from './bankLoan.js';
 import { KOREA_2026_FALL_HOLIDAYS } from './season2.js';
 
 const NOON_KST = Date.parse('2026-10-19T03:00:00.000Z');
@@ -306,6 +309,115 @@ describe('점심 요일은 서버 시각의 한국 표준시다', () => {
         assert.equal(plan.bong, 90);
         assert.equal(plan.lastLunchDeductDate, '2026-10-20');
         assert.notEqual(plan.today, seoulYmdFromMs(deviceSaturday));
+    });
+
+    it('자정을 넘기면 서울 날짜가 바뀌고 점심 시간은 닫힌다', () => {
+        const before = Date.parse('2026-10-20T14:59:59.000Z');
+        const after = Date.parse('2026-10-20T15:00:00.000Z');
+        const tueNight = seoulSchoolDay(before, { holidays: [] });
+        const wedStart = seoulSchoolDay(after, { holidays: [] });
+        assert.equal(tueNight.ymd, '2026-10-20');
+        assert.equal(tueNight.hour, 23);
+        assert.equal(tueNight.lunchOpen, true);
+        assert.equal(wedStart.ymd, '2026-10-21');
+        assert.equal(wedStart.hour, 0);
+        assert.equal(wedStart.lunchOpen, false);
+        assert.equal(planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '2026-10-19',
+            serverNowMs: before,
+            deviceNowMs: after,
+        }).deduct, true);
+        assert.equal(planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '2026-10-20',
+            serverNowMs: after,
+            deviceNowMs: before,
+        }).deduct, false);
+    });
+
+    it('금요일 밤에서 토요일로 넘어가면 점심값을 빼지 않는다', () => {
+        const fridayNight = Date.parse('2026-10-23T14:59:59.000Z');
+        const saturdayStart = Date.parse('2026-10-23T15:00:00.000Z');
+        const friday = seoulSchoolDay(fridayNight, { holidays: [] });
+        const saturday = seoulSchoolDay(saturdayStart, { holidays: [] });
+        assert.equal(friday.ymd, '2026-10-23');
+        assert.equal(friday.weekday, 5);
+        assert.equal(friday.lunchOpen, true);
+        assert.equal(saturday.ymd, '2026-10-24');
+        assert.equal(saturday.weekday, 6);
+        assert.equal(saturday.lunchOpen, false);
+        assert.equal(planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '2026-10-22',
+            nowMs: fridayNight,
+        }).lastLunchDeductDate, '2026-10-23');
+        assert.equal(planServerLunchDeduction({
+            serverBong: 90,
+            serverLunchDate: '2026-10-23',
+            nowMs: saturdayStart,
+        }).deduct, false);
+    });
+
+    it('기기 시계가 하루 앞서 있어도 이미 적힌 날짜면 다시 빼지 않는다', () => {
+        const serverTuesday = Date.parse('2026-10-20T03:30:00.000Z');
+        const ahead = planServerLunchDeduction({
+            serverBong: 80,
+            serverLunchDate: '2026-10-21',
+            serverNowMs: serverTuesday,
+            deviceNowMs: Date.parse('2026-10-21T03:30:00.000Z'),
+        });
+        assert.equal(lunchAlreadyRecorded('2026-10-21', '2026-10-20'), true);
+        assert.equal(ahead.deduct, false);
+        assert.equal(ahead.bong, 80);
+        assert.equal(ahead.lastLunchDeductDate, '2026-10-21');
+        assert.equal(ahead.today, '2026-10-20');
+    });
+
+    it('기기 시계가 늦어도 서버 시각이 점심 시간이면 한 번 뺀다', () => {
+        const serverTuesday = Date.parse('2026-10-20T03:30:00.000Z');
+        const behind = planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '2026-10-19',
+            serverNowMs: serverTuesday,
+            deviceNowMs: Date.parse('2026-10-19T01:00:00.000Z'),
+        });
+        assert.equal(behind.deduct, true);
+        assert.equal(behind.bong, 90);
+        assert.equal(behind.lastLunchDeductDate, '2026-10-20');
+        assert.equal(seoulSchoolDay(serverTuesday, {
+            holidays: [],
+            deviceNowMs: Date.parse('2026-10-24T03:30:00.000Z'),
+        }).ymd, '2026-10-20');
+    });
+
+    it('서버 시각을 모르면 기기 시계로 빼지 않는다', () => {
+        const skipped = planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '',
+        });
+        assert.equal(skipped.deduct, false);
+        assert.equal(skipped.bong, 100);
+        assert.equal(skipped.today, '');
+    });
+
+    it('기기 시간대와 달라도 서울 날짜는 같다', () => {
+        const cross = Date.parse('2026-10-20T15:30:00.000Z');
+        const seoul = seoulYmdFromMs(cross);
+        assert.equal(seoul, '2026-10-21');
+        assert.equal(seoulDateParts(cross).weekday, 3);
+        const local = new Date(cross);
+        const localYmd = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`;
+        if (new Date().getTimezoneOffset() !== -540) {
+            assert.notEqual(localYmd, seoul);
+        }
+        assert.equal(isBankBusinessDay('2026-10-05', { holidays: [] }), false);
+        assert.equal(planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '',
+            nowMs: Date.parse('2026-10-05T03:30:00.000Z'),
+            classHolidays: [],
+        }).deduct, false);
     });
 });
 

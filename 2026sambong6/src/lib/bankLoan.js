@@ -4,6 +4,7 @@
  * 약정일은 영업일(월~금, 공휴일·방학 제외)입니다.
  */
 
+import { isSchoolDayYmd, lunchAlreadyRecorded, weekdayOfYmd } from './schoolClock.js';
 import { KOREA_2026_FALL_HOLIDAYS, toYmd } from './season2.js';
 
 export const LOAN_MIN_UNIT = 10;
@@ -99,22 +100,14 @@ export function sanitizeLoanDays(raw) {
     return Math.max(1, Math.min(LOAN_MAX_BUSINESS_DAYS, n));
 }
 
-function holidaySet(holidays) {
-    return new Set((Array.isArray(holidays) ? holidays : KOREA_2026_FALL_HOLIDAYS).map(String));
-}
-
-/** 월~금이고 공휴일·방학이 아니면 영업일입니다. */
+/** 월~금이고 공휴일·방학이 아니면 영업일입니다. 휴일은 점심값과 같은 목록입니다. */
 export function isBankBusinessDay(ymd, calendar = {}) {
-    const id = String(ymd || '');
-    const [y, m, d] = id.split('-').map(Number);
-    if (!y || !m || !d) return false;
-    const dt = new Date(y, m - 1, d);
-    if (dt.getDay() === 0 || dt.getDay() === 6) return false;
-    if (holidaySet(calendar.holidays).has(id)) return false;
-    const vs = String(calendar.vacationStart || '');
-    const ve = String(calendar.vacationEnd || '');
-    if (vs && ve && id >= vs && id <= ve) return false;
-    return true;
+    const cal = calendar || {};
+    return isSchoolDayYmd(ymd, {
+        holidays: cal.holidays,
+        vacationStart: cal.vacationStart,
+        vacationEnd: cal.vacationEnd,
+    });
 }
 
 /** start 다음날부터 end까지(포함) 영업일 수. 같은 날이면 0. */
@@ -528,6 +521,38 @@ export function formatLunchHoldSentence(parts, unit = 'B') {
     return `${body}${lunchParticle(shown)} 남겨 둘게요.`;
 }
 
+function topicParticle(unit) {
+    const ch = String(unit || 'B').slice(-1);
+    const code = ch.charCodeAt(0);
+    if (code < 0xac00 || code > 0xd7a3) return '는';
+    return (code - 0xac00) % 28 === 0 ? '는' : '은';
+}
+
+/**
+ * 만기일에 자동으로 갚았을 때 학생에게 보여주는 문장.
+ * 금액은 호출하는 쪽이 넘긴 갚은 돈·남은 빚·남겨 둔 점심값으로 만듭니다.
+ */
+export function formatDueDayRepaySentence(msg, unit = 'B') {
+    const paid = Math.max(0, Math.floor(Number(msg && msg.paid) || 0));
+    const unpaid = Math.max(0, Math.floor(Number(msg && msg.unpaid) || 0));
+    const shown = String(unit || 'B');
+    const parts = (Array.isArray(msg && msg.lunchParts) ? msg.lunchParts : []).filter((part) => part && part.amount > 0);
+    const paidText = `${paid}${shown}${lunchParticle(shown)}`;
+    if (unpaid <= 0) {
+        return `오늘이 갚기로 한 날이라 빌린 돈 ${paidText} 다 갚았어요.`;
+    }
+    let held = '';
+    if (parts.length >= 2 && parts.every((part) => part.amount === parts[0].amount)) {
+        const names = parts.map((part) => String(part.label || '점심').replace(/\s*점심값\s*$/, '').trim() || '점심');
+        const rest = names.slice(1).join(', ');
+        held = `${names[0]}이랑 ${rest} 점심값 ${parts[0].amount}${shown}씩은 남겨 뒀고, `;
+    } else if (parts.length === 1) {
+        const only = parts[0];
+        held = `${only.label} ${only.amount}${shown}${topicParticle(shown)} 남겨 뒀고, `;
+    }
+    return `오늘이 갚기로 한 날이라 ${paidText} 먼저 갚았어요. ${held}빚은 ${unpaid}${shown} 남았어요.`;
+}
+
 /**
  * 오늘 점심값이 아직 안 빠졌으면 그것도 남기고, 다음 등교일 점심값도 남깁니다.
  * 날짜를 모르면 남기지 않습니다.
@@ -538,7 +563,7 @@ function schoolLunchParts(todayYmd, calendar, lastLunchDeductDate) {
     const cal = calendar || {};
     const parts = [];
     const deducted = String(lastLunchDeductDate || '').trim();
-    if (isBankBusinessDay(today, cal) && deducted !== today) {
+    if (isBankBusinessDay(today, cal) && !lunchAlreadyRecorded(deducted, today)) {
         parts.push({ label: '오늘 점심값', amount: LUNCH_FEE_BONG, ymd: today, kind: 'today' });
     }
     for (let i = 1; i <= 7; i += 1) {
@@ -735,7 +760,7 @@ function lunchAdjustedShortfall({
     calendar,
 } = {}) {
     const today = String(todayYmd || '');
-    const already = String(lastLunchDeductDate || '').trim() === today && isBankBusinessDay(today, calendar || {})
+    const already = lunchAlreadyRecorded(lastLunchDeductDate, today) && isBankBusinessDay(today, calendar || {})
         ? LUNCH_FEE_BONG
         : 0;
     const funds = Math.max(0, Math.floor(Number(wallet) || 0)) + already + Math.max(0, Math.floor(Number(regular) || 0));
@@ -930,10 +955,8 @@ export function applyLoanLifecycle(state, todayYmd, calendar = {}) {
 }
 
 function weekdayMon1(ymd) {
-    const [y, m, d] = String(ymd || '').split('-').map(Number);
-    if (!y || !m || !d) return 0;
-    const dt = new Date(y, m - 1, d);
-    const day = dt.getDay();
+    const day = weekdayOfYmd(ymd);
+    if (day == null) return 0;
     return day === 0 ? 7 : day;
 }
 

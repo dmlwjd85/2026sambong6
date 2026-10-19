@@ -20,6 +20,7 @@ import {
     mergeStudentDocKeepingLoanRepayment,
     LUNCH_FEE_BONG,
     claimLoanNoticesForSave,
+    formatDueDayRepaySentence,
     formatLunchHoldSentence,
     planLoanRepayment,
     planPartialRepay,
@@ -280,7 +281,8 @@ describe('대출 실행·달력', () => {
             vacationEndDate: '2027-01-06',
         }, ['2026-10-09']);
         assert.equal(off.vacationStart, '');
-        assert.equal(isBankBusinessDay('2026-12-25', off), true);
+        assert.equal(isBankBusinessDay('2026-12-24', off), true);
+        assert.equal(isBankBusinessDay('2026-12-25', off), false);
         const on = getLoanCalendarFromWorld({
             vacationEnabled: true,
             vacationStartDate: '2026-12-24',
@@ -293,6 +295,10 @@ describe('대출 실행·달력', () => {
         });
         assert.deepEqual(fromWorld.holidays, ['2026-10-09']);
         assert.equal(isBankBusinessDay('2026-10-09', fromWorld), false);
+        assert.equal(isBankBusinessDay('2026-10-05', { holidays: [] }), false);
+        assert.equal(isBankBusinessDay('2026-10-09', { holidays: ['2026-11-11'] }), false);
+        assert.equal(isBankBusinessDay('2026-11-11', { holidays: ['2026-11-11'] }), false);
+        assert.equal(isBankBusinessDay('2026-10-20', { holidays: [] }), true);
     });
 
     it('서버 기준으로만 대출을 실행하고 신용불량 안내를 준다', () => {
@@ -887,6 +893,30 @@ describe('점심값을 남긴 상환은 다음 날 신용불량이 아니다', (
         assert.equal(sentence, '오늘 점심값 10B, 월요일 점심값 10B를 남겨 둘게요.');
         assert.match(sentence, /월요일 점심값/);
         assert.doesNotMatch(sentence, /내일/);
+    });
+
+    it('만기일 문장은 갚은 금액과 남겨 둔 점심값으로 만든다', () => {
+        const today = '2026-10-20';
+        const loan = loanOf(101, today, 'loan_due_sentence');
+        const plan = planLoanRepayment({
+            bong: 101, bankLoan: loan, lastLunchDeductDate: '2026-10-19',
+        }, { mode: 'auto', todayYmd: today, calendar: cal });
+        assert.equal(plan.amount, 81);
+        assert.equal(plan.left, 20);
+        assert.deepEqual(plan.lunchParts.map((part) => part.label), ['오늘 점심값', '수요일 점심값']);
+        assert.equal(formatDueDayRepaySentence({
+            paid: plan.amount,
+            unpaid: plan.left,
+            lunchParts: plan.lunchParts,
+        }, 'B'), '오늘이 갚기로 한 날이라 81B를 먼저 갚았어요. 오늘이랑 수요일 점심값 10B씩은 남겨 뒀고, 빚은 20B 남았어요.');
+        assert.equal(formatDueDayRepaySentence({
+            paid: 81,
+            unpaid: 20,
+            lunchParts: [{ label: '수요일 점심값', amount: 10 }],
+        }, 'B'), '오늘이 갚기로 한 날이라 81B를 먼저 갚았어요. 수요일 점심값 10B는 남겨 뒀고, 빚은 20B 남았어요.');
+        assert.equal(formatDueDayRepaySentence({
+            paid: 101, unpaid: 0, lunchParts: plan.lunchParts,
+        }, 'B'), '오늘이 갚기로 한 날이라 빌린 돈 101B를 다 갚았어요.');
     });
 
     it('만기일에 갚기 버튼을 눌러도 자동 상환 결과가 거절되지 않는다', () => {

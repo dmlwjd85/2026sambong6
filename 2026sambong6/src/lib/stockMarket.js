@@ -80,6 +80,13 @@ function seoulParts(nowMs) {
     };
 }
 
+/** 서버 시각의 서울 날짜. 기기 달력과 다를 수 있습니다. */
+export function seoulYmd(nowMs) {
+    const p = seoulParts(nowMs);
+    if (!p.year || !p.month || !p.day) return '';
+    return `${p.year}-${p.month}-${p.day}`;
+}
+
 /** 서버 시각 기준 정시 시간대. 예: 2026-09-02T10 */
 export function marketHourSlot(nowMs) {
     const p = seoulParts(nowMs);

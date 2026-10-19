@@ -24,6 +24,7 @@ import {
     integerIndexPayout,
     isQuoteAdjustmentWindow,
     marketHourSlot,
+    seoulYmd,
     msUntilQuoteUiBoundary,
     shouldFetchLiveMarketQuotes,
     summarizeStudentStockInvest,
@@ -51,6 +52,14 @@ describe('지수 파싱', () => {
         assert.match(formatChangePct(1.5), /\+1\.50%/);
         const wrapped = extractYahooChartJson('Title\n\n{"chart":{"result":[{"meta":{"regularMarketPrice":10,"chartPreviousClose":10}}]}}');
         assert.equal(parseYahooChart(wrapped, 'nasdaq').price, 10);
+    });
+});
+
+describe('서울 날짜', () => {
+    it('기기 시각이 아니라 서울 날짜를 쓴다', () => {
+        assert.equal(seoulYmd(Date.parse('2026-10-19T14:59:00Z')), '2026-10-19');
+        assert.equal(seoulYmd(Date.parse('2026-10-19T15:00:00Z')), '2026-10-20');
+        assert.equal(marketHourSlot(Date.parse('2026-10-19T15:30:00Z')), '2026-10-20T00');
     });
 });
 

@@ -118,24 +118,34 @@ describe('원래 학급 PIN 로그인 유지', () => {
         assert.equal(planGmIdleExpiry({ classId: 'other-class', isAdmin: false, projectionActive: true }), 'ignore');
     });
 
-    it('PIN 시도는 학급당 10번째에 15분 잠그고, 잠긴 동안은 더하지 않는다', () => {
+    it('PIN 시도는 학급당 10번째 틀린 입력에 15분 잠그고, 잠긴 동안은 더하지 않는다', () => {
         const start = 1_000_000;
-        assert.deepEqual(planPinAttempt(null, start), { count: 1, lockedUntilMs: null, blocked: false });
+        assert.deepEqual(planPinAttempt(null, start), {
+            count: 1,
+            generation: 1,
+            lockedUntilMs: null,
+            blocked: false,
+        });
         assert.deepEqual(
-            planPinAttempt({ count: 1, lockedUntilMs: null }, start + 1000),
-            { count: 2, lockedUntilMs: null, blocked: false },
+            planPinAttempt({ count: 1, generation: 1, lockedUntilMs: null }, start + 1000),
+            { count: 2, generation: 1, lockedUntilMs: null, blocked: false },
         );
-        const tenth = planPinAttempt({ count: PIN_ATTEMPT_MAX - 1, lockedUntilMs: null }, start);
+        assert.deepEqual(
+            planPinAttempt({ count: 0, generation: 2, lockedUntilMs: null }, start),
+            { count: 1, generation: 2, lockedUntilMs: null, blocked: false },
+        );
+        const tenth = planPinAttempt({ count: PIN_ATTEMPT_MAX - 1, generation: 3, lockedUntilMs: null }, start);
         assert.equal(tenth.count, PIN_ATTEMPT_MAX);
+        assert.equal(tenth.generation, 3);
         assert.equal(tenth.lockedUntilMs, start + PIN_LOCK_MS);
         assert.equal(tenth.blocked, false);
         assert.deepEqual(
-            planPinAttempt({ count: PIN_ATTEMPT_MAX, lockedUntilMs: start + PIN_LOCK_MS }, start + 1000),
-            { count: PIN_ATTEMPT_MAX, lockedUntilMs: start + PIN_LOCK_MS, blocked: true },
+            planPinAttempt({ count: PIN_ATTEMPT_MAX, generation: 3, lockedUntilMs: start + PIN_LOCK_MS }, start + 1000),
+            { count: PIN_ATTEMPT_MAX, generation: 3, lockedUntilMs: start + PIN_LOCK_MS, blocked: true },
         );
         assert.deepEqual(
-            planPinAttempt({ count: PIN_ATTEMPT_MAX, lockedUntilMs: start + PIN_LOCK_MS }, start + PIN_LOCK_MS),
-            { count: 1, lockedUntilMs: null, blocked: false },
+            planPinAttempt({ count: PIN_ATTEMPT_MAX, generation: 3, lockedUntilMs: start + PIN_LOCK_MS }, start + PIN_LOCK_MS),
+            { count: 1, generation: 4, lockedUntilMs: null, blocked: false },
         );
     });
 

@@ -516,7 +516,6 @@ import { learningThermometerStudentControls } from './lib/learningThermometerCon
 import {
     allowLegacyThermometerValues,
     buildThermometerParentPayload,
-    createThermometerLockOwner,
     sanitizeThermometerParentState,
     settleThermometerResolvingPrior,
 } from './lib/learningThermometerSettlement.js';
@@ -11298,7 +11297,6 @@ ${subjectLine}
         const LEARNING_THERMOMETER_DEFAULT_MAX = 20;
         const LEARNING_THERMOMETER_AUTO_HOUR = 15;
         const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
-        const _thermometerLockOwner = createThermometerLockOwner();
         let _learningThermometerSaveTimer = null;
         let _learningThermometerSettlementRunning = false;
         let _learningThermometerEditActive = false;
@@ -14970,6 +14968,8 @@ ${subjectLine}
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
             const sessionOk = await ensureAnonAuthReady();
             if (!sessionOk) return { status: 'auth' };
+            const ownerUid = auth && auth.currentUser ? auth.currentUser.uid : '';
+            if (!ownerUid) return { status: 'auth' };
 
             _learningThermometerSettlementRunning = true;
             try {
@@ -14982,7 +14982,7 @@ ${subjectLine}
                     voteRefFor: (sid) => getLearningThermometerVoteRef(sid),
                     studentRefFor: (sid) => doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
                     today,
-                    owner: _thermometerLockOwner,
+                    owner: ownerUid,
                     leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
                     manual,
                     minDefault: LEARNING_THERMOMETER_DEFAULT_MIN,
@@ -24906,6 +24906,23 @@ ${subjectLine}
             }
         }
 
+        function pinAttemptSnapshot(data) {
+            if (!data) return null;
+            const lockedUntilMs = data.lockedUntil && typeof data.lockedUntil.toMillis === 'function'
+                ? data.lockedUntil.toMillis()
+                : 0;
+            const generation = Number(data.generation);
+            return {
+                count: Number(data.count) || 0,
+                generation: Number.isFinite(generation) && generation >= 1 ? generation : 0,
+                lockedUntilMs,
+            };
+        }
+
+        function pinLockMessage() {
+            return 'PIN 시도가 10번이 되어 15분 동안 잠겼어요. 잠시 뒤에 다시 입력해 주세요.';
+        }
+
         async function openGmPinSession(classId, pin, { quiet = false } = {}) {
             const code = String(pin || '').trim();
             if (!gmAuthUid() || !/^\d{4,12}$/.test(code)) {
@@ -24917,17 +24934,14 @@ ${subjectLine}
             const attemptRef = doc(db, 'gmPinAttempts', classId);
             const sessionRef = doc(db, 'gmSessions', uid);
             const expiresAt = gmSessionExpiresAt();
-            let bumped = null;
+            await deleteDoc(proofRef).catch(() => {});
+
+            let wrongCommit = null;
             try {
-                await deleteDoc(proofRef).catch(() => {});
-                bumped = await runTransaction(db, async (tx) => {
+                wrongCommit = await runTransaction(db, async (tx) => {
                     const snap = await tx.get(attemptRef);
-                    const data = snap.exists() ? (snap.data() || {}) : null;
-                    const lockedUntilMs = data && data.lockedUntil && typeof data.lockedUntil.toMillis === 'function'
-                        ? data.lockedUntil.toMillis()
-                        : 0;
                     const planned = planPinAttempt(
-                        data ? { count: Number(data.count) || 0, lockedUntilMs } : null,
+                        pinAttemptSnapshot(snap.exists() ? (snap.data() || {}) : null),
                         Date.now(),
                     );
                     if (planned.blocked) {
@@ -24935,37 +24949,73 @@ ${subjectLine}
                         err.code = 'pin-locked';
                         throw err;
                     }
+                    const tryRef = doc(db, 'gmPinAttempts', classId, 'tries', `${planned.generation}_${planned.count}`);
                     tx.set(attemptRef, {
                         count: planned.count,
+                        generation: planned.generation,
                         lockedUntil: planned.lockedUntilMs ? Timestamp.fromMillis(planned.lockedUntilMs) : null,
                     });
+                    tx.set(tryRef, { n: planned.count });
                     tx.set(proofRef, { pin: code, classId, expiresAt });
                     return planned;
                 });
             } catch (e) {
+                if (e && e.code === 'pin-locked') {
+                    if (!quiet) await window.customAlert(pinLockMessage());
+                    return false;
+                }
+                const codeName = String((e && e.code) || '');
+                const mayBeCorrect = firestorePermissionDenied(e)
+                    || codeName.includes('already-exists')
+                    || codeName.includes('aborted')
+                    || codeName.includes('failed-precondition');
+                if (!mayBeCorrect) {
+                    if (!quiet) await window.customAlert('PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    return false;
+                }
+                wrongCommit = null;
+            }
+
+            if (wrongCommit) {
+                await deleteDoc(proofRef).catch(() => {});
                 if (!quiet) {
-                    await window.customAlert(e && e.code === 'pin-locked'
-                        ? 'PIN 시도가 10번이 되어 15분 동안 잠겼어요. 잠시 뒤에 다시 입력해 주세요.'
-                        : 'PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    await window.customAlert(wrongCommit.count >= PIN_ATTEMPT_MAX
+                        ? pinLockMessage()
+                        : 'PIN이 달라서 저장하지 않았어요');
                 }
                 return false;
             }
+
             try {
+                await setDoc(proofRef, { pin: code, classId, expiresAt });
                 await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(attemptRef);
+                    const data = snap.exists() ? (snap.data() || {}) : null;
+                    const lockedUntilMs = data && data.lockedUntil && typeof data.lockedUntil.toMillis === 'function'
+                        ? data.lockedUntil.toMillis()
+                        : 0;
+                    if (lockedUntilMs > Date.now()) {
+                        const err = new Error('pin_locked');
+                        err.code = 'pin-locked';
+                        throw err;
+                    }
+                    const generation = (data && Number(data.generation) >= 1 ? Number(data.generation) : 0) + 1;
                     tx.set(sessionRef, { classId, expiresAt });
                     tx.delete(proofRef);
-                    tx.set(attemptRef, { count: 0, lockedUntil: null });
+                    tx.set(attemptRef, { count: 0, generation, lockedUntil: null });
                 });
                 return true;
             } catch (e) {
                 await deleteDoc(proofRef).catch(() => {});
                 if (!quiet) {
-                    const lockedNow = bumped && bumped.count >= PIN_ATTEMPT_MAX;
-                    await window.customAlert(lockedNow
-                        ? 'PIN 시도가 10번이 되어 15분 동안 잠겼어요. 잠시 뒤에 다시 입력해 주세요.'
-                        : (firestorePermissionDenied(e)
-                            ? 'PIN이 달라서 저장하지 않았어요'
-                            : 'PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'));
+                    const codeName = String((e && e.code) || '');
+                    if (e && e.code === 'pin-locked') {
+                        await window.customAlert(pinLockMessage());
+                    } else if (firestorePermissionDenied(e) || codeName.includes('already-exists')) {
+                        await window.customAlert('PIN이 달라서 저장하지 않았어요');
+                    } else {
+                        await window.customAlert('PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+                    }
                 }
                 return false;
             }

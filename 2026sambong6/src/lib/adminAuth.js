@@ -14,35 +14,41 @@ export const GM_SESSION_TTL_MS = 10 * 60 * 1000;
 /** 세션 만료 시각을 규칙 상한보다 조금 짧게 씁니다. */
 export const GM_SESSION_SKEW_MS = 15 * 1000;
 
-/** 학급당 연속 실패. 10번째에 잠그고, 잠금은 15분입니다. */
+/** 학급당 연속 실패. 10번째 틀린 시도에 잠그고, 잠금은 15분입니다. */
 export const PIN_ATTEMPT_MAX = 10;
 export const PIN_LOCK_MS = 15 * 60 * 1000;
 
 /**
  * 다음 학급 PIN 시도 값.
  * blocked면 이미 잠겨 있어 규칙을 호출하지 않습니다.
- * 잠금이 끝난 뒤나 10에 도달한 뒤에는 1부터 다시 셉니다.
- * 10이 되면 lockedUntilMs를 지금으로부터 15분 뒤로 둡니다.
+ * 잠금이 끝난 뒤에는 횟수를 1로 되돌리고 generation을 1 올립니다.
+ * 맞는 PIN으로 횟수가 0이 된 뒤에는 generation을 유지한 채 1부터 다시 셉니다.
+ * 10번째 틀린 시도면 lockedUntilMs를 지금으로부터 15분 뒤로 둡니다.
  */
 export function planPinAttempt(existing, nowMs) {
     const now = Number(nowMs);
     const count = Number(existing && existing.count);
+    const generation = Number(existing && existing.generation);
     const lockedUntilMs = Number(existing && existing.lockedUntilMs);
     const locked = Number.isFinite(lockedUntilMs) && lockedUntilMs > now;
+    const baseGen = Number.isFinite(generation) && generation >= 1 ? generation : 0;
     if (locked) {
         return {
             count: Number.isFinite(count) ? count : PIN_ATTEMPT_MAX,
+            generation: baseGen || 1,
             lockedUntilMs,
             blocked: true,
         };
     }
     const expired = Number.isFinite(lockedUntilMs) && lockedUntilMs > 0 && lockedUntilMs <= now;
-    const base = !existing || expired || !Number.isFinite(count) || count >= PIN_ATTEMPT_MAX || count < 0
-        ? 0
-        : count;
-    const next = base + 1;
+    const restart = !existing || expired || !Number.isFinite(count) || count >= PIN_ATTEMPT_MAX || count < 0;
+    const next = restart ? 1 : count + 1;
+    const nextGen = !existing || baseGen < 1
+        ? 1
+        : (expired ? baseGen + 1 : baseGen);
     return {
         count: next,
+        generation: nextGen,
         lockedUntilMs: next >= PIN_ATTEMPT_MAX ? now + PIN_LOCK_MS : null,
         blocked: false,
     };

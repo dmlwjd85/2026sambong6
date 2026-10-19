@@ -1110,13 +1110,23 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
         return Timestamp.fromMillis(Date.now() + minutesFromNow * 60 * 1000);
     }
 
-    async function commitPinGuess(db, { uid, classId, pin, count, lock = false, expiresAt = null }) {
+    async function commitPinGuess(db, {
+        uid,
+        classId,
+        pin,
+        count,
+        generation = 1,
+        lock = false,
+        expiresAt = null,
+    }) {
         const exp = expiresAt || pinExpiresAt(9);
         const batch = writeBatch(db);
         batch.set(doc(db, `gmPinAttempts/${classId}`), {
             count,
+            generation,
             lockedUntil: lock ? Timestamp.fromMillis(Date.now() + 15 * 60 * 1000) : null,
         });
+        batch.set(doc(db, `gmPinAttempts/${classId}/tries/${generation}_${count}`), { n: count });
         batch.set(doc(db, `gmPinProofs/${uid}`), { pin, classId, expiresAt: exp });
         await batch.commit();
         return exp;
@@ -1133,18 +1143,24 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
         await assertFails(setDoc(doc(db, `gmSessions/${uid}`), { classId: 'class1', expiresAt }));
         await assertFails(setDoc(doc(db, `gmPinProofs/${uid}`), { pin: '0000', classId: 'class1', expiresAt }));
         await assertFails(setDoc(doc(db, 'gmPinAttempts/class1'), { count: 1, lockedUntil: null }));
-        await assertSucceeds(commitPinGuess(db, { uid, classId: 'class1', pin: '0000', count: 1 }));
-        await assertFails(commitPinGuess(db, { uid, classId: 'class1', pin: '0000', count: 1 }));
+        await assertSucceeds(commitPinGuess(db, { uid, classId: 'class1', pin: '0000', count: 1, generation: 1 }));
+        await assertFails(commitPinGuess(db, { uid, classId: 'class1', pin: '0000', count: 1, generation: 1 }));
+        await assertFails(setDoc(doc(db, 'gmPinAttempts/class1/tries/1_1'), { n: 9 }));
         await deleteDoc(doc(db, `gmPinProofs/${uid}`));
         const matchedExp = pinExpiresAt(9);
-        await assertSucceeds(commitPinGuess(db, {
-            uid, classId: 'class1', pin: '2580', count: 2, expiresAt: matchedExp,
+        await assertFails(commitPinGuess(db, {
+            uid, classId: 'class1', pin: '2580', count: 2, generation: 1, expiresAt: matchedExp,
+        }));
+        await assertSucceeds(setDoc(doc(db, `gmPinProofs/${uid}`), {
+            pin: '2580',
+            classId: 'class1',
+            expiresAt: matchedExp,
         }));
         await assertFails(setDoc(doc(db, `gmSessions/${uid}`), { classId: 'class1', expiresAt: tooLong }));
         const open = writeBatch(db);
         open.set(doc(db, `gmSessions/${uid}`), { classId: 'class1', expiresAt: matchedExp });
         open.delete(doc(db, `gmPinProofs/${uid}`));
-        open.set(doc(db, 'gmPinAttempts/class1'), { count: 0, lockedUntil: null });
+        open.set(doc(db, 'gmPinAttempts/class1'), { count: 0, generation: 2, lockedUntil: null });
         await assertSucceeds(open.commit());
         const session = await getDoc(doc(db, `gmSessions/${uid}`));
         assert.equal(session.data().classId, 'class1');
@@ -1194,6 +1210,7 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
                 classId,
                 pin: String(1000 + (n % 9000)),
                 count: n <= 10 ? n : 1,
+                generation: 1,
                 lock: n === 10,
             });
             if (n <= 10) {
@@ -1206,18 +1223,19 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
         assert.equal(accepted, 10);
         const attempt = await getDoc(doc(db, `gmPinAttempts/${classId}`));
         assert.equal(attempt.data().count, 10);
+        assert.equal(attempt.data().generation, 1);
         assert.ok(attempt.data().lockedUntil.toMillis() > Date.now() + 14 * 60 * 1000);
 
         await deleteDoc(doc(db, `gmPinProofs/${uid}`)).catch(() => {});
-        await assertFails(commitPinGuess(db, { uid, classId, pin: '2580', count: 11, lock: true }));
-        await assertFails(commitPinGuess(db, { uid, classId, pin: '2580', count: 1 }));
-        await assertFails(commitPinGuess(otherDb, { uid: otherUid, classId, pin: '2580', count: 1 }));
-        await assertFails(commitPinGuess(otherDb, { uid: otherUid, classId, pin: '2580', count: 11, lock: true }));
+        await assertFails(commitPinGuess(db, { uid, classId, pin: '2580', count: 11, generation: 1, lock: true }));
+        await assertFails(commitPinGuess(db, { uid, classId, pin: '2580', count: 1, generation: 1 }));
+        await assertFails(commitPinGuess(otherDb, { uid: otherUid, classId, pin: '2580', count: 1, generation: 1 }));
+        await assertFails(commitPinGuess(otherDb, { uid: otherUid, classId, pin: '2580', count: 11, generation: 1, lock: true }));
 
         const expiresAt = pinExpiresAt(9);
         const correctAsOther = writeBatch(otherDb);
         correctAsOther.set(doc(otherDb, `gmSessions/${otherUid}`), { classId, expiresAt });
-        correctAsOther.set(doc(otherDb, `gmPinAttempts/${classId}`), { count: 0, lockedUntil: null });
+        correctAsOther.set(doc(otherDb, `gmPinAttempts/${classId}`), { count: 0, generation: 2, lockedUntil: null });
         await assertFails(correctAsOther.commit());
         await assertFails(setDoc(doc(db, settingsPath), { announcement: '잠금 우회' }, { merge: true }));
         const plantedExp = pinExpiresAt(9);
@@ -1231,12 +1249,98 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
         const planted = writeBatch(db);
         planted.set(doc(db, `gmSessions/${uid}`), { classId, expiresAt: plantedExp });
         planted.delete(doc(db, `gmPinProofs/${uid}`));
-        planted.set(doc(db, `gmPinAttempts/${classId}`), { count: 0, lockedUntil: null });
+        planted.set(doc(db, `gmPinAttempts/${classId}`), { count: 0, generation: 2, lockedUntil: null });
         await assertFails(planted.commit());
 
         const still = await getDoc(doc(otherDb, `gmPinAttempts/${classId}`));
         assert.equal(still.data().count, 10);
         assert.ok(still.data().lockedUntil.toMillis() > Date.now());
+    });
+
+    it('동시에 보낸 두 PIN 시도 중 하나만 통과한다', async () => {
+        const classId = 'class1';
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            await setDoc(doc(db, `gmPinAttempts/${classId}`), {
+                count: 1,
+                generation: 1,
+                lockedUntil: null,
+            });
+            await setDoc(doc(db, `gmPinAttempts/${classId}/tries/1_1`), { n: 1 });
+        });
+        const left = anonUid('race-left').firestore();
+        const right = anonUid('race-right').firestore();
+        const results = await Promise.allSettled([
+            commitPinGuess(left, {
+                uid: 'race-left',
+                classId,
+                pin: '1111',
+                count: 2,
+                generation: 1,
+            }),
+            commitPinGuess(right, {
+                uid: 'race-right',
+                classId,
+                pin: '2222',
+                count: 2,
+                generation: 1,
+            }),
+        ]);
+        const passed = results.filter((result) => result.status === 'fulfilled');
+        assert.equal(passed.length, 1);
+        const attempt = await getDoc(doc(left, `gmPinAttempts/${classId}`));
+        assert.equal(attempt.data().count, 2);
+        assert.equal(attempt.data().generation, 1);
+        assert.equal(attempt.data().lockedUntil, null);
+        const tryDoc = await getDoc(doc(left, `gmPinAttempts/${classId}/tries/1_2`));
+        assert.equal(tryDoc.exists(), true);
+        assert.equal(tryDoc.data().n, 2);
+    });
+
+    it('틀린 시도가 9번인 뒤 10번째가 맞는 PIN이면 세션이 생기고 잠기지 않는다', async () => {
+        const uid = 'pin-tenth-ok';
+        const db = anonUid(uid).firestore();
+        const classId = 'class1';
+        for (let n = 1; n <= 9; n += 1) {
+            await deleteDoc(doc(db, `gmPinProofs/${uid}`)).catch(() => {});
+            await assertSucceeds(commitPinGuess(db, {
+                uid,
+                classId,
+                pin: String(1100 + n),
+                count: n,
+                generation: 1,
+            }));
+        }
+        await deleteDoc(doc(db, `gmPinProofs/${uid}`));
+        await assertFails(commitPinGuess(db, {
+            uid,
+            classId,
+            pin: '2580',
+            count: 10,
+            generation: 1,
+            lock: true,
+        }));
+        const mid = await getDoc(doc(db, `gmPinAttempts/${classId}`));
+        assert.equal(mid.data().count, 9);
+        assert.equal(mid.data().lockedUntil, null);
+        const expiresAt = pinExpiresAt(9);
+        await assertSucceeds(setDoc(doc(db, `gmPinProofs/${uid}`), {
+            pin: '2580',
+            classId,
+            expiresAt,
+        }));
+        const open = writeBatch(db);
+        open.set(doc(db, `gmSessions/${uid}`), { classId, expiresAt });
+        open.delete(doc(db, `gmPinProofs/${uid}`));
+        open.set(doc(db, `gmPinAttempts/${classId}`), { count: 0, generation: 2, lockedUntil: null });
+        await assertSucceeds(open.commit());
+        const session = await getDoc(doc(db, `gmSessions/${uid}`));
+        assert.equal(session.data().classId, classId);
+        const reset = await getDoc(doc(db, `gmPinAttempts/${classId}`));
+        assert.equal(reset.data().count, 0);
+        assert.equal(reset.data().generation, 2);
+        assert.equal(reset.data().lockedUntil, null);
+        await assertSucceeds(setDoc(doc(db, settingsPath), { announcement: '10번째 정답' }, { merge: true }));
     });
 
     function kstTodayString(now = Date.now()) {
@@ -1296,6 +1400,61 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
             settlementKey: '2099-01-01',
             settledDate: '2099-01-01',
         }, { merge: true }));
+        await assertFails(setDoc(doc(anonDb, `${thermo}/votes/2`), { value: 0 }));
+        await assertFails(setDoc(doc(anonUid('other-anon').firestore(), thermo), thermometerPayload({
+            date: today,
+            min: -20,
+            max: 20,
+            settledDate: today,
+            lastSettlementAt: now,
+            settlementKey: today,
+            settlementStatus: 'done',
+            settlementStartedAt: 0,
+            settlementLockOwner: '',
+            settlementAttempt: 1,
+            usedStaleValues: false,
+        })));
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), thermo), {
+                settlementLockOwner: 'anon-student',
+                settlementStartedAt: now - 6 * 60 * 1000,
+            }, { merge: true });
+        });
+        await assertFails(setDoc(doc(anonDb, `${thermo}/votes/2`), { value: 0 }));
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), thermo), thermometerPayload({
+                date: '2026-10-18',
+                settlementKey: '2026-10-18',
+                settlementStatus: 'running',
+                settlementStartedAt: now - 1000,
+                settlementLockOwner: 'anon-student',
+                settlementAttempt: 1,
+            }));
+        });
+        await assertSucceeds(setDoc(doc(anonDb, `${thermo}/votes/2`), { value: 0 }));
+        await assertFails(setDoc(doc(anonDb, thermo), thermometerPayload({
+            date: '2026-10-17',
+            min: -20,
+            max: 20,
+            settledDate: '',
+            lastSettlementAt: 0,
+            settlementKey: '2026-10-17',
+            settlementStatus: 'running',
+            settlementStartedAt: now,
+            settlementLockOwner: 'anon-student',
+            settlementAttempt: 2,
+            usedStaleValues: false,
+        })));
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), thermo), thermometerPayload({
+                date: today,
+                settlementKey: today,
+                settlementStatus: 'running',
+                settlementStartedAt: now - 1000,
+                settlementLockOwner: 'anon-student',
+                settlementAttempt: 1,
+            }));
+        });
         await assertSucceeds(setDoc(doc(anonDb, `${thermo}/votes/2`), { value: 0 }));
         await assertSucceeds(setDoc(doc(anonDb, thermo), thermometerPayload({
             date: today,

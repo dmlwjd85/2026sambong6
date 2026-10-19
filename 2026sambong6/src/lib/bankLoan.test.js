@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    CREDIT_DEFAULT_CALENDAR_DAYS,
+    CREDIT_DEFAULT_UNIT,
     LOAN_LIMIT_DEFAULT,
     LOAN_MIN_INTEREST,
     LOAN_MIN_UNIT,
@@ -9,7 +9,10 @@ import {
     addCalendarDaysYmd,
     applyLoanAction,
     applyLoanLifecycle,
+    creditDefaultDaysFromAmount,
     isLoanPenaltyActive,
+    isStudentCreditDefault,
+    personalLoanLimit,
     planPartialRepay,
     collectLoanRepayment,
     computeLoanInterest,
@@ -36,6 +39,22 @@ describe('대출 한도·금액', () => {
         assert.equal(sanitizeLoanLimit(null), LOAN_LIMIT_DEFAULT);
         assert.equal(sanitizeLoanLimit(-1), 0);
         assert.equal(sanitizeLoanLimit(9999), 500);
+        assert.equal(personalLoanLimit({
+            baseLimit: 50,
+            regularSavings: 20,
+            termSavings: 30,
+            indexValue: 15.9,
+        }), 115);
+        assert.equal(personalLoanLimit({
+            baseLimit: 9999,
+            regularSavings: -4,
+            termSavings: 10,
+            indexValue: 0,
+        }), 510);
+        assert.equal(creditDefaultDaysFromAmount(0), 0);
+        assert.equal(creditDefaultDaysFromAmount(30), 1);
+        assert.equal(creditDefaultDaysFromAmount(31), 2);
+        assert.equal(creditDefaultDaysFromAmount(-61), Math.ceil(61 / CREDIT_DEFAULT_UNIT));
     });
 });
 
@@ -92,10 +111,12 @@ describe('자동이체·신용불량', () => {
         assert.equal(paid.fromRegular, 5);
     });
 
-    it('약정일을 넘기면 바로 걷지 않고 5영업일 정지 뒤 절반을 걷는다', () => {
+    it('약정일을 넘기면 연체액/30일을 올리고, 그 기간이 끝나면 절반을 걷는다', () => {
         const loan = planTakeLoan({
             amount: 20, days: 1, ratePercent: 0, limit: 50, todayYmd: '2026-09-14', calendar: cal,
         }).loan;
+        const dueAmt = loan.principal + loan.interest;
+        const days = creditDefaultDaysFromAmount(dueAmt);
         const started = applyLoanLifecycle({
             bong: 5,
             bankRegularSavings: 10,
@@ -104,7 +125,9 @@ describe('자동이체·신용불량', () => {
         assert.equal(started.bankLoan.dueYmd, loan.dueYmd);
         assert.equal(started.bankLoan.principal, 20);
         assert.equal(started.bong, 5);
-        assert.ok(started.loanPenaltyUntilYmd > loan.dueYmd);
+        assert.equal(started.loanPenaltyUntilYmd, addCalendarDaysYmd(loan.dueYmd, days));
+        assert.equal(started.creditDefaultUntilYmd, started.loanPenaltyUntilYmd);
+        assert.equal(isStudentCreditDefault(started, loan.dueYmd), true);
         assert.ok(started.msgs.some((m) => m.kind === 'penalty_start'));
         const halved = applyLoanLifecycle(started, started.loanPenaltyUntilYmd, cal);
         assert.equal(halved.loanPenaltyUntilYmd, '');
@@ -115,18 +138,20 @@ describe('자동이체·신용불량', () => {
         assert.ok(halved.msgs.some((m) => m.kind === 'penalty_half'));
     });
 
-    it('마이너스 5영업일이 지나면 3일 신용불량이 된다', () => {
+    it('마이너스가 되면 바로 신용불량이 되고, 기간 중에는 날짜를 다시 밀지 않는다', () => {
         const start = '2026-09-14';
-        const fifth = addBusinessDaysYmd(start, 5, cal);
         const hit = applyLoanLifecycle({
-            bong: -3,
+            bong: -31,
             bankRegularSavings: 0,
             bankLoan: null,
-            bankNegativeSinceYmd: start,
-        }, fifth, cal);
-        assert.equal(isCreditDefaultOn(hit, fifth), true);
-        assert.equal(hit.creditDefaultUntilYmd, addCalendarDaysYmd(fifth, CREDIT_DEFAULT_CALENDAR_DAYS));
-        assert.match(creditDefaultBlockMessage(hit.creditDefaultUntilYmd), /신용불량/);
+        }, start, cal);
+        assert.equal(isCreditDefaultOn(hit, start), true);
+        assert.equal(hit.creditDefaultUntilYmd, addCalendarDaysYmd(start, 2));
+        assert.match(creditDefaultBlockMessage(hit.creditDefaultUntilYmd), /밥줄/);
+        const stay = applyLoanLifecycle({ ...hit, bong: -90 }, '2026-09-15', cal);
+        assert.equal(stay.creditDefaultUntilYmd, hit.creditDefaultUntilYmd);
+        const again = applyLoanLifecycle({ ...hit, bong: -90 }, hit.creditDefaultUntilYmd, cal);
+        assert.equal(again.creditDefaultUntilYmd, addCalendarDaysYmd(hit.creditDefaultUntilYmd, creditDefaultDaysFromAmount(90)));
         const recovered = applyLoanLifecycle({
             bong: 10,
             bankRegularSavings: 0,
@@ -134,6 +159,25 @@ describe('자동이체·신용불량', () => {
         }, '2026-09-15', cal);
         assert.equal(recovered.bankNegativeSinceYmd, '');
         assert.equal(isCreditDefaultOn(recovered, '2026-09-15'), false);
+        const kept = applyLoanLifecycle({
+            bong: 10,
+            creditDefaultUntilYmd: '2026-09-20',
+        }, '2026-09-15', cal);
+        assert.equal(kept.creditDefaultUntilYmd, '2026-09-20');
+        assert.equal(isStudentCreditDefault(kept, '2026-09-15'), true);
+    });
+
+    it('연체와 마이너스가 같은 날이면 더 큰 금액으로 기간을 정한다', () => {
+        const loan = planTakeLoan({
+            amount: 20, days: 1, ratePercent: 0, limit: 50, todayYmd: '2026-09-14', calendar: cal,
+        }).loan;
+        const started = applyLoanLifecycle({
+            bong: -90,
+            bankRegularSavings: 0,
+            bankLoan: loan,
+        }, loan.dueYmd, cal);
+        assert.equal(started.creditDefaultUntilYmd, addCalendarDaysYmd(loan.dueYmd, creditDefaultDaysFromAmount(90)));
+        assert.equal(started.loanPenaltyUntilYmd, started.creditDefaultUntilYmd);
     });
 });
 
@@ -246,5 +290,18 @@ describe('대출 실행·달력', () => {
         assert.equal(broke.reason, 'funds');
         const overdue = applyLoanLifecycle(saved, saved.bankLoan.dueYmd, cal);
         assert.equal(isLoanPenaltyActive(overdue, saved.bankLoan.dueYmd), true);
+        const cleared = applyLoanAction({
+            ...overdue,
+            bong: 100,
+        }, 'repay', { todayYmd: saved.bankLoan.dueYmd, calendar: cal });
+        assert.equal(cleared.ok, true);
+        assert.equal(cleared.bankLoan, null);
+        assert.equal(cleared.loanPenaltyUntilYmd, '');
+        assert.equal(cleared.creditDefaultUntilYmd, '');
+        assert.equal(planTakeLoan({
+            amount: 40, days: 1, ratePercent: 10, limit: personalLoanLimit({
+                baseLimit: 50, regularSavings: 20, termSavings: 0, indexValue: 0,
+            }), todayYmd: '2026-09-15', calendar: cal,
+        }).ok, true);
     });
 });

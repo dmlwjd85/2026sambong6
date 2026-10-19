@@ -19,6 +19,8 @@ export const MARKET_REFRESH_MS = 60 * 60 * 1000;
 export const MARKET_CACHE_TTL_MS = 50 * 60 * 1000;
 
 export const STOCK_INVEST_MIN = 10;
+/** 지수 사고팔기 기록은 최근 30건만 남깁니다. */
+export const STOCK_HISTORY_LIMIT = 30;
 /** 시장별 원금 합계 한도. 추가 매수해도 이 값을 넘지 못합니다. */
 export const STOCK_INVEST_MAX = 1000;
 export const STOCK_DAILY_PROFIT_CAP = 8;
@@ -139,6 +141,39 @@ export function sanitizeStockPosition(raw) {
         openedAt,
         openedDate: String(src.openedDate || '').slice(0, 10),
     };
+}
+
+export function sanitizeStockHistoryEntry(raw) {
+    const src = raw && typeof raw === 'object' ? raw : null;
+    if (!src) return null;
+    const kind = src.kind === 'buy' || src.kind === 'sell' ? src.kind : '';
+    const marketId = String(src.marketId || '');
+    if (!kind || !getStockMarket(marketId)) return null;
+    const amount = Math.floor(Number(src.amount) || 0);
+    if (amount < 1) return null;
+    return {
+        at: Math.max(0, Math.floor(Number(src.at) || 0)),
+        date: String(src.date || '').slice(0, 10),
+        kind,
+        marketId,
+        amount,
+        payout: Math.max(0, Math.floor(Number(src.payout) || 0)),
+        remaining: Math.max(0, Math.floor(Number(src.remaining) || 0)),
+        full: src.full === true,
+    };
+}
+
+export function sanitizeStockHistory(raw) {
+    const list = Array.isArray(raw) ? raw : [];
+    return list.map(sanitizeStockHistoryEntry).filter(Boolean).slice(-STOCK_HISTORY_LIMIT);
+}
+
+/** 매수·매도 한 건을 기록 뒤에 붙입니다. 일부 매도도 같은 기록에 남습니다. */
+export function appendStockHistory(history, entry) {
+    const row = sanitizeStockHistoryEntry(entry);
+    const base = sanitizeStockHistory(history);
+    if (!row) return base;
+    return sanitizeStockHistory([...base, row]);
 }
 
 export function sanitizeStockInvestments(raw) {
@@ -355,6 +390,7 @@ export function applyStockSellFromServer({
     serverInvestments,
     serverDaily,
     serverBong,
+    serverHistory,
     marketId,
     amount,
     currentIndex,
@@ -371,9 +407,20 @@ export function applyStockSellFromServer({
         amount
     );
     if (!sold.ok) return { ok: false, reason: sold.reason || 'none' };
+    const history = appendStockHistory(serverHistory, {
+        at: Math.floor(Number(nowMs) || Date.now()),
+        date: String(today || ''),
+        kind: 'sell',
+        marketId,
+        amount: sold.principal,
+        payout: sold.payout,
+        remaining: sold.remaining,
+        full: sold.full,
+    });
     return {
         ...sold,
         bong: Math.floor(Number(serverBong) || 0) + sold.payout,
+        history,
     };
 }
 
@@ -383,6 +430,7 @@ export function applyStockSellFromServer({
 export function applyStockBuyFromServer({
     serverInvestments,
     serverBong,
+    serverHistory,
     marketId,
     amount,
     buyIndex,
@@ -400,11 +448,22 @@ export function applyStockBuyFromServer({
     if (!gate.ok) return { ok: false, reason: gate.reason };
     const bought = applyBuyStock(bag, market.id, gate.amount, buyIndex, nowMs, today);
     if (!bought.ok) return { ok: false, reason: bought.reason || 'buy' };
+    const history = appendStockHistory(serverHistory, {
+        at: Math.floor(Number(nowMs) || Date.now()),
+        date: String(today || ''),
+        kind: 'buy',
+        marketId: market.id,
+        amount: gate.amount,
+        payout: 0,
+        remaining: bought.investments[market.id] ? bought.investments[market.id].principal : 0,
+        full: false,
+    });
     return {
         ok: true,
         investments: bought.investments,
         bong: Math.floor(Number(serverBong) || 0) - gate.amount,
         amount: gate.amount,
         added: !!bought.added,
+        history,
     };
 }

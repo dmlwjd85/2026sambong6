@@ -95,8 +95,9 @@ import {
     computeLoanInterest,
     creditDefaultBlockMessage,
     getLoanCalendarFromWorld,
-    isCreditDefaultOn,
     isLoanPenaltyActive,
+    isStudentCreditDefault,
+    personalLoanLimit,
     loanDueTotal,
     loanFieldsFromLifecycle,
     loanPenaltyBlockMessage,
@@ -349,6 +350,7 @@ import {
     isKoreanStockSession,
     MARKET_REFRESH_MS,
     parseYahooChart,
+    sanitizeStockHistory,
     sanitizeStockInvestDaily,
     sanitizeStockInvestments,
     settleStockPosition,
@@ -497,6 +499,7 @@ import {
     filterLunchQueueStudents,
     isLunchRankVisible,
     lunchQueueDisplayName,
+    sortLunchQueue,
 } from './lib/lunchQueue.js';
 import {
     CLASS_BELL_CHECK_MS,
@@ -509,6 +512,8 @@ import {
     melodyForClassBell,
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
+import { bankBonusBlocked, weeklySalaryGrantPlan } from './lib/autoPayout.js';
+import { MONEY_NEGATIVE_CLASS, formatMoneyHtml, isNegativeMoney, splitNegativeMoney } from './lib/moneyFormat.js';
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
@@ -1473,8 +1478,24 @@ function redrawPlazaGrantsUi() {
             return sanitizeLoanLimit(window.globalSettings && window.globalSettings.bankLoanLimitPerStudent);
         }
 
+        function studentIndexInvestValue(stu) {
+            const row = summarizeStudentStockInvest(stu || {}, _marketQuotes);
+            return Math.max(0, Math.floor(Number(row && row.payout) || 0));
+        }
+
+        /** 빌릴 수 있는 돈 = 기본 한도 + 예금 + 적금 + 지수 투자 지금 가치 */
+        function getPersonalLoanLimit(stu) {
+            const who = stu || window.playerState || {};
+            return personalLoanLimit({
+                baseLimit: getClassLoanLimit(),
+                regularSavings: who.bankRegularSavings,
+                termSavings: sumBankTermDeposits(who.bankTermDeposits),
+                indexValue: studentIndexInvestValue(who),
+            });
+        }
+
         function studentIsCreditDefault(stu, todayYmd = getLocalDateStr()) {
-            return isCreditDefaultOn(stu, todayYmd) || isLoanPenaltyActive(stu, todayYmd);
+            return isStudentCreditDefault(stu, todayYmd);
         }
 
         function playerCreditDefaultMessage() {
@@ -4704,7 +4725,7 @@ function redrawPlazaGrantsUi() {
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
             condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
             bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
-            stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
+            stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [],
             catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
             conveniencePurchases: [],
@@ -7160,6 +7181,75 @@ ${subjectLine}
         }
         window.formatBongAmount = formatBongAmount;
 
+        /** 화면용. 음수 금액은 빨간 클래스로 감쌉니다. 알림 문장에는 쓰지 않습니다. */
+        function formatBongAmountHtml(v) {
+            return formatMoneyHtml(formatBongAmount(v), normalizeBongValue(v));
+        }
+
+        function paintMoneyElement(el, value) {
+            if (!el) return;
+            el.classList.toggle(MONEY_NEGATIVE_CLASS, isNegativeMoney(value));
+        }
+
+        /**
+         * 이미 그려진 글자 중 "-12봉"처럼 단위가 붙은 음수 금액을 빨갛게 바꿉니다.
+         * 입력칸·이미 칠한 글자는 다시 건드리지 않습니다.
+         */
+        function paintNegativeCurrency(root) {
+            const unit = getCurrencyUnit();
+            const scope = root || document.body;
+            if (!scope || !unit || typeof document === 'undefined') return;
+            const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
+                acceptNode(node) {
+                    if (!node || !node.nodeValue || node.nodeValue.indexOf('-') < 0) return NodeFilter.FILTER_REJECT;
+                    const parent = node.parentElement;
+                    if (!parent) return NodeFilter.FILTER_REJECT;
+                    if (parent.closest(`script,style,textarea,input,option,.${MONEY_NEGATIVE_CLASS}`)) return NodeFilter.FILTER_REJECT;
+                    return NodeFilter.FILTER_ACCEPT;
+                },
+            });
+            const nodes = [];
+            let current = walker.nextNode();
+            while (current) {
+                nodes.push(current);
+                current = walker.nextNode();
+            }
+            nodes.forEach((node) => {
+                const parts = splitNegativeMoney(node.nodeValue, unit);
+                if (!parts.some((part) => part.negative)) return;
+                const frag = document.createDocumentFragment();
+                parts.forEach((part) => {
+                    if (!part.text) return;
+                    if (part.negative) {
+                        const span = document.createElement('span');
+                        span.className = MONEY_NEGATIVE_CLASS;
+                        span.textContent = part.text;
+                        frag.appendChild(span);
+                    } else {
+                        frag.appendChild(document.createTextNode(part.text));
+                    }
+                });
+                if (node.parentNode) node.parentNode.replaceChild(frag, node);
+            });
+        }
+
+        function installMoneyPaint() {
+            if (window._moneyPaintOn || typeof document === 'undefined' || !document.body) return;
+            window._moneyPaintOn = true;
+            let scheduled = false;
+            const run = () => {
+                scheduled = false;
+                paintNegativeCurrency(document.body);
+            };
+            const obs = new MutationObserver(() => {
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(run);
+            });
+            obs.observe(document.body, { childList: true, subtree: true, characterData: true });
+            paintNegativeCurrency(document.body);
+        }
+
         /** UI — 부족 화폐 안내 */
         function formatInsufficientBongAlert(shortfall) {
             const need = formatBongAmount(Math.max(0, Number(shortfall) || 0));
@@ -9349,7 +9439,11 @@ ${subjectLine}
             }, today, getBankLoanCalendar());
             bong = life.bong;
             regular = life.bankRegularSavings;
-            if (!isAdmin && !isVacationAutomationPaused('bankBonus')) {
+            const creditBlocksBonus = bankBonusBlocked({
+                creditDefaultUntilYmd: life.creditDefaultUntilYmd,
+                loanPenaltyUntilYmd: life.loanPenaltyUntilYmd,
+            }, today);
+            if (!isAdmin && !isVacationAutomationPaused('bankBonus') && !creditBlocksBonus) {
                 const totalDep = normalizeBongValue(regular + sumBankTermDeposits(terms));
                 if (totalDep >= 100) {
                     const last = bonusDate;
@@ -9397,7 +9491,12 @@ ${subjectLine}
                     amount: loanAmount,
                     days: loanDays,
                     ratePercent: Number(globalSettings && globalSettings.bankInterestPercent) || 0,
-                    limit: getClassLoanLimit(),
+                    limit: personalLoanLimit({
+                        baseLimit: getClassLoanLimit(),
+                        regularSavings: accrued.bankRegularSavings,
+                        termSavings: sumBankTermDeposits(accrued.bankTermDeposits),
+                        indexValue: studentIndexInvestValue({ stockInvestments: serverData.stockInvestments }),
+                    }),
                 });
                 if (!acted.ok) {
                     const keepLoan = loanAction === 'take' && loanStillOutstanding(serverData.bankLoan);
@@ -20934,7 +21033,7 @@ ${subjectLine}
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
+                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${isNegativeMoney(walletBong) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
                 </div>`;
             };
@@ -21075,7 +21174,7 @@ ${subjectLine}
                         <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
+                        <td class="p-2 font-bold cursor-pointer ${isNegativeMoney(stu.bong) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
@@ -21712,12 +21811,7 @@ ${subjectLine}
             let queue = filterLunchQueueStudents(studentsData, getActiveStudentIds());
             queue = queue.filter((s) => lunchQueueDisplayName(s, STUDENT_NAMES));
             
-            queue.sort((a, b) => {
-                const aBid = (a.lunchBid && a.lunchBid.date === todayStr) ? a.lunchBid.amount : 0;
-                const bBid = (b.lunchBid && b.lunchBid.date === todayStr) ? b.lunchBid.amount : 0;
-                if (bBid !== aBid) return bBid - aBid; 
-                return (b.xp || 0) - (a.xp || 0); 
-            });
+            queue = sortLunchQueue(queue, todayStr);
             
             container.innerHTML = queue.map((s, idx) => {
                 const bidAmt = (s.lunchBid && s.lunchBid.date === todayStr) ? s.lunchBid.amount : 0;
@@ -21736,7 +21830,7 @@ ${subjectLine}
                         <div class="text-2xl relative">${crown}${face}</div>
                         <div>
                             <div class="font-bold text-xs text-white">${displayName}</div>
-                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
+                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}${studentIsCreditDefault(s, todayStr) ? ' · <span class="money-negative">신용불량 · 맨 뒤</span>' : ''}</div>
                         </div>
                     </div>
                     <div class="bg-slate-900 px-2 py-1 rounded-lg border border-slate-600 text-right min-w-[52px]">
@@ -22659,7 +22753,7 @@ ${subjectLine}
                 } else if (m.kind === 'penalty_half') {
                     setTimeout(() => {
                         void window.customAlert(
-                            `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`
+                            `신용불량 기간이 끝났어요.\n남은 빚의 절반인 ${formatBongAmount(m.charge)}를 냈어요.\n나머지는 ${m.nextDue}까지 갚아야 해요.`
                         );
                     }, 200);
                 }
@@ -22670,6 +22764,7 @@ ${subjectLine}
         function applyBankRegularDailyBonus() {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return false;
             if (isVacationAutomationPaused('bankBonus')) return false;
+            if (bankBonusBlocked(window.playerState, getLocalDateStr())) return false;
             const total = getBankTotalDeposits();
             if (total < 100) return false;
             const today = getLocalDateStr();
@@ -22744,10 +22839,28 @@ ${subjectLine}
             const walletBal = normalizeBongValue(Number(window.playerState.bong) || 0);
             const regularBal = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             w.textContent = `${formatBongAmount(walletBal)}`;
+            paintMoneyElement(w, walletBal);
             s.textContent = `${formatBongAmount(regularBal)}`;
+            paintMoneyElement(s, regularBal);
             r.textContent = `${rate.toFixed(1)}`;
+            const limitParts = {
+                base: getClassLoanLimit(),
+                deposits: Math.max(0, Math.floor(Number(window.playerState.bankRegularSavings) || 0)),
+                savings: sumBankTermDeposits(window.playerState.bankTermDeposits),
+                index: studentIndexInvestValue(window.playerState),
+            };
+            limitParts.total = personalLoanLimit({
+                baseLimit: limitParts.base,
+                regularSavings: limitParts.deposits,
+                termSavings: limitParts.savings,
+                indexValue: limitParts.index,
+            });
             const limitEl = document.getElementById('bankLoanLimitDisplay');
-            if (limitEl) limitEl.textContent = String(getClassLoanLimit());
+            if (limitEl) limitEl.textContent = formatBongAmount(limitParts.total);
+            const limitDetail = document.getElementById('bankLoanLimitDetail');
+            if (limitDetail) {
+                limitDetail.textContent = `기본 ${formatBongAmount(limitParts.base)} + 예금 ${formatBongAmount(limitParts.deposits)} + 적금 ${formatBongAmount(limitParts.savings)} + 지수 ${formatBongAmount(limitParts.index)}`;
+            }
             const creditLine = document.getElementById('bankCreditDefaultLine');
             if (creditLine) {
                 const inDefault = studentIsCreditDefault(window.playerState);
@@ -22760,7 +22873,7 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             const outstanding = loanStillOutstanding(rawLoan);
-            const cap = getClassLoanLimit();
+            const cap = getPersonalLoanLimit(window.playerState);
             const inDefault = studentIsCreditDefault(window.playerState);
             if (loanStatus) {
                 if (inDefault) {
@@ -22771,9 +22884,9 @@ ${subjectLine}
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
                     loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
                 } else if (cap < LOAN_MIN_UNIT) {
-                    loanStatus.textContent = '현재 학급에서는 대출이 닫혀 있습니다.';
+                    loanStatus.textContent = '지금 빌릴 수 있는 돈이 없어요. 예금, 적금, 지수 투자가 생기면 그 만큼 더해져요.';
                 } else {
-                    loanStatus.textContent = `1인 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 최대 ${LOAN_MAX_BUSINESS_DAYS}영업일. 갚을 대출이 남아 있으면 다시 빌릴 수 없습니다.`;
+                    loanStatus.textContent = `지금 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 최대 ${LOAN_MAX_BUSINESS_DAYS}영업일. 기본 한도에 예금, 적금, 지수 투자 가치를 더한 값이에요. 갚기 전에는 다시 빌릴 수 없어요.`;
                 }
             }
             if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
@@ -22846,7 +22959,7 @@ ${subjectLine}
                         const defTxt = studentIsCreditDefault(stu) ? '신용불량' : '';
                         rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
+                            <div class="text-right tabular-nums ${isNegativeMoney(wallet) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
                             <div class="text-right text-sky-300 tabular-nums">${formatBongAmount(regular)}</div>
                             <div class="text-right text-amber-200 tabular-nums">${formatBongAmount(termTotal)}</div>
                             <div class="text-right text-rose-200 tabular-nums">${loanTxt}</div>
@@ -23001,7 +23114,23 @@ ${subjectLine}
                     </div>
                 </div>`;
             });
-            box.innerHTML = rows.join('');
+            const history = sanitizeStockHistory(window.playerState.stockInvestHistory);
+            const historyHtml = history.length
+                ? `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/40">
+                    <div class="text-[10px] font-bold text-slate-200 mb-1">사고팔기 기록</div>
+                    ${history.slice().reverse().slice(0, 8).map((row) => {
+                        const market = getStockMarket(row.marketId);
+                        const name = market ? market.name : row.marketId;
+                        const when = row.date || '';
+                        if (row.kind === 'sell') {
+                            const left = row.full ? '전부 팔았어요' : `남은 원금 ${formatBongAmount(row.remaining)}`;
+                            return `<div class="text-[10px] text-slate-300 leading-snug py-0.5">${when} · ${name} ${formatBongAmount(row.amount)} 팔기 · 지갑 ${formatBongAmountHtml(row.payout)} · ${left}</div>`;
+                        }
+                        return `<div class="text-[10px] text-slate-300 leading-snug py-0.5">${when} · ${name} ${formatBongAmount(row.amount)} 사기</div>`;
+                    }).join('')}
+                </div>`
+                : '<p class="text-[10px] text-slate-500">아직 사고팔기 기록이 없어요. 일부를 팔면 여기에 남아요.</p>';
+            box.innerHTML = `${rows.join('')}<div id="bankInvestHistory" class="pt-1">${historyHtml}</div>`;
         }
 
         /** 지수 매수·매도가 겹치면 같은 원금을 여러 번 정산할 수 있어 한 건씩만 처리합니다. */
@@ -23382,7 +23511,7 @@ ${subjectLine}
             const amount = sanitizeLoanAmount(amtEl && amtEl.value);
             const days = sanitizeLoanDays(dayEl && dayEl.value);
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-            const cap = getClassLoanLimit();
+            const cap = getPersonalLoanLimit(window.playerState);
             if (!amount) {
                 preview.textContent = opts.silent ? `한도 ${formatBongAmount(cap)} · 이자율 ${rate}% · 최소 이자 1봉` : `금액을 ${LOAN_MIN_UNIT}봉 단위로 입력하세요.`;
                 return;
@@ -23405,7 +23534,7 @@ ${subjectLine}
                 const amount = sanitizeLoanAmount(amtEl && amtEl.value);
                 const days = sanitizeLoanDays(dayEl && dayEl.value);
                 const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-                const cap = getClassLoanLimit();
+                const cap = getPersonalLoanLimit(window.playerState);
                 const plan = planTakeLoan({
                     existingLoan: window.playerState.bankLoan,
                     inDefault: studentIsCreditDefault(window.playerState),
@@ -23873,12 +24002,12 @@ ${subjectLine}
             const due = loanDueTotal(loan);
             const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
             body.textContent =
-                `너에게 아직 갚지 않은 대출이 있다.\n` +
+                `아직 갚지 않은 대출이 있어요.\n` +
                 `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
-                `납기일 ${loan.dueYmd}\n\n` +
+                `약속한 날 ${loan.dueYmd}\n\n` +
                 (penalty
-                    ? '이미 납기일을 넘겼다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있다.'
-                    : '이 날짜가 지나기 전에 갚아라. 일부만 갚을 수도 있다. 미루면 도장이 찍힌다.');
+                    ? '약속한 날을 넘겼어요. 신용불량이라 밥줄에서 맨 뒤이고, 자동으로 들어오는 보상은 없어요.'
+                    : '이 날이 지나기 전에 갚아 주세요. 일부만 갚아도 돼요. 미루면 신용불량이 됩니다.');
             modal.classList.remove('hidden');
         };
 
@@ -24396,8 +24525,8 @@ ${subjectLine}
             if (dashBongEl) {
                 const bBal = Number(window.playerState.bong) || 0;
                 dashBongEl.innerText = formatBongDisplay(bBal);
-                dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
-                dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
+                dashBongEl.classList.remove('text-sb-gold', 'text-red-400', MONEY_NEGATIVE_CLASS);
+                dashBongEl.classList.add(isNegativeMoney(bBal) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold');
             }
 
             const hp = shieldHpOf(window.playerState);
@@ -24679,6 +24808,8 @@ ${subjectLine}
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
             }
+            installMoneyPaint();
+            paintNegativeCurrency(document.body);
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가. 시각으로 입찰을 막지 않습니다.
@@ -24742,7 +24873,7 @@ ${subjectLine}
                 inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, gearEnhance: { wp1: 1 }, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 dragonBalls: [], dragonBallWeekendKey: '',
                 bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
-                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
+                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [],
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
@@ -25055,7 +25186,7 @@ ${subjectLine}
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
                     
-                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [], catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -25300,6 +25431,7 @@ ${subjectLine}
                                     serverInvestments: serverData.stockInvestments,
                                     serverDaily: serverData.stockInvestDaily,
                                     serverBong: Number.isFinite(serverBong) ? serverBong : 0,
+                                    serverHistory: serverData.stockInvestHistory,
                                     marketId: trade.marketId,
                                     amount: trade.amount,
                                     currentIndex: tradeIndex,
@@ -25313,12 +25445,14 @@ ${subjectLine}
                                 }
                                 dataToSave.stockInvestments = sold.investments;
                                 dataToSave.stockInvestDaily = sold.daily;
+                                dataToSave.stockInvestHistory = sold.history;
                                 dataToSave.bong = normalizeBongValue(sold.bong);
                                 trade.applied = sold;
                             } else {
                                 const bought = applyStockBuyFromServer({
                                     serverInvestments: serverData.stockInvestments,
                                     serverBong: Number.isFinite(serverBong) ? serverBong : 0,
+                                    serverHistory: serverData.stockInvestHistory,
                                     marketId: trade.marketId,
                                     amount: trade.amount,
                                     buyIndex: tradeIndex,
@@ -25331,6 +25465,7 @@ ${subjectLine}
                                     return;
                                 }
                                 dataToSave.stockInvestments = bought.investments;
+                                dataToSave.stockInvestHistory = bought.history;
                                 dataToSave.bong = normalizeBongValue(bought.bong);
                                 trade.applied = bought;
                             }
@@ -25369,6 +25504,9 @@ ${subjectLine}
                             ) {
                                 dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
                             }
+                        }
+                        if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && Array.isArray(serverData.stockInvestHistory)) {
+                            dataToSave.stockInvestHistory = sanitizeStockHistory(serverData.stockInvestHistory);
                         }
                         const finalBong = normalizeBongValue(Number(dataToSave.bong));
                         if (Number.isFinite(serverBong) && Math.abs(finalBong - serverBong) > 0.0001) {
@@ -25516,6 +25654,9 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestDaily')) {
                     window.playerState.stockInvestDaily = dataToSave.stockInvestDaily;
+                }
+                if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestHistory')) {
+                    window.playerState.stockInvestHistory = sanitizeStockHistory(dataToSave.stockInvestHistory);
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'shieldHP')) window.playerState.shieldHP = dataToSave.shieldHP;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'hasShield')) window.playerState.hasShield = dataToSave.hasShield;
@@ -28818,7 +28959,7 @@ ${subjectLine}
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
             'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
-            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
+            'stockInvestments', 'stockInvestDaily', 'stockInvestHistory', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',
@@ -29334,6 +29475,7 @@ ${subjectLine}
                 dailyAllClearBonusDate: '',
                 stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
                 stockInvestDaily: { date: '', profit: 0, sells: 0 },
+                stockInvestHistory: [],
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 classEventPurchases: [],
                 conveniencePurchases: [],
@@ -29529,7 +29671,6 @@ ${subjectLine}
             let permissionDenied = 0;
 
             await Promise.all(stuList.map(async (stu) => {
-                if (studentIsCreditDefault(stu)) return;
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
                 attempted += 1;
                 try {
@@ -29537,7 +29678,9 @@ ${subjectLine}
                         const snap = await transaction.get(ref);
                         if (!snap.exists()) return 'missing';
                         const data = snap.data() || {};
-                        const decision = classXpGrantDecision(data.xp, data.lastClassXpSlot, todayKey);
+                        const decision = classXpGrantDecision(data.xp, data.lastClassXpSlot, todayKey, {
+                            blocked: studentIsCreditDefault(data, slot.ymd),
+                        });
                         if (decision !== 'grant') return decision;
                         transaction.set(ref, {
                             xp: increment(5),
@@ -29547,6 +29690,7 @@ ${subjectLine}
                         return 'granted';
                     });
                     if (result === 'granted') grantedCount += 1;
+                    else if (result === 'credit-default') skipped.push({ id: stu.id, reason: 'credit' });
                     else if (result === 'invalid-xp') skipped.push({ id: stu.id, reason: 'xp' });
                 } catch (e) {
                     console.warn('checkAndDistributeClassXP', stu.id, e);
@@ -29556,9 +29700,11 @@ ${subjectLine}
             }));
 
             skipped.sort((a, b) => String(a.id).localeCompare(String(b.id), 'ko'));
-            const skippedLabel = skipped.map((row) => String(row.id)).join(', ');
 
+            const creditSkips = skipped.filter((row) => row.reason === 'credit');
+            const otherSkips = skipped.filter((row) => row.reason !== 'credit');
             if (!grantedCount) {
+                if (otherSkips.length === 0) return;
                 if (attempted > 0 && permissionDenied === attempted && _classXpWriteNoticeKey !== todayKey) {
                     _classXpWriteNoticeKey = todayKey;
                     await window.customAlert(
@@ -29567,10 +29713,11 @@ ${subjectLine}
                         '이 기기 시계나 시간대가 한국 표준시와 다르면 서버가 거절합니다.\n' +
                         '시간대를 서울로 맞추고 시각을 자동으로 설정한 뒤 이 화면을 다시 열어 주세요.'
                     );
-                } else if (skipped.length) {
+                } else if (otherSkips.length) {
+                    const otherLabel = otherSkips.map((row) => String(row.id)).join(', ');
                     await window.customAlert(
                         `⏰ [${timeStr}] 수업 종료 경험치를 넘긴 학생이 있습니다.\n` +
-                        `건너뛴 학생: ${skippedLabel}\n` +
+                        `건너뛴 학생: ${otherLabel}\n` +
                         '경험치가 숫자가 아니거나 그 학생 기록만 거절된 경우입니다.'
                     );
                 }
@@ -29587,7 +29734,12 @@ ${subjectLine}
             window.globalSettings.lastAutoXpTime = todayKey;
             const npcEl = document.getElementById('npcText');
             if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
-            const skipLine = skipped.length ? `\n\n건너뛴 학생: ${skippedLabel}\n(경험치가 숫자가 아니거나 기록에 실패한 학생입니다.)` : '';
+            const otherLabel = otherSkips.map((row) => String(row.id)).join(', ');
+            const creditLabel = creditSkips.map((row) => String(row.id)).join(', ');
+            const skipLine = [
+                otherLabel ? `\n\n건너뛴 학생: ${otherLabel}\n(경험치가 숫자가 아니거나 기록에 실패한 학생입니다.)` : '',
+                creditLabel ? `\n\n신용불량이라 이번 경험치를 받지 않은 학생: ${creditLabel}` : '',
+            ].join('');
             window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${grantedCount}명에게 경험치 +5 자동 지급을 완료했습니다.${skipLine}`);
         };
 
@@ -29619,24 +29771,20 @@ ${subjectLine}
                     const last = settingsSnap.exists() ? settingsSnap.data().lastSalaryWeek : null;
                     if (last === wId) return null;
 
-                    let count = 0;
+                    const todayPay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const catalog = getJobCatalog();
+                    const reads = [];
                     for (const stu of stuList) {
-                        let pay = 0;
-                        if (stu.jobs) {
-                            const catalog = getJobCatalog();
-                            resolveStudentJobsFromCatalog(stu.jobs, catalog).forEach((j) => {
-                                const ji = catalog.find((jd) =>
-                                    (jd.id && j.id && String(jd.id) === String(j.id))
-                                    || jd.name === j.name
-                                    || (jd.icon === j.icon && jd.color === j.color));
-                                if (ji) pay += ji.pay;
-                            });
-                        }
-                        if (pay > 0) {
-                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
-                            transaction.set(ref, { bong: increment(pay) }, { merge: true });
-                            count++;
-                        }
+                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
+                        reads.push({ stu, ref, snap: await transaction.get(ref) });
+                    }
+                    let count = 0;
+                    for (const row of reads) {
+                        const data = row.snap.exists() ? (row.snap.data() || {}) : row.stu;
+                        const plan = weeklySalaryGrantPlan(data, catalog, todayPay);
+                        if (!plan.grant) continue;
+                        transaction.set(row.ref, { bong: increment(plan.pay) }, { merge: true });
+                        count++;
                     }
 
                     transaction.set(settingsRef, { lastSalaryWeek: wId }, { merge: true });

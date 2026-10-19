@@ -5,6 +5,7 @@ import {
     STOCK_INVEST_MAX,
     applyBuyStock,
     applySellStock,
+    appendStockHistory,
     applyStockBuyFromServer,
     applyStockSellFromServer,
     blendStockBuyIndex,
@@ -122,6 +123,21 @@ describe('은행 지수 투자', () => {
         assert.equal(rest.ok, true);
         assert.equal(rest.full, true);
         assert.equal(rest.investments.kospi, null);
+        const hist = appendStockHistory([], {
+            at: 1000,
+            date: '2026-09-02',
+            kind: 'sell',
+            marketId: 'kospi',
+            amount: 40,
+            payout: part.payout,
+            remaining: 60,
+            full: false,
+        });
+        assert.equal(hist.length, 1);
+        assert.equal(hist[0].kind, 'sell');
+        assert.equal(hist[0].remaining, 60);
+        assert.equal(hist[0].full, false);
+        assert.equal(appendStockHistory(hist, { kind: 'nope' }).length, 1);
     });
 
     it('서버 원금이 없으면 같은 매도를 다시 정산하지 않는다', () => {
@@ -139,6 +155,9 @@ describe('은행 지수 투자', () => {
         assert.equal(first.ok, true);
         assert.equal(first.bong, 150);
         assert.equal(first.investments.kospi, null);
+        assert.equal(first.history.length, 1);
+        assert.equal(first.history[0].kind, 'sell');
+        assert.equal(first.history[0].full, true);
         const again = applyStockSellFromServer({
             serverInvestments: first.investments,
             serverDaily: first.daily,
@@ -173,6 +192,8 @@ describe('은행 지수 투자', () => {
         });
         assert.equal(bought.ok, true);
         assert.equal(bought.bong, 30);
+        assert.equal(bought.history[0].kind, 'buy');
+        assert.equal(bought.history[0].amount, 20);
         const boughtAgain = applyStockBuyFromServer({
             serverInvestments: bought.investments,
             serverBong: 10,

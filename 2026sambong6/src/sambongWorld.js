@@ -3001,13 +3001,14 @@ function redrawPlazaGrantsUi() {
                 codeEl.value = (meta && meta.inviteCode) ? meta.inviteCode : appId;
             }
             if (navClassEl && meta) {
-                navClassEl.textContent = meta.displayName || appId;
-                navClassEl.title = meta.displayName || appId;
+                const className = meta.displayName || appId;
+                navClassEl.textContent = className;
+                navClassEl.title = `${className} · 학급 ID: ${appId}`;
             }
             if (navBtn && meta) {
                 navBtn.classList.remove('hidden');
-                const className = (meta.displayName || appId);
-                navBtn.title = `학급 바꾸기 · ${className}`;
+                const className = meta.displayName || appId;
+                navBtn.title = `학급 고르기 · ${className}`;
                 navBtn.setAttribute('aria-label', `학급 바꾸기, ${className}`);
             }
             const renameBtn = document.getElementById('navRenameClassBtn');

@@ -655,6 +655,13 @@ export function planLoanRepayment(state, opts = {}) {
     };
 }
 
+/** 확인창에 보여 준 금액과 서버에서 다시 계산한 금액이 같은지 봅니다. */
+export function repayAmountsMatch(confirmed, actual) {
+    const left = Math.floor(Number(confirmed));
+    const right = Math.floor(Number(actual));
+    return Number.isFinite(left) && Number.isFinite(right) && left === right;
+}
+
 /** 다 갚기. planLoanRepayment의 full과 같습니다. */
 export function planRepayLoan(state, opts = {}) {
     return planLoanRepayment(state, { ...opts, mode: 'full' });

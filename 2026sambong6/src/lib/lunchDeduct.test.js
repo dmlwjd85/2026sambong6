@@ -5,10 +5,12 @@ import {
     capBongIncrease,
     isLunchDeductWindow,
     laterLunchDate,
+    lunchHolidayDates,
     planServerLunchDeduction,
     seoulDateParts,
     seoulYmdFromMs,
 } from './lunchDeduct.js';
+import { KOREA_2026_FALL_HOLIDAYS } from './season2.js';
 
 const NOON_KST = Date.parse('2026-10-19T03:00:00.000Z');
 const BEFORE_NOON_KST = Date.parse('2026-10-19T02:59:00.000Z');
@@ -55,11 +57,10 @@ function lunchCommit(nowMs, vacationPaused = false) {
     };
 }
 
-function guardedSave(client, today, maxBongIncrease = 0) {
+function guardedSave(client, _today, maxBongIncrease = 0) {
     return (snap, write) => {
         write({
             bong: capBongIncrease(snap.bong, client.bong, maxBongIncrease),
-            lastLunchDeductDate: laterLunchDate(snap.lastLunchDeductDate, client.lastLunchDeductDate, today),
         });
     };
 }
@@ -161,6 +162,16 @@ describe('점심값 한 번', () => {
         assert.equal(kept.bong, 90);
         assert.equal(kept.lastLunchDeductDate, TODAY);
     });
+
+    it('점심을 빼지 않은 저장은 날짜를 오늘로 바꾸지 않아 그날 점심값이 남는다', async () => {
+        const doc = memoryDoc({ bong: 20, lastLunchDeductDate: YESTERDAY });
+        await doc.transaction(guardedSave({ bong: 20, lastLunchDeductDate: TODAY }, TODAY));
+        assert.equal(doc.read().bong, 20);
+        assert.equal(doc.read().lastLunchDeductDate, YESTERDAY);
+        await doc.transaction(lunchCommit(NOON_KST));
+        assert.equal(doc.read().bong, 10);
+        assert.equal(doc.read().lastLunchDeductDate, TODAY);
+    });
 });
 
 describe('일반 저장의 봉 상한', () => {
@@ -174,6 +185,127 @@ describe('일반 저장의 봉 상한', () => {
     it('보상에 적어 둔 증가만 허용한다', () => {
         assert.equal(capBongIncrease(100, 140, 40), 140);
         assert.equal(capBongIncrease(100, 160, 40), 140);
+    });
+});
+
+describe('공휴일에는 점심값을 빼지 않는다', () => {
+    const HOLIDAYS = [
+        ['2026-01-01', '신정'],
+        ['2026-02-16', '설날 연휴'],
+        ['2026-02-17', '설날'],
+        ['2026-02-18', '설날 연휴'],
+        ['2026-03-01', '삼일절'],
+        ['2026-03-02', '삼일절 대체공휴일'],
+        ['2026-05-01', '노동절'],
+        ['2026-05-05', '어린이날'],
+        ['2026-05-24', '부처님오신날'],
+        ['2026-05-25', '부처님오신날 대체공휴일'],
+        ['2026-06-03', '전국동시지방선거'],
+        ['2026-06-06', '현충일'],
+        ['2026-07-17', '제헌절'],
+        ['2026-08-15', '광복절'],
+        ['2026-08-17', '광복절 대체공휴일'],
+        ['2026-09-24', '추석 연휴'],
+        ['2026-09-25', '추석'],
+        ['2026-09-26', '추석 연휴'],
+        ['2026-10-03', '개천절'],
+        ['2026-10-05', '개천절 대체공휴일'],
+        ['2026-10-09', '한글날'],
+        ['2026-12-25', '성탄절'],
+        ['2027-01-01', '신정'],
+    ];
+
+    HOLIDAYS.forEach(([ymd, name]) => {
+        it(`${ymd} ${name} 정오에는 봉과 점심 날짜를 그대로 둔다`, () => {
+            const noon = Date.parse(`${ymd}T03:00:00.000Z`);
+            const plan = planServerLunchDeduction({
+                serverBong: 100,
+                serverLunchDate: '',
+                nowMs: noon,
+                classHolidays: [],
+            });
+            assert.equal(plan.deduct, false, name);
+            assert.equal(plan.bong, 100, name);
+            assert.equal(plan.lastLunchDeductDate, '', name);
+            assert.equal(plan.holiday || !isLunchDeductWindow(seoulDateParts(noon)), true, name);
+        });
+    });
+
+    it('학급 목록에만 있는 날도 빼고, 비운 학급 목록은 기본 공휴일을 남긴다', () => {
+        const schoolDay = planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: YESTERDAY,
+            nowMs: NOON_KST,
+            classHolidays: ['2026-10-19'],
+        });
+        assert.equal(schoolDay.deduct, false);
+        assert.equal(schoolDay.bong, 100);
+        assert.equal(schoolDay.lastLunchDeductDate, YESTERDAY);
+
+        const cleared = planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '',
+            nowMs: Date.parse('2026-10-09T03:00:00.000Z'),
+            classHolidays: [],
+        });
+        assert.equal(cleared.deduct, false);
+        assert.equal(cleared.holiday, true);
+
+        const oldClassList = planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '',
+            nowMs: Date.parse('2026-10-05T03:00:00.000Z'),
+            classHolidays: ['2026-09-24'],
+        });
+        assert.equal(oldClassList.deduct, false);
+        assert.equal(lunchHolidayDates(['2026-11-11']).has('2026-11-11'), true);
+        assert.equal(lunchHolidayDates([]).has('2026-10-05'), true);
+        assert.equal(KOREA_2026_FALL_HOLIDAYS.includes('2026-10-05'), true);
+    });
+});
+
+describe('점심 요일은 서버 시각의 한국 표준시다', () => {
+    it('UTC 금요일 저녁은 서울 토요일이라 점심값을 빼지 않는다', () => {
+        const fridayEveningUtc = Date.parse('2026-10-23T15:30:00.000Z');
+        const saturday = seoulDateParts(fridayEveningUtc);
+        assert.equal(new Date(fridayEveningUtc).getUTCDay(), 5);
+        assert.equal(saturday.ymd, '2026-10-24');
+        assert.equal(saturday.weekday, 6);
+        assert.equal(planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '',
+            nowMs: fridayEveningUtc,
+        }).deduct, false);
+
+        const saturdayAfternoon = Date.parse('2026-10-24T03:30:00.000Z');
+        const afternoon = seoulDateParts(saturdayAfternoon);
+        assert.equal(afternoon.ymd, '2026-10-24');
+        assert.equal(afternoon.weekday, 6);
+        assert.equal(afternoon.hour, 12);
+        assert.equal(isLunchDeductWindow(afternoon), false);
+        assert.equal(planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '2026-10-23',
+            nowMs: saturdayAfternoon,
+        }).deduct, false);
+    });
+
+    it('서버가 화요일이면 기기 달력과 상관없이 그 날짜로 뺀다', () => {
+        const serverTuesday = Date.parse('2026-10-20T03:30:00.000Z');
+        const deviceSaturday = Date.parse('2026-10-24T03:30:00.000Z');
+        const serverParts = seoulDateParts(serverTuesday);
+        assert.equal(serverParts.ymd, '2026-10-20');
+        assert.equal(serverParts.weekday, 2);
+        assert.equal(seoulDateParts(deviceSaturday).weekday, 6);
+        const plan = planServerLunchDeduction({
+            serverBong: 100,
+            serverLunchDate: '2026-10-19',
+            nowMs: serverTuesday,
+        });
+        assert.equal(plan.deduct, true);
+        assert.equal(plan.bong, 90);
+        assert.equal(plan.lastLunchDeductDate, '2026-10-20');
+        assert.notEqual(plan.today, seoulYmdFromMs(deviceSaturday));
     });
 });
 

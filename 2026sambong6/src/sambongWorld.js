@@ -110,6 +110,7 @@ import {
     formatLunchHoldSentence,
     planPartialRepay,
     planRepayLoan,
+    repayAmountsMatch,
     planTakeLoan,
     repayLoanFailMessage,
     resolveBongKeepingLoanRepayment,
@@ -122,7 +123,9 @@ import {
 import {
     capBongIncrease,
     isLunchDeductWindow,
+    isLunchYmd,
     laterLunchDate,
+    lunchHolidayDates,
     planServerLunchDeduction,
     seoulDateParts,
     seoulYmdFromMs,
@@ -9619,6 +9622,7 @@ ${subjectLine}
                     loanChanged: true,
                     changed: true,
                     rejected: false,
+                    repayAmount: Math.floor(Number(acted.amount) || 0),
                 };
             }
             const serverBase = {
@@ -23848,40 +23852,98 @@ ${subjectLine}
             return repayLoanFailMessage(plan && plan.reason);
         }
 
+        async function readServerRepayQuote(action, loanAmount) {
+            if (!db || !currentStudentDocRef) return { ok: false, reason: 'none' };
+            try {
+                await syncServerClock();
+                const snap = await getDoc(currentStudentDocRef);
+                const serverData = snap.exists() ? (snap.data() || {}) : {};
+                const accrued = applyServerBankAccrual(serverData, window.globalSettings, {
+                    isAdmin: !!(window.playerState && window.playerState.isAdmin),
+                });
+                const acted = applyLoanAction({
+                    bong: accrued.bong,
+                    bankRegularSavings: accrued.bankRegularSavings,
+                    bankLoan: accrued.bankLoan,
+                    lastLunchDeductDate: serverData.lastLunchDeductDate,
+                    ...copyCreditFields(accrued),
+                }, action, {
+                    todayYmd: loanPlanToday(),
+                    calendar: getBankLoanCalendar(),
+                    amount: loanAmount,
+                });
+                const msg = (acted.msgs || []).slice().reverse().find((row) => row && (row.kind === 'repay_early' || row.kind === 'repay_partial'));
+                const lunchParts = (msg && msg.lunchParts) || [];
+                const left = loanStillOutstanding(acted.bankLoan) ? loanDueTotal(acted.bankLoan) : 0;
+                return {
+                    ok: !!acted.ok && Math.floor(Number(acted.amount) || 0) > 0,
+                    reason: acted.ok ? '' : (acted.reason || 'funds'),
+                    amount: Math.floor(Number(acted.amount) || 0),
+                    left,
+                    full: !loanStillOutstanding(acted.bankLoan),
+                    lunchParts,
+                    withheldLunch: left > 0 && lunchParts.length > 0,
+                    loan: sanitizeBankLoan(accrued.bankLoan) || sanitizeBankLoan(serverData.bankLoan),
+                };
+            } catch (e) {
+                console.warn('readServerRepayQuote', e);
+                return { ok: false, reason: 'funds' };
+            }
+        }
+
+        async function confirmAndSaveRepayment({ action, loanAmount, operationLabel, confirmText, doneText }) {
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                const quote = await readServerRepayQuote(action, loanAmount);
+                if (!quote.ok) {
+                    await window.customAlert(loanRepayFailText(quote));
+                    return;
+                }
+                const ok = await window.customConfirm(confirmText(quote));
+                if (!ok) return;
+                const saveOpts = {
+                    allowBankFieldChanges: true,
+                    allowBongDecrease: true,
+                    loanAction: action,
+                    loanAmount,
+                    operationLabel,
+                    bongLogSource: 'bankLoanRepay',
+                    confirmRepayAmount: quote.amount,
+                };
+                const saved = await saveDataToCloud(saveOpts);
+                if (saved) {
+                    updateUI();
+                    await window.customAlert(doneText(quote));
+                    return;
+                }
+                if (saveOpts.repayMismatch) continue;
+                return;
+            }
+            await window.customAlert('갚는 금액이 바뀌어서 이번엔 갚지 않았어요. 잠시 뒤 다시 눌러 주세요.');
+        }
+
         window.repayBankLoan = async function() {
             if (_bankLoanBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const loan = sanitizeBankLoan(window.playerState.bankLoan);
-            if (!loan) return window.customAlert(repayLoanFailMessage('none'));
-            const plan = planRepayLoan(window.playerState, {
-                todayYmd: loanPlanToday(),
-                calendar: getBankLoanCalendar(),
-            });
-            if (!plan.ok) return window.customAlert(loanRepayFailText(plan));
-            const lunchLine = loanLunchLine(plan);
-            const ok = await window.customConfirm(
-                plan.full
-                    ? `지갑에서 ${formatBongAmount(plan.amount)}를 다 갚을까요?\n이자 ${formatBongAmount(loan.interest)}가 포함돼요.${lunchLine}`
-                    : `${formatBongAmount(plan.amount)}를 갚을까요?\n남은 ${formatBongAmount(plan.left)}는 빚으로 남아요.${lunchLine}`
-            );
-            if (!ok) return;
             _bankLoanBusy = true;
             setBankLoanButtonsDisabled(true);
             try {
-                const saved = await saveDataToCloud({
-                    allowBankFieldChanges: true,
-                    allowBongDecrease: true,
-                    loanAction: 'repay',
+                await confirmAndSaveRepayment({
+                    action: 'repay',
                     operationLabel: '은행 대출 상환',
-                    bongLogSource: 'bankLoanRepay',
+                    confirmText(quote) {
+                        const lunchLine = loanLunchLine(quote);
+                        const interest = quote.loan ? quote.loan.interest : 0;
+                        return quote.full
+                            ? `지갑에서 ${formatBongAmount(quote.amount)}를 다 갚을까요?\n이자 ${formatBongAmount(interest)}가 포함돼요.${lunchLine}`
+                            : `${formatBongAmount(quote.amount)}를 갚을까요?\n남은 ${formatBongAmount(quote.left)}는 빚으로 남아요.${lunchLine}`;
+                    },
+                    doneText(quote) {
+                        const lunchLine = loanLunchLine(quote);
+                        return quote.full
+                            ? `${formatBongAmount(quote.amount)}를 다 갚았어요.${lunchLine}`
+                            : `${formatBongAmount(quote.amount)}를 갚았어요. 남은 빚은 ${formatBongAmount(quote.left)}예요.${lunchLine}`;
+                    },
                 });
-                if (!saved) return;
-                updateUI();
-                await window.customAlert(
-                    plan.full
-                        ? `${formatBongAmount(plan.amount)}를 다 갚았어요.${lunchLine}`
-                        : `${formatBongAmount(plan.amount)}를 갚았어요. 남은 빚은 ${formatBongAmount(plan.left)}예요.${lunchLine}`
-                );
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -23891,41 +23953,28 @@ ${subjectLine}
         window.repayBankLoanPartial = async function() {
             if (_bankLoanBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const loan = sanitizeBankLoan(window.playerState.bankLoan);
-            if (!loan) return window.customAlert(repayLoanFailMessage('none'));
             const amount = Math.floor(Number((document.getElementById('bankLoanPartialInput') || {}).value) || 0);
-            const plan = planPartialRepay(window.playerState, amount, {
-                todayYmd: loanPlanToday(),
-                calendar: getBankLoanCalendar(),
-            });
-            if (!plan.ok) return window.customAlert(loanRepayFailText(plan));
-            const lunchLine = loanLunchLine(plan);
-            const ok = await window.customConfirm(
-                plan.full
-                    ? `${formatBongAmount(plan.amount)}를 모두 갚을까요?${lunchLine}`
-                    : `${formatBongAmount(plan.amount)}를 갚을까요?\n갚고 나면 ${formatBongAmount(plan.left)}가 남고, 약정일 ${loan.dueYmd}는 그대로예요.${lunchLine}`
-            );
-            if (!ok) return;
             _bankLoanBusy = true;
             setBankLoanButtonsDisabled(true);
             try {
-                const saved = await saveDataToCloud({
-                    allowBankFieldChanges: true,
-                    allowBongDecrease: true,
-                    loanAction: plan.full ? 'repay' : 'partial',
+                await confirmAndSaveRepayment({
+                    action: 'partial',
                     loanAmount: amount,
                     operationLabel: '은행 대출 일부 상환',
-                    bongLogSource: 'bankLoanRepay',
+                    confirmText(quote) {
+                        const lunchLine = loanLunchLine(quote);
+                        const dueYmd = quote.loan ? quote.loan.dueYmd : '';
+                        return quote.full
+                            ? `${formatBongAmount(quote.amount)}를 모두 갚을까요?${lunchLine}`
+                            : `${formatBongAmount(quote.amount)}를 갚을까요?\n갚고 나면 ${formatBongAmount(quote.left)}가 남고, 약정일 ${dueYmd}는 그대로예요.${lunchLine}`;
+                    },
+                    doneText(quote) {
+                        const lunchLine = loanLunchLine(quote);
+                        return quote.full
+                            ? `${formatBongAmount(quote.amount)}를 모두 갚았어요.${lunchLine}`
+                            : `${formatBongAmount(quote.amount)}를 갚았어요. 남은 빚은 ${formatBongAmount(quote.left)}예요.${lunchLine}`;
+                    },
                 });
-                if (!saved) return;
-                const input = document.getElementById('bankLoanPartialInput');
-                if (input) input.value = '';
-                updateUI();
-                await window.customAlert(
-                    plan.full
-                        ? `${formatBongAmount(plan.amount)}를 모두 갚았어요.${lunchLine}`
-                        : `${formatBongAmount(plan.amount)}를 갚았어요. 남은 빚은 ${formatBongAmount(plan.left)}예요.${lunchLine}`
-                );
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -25637,6 +25686,7 @@ ${subjectLine}
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
+            let blockedByRepayMismatch = false;
             let blockedLoanReason = '';
             let keepLoanLifecycle = false;
             let blockedStockTradeReason = '';
@@ -25688,6 +25738,9 @@ ${subjectLine}
                                 dataToSave.xp = Math.floor(serverXp + maxRise);
                             }
                         }
+                        options.serverLunchDateKept = isLunchYmd(serverData.lastLunchDeductDate)
+                            ? String(serverData.lastLunchDeductDate).trim()
+                            : '';
                         const todaySave = loanPlanToday();
                         const bankAccrued = applyServerBankAccrual(serverData, window.globalSettings, {
                             isAdmin: !!window.playerState.isAdmin,
@@ -25742,6 +25795,16 @@ ${subjectLine}
                             if (reconciled.keepLifecycle) {
                                 keepLoanLifecycle = true;
                                 blockedLoanReason = String(reconciled.loanReason || '');
+                            }
+                            if (
+                                (opts.loanAction === 'repay' || opts.loanAction === 'partial')
+                                && opts.confirmRepayAmount != null
+                                && !repayAmountsMatch(opts.confirmRepayAmount, reconciled.repayAmount)
+                            ) {
+                                blockedByRepayMismatch = true;
+                                options.repayMismatch = true;
+                                options.nextRepayAmount = Math.floor(Number(reconciled.repayAmount) || 0);
+                                return;
                             }
                             dataToSave.bong = reconciled.bong;
                             dataToSave.bankRegularSavings = reconciled.bankRegularSavings;
@@ -25920,11 +25983,6 @@ ${subjectLine}
                         if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && Array.isArray(serverData.stockInvestHistory)) {
                             dataToSave.stockInvestHistory = sanitizeStockHistory(serverData.stockInvestHistory);
                         }
-                        dataToSave.lastLunchDeductDate = laterLunchDate(
-                            serverData.lastLunchDeductDate,
-                            dataToSave.lastLunchDeductDate,
-                            seoulYmdFromMs(getServerNowMs()),
-                        );
                         const judgedBong = normalizeBongValue(creditBasis && creditBasis.bong != null ? creditBasis.bong : serverData.bong);
                         const settledBong = normalizeBongValue(dataToSave.bong);
                         if (settledBong !== judgedBong) {
@@ -26035,8 +26093,15 @@ ${subjectLine}
                         opts.claimedLoanNoticeKeys = noticeClaim.claimed;
                         opts.wroteLoanNotices = true;
                     }
+                    delete dataToSave.lastLunchDeductDate;
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
+                if (blockedByRepayMismatch) {
+                    if (window.playerState && Object.prototype.hasOwnProperty.call(options, 'serverLunchDateKept')) {
+                        window.playerState.lastLunchDeductDate = options.serverLunchDateKept || '';
+                    }
+                    return false;
+                }
                 if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade) {
                     if (serverRestoreData) {
                         const roleFlags = {
@@ -26084,8 +26149,8 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
-                if (Object.prototype.hasOwnProperty.call(dataToSave, 'lastLunchDeductDate')) {
-                    window.playerState.lastLunchDeductDate = dataToSave.lastLunchDeductDate || '';
+                if (Object.prototype.hasOwnProperty.call(options, 'serverLunchDateKept')) {
+                    window.playerState.lastLunchDeductDate = options.serverLunchDateKept || '';
                 }
                 if (opts.keepServerSkinPurchase) {
                     if (dataToSave.ownedSkins && typeof dataToSave.ownedSkins === 'object') {
@@ -30296,11 +30361,13 @@ ${subjectLine}
             if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef || !db) return;
             if (window.playerState.isAdmin) return;
 
+            await syncServerClock();
             const nowMs = getServerNowMs();
             const parts = seoulDateParts(nowMs);
             if (!parts || !isLunchDeductWindow(parts)) return;
+            const classHolidays = getWorldSettings().holidays;
+            if (lunchHolidayDates(classHolidays).has(parts.ymd)) return;
             if (isVacationAutomationPaused('lunch', parts.ymd)) return;
-            if (window.playerState.lastLunchDeductDate === parts.ymd) return;
 
             let outcome = null;
             try {
@@ -30309,11 +30376,13 @@ ${subjectLine}
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(currentStudentDocRef);
                     const serverData = snap.exists() ? (snap.data() || {}) : {};
+                    const serverNow = getServerNowMs();
                     const plan = planServerLunchDeduction({
                         serverBong: serverData.bong,
                         serverLunchDate: serverData.lastLunchDeductDate,
-                        nowMs: getServerNowMs(),
-                        vacationPaused: isVacationAutomationPaused('lunch', seoulYmdFromMs(getServerNowMs())),
+                        nowMs: serverNow,
+                        vacationPaused: isVacationAutomationPaused('lunch', seoulYmdFromMs(serverNow)),
+                        classHolidays,
                     });
                     if (!plan.deduct) {
                         outcome = {

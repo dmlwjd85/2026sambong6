@@ -24,6 +24,7 @@ import {
     planLoanRepayment,
     planPartialRepay,
     planRepayLoan,
+    repayAmountsMatch,
     creditJudgedOnFinalBong,
     walletCreditAfterFinalBong,
     resolveBongKeepingLoanRepayment,
@@ -737,6 +738,46 @@ function morningAfterLunch(state, ymd) {
     }
     return next;
 }
+
+describe('확인창 금액과 서버 상환 금액', () => {
+    it('화면이 91이어도 서버 점심 날짜가 어제이면 81이고, 다르면 다시 확인한다', () => {
+        const today = '2026-10-21';
+        const yesterday = '2026-10-20';
+        const loan = loanOf(101, '2026-10-22', 'loan_stale');
+        const screen = planRepayLoan({
+            bong: 101,
+            bankRegularSavings: 0,
+            bankLoan: loan,
+            lastLunchDeductDate: today,
+        }, { todayYmd: today, calendar: cal });
+        assert.equal(screen.amount, 91);
+        assert.equal(screen.left, 10);
+
+        const serverState = {
+            bong: 101,
+            bankRegularSavings: 0,
+            bankLoan: loan,
+            lastLunchDeductDate: yesterday,
+        };
+        const server = planRepayLoan(serverState, {
+            todayYmd: today,
+            calendar: cal,
+            lastLunchDeductDate: yesterday,
+        });
+        assert.equal(server.amount, 81);
+        assert.equal(server.left, 20);
+        assert.equal(server.bong, 20);
+        assert.equal(repayAmountsMatch(screen.amount, server.amount), false);
+        assert.equal(repayAmountsMatch(81, server.amount), true);
+
+        const acted = applyLoanAction(serverState, 'repay', { todayYmd: today, calendar: cal });
+        assert.equal(acted.amount, 81);
+        assert.equal(acted.bong, 20);
+        assert.equal(loanDueTotal(acted.bankLoan), 20);
+        assert.equal(serverState.lastLunchDeductDate, yesterday);
+        assert.equal(repayAmountsMatch(screen.amount, acted.amount), false);
+    });
+});
 
 describe('점심값을 남긴 상환은 다음 날 신용불량이 아니다', () => {
     it('지갑 101, 빚 101에서 101을 일부 갚으면 91만 갚고 다음 날 신용불량이 아니다', () => {

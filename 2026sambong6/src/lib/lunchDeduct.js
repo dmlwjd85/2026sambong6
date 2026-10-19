@@ -4,47 +4,38 @@
  */
 
 import { LUNCH_FEE_BONG } from './bankLoan.js';
+import { KOREA_2026_FALL_HOLIDAYS } from './season2.js';
 
 export { LUNCH_FEE_BONG };
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 export function isLunchYmd(raw) {
     return YMD_RE.test(String(raw || '').trim());
 }
 
-/** 서울 달력의 연월일·시·요일. 요일은 0(일)~6(토). */
+function pad2(n) {
+    return String(n).padStart(2, '0');
+}
+
+/**
+ * 서울 달력의 연월일·시·요일. 요일은 0(일)~6(토).
+ * 기기 시간대가 아니라, 넘긴 시각에 9시간을 더한 한국 표준시입니다.
+ */
 export function seoulDateParts(ms) {
     const stamp = Number(ms);
     if (!Number.isFinite(stamp)) return null;
-    const fmt = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hourCycle: 'h23',
-    });
-    const bag = {};
-    fmt.formatToParts(new Date(stamp)).forEach((part) => {
-        if (part.type !== 'literal') bag[part.type] = part.value;
-    });
-    const year = bag.year;
-    const month = bag.month;
-    const day = bag.day;
-    if (!year || !month || !day) return null;
-    let hour = Number(bag.hour);
-    if (!Number.isFinite(hour)) hour = 0;
-    if (hour === 24) hour = 0;
-    const ymd = `${year}-${month}-${day}`;
-    const [y, m, d] = ymd.split('-').map(Number);
-    const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    const shifted = new Date(stamp + KST_OFFSET_MS);
+    const year = shifted.getUTCFullYear();
+    const month = shifted.getUTCMonth() + 1;
+    const day = shifted.getUTCDate();
+    const ymd = `${year}-${pad2(month)}-${pad2(day)}`;
     return {
         ymd,
-        hour,
-        minute: Number(bag.minute) || 0,
-        weekday,
+        hour: shifted.getUTCHours(),
+        minute: shifted.getUTCMinutes(),
+        weekday: shifted.getUTCDay(),
     };
 }
 
@@ -89,15 +80,27 @@ export function capBongIncrease(serverBong, proposedBong, maxBongIncrease = 0) {
     return Math.floor(proposed);
 }
 
+/** 학급이 적어 둔 휴일과 코드의 기본 공휴일을 합칩니다. 어느 쪽에만 있어도 쉽니다. */
+export function lunchHolidayDates(classHolidays) {
+    const dates = new Set(KOREA_2026_FALL_HOLIDAYS);
+    (Array.isArray(classHolidays) ? classHolidays : []).forEach((item) => {
+        const raw = typeof item === 'string' ? item : (item && (item.date || item.ymd));
+        const ymd = String(raw || '').trim();
+        if (isLunchYmd(ymd)) dates.add(ymd);
+    });
+    return dates;
+}
+
 /**
  * 서버 문서를 읽은 뒤 점심값을 뺄지 정합니다.
- * 오늘 이미 빠졌으면 봉과 날짜를 그대로 둡니다.
+ * 오늘 이미 빠졌거나 공휴일이면 봉과 날짜를 그대로 둡니다.
  */
 export function planServerLunchDeduction({
     serverBong = 0,
     serverLunchDate = '',
     nowMs = Date.now(),
     vacationPaused = false,
+    classHolidays,
     fee = LUNCH_FEE_BONG,
 } = {}) {
     const parts = seoulDateParts(nowMs);
@@ -105,7 +108,8 @@ export function planServerLunchDeduction({
     const bong = Math.floor(Number(serverBong) || 0);
     const serverDate = isLunchYmd(serverLunchDate) ? String(serverLunchDate).trim() : '';
     const amount = Math.max(0, Math.floor(Number(fee) || 0));
-    const closed = !parts || vacationPaused || !isLunchDeductWindow(parts) || amount <= 0;
+    const holiday = !!(today && lunchHolidayDates(classHolidays).has(today));
+    const closed = !parts || vacationPaused || holiday || !isLunchDeductWindow(parts) || amount <= 0;
     if (closed || serverDate === today) {
         return {
             deduct: false,
@@ -113,6 +117,7 @@ export function planServerLunchDeduction({
             lastLunchDeductDate: serverDate,
             today,
             fee: 0,
+            holiday,
         };
     }
     return {
@@ -121,5 +126,6 @@ export function planServerLunchDeduction({
         lastLunchDeductDate: today,
         today,
         fee: amount,
+        holiday: false,
     };
 }

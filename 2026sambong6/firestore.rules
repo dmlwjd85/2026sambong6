@@ -262,6 +262,11 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    // 역따봉 문서는 공개 와일드카드에서 빼 둡니다. 학생·로그아웃은 감사 문서를 읽지 못합니다.
+    function isRebukeOpsPath() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/classOps/rebuke.*$');
+    }
+
     function isStudentDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/[^/]+$');
     }
@@ -766,8 +771,8 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/data/students/{studentId} {
       allow read: if true;
-      allow create: if studentCreateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId);
-      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId);
+      allow create: if studentCreateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId) && rebukeCreateAbsent();
+      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId) && rebukeStudentOk(appId, studentId);
       allow delete: if false;
     }
 
@@ -933,14 +938,337 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 역따봉. 따봉·출석과 떨어진 문서만 다룹니다.
+    // 받은 횟수와 감점은 역따봉 문서와 같은 배치에서만 올라갑니다.
+    // 감사·하루 제한은 만든 뒤 고치거나 지우지 못합니다. 시즌이 바뀌면 세대 번호만 올립니다.
+    function rebukeConfigPath(appId) {
+      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeConfig;
+    }
+
+    function rebukeEventItemPath(appId, eventId) {
+      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeEvents/items/$(eventId);
+    }
+
+    function rebukeAuditItemPath(appId, eventId) {
+      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeAudit/items/$(eventId);
+    }
+
+    function rebukeDailyItemPath(appId, dailyId) {
+      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeDaily/items/$(dailyId);
+    }
+
+    function rebukeStudentPath(appId, studentDocId) {
+      return /databases/$(database)/documents/artifacts/$(appId)/public/data/students/$(studentDocId);
+    }
+
+    function rebukeCreateAbsent() {
+      return !('rebukeSeq' in request.resource.data)
+        && !('rebukeEpoch' in request.resource.data)
+        && !('rebukeRoster' in request.resource.data);
+    }
+
+    // 만들기는 횟수 필드가 없고, 지우기는 기존과 같이 둡니다.
+    // 고치기는 횟수·세대·명단이 그대로일 때만 참입니다. diff()는 큰 문서에서 식 한도를 넘깁니다.
+    function rebukeSeqHeld() {
+      return request.method == 'delete'
+        || (request.method == 'create' && rebukeCreateAbsent())
+        || (
+          request.method == 'update'
+          && (
+            (
+              !('rebukeSeq' in resource.data)
+              && !('rebukeSeq' in request.resource.data)
+            )
+            || (
+              'rebukeSeq' in resource.data
+              && 'rebukeSeq' in request.resource.data
+              && request.resource.data.rebukeSeq == resource.data.rebukeSeq
+              && (
+                !('rebukeEpoch' in resource.data)
+                || (
+                  'rebukeEpoch' in request.resource.data
+                  && request.resource.data.rebukeEpoch == resource.data.rebukeEpoch
+                )
+              )
+              && (
+                !('rebukeRoster' in resource.data)
+                || (
+                  'rebukeRoster' in request.resource.data
+                  && request.resource.data.rebukeRoster == resource.data.rebukeRoster
+                )
+              )
+            )
+          )
+        );
+    }
+
+    function rebukeEventPathForStudent(appId, studentId) {
+      return rebukeEventItemPath(
+        appId,
+        'e~' + string(request.resource.data.rebukeEpoch) + '~' + string(request.resource.data.rebukeRoster) + '~' + studentId + '~' + string(request.resource.data.rebukeSeq)
+      );
+    }
+
+    // 선생님 세션이 같은 배치에서 세대나 명단 번호를 올릴 때만 받은 횟수를 0으로 되돌립니다.
+    function rebukeResetInBatch(appId) {
+      let cfgPath = rebukeConfigPath(appId);
+      let before = get(cfgPath).data;
+      let after = getAfter(cfgPath).data;
+      return request.resource.data.rebukeSeq == 0
+        && request.resource.data.rebukeEpoch is int
+        && request.resource.data.rebukeRoster is int
+        && exists(cfgPath)
+        && after.epoch is int
+        && before.epoch is int
+        && (
+          after.epoch > before.epoch
+          || after.roster != before.roster
+        );
+    }
+
+    function rebukeStudentOk(appId, studentId) {
+      return rebukeSeqHeld()
+        || (
+          'rebukeSeq' in request.resource.data
+          && 'rebukeEpoch' in request.resource.data
+          && 'rebukeRoster' in request.resource.data
+          && (
+            existsAfter(rebukeEventPathForStudent(appId, studentId))
+            || rebukeResetInBatch(appId)
+          )
+        );
+    }
+
+    function rebukeRosterEpoch(cfg, toId) {
+      return (cfg.roster is map && toId in cfg.roster && cfg.roster[toId] is int && cfg.roster[toId] >= 1)
+        ? cfg.roster[toId]
+        : 1;
+    }
+
+    function rebukeReasonOk(reason) {
+      return reason is string
+        && reason.size() >= 2
+        && reason.size() <= 80
+        && reason.matches('.*[0-9A-Za-z가-힣].*')
+        && !reason.matches('.*(바[^가-힣A-Za-z]{0,3}보|멍[^가-힣A-Za-z]{0,3}청|병[^가-힣A-Za-z]{0,3}신|지[^가-힣A-Za-z]{0,3}랄|시[^가-힣A-Za-z]{0,3}발|씨[^가-힣A-Za-z]{0,3}발|ㅅ[^가-힣A-Za-z]{0,3}ㅂ|ㅆ[^가-힣A-Za-z]{0,3}ㅂ|ㅂ[^가-힣A-Za-z]{0,3}ㅅ|ㅈ[^가-힣A-Za-z]{0,3}ㄹ|존나|개새끼|좆).*');
+    }
+
+    function rebukeNotDefault(stu) {
+      return (
+          !('creditDefaultUntilYmd' in stu)
+          || !(stu.creditDefaultUntilYmd is string)
+          || stu.creditDefaultUntilYmd <= kstDateString()
+        )
+        && (
+          !('loanPenaltyUntilYmd' in stu)
+          || !(stu.loanPenaltyUntilYmd is string)
+          || stu.loanPenaltyUntilYmd <= kstDateString()
+        );
+    }
+
+    function rebukeBongTaken(before, after, seq, took) {
+      return took is int
+        && took >= 0
+        && took <= 10
+        && (
+          (
+            seq % 10 != 0
+            && took == 0
+            && after == before
+          )
+          || (
+            seq % 10 == 0
+            && before - 10 >= -2000
+            && took == 10
+            && after == before - 10
+          )
+          || (
+            seq % 10 == 0
+            && before - 10 < -2000
+            && after == -2000
+            && took == before + 2000
+          )
+        );
+    }
+
+    // get()과 getAfter()의 봉을 한 식에서 빼면 평가가 죽는다. 요청 문서의 정수와 각각 맞춘다.
+    function rebukeTookOk(before, after, seq, took) {
+      return before is int
+        && after is int
+        && took is int
+        && after == before - took
+        && took >= 0
+        && took <= 10
+        && (
+          (seq % 10 != 0 && took == 0)
+          || (seq % 10 == 0 && before - 10 >= -2000 && took == 10)
+          || (seq % 10 == 0 && before - 10 < -2000 && after == -2000 && took == before + 2000)
+        );
+    }
+
+    function rebukeEventCreateOk(appId, eventId) {
+      let stu = get(rebukeStudentPath(appId, 'student_' + request.resource.data.toId)).data;
+      let after = getAfter(rebukeStudentPath(appId, 'student_' + request.resource.data.toId)).data;
+      let cfg = get(rebukeConfigPath(appId)).data;
+      let audit = getAfter(rebukeAuditItemPath(appId, eventId)).data;
+      let pairId = 'p~' + string(request.resource.data.epoch) + '~' + request.resource.data.ymd + '~' + audit.fromId + '~' + request.resource.data.toId;
+      let sentId = 's~' + string(request.resource.data.epoch) + '~' + request.resource.data.ymd + '~' + audit.fromId + '~' + string(request.resource.data.sentN);
+      let recvId = 'r~' + string(request.resource.data.epoch) + '~' + request.resource.data.ymd + '~' + request.resource.data.toId + '~' + string(request.resource.data.recvN);
+      return signedIn()
+        && request.resource.data.keys().hasOnly(['epoch', 'rosterEpoch', 'toId', 'ymd', 'seq', 'reason', 'hidden', 'took', 'sentN', 'recvN', 'bongBefore', 'bongAfter'])
+        && request.resource.data.hidden == false
+        && request.resource.data.toId is string
+        && request.resource.data.toId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && request.resource.data.ymd == kstDateString()
+        && request.resource.data.epoch is int
+        && request.resource.data.epoch >= 1
+        && request.resource.data.rosterEpoch is int
+        && request.resource.data.seq is int
+        && request.resource.data.seq >= 1
+        && request.resource.data.sentN is int
+        && request.resource.data.sentN >= 1
+        && request.resource.data.sentN <= 3
+        && request.resource.data.recvN is int
+        && request.resource.data.recvN >= 1
+        && request.resource.data.recvN <= 3
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 2
+        && request.resource.data.reason.size() <= 80
+        && request.resource.data.reason.matches('.*[0-9A-Za-z가-힣].*')
+        && !request.resource.data.reason.matches('.*(바보|병신|시발|씨발|지랄|개새끼|존나|ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄹ).*')
+        && cfg.enabled == true
+        && cfg.epoch == request.resource.data.epoch
+        && request.resource.data.rosterEpoch == rebukeRosterEpoch(cfg, request.resource.data.toId)
+        && eventId == 'e~' + string(request.resource.data.epoch) + '~' + string(request.resource.data.rosterEpoch) + '~student_' + request.resource.data.toId + '~' + string(request.resource.data.seq)
+        && rebukeTookOk(request.resource.data.bongBefore, request.resource.data.bongAfter, request.resource.data.seq, request.resource.data.took)
+        && string(stu.bong) == string(request.resource.data.bongBefore)
+        && string(after.bong) == string(request.resource.data.bongAfter)
+        && request.resource.data.seq == (((('rebukeEpoch' in stu) && stu.rebukeEpoch == request.resource.data.epoch && ('rebukeRoster' in stu) && stu.rebukeRoster == request.resource.data.rosterEpoch && ('rebukeSeq' in stu)) ? stu.rebukeSeq : 0) + 1)
+        && after.rebukeSeq == request.resource.data.seq
+        && after.rebukeEpoch == request.resource.data.epoch
+        && after.rebukeRoster == request.resource.data.rosterEpoch
+        && audit.authUid == request.auth.uid
+        && audit.fromId is string
+        && audit.fromId != request.resource.data.toId
+        && audit.toId == request.resource.data.toId
+        && !exists(rebukeDailyItemPath(appId, pairId))
+        && existsAfter(rebukeDailyItemPath(appId, pairId))
+        && !exists(rebukeDailyItemPath(appId, sentId))
+        && existsAfter(rebukeDailyItemPath(appId, sentId))
+        && !exists(rebukeDailyItemPath(appId, recvId))
+        && existsAfter(rebukeDailyItemPath(appId, recvId));
+    }
+
+    function rebukeAuditCreateOk(appId, eventId) {
+      let ev = getAfter(rebukeEventItemPath(appId, eventId)).data;
+      let fromId = request.resource.data.fromId;
+      let before = get(rebukeStudentPath(appId, 'student_' + fromId)).data;
+      let after = getAfter(rebukeStudentPath(appId, 'student_' + fromId)).data;
+      return signedIn()
+        && request.resource.data.keys().hasOnly(['toId', 'fromId', 'ymd', 'authUid', 'reason', 'bongBefore'])
+        && request.resource.data.authUid == request.auth.uid
+        && request.resource.data.bongBefore is int
+        && request.resource.data.bongBefore >= 5
+        && fromId is string
+        && fromId.matches('^[A-Za-z0-9_-]{1,24}$')
+        && fromId != ev.toId
+        && request.resource.data.toId == ev.toId
+        && request.resource.data.reason == ev.reason
+        && request.resource.data.ymd == ev.ymd
+        && string(before.bong) == string(request.resource.data.bongBefore)
+        && string(after.bong) == string(request.resource.data.bongBefore - 5)
+        && rebukeNotDefault(before);
+    }
+
+    function rebukeDailyCreateOk(appId, dailyId) {
+      let eventId = request.resource.data.eventId;
+      let ev = getAfter(rebukeEventItemPath(appId, eventId)).data;
+      let fromId = getAfter(rebukeAuditItemPath(appId, eventId)).data.fromId;
+      return signedIn()
+        && request.resource.data.keys().hasOnly(['eventId'])
+        && eventId is string
+        && (
+          dailyId == 'p~' + string(ev.epoch) + '~' + ev.ymd + '~' + fromId + '~' + ev.toId
+          || dailyId == 's~' + string(ev.epoch) + '~' + ev.ymd + '~' + fromId + '~' + string(ev.sentN)
+          || dailyId == 'r~' + string(ev.epoch) + '~' + ev.ymd + '~' + ev.toId + '~' + string(ev.recvN)
+        );
+    }
+
+    function rebukeRefundCreateOk(appId, eventId) {
+      let ev = get(rebukeEventItemPath(appId, eventId)).data;
+      let before = get(rebukeStudentPath(appId, 'student_' + ev.toId)).data;
+      let after = getAfter(rebukeStudentPath(appId, 'student_' + ev.toId)).data;
+      return isPinMaster(appId)
+        && request.resource.data.keys().hasOnly(['amount', 'beforeBong', 'afterBong'])
+        && request.resource.data.amount is int
+        && request.resource.data.beforeBong is int
+        && request.resource.data.afterBong is int
+        && request.resource.data.amount >= 1
+        && request.resource.data.amount <= 10
+        && ev.took == request.resource.data.amount
+        && request.resource.data.afterBong == request.resource.data.beforeBong + request.resource.data.amount
+        && string(ev.bongAfter) == string(request.resource.data.beforeBong)
+        && string(before.bong) == string(request.resource.data.beforeBong)
+        && string(after.bong) == string(request.resource.data.afterBong);
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebukeConfig {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['enabled', 'epoch', 'roster'])
+        && request.resource.data.enabled == true
+        && request.resource.data.epoch == 1
+        && request.resource.data.roster is map
+        && request.resource.data.roster.size() == 0;
+      allow update: if isPinMaster(appId)
+        && request.resource.data.keys().hasOnly(['enabled', 'epoch', 'roster'])
+        && request.resource.data.enabled is bool
+        && request.resource.data.epoch is int
+        && request.resource.data.epoch >= resource.data.epoch
+        && request.resource.data.roster is map;
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebukeEvents/items/{eventId} {
+      allow read: if signedIn();
+      allow create: if rebukeEventCreateOk(appId, eventId);
+      allow update: if isPinMaster(appId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden', 'reason'])
+        && request.resource.data.hidden == true
+        && request.resource.data.reason == ''
+        && resource.data.hidden == false;
+      allow delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebukeAudit/items/{eventId} {
+      allow read: if isPinMaster(appId);
+      allow create: if rebukeAuditCreateOk(appId, eventId);
+      allow update, delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebukeDaily/items/{dailyId} {
+      allow read: if false;
+      allow create: if rebukeDailyCreateOk(appId, dailyId);
+      allow update, delete: if false;
+    }
+
+    match /artifacts/{appId}/public/data/classOps/rebukeRefunds/items/{eventId} {
+      allow read: if isPinMaster(appId);
+      allow create: if rebukeRefundCreateOk(appId, eventId);
+      allow update, delete: if false;
+    }
+
     match /artifacts/{appId}/public/{document=**} {
-      allow read: if true;
+      allow read: if !isRebukeOpsPath();
+      // 학생 문서는 아래 전용 match만 통과합니다. 여기서 다시 검사하면 식 1000개를 넘습니다.
       allow write: if signedIn()
         && !isSettingsGlobalDoc()
         && !isAutoXpDoc()
         && !isLearningThermometerDoc()
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
+        && !isRebukeOpsPath()
+        && !isStudentDoc()
         && studentClassXpSlotAllowed()
         && masterStudentPinAbsent()
         && studentThermometerMarkerAllowed(appId);

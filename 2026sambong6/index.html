@@ -3834,6 +3834,21 @@
             <button type="button" onclick="document.getElementById('praiseFanfareModal').classList.add('hidden')" class="w-full bg-amber-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
         </div>
     </div>
+    <div id="rebukeSelfModal" class="hidden fixed inset-0 z-[125] bg-slate-950/80 flex items-center justify-center p-4">
+        <div class="w-full max-w-sm rounded-3xl border-4 border-rose-300 bg-slate-900 p-5 space-y-3">
+            <h3 id="rebukeSelfTitle" class="text-rose-100 font-black text-lg">내가 받은 역따봉</h3>
+            <ul id="rebukeSelfList" class="space-y-2 max-h-72 overflow-y-auto text-sm text-rose-50"></ul>
+            <button type="button" onclick="document.getElementById('rebukeSelfModal').classList.add('hidden')" class="w-full bg-rose-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
+        </div>
+    </div>
+    <div id="rebukeTeacherModal" class="hidden fixed inset-0 z-[125] bg-slate-950/80 flex items-center justify-center p-4">
+        <div class="w-full max-w-md rounded-3xl border-4 border-rose-300 bg-slate-900 p-5 space-y-3">
+            <h3 class="text-rose-100 font-black text-lg">역따봉 관리</h3>
+            <button type="button" id="rebukeToggleBtn" onclick="void window.toggleRebukeClass()" class="w-full bg-slate-800 text-rose-50 font-black py-2 rounded-xl min-h-[44px] border border-rose-400">반 전체 역따봉 끄기</button>
+            <div id="rebukeTeacherList" class="space-y-2 max-h-80 overflow-y-auto"></div>
+            <button type="button" onclick="document.getElementById('rebukeTeacherModal').classList.add('hidden')" class="w-full bg-rose-400 text-stone-950 font-black py-2 rounded-xl min-h-[44px]">닫기</button>
+        </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

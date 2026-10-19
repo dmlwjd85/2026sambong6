@@ -72,6 +72,22 @@ export function omitClassXpSlot(data) {
 }
 
 /**
+ * 학생 복구는 문서를 통째로 바꿉니다. 백업에는 수업 XP 슬롯이 없습니다.
+ * 서버에 슬롯이 있으면 그 값을 그대로 두어야, 슬롯을 지우는 쓰기로 규칙이 복구를 거절하지 않습니다.
+ * 서버에 슬롯이 없으면 백업에 들어 있던 슬롯도 넣지 않습니다.
+ */
+export function keepServerClassXpSlot(restoreData, serverData) {
+    const next = { ...(restoreData && typeof restoreData === 'object' ? restoreData : {}) };
+    const server = serverData && typeof serverData === 'object' ? serverData : {};
+    if (Object.prototype.hasOwnProperty.call(server, 'lastClassXpSlot')) {
+        next.lastClassXpSlot = server.lastClassXpSlot;
+    } else {
+        delete next.lastClassXpSlot;
+    }
+    return next;
+}
+
+/**
  * 한 학생 문서에 이번 슬롯을 쓸지 판단합니다.
  * xp가 유한한 숫자가 아니면 grant가 아닙니다. 문자열을 0으로 바꾸지 않습니다.
  */

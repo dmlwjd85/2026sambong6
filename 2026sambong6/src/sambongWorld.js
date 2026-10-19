@@ -508,7 +508,7 @@ import {
     matchClassBell,
     melodyForClassBell,
 } from './lib/classBell.js';
-import { classXpCatchupSlot, classXpGrantDecision, omitClassXpSlot } from './lib/classXpSlot.js';
+import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
@@ -538,6 +538,7 @@ import {
 import {
     FEATURE_UNLOCK_PRICE,
     canOpenClassTool,
+    classToolButtonState,
     featureIdForClassTool,
     getFeatureUnlockItem,
     hasUnlockedFeature,
@@ -3014,10 +3015,16 @@ function redrawPlazaGrantsUi() {
                 codeEl.value = (meta && meta.inviteCode) ? meta.inviteCode : appId;
             }
             if (navClassEl && meta) {
-                navClassEl.textContent = meta.displayName || appId;
-                navClassEl.title = `학급 ID: ${appId}`;
+                const className = meta.displayName || appId;
+                navClassEl.textContent = className;
+                navClassEl.title = `${className} · 학급 ID: ${appId}`;
             }
-            if (navBtn && meta) navBtn.classList.remove('hidden');
+            if (navBtn && meta) {
+                navBtn.classList.remove('hidden');
+                const className = meta.displayName || appId;
+                navBtn.title = `학급 고르기 · ${className}`;
+                navBtn.setAttribute('aria-label', `학급 바꾸기, ${className}`);
+            }
             const renameBtn = document.getElementById('navRenameClassBtn');
             if (renameBtn) renameBtn.classList.toggle('hidden', !(window.playerState && window.playerState.isGM));
             if (teacherHint && meta) {
@@ -4815,10 +4822,14 @@ function redrawPlazaGrantsUi() {
                 // 학생 PIN 로그인이 그 사이에 선생님 세션을 끊으면, 늦게 도착한 허용 목록으로
                 // "인증됨"을 다시 그리지 않습니다.
                 if (generation !== teacherBadgeReadGeneration) return;
-                if (!shouldApplyTeacherBadgeRead(user, auth.currentUser)) return;
-                renderTeacherAuthBadges(state);
+                if (shouldApplyTeacherBadgeRead(user, auth.currentUser)) {
+                    renderTeacherAuthBadges(state);
+                }
             }
             if (generation !== teacherBadgeReadGeneration) return;
+            // 배지 조회가 끝난 시점의 isAdmin 으로 도구 목록을 다시 그립니다.
+            // 마스터 표시가 로그인보다 늦어도 온도계 버튼이 숨은 채로 남지 않습니다.
+            if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
             if (window.playerState && window.playerState.isAdmin && typeof renderLearningThermometerPanel === 'function') {
                 renderLearningThermometerPanel();
             }
@@ -4870,6 +4881,7 @@ function redrawPlazaGrantsUi() {
                 return { ok: false, reason: 'not_allowlisted', message: teacherAuthFailureMessage('not_allowlisted') };
             }
             if (window.playerState && window.playerState.isAdmin) void runAdminOneShotMigrations();
+            if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
             return { ok: true, email: state.email };
         }
 
@@ -11807,19 +11819,20 @@ ${subjectLine}
 
         function updateClassToolsPanelVisibility() {
             const grid = document.getElementById('classtoolsAppGrid');
-            const isAdmin = canEditLearningThermometer();
+            // 목록 표시는 마스터 로그인(isAdmin)만 본다. 온도계 편집에 필요한
+            // 선생님 인증이 아직 없어도 마스터에게는 온도계 버튼을 숨기지 않는다.
+            const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             const masterBar = document.getElementById('classtoolsMasterBar');
             if (masterBar) masterBar.classList.toggle('hidden', !isAdmin);
             if (grid) grid.classList.remove('hidden');
             document.querySelectorAll('#classtoolsAppGrid .app-tool-item').forEach((btn) => {
                 const id = btn.getAttribute('data-tool');
-                const masterOnly = isMasterOnlyClassTool(id);
-                const unlocked = canOpenClassTool(window.playerState, id);
-                btn.classList.toggle('hidden', !isAdmin && masterOnly);
-                btn.classList.toggle('is-active', id === classtoolSub && unlocked);
-                btn.classList.toggle('is-locked', !isAdmin && !masterOnly && !unlocked);
+                const state = classToolButtonState(window.playerState, id, classtoolSub);
+                btn.classList.toggle('hidden', state.hidden);
+                btn.classList.toggle('is-active', state.active);
+                btn.classList.toggle('is-locked', state.locked);
                 let badge = btn.querySelector('.app-tool-lock');
-                if (!isAdmin && !masterOnly && !unlocked) {
+                if (state.locked) {
                     if (!badge) {
                         badge = document.createElement('span');
                         badge.className = 'app-tool-lock';
@@ -24927,7 +24940,9 @@ ${subjectLine}
             document.getElementById('loginOverlay').style.opacity = '0'; 
             setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
             document.getElementById('saveStatus').classList.replace('hidden', 'flex');
-            document.getElementById('playerNameDisplay').innerText = "손님"; 
+            const guestNameEl = document.getElementById('playerNameDisplay');
+            guestNameEl.innerText = "손님";
+            guestNameEl.title = "손님"; 
             document.getElementById('cloudIcon').className = "fa-solid fa-eye-slash text-slate-400";
             
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
@@ -24971,8 +24986,10 @@ ${subjectLine}
             btn.classList.toggle('bg-rose-600', gm);
             btn.classList.toggle('hover:bg-rose-500', gm);
             btn.classList.toggle('bg-slate-700', !gm);
+            btn.setAttribute('aria-label', '로그아웃');
+            btn.title = '로그아웃';
             btn.innerHTML = gm
-                ? '<i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> 로그아웃'
+                ? '<i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i><span class="nav-logout-label">로그아웃</span>'
                 : '<i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>';
         }
 
@@ -25256,7 +25273,9 @@ ${subjectLine}
                 document.getElementById('loginOverlay').style.opacity = '0'; 
                 setTimeout(() => document.getElementById('loginOverlay').classList.add('hidden'), 500);
                 document.getElementById('saveStatus').classList.replace('hidden', 'flex');
-                document.getElementById('playerNameDisplay').innerText = STUDENT_NAMES[studentId];
+                const nameEl = document.getElementById('playerNameDisplay');
+                nameEl.innerText = STUDENT_NAMES[studentId];
+                nameEl.title = nameEl.innerText;
                 document.getElementById('cloudIcon').className = "fa-solid fa-cloud text-sb-blue";
                 
                 updateUI(); 
@@ -29591,10 +29610,17 @@ ${subjectLine}
 
             try {
                 const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
-                const restorePayload = { ...backup.data };
-                if (stu.pin) restorePayload.pin = stu.pin;
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
-                await setDoc(docRef, restorePayload);
+                // 백업에는 lastClassXpSlot이 없다. 통째로 덮으면 오늘 수업 XP 슬롯이 지워지고
+                // 규칙이 복구를 거절해, 초기화 직후 자동 지급된 학생을 되돌리지 못한다.
+                let restorePayload = null;
+                await runTransaction(db, async (transaction) => {
+                    const liveSnap = await transaction.get(docRef);
+                    const live = liveSnap.exists() ? (liveSnap.data() || {}) : {};
+                    restorePayload = keepServerClassXpSlot(backup.data, live);
+                    if (stu.pin) restorePayload.pin = stu.pin;
+                    transaction.set(docRef, restorePayload);
+                });
 
                 const myId = localStorage.getItem('sambong_student_id');
                 if (myId === String(stuId) && !window.playerState.isAdmin) {

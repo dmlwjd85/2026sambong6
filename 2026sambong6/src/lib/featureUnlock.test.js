@@ -6,6 +6,7 @@ import {
     FEATURE_UNLOCK_PRICE,
     MASTER_ONLY_CLASS_TOOLS,
     canOpenClassTool,
+    classToolButtonState,
     featureIdForClassTool,
     getFeatureUnlockItem,
     hasUnlockedFeature,
@@ -67,6 +68,46 @@ describe('잠금해제 판정', () => {
         assert.equal(canOpenClassTool({ isGuest: true }, 'classboard'), false);
         assert.equal(canOpenClassTool({ isGuest: true }, 'boardgames'), false);
         assert.deepEqual(sanitizeUnlockedFeatures(stu.unlockedFeatures), { tool_timer: true });
+    });
+});
+
+describe('수업 탭 도구 버튼', () => {
+    it('마스터는 선생님 인증 전에도 온도계를 본다', () => {
+        const master = { isAdmin: true, isGM: true, unlockedFeatures: {} };
+        const thermo = classToolButtonState(master, 'thermo', 'timetable');
+        assert.equal(thermo.hidden, false);
+        assert.equal(thermo.locked, false);
+        assert.equal(thermo.active, false);
+        MASTER_ONLY_CLASS_TOOLS.forEach((id) => {
+            assert.equal(classToolButtonState(master, id).hidden, false);
+        });
+        assert.equal(classToolButtonState(master, 'thermo', 'thermo').active, true);
+    });
+
+    it('학생·게스트는 온도계를 숨기고 나머지 도구는 그대로 둔다', () => {
+        const student = { isAdmin: false, isGuest: false, unlockedFeatures: { tool_timer: true } };
+        assert.equal(classToolButtonState(student, 'thermo').hidden, true);
+        assert.equal(classToolButtonState(student, 'vote').hidden, true);
+        assert.equal(classToolButtonState(student, 'timer').hidden, false);
+        assert.equal(classToolButtonState(student, 'timer').locked, false);
+        assert.equal(classToolButtonState(student, 'chalk').hidden, false);
+        assert.equal(classToolButtonState(student, 'chalk').locked, true);
+        assert.equal(classToolButtonState(student, 'padlet').hidden, false);
+        assert.equal(classToolButtonState(student, 'padlet').locked, false);
+        assert.equal(classToolButtonState(student, 'boardgames').locked, false);
+        const guest = { isAdmin: false, isGuest: true };
+        assert.equal(classToolButtonState(guest, 'thermo').hidden, true);
+        assert.equal(classToolButtonState(guest, 'timetable').hidden, false);
+        assert.equal(classToolButtonState(guest, 'padlet').locked, true);
+    });
+
+    it('관리자 상태가 늦게 확정되면 온도계 숨김이 풀린다', () => {
+        const pending = { isAdmin: false, isGM: false };
+        const resolved = { isAdmin: true, isGM: true };
+        assert.equal(classToolButtonState(pending, 'thermo').hidden, true);
+        assert.equal(classToolButtonState(resolved, 'thermo').hidden, false);
+        assert.equal(classToolButtonState(null, 'thermo').hidden, true);
+        assert.equal(classToolButtonState(undefined, 'chalk').hidden, false);
     });
 });
 

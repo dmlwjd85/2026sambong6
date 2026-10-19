@@ -68,6 +68,24 @@ export function canOpenClassTool(playerState, toolId) {
     return hasUnlockedFeature(playerState, fid);
 }
 
+/**
+ * 수업 탭 도구 버튼의 숨김·잠금.
+ * 온도계를 포함한 마스터 전용 도구는 playerState.isAdmin 이면 목록에 둡니다.
+ * 선생님 계정 인증(Google·이메일)은 값을 고치는 권한이고, 버튼을 보여줄 조건이 아닙니다.
+ * isAdmin 이 나중에 true 가 되면 이 함수를 다시 호출해 온도계를 그리면 됩니다.
+ */
+export function classToolButtonState(playerState, toolId, activeToolId = '') {
+    const id = String(toolId || '');
+    const isAdmin = !!(playerState && playerState.isAdmin);
+    const masterOnly = isMasterOnlyClassTool(id);
+    const unlocked = canOpenClassTool(playerState, id);
+    return {
+        hidden: masterOnly && !isAdmin,
+        active: id === String(activeToolId || '') && unlocked,
+        locked: !isAdmin && !masterOnly && !unlocked,
+    };
+}
+
 /** 광장 프로필용 상태 문구 — 공백 정리 후 10글자. */
 export function sanitizeStatusMessage(raw) {
     const s = String(raw ?? '').replace(/\s+/g, ' ').trim();

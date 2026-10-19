@@ -4,6 +4,7 @@ import {
     countRebukeReceivedToday,
     defaultRebukeConfig,
     planPeerRebuke,
+    planRebukeDue,
     rebukeFailMessage,
     rebukePenaltyTook,
     rebukePublicEvent,
@@ -50,6 +51,8 @@ describe('역따봉 이유', () => {
             '바 보', '바1보', 'ㅂ ㅅ', '멍.청.이', 'ㅄ아', 'qkqh', 'tlqkf',
             'QKQH', '죽어', '꺼져 돼지야', '찐따', '개새기',
             '바.보', '멍청이', '좆같아', '시1발놈', 'ㅅ ㅂ',
+            '미친놈', '씨바', '시바', '18놈', 'ㅅ1ㅂ', 'fuck', 'rjwu', '닥쳐', '등신', '또라이',
+            'ｆｕｃｋ', '미 친놈', '씨1바', 'FUCK',
         ];
         blocked.forEach((text) => {
             assert.equal(rebukeReasonIssue(text, names), 'hurt', text);
@@ -59,6 +62,69 @@ describe('역따봉 이유', () => {
         assert.equal(rebukeReasonFold('ㅄ아'), 'ㅂㅅ아');
         assert.equal(rebukeReasonFold('바 보'), '바보');
         assert.equal(rebukeReasonFold('바1보'), '바1보');
+    });
+});
+
+describe('역따봉 정산 장부', () => {
+    it('기기가 바뀌면 안 낸 빚이 있을 때 더 보내지 못하고, 낸 뒤에는 다시 쌓인다', () => {
+        const blocked = planRebukeDue({
+            fromId: '1',
+            epoch: 1,
+            owed: 5,
+            openYmd: '2026-10-18',
+            n: 1,
+            payerUid: 'old-device',
+            lastPaidYmd: '',
+            eventId: 'e1',
+            settled: false,
+        }, {
+            fromId: '1',
+            epoch: 1,
+            ymd: '2026-10-19',
+            payerUid: 'new-device',
+            eventId: 'e2',
+        });
+        assert.equal(blocked.reason, 'due');
+        const sameDay = planRebukeDue({
+            fromId: '1',
+            epoch: 1,
+            owed: 5,
+            openYmd: '2026-10-19',
+            n: 1,
+            payerUid: 'old-device',
+            lastPaidYmd: '',
+            eventId: 'e1',
+            settled: false,
+        }, {
+            fromId: '1',
+            epoch: 1,
+            ymd: '2026-10-19',
+            payerUid: 'new-device',
+            eventId: 'e2',
+        });
+        assert.equal(sameDay.reason, 'due');
+        const again = planRebukeDue({
+            fromId: '1',
+            epoch: 1,
+            owed: 0,
+            openYmd: '',
+            n: 0,
+            payerUid: 'new-device',
+            lastPaidYmd: '2026-10-18',
+            eventId: 'e1',
+            settled: true,
+        }, {
+            fromId: '1',
+            epoch: 1,
+            ymd: '2026-10-19',
+            payerUid: 'new-device',
+            eventId: 'e2',
+        });
+        assert.equal(again.ok, true);
+        assert.equal(again.due.owed, 5);
+        assert.equal(again.due.n, 1);
+        assert.equal(again.due.openYmd, '2026-10-19');
+        assert.equal(again.id, '1~1');
     });
 });
 

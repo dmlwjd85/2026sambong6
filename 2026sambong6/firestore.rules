@@ -966,6 +966,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeCharges/items/$(eventId);
     }
 
+    function rebukeDueItemPath(appId, dueId) {
+      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeDue/items/$(dueId);
+    }
+
     function rebukeSettlementItemPath(appId, eventId) {
       return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeSettlements/items/$(eventId);
     }
@@ -1076,8 +1080,8 @@ service cloud.firestore {
         && fold.size() >= 2
         && fold.size() <= 80
         && fold.matches('^[0-9a-z가-힣ㄱ-ㅎ]+$')
-        && !fold.matches('.*(바보|멍청|병신|지랄|시발|씨발|개새끼|좆|존나|개새기|돼지|찐따|죽어|꺼져|ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄹ|ㅄ|qkqh|tlqkf).*')
-        && !reason.matches('.*(바[^가-힣A-Za-z]{0,3}보|멍[^가-힣A-Za-z]{0,3}청|병[^가-힣A-Za-z]{0,3}신|지[^가-힣A-Za-z]{0,3}랄|시[^가-힣A-Za-z]{0,3}발|씨[^가-힣A-Za-z]{0,3}발|ㅅ[^가-힣A-Za-z]{0,3}ㅂ|ㅆ[^가-힣A-Za-z]{0,3}ㅂ|ㅂ[^가-힣A-Za-z]{0,3}ㅅ|ㅈ[^가-힣A-Za-z]{0,3}ㄹ|존나|개새끼|좆|개새기|돼지|찐따|죽어|꺼져|ㅄ|[qQ][kK][qQ][hH]|[tT][lL][qQ][kK][fF]).*');
+        && !fold.matches('.*(바보|멍청|병신|지랄|시발|씨발|개새끼|좆|존나|개새기|돼지|찐따|죽어|꺼져|ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄹ|ㅄ|qkqh|tlqkf|미친|씨바|시바|18놈|닥쳐|등신|또라이|fuck|rjwu).*')
+        && !reason.matches('.*(바[^가-힣A-Za-z]{0,3}보|멍[^가-힣A-Za-z]{0,3}청|병[^가-힣A-Za-z]{0,3}신|지[^가-힣A-Za-z]{0,3}랄|시[^가-힣A-Za-z]{0,3}발|씨[^가-힣A-Za-z]{0,3}발|ㅅ[^가-힣A-Za-z]{0,3}ㅂ|ㅆ[^가-힣A-Za-z]{0,3}ㅂ|ㅂ[^가-힣A-Za-z]{0,3}ㅅ|ㅈ[^가-힣A-Za-z]{0,3}ㄹ|존나|개새끼|좆|개새기|돼지|찐따|죽어|꺼져|ㅄ|미친|미[^가-힣A-Za-z]{0,3}친|씨바|씨[^가-힣A-Za-z]{0,3}바|시바|시[^가-힣A-Za-z]{0,3}바|18[^가-힣A-Za-z]{0,3}놈|닥[^가-힣A-Za-z]{0,3}쳐|등[^가-힣A-Za-z]{0,3}신|또[^가-힣A-Za-z]{0,3}라이|[fF][uU][cC][kK]|ｆｕｃｋ|ＦＵＣＫ|[rR][jJ][wW][uU]|[qQ][kK][qQ][hH]|[tT][lL][qQ][kK][fF]).*');
     }
 
     function rebukeNotDefault(stu) {
@@ -1208,6 +1212,96 @@ service cloud.firestore {
         && rebukeNotDefault(before);
     }
 
+    // 5봉 빚은 로그인 기기가 아니라 학생 번호에 붙입니다. 기기가 바뀌어도 같은 학생이 다음 날 냅니다.
+    function rebukeDueRaiseOk(path, after) {
+      let before = get(path).data;
+      return before.fromId == after.fromId
+        && before.epoch == after.epoch
+        && after.settled == false
+        && after.lastPaidYmd == before.lastPaidYmd
+        && (
+          (before.owed == 0 && after.n == 1 && after.owed == 5)
+          || (
+            before.payerUid == request.auth.uid
+            && before.openYmd == after.openYmd
+            && before.n == 1
+            && before.owed == 5
+            && after.n == 2
+            && after.owed == 10
+          )
+          || (
+            before.payerUid == request.auth.uid
+            && before.openYmd == after.openYmd
+            && before.n == 2
+            && before.owed == 10
+            && after.n == 3
+            && after.owed == 15
+          )
+        );
+    }
+
+    function rebukeDueSendOk(appId, fromId, epoch, eventId) {
+      let path = rebukeDueItemPath(appId, string(epoch) + '~' + fromId);
+      let after = getAfter(path).data;
+      return existsAfter(path)
+        && fromId is string
+        && epoch is int
+        && eventId is string
+        && after.keys().hasOnly(['fromId', 'epoch', 'owed', 'openYmd', 'n', 'payerUid', 'lastPaidYmd', 'eventId', 'settled'])
+        && after.fromId == fromId
+        && after.epoch == epoch
+        && after.payerUid == request.auth.uid
+        && after.eventId == eventId
+        && after.openYmd == kstDateString()
+        && after.settled == false
+        && after.owed is int
+        && after.n is int
+        && !exists(rebukeChargeItemPath(appId, eventId))
+        && existsAfter(rebukeChargeItemPath(appId, eventId))
+        && (
+          (!exists(path) && after.n == 1 && after.owed == 5 && after.lastPaidYmd == '')
+          || (exists(path) && rebukeDueRaiseOk(path, after))
+        );
+    }
+
+    function rebukeDueClearOk(appId, dueId) {
+      let epoch = request.resource.data.epoch;
+      let fromId = request.resource.data.fromId;
+      return signedIn()
+        && dueId == string(epoch) + '~' + fromId
+        && resource.data.owed is int
+        && resource.data.owed >= 5
+        && resource.data.owed <= 15
+        && resource.data.openYmd is string
+        && resource.data.openYmd < kstDateString()
+        && resource.data.settled == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owed', 'n', 'openYmd', 'settled', 'payerUid'])
+        && request.resource.data.owed == 0
+        && request.resource.data.n == 0
+        && request.resource.data.openYmd == ''
+        && request.resource.data.settled == true
+        && request.resource.data.payerUid == request.auth.uid
+        && existsAfter(rebukeSettlementItemPath(appId, 'due~' + dueId + '~' + kstDateString()));
+    }
+
+    function rebukeDueWaiveOk(appId, fromId, epoch) {
+      let path = rebukeDueItemPath(appId, string(epoch) + '~' + fromId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      return before.settled == false
+        && after.settled == false
+        && after.fromId == before.fromId
+        && after.epoch == before.epoch
+        && after.payerUid == before.payerUid
+        && after.eventId == before.eventId
+        && after.lastPaidYmd == before.lastPaidYmd
+        && (
+          (before.owed == 15 && before.n == 3 && after.owed == 10 && after.n == 2 && after.openYmd == before.openYmd)
+          || (before.owed == 10 && before.n == 2 && after.owed == 5 && after.n == 1 && after.openYmd == before.openYmd)
+          || (before.owed == 5 && before.n == 1 && after.owed == 0 && after.n == 0 && after.openYmd == '')
+        );
+    }
+
     function rebukeChargeCreateOk(appId, eventId) {
       let ev = getAfter(rebukeEventItemPath(appId, eventId)).data;
       let audit = getAfter(rebukeAuditItemPath(appId, eventId)).data;
@@ -1223,24 +1317,36 @@ service cloud.firestore {
         && request.resource.data.fromId != 'gm'
         && request.resource.data.fromId != 'gm_a'
         && request.resource.data.toId != 'gm'
-        && request.resource.data.toId != 'gm_a';
+        && request.resource.data.toId != 'gm_a'
+        && rebukeDueSendOk(appId, audit.fromId, ev.epoch, eventId);
     }
 
-    function rebukeSettlementCreateOk(appId, eventId) {
-      let charge = get(rebukeChargeItemPath(appId, eventId)).data;
-      let before = get(rebukeStudentPath(appId, 'student_' + charge.fromId)).data;
-      let after = getAfter(rebukeStudentPath(appId, 'student_' + charge.fromId)).data;
+    function rebukeSettlementCreateOk(appId, settleId) {
+      let epoch = request.resource.data.epoch;
+      let fromId = request.resource.data.fromId;
+      let due = get(rebukeDueItemPath(appId, string(epoch) + '~' + fromId)).data;
+      let before = get(rebukeStudentPath(appId, 'student_' + fromId)).data;
+      let afterStu = getAfter(rebukeStudentPath(appId, 'student_' + fromId)).data;
+      let dueAfter = getAfter(rebukeDueItemPath(appId, string(epoch) + '~' + fromId)).data;
       return signedIn()
-        && charge.amount == 5
-        && charge.ymd < kstDateString()
-        && charge.authUid == request.auth.uid
-        && !exists(rebukeWaiverItemPath(appId, eventId))
-        && request.resource.data.keys().hasOnly(['amount', 'bongBefore', 'bongAfter', 'authUid'])
-        && request.resource.data.amount == 5
+        && settleId == 'due~' + string(epoch) + '~' + fromId + '~' + kstDateString()
+        && request.resource.data.keys().hasOnly(['amount', 'bongBefore', 'bongAfter', 'authUid', 'epoch', 'fromId'])
+        && request.resource.data.amount is int
+        && request.resource.data.amount == due.owed
+        && request.resource.data.amount >= 5
+        && request.resource.data.amount <= 15
         && request.resource.data.authUid == request.auth.uid
-        && request.resource.data.bongAfter == request.resource.data.bongBefore - 5
+        && epoch is int
+        && fromId is string
+        && due.openYmd < kstDateString()
+        && due.settled == false
+        && due.fromId == fromId
+        && dueAfter.owed == 0
+        && dueAfter.settled == true
+        && dueAfter.payerUid == request.auth.uid
+        && request.resource.data.bongAfter == request.resource.data.bongBefore - request.resource.data.amount
         && string(before.bong) == string(request.resource.data.bongBefore)
-        && string(after.bong) == string(request.resource.data.bongAfter);
+        && string(afterStu.bong) == string(request.resource.data.bongAfter);
     }
 
     function rebukeWaiverCreateOk(appId, eventId) {
@@ -1249,15 +1355,24 @@ service cloud.firestore {
         && !exists(rebukeSettlementItemPath(appId, eventId))
         && request.resource.data.keys().hasOnly(['authUid', 'fromId'])
         && request.resource.data.authUid == charge.authUid
-        && request.resource.data.fromId == charge.fromId;
+        && request.resource.data.fromId == charge.fromId
+        && (
+          !exists(rebukeDueItemPath(appId, string(charge.epoch) + '~' + charge.fromId))
+          || rebukeDueWaiveOk(appId, charge.fromId, charge.epoch)
+        );
     }
 
     function rebukePaybackCreateOk(appId, eventId) {
       let charge = get(rebukeChargeItemPath(appId, eventId)).data;
+      let due = get(rebukeDueItemPath(appId, string(charge.epoch) + '~' + charge.fromId)).data;
       let before = get(rebukeStudentPath(appId, 'student_' + charge.fromId)).data;
       let after = getAfter(rebukeStudentPath(appId, 'student_' + charge.fromId)).data;
       return isPinMaster(appId)
-        && exists(rebukeSettlementItemPath(appId, eventId))
+        && due.settled == true
+        && due.owed == 0
+        && due.fromId == charge.fromId
+        && charge.ymd < kstDateString()
+        && !exists(rebukeWaiverItemPath(appId, eventId))
         && request.resource.data.keys().hasOnly(['amount', 'beforeBong', 'afterBong', 'authUid'])
         && request.resource.data.amount == 5
         && request.resource.data.authUid == charge.authUid
@@ -1350,6 +1465,17 @@ service cloud.firestore {
       allow read: if isPinMaster(appId);
       allow create: if rebukeRefundCreateOk(appId, eventId);
       allow update, delete: if false;
+    }
+
+    // 학생 번호에 쌓인 5봉. 낸 기기만 읽고, 다른 기기는 정산 쓰기만 할 수 있습니다.
+    match /artifacts/{appId}/public/data/classOps/rebukeDue/items/{dueId} {
+      allow read: if isPinMaster(appId)
+        || (signedIn() && resource == null)
+        || (signedIn() && resource != null && resource.data.payerUid == request.auth.uid);
+      allow create: if rebukeDueSendOk(appId, request.resource.data.fromId, request.resource.data.epoch, request.resource.data.eventId);
+      allow update: if rebukeDueSendOk(appId, request.resource.data.fromId, request.resource.data.epoch, request.resource.data.eventId);
+      allow update: if rebukeDueClearOk(appId, dueId);
+      allow delete: if false;
     }
 
     // 5봉 청구. 보낸 기기만 읽고, 받는 문서와 같은 배치에서 보낸 사람 봉은 바꾸지 않습니다.

@@ -22,6 +22,7 @@ const HURT_WORDS = [
     '바보', '멍청', '병신', '지랄', '시발', '씨발', '개새끼', '좆', '존나',
     '개새기', '돼지', '찐따', '죽어', '꺼져',
     'ㅅㅂ', 'ㅆㅂ', 'ㅂㅅ', 'ㅈㄹ', 'ㅄ',
+    '미친', '씨바', '시바', '18놈', '닥쳐', '등신', '또라이', 'fuck', 'rjwu',
 ];
 const STAFF_IDS = new Set(['gm', 'gm_a']);
 const NAME_ROLE = /^(손님|마스터|게스트|관리자|선생님)/;
@@ -85,6 +86,12 @@ function isSafeId(id) {
 
 export function isRebukeStaffId(id) {
     return STAFF_IDS.has(String(id || ''));
+}
+
+function toHalfWidth(raw) {
+    return String(raw || '')
+        .replace(/\u3000/g, ' ')
+        .replace(/[\uFF01-\uFF5E]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
 }
 
 /** 두벌식 영타를 한글로 바꿉니다. qkqh → 바보, tlqkf → 시발. */
@@ -175,8 +182,49 @@ export function foldRebukeWords(raw) {
 
 /** 화면이 저장하는 정규화 본문. 영타를 한글로 바꾼 뒤 공백·기호를 뺍니다. */
 export function rebukeReasonFold(raw) {
-    const composed = composeEnglishHangul(String(raw || '')).replace(/\u3144/g, 'ㅂㅅ');
+    const composed = composeEnglishHangul(toHalfWidth(raw)).replace(/\u3144/g, 'ㅂㅅ');
     return composed.toLowerCase().replace(/[^0-9a-z가-힣ㄱ-ㅎ]/g, '');
+}
+
+export function rebukeDueId(epoch, fromId) {
+    return `${Math.max(1, Math.floor(Number(epoch) || 1))}~${String(fromId || '')}`;
+}
+
+/**
+ * 다음 날 낼 5봉을 학생 번호에 쌓습니다.
+ * 로그인 기기가 바뀌어도 같은 학생이면 이 문서로 정산합니다.
+ * 아직 안 낸 빚이 있으면 더 보내지 못합니다.
+ */
+export function planRebukeDue(prev, { fromId, epoch, ymd, payerUid, eventId } = {}) {
+    const from = String(fromId || '');
+    const day = String(ymd || '');
+    const payer = String(payerUid || '');
+    const era = Math.max(1, Math.floor(Number(epoch) || 1));
+    if (!isSafeId(from) || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !payer) return { ok: false, reason: 'who' };
+    const before = prev && typeof prev === 'object' ? prev : null;
+    const owed = before ? Math.floor(Number(before.owed) || 0) : 0;
+    const openYmd = before ? String(before.openYmd || '') : '';
+    const count = before ? Math.floor(Number(before.n) || 0) : 0;
+    const oldPayer = before ? String(before.payerUid || '') : '';
+    if (owed > 0 && openYmd && openYmd < day) return { ok: false, reason: 'due' };
+    if (owed > 0 && oldPayer && oldPayer !== payer) return { ok: false, reason: 'due' };
+    const nextN = owed > 0 && openYmd === day ? count + 1 : 1;
+    if (nextN > REBUKE_SEND_CAP) return { ok: false, reason: 'send' };
+    return {
+        ok: true,
+        id: rebukeDueId(era, from),
+        due: {
+            fromId: from,
+            epoch: era,
+            owed: nextN * REBUKE_COST,
+            openYmd: day,
+            n: nextN,
+            payerUid: payer,
+            lastPaidYmd: before ? String(before.lastPaidYmd || '') : '',
+            eventId: String(eventId || ''),
+            settled: false,
+        },
+    };
 }
 
 export function rebukeNameNeedles(hiddenNames) {
@@ -198,14 +246,15 @@ export function rebukeNameNeedles(hiddenNames) {
 }
 
 export function rebukeReasonIssue(reason, hiddenNames) {
-    const text = String(reason || '').trim();
+    const text = toHalfWidth(reason).trim();
     if (!text) return 'short';
     if (text.length > REBUKE_REASON_MAX) return 'long';
     const latin = text.toLowerCase().replace(/[^a-z]/g, '');
-    if (latin.includes('qkqh') || latin.includes('tlqkf')) return 'hurt';
+    if (['qkqh', 'tlqkf', 'rjwu', 'fuck'].some((word) => latin.includes(word))) return 'hurt';
     const fold = rebukeReasonFold(text);
+    const digitless = fold.replace(/[0-9]/g, '');
     const hangul = fold.replace(/[^가-힣]/g, '');
-    if (HURT_WORDS.some((word) => fold.includes(word) || hangul.includes(word))) return 'hurt';
+    if (HURT_WORDS.some((word) => fold.includes(word) || digitless.includes(word) || hangul.includes(word))) return 'hurt';
     if (!/[0-9A-Za-z가-힣]/.test(text)) return 'symbol';
     if (text.length < REBUKE_REASON_MIN) return 'short';
     const needles = rebukeNameNeedles(hiddenNames);
@@ -228,6 +277,7 @@ export function rebukeFailMessage(reason) {
     if (reason === 'receive') return '이 친구는 오늘 역따봉을 3번 받아서, 오늘은 더 보낼 수 없어요.';
     if (reason === 'send') return '역따봉은 하루에 3번까지 보낼 수 있어요.';
     if (reason === 'pair') return '오늘은 이미 이 친구에게 역따봉을 보냈어요.';
+    if (reason === 'due') return '아직 내지 않은 역따봉이 있어요. 다음 날 봉이 빠진 뒤에 다시 보낼 수 있어요.';
     if (reason === 'who') return '보낼 친구를 찾지 못했어요.';
     return '역따봉을 보내지 못했어요. 오늘은 이미 보냈거나, 보낼 수 있는 횟수를 다 썼을 수 있어요.';
 }

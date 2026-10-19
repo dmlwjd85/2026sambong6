@@ -920,8 +920,8 @@
                 height: 0.78rem;
                 font-size: 7px;
             }
-            .plaza-cards-seating .plaza-gm-side,
-            .plaza-cards-seating .plaza-gm-controls {
+            .plaza-cards-seating .plaza-card:not(:has(.plaza-card-core-gm)) .plaza-gm-side,
+            .plaza-cards-seating .plaza-card:not(:has(.plaza-card-core-gm)) .plaza-gm-controls {
                 display: none;
             }
             .plaza-cards-seating .plaza-seat {
@@ -4490,6 +4490,26 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             flex: 0 0 auto;
             width: 3.15rem;
             z-index: 20;
+        }
+        /* 선생님 카드는 조절판을 얼굴 아래로 내려, 좁은 칸에서 얼굴 위를 덮지 않습니다. */
+        .plaza-card-core-gm {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .plaza-card-core-gm .plaza-card-main {
+            width: 100%;
+            z-index: 2;
+        }
+        .plaza-card-core-gm .plaza-card-face {
+            position: relative;
+            z-index: 3;
+        }
+        .plaza-card-core-gm .plaza-gm-side {
+            width: 100%;
+            max-width: 100%;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            z-index: 1;
+            margin-top: 0.28rem;
         }
         .plaza-gm-btn {
             width: 100%;

@@ -37,6 +37,10 @@ function chargePath(id) {
     return `artifacts/class1/public/data/classOps/rebukeCharges/items/${id}`;
 }
 
+function duePath(id) {
+    return `artifacts/class1/public/data/classOps/rebukeDue/items/${id}`;
+}
+
 function settlementPath(id) {
     return `artifacts/class1/public/data/classOps/rebukeSettlements/items/${id}`;
 }
@@ -123,6 +127,17 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         batch.set(doc(db, eventPath(made.eventId)), made.event);
         batch.set(doc(db, auditPath(made.eventId)), { ...made.audit, authUid: uid });
         batch.set(doc(db, chargePath(made.eventId)), { ...made.charge, authUid: uid });
+        batch.set(doc(db, duePath(`${made.event.epoch}~${made.charge.fromId}`)), {
+            fromId: made.charge.fromId,
+            epoch: made.event.epoch,
+            owed: 5,
+            openYmd: made.event.ymd,
+            n: 1,
+            payerUid: uid,
+            lastPaidYmd: '',
+            eventId: made.eventId,
+            settled: false,
+        });
         batch.set(doc(db, dailyPath(made.daily.pairId)), { eventId: made.eventId });
         batch.set(doc(db, dailyPath(made.daily.sentId)), { eventId: made.eventId });
         batch.set(doc(db, dailyPath(made.daily.recvId)), { eventId: made.eventId });
@@ -379,7 +394,10 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
     it('금칙어는 화면 정규화와 원문 둘 다에서 거절한다', async () => {
         await seedStudent('1');
         await seedStudent('2');
-        const samples = ['바 보', '바.보', '바1보', '멍청이', '좆같아', '시1발놈', 'ㅅ ㅂ', 'qkqh', 'tlqkf', '꺼져 돼지야'];
+        const samples = [
+            '바 보', '바.보', '바1보', '멍청이', '좆같아', '시1발놈', 'ㅅ ㅂ', 'qkqh', 'tlqkf', '꺼져 돼지야',
+            '미친놈', '씨바', '시바', '18놈', 'ㅅ1ㅂ', 'fuck', 'rjwu', '닥쳐', '등신', '또라이', 'ｆｕｃｋ', '미 친놈', '씨1바', 'FUCK',
+        ];
         for (const reason of samples) {
             const made = makePlan();
             made.event.reason = reason;
@@ -446,49 +464,105 @@ describe('firestore rules: 역따봉', { skip: emulatorOn ? false : 'FIRESTORE_E
         await assertSucceeds(commitSend(anon(), made));
         const senderDb = anon();
         const todaySettle = writeBatch(senderDb);
-        todaySettle.set(doc(senderDb, settlementPath(made.eventId)), {
+        todaySettle.set(doc(senderDb, settlementPath(`due~1~1~${today()}`)), {
             amount: 5,
             bongBefore: 50,
             bongAfter: 45,
             authUid: 'anon-student',
+            epoch: 1,
+            fromId: '1',
+        });
+        todaySettle.update(doc(senderDb, duePath('1~1')), {
+            owed: 0,
+            n: 0,
+            openYmd: '',
+            settled: true,
+            payerUid: 'anon-student',
         });
         todaySettle.set(doc(senderDb, studentPath('1')), { bong: 45 }, { merge: true });
         await assertFails(todaySettle.commit());
         const kept = await getDoc(doc(anon(), studentPath('1')));
         assert.equal(kept.data().bong, 50);
+        await assertFails(getDoc(doc(other(), duePath('1~1'))));
+    });
 
+    it('로그인 기기가 바뀌어도 지난 5봉은 학생 번호로 정산하고, 내기 전에는 더 보내지 못한다', async () => {
+        await seedStudent('1', {
+            bong: 30,
+            pin: '1234',
+            quests: {},
+            questHistory: [],
+            inventory: [],
+            ownedSkins: {},
+            equippedSkins: {},
+            bankLoan: null,
+            bankTermDeposits: [],
+            dragonBalls: [],
+            shopDailyPurchase: { date: '2026-10-19', item_xp_pack: 0 },
+            lunchBid: { date: '', amount: 0 },
+            bongChangeLog: [{ at: 1, reason: '저장', delta: 0 }],
+            statusMessage: '',
+            unlockedFeatures: {},
+        });
+        await seedStudent('2');
         await testEnv.withSecurityRulesDisabled(async (context) => {
-            await setDoc(doc(context.firestore(), chargePath('old-fee')), {
+            const db = context.firestore();
+            await setDoc(doc(db, duePath('1~1')), {
+                fromId: '1',
+                epoch: 1,
+                owed: 5,
+                openYmd: '2000-01-01',
+                n: 1,
+                payerUid: 'old-device',
+                lastPaidYmd: '',
+                eventId: 'old-event',
+                settled: false,
+            });
+            await setDoc(doc(db, chargePath('old-fee')), {
                 fromId: '1',
                 toId: '2',
-                authUid: 'anon-student',
+                authUid: 'old-device',
                 ymd: '2000-01-01',
                 amount: 5,
                 epoch: 1,
             });
         });
-        const db = anon();
-        const settle = writeBatch(db);
-        settle.set(doc(db, settlementPath('old-fee')), {
+        await assertFails(getDoc(doc(other(), duePath('1~1'))));
+        await assertFails(getDoc(doc(other(), chargePath('old-fee'))));
+        await assertFails(commitSend(other(), makePlan({ senderBong: 30 })));
+
+        const fresh = other();
+        const settle = writeBatch(fresh);
+        settle.set(doc(fresh, settlementPath(`due~1~1~${today()}`)), {
             amount: 5,
-            bongBefore: 50,
-            bongAfter: 45,
-            authUid: 'anon-student',
+            bongBefore: 30,
+            bongAfter: 25,
+            authUid: 'other-student',
+            epoch: 1,
+            fromId: '1',
         });
-        settle.set(doc(db, studentPath('1')), { bong: 45 }, { merge: true });
+        settle.update(doc(fresh, duePath('1~1')), {
+            owed: 0,
+            n: 0,
+            openYmd: '',
+            settled: true,
+            payerUid: 'other-student',
+        });
+        settle.update(doc(fresh, studentPath('1')), { bong: 25 });
         await assertSucceeds(settle.commit());
-        const paid = await getDoc(doc(anon(), studentPath('1')));
-        assert.equal(paid.data().bong, 45);
+        const paid = await getDoc(doc(other(), studentPath('1')));
+        assert.equal(paid.data().bong, 25);
+        await assertSucceeds(getDoc(doc(other(), duePath('1~1'))));
 
         const teacherDb = teacher();
         const payback = writeBatch(teacherDb);
         payback.set(doc(teacherDb, paybackPath('old-fee')), {
             amount: 5,
-            beforeBong: 45,
-            afterBong: 50,
-            authUid: 'anon-student',
+            beforeBong: 25,
+            afterBong: 30,
+            authUid: 'old-device',
         });
-        payback.set(doc(teacherDb, studentPath('1')), { bong: 50 }, { merge: true });
+        payback.update(doc(teacherDb, studentPath('1')), { bong: 30 });
         await assertSucceeds(payback.commit());
     });
 

@@ -799,6 +799,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
                 globalSettingsRef: doc(db, settingsPath),
                 voteRefFor: (sid) => doc(db, `${path}/votes/${sid}`),
                 studentRefFor: (sid) => doc(db, `artifacts/class1/public/data/students/student_${sid}`),
+                snapshotRef: doc(db, 'artifacts/class1/public/data/maintenance/learning_thermometer_settlement_snapshot'),
                 leaseMs: 5 * 60 * 1000,
                 minDefault: -20,
                 maxDefault: 20,
@@ -968,6 +969,62 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         assert.equal(parent.data().settledDate, '2026-10-16');
         assert.equal(parent.data().settlementAttempt, 1);
         assert.equal((await getDoc(doc(db, `${path}/votes/2`))).data().value, 0);
+    });
+
+    it('H3: 어제 잠금 뒤에 바꾼 표는 어제 값과 오늘 값을 둘 다 지급한다', async () => {
+        const now = 1_800_000_000_000;
+        const leaseMs = 5 * 60 * 1000;
+        const path = 'artifacts/class1/public/data/settings/learningThermometer';
+        const snapshotPath = 'artifacts/class1/public/data/maintenance/learning_thermometer_settlement_snapshot';
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            const db = context.firestore();
+            await setDoc(doc(db, path), thermometerPayload({
+                date: '2026-10-16',
+                settlementKey: '2026-10-16',
+                settlementStatus: 'running',
+                settlementStartedAt: now - leaseMs - 1000,
+                settlementLockOwner: 'tabA',
+                settlementAttempt: 1,
+                usedStaleValues: false,
+                settledDate: '',
+            }));
+            await setDoc(doc(db, snapshotPath), {
+                settlementKey: '2026-10-16',
+                values: { '2': 5, '4': 3 },
+            });
+            await setDoc(doc(db, `${path}/votes/2`), { value: 8 });
+            await setDoc(doc(db, `${path}/votes/4`), { value: 6 });
+            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_2'), {
+                xp: 15,
+                bong: 0,
+                lastThermometerSettlementKey: '2026-10-16#1',
+            });
+            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_4'), { xp: 10, bong: 0 });
+        });
+
+        const db = teacher().firestore();
+        const { args } = settlementRefs(db);
+        const result = await settleThermometerResolvingPrior(db, {
+            ...args,
+            activeIds: ['2', '4'],
+            today: '2026-10-17',
+            owner: 'tabB',
+            now,
+            manual: false,
+        });
+        assert.equal(result.status, 'done');
+        const stu2 = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_2'));
+        const stu4 = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_4'));
+        assert.equal(stu2.data().xp, 23);
+        assert.equal(stu2.data().lastThermometerSettlementKey, '2026-10-17#2');
+        assert.equal(stu4.data().xp, 19);
+        assert.equal(stu4.data().lastThermometerSettlementKey, '2026-10-17#2');
+        assert.equal((await getDoc(doc(db, `${path}/votes/2`))).data().value, 0);
+        assert.equal((await getDoc(doc(db, `${path}/votes/4`))).data().value, 0);
+        assert.equal((await getDoc(doc(db, snapshotPath))).exists(), false);
+        const parent = await getDoc(doc(db, path));
+        assert.equal(parent.data().settlementPending, undefined);
+        assert.equal(parent.data().settledDate, '2026-10-17');
     });
 
     it('시드 학급 선생님의 승인 표식은 그 선생님 uid로만 새 학급 설정을 만든다', async () => {

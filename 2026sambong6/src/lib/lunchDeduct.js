@@ -25,47 +25,6 @@ export function isLunchYmd(raw) {
     return isSchoolYmd(raw);
 }
 
-/** 탭이 달라도 같은 학생의 점심 알림은 하루에 한 번만 띄우게 하는 키입니다. */
-export function lunchAlertStorageKey(appId, studentId, ymd) {
-    const day = String(ymd || '').trim();
-    const who = String(studentId || '').trim();
-    const room = String(appId || '').trim();
-    if (!day || !who) return '';
-    return `sambong_lunch_alert_${room}_${who}_${day}`;
-}
-
-/**
- * 이 알림을 지금 띄워도 되면 true.
- * 이미 띄운 키면 false. 저장소가 없으면 막지 않습니다.
- */
-export function claimLunchAlertShown(storage, key) {
-    const id = String(key || '');
-    if (!id) return true;
-    if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') return true;
-    try {
-        if (storage.getItem(id) === '1') return false;
-        storage.setItem(id, '1');
-        return storage.getItem(id) === '1';
-    } catch {
-        return true;
-    }
-}
-
-/** 탭 두 개가 동시에 봐도 알림은 한 번만 가져가게 합니다. */
-export async function claimLunchAlertShownOnce(storage, key) {
-    const id = String(key || '');
-    const run = () => claimLunchAlertShown(storage, id);
-    const locks = typeof navigator !== 'undefined' && navigator.locks;
-    if (id && locks && typeof locks.request === 'function') {
-        try {
-            return await locks.request(`lunch-alert:${id}`, run);
-        } catch {
-            return run();
-        }
-    }
-    return run();
-}
-
 /** 평일 12시(서울)부터 자정 전까지 점심값을 빼는 시간입니다. 휴일은 따로 봅니다. */
 export function isLunchDeductWindow(parts) {
     if (!parts || !isLunchYmd(parts.ymd)) return false;

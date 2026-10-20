@@ -640,6 +640,7 @@ import {
     toggleJobAssignment,
 } from './lib/jobs.js';
 import {
+    applyAttendanceDayMark,
     attendanceDimsCard,
     attendanceMarkForToday,
     buildAttendanceSheetRows,
@@ -23663,21 +23664,22 @@ ${subjectLine}
             }));
         }
 
-        async function writeStudentReward(sid, xpDelta, bongDelta, extra) {
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
-            const snap = await readStudentDocPreferServer(ref);
-            const stu = snap.exists() ? (snap.data() || {}) : {};
-            const xp = Math.max(0, Math.floor((Number(stu.xp) || 0) + Math.floor(xpDelta || 0)));
-            const bong = normalizeBongValue((Number(stu.bong) || 0) + Number(bongDelta || 0));
-            const payload = { ...(extra || {}), xp, bong };
-            await setDoc(ref, payload, { merge: true });
+        /** 출석·체크리스트처럼 같은 문서를 여러 사람이 고칠 때, 같은 칸의 연타만 막습니다. */
+        const classOpsWriteLocks = new Set();
+
+        function studentRewardPatch(stu, xpDelta, bongDelta, extra) {
+            const xp = Math.max(0, Math.floor((Number(stu && stu.xp) || 0) + Math.floor(xpDelta || 0)));
+            const bong = normalizeBongValue((Number(stu && stu.bong) || 0) + Number(bongDelta || 0));
+            return { ...(extra || {}), xp, bong };
+        }
+
+        function rememberStudentReward(sid, stu, payload) {
             mergeStudentDocIntoPlazaCache(sid, { ...stu, ...payload, id: String(sid) });
             if (String(localStorage.getItem('sambong_student_id') || '') === String(sid) && window.playerState) {
-                window.playerState.xp = xp;
-                window.playerState.bong = bong;
-                Object.assign(window.playerState, extra || {});
+                window.playerState.xp = payload.xp;
+                window.playerState.bong = payload.bong;
+                Object.assign(window.playerState, payload);
             }
-            return { xp, bong };
         }
 
         window.renderAttendanceBoard = function() {
@@ -23709,27 +23711,45 @@ ${subjectLine}
         window.setAttendanceMark = async function(sid, status) {
             if (!window.playerState || !window.playerState.isAdmin) return window.customAlert('담임·보조 교사만 출석을 고를 수 있습니다.');
             if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
-            await ensureClassOpsLoaded();
-            const today = getLocalDateStr();
-            const days = { ...(window._attendanceDays || {}) };
-            const todayMarks = { ...(days[today] || {}) };
-            const plan = planAttendanceChange(todayMarks[sid] || '', status);
-            if (!plan.ok) return;
-            if (plan.status) todayMarks[sid] = plan.status;
-            else delete todayMarks[sid];
-            days[today] = todayMarks;
-            const keys = Object.keys(days).sort();
-            keys.slice(0, Math.max(0, keys.length - 120)).forEach((k) => { delete days[k]; });
-            await writeStudentReward(sid, plan.xpDelta, plan.bongDelta, {
-                attendanceMark: plan.status ? { date: today, status: plan.status } : { date: '', status: '' },
-            });
-            await setDoc(classOpsRef('attendance'), { days }, { merge: true });
-            window._attendanceDays = days;
-            window.renderAttendanceBoard();
-            if (typeof window.renderPlaza === 'function') {
-                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+            const studentId = String(sid || '');
+            if (!studentId) return;
+            const lockKey = `att:${studentId}`;
+            if (classOpsWriteLocks.has(lockKey)) return;
+            classOpsWriteLocks.add(lockKey);
+            try {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다.');
+                await ensureClassOpsLoaded();
+                const today = getLocalDateStr();
+                const attRef = classOpsRef('attendance');
+                const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
+                const applied = await runTransaction(db, async (tx) => {
+                    const attSnap = await tx.get(attRef);
+                    const stuSnap = await tx.get(stuRef);
+                    const serverDays = attSnap.exists() && attSnap.data() ? attSnap.data().days : {};
+                    const next = applyAttendanceDayMark(serverDays, today, studentId, status);
+                    if (!next.ok) return { ok: false, reason: next.reason };
+                    const stu = stuSnap.exists() ? (stuSnap.data() || {}) : {};
+                    const attendanceMark = next.plan.status
+                        ? { date: today, status: next.plan.status }
+                        : { date: '', status: '' };
+                    const payload = studentRewardPatch(stu, next.plan.xpDelta, next.plan.bongDelta, { attendanceMark });
+                    tx.set(stuRef, payload, { merge: true });
+                    tx.set(attRef, { days: next.days }, { merge: true });
+                    return { ok: true, days: next.days, stu, payload };
+                });
+                if (!applied || !applied.ok) return;
+                window._attendanceDays = applied.days;
+                rememberStudentReward(studentId, applied.stu, applied.payload);
+                window.renderAttendanceBoard();
+                if (typeof window.renderPlaza === 'function') {
+                    window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                }
+            } catch (e) {
+                console.error('setAttendanceMark', e);
+                await window.customAlert('출석을 저장하지 못했습니다.');
+            } finally {
+                classOpsWriteLocks.delete(lockKey);
             }
         };
 
@@ -23801,19 +23821,43 @@ ${subjectLine}
         window.toggleChecklistCell = async function(checklistId, sid) {
             const myId = String(localStorage.getItem('sambong_student_id') || '');
             const admin = !!(window.playerState && window.playerState.isAdmin);
-            if (!admin && myId !== String(sid)) return window.customAlert('내 번호만 누를 수 있습니다.');
+            const studentId = String(sid || '');
+            if (!admin && myId !== studentId) return window.customAlert('내 번호만 누를 수 있습니다.');
             if (!admin && studentIsCreditDefault(window.playerState)) return window.customAlert(playerCreditDefaultMessage());
-            await ensureClassOpsLoaded();
-            const plan = toggleChecklistNumber(window._checklists || [], checklistId, sid);
-            if (!plan.ok) return;
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) return window.customAlert('인증에 실패했습니다.');
-            await writeStudentReward(sid, plan.xpDelta, plan.bongDelta, {});
-            await setDoc(classOpsRef('checklists'), { items: plan.items }, { merge: true });
-            window._checklists = plan.items;
-            window.renderChecklistBoard();
-            if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
-            updateUI();
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            const lockKey = `chk:${String(checklistId || '')}:${studentId}`;
+            if (classOpsWriteLocks.has(lockKey)) return;
+            classOpsWriteLocks.add(lockKey);
+            try {
+                await ensureClassOpsLoaded();
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) return window.customAlert('인증에 실패했습니다.');
+                const listRef = classOpsRef('checklists');
+                const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId);
+                const applied = await runTransaction(db, async (tx) => {
+                    const listSnap = await tx.get(listRef);
+                    const stuSnap = await tx.get(stuRef);
+                    const serverItems = listSnap.exists() ? listSnap.data() : [];
+                    const plan = toggleChecklistNumber(serverItems, checklistId, studentId);
+                    if (!plan.ok) return { ok: false, reason: plan.reason };
+                    const stu = stuSnap.exists() ? (stuSnap.data() || {}) : {};
+                    const payload = studentRewardPatch(stu, plan.xpDelta, plan.bongDelta, {});
+                    tx.set(stuRef, payload, { merge: true });
+                    tx.set(listRef, { items: plan.items }, { merge: true });
+                    return { ok: true, items: plan.items, stu, payload };
+                });
+                if (!applied || !applied.ok) return;
+                window._checklists = applied.items;
+                rememberStudentReward(studentId, applied.stu, applied.payload);
+                window.renderChecklistBoard();
+                if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                updateUI();
+            } catch (e) {
+                console.error('toggleChecklistCell', e);
+                await window.customAlert('체크리스트를 저장하지 못했습니다.');
+            } finally {
+                classOpsWriteLocks.delete(lockKey);
+            }
         };
 
         window.givePeerPraise = async function(toId) {

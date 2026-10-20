@@ -12,9 +12,14 @@ describe('퀘스트 체크리스트', () => {
         assert.equal(on.xpDelta, CHECKLIST_XP);
         assert.equal(on.bongDelta, CHECKLIST_BONG);
         assert.equal(on.items[0].marks['4'], true);
-        const off = toggleChecklistNumber(on.items, 'c1', '4');
+        const other = toggleChecklistNumber(on.items, 'c1', '8');
+        assert.equal(other.items[0].marks['4'], true);
+        assert.equal(other.items[0].marks['8'], true);
+        assert.equal(other.xpDelta, CHECKLIST_XP);
+        const off = toggleChecklistNumber(other.items, 'c1', '4');
         assert.equal(off.marked, false);
         assert.equal(off.xpDelta, -CHECKLIST_XP);
+        assert.equal(off.items[0].marks['8'], true);
         assert.equal(deleteChecklist(on.items, 'c1').items.length, 0);
         assert.equal(createChecklist([], '   ', 'c2').ok, false);
     });

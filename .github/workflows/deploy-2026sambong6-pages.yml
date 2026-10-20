@@ -17,8 +17,7 @@ permissions:
     id-token: write
 
 concurrency:
-    # v2: #51 배포 때 waiting 교착(cancel-in-progress가 waiting을 못 끊음) 회피
-    group: pages-2026sambong6-v2
+    group: pages-2026sambong6
     cancel-in-progress: true
 
 jobs:

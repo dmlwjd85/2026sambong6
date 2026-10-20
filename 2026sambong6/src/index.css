@@ -43,18 +43,41 @@
         @media (max-width: 639px) {
             .app-top-brand { letter-spacing: 0; font-size: 0.95rem; }
             #navVersionBadge { display: none; }
+            .app-top-nav-row {
+                flex-wrap: wrap;
+                white-space: normal;
+                overflow: visible;
+                height: auto;
+                min-height: 3.5rem;
+                align-items: center;
+                row-gap: 0.15rem;
+                padding-top: 0.2rem;
+                padding-bottom: 0.2rem;
+            }
+            .app-top-nav-lead { flex: 1 1 12rem; }
+            .app-class-switch {
+                flex-wrap: wrap;
+                white-space: normal;
+                overflow: visible;
+                height: auto;
+                max-width: 100%;
+                row-gap: 0.05rem;
+            }
             .nav-class-kicker,
             .nav-class-sep,
+            .nav-class-name,
             .nav-logout-label {
-                position: absolute;
-                width: 1px;
-                height: 1px;
-                padding: 0;
-                margin: -1px;
-                overflow: hidden;
-                clip: rect(0, 0, 0, 0);
-                white-space: nowrap;
-                border: 0;
+                position: static;
+                width: auto;
+                height: auto;
+                margin: 0;
+                overflow: visible;
+                clip: auto;
+                white-space: normal;
+            }
+            .nav-class-name {
+                display: inline;
+                text-overflow: clip;
             }
         }
         @media (max-width: 400px) {
@@ -4754,8 +4777,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             pointer-events: none;
             background: rgba(2, 6, 23, 0.35);
         }
-        /* 뒤쪽 유틸의 display:flex가 Tailwind hidden을 이기면 로그인 화면까지 어두운 막이 남습니다. */
-        .rank-up-celebrate.hidden {
+        /* 뒤쪽 유틸의 display:flex가 Tailwind hidden을 이기면 로그인 화면까지 어두운 막이 남습니다.
+           셀렉터는 이 오버레이만 가리킵니다. 대시보드 체크박스 같은 다른 hidden은 건드리지 않습니다. */
+        #rankUpCelebrate.hidden {
+            display: none !important;
+        }
+        #loginOverlay.hidden {
             display: none !important;
         }
         .rank-up-card {

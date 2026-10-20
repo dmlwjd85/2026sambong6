@@ -58,9 +58,40 @@ describe('학습 온도계 자동 정산', () => {
     });
 });
 
+describe('게스트 읽기와 마스터 PIN', () => {
+    it('게스트는 읽기 구독만 열고 로그인 세션은 켜지 않습니다', () => {
+        const src = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const start = src.indexOf('window.loginAsGuest = function()');
+        const end = src.indexOf('function clearLoginStorageKeepingClass', start);
+        const body = src.slice(start, end);
+        assert.ok(start >= 0 && end > start);
+        assert.match(body, /openReadSubscriptions\(auth\.currentUser\)/);
+        assert.equal(body.includes('_sambongLoggedIn = true'), false);
+    });
+
+    it('마스터 학생 문서의 PIN 쓰기가 거부돼도 로그인을 끝냅니다', () => {
+        const src = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const start = src.indexOf('async function attemptLogin');
+        const end = src.indexOf('async function saveDataToCloud', start);
+        const body = src.slice(start, end);
+        assert.match(body, /master pin write skipped/);
+        assert.match(body, /classifyAuthError\(pinErr\) === 'permission_denied'/);
+    });
+
+    it('로그인 전 밥줄·수업 탭을 다시 보여 줍니다', () => {
+        const src = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const start = src.indexOf('function syncPublicNavTabs()');
+        const end = src.indexOf('function syncLunchRankVisibility()', start);
+        const body = src.slice(start, end);
+        assert.match(body, /tab-lunch/);
+        assert.match(body, /enforceClassToolsAccess/);
+    });
+});
+
 describe('레벨업 암막', () => {
     it('hidden이 있어도 화면 전체를 덮지 않도록 display를 끕니다', () => {
         const css = fs.readFileSync(fileURLToPath(new URL('../index.css', import.meta.url)), 'utf8');
-        assert.match(css, /\.rank-up-celebrate\.hidden\s*\{[^}]*display:\s*none\s*!important/);
+        assert.match(css, /#rankUpCelebrate\.hidden\s*\{[^}]*display:\s*none\s*!important/);
+        assert.doesNotMatch(css, /\.rank-up-celebrate\.hidden\s*\{[^}]*display:\s*none\s*!important/);
     });
 });

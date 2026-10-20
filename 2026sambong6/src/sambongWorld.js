@@ -397,7 +397,6 @@ import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldP
 import {
     clearPersistedLoginIdentity,
     readPersistedLogin,
-    shouldRestoreLoginWithoutServerPin,
     writePersistedLogin,
 } from './lib/loginSession.js';
 import {
@@ -25101,11 +25100,8 @@ ${subjectLine}
                 
                 if (data) {
                     if (!data.pin) {
-                        if (isAutoLogin) {
-                            // 서버에 pin이 없어도 이 기기의 마스터 세션은 유지합니다. 여기서는 쓰지 않습니다.
-                            if (!shouldRestoreLoginWithoutServerPin({ isAutoLogin: true, isAdmin, savedPin: pin })) return;
-                            data = { ...data, pin };
-                        } else {
+                        if (isAutoLogin) return;
+                        else {
                             const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                             if(!isOk) return; 
                             data.pin = pin; 

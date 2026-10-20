@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import {
     clearPersistedLoginIdentity,
     readPersistedLogin,
-    shouldRestoreLoginWithoutServerPin,
     writePersistedLogin,
 } from './loginSession.js';
 
@@ -56,19 +55,13 @@ describe('로그인 유지', () => {
         assert.equal(storage.getItem('sambong_class_id'), 'sambong-class-2026');
     });
 
-    it('서버에 PIN이 없는 마스터 자동 로그인만 저장 세션으로 통과합니다', () => {
-        assert.equal(shouldRestoreLoginWithoutServerPin({
-            isAutoLogin: true, isAdmin: true, savedPin: '2468',
-        }), true);
-        assert.equal(shouldRestoreLoginWithoutServerPin({
-            isAutoLogin: false, isAdmin: true, savedPin: '2468',
-        }), false);
-        assert.equal(shouldRestoreLoginWithoutServerPin({
-            isAutoLogin: true, isAdmin: false, savedPin: '1357',
-        }), false);
-        assert.equal(shouldRestoreLoginWithoutServerPin({
-            isAutoLogin: true, isAdmin: true, savedPin: '',
-        }), false);
+    it('서버 PIN이 없으면 마스터 자동 로그인을 열지 않습니다', () => {
+        const app = fs.readFileSync(fileURLToPath(new URL('../sambongWorld.js', import.meta.url)), 'utf8');
+        const start = app.indexOf('async function attemptLogin');
+        const end = app.indexOf('async function saveDataToCloud', start);
+        const body = app.slice(start, end);
+        assert.equal(app.includes('shouldRestoreLoginWithoutServerPin'), false);
+        assert.match(body, /if \(!data\.pin\) \{\s*if \(isAutoLogin\) return;/);
     });
 
     it('인증은 브라우저를 닫아도 남고, 서비스 워커는 로그인 저장소를 지우지 않습니다', () => {
@@ -77,7 +70,6 @@ describe('로그인 유지', () => {
         assert.match(app, /setPersistence\(auth, browserLocalPersistence\)/);
         assert.equal(app.includes('browserSessionPersistence'), false);
         assert.match(app, /readPersistedLogin\(localStorage\)/);
-        assert.match(app, /shouldRestoreLoginWithoutServerPin/);
         assert.equal(/localStorage\.clear\(/.test(sw), false);
         assert.equal(/indexedDB/.test(sw), false);
         assert.match(sw, /get\('sw-clear'\) === SW_CLEAR/);

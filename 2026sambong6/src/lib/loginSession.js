@@ -45,12 +45,3 @@ export function clearPersistedLoginIdentity(storage) {
     storage.removeItem(LOGIN_PIN_KEY);
     storage.removeItem(LOGIN_ROLE_KEY);
 }
-
-/**
- * 배포 규칙이 마스터 문서의 pin 필드를 비워 둔 경우에도,
- * 이 기기에 저장해 둔 마스터 세션이면 PIN 창 없이 다시 들어갑니다.
- * 서버에 pin 이 있으면 그 값과 맞는지 기존 비교를 그대로 탑니다.
- */
-export function shouldRestoreLoginWithoutServerPin({ isAutoLogin, isAdmin, savedPin } = {}) {
-    return isAutoLogin === true && isAdmin === true && String(savedPin || '').length > 0;
-}

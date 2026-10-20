@@ -779,6 +779,16 @@
             .plaza-cards-lg .plaza-card-face { font-size: 2.75rem !important; }
         }
         .plaza-cards-lg .plaza-card-name { font-size: 11px !important; }
+        /* 넓은 화면의 좁은 카드 칸: 말줄임 없이 이름 전체를 칸 안에서 줄바꿈합니다. */
+        @media (min-width: 640px) {
+            .plaza-card-name:not(.plaza-staff-name) {
+                white-space: normal !important;
+                overflow: visible;
+                text-overflow: clip;
+                word-break: keep-all;
+                line-height: 1.25;
+            }
+        }
 
         /* 스마트폰: 한 줄 2명, 이름·수치를 키워 확대 없이 읽히게 합니다. (자리표 연동 격자는 제외) */
         @media (max-width: 639px) {

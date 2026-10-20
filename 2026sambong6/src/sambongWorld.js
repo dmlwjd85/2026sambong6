@@ -2623,6 +2623,20 @@ function redrawPlazaGrantsUi() {
             return isClassModuleEnabled(window.globalSettings, moduleId, { isSeed: isSeedDemoClass() });
         }
 
+        /** 로그인 전에도 밥줄·수업 탭을 보여 줍니다. Firestore 쓰기는 하지 않습니다. */
+        function syncPublicNavTabs() {
+            const lunchTab = document.getElementById('tab-lunch');
+            if (lunchTab) lunchTab.classList.toggle('hidden', !classModuleOn('lunch'));
+            if (typeof enforceClassToolsAccess === 'function') enforceClassToolsAccess();
+        }
+
+        function syncLunchRankVisibility() {
+            const queueContainer = document.getElementById('lunchQueueWrapper');
+            if (!queueContainer) return;
+            const admin = !!(window.playerState && window.playerState.isAdmin);
+            queueContainer.classList.toggle('hidden', !isLunchRankVisible(new Date(), admin));
+        }
+
         function currentExternalPortals() {
             return resolveExternalPortals(window.globalSettings && window.globalSettings.externalPortals, {
                 isSeed: isSeedDemoClass(),
@@ -3565,6 +3579,8 @@ function redrawPlazaGrantsUi() {
             if (!raw) return window.customAlert('학급 초대 코드 또는 학급 ID를 입력해 주세요.');
             if (!db) return window.customAlert('서버 연결 중입니다. 잠시 후 다시 시도해 주세요.');
             try {
+                // 초대 코드를 읽는 순간에만 익명 인증을 켭니다. 로그인 세션은 아니므로 배경 쓰기는 막혀 있습니다.
+                await ensureAnonAuthReady();
                 window.showGlobalLoading('학급을 찾는 중…');
                 const classId = await resolveClassIdFromInviteOrRaw(raw);
                 window.hideGlobalLoading();
@@ -4741,11 +4757,13 @@ function redrawPlazaGrantsUi() {
         
         let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeAutoXp = null, unsubscribeThermometer = null, unsubscribeThermometerVotes = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let _firestoreListenersReady = false;
+        let _loggedInSideEffectsReady = false;
         let _sambongLoggedIn = false;
         function isLoggedInSession() {
             return _sambongLoggedIn === true;
         }
         let openLoggedInServices = function() {};
+        let openReadSubscriptions = function() {};
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
         let unsubscribeShopGroupBuy = null;
@@ -19894,12 +19912,14 @@ ${subjectLine}
                 if (await applyInviteCodeFromUrlIfNeeded()) return;
                 await loadClassMeta();
                 window.hideGlobalLoading?.();
+                syncPublicNavTabs();
 
                 openLoggedInServices = function(user) {
-                    // 익명 로그인만으로는 스냅샷·자동 정산을 열지 않습니다. 학생/마스터 로그인 뒤에만 엽니다.
-                    if (!user || !_sambongLoggedIn || _firestoreListenersReady) return;
-                    _firestoreListenersReady = true;
-                    if (user) {
+                    // 익명 로그인만으로는 자동 정산·마이그레이션을 열지 않습니다.
+                    if (!user || !_sambongLoggedIn) return;
+                    openReadSubscriptions(user);
+                    if (_loggedInSideEffectsReady) return;
+                    _loggedInSideEffectsReady = true;
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyDuplicateQuestBongHotfix();
@@ -19917,7 +19937,12 @@ ${subjectLine}
                         syncClassBellToggleUi();
                         setInterval(() => { void tryDragonBallSpawnTick(); }, 45000);
                         void tryDragonBallSpawnTick();
-                        
+                };
+
+                openReadSubscriptions = function(user) {
+                    // 게스트도 자리표·공지·급식 순위를 읽습니다. 문서가 없을 때의 생성 쓰기는 로그인 뒤에만 합니다.
+                    if (!user || _firestoreListenersReady) return;
+                    _firestoreListenersReady = true;
                         if(unsubscribeGlobal) unsubscribeGlobal();
                         unsubscribeGlobal = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'students'), snap => {
                             const students = []; 
@@ -19986,6 +20011,7 @@ ${subjectLine}
                             window.renderPlaza(students, gmD, gmaD); 
                             window.renderHallOfFame(students);
                             window.renderLunchQueue(students);
+                            syncLunchRankVisibility();
                             if (typeof refreshElectionLiveTurnout === 'function') refreshElectionLiveTurnout();
                             if (typeof syncStudentElectionUi === 'function') syncStudentElectionUi();
                             if (typeof refreshRpsLiveUi === 'function') refreshRpsLiveUi();
@@ -20206,6 +20232,9 @@ ${subjectLine}
                                 applyClassWatchUI();
                                 if (typeof syncClassModuleUi === 'function') syncClassModuleUi();
                                 updateUI();
+                            } else {
+                                const npcEl = document.getElementById('npcText');
+                                if (npcEl) npcEl.innerText = '"(등록된 공지가 없습니다)"';
                             }
                         });
 
@@ -20219,10 +20248,12 @@ ${subjectLine}
                                         }
                                     });
                                 }
-                                window.ensureEstateSeokRestore();
-                                window.ensureEstateHwangRestore();
+                                if (isLoggedInSession()) {
+                                    window.ensureEstateSeokRestore();
+                                    window.ensureEstateHwangRestore();
+                                }
                                 window.renderEstate(); 
-                            } else {
+                            } else if (isLoggedInSession()) {
                                 const built = buildEstateSeatsFromLayout(4, 4, {
                                     defaultPrice: ESTATE_DEFAULT_PRICE,
                                     hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
@@ -20240,6 +20271,17 @@ ${subjectLine}
                                     layout: built.layout,
                                     purchaseHistory: ph,
                                 });
+                            } else {
+                                const built = buildEstateSeatsFromLayout(4, 4, {
+                                    defaultPrice: ESTATE_DEFAULT_PRICE,
+                                    hiddenIds: ESTATE_DEFAULT_HIDDEN_SEAT_IDS,
+                                });
+                                window.estateState = normalizeEstateState({
+                                    seats: built.seats,
+                                    layout: built.layout,
+                                    purchaseHistory: [],
+                                });
+                                window.renderEstate();
                             }
                         });
 
@@ -20343,8 +20385,8 @@ ${subjectLine}
                             if(snap.exists()) { 
                                 window.dragonBallState = snap.data(); 
                                 updateDragonBallUI(); 
-                                void tryDragonBallSpawnTick();
-                            } else {
+                                if (isLoggedInSession()) void tryDragonBallSpawnTick();
+                            } else if (isLoggedInSession()) {
                                 setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'dragonball', 'state'), { 
                                     isActive: false, number: 1, posX: 50, posY: 50, 
                                     lastClaimTime: Date.now(), nextSpawnTime: Date.now(),
@@ -20431,9 +20473,8 @@ ${subjectLine}
                                 if (!snap.metadata.fromCache) maybeShowConvenienceOrderPopup();
                             }
                         );
-
-                    }
-                }
+                    syncLunchRankVisibility();
+                };
                 onAuthStateChanged(auth, (user) => {
                     void refreshTeacherAuthBadge();
                     openLoggedInServices(user);
@@ -24768,6 +24809,13 @@ ${subjectLine}
             _prevXpFromSnapshot = Number(window.playerState.xp) || 0;
             updateUI(); 
             window.switchTab('plaza');
+            syncPublicNavTabs();
+            syncLunchRankVisibility();
+            // 게스트는 읽기 구독만 엽니다. 로그인 세션이 아니므로 날씨·초대코드 쓰기는 하지 않습니다.
+            void (async () => {
+                const authOk = await ensureAnonAuthReady();
+                if (authOk && auth && auth.currentUser) openReadSubscriptions(auth.currentUser);
+            })();
         };
         
         function clearLoginStorageKeepingClass() {
@@ -25007,7 +25055,8 @@ ${subjectLine}
                         throw new Error('teacher-session-remains');
                     }
                 }
-                if (!auth.currentUser) await signInAnonymously(auth);
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('anon-auth-failed');
             } catch (e) {
                 if (teacherSignOutFailed) {
                     await window.customAlert(TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE);
@@ -25049,7 +25098,14 @@ ${subjectLine}
                         const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                         if(!isOk) return; 
                         data.pin = pin; 
-                        await setDoc(docRef, { pin: pin }, { merge: true });
+                        try {
+                            await setDoc(docRef, { pin: pin }, { merge: true });
+                        } catch (pinErr) {
+                            // 배포된 규칙은 마스터 학생 문서에 pin을 두지 못하게 할 수 있습니다.
+                            if (!(isAdmin && classifyAuthError(pinErr) === 'permission_denied')) throw pinErr;
+                            delete data.pin;
+                            console.warn('master pin write skipped', pinErr && pinErr.code);
+                        }
                     } else if (data.pin !== pin) {
                         if (isAutoLogin) {
                             const classId = localStorage.getItem('sambong_class_id');
@@ -25066,7 +25122,13 @@ ${subjectLine}
                     if(!isOk) return;
                     
                     data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
-                    await setDoc(docRef, data);
+                    try {
+                        await setDoc(docRef, data);
+                    } catch (createErr) {
+                        if (!(isAdmin && classifyAuthError(createErr) === 'permission_denied')) throw createErr;
+                        delete data.pin;
+                        await setDoc(docRef, data);
+                    }
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };

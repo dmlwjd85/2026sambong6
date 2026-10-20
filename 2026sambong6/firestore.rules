@@ -9,237 +9,50 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // 마스터 PIN은 secrets/{학급}에만 있고 클라이언트는 읽지 못합니다.
-    // gmSessions에는 PIN을 넣지 않습니다. 비교는 읽기 금지인 gmPinProofs에서만 합니다.
-    // Google 로그인이나 admins/{uid} 는 저장 권한에 쓰지 않습니다.
+    // 선생님 계정은 익명이 아닌 로그인(Google 또는 이메일/비밀번호)이고
+    // admins/{uid} 문서가 있을 때만 인정합니다. updatedBy 문자열은 보지 않습니다.
+    // 학생 익명 세션은 로또·뮤직타임·방패 재고처럼 학생이 쓰는 키만 바꿀 수 있습니다.
     // 스킨 구매 시각(request.time)은 여기서 보지 않습니다. 가격표는 앱에만 있고
     // 규칙에는 반올림이 없으며, 학생 문서는 퀘스트·은행·선생님 복구가 한 번에 덮입니다.
     // {document=**} 는 path 라서 문자열과 바로 비교하지 않습니다.
-
-    function gmSessionPath() {
-      return /databases/$(database)/documents/gmSessions/$(request.auth.uid);
-    }
-
-    function gmProofPath() {
-      return /databases/$(database)/documents/gmPinProofs/$(request.auth.uid);
-    }
-
-    function gmAttemptPath(classId) {
-      return /databases/$(database)/documents/gmPinAttempts/$(classId);
-    }
-
-    function secretPath(classId) {
-      return /databases/$(database)/documents/secrets/$(classId);
-    }
-
-    function gmSession() {
-      return get(gmSessionPath()).data;
-    }
-
-    function isLiveGmSession() {
+    function isAdmin() {
       return signedIn()
-        && exists(gmSessionPath())
-        && gmSession().keys().hasOnly(['classId', 'expiresAt'])
-        && gmSession().classId is string
-        && gmSession().expiresAt is timestamp
-        && gmSession().expiresAt > request.time;
+        && request.auth.token is map
+        && 'firebase' in request.auth.token
+        && request.auth.token.firebase is map
+        && 'sign_in_provider' in request.auth.token.firebase
+        && request.auth.token.firebase.sign_in_provider is string
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    function isPinMaster(appId) {
-      return isLiveGmSession() && gmSession().classId == appId;
+    function adminRecord() {
+      return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
     }
 
-    function isSeedPinMaster() {
-      return isPinMaster('sambong-class-2026');
+    // 이미 있는 학급 설정은 admins.classIds 에 그 학급 ID가 있을 때만 고칩니다.
+    function isAdminForApp(appId) {
+      return isAdmin()
+        && adminRecord().classIds is list
+        && appId in adminRecord().classIds;
     }
 
-    function sessionExpiryOk() {
-      return request.resource.data.expiresAt is timestamp
-        && request.resource.data.expiresAt > request.time
-        && request.resource.data.expiresAt <= request.time + duration.value(10, 'm');
+    function hasApprovedClassGrant(classId) {
+      return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
     }
 
-    function pinClassLocked(classId) {
-      return exists(gmAttemptPath(classId))
-        && get(gmAttemptPath(classId)).data.lockedUntil is timestamp
-        && get(gmAttemptPath(classId)).data.lockedUntil > request.time;
+    function approvedClassGrant(classId) {
+      return get(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId)).data;
     }
 
-    function pinAttemptMissing(classId) {
-      return !exists(gmAttemptPath(classId));
-    }
-
-    function pinAttemptExpired(classId) {
-      return exists(gmAttemptPath(classId))
-        && get(gmAttemptPath(classId)).data.lockedUntil is timestamp
-        && get(gmAttemptPath(classId)).data.lockedUntil <= request.time;
-    }
-
-    function pinAttemptGeneration(classId) {
-      return exists(gmAttemptPath(classId))
-        && get(gmAttemptPath(classId)).data.generation is int
-        ? get(gmAttemptPath(classId)).data.generation
-        : 0;
-    }
-
-    function pinAttemptExpectedCount(classId) {
-      return (pinAttemptMissing(classId) || pinAttemptExpired(classId))
-        ? 1
-        : get(gmAttemptPath(classId)).data.count + 1;
-    }
-
-    function pinAttemptExpectedGeneration(classId) {
-      let gen = pinAttemptGeneration(classId);
-      return pinAttemptMissing(classId) || gen < 1
-        ? 1
-        : (pinAttemptExpired(classId) ? gen + 1 : gen);
-    }
-
-    function pinTryId(generation, count) {
-      return string(generation) + '_' + string(count);
-    }
-
-    function pinTryPath(classId, generation, count) {
-      return /databases/$(database)/documents/gmPinAttempts/$(classId)/tries/$(pinTryId(generation, count));
-    }
-
-    function pinAttemptShape(count, generation, lockedUntil) {
-      return count is int
-        && generation is int
-        && generation >= 1
-        && generation <= 1000000
-        && count >= 1
-        && count <= 10
-        && (
-          (count < 10 && lockedUntil == null)
-          || (
-            count == 10
-            && lockedUntil is timestamp
-            && lockedUntil > request.time + duration.value(14, 'm')
-            && lockedUntil <= request.time + duration.value(16, 'm')
-          )
-        );
-    }
-
-    // PIN이 맞는지는 보지 않습니다. 맞든 틀리든 같은 배치에서 횟수와 시도 문서가 생겨야 합니다.
-    function proofDataOk(proof, classId) {
-      return proof.keys().hasOnly(['pin', 'classId', 'expiresAt', 'attemptCount', 'generation'])
-        && proof.pin is string
-        && proof.pin.matches('^[0-9]{6}$')
-        && proof.classId == classId
-        && proof.expiresAt is timestamp
-        && proof.expiresAt > request.time
-        && proof.expiresAt <= request.time + duration.value(10, 'm')
-        && proof.attemptCount is int
-        && proof.generation is int;
-    }
-
-    function attemptAfterOk(classId, after) {
-      return after.keys().hasOnly(['count', 'generation', 'lockedUntil'])
-        && after.count == pinAttemptExpectedCount(classId)
-        && after.generation == pinAttemptExpectedGeneration(classId)
-        && pinAttemptShape(after.count, after.generation, after.lockedUntil);
-    }
-
-    function proofForcesAttemptBump() {
-      let classId = request.resource.data.classId;
-      return !pinClassLocked(classId)
-        && existsAfter(gmAttemptPath(classId))
-        && existsAfter(gmProofPath())
-        && attemptAfterOk(classId, getAfter(gmAttemptPath(classId)).data)
-        && proofDataOk(getAfter(gmProofPath()).data, classId)
-        && getAfter(gmProofPath()).data.attemptCount == getAfter(gmAttemptPath(classId)).data.count
-        && getAfter(gmProofPath()).data.generation == getAfter(gmAttemptPath(classId)).data.generation
-        && existsAfter(pinTryPath(
-          classId,
-          getAfter(gmAttemptPath(classId)).data.generation,
-          getAfter(gmAttemptPath(classId)).data.count
-        ));
-    }
-
-    function attemptBumpWriteOk(classId) {
-      let after = request.resource.data;
-      return signedIn()
-        && !pinClassLocked(classId)
-        && attemptAfterOk(classId, after)
-        && existsAfter(gmProofPath())
-        && proofDataOk(getAfter(gmProofPath()).data, classId)
-        && getAfter(gmProofPath()).data.attemptCount == after.count
-        && getAfter(gmProofPath()).data.generation == after.generation
-        && existsAfter(pinTryPath(classId, after.generation, after.count));
-    }
-
-    function attemptResetShape(classId) {
-      let beforeGen = pinAttemptGeneration(classId);
-      let after = getAfter(gmAttemptPath(classId)).data;
-      return existsAfter(gmAttemptPath(classId))
-        && after.keys().hasOnly(['count', 'generation', 'lockedUntil'])
-        && after.count == 0
-        && after.lockedUntil == null
-        && after.generation == beforeGen + 1;
-    }
-
-    // 잠금은 이 요청 전의 상태를 봅니다. 그래서 9번까지 틀린 뒤의 10번째 정답도 증명 배치는 통과합니다.
-    // 그 10번째가 맞으면 세션 배치에서만 횟수를 0으로 되돌립니다.
-    function proofPinMatchesSecret(classId) {
-      return exists(gmProofPath())
-        && exists(gmAttemptPath(classId))
-        && exists(secretPath(classId))
-        && get(gmProofPath()).data.keys().hasOnly(['pin', 'classId', 'expiresAt', 'attemptCount', 'generation'])
-        && get(secretPath(classId)).data.pin is string
-        && get(gmProofPath()).data.pin is string
-        && get(gmProofPath()).data.classId == classId
-        && get(gmProofPath()).data.pin == get(secretPath(classId)).data.pin
-        && get(gmProofPath()).data.attemptCount == get(gmAttemptPath(classId)).data.count
-        && get(gmProofPath()).data.generation == get(gmAttemptPath(classId)).data.generation
-        && (
-          !pinClassLocked(classId)
-          || get(gmAttemptPath(classId)).data.count == 10
-        );
-    }
-
-    function attemptResetWriteOk(classId) {
-      return signedIn()
-        && proofPinMatchesSecret(classId)
-        && attemptResetShape(classId)
-        && existsAfter(gmSessionPath())
-        && getAfter(gmSessionPath()).data.keys().hasOnly(['classId', 'expiresAt'])
-        && getAfter(gmSessionPath()).data.classId == classId
-        && get(gmProofPath()).data.expiresAt == getAfter(gmSessionPath()).data.expiresAt
-        && existsAfter(gmProofPath()) == false;
-    }
-
-    function tryCreateOk(classId, tryId) {
-      let after = getAfter(gmAttemptPath(classId)).data;
-      return signedIn()
-        && !pinClassLocked(classId)
-        && existsAfter(gmAttemptPath(classId))
-        && existsAfter(gmProofPath())
-        && tryId == pinTryId(after.generation, after.count)
-        && request.resource.data.keys().hasOnly(['n'])
-        && request.resource.data.n == after.count
-        && attemptAfterOk(classId, after)
-        && proofDataOk(getAfter(gmProofPath()).data, classId)
-        && getAfter(gmProofPath()).data.attemptCount == after.count
-        && getAfter(gmProofPath()).data.generation == after.generation;
-    }
-
-    function sessionShapeOk() {
-      return request.resource.data.keys().hasOnly(['classId', 'expiresAt'])
-        && request.resource.data.classId is string
-        && request.resource.data.classId.size() > 0
-        && request.resource.data.classId.size() < 80
-        && sessionExpiryOk();
-    }
-
-    // 세션을 만드는 배치에서만 증명을 지우고 횟수를 0으로 되돌립니다.
-    // 이 허용/거부가 PIN을 알려 주지만, 그 전 배치에서 횟수가 이미 1 올랐습니다.
-    function proofMatchesSecret() {
-      let classId = request.resource.data.classId;
-      return proofPinMatchesSecret(classId)
-        && get(gmProofPath()).data.expiresAt == request.resource.data.expiresAt
-        && existsAfter(gmProofPath()) == false
-        && attemptResetShape(classId);
+    // 새 학급 문서는 classIds에 그 ID가 있거나, 시드 학급 선생님이 남긴 승인 표식의 createdBy가
+    // 지금 요청한 선생님 uid와 같을 때만 만듭니다.
+    function canCreateClassSettings(appId) {
+      return isAdminForApp(appId) || (
+        isAdmin()
+        && hasApprovedClassGrant(appId)
+        && approvedClassGrant(appId).createdBy == request.auth.uid
+      );
     }
 
     function isSettingsGlobalDoc() {
@@ -262,25 +75,8 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
-    // 역따봉 문서는 공개 와일드카드에서 빼 둡니다. 학생·로그아웃은 감사 문서를 읽지 못합니다.
-    function isRebukeOpsPath() {
-      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/classOps/rebuke.*$');
-    }
-
     function isStudentDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/[^/]+$');
-    }
-
-    // 마스터 문서의 PIN은 공개되면 안 됩니다. 와일드카드와 OR 되므로 양쪽에서 막습니다.
-    function isMasterStudentDoc() {
-      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm$')
-        || string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/student_gm_a$');
-    }
-
-    function masterStudentPinAbsent() {
-      return !isMasterStudentDoc()
-        || request.method == 'delete'
-        || !('pin' in request.resource.data);
     }
 
     // 학생 문서는 공개 와일드카드와 OR 됩니다. 슬롯 키 검사는 이쪽에도 있어야 우회되지 않습니다.
@@ -291,8 +87,7 @@ service cloud.firestore {
         || (request.method == 'update' && classXpSlotWriteOk());
     }
 
-    // 선생님 화면이 주로 쓰는 키. 유효한 gmSessions가 있을 때만 바꿉니다.
-    // 목록은 앱의 GM_ONLY_SETTING_KEYS 와 맞춥니다.
+    // 학생 화면이 쓰지 않는 것이 확인된 키만 둡니다. 애매한 키는 넣지 않습니다.
     function gmOnlyKeys() {
       return [
         'shopPrices',
@@ -374,11 +169,6 @@ service cloud.firestore {
 
     function kstNow() {
       return request.time + duration.value(9, 'h');
-    }
-
-    function kstDateString() {
-      let kst = kstNow();
-      return string(kst.year()) + '-' + twoDigits(kst.month()) + '-' + twoDigits(kst.day());
     }
 
     // 1970-01-01은 목요일. date()는 9시간을 더한 시각의 달력 날짜(한국 표준시)입니다.
@@ -463,11 +253,7 @@ service cloud.firestore {
           && d.settlementAttempt >= 0
           && d.settlementAttempt <= 1000000
         ))
-        && (!('usedStaleValues' in d) || d.usedStaleValues is bool)
-        && (!('settlementPending' in d) || (
-          d.settlementPending is map
-          && d.settlementPending.size() <= 40
-        ));
+        && (!('usedStaleValues' in d) || d.usedStaleValues is bool);
     }
 
     function thermometerShapeOk() {
@@ -476,7 +262,6 @@ service cloud.firestore {
           'date', 'min', 'max', 'settledDate', 'lastSettlementAt',
           'settlementKey', 'settlementStatus', 'settlementStartedAt',
           'settlementLockOwner', 'settlementAttempt', 'usedStaleValues',
-          'settlementPending',
           'settlementAppliedCount', 'settlementTotalDelta'
         ])
         && d.date is string
@@ -520,196 +305,12 @@ service cloud.firestore {
         && d.keys().hasOnly(['value'])
         && d.value is int
         && exists(/databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer)
-        && thermometerVoteInRange(appId, d.value);
+        && thermometerVoteInRange(appId, d.value)
+        && (isAdminForApp(appId) || studentId == request.auth.uid);
     }
 
     function shopDiscountUntouched() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['shopDiscount']);
-    }
-
-    // 자동 정산이 예전 온도계 값을 비울 때만 GM 키를 세션 없이 바꿉니다.
-    function learningThermometerLegacyClearOnly() {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return changed.hasOnly(['learningThermometer'])
-        && resource.data.learningThermometer is map
-        && request.resource.data.learningThermometer is map
-        && request.resource.data.learningThermometer.values is map
-        && request.resource.data.learningThermometer.values.size() == 0
-        && request.resource.data.learningThermometer.diff(resource.data.learningThermometer).affectedKeys().hasOnly(['values']);
-    }
-
-    function thermometerDayKey(value) {
-      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && value <= kstDateString();
-    }
-
-    function thermometerLockFresh() {
-      return resource.data.settlementStartedAt is number
-        && resource.data.settlementStartedAt > request.time.toMillis() - 300000
-        && resource.data.settlementStartedAt <= request.time.toMillis() + 15000;
-    }
-
-    // 세션 없는 자동 정산이 잠금을 새로 잡습니다. 범위와 이미 끝난 오늘은 바꾸지 못합니다.
-    function thermometerAutoClaimCreate() {
-      let d = request.resource.data;
-      return thermometerShapeOk()
-        && d.settlementStatus == 'running'
-        && d.settlementLockOwner is string
-        && d.settlementLockOwner == request.auth.uid
-        && d.settlementKey == d.date
-        && d.date == kstDateString()
-        && d.settlementStartedAt is number
-        && d.settlementStartedAt > request.time.toMillis() - 120000
-        && d.settlementStartedAt <= request.time.toMillis() + 15000
-        && d.settlementAttempt == 1;
-    }
-
-    function thermometerAutoClaimUpdate() {
-      let d = request.resource.data;
-      let continuing = resource.data.settlementStatus == 'running' && resource.data.settlementKey == d.settlementKey;
-      let prevAttempt = ('settlementAttempt' in resource.data && resource.data.settlementAttempt is int)
-        ? resource.data.settlementAttempt
-        : 0;
-      let otherFreshLock = resource.data.settlementStatus == 'running'
-        && resource.data.settlementKey == d.date
-        && resource.data.settlementLockOwner is string
-        && resource.data.settlementLockOwner.size() > 0
-        && resource.data.settlementLockOwner != d.settlementLockOwner
-        && thermometerLockFresh();
-      let alreadyDoneToday = resource.data.settledDate == kstDateString()
-        && resource.data.settlementStatus != 'running';
-      return thermometerShapeOk()
-        && d.settlementStatus == 'running'
-        && d.settlementLockOwner is string
-        && d.settlementLockOwner == request.auth.uid
-        && d.settlementKey == d.date
-        && thermometerDayKey(d.date)
-        && (continuing || d.date == kstDateString())
-        && d.settlementStartedAt is number
-        && d.settlementStartedAt > request.time.toMillis() - 120000
-        && d.settlementStartedAt <= request.time.toMillis() + 15000
-        && d.min == resource.data.min
-        && d.max == resource.data.max
-        && !otherFreshLock
-        && !alreadyDoneToday
-        && (
-          (continuing && (d.settlementAttempt == prevAttempt || (prevAttempt == 0 && d.settlementAttempt == 1)))
-          || (!continuing && d.settlementAttempt == prevAttempt + 1)
-        );
-    }
-
-    // 끝 표시는 running 잠금에서만, 같은 키·같은 소유자(또는 비움), 오늘 또는 그보다 이전 키만.
-    function thermometerAutoDone() {
-      let d = request.resource.data;
-      return thermometerShapeOk()
-        && resource.data.settlementStatus == 'running'
-        && resource.data.settlementLockOwner is string
-        && resource.data.settlementLockOwner == request.auth.uid
-        && thermometerLockFresh()
-        && d.settlementStatus == 'done'
-        && d.settlementKey == resource.data.settlementKey
-        && d.date == resource.data.settlementKey
-        && d.settledDate == resource.data.settlementKey
-        && thermometerDayKey(d.settlementKey)
-        && (d.settlementLockOwner == '' || d.settlementLockOwner == resource.data.settlementLockOwner)
-        && d.min == resource.data.min
-        && d.max == resource.data.max
-        && d.settlementStartedAt == 0
-        && (
-          !('usedStaleValues' in resource.data)
-          || resource.data.usedStaleValues != true
-          || d.usedStaleValues == true
-        );
-    }
-
-    function thermometerStaleFlagOnly() {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return changed.hasOnly(['usedStaleValues'])
-        && request.resource.data.usedStaleValues == true
-        && resource.data.settlementStatus == 'running'
-        && resource.data.settlementLockOwner is string
-        && resource.data.settlementLockOwner == request.auth.uid
-        && thermometerLockFresh();
-    }
-
-    // 표를 0으로 만드는 것은 완료로 바꾸는 같은 배치에서만 됩니다.
-    function thermometerVoteResetInFinish(appId) {
-      let parentPath = /databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer;
-      let before = get(parentPath).data;
-      let after = getAfter(parentPath).data;
-      let todayKey = before.settlementKey == kstDateString() && before.date == kstDateString();
-      let priorKey = before.settlementKey < kstDateString()
-        && before.settlementKey == before.date
-        && thermometerDayKey(before.settlementKey);
-      return request.resource.data.keys().hasOnly(['value'])
-        && request.resource.data.value == 0
-        && exists(parentPath)
-        && existsAfter(parentPath)
-        && before.settlementStatus == 'running'
-        && before.settlementLockOwner == request.auth.uid
-        && (todayKey || priorKey)
-        && before.settlementStartedAt is number
-        && before.settlementStartedAt > request.time.toMillis() - 300000
-        && before.settlementStartedAt <= request.time.toMillis() + 15000
-        && after.settlementStatus == 'done'
-        && after.settlementKey == before.settlementKey
-        && after.date == before.settlementKey
-        && after.settledDate == before.settlementKey
-        && after.settlementStartedAt == 0;
-    }
-
-    function thermometerMarkerUnchanged() {
-      return !('lastThermometerSettlementKey' in request.resource.data)
-        || (
-          request.method == 'update'
-          && ('lastThermometerSettlementKey' in resource.data)
-          && request.resource.data.lastThermometerSettlementKey == resource.data.lastThermometerSettlementKey
-        );
-    }
-
-    function thermometerMarkerLockedIn(appId) {
-      let parentPath = /databases/$(database)/documents/artifacts/$(appId)/public/data/settings/learningThermometer;
-      let marker = request.resource.data.lastThermometerSettlementKey;
-      return marker is string
-        && exists(parentPath)
-        && get(parentPath).data.settlementStatus == 'running'
-        && get(parentPath).data.settlementLockOwner == request.auth.uid
-        && get(parentPath).data.settlementKey is string
-        && get(parentPath).data.settlementAttempt is int
-        && marker == get(parentPath).data.settlementKey + '#' + string(get(parentPath).data.settlementAttempt)
-        && get(parentPath).data.settlementStartedAt is number
-        && get(parentPath).data.settlementStartedAt > request.time.toMillis() - 300000
-        && get(parentPath).data.settlementStartedAt <= request.time.toMillis() + 15000;
-    }
-
-    function studentThermometerMarkerAllowed(appId) {
-      return !isStudentDoc()
-        || request.method == 'delete'
-        || thermometerMarkerUnchanged()
-        || isPinMaster(appId)
-        || thermometerMarkerLockedIn(appId);
-    }
-
-    function shopDiscountSame() {
-      return (
-          !('shopDiscount' in resource.data)
-          && !('shopDiscount' in request.resource.data)
-        )
-        || (
-          'shopDiscount' in resource.data
-          && 'shopDiscount' in request.resource.data
-          && resource.data.shopDiscount == request.resource.data.shopDiscount
-        );
-    }
-
-    // 세션이 있으면 문서 전체를 비교하지 않습니다. 식 한도를 넘기지 않기 위해서입니다.
-    function settingsGlobalPinMasterUpdate(appId) {
-      return isPinMaster(appId) && (shopDiscountSame() || shopDiscountChangeIsValid());
-    }
-
-    function settingsGlobalOpenUpdate() {
-      return signedIn()
-        && shopDiscountSame()
-        && (gmOnlyUntouched() || learningThermometerLegacyClearOnly());
     }
 
     function gmOnlyUntouched() {
@@ -776,79 +377,9 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/data/students/{studentId} {
       allow read: if true;
-      allow create: if studentCreateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId) && rebukeCreateAbsent();
-      allow update: if studentUpdateIsSafe() && masterStudentPinAbsent() && studentThermometerMarkerAllowed(appId) && rebukeStudentOk(appId, studentId);
+      allow create: if studentCreateIsSafe();
+      allow update: if studentUpdateIsSafe();
       allow delete: if false;
-    }
-
-    // 마스터 PIN. 클라이언트는 읽지 못합니다. 콘솔에서 문자열로 만듭니다.
-    // 시드 마스터 세션만 다른 학급 문서를 처음 만들고, 그 학급 세션이나 시드 세션이 값을 바꿉니다.
-    match /secrets/{appId} {
-      allow read: if false;
-      allow create: if isSeedPinMaster()
-        && appId != 'sambong-class-2026'
-        && request.resource.data.keys().hasOnly(['pin'])
-        && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{6}$');
-      allow update: if (isPinMaster(appId) || isSeedPinMaster())
-        && request.resource.data.keys().hasOnly(['pin'])
-        && request.resource.data.pin is string
-        && request.resource.data.pin.matches('^[0-9]{6}$');
-      allow delete: if false;
-    }
-
-    // 학급 단위 PIN 시도. PIN은 저장하지 않습니다. 로그인한 사용자는 횟수를 읽을 수 있습니다.
-    // 틀린 PIN만 횟수를 올립니다. 10번째 틀린 시도에 잠금 시각을 같이 씁니다.
-    match /gmPinAttempts/{classId} {
-      allow read: if signedIn();
-      allow create, update: if attemptBumpWriteOk(classId) || attemptResetWriteOk(classId);
-      allow delete: if false;
-
-      // 같은 번호의 시도 문서는 한 번만 만들 수 있습니다. 동시에 두 번 쓰면 하나가 실패합니다.
-      match /tries/{tryId} {
-        allow read: if signedIn();
-        allow create: if tryCreateOk(classId, tryId);
-        allow update, delete: if false;
-      }
-    }
-
-    // PIN 확인용 임시 문서. 읽기·수정·목록은 막습니다.
-    // 맞든 틀리든 같은 배치에서 시도 문서와 횟수 +1이 있어야 만들어집니다. 잠금 중에는 거부합니다.
-    match /gmPinProofs/{uid} {
-      allow read: if false;
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && request.resource.data.classId is string
-        && request.resource.data.classId.size() > 0
-        && request.resource.data.classId.size() < 80
-        && proofDataOk(request.resource.data, request.resource.data.classId)
-        && proofForcesAttemptBump();
-      allow update: if false;
-      allow delete: if signedIn() && request.auth.uid == uid;
-    }
-
-    // 교사 쓰기 세션. PIN 필드는 규칙으로 거부합니다. 본인만 읽을 수 있습니다.
-    // 새로 만들거나 만료 뒤 다시 만들 때만 증명의 PIN이 secrets와 같아야 합니다.
-    // 살아 있는 세션은 같은 학급으로 10분 안에서만 늘립니다.
-    match /gmSessions/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && sessionShapeOk()
-        && proofMatchesSecret();
-      allow update: if signedIn()
-        && request.auth.uid == uid
-        && sessionShapeOk()
-        && (
-          (
-            resource.data.keys().hasOnly(['classId', 'expiresAt'])
-            && resource.data.classId == request.resource.data.classId
-            && resource.data.expiresAt is timestamp
-            && resource.data.expiresAt > request.time
-          )
-          || proofMatchesSecret()
-        );
-      allow delete: if signedIn() && request.auth.uid == uid;
     }
 
     // 보드게임 방: 로그인(익명 인증)한 학급 화면에서만 만들고 고칩니다.
@@ -864,38 +395,24 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
-    function approvedClassGrant(classId) {
-      return get(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId)).data;
-    }
-
-    function hasApprovedClassGrant(classId) {
-      return exists(/databases/$(database)/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/$(classId));
-    }
-
-    function settingsCreateByPinMaster(appId) {
-      return isPinMaster(appId)
-        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
-    }
-
-    // 시드 마스터가 승인한 새 학급의 첫 설정. 그 학급 세션은 아직 없습니다.
-    function settingsCreateBySeedGrant(appId) {
-      return isSeedPinMaster()
-        && appId != 'sambong-class-2026'
-        && hasApprovedClassGrant(appId)
-        && approvedClassGrant(appId).createdBy == request.auth.uid
-        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
-    }
-
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 할인·GM 전용 키는 그 학급의 유효한 PIN 세션만 바꿉니다. 삭제는 금지입니다.
+    // 생성은 classIds 또는 시드 학급 승인 표식이 있어야 합니다.
+    // shopDiscount 와 GM 전용 키를 바꾸려면 학급 관리자입니다. 앱은 이 문서를 지우지 않습니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
-      allow create: if settingsCreateByPinMaster(appId) || settingsCreateBySeedGrant(appId);
-      allow update: if settingsGlobalPinMasterUpdate(appId) || settingsGlobalOpenUpdate();
+      allow create: if canCreateClassSettings(appId)
+        && (!createHasShopDiscount() || shopDiscountChangeIsValid());
+      allow update: if signedIn() && (
+        (shopDiscountUntouched() && gmOnlyUntouched())
+        || (
+          isAdminForApp(appId)
+          && (shopDiscountUntouched() || shopDiscountChangeIsValid())
+        )
+      );
       allow delete: if false;
     }
 
-    // 수업 종료 자동 XP 공지. GM/TV 탭이 세션 없이 씁니다. 형식과 중복 간격은 그대로입니다.
+    // 수업 종료 자동 XP 공지. 지급 중복 방지는 학생 문서 lastClassXpSlot입니다.
     match /artifacts/{appId}/public/data/settings/autoXp {
       allow read: if true;
       allow create: if signedIn() && autoXpShapeOk();
@@ -906,29 +423,26 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 학습 온도계 부모. 수동 저장은 PIN 세션, 자동 정산은 잠금·완료 전이만 세션 없이 됩니다.
+    // 학습 온도계 부모. 생성·수정은 그 학급 선생님만 합니다. 학생별 값은 votes 하위 문서입니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer {
       allow read: if true;
-      allow create: if (isPinMaster(appId) && thermometerShapeOk())
-        || (signedIn() && thermometerAutoClaimCreate());
-      allow update: if (isPinMaster(appId) && thermometerShapeOk())
-        || (signedIn() && (thermometerAutoClaimUpdate() || thermometerAutoDone() || thermometerStaleFlagOnly()));
+      allow create: if isAdminForApp(appId) && thermometerShapeOk();
+      allow update: if isAdminForApp(appId) && thermometerShapeOk();
       allow delete: if false;
     }
 
-    // 수동 표 값은 PIN 세션만. 자동 정산은 잠금이 살아있는 동안 0으로 초기화만 합니다.
+    // 학생 본인 문서는 Firebase uid와 문서 ID가 같을 때만, 선생님은 학번 문서를 씁니다.
+    // 익명 로그인 uid는 학번이 아니므로 학생은 다른 학생 값을 쓰지 못합니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer/votes/{studentId} {
       allow read: if true;
-      allow create, update: if signedIn()
-        && thermometerVoteOk(appId, studentId)
-        && (isPinMaster(appId) || thermometerVoteResetInFinish(appId));
+      allow create, update: if signedIn() && thermometerVoteOk(appId, studentId);
       allow delete: if false;
     }
 
-    // 학급 개설 표식. 시드 학급 PIN 세션만, 자기 uid를 createdBy에 남길 때만 만듭니다.
+    // 학급 개설 직전, 시드 학급 선생님만 만들고 createdBy에 자기 uid를 남깁니다.
     match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
       allow read: if signedIn();
-      allow create: if isSeedPinMaster()
+      allow create: if isAdminForApp('sambong-class-2026')
         && request.resource.data.keys().hasOnly(['classId', 'status', 'createdBy'])
         && request.resource.data.classId == classId
         && request.resource.data.status == 'approved'
@@ -937,594 +451,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // 예전 허용목록. 저장 권한에는 쓰지 않습니다. 클라이언트는 만들거나 고치지 못합니다.
+    // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
     match /admins/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow write: if false;
     }
 
-    // 역따봉. 따봉·출석과 떨어진 문서만 다룹니다.
-    // 받은 횟수와 감점은 역따봉 문서와 같은 배치에서만 올라갑니다.
-    // 감사·하루 제한은 만든 뒤 고치거나 지우지 못합니다. 시즌이 바뀌면 세대 번호만 올립니다.
-    function rebukeConfigPath(appId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeConfig;
-    }
-
-    function rebukeEventItemPath(appId, eventId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeEvents/items/$(eventId);
-    }
-
-    function rebukeAuditItemPath(appId, eventId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeAudit/items/$(eventId);
-    }
-
-    function rebukeDailyItemPath(appId, dailyId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeDaily/items/$(dailyId);
-    }
-
-    function rebukeChargeItemPath(appId, eventId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeCharges/items/$(eventId);
-    }
-
-    function rebukeDueItemPath(appId, dueId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeDue/items/$(dueId);
-    }
-
-    function rebukeSettlementItemPath(appId, eventId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeSettlements/items/$(eventId);
-    }
-
-    function rebukeWaiverItemPath(appId, eventId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukeWaivers/items/$(eventId);
-    }
-
-    function rebukePaybackItemPath(appId, eventId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/classOps/rebukePaybacks/items/$(eventId);
-    }
-
-    function rebukeStudentPath(appId, studentDocId) {
-      return /databases/$(database)/documents/artifacts/$(appId)/public/data/students/$(studentDocId);
-    }
-
-    function rebukeCreateAbsent() {
-      return !('rebukeSeq' in request.resource.data)
-        && !('rebukeEpoch' in request.resource.data)
-        && !('rebukeRoster' in request.resource.data);
-    }
-
-    // 만들기는 횟수 필드가 없고, 지우기는 기존과 같이 둡니다.
-    // 고치기는 횟수·세대·명단이 그대로일 때만 참입니다. diff()는 큰 문서에서 식 한도를 넘깁니다.
-    function rebukeSeqHeld() {
-      return request.method == 'delete'
-        || (request.method == 'create' && rebukeCreateAbsent())
-        || (
-          request.method == 'update'
-          && (
-            (
-              !('rebukeSeq' in resource.data)
-              && !('rebukeSeq' in request.resource.data)
-            )
-            || (
-              'rebukeSeq' in resource.data
-              && 'rebukeSeq' in request.resource.data
-              && request.resource.data.rebukeSeq == resource.data.rebukeSeq
-              && (
-                !('rebukeEpoch' in resource.data)
-                || (
-                  'rebukeEpoch' in request.resource.data
-                  && request.resource.data.rebukeEpoch == resource.data.rebukeEpoch
-                )
-              )
-              && (
-                !('rebukeRoster' in resource.data)
-                || (
-                  'rebukeRoster' in request.resource.data
-                  && request.resource.data.rebukeRoster == resource.data.rebukeRoster
-                )
-              )
-            )
-          )
-        );
-    }
-
-    function rebukeEventPathForStudent(appId, studentId) {
-      return rebukeEventItemPath(
-        appId,
-        'e~' + string(request.resource.data.rebukeEpoch) + '~' + string(request.resource.data.rebukeRoster) + '~' + studentId + '~' + string(request.resource.data.rebukeSeq)
-      );
-    }
-
-    // 선생님 세션이 같은 배치에서 세대나 명단 번호를 올릴 때만 받은 횟수를 0으로 되돌립니다.
-    function rebukeResetInBatch(appId) {
-      let cfgPath = rebukeConfigPath(appId);
-      let before = get(cfgPath).data;
-      let after = getAfter(cfgPath).data;
-      return request.resource.data.rebukeSeq == 0
-        && request.resource.data.rebukeEpoch is int
-        && request.resource.data.rebukeRoster is int
-        && exists(cfgPath)
-        && after.epoch is int
-        && before.epoch is int
-        && (
-          after.epoch > before.epoch
-          || after.roster != before.roster
-        );
-    }
-
-    function rebukeStudentOk(appId, studentId) {
-      return rebukeSeqHeld()
-        || (
-          'rebukeSeq' in request.resource.data
-          && 'rebukeEpoch' in request.resource.data
-          && 'rebukeRoster' in request.resource.data
-          && (
-            existsAfter(rebukeEventPathForStudent(appId, studentId))
-            || rebukeResetInBatch(appId)
-          )
-        );
-    }
-
-    function rebukeRosterEpoch(cfg, toId) {
-      return (cfg.roster is map && toId in cfg.roster && cfg.roster[toId] is int && cfg.roster[toId] >= 1)
-        ? cfg.roster[toId]
-        : 1;
-    }
-
-    // 화면이 만든 reasonFold와 원문을 둘 다 봅니다. 공백·기호를 끼운 욕과 영타를 거릅니다.
-    function rebukeReasonOk(reason, fold) {
-      return reason is string
-        && reason.size() >= 2
-        && reason.size() <= 80
-        && reason.matches('.*[0-9A-Za-z가-힣].*')
-        && fold is string
-        && fold.size() >= 2
-        && fold.size() <= 80
-        && fold.matches('^[0-9a-z가-힣ㄱ-ㅎ]+$')
-        && !fold.matches('.*(바보|멍청|병신|지랄|시발|씨발|개새끼|좆|존나|개새기|돼지|찐따|죽어|꺼져|ㅅㅂ|ㅆㅂ|ㅂㅅ|ㅈㄹ|ㅄ|qkqh|tlqkf|미친|씨바|시바|18놈|닥쳐|등신|또라이|fuck|rjwu).*')
-        && !reason.matches('.*(바[^가-힣A-Za-z]{0,3}보|멍[^가-힣A-Za-z]{0,3}청|병[^가-힣A-Za-z]{0,3}신|지[^가-힣A-Za-z]{0,3}랄|시[^가-힣A-Za-z]{0,3}발|씨[^가-힣A-Za-z]{0,3}발|ㅅ[^가-힣A-Za-z]{0,3}ㅂ|ㅆ[^가-힣A-Za-z]{0,3}ㅂ|ㅂ[^가-힣A-Za-z]{0,3}ㅅ|ㅈ[^가-힣A-Za-z]{0,3}ㄹ|존나|개새끼|좆|개새기|돼지|찐따|죽어|꺼져|ㅄ|미친|미[^가-힣A-Za-z]{0,3}친|씨바|씨[^가-힣A-Za-z]{0,3}바|시바|시[^가-힣A-Za-z]{0,3}바|18[^가-힣A-Za-z]{0,3}놈|닥[^가-힣A-Za-z]{0,3}쳐|등[^가-힣A-Za-z]{0,3}신|또[^가-힣A-Za-z]{0,3}라이|[fF][uU][cC][kK]|ｆｕｃｋ|ＦＵＣＫ|[rR][jJ][wW][uU]|[qQ][kK][qQ][hH]|[tT][lL][qQ][kK][fF]).*');
-    }
-
-    function rebukeNotDefault(stu) {
-      return (
-          !('creditDefaultUntilYmd' in stu)
-          || !(stu.creditDefaultUntilYmd is string)
-          || stu.creditDefaultUntilYmd <= kstDateString()
-        )
-        && (
-          !('loanPenaltyUntilYmd' in stu)
-          || !(stu.loanPenaltyUntilYmd is string)
-          || stu.loanPenaltyUntilYmd <= kstDateString()
-        );
-    }
-
-    function rebukeBongTaken(before, after, seq, took) {
-      return took is int
-        && took >= 0
-        && took <= 10
-        && (
-          (
-            seq % 10 != 0
-            && took == 0
-            && after == before
-          )
-          || (
-            seq % 10 == 0
-            && before - 10 >= -2000
-            && took == 10
-            && after == before - 10
-          )
-          || (
-            seq % 10 == 0
-            && before - 10 < -2000
-            && after == -2000
-            && took == before + 2000
-          )
-        );
-    }
-
-    // get()과 getAfter()의 봉을 한 식에서 빼면 평가가 죽는다. 요청 문서의 숫자와 각각 맞춘다.
-    // 100.5처럼 소수 봉도 받을 수 있게 정수만 요구하지 않습니다.
-    function rebukeTookOk(before, after, seq, took) {
-      return before is number
-        && after is number
-        && took is number
-        && after == before - took
-        && took >= 0
-        && took <= 10
-        && (
-          (seq % 10 != 0 && took == 0)
-          || (seq % 10 == 0 && before - 10 >= -2000 && took == 10)
-          || (seq % 10 == 0 && before - 10 < -2000 && after == -2000 && took == before + 2000)
-        );
-    }
-
-    function rebukeEventCreateOk(appId, eventId) {
-      let stu = get(rebukeStudentPath(appId, 'student_' + request.resource.data.toId)).data;
-      let after = getAfter(rebukeStudentPath(appId, 'student_' + request.resource.data.toId)).data;
-      let cfg = get(rebukeConfigPath(appId)).data;
-      let audit = getAfter(rebukeAuditItemPath(appId, eventId)).data;
-      let pairId = 'p~' + string(request.resource.data.epoch) + '~' + request.resource.data.ymd + '~' + audit.fromId + '~' + request.resource.data.toId;
-      let sentId = 's~' + string(request.resource.data.epoch) + '~' + request.resource.data.ymd + '~' + audit.fromId + '~' + string(request.resource.data.sentN);
-      let recvId = 'r~' + string(request.resource.data.epoch) + '~' + request.resource.data.ymd + '~' + request.resource.data.toId + '~' + string(request.resource.data.recvN);
-      return signedIn()
-        && request.resource.data.keys().hasOnly(['epoch', 'rosterEpoch', 'toId', 'ymd', 'seq', 'reason', 'reasonFold', 'hidden', 'took', 'sentN', 'recvN', 'bongBefore', 'bongAfter'])
-        && request.resource.data.hidden == false
-        && request.resource.data.toId is string
-        && request.resource.data.toId.matches('^[A-Za-z0-9_-]{1,24}$')
-        && request.resource.data.toId != 'gm'
-        && request.resource.data.toId != 'gm_a'
-        && request.resource.data.ymd == kstDateString()
-        && request.resource.data.epoch is int
-        && request.resource.data.epoch >= 1
-        && request.resource.data.rosterEpoch is int
-        && request.resource.data.seq is int
-        && request.resource.data.seq >= 1
-        && request.resource.data.sentN is int
-        && request.resource.data.sentN >= 1
-        && request.resource.data.sentN <= 3
-        && request.resource.data.recvN is int
-        && request.resource.data.recvN >= 1
-        && request.resource.data.recvN <= 3
-        && rebukeReasonOk(request.resource.data.reason, request.resource.data.reasonFold)
-        && cfg.enabled == true
-        && cfg.epoch == request.resource.data.epoch
-        && request.resource.data.rosterEpoch == rebukeRosterEpoch(cfg, request.resource.data.toId)
-        && eventId == 'e~' + string(request.resource.data.epoch) + '~' + string(request.resource.data.rosterEpoch) + '~student_' + request.resource.data.toId + '~' + string(request.resource.data.seq)
-        && rebukeTookOk(request.resource.data.bongBefore, request.resource.data.bongAfter, request.resource.data.seq, request.resource.data.took)
-        && string(stu.bong) == string(request.resource.data.bongBefore)
-        && string(after.bong) == string(request.resource.data.bongAfter)
-        && request.resource.data.seq == (((('rebukeEpoch' in stu) && stu.rebukeEpoch == request.resource.data.epoch && ('rebukeRoster' in stu) && stu.rebukeRoster == request.resource.data.rosterEpoch && ('rebukeSeq' in stu)) ? stu.rebukeSeq : 0) + 1)
-        && after.rebukeSeq == request.resource.data.seq
-        && after.rebukeEpoch == request.resource.data.epoch
-        && after.rebukeRoster == request.resource.data.rosterEpoch
-        && audit.authUid == request.auth.uid
-        && audit.fromId is string
-        && audit.fromId != request.resource.data.toId
-        && audit.toId == request.resource.data.toId
-        && !exists(rebukeDailyItemPath(appId, pairId))
-        && existsAfter(rebukeDailyItemPath(appId, pairId))
-        && !exists(rebukeDailyItemPath(appId, sentId))
-        && existsAfter(rebukeDailyItemPath(appId, sentId))
-        && !exists(rebukeDailyItemPath(appId, recvId))
-        && existsAfter(rebukeDailyItemPath(appId, recvId));
-    }
-
-    function rebukeAuditCreateOk(appId, eventId) {
-      let ev = getAfter(rebukeEventItemPath(appId, eventId)).data;
-      let fromId = request.resource.data.fromId;
-      let before = get(rebukeStudentPath(appId, 'student_' + fromId)).data;
-      return signedIn()
-        && request.resource.data.keys().hasOnly(['toId', 'fromId', 'ymd', 'authUid', 'reason', 'reasonFold', 'bongBefore'])
-        && request.resource.data.authUid == request.auth.uid
-        && request.resource.data.bongBefore is number
-        && request.resource.data.bongBefore >= ev.sentN * 5
-        && fromId is string
-        && fromId.matches('^[A-Za-z0-9_-]{1,24}$')
-        && fromId != 'gm'
-        && fromId != 'gm_a'
-        && fromId != ev.toId
-        && request.resource.data.toId == ev.toId
-        && request.resource.data.reason == ev.reason
-        && request.resource.data.reasonFold == ev.reasonFold
-        && request.resource.data.ymd == ev.ymd
-        && string(before.bong) == string(request.resource.data.bongBefore)
-        && existsAfter(rebukeChargeItemPath(appId, eventId))
-        && rebukeNotDefault(before);
-    }
-
-    // 5봉 빚은 로그인 기기가 아니라 학생 번호에 붙입니다. 기기가 바뀌어도 같은 학생이 다음 날 냅니다.
-    function rebukeDueRaiseOk(path, after) {
-      let before = get(path).data;
-      return before.fromId == after.fromId
-        && before.epoch == after.epoch
-        && after.settled == false
-        && after.lastPaidYmd == before.lastPaidYmd
-        && (
-          (before.owed == 0 && after.n == 1 && after.owed == 5)
-          || (
-            before.payerUid == request.auth.uid
-            && before.openYmd == after.openYmd
-            && before.n == 1
-            && before.owed == 5
-            && after.n == 2
-            && after.owed == 10
-          )
-          || (
-            before.payerUid == request.auth.uid
-            && before.openYmd == after.openYmd
-            && before.n == 2
-            && before.owed == 10
-            && after.n == 3
-            && after.owed == 15
-          )
-        );
-    }
-
-    function rebukeDueSendOk(appId, fromId, epoch, eventId) {
-      let path = rebukeDueItemPath(appId, string(epoch) + '~' + fromId);
-      let after = getAfter(path).data;
-      return existsAfter(path)
-        && fromId is string
-        && epoch is int
-        && eventId is string
-        && after.keys().hasOnly(['fromId', 'epoch', 'owed', 'openYmd', 'n', 'payerUid', 'lastPaidYmd', 'eventId', 'settled'])
-        && after.fromId == fromId
-        && after.epoch == epoch
-        && after.payerUid == request.auth.uid
-        && after.eventId == eventId
-        && after.openYmd == kstDateString()
-        && after.settled == false
-        && after.owed is int
-        && after.n is int
-        && !exists(rebukeChargeItemPath(appId, eventId))
-        && existsAfter(rebukeChargeItemPath(appId, eventId))
-        && (
-          (!exists(path) && after.n == 1 && after.owed == 5 && after.lastPaidYmd == '')
-          || (exists(path) && rebukeDueRaiseOk(path, after))
-        );
-    }
-
-    function rebukeDueClearOk(appId, dueId) {
-      let epoch = request.resource.data.epoch;
-      let fromId = request.resource.data.fromId;
-      return signedIn()
-        && dueId == string(epoch) + '~' + fromId
-        && resource.data.owed is int
-        && resource.data.owed >= 5
-        && resource.data.owed <= 15
-        && resource.data.openYmd is string
-        && resource.data.openYmd < kstDateString()
-        && resource.data.settled == false
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owed', 'n', 'openYmd', 'settled', 'payerUid'])
-        && request.resource.data.owed == 0
-        && request.resource.data.n == 0
-        && request.resource.data.openYmd == ''
-        && request.resource.data.settled == true
-        && request.resource.data.payerUid == request.auth.uid
-        && existsAfter(rebukeSettlementItemPath(appId, 'due~' + dueId + '~' + kstDateString()));
-    }
-
-    function rebukeDueWaiveOk(appId, fromId, epoch) {
-      let path = rebukeDueItemPath(appId, string(epoch) + '~' + fromId);
-      let before = get(path).data;
-      let after = getAfter(path).data;
-      return before.settled == false
-        && after.settled == false
-        && after.fromId == before.fromId
-        && after.epoch == before.epoch
-        && after.payerUid == before.payerUid
-        && after.eventId == before.eventId
-        && after.lastPaidYmd == before.lastPaidYmd
-        && (
-          (before.owed == 15 && before.n == 3 && after.owed == 10 && after.n == 2 && after.openYmd == before.openYmd)
-          || (before.owed == 10 && before.n == 2 && after.owed == 5 && after.n == 1 && after.openYmd == before.openYmd)
-          || (before.owed == 5 && before.n == 1 && after.owed == 0 && after.n == 0 && after.openYmd == '')
-        );
-    }
-
-    function rebukeChargeCreateOk(appId, eventId) {
-      let ev = getAfter(rebukeEventItemPath(appId, eventId)).data;
-      let audit = getAfter(rebukeAuditItemPath(appId, eventId)).data;
-      return signedIn()
-        && request.resource.data.keys().hasOnly(['fromId', 'toId', 'authUid', 'ymd', 'amount', 'epoch'])
-        && request.resource.data.amount == 5
-        && request.resource.data.authUid == request.auth.uid
-        && request.resource.data.authUid == audit.authUid
-        && request.resource.data.fromId == audit.fromId
-        && request.resource.data.toId == ev.toId
-        && request.resource.data.ymd == ev.ymd
-        && request.resource.data.epoch == ev.epoch
-        && request.resource.data.fromId != 'gm'
-        && request.resource.data.fromId != 'gm_a'
-        && request.resource.data.toId != 'gm'
-        && request.resource.data.toId != 'gm_a'
-        && rebukeDueSendOk(appId, audit.fromId, ev.epoch, eventId);
-    }
-
-    function rebukeSettlementCreateOk(appId, settleId) {
-      let epoch = request.resource.data.epoch;
-      let fromId = request.resource.data.fromId;
-      let due = get(rebukeDueItemPath(appId, string(epoch) + '~' + fromId)).data;
-      let before = get(rebukeStudentPath(appId, 'student_' + fromId)).data;
-      let afterStu = getAfter(rebukeStudentPath(appId, 'student_' + fromId)).data;
-      let dueAfter = getAfter(rebukeDueItemPath(appId, string(epoch) + '~' + fromId)).data;
-      return signedIn()
-        && settleId == 'due~' + string(epoch) + '~' + fromId + '~' + kstDateString()
-        && request.resource.data.keys().hasOnly(['amount', 'bongBefore', 'bongAfter', 'authUid', 'epoch', 'fromId'])
-        && request.resource.data.amount is int
-        && request.resource.data.amount == due.owed
-        && request.resource.data.amount >= 5
-        && request.resource.data.amount <= 15
-        && request.resource.data.authUid == request.auth.uid
-        && epoch is int
-        && fromId is string
-        && due.openYmd < kstDateString()
-        && due.settled == false
-        && due.fromId == fromId
-        && dueAfter.owed == 0
-        && dueAfter.settled == true
-        && dueAfter.payerUid == request.auth.uid
-        && request.resource.data.bongAfter == request.resource.data.bongBefore - request.resource.data.amount
-        && string(before.bong) == string(request.resource.data.bongBefore)
-        && string(afterStu.bong) == string(request.resource.data.bongAfter);
-    }
-
-    function rebukeWaiverCreateOk(appId, eventId) {
-      let charge = get(rebukeChargeItemPath(appId, eventId)).data;
-      return isPinMaster(appId)
-        && !exists(rebukeSettlementItemPath(appId, eventId))
-        && request.resource.data.keys().hasOnly(['authUid', 'fromId'])
-        && request.resource.data.authUid == charge.authUid
-        && request.resource.data.fromId == charge.fromId
-        && (
-          !exists(rebukeDueItemPath(appId, string(charge.epoch) + '~' + charge.fromId))
-          || rebukeDueWaiveOk(appId, charge.fromId, charge.epoch)
-        );
-    }
-
-    function rebukePaybackCreateOk(appId, eventId) {
-      let charge = get(rebukeChargeItemPath(appId, eventId)).data;
-      let due = get(rebukeDueItemPath(appId, string(charge.epoch) + '~' + charge.fromId)).data;
-      let before = get(rebukeStudentPath(appId, 'student_' + charge.fromId)).data;
-      let after = getAfter(rebukeStudentPath(appId, 'student_' + charge.fromId)).data;
-      return isPinMaster(appId)
-        && due.settled == true
-        && due.owed == 0
-        && due.fromId == charge.fromId
-        && charge.ymd < kstDateString()
-        && !exists(rebukeWaiverItemPath(appId, eventId))
-        && request.resource.data.keys().hasOnly(['amount', 'beforeBong', 'afterBong', 'authUid'])
-        && request.resource.data.amount == 5
-        && request.resource.data.authUid == charge.authUid
-        && request.resource.data.afterBong == request.resource.data.beforeBong + 5
-        && string(before.bong) == string(request.resource.data.beforeBong)
-        && string(after.bong) == string(request.resource.data.afterBong);
-    }
-
-    function rebukeDailyCreateOk(appId, dailyId) {
-      let eventId = request.resource.data.eventId;
-      let ev = getAfter(rebukeEventItemPath(appId, eventId)).data;
-      let fromId = getAfter(rebukeAuditItemPath(appId, eventId)).data.fromId;
-      return signedIn()
-        && request.resource.data.keys().hasOnly(['eventId'])
-        && eventId is string
-        && (
-          dailyId == 'p~' + string(ev.epoch) + '~' + ev.ymd + '~' + fromId + '~' + ev.toId
-          || dailyId == 's~' + string(ev.epoch) + '~' + ev.ymd + '~' + fromId + '~' + string(ev.sentN)
-          || dailyId == 'r~' + string(ev.epoch) + '~' + ev.ymd + '~' + ev.toId + '~' + string(ev.recvN)
-        );
-    }
-
-    function rebukeRefundCreateOk(appId, eventId) {
-      let ev = get(rebukeEventItemPath(appId, eventId)).data;
-      let before = get(rebukeStudentPath(appId, 'student_' + ev.toId)).data;
-      let after = getAfter(rebukeStudentPath(appId, 'student_' + ev.toId)).data;
-      return isPinMaster(appId)
-        && request.resource.data.keys().hasOnly(['amount', 'beforeBong', 'afterBong'])
-        && request.resource.data.amount is number
-        && request.resource.data.beforeBong is number
-        && request.resource.data.afterBong is number
-        && request.resource.data.amount >= 1
-        && request.resource.data.amount <= 10
-        && ev.took == request.resource.data.amount
-        && request.resource.data.afterBong == request.resource.data.beforeBong + request.resource.data.amount
-        && string(before.bong) == string(request.resource.data.beforeBong)
-        && string(after.bong) == string(request.resource.data.afterBong);
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeConfig {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['enabled', 'epoch', 'roster'])
-        && request.resource.data.epoch == 1
-        && request.resource.data.roster is map
-        && request.resource.data.roster.size() == 0
-        && (
-          request.resource.data.enabled == false
-          || (isPinMaster(appId) && request.resource.data.enabled == true)
-        );
-      allow update: if isPinMaster(appId)
-        && request.resource.data.keys().hasOnly(['enabled', 'epoch', 'roster'])
-        && request.resource.data.enabled is bool
-        && request.resource.data.epoch is int
-        && request.resource.data.epoch >= resource.data.epoch
-        && request.resource.data.roster is map;
-      allow delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeEvents/items/{eventId} {
-      allow read: if signedIn();
-      allow create: if rebukeEventCreateOk(appId, eventId);
-      allow update: if isPinMaster(appId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden', 'reason', 'reasonFold'])
-        && request.resource.data.hidden == true
-        && request.resource.data.reason == ''
-        && request.resource.data.reasonFold == ''
-        && resource.data.hidden == false;
-      allow update: if isPinMaster(appId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reason', 'reasonFold'])
-        && request.resource.data.reason == ''
-        && request.resource.data.reasonFold == ''
-        && resource.data.epoch < get(rebukeConfigPath(appId)).data.epoch;
-      allow delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeAudit/items/{eventId} {
-      allow read: if isPinMaster(appId);
-      allow create: if rebukeAuditCreateOk(appId, eventId);
-      allow update, delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeDaily/items/{dailyId} {
-      allow read: if false;
-      allow create: if rebukeDailyCreateOk(appId, dailyId);
-      allow update, delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeRefunds/items/{eventId} {
-      allow read: if isPinMaster(appId);
-      allow create: if rebukeRefundCreateOk(appId, eventId);
-      allow update, delete: if false;
-    }
-
-    // 학생 번호에 쌓인 5봉. 낸 기기만 읽고, 다른 기기는 정산 쓰기만 할 수 있습니다.
-    match /artifacts/{appId}/public/data/classOps/rebukeDue/items/{dueId} {
-      allow read: if isPinMaster(appId)
-        || (signedIn() && resource == null)
-        || (signedIn() && resource != null && resource.data.payerUid == request.auth.uid);
-      allow create: if rebukeDueSendOk(appId, request.resource.data.fromId, request.resource.data.epoch, request.resource.data.eventId);
-      allow update: if rebukeDueSendOk(appId, request.resource.data.fromId, request.resource.data.epoch, request.resource.data.eventId);
-      allow update: if rebukeDueClearOk(appId, dueId);
-      allow delete: if false;
-    }
-
-    // 5봉 청구. 보낸 기기만 읽고, 받는 문서와 같은 배치에서 보낸 사람 봉은 바꾸지 않습니다.
-    match /artifacts/{appId}/public/data/classOps/rebukeCharges/items/{eventId} {
-      allow read: if isPinMaster(appId)
-        || (signedIn() && resource == null)
-        || (signedIn() && resource != null && resource.data.authUid == request.auth.uid);
-      allow create: if rebukeChargeCreateOk(appId, eventId);
-      allow update, delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeSettlements/items/{eventId} {
-      allow read: if isPinMaster(appId)
-        || (signedIn() && resource == null)
-        || (signedIn() && resource != null && resource.data.authUid == request.auth.uid);
-      allow create: if rebukeSettlementCreateOk(appId, eventId);
-      allow update, delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukeWaivers/items/{eventId} {
-      allow read: if isPinMaster(appId)
-        || (signedIn() && resource == null)
-        || (signedIn() && resource != null && resource.data.authUid == request.auth.uid);
-      allow create: if rebukeWaiverCreateOk(appId, eventId);
-      allow update, delete: if false;
-    }
-
-    match /artifacts/{appId}/public/data/classOps/rebukePaybacks/items/{eventId} {
-      allow read: if isPinMaster(appId)
-        || (signedIn() && resource == null)
-        || (signedIn() && resource != null && resource.data.authUid == request.auth.uid);
-      allow create: if rebukePaybackCreateOk(appId, eventId);
-      allow update, delete: if false;
-    }
-
     match /artifacts/{appId}/public/{document=**} {
-      allow read: if !isRebukeOpsPath();
-      // 학생 문서는 아래 전용 match만 통과합니다. 여기서 다시 검사하면 식 1000개를 넘습니다.
+      allow read: if true;
       allow write: if signedIn()
         && !isSettingsGlobalDoc()
         && !isAutoXpDoc()
         && !isLearningThermometerDoc()
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
-        && !isRebukeOpsPath()
-        && !isStudentDoc()
-        && studentClassXpSlotAllowed()
-        && masterStudentPinAbsent()
-        && studentThermometerMarkerAllowed(appId);
+        && studentClassXpSlotAllowed();
     }
 
     match /classes/{classId} {

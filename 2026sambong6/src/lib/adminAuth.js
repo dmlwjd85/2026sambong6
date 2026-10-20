@@ -1,58 +1,12 @@
 /**
- * 마스터 PIN 세션과 유휴 로그아웃.
- * 저장 권한은 gmSessions 문서이고, Google 계정은 요구하지 않습니다.
+ * 선생님 계정 인증 판별.
+ * Firestore 규칙의 isAdmin() 과 맞춥니다. 익명 로그인은 선생님이 아닙니다.
  */
 
 import { SEED_MASTER_CLASS_ID } from './classCreateRequest.js';
 
-/** GM 화면을 15분 동안 건드리지 않으면 다른 학급은 로그아웃합니다. */
+/** GM 화면을 15분 동안 건드리지 않으면 선생님 세션을 끊습니다. */
 export const GM_IDLE_LOGOUT_MS = 15 * 60 * 1000;
-
-/** 서버 세션 만료. 규칙 상한은 10분입니다. 쓸 때는 이 값에서 15초를 빼 시계 차이를 피합니다. */
-export const GM_SESSION_TTL_MS = 10 * 60 * 1000;
-
-/** 세션 만료 시각을 규칙 상한보다 조금 짧게 씁니다. */
-export const GM_SESSION_SKEW_MS = 15 * 1000;
-
-/** 학급당 연속 실패. 10번째 틀린 시도에 잠그고, 잠금은 15분입니다. */
-export const PIN_ATTEMPT_MAX = 10;
-export const PIN_LOCK_MS = 15 * 60 * 1000;
-
-/**
- * 다음 학급 PIN 시도 값.
- * blocked면 이미 잠겨 있어 규칙을 호출하지 않습니다.
- * 잠금이 끝난 뒤에는 횟수를 1로 되돌리고 generation을 1 올립니다.
- * 맞는 PIN으로 횟수가 0이 된 뒤에는 generation을 유지한 채 1부터 다시 셉니다.
- * 10번째 틀린 시도면 lockedUntilMs를 지금으로부터 15분 뒤로 둡니다.
- */
-export function planPinAttempt(existing, nowMs) {
-    const now = Number(nowMs);
-    const count = Number(existing && existing.count);
-    const generation = Number(existing && existing.generation);
-    const lockedUntilMs = Number(existing && existing.lockedUntilMs);
-    const locked = Number.isFinite(lockedUntilMs) && lockedUntilMs > now;
-    const baseGen = Number.isFinite(generation) && generation >= 1 ? generation : 0;
-    if (locked) {
-        return {
-            count: Number.isFinite(count) ? count : PIN_ATTEMPT_MAX,
-            generation: baseGen || 1,
-            lockedUntilMs,
-            blocked: true,
-        };
-    }
-    const expired = Number.isFinite(lockedUntilMs) && lockedUntilMs > 0 && lockedUntilMs <= now;
-    const restart = !existing || expired || !Number.isFinite(count) || count >= PIN_ATTEMPT_MAX || count < 0;
-    const next = restart ? 1 : count + 1;
-    const nextGen = !existing || baseGen < 1
-        ? 1
-        : (expired ? baseGen + 1 : baseGen);
-    return {
-        count: next,
-        generation: nextGen,
-        lockedUntilMs: next >= PIN_ATTEMPT_MAX ? now + PIN_LOCK_MS : null,
-        blocked: false,
-    };
-}
 
 /**
  * 담임 원래 학급(시드).
@@ -70,7 +24,7 @@ export function isOriginalHomeClass(classId) {
  * GM 유휴 만료.
  * - ignore: GM이 아니라 아무것도 하지 않음
  * - defer: 수업 화면 공유 중이라 타이머만 다시 켬
- * - end-teacher-auth: 원래 학급. 비익명 로그인만 종료. PIN 세션·localStorage·화면 로그인은 유지하고 새로고침하지 않음
+ * - end-teacher-auth: 원래 학급. 선생님 인증(비익명)만 종료. PIN·localStorage·화면 로그인은 유지하고 새로고침하지 않음
  * - full-logout: 다른 학급. 로그인 저장소 삭제, 선생님 세션 종료, 새로고침
  */
 export function planGmIdleExpiry({ classId, isAdmin, projectionActive }) {
@@ -257,7 +211,7 @@ export function teacherAuthFailureMessage(reason) {
         case 'provider_disabled':
             return '이 로그인 방식이 아직 켜져 있지 않습니다. Firebase 콘솔에서 Google 또는 이메일/비밀번호를 사용 설정해 주세요.';
         case 'permission_denied':
-            return '저장이 거부되었습니다. 로그인 세션이 없거나 값 형식이 규칙과 맞지 않습니다.';
+            return '저장이 거부되었습니다. 선생님 계정 인증, admins 문서, classIds에 이 학급 ID가 있는지 확인해 주세요.';
         default:
             return '선생님 계정 인증에 실패했습니다. 다시 시도해 주세요.';
     }

@@ -91,8 +91,7 @@ export function keepServerClassXpSlot(restoreData, serverData) {
  * 한 학생 문서에 이번 슬롯을 쓸지 판단합니다.
  * xp가 유한한 숫자가 아니면 grant가 아닙니다. 문자열을 0으로 바꾸지 않습니다.
  */
-export function classXpGrantDecision(xp, lastSlot, slotKey, options) {
-    if (options && options.blocked) return 'credit-default';
+export function classXpGrantDecision(xp, lastSlot, slotKey) {
     if (typeof xp !== 'number' || !Number.isFinite(xp)) return 'invalid-xp';
     if (String(lastSlot || '') === String(slotKey || '')) return 'already';
     return 'grant';

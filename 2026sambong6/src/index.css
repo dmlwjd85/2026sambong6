@@ -3,8 +3,6 @@
 @tailwind utilities;
 
         body { color: #f8fafc; overflow-x: hidden; transition: background 0.5s ease-in-out; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-        /* 음수 금액은 어느 화면에서나 이 클래스로 빨갛게 보입니다. */
-        .money-negative { color: #f87171 !important; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
         /* 상단 헤더: 좁은 화면에서도 학급·이름·로그아웃이 한 줄입니다. */
@@ -662,59 +660,16 @@
             opacity: 0.38;
             filter: grayscale(0.65);
         }
-        .plaza-praise-row {
-            display: flex;
-            flex-direction: column;
-            align-items: stretch;
-            gap: 0.2rem;
-            width: 100%;
-            margin-top: 0.2rem;
-        }
-        .praise-btn,
-        .rebuke-btn {
-            width: 100%;
-            min-height: 40px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 900;
-            line-height: 1.2;
-            padding: 0 0.35rem;
-            white-space: nowrap;
-            overflow: visible;
-        }
         .praise-btn {
+            margin-top: 0.2rem;
+            min-height: 1.6rem;
+            border-radius: 999px;
             border: 1px solid #fbbf24;
             background: #422006;
             color: #fde68a;
-        }
-        .rebuke-btn {
-            border: 1px solid #fb7185;
-            background: #4c0519;
-            color: #ffe4e6;
-        }
-        @media (min-width: 1400px) {
-            .plaza-praise-row {
-                flex-direction: row;
-            }
-            .praise-btn,
-            .rebuke-btn {
-                width: auto;
-                flex: 1 1 0;
-                min-height: 40px;
-            }
-        }
-        /* 선생님 카드는 봉 조절판 밖에 버튼을 두어 44px 아래로 줄거나 가리지 않습니다. */
-        .plaza-praise-row.is-teacher {
-            align-self: stretch;
-            width: 100%;
-            position: relative;
-            z-index: 30;
-            margin-top: 0.35rem;
-        }
-        .plaza-praise-row.is-teacher .praise-btn,
-        .plaza-praise-row.is-teacher .rebuke-btn {
-            min-height: 44px;
-            min-width: 44px;
+            font-size: 9px;
+            font-weight: 900;
+            padding: 0 0.4rem;
         }
         .checklist-grid {
             display: grid;
@@ -922,8 +877,8 @@
                 height: 0.78rem;
                 font-size: 7px;
             }
-            .plaza-cards-seating .plaza-card:not(:has(.plaza-card-core-gm)) .plaza-gm-side,
-            .plaza-cards-seating .plaza-card:not(:has(.plaza-card-core-gm)) .plaza-gm-controls {
+            .plaza-cards-seating .plaza-gm-side,
+            .plaza-cards-seating .plaza-gm-controls {
                 display: none;
             }
             .plaza-cards-seating .plaza-seat {
@@ -4492,26 +4447,6 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             flex: 0 0 auto;
             width: 3.15rem;
             z-index: 20;
-        }
-        /* 선생님 카드는 조절판을 얼굴 아래로 내려, 좁은 칸에서 얼굴 위를 덮지 않습니다. */
-        .plaza-card-core-gm {
-            flex-direction: column;
-            align-items: stretch;
-        }
-        .plaza-card-core-gm .plaza-card-main {
-            width: 100%;
-            z-index: 2;
-        }
-        .plaza-card-core-gm .plaza-card-face {
-            position: relative;
-            z-index: 3;
-        }
-        .plaza-card-core-gm .plaza-gm-side {
-            width: 100%;
-            max-width: 100%;
-            grid-template-columns: repeat(6, minmax(0, 1fr));
-            z-index: 1;
-            margin-top: 0.28rem;
         }
         .plaza-gm-btn {
             width: 100%;

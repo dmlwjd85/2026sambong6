@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
 import {
     getFirestore,
     connectFirestoreEmulator,
@@ -17,9 +17,7 @@ import {
     runTransaction,
     arrayUnion,
     deleteDoc,
-    deleteField,
     serverTimestamp,
-    Timestamp,
     query,
     where,
 } from 'firebase/firestore';
@@ -95,62 +93,23 @@ import {
     applyLoanAction,
     applyLoanLifecycle,
     computeLoanInterest,
-    copyCreditFields,
     creditDefaultBlockMessage,
     getLoanCalendarFromWorld,
+    isCreditDefaultOn,
     isLoanPenaltyActive,
-    isStudentCreditDefault,
-    personalLoanLimit,
     loanDueTotal,
     loanFieldsFromLifecycle,
     loanPenaltyBlockMessage,
     loanStillOutstanding,
-    creditJudgedOnFinalBong,
-    walletCreditAfterFinalBong,
-    mergeStudentDocKeepingLoanRepayment,
-    claimLoanNoticesForSave,
-    formatDueDayRepaySentence,
-    formatClearRepayConfirm,
-    formatClearRepayDone,
-    formatKeepLunchConfirm,
-    formatKeepLunchDone,
-    formatPartialRepayDone,
-    formatDebtLeftSentence,
-    formatSalaryCollectionNotice,
-    formatPromiseDay,
-    formatPastPromiseLine,
-    formatLunchRepayBlocked,
-    koreanCopula,
-    formatWithheldLunchLine,
-    formatLunchWalletSentence,
-    lunchShieldCoversLoan,
-    collectShieldedDebtFromSalary,
     planPartialRepay,
-    planRepayLoan,
-    repayAmountsMatch,
     planTakeLoan,
     repayLoanFailMessage,
-    resolveBongKeepingLoanRepayment,
     sanitizeBankLoan,
     sanitizeLoanAmount,
     sanitizeLoanDays,
     sanitizeLoanLimit,
     takeLoanFailMessage,
 } from './lib/bankLoan.js';
-import {
-    capBongIncrease,
-    walletSaveBaseline,
-    isLunchYmd,
-    laterLunchDate,
-    lunchAlreadyRecorded,
-    planServerLunchDeduction,
-    bongPreservingCommittedLunch,
-    settleLunchAndLoan,
-    seoulSchoolDay,
-    seoulYmdFromMs,
-    lunchAlertStorageKey,
-    claimLunchAlertShownOnce,
-} from './lib/lunchDeduct.js';
 import {
     MAX_CANDIDATES_PER_POSITION,
     MAX_POSITIONS,
@@ -373,7 +332,6 @@ import {
     walletCoversSpend,
     BANK_TRANSFER_AMOUNT_MAX,
 } from './lib/bankTransfer.js';
-import { supervisionCountableDelta } from './lib/bongSupervision.js';
 import {
     STOCK_INVEST_MAX,
     STOCK_INVEST_MIN,
@@ -384,20 +342,13 @@ import {
     applyStockSellFromServer,
     canBuyStock,
     canSellStock,
-    evaluateStockTradeWindow,
     extractYahooChartJson,
     formatChangePct,
     formatIndexPrice,
-    formatMarketHourSlot,
     getStockMarket,
     isKoreanStockSession,
-    isQuoteAdjustmentWindow,
     MARKET_REFRESH_MS,
-    marketHourSlot,
-    seoulYmd,
-    msUntilQuoteUiBoundary,
     parseYahooChart,
-    sanitizeStockHistory,
     sanitizeStockInvestDaily,
     sanitizeStockInvestments,
     settleStockPosition,
@@ -430,18 +381,17 @@ import {
 } from './lib/shopDiscount.js';
 import {
     classifyAuthError,
-    GM_SESSION_SKEW_MS,
-    GM_SESSION_TTL_MS,
     HOME_CLASS_IDLE_AUTH_NOTICE,
-    PIN_ATTEMPT_MAX,
     TEACHER_SESSION_SIGNOUT_FAILED_MESSAGE,
+    isTeacherProvider,
     planGmIdleExpiry,
-    planPinAttempt,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
+    shouldApplyTeacherBadgeRead,
     shouldSignOutNonAnonymousForPinLogin,
     shouldUseLocalFirebaseEmulator,
     teacherAuthFailureMessage,
+    teacherAuthStatusText,
 } from './lib/adminAuth.js';
 import {
     extractWeatherJson,
@@ -547,7 +497,6 @@ import {
     filterLunchQueueStudents,
     isLunchRankVisible,
     lunchQueueDisplayName,
-    sortLunchQueue,
 } from './lib/lunchQueue.js';
 import {
     CLASS_BELL_CHECK_MS,
@@ -560,12 +509,11 @@ import {
     melodyForClassBell,
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
-import { bankBonusBlocked, weeklySalaryGrantPlan } from './lib/autoPayout.js';
-import { MONEY_NEGATIVE_CLASS, formatMoneyHtml, isNegativeMoney, splitNegativeMoney } from './lib/moneyFormat.js';
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
     buildThermometerParentPayload,
+    createThermometerLockOwner,
     sanitizeThermometerParentState,
     settleThermometerResolvingPrior,
 } from './lib/learningThermometerSettlement.js';
@@ -709,22 +657,6 @@ import {
     rollPraiseDay,
     sanitizePraiseBoard,
 } from './lib/peerPraise.js';
-import {
-    countRebukeReceivedToday,
-    defaultRebukeConfig,
-    isRebukeStaffId,
-    planPeerRebuke,
-    planRebukeDue,
-    rebukeFailMessage,
-    rebukePublicEvent,
-    rebukeReasonIssue,
-    rebukeRosterEpoch,
-    roundRebukeBong,
-    rebukeTodayYmd,
-    receivedRebukeCount,
-    visibleRebukeReasons,
-} from './lib/peerRebuke.js';
-import { QUEST_DROP_SAVES_SEPARATELY } from './lib/saveBong.js';
 import {
     buildScreenNotice,
     closeScreenNotice,
@@ -1537,42 +1469,19 @@ function redrawPlazaGrantsUi() {
             return getLoanCalendarFromWorld(getWorldSettings());
         }
 
-        /** 대출 날짜는 기기 달력이 아니라 서울 기준 서버 시각입니다. */
-        function loanPlanToday() {
-            const ms = lunchClockMs();
-            const stamp = ms == null ? getServerNowMs() : ms;
-            return seoulYmdFromMs(stamp) || getLocalDateStr();
-        }
-
         function getClassLoanLimit() {
             return sanitizeLoanLimit(window.globalSettings && window.globalSettings.bankLoanLimitPerStudent);
         }
 
-        function studentIndexInvestValue(stu) {
-            const row = summarizeStudentStockInvest(stu || {}, _marketQuotes);
-            return Math.max(0, Math.floor(Number(row && row.payout) || 0));
-        }
-
-        /** 빌릴 수 있는 돈 = 기본 한도 + 예금 + 적금 + 지수 투자 지금 가치 */
-        function getPersonalLoanLimit(stu) {
-            const who = stu || window.playerState || {};
-            return personalLoanLimit({
-                baseLimit: getClassLoanLimit(),
-                regularSavings: who.bankRegularSavings,
-                termSavings: sumBankTermDeposits(who.bankTermDeposits),
-                indexValue: studentIndexInvestValue(who),
-            });
-        }
-
         function studentIsCreditDefault(stu, todayYmd = getLocalDateStr()) {
-            return isStudentCreditDefault(stu, todayYmd);
+            return isCreditDefaultOn(stu, todayYmd) || isLoanPenaltyActive(stu, todayYmd);
         }
 
         function playerCreditDefaultMessage() {
             if (isLoanPenaltyActive(window.playerState, getLocalDateStr())) {
                 return loanPenaltyBlockMessage(window.playerState && window.playerState.loanPenaltyUntilYmd);
             }
-            return creditDefaultBlockMessage(window.playerState && window.playerState.creditDefaultUntilYmd, getCurrencyUnit());
+            return creditDefaultBlockMessage(window.playerState && window.playerState.creditDefaultUntilYmd);
         }
 
         function setLocalWorldSettings(next) {
@@ -1838,86 +1747,6 @@ function redrawPlazaGrantsUi() {
                 }
             });
             if (Number(src.fetchedAt) > 0) _marketQuotes.fetchedAt = Number(src.fetchedAt);
-            if (src.hourSlot) _marketQuotes.hourSlot = String(src.hourSlot);
-        }
-
-        let _serverClockOffsetMs = 0;
-        let _serverClockReady = false;
-        let _serverClockSyncedAt = 0;
-
-        function getServerNowMs() {
-            if (import.meta.env.DEV && Number.isFinite(Number(window.__SAMBONG_NOW_MS))) {
-                return Number(window.__SAMBONG_NOW_MS);
-            }
-            return Date.now() + _serverClockOffsetMs;
-        }
-
-        /** 점심값에 쓰는 시각. 개발용 시계이거나, 서버 시각을 실제로 읽은 뒤에만 돌려줍니다. */
-        function lunchClockMs() {
-            if (import.meta.env.DEV && Number.isFinite(Number(window.__SAMBONG_NOW_MS))) {
-                return Number(window.__SAMBONG_NOW_MS);
-            }
-            if (!_serverClockReady) return null;
-            return Date.now() + _serverClockOffsetMs;
-        }
-
-        function isClockPingOnlyChange(prev, next) {
-            if (!prev || !next || typeof prev !== 'object' || typeof next !== 'object') return false;
-            const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
-            let sawClock = false;
-            for (const key of keys) {
-                if (key === 'serverClockPing' || key === 'serverClockClientMs') {
-                    sawClock = true;
-                    continue;
-                }
-                const left = prev[key];
-                const right = next[key];
-                if (left === right) continue;
-                const leftMs = left && typeof left.toMillis === 'function' ? left.toMillis() : null;
-                const rightMs = right && typeof right.toMillis === 'function' ? right.toMillis() : null;
-                if (leftMs != null && leftMs === rightMs) continue;
-                try {
-                    if (JSON.stringify(left) === JSON.stringify(right)) continue;
-                } catch (_) { /* 비교할 수 없으면 다른 변경으로 봅니다. */ }
-                return false;
-            }
-            return sawClock;
-        }
-
-        function applyServerClockSample(data) {
-            const ping = data && data.serverClockPing;
-            const writtenClient = Number(data && data.serverClockClientMs);
-            if (ping && typeof ping.toMillis === 'function' && Number.isFinite(writtenClient)) {
-                _serverClockOffsetMs = ping.toMillis() - writtenClient;
-                _serverClockReady = true;
-                _serverClockSyncedAt = Date.now();
-            }
-        }
-
-        async function syncServerClock() {
-            if (!db) return lunchClockMs();
-            if (_serverClockReady && Date.now() - _serverClockSyncedAt < 60000) return lunchClockMs();
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return lunchClockMs();
-                const clientMs = Date.now();
-                await setDoc(getGlobalSettingsDocRef(), {
-                    serverClockPing: serverTimestamp(),
-                    serverClockClientMs: clientMs,
-                }, { merge: true });
-                const snap = await getDoc(getGlobalSettingsDocRef());
-                const data = snap.exists() ? (snap.data() || {}) : {};
-                const ping = data.serverClockPing;
-                const writtenClient = Number(data.serverClockClientMs) || clientMs;
-                if (ping && typeof ping.toMillis === 'function') {
-                    _serverClockOffsetMs = ping.toMillis() - writtenClient;
-                    _serverClockReady = true;
-                    _serverClockSyncedAt = Date.now();
-                }
-            } catch (e) {
-                console.warn('server clock', e);
-            }
-            return lunchClockMs();
         }
 
         function hasAnyMarketQuote(src) {
@@ -1947,16 +1776,10 @@ function redrawPlazaGrantsUi() {
                 const ok = _marketQuotes.kospi || _marketQuotes.kosdaq || _marketQuotes.nasdaq;
                 if (!ok) {
                     meta.textContent = '지수를 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
-                } else if (isQuoteAdjustmentWindow(getServerNowMs())) {
-                    meta.textContent = '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.';
-                } else if (isKoreanStockSession(getServerNowMs())) {
-                    const now = getServerNowMs();
-                    const stored = String(_marketQuotes.hourSlot || '');
-                    meta.textContent = stored && stored !== marketHourSlot(now)
-                        ? '새 시세를 받지 못했어요. 잠시 뒤 다시 해 주세요.'
-                        : '시세는 1시간에 한 번, 정각에 바뀌어요.';
+                } else if (isKoreanStockSession()) {
+                    meta.textContent = '코스피·코스닥은 장중 1시간마다 갱신 · 은행에서 투자할 수 있습니다.';
                 } else {
-                    meta.textContent = '장이 끝났어요. 마지막 시세로 사고팔 수 있어요.';
+                    meta.textContent = '장마감 · 마지막 시세를 보여 줍니다.';
                 }
             }
             if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
@@ -1983,18 +1806,15 @@ function redrawPlazaGrantsUi() {
         }
 
         async function refreshMarketQuotes(force) {
+            const now = Date.now();
             const shared = window.globalSettings && window.globalSettings.marketQuotes;
             if (shared && hasAnyMarketQuote(shared)) {
                 applySharedMarketQuotes(shared);
             }
-            await syncServerClock();
-            const now = getServerNowMs();
-            const slot = marketHourSlot(now);
             const cacheAgeMs = now - (Number(_marketQuotes.fetchedAt) || 0);
             const fetchLive = shouldFetchLiveMarketQuotes(now, {
                 force,
                 cacheAgeMs,
-                storedSlot: _marketQuotes.hourSlot || '',
                 hasAnyQuote: hasAnyMarketQuote(_marketQuotes),
             });
             if (!fetchLive) {
@@ -2007,31 +1827,28 @@ function redrawPlazaGrantsUi() {
                 if (q) got[m.id] = q;
             }
             if (hasAnyMarketQuote(got)) {
-                const nextQuotes = {
-                    kospi: got.kospi || _marketQuotes.kospi || null,
-                    kosdaq: got.kosdaq || _marketQuotes.kosdaq || null,
-                    nasdaq: got.nasdaq || _marketQuotes.nasdaq || null,
-                    hourSlot: slot,
-                    fetchedAt: now,
-                };
-                _marketQuotes = { ..._marketQuotes, ...nextQuotes };
+                _marketQuotes = { ..._marketQuotes, ...got, fetchedAt: now };
                 renderMarketTicker();
                 if (db) {
                     try {
                         const authOk = await ensureAnonAuthReady();
                         if (authOk) {
-                            await runTransaction(db, async (transaction) => {
-                                const ref = getGlobalSettingsDocRef();
-                                const snap = await transaction.get(ref);
-                                const prev = snap.exists() ? (snap.data() || {}).marketQuotes : null;
-                                if (prev && String(prev.hourSlot || '') === slot) return;
-                                transaction.set(ref, {
-                                    marketQuotes: nextQuotes,
-                                    serverClockPing: serverTimestamp(),
-                                    serverClockClientMs: Date.now(),
-                                }, { merge: true });
-                            });
-                            if (window.globalSettings) window.globalSettings.marketQuotes = { ...nextQuotes };
+                            await setDoc(getGlobalSettingsDocRef(), {
+                                marketQuotes: {
+                                    kospi: _marketQuotes.kospi || null,
+                                    kosdaq: _marketQuotes.kosdaq || null,
+                                    nasdaq: _marketQuotes.nasdaq || null,
+                                    fetchedAt: now,
+                                },
+                            }, { merge: true });
+                            if (window.globalSettings) {
+                                window.globalSettings.marketQuotes = {
+                                    kospi: _marketQuotes.kospi || null,
+                                    kosdaq: _marketQuotes.kosdaq || null,
+                                    nasdaq: _marketQuotes.nasdaq || null,
+                                    fetchedAt: now,
+                                };
+                            }
                         }
                     } catch (e) {
                         console.warn('marketQuotes save', e);
@@ -2045,28 +1862,6 @@ function redrawPlazaGrantsUi() {
         window.refreshMarketQuotes = refreshMarketQuotes;
         void refreshMarketQuotes(true);
         _marketQuoteTimer = setInterval(() => { void refreshMarketQuotes(true); }, MARKET_REFRESH_MS);
-
-        let _quoteUiTimer = 0;
-        function refreshQuoteClockNow() {
-            const now = getServerNowMs();
-            renderMarketTicker();
-            if (isQuoteAdjustmentWindow(now) || !isKoreanStockSession(now)) return;
-            const stored = String(_marketQuotes && _marketQuotes.hourSlot || '');
-            if (stored !== marketHourSlot(now)) void refreshMarketQuotes(false);
-        }
-        function scheduleQuoteUiRefresh() {
-            if (_quoteUiTimer) clearTimeout(_quoteUiTimer);
-            const wait = msUntilQuoteUiBoundary(getServerNowMs());
-            _quoteUiTimer = setTimeout(() => {
-                refreshQuoteClockNow();
-                scheduleQuoteUiRefresh();
-            }, wait);
-        }
-        window.refreshQuoteClockUi = function() {
-            refreshQuoteClockNow();
-            scheduleQuoteUiRefresh();
-        };
-        scheduleQuoteUiRefresh();
 
         window.searchSchoolWeatherRegion = async function() {
             const inp = document.getElementById('schoolWeatherSearch');
@@ -3482,7 +3277,7 @@ function redrawPlazaGrantsUi() {
         };
 
         function createRandomMasterPin() {
-            return String(100000 + Math.floor(Math.random() * 900000));
+            return String(1000 + Math.floor(Math.random() * 9000));
         }
 
         function studentDocRefForClass(classId, studentKey) {
@@ -3512,46 +3307,19 @@ function redrawPlazaGrantsUi() {
             if (!byKey.has('student_gm')) byKey.set('student_gm', {});
             if (!byKey.has('student_gm_a')) byKey.set('student_gm_a', {});
             const newPin = rotateMasterPin ? createRandomMasterPin() : '';
-            let rebukeSeason = null;
-            if (id === appId) {
-                try { rebukeSeason = await ensureRebukeConfigDoc(); } catch (e) { rebukeSeason = null; }
-            }
-            const nextRebukeEpoch = rebukeSeason ? rebukeSeason.epoch + 1 : 0;
             const batch = writeBatch(db);
-            if (rebukeSeason) {
-                batch.set(classOpsRef('rebukeConfig'), {
-                    enabled: rebukeSeason.enabled === true,
-                    epoch: nextRebukeEpoch,
-                    roster: rebukeSeason.roster || {},
-                });
-            }
             byKey.forEach((data, key) => {
                 const sid = key === 'student_gm' ? 'gm' : (key === 'student_gm_a' ? 'gm_a' : key.replace(/^student_/, ''));
                 const payload = buildStudentResetPayload(data);
-                if (rebukeSeason && data && Object.keys(data).length > 0) {
-                    payload.rebukeSeq = 0;
-                    payload.rebukeEpoch = nextRebukeEpoch;
-                    payload.rebukeRoster = rebukeRosterEpoch(rebukeSeason, sid);
-                } else {
-                    copyRebukeFields(payload, data);
-                }
-                const backupData = extractStudentGameData(data);
-                if (key === 'student_gm' || key === 'student_gm_a') {
-                    delete payload.pin;
-                    delete backupData.pin;
-                }
+                if (key === 'student_gm' && rotateMasterPin) payload.pin = newPin;
                 batch.set(studentBackupRefForClass(id, sid), {
                     studentId: String(sid),
                     savedAt: new Date().toISOString(),
-                    data: backupData,
+                    data: extractStudentGameData(data),
                 });
                 batch.set(studentDocRefForClass(id, key), payload);
             });
-            if (rotateMasterPin && newPin) {
-                batch.set(doc(db, 'secrets', id), { pin: newPin });
-            }
             await batch.commit();
-            if (rebukeSeason) await clearOldRebukeReasons(id, nextRebukeEpoch);
             return { newPin, displayName: classData.displayName || id, inviteCode: classData.inviteCode || '' };
         }
 
@@ -3583,8 +3351,8 @@ function redrawPlazaGrantsUi() {
             if (typed !== '초기화확인') return window.customAlert('입력이 일치하지 않아 취소되었습니다.');
             try {
                 window.showGlobalLoading('학급 초기화 중…');
-                const authOk = await requireGmSettingsAuth();
-                if (!authOk) return;
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증 실패');
                 const result = await runWithNetworkRetry(
                     () => resetClassWorkspaceById(id, { rotateMasterPin: rotatePin }),
                     '학급 초기화',
@@ -3954,9 +3722,9 @@ function redrawPlazaGrantsUi() {
 
             if (teacherPin) {
                 const pin = String(teacherPin).trim();
-                if (/^\d{6}$/.test(pin)) {
-                    await setDoc(doc(db, 'secrets', newClassId), { pin });
+                if (/^\d{4}$/.test(pin)) {
                     await setDoc(doc(db, 'artifacts', newClassId, 'public', 'data', 'students', 'student_gm'), {
+                        pin,
                         xp: 0,
                         bong: 0,
                         quests: {},
@@ -4377,8 +4145,8 @@ function redrawPlazaGrantsUi() {
             if (!displayName) {
                 return window.customAlert('학급명은 필수입니다.');
             }
-            if (!/^\d{6}$/.test(teacherPin)) {
-                return window.customAlert('마스터 PIN은 숫자 6자리로 설정해 주세요.');
+            if (!/^\d{4}$/.test(teacherPin)) {
+                return window.customAlert('마스터 PIN은 숫자 4자리로 설정해 주세요.');
             }
             const ok = await window.customConfirm(
                 `새 학급 개설을 원래 마스터에게 요청합니다.\n\n` +
@@ -4411,7 +4179,7 @@ function redrawPlazaGrantsUi() {
                     sourceClassId: appId,
                 });
                 if (!sent.ok) {
-                    throw new Error(sent.reason === 'teacherPin' ? '마스터 PIN은 숫자 6자리로 설정해 주세요.' : '학급명은 필수입니다.');
+                    throw new Error(sent.reason === 'teacherPin' ? '마스터 PIN은 숫자 4자리로 설정해 주세요.' : '학급명은 필수입니다.');
                 }
                 window.hideGlobalLoading();
                 await window.customAlert('학급 개설 요청을 삼봉초 원래 마스터에게 보냈습니다. 허락되면 이 화면에 초대 코드가 나타납니다.');
@@ -4935,8 +4703,8 @@ function redrawPlazaGrantsUi() {
             xp: 0, xpChangeLog: [], bong: 0.0, quests: {}, unlockedQuests: {}, jobs: [], 
             ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', hasShield: false, shieldHP: 0, 
             condition: null, statusMessage: '', unlockedFeatures: {}, homeLookMode: '', dragonBalls: [], dragonBallWeekendKey: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [],
-            bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', creditReleasedYmd: '', creditReleaseLoanId: '', creditWalletRecovered: false, loanDueHandledKey: '', dailyAllClearBonusDate: '',
-            stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [],
+            bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
+            stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
             catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
             shopDailyPurchase: { date: '', item_random: 0, item_mystery_dice: 0 },
             conveniencePurchases: [],
@@ -5016,41 +4784,179 @@ function redrawPlazaGrantsUi() {
             return (error && error.message) ? error.message : String(error);
         }
 
-        function renderTeacherAuthBadges() {
-            const gm = !!(window.playerState && window.playerState.isAdmin);
-            const text = gm ? '마스터 PIN으로 저장' : '학생 화면';
+        function renderTeacherAuthBadges(state) {
+            const text = teacherAuthStatusText(state);
             document.querySelectorAll('.teacher-auth-badge').forEach((el) => {
                 el.textContent = text;
-                el.classList.toggle('text-emerald-300', gm);
-                el.classList.toggle('text-rose-300', false);
-                el.classList.toggle('text-slate-300', !gm);
+                el.classList.toggle('text-emerald-300', !!(state && state.allowlisted));
+                el.classList.toggle('text-rose-300', !!(state && state.authenticated && !state.allowlisted));
+                el.classList.toggle('text-slate-300', !(state && state.authenticated));
             });
         }
 
+        async function readTeacherAllowlist(user) {
+            if (!db || !isTeacherProvider(user)) {
+                return { authenticated: false, allowlisted: false, email: '' };
+            }
+            const email = String(user.email || (user.providerData && user.providerData[0] && user.providerData[0].email) || '');
+            try {
+                const snap = await getDoc(doc(db, 'admins', user.uid));
+                return { authenticated: true, allowlisted: snap.exists(), email };
+            } catch (e) {
+                console.warn('admins read', e);
+                return { authenticated: true, allowlisted: false, email };
+            }
+        }
+
+        let teacherBadgeReadGeneration = 0;
         async function refreshTeacherAuthBadge() {
-            renderTeacherAuthBadges();
+            if (!auth) return;
+            const generation = ++teacherBadgeReadGeneration;
+            const user = auth.currentUser;
+            if (!isTeacherProvider(user)) {
+                renderTeacherAuthBadges({ authenticated: false, allowlisted: false, email: '' });
+            } else {
+                const state = await readTeacherAllowlist(user);
+                // 학생 PIN 로그인이 그 사이에 선생님 세션을 끊으면, 늦게 도착한 허용 목록으로
+                // "인증됨"을 다시 그리지 않습니다.
+                if (generation !== teacherBadgeReadGeneration) return;
+                if (shouldApplyTeacherBadgeRead(user, auth.currentUser)) {
+                    renderTeacherAuthBadges(state);
+                }
+            }
+            if (generation !== teacherBadgeReadGeneration) return;
+            // 배지 조회가 끝난 시점의 isAdmin 으로 도구 목록을 다시 그립니다.
+            // 마스터 표시가 로그인보다 늦어도 온도계 버튼이 숨은 채로 남지 않습니다.
             if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
             if (window.playerState && window.playerState.isAdmin && typeof renderLearningThermometerPanel === 'function') {
                 renderLearningThermometerPanel();
             }
         }
 
-        /** 교사가 직접 저장할 때만 PIN을 확인합니다. 화면을 열 때는 묻지 않습니다. */
+        async function ensureTeacherAuth(options = {}) {
+            if (!auth || !db) {
+                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown') };
+            }
+            await auth.authStateReady();
+            let user = auth.currentUser;
+            const email = String(options.email || '').trim();
+            const password = String(options.password || '');
+            if (email && password) {
+                try {
+                    const cred = await signInWithEmailAndPassword(auth, email, password);
+                    user = cred.user;
+                } catch (e) {
+                    const reason = classifyAuthError(e);
+                    return { ok: false, reason, message: teacherAuthFailureMessage(reason), showEmail: true };
+                }
+            } else if (!isTeacherProvider(user)) {
+                try {
+                    const provider = new GoogleAuthProvider();
+                    provider.setCustomParameters({ prompt: 'select_account' });
+                    const cred = await signInWithPopup(auth, provider);
+                    user = cred.user;
+                } catch (e) {
+                    const reason = classifyAuthError(e);
+                    return {
+                        ok: false,
+                        reason,
+                        message: teacherAuthFailureMessage(reason),
+                        showEmail: reason === 'popup_blocked',
+                    };
+                }
+            }
+            if (!isTeacherProvider(user)) {
+                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown'), showEmail: true };
+            }
+            const state = await readTeacherAllowlist(user);
+            renderTeacherAuthBadges(state);
+            try {
+                await user.getIdToken(true);
+            } catch (e) {
+                console.warn('teacher getIdToken', e);
+            }
+            if (!state.allowlisted) {
+                return { ok: false, reason: 'not_allowlisted', message: teacherAuthFailureMessage('not_allowlisted') };
+            }
+            if (window.playerState && window.playerState.isAdmin) void runAdminOneShotMigrations();
+            if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
+            return { ok: true, email: state.email };
+        }
+
         async function requireGmSettingsAuth() {
-            const opened = await ensureMasterWriteSession();
-            if (!opened) return false;
+            const result = await ensureTeacherAuth();
+            if (!result.ok) {
+                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
+                    window.openTeacherAuthModal({ showEmail: true });
+                }
+                await window.customAlert(result.message);
+                return false;
+            }
             return true;
         }
 
         async function assertGmSettingsAuth() {
-            const opened = await ensureMasterWriteSession();
-            if (!opened) {
-                const err = new Error('저장을 하지 않았어요');
+            const result = await ensureTeacherAuth();
+            if (!result.ok) {
+                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
+                    window.openTeacherAuthModal({ showEmail: true });
+                }
+                const err = new Error(result.message);
                 err.teacherAuth = true;
-                err.alreadyNotified = true;
                 throw err;
             }
         }
+
+        window.openTeacherAuthModal = function(options = {}) {
+            const modal = document.getElementById('teacherAuthModal');
+            const form = document.getElementById('teacherAuthEmailForm');
+            const hint = document.getElementById('teacherAuthModalHint');
+            if (form) form.classList.toggle('hidden', !options.showEmail);
+            if (hint) {
+                hint.textContent = options.showEmail
+                    ? 'Google 창을 열 수 없습니다. 이메일과 비밀번호로 인증해 주세요.'
+                    : 'Google 계정으로 인증합니다. 창이 막히면 이메일과 비밀번호를 사용하세요.';
+            }
+            if (modal) modal.classList.remove('hidden');
+        };
+
+        window.closeTeacherAuthModal = function() {
+            const modal = document.getElementById('teacherAuthModal');
+            if (modal) modal.classList.add('hidden');
+        };
+
+        window.showTeacherEmailFallback = function() {
+            const form = document.getElementById('teacherAuthEmailForm');
+            if (form) form.classList.remove('hidden');
+        };
+
+        window.startTeacherGoogleAuth = async function() {
+            const result = await ensureTeacherAuth();
+            if (!result.ok) {
+                if (result.showEmail) window.openTeacherAuthModal({ showEmail: true });
+                await window.customAlert(result.message);
+                return;
+            }
+            window.closeTeacherAuthModal();
+            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
+        };
+
+        window.startTeacherEmailAuth = async function() {
+            const email = String(document.getElementById('teacherAuthEmail')?.value || '').trim();
+            const password = String(document.getElementById('teacherAuthPassword')?.value || '');
+            if (!email || !password) {
+                await window.customAlert('이메일과 비밀번호를 입력해 주세요.');
+                return;
+            }
+            const result = await ensureTeacherAuth({ email, password });
+            if (!result.ok) {
+                window.openTeacherAuthModal({ showEmail: true });
+                await window.customAlert(result.message);
+                return;
+            }
+            window.closeTeacherAuthModal();
+            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
+        };
 
         /** 전역 로딩 스피너 / 에러 표시 */
         window.showGlobalLoading = function(msg) {
@@ -6937,11 +6843,8 @@ ${subjectLine}
             const prevBalls = window.playerState && window.playerState.dragonBalls;
             const prevKey = window.playerState && window.playerState.dragonBallWeekendKey;
             const prevRpsPick = sanitizeRpsPick(window.playerState && window.playerState.rpsPick);
-            const prevLunchDate = window.playerState && window.playerState.lastLunchDeductDate;
-            const prevBong = window.playerState && window.playerState.bong;
-            const merged = mergeStudentDocKeepingLoanRepayment(window.playerState, myData);
             window.playerState = {
-                ...merged,
+                ...myData,
                 isGuest: false,
                 isGM: myId === 'gm',
                 isGMA: myId === 'gm_a',
@@ -6949,20 +6852,6 @@ ${subjectLine}
                 dragonBalls: resolveDragonBallsForSnapshot(prevBalls, myData && myData.dragonBalls),
                 dragonBallWeekendKey: resolveDragonBallWeekendKey(prevKey, myData && myData.dragonBallWeekendKey),
             };
-            const lunchToday = seoulYmdFromMs(getServerNowMs());
-            window.playerState.lastLunchDeductDate = laterLunchDate(
-                merged.lastLunchDeductDate,
-                prevLunchDate,
-                lunchToday,
-            );
-            // 캐시 스냅샷이 점심을 빼기 전의 큰 잔액으로 되돌리지 않습니다.
-            const snapLunch = String(merged.lastLunchDeductDate || '');
-            const keptLunch = String(prevLunchDate || '');
-            if (keptLunch && snapLunch && keptLunch > snapLunch) {
-                const localBong = normalizeBongValue(prevBong);
-                const snapBong = normalizeBongValue(window.playerState.bong);
-                if (snapBong > localBong) window.playerState.bong = localBong;
-            }
             if (window.playerState.bong != null) window.playerState.bong = normalizeBongValue(window.playerState.bong);
             const nextRpsPick = sanitizeRpsPick(window.playerState.rpsPick);
             if (prevRpsPick.move && prevRpsPick.at >= nextRpsPick.at) {
@@ -7271,82 +7160,6 @@ ${subjectLine}
         }
         window.formatBongAmount = formatBongAmount;
 
-        function moneyObjectParticle(unit = getCurrencyUnit()) {
-            const ch = String(unit || 'B').slice(-1);
-            const code = ch.charCodeAt(0);
-            if (code < 0xac00 || code > 0xd7a3) return '를';
-            return (code - 0xac00) % 28 === 0 ? '를' : '을';
-        }
-
-        /** 화면용. 음수 금액은 빨간 클래스로 감쌉니다. 알림 문장에는 쓰지 않습니다. */
-        function formatBongAmountHtml(v) {
-            return formatMoneyHtml(formatBongAmount(v), normalizeBongValue(v));
-        }
-
-        function paintMoneyElement(el, value) {
-            if (!el) return;
-            el.classList.toggle(MONEY_NEGATIVE_CLASS, isNegativeMoney(value));
-        }
-
-        /**
-         * 이미 그려진 글자 중 "-12봉"처럼 단위가 붙은 음수 금액을 빨갛게 바꿉니다.
-         * 입력칸·이미 칠한 글자는 다시 건드리지 않습니다.
-         */
-        function paintNegativeCurrency(root) {
-            const unit = getCurrencyUnit();
-            const scope = root || document.body;
-            if (!scope || !unit || typeof document === 'undefined') return;
-            const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT, {
-                acceptNode(node) {
-                    if (!node || !node.nodeValue || node.nodeValue.indexOf('-') < 0) return NodeFilter.FILTER_REJECT;
-                    const parent = node.parentElement;
-                    if (!parent) return NodeFilter.FILTER_REJECT;
-                    if (parent.closest(`script,style,textarea,input,option,.${MONEY_NEGATIVE_CLASS}`)) return NodeFilter.FILTER_REJECT;
-                    return NodeFilter.FILTER_ACCEPT;
-                },
-            });
-            const nodes = [];
-            let current = walker.nextNode();
-            while (current) {
-                nodes.push(current);
-                current = walker.nextNode();
-            }
-            nodes.forEach((node) => {
-                const parts = splitNegativeMoney(node.nodeValue, unit);
-                if (!parts.some((part) => part.negative)) return;
-                const frag = document.createDocumentFragment();
-                parts.forEach((part) => {
-                    if (!part.text) return;
-                    if (part.negative) {
-                        const span = document.createElement('span');
-                        span.className = MONEY_NEGATIVE_CLASS;
-                        span.textContent = part.text;
-                        frag.appendChild(span);
-                    } else {
-                        frag.appendChild(document.createTextNode(part.text));
-                    }
-                });
-                if (node.parentNode) node.parentNode.replaceChild(frag, node);
-            });
-        }
-
-        function installMoneyPaint() {
-            if (window._moneyPaintOn || typeof document === 'undefined' || !document.body) return;
-            window._moneyPaintOn = true;
-            let scheduled = false;
-            const run = () => {
-                scheduled = false;
-                paintNegativeCurrency(document.body);
-            };
-            const obs = new MutationObserver(() => {
-                if (scheduled) return;
-                scheduled = true;
-                requestAnimationFrame(run);
-            });
-            obs.observe(document.body, { childList: true, subtree: true, characterData: true });
-            paintNegativeCurrency(document.body);
-        }
-
         /** UI — 부족 화폐 안내 */
         function formatInsufficientBongAlert(shortfall) {
             const need = formatBongAmount(Math.max(0, Number(shortfall) || 0));
@@ -7362,6 +7175,16 @@ ${subjectLine}
         const BONG_ANOMALY_SINGLE_DELTA_WARN = 120;
         /** 삼봉 금융감독 — 아이템 환불 누적 의심 기준 */
         const BONG_SUPERVISION_REFUND_WARN = 8;
+        /** 금융감독 집계에서 제외할 bongChangeLog source (정상 은행·적금 흐름) */
+        const BONG_SUPERVISION_EXCLUDED_SOURCES = new Set(['bankTermMaturity', 'bankTermEarly', 'bankLoanTake', 'bankLoanDue', 'bankLoanRepay']);
+
+        function isBankTermDepositBongSupervisionExcluded(row) {
+            if (!row || typeof row !== 'object') return false;
+            if (row.source && BONG_SUPERVISION_EXCLUDED_SOURCES.has(String(row.source))) return true;
+            const reason = String(row.reason || '');
+            return /보물상자 적금 만기|적금 만기|보물상자 적금 중도 해지|대출/.test(reason);
+        }
+
         function formatSupervisionDateTime(ms) {
             const d = new Date(Number(ms));
             if (isNaN(d.getTime())) return '날짜 미상';
@@ -7384,9 +7207,10 @@ ${subjectLine}
             const todayGainRows = [];
             logs.forEach((row) => {
                 if (!row || !row.at) return;
+                if (isBankTermDepositBongSupervisionExcluded(row)) return;
                 const ds = getLocalDateStr(new Date(Number(row.at)));
                 if (ds !== today) return;
-                const delta = normalizeBongValue(supervisionCountableDelta(row));
+                const delta = normalizeBongValue(Number(row.delta) || 0);
                 if (delta > 0) {
                     todayGain = normalizeBongValue(todayGain + delta);
                     todayGainRows.push(row);
@@ -7407,7 +7231,8 @@ ${subjectLine}
             }
 
             logs.forEach((row, idx) => {
-                const delta = normalizeBongValue(supervisionCountableDelta(row));
+                if (isBankTermDepositBongSupervisionExcluded(row)) return;
+                const delta = normalizeBongValue(Number(row && row.delta) || 0);
                 if (delta < BONG_ANOMALY_SINGLE_DELTA_WARN) return;
                 incidents.push({
                     id: `single_${row.at || idx}_${delta}`,
@@ -7592,11 +7417,12 @@ ${subjectLine}
             let gain = 0;
             logs.forEach((row) => {
                 if (!row || !row.at) return;
+                if (isBankTermDepositBongSupervisionExcluded(row)) return;
                 const d = new Date(Number(row.at));
                 if (isNaN(d.getTime())) return;
                 const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                 if (ds !== gameDateStr) return;
-                const delta = normalizeBongValue(supervisionCountableDelta(row));
+                const delta = normalizeBongValue(Number(row.delta) || 0);
                 if (delta > 0) gain = normalizeBongValue(gain + delta);
             });
             return gain;
@@ -7789,7 +7615,7 @@ ${subjectLine}
                 }).join('\n\n');
                 await window.customAlert(
                     '⚠️ 삼봉 금융감독 경고\n\n' +
-                    `비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n` +
+                    '비정상으로 의심되는 ${getCurrencyUnit()} 거래가 감지되었습니다.\n' +
                     `허용되지 않은 방법으로 획득·환불한 경우 ${getMasterDisplayName()}가 확인할 수 있습니다.\n\n` +
                     '[감지 내역]\n' +
                     lines +
@@ -9496,23 +9322,16 @@ ${subjectLine}
         }
 
         /** 서버 문서 기준 만기·대출 만기·주기 보너스 반영 후, 클라이언트 수동 조작 검증 */
-        function isManualLoanAction(action) {
-            return action === 'take' || action === 'repay' || action === 'keepLunch' || action === 'clear' || action === 'partial';
-        }
-
         function applyServerBankAccrual(serverData, globalSettings, { isAdmin = false } = {}) {
-            const today = loanPlanToday();
+            const today = getLocalDateStr();
             const rate = Number(globalSettings && globalSettings.bankInterestPercent) || 0;
             let bong = normalizeBongValue(Number(serverData.bong) || 0);
             let regular = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
             let terms = sanitizeBankTermDeposits(serverData.bankTermDeposits);
             let bonusDate = String(serverData.bankDailyBonusLastDate || '');
-            let lunchDate = String(serverData.lastLunchDeductDate || '');
             let maturityMsgs = [];
             let maturityCredit = 0;
             let bonusGranted = 0;
-            let lunchDeducted = false;
-            let lunchFee = 0;
             const maturity = computeTermDepositMaturityCredit(terms, rate);
             if (maturity.credit > 0) {
                 terms = maturity.left;
@@ -9520,55 +9339,17 @@ ${subjectLine}
                 maturityCredit = maturity.credit;
                 maturityMsgs = maturity.msgs;
             }
-            const lunchNow = lunchClockMs();
-            let bankLoan = serverData.bankLoan;
-            let creditFields = copyCreditFields(serverData);
-            let loanMsgs = [];
-            let loanChanged = false;
-            if (!isAdmin && lunchNow != null) {
-                const settled = settleLunchAndLoan({
-                    bong,
-                    bankRegularSavings: regular,
-                    bankLoan: serverData.bankLoan,
-                    lastLunchDeductDate: lunchDate,
-                    ...copyCreditFields(serverData),
-                }, {
-                    nowMs: lunchNow,
-                    todayYmd: today,
-                    calendar: getBankLoanCalendar(),
-                    classHolidays: getWorldSettings().holidays,
-                    vacationPaused: isVacationAutomationPaused('lunch', today),
-                });
-                bong = normalizeBongValue(settled.bong);
-                regular = settled.bankRegularSavings;
-                lunchDate = settled.lastLunchDeductDate || lunchDate;
-                lunchDeducted = !!settled.lunchDeducted;
-                lunchFee = Math.max(0, Math.floor(Number(settled.lunchFee) || 0));
-                bankLoan = settled.bankLoan;
-                creditFields = copyCreditFields(settled);
-                loanMsgs = settled.loanMsgs || [];
-                loanChanged = !!settled.changed;
-            } else {
-                const life = applyLoanLifecycle({
-                    bong,
-                    bankRegularSavings: regular,
-                    bankLoan: serverData.bankLoan,
-                    lastLunchDeductDate: lunchDate,
-                    ...copyCreditFields(serverData),
-                }, today, getBankLoanCalendar());
-                bong = life.bong;
-                regular = life.bankRegularSavings;
-                bankLoan = life.bankLoan;
-                creditFields = copyCreditFields(life);
-                loanMsgs = life.msgs || [];
-                loanChanged = !!life.changed;
-            }
-            const creditBlocksBonus = bankBonusBlocked({
+            const life = applyLoanLifecycle({
                 bong,
-                bankLoan,
-                ...creditFields,
-            }, today);
-            if (!isAdmin && !isVacationAutomationPaused('bankBonus') && !creditBlocksBonus) {
+                bankRegularSavings: regular,
+                bankLoan: serverData.bankLoan,
+                creditDefaultUntilYmd: serverData.creditDefaultUntilYmd,
+                bankNegativeSinceYmd: serverData.bankNegativeSinceYmd,
+                loanPenaltyUntilYmd: serverData.loanPenaltyUntilYmd,
+            }, today, getBankLoanCalendar());
+            bong = life.bong;
+            regular = life.bankRegularSavings;
+            if (!isAdmin && !isVacationAutomationPaused('bankBonus')) {
                 const totalDep = normalizeBongValue(regular + sumBankTermDeposits(terms));
                 if (totalDep >= 100) {
                     const last = bonusDate;
@@ -9585,58 +9366,54 @@ ${subjectLine}
                 bankRegularSavings: regular,
                 bankTermDeposits: terms,
                 bankDailyBonusLastDate: bonusDate,
-                bankLoan,
-                ...creditFields,
-                lastLunchDeductDate: lunchDate,
+                bankLoan: life.bankLoan,
+                creditDefaultUntilYmd: life.creditDefaultUntilYmd || '',
+                bankNegativeSinceYmd: life.bankNegativeSinceYmd || '',
+                loanPenaltyUntilYmd: life.loanPenaltyUntilYmd || '',
                 maturityMsgs,
                 maturityCredit,
                 bonusGranted,
-                lunchDeducted,
-                lunchFee,
-                loanMsgs,
-                loanChanged,
-                changed: !!(maturity.credit || bonusGranted || loanChanged),
+                loanMsgs: life.msgs,
+                loanChanged: !!life.changed,
+                changed: !!(maturity.credit || bonusGranted || life.changed),
             };
         }
 
         function reconcileBankStateForSave(serverData, clientData, globalSettings, { isAdmin = false, loanAction = '', loanAmount, loanDays } = {}) {
-            const today = loanPlanToday();
+            const today = getLocalDateStr();
             const accrued = applyServerBankAccrual(serverData, globalSettings, { isAdmin });
-            if (isManualLoanAction(loanAction)) {
+            if (loanAction === 'take' || loanAction === 'repay' || loanAction === 'partial') {
                 const acted = applyLoanAction({
                     bong: accrued.bong,
                     bankRegularSavings: accrued.bankRegularSavings,
-                    bankLoan: accrued.bankLoan,
-                    lastLunchDeductDate: accrued.lastLunchDeductDate || serverData.lastLunchDeductDate,
-                    ...copyCreditFields(accrued),
+                    // 새 대출은 만기 처리로 비우기 전의 서버 대출을 기준으로 막습니다.
+                    bankLoan: loanAction === 'take' ? serverData.bankLoan : accrued.bankLoan,
+                    creditDefaultUntilYmd: accrued.creditDefaultUntilYmd,
+                    bankNegativeSinceYmd: accrued.bankNegativeSinceYmd,
+                    loanPenaltyUntilYmd: loanAction === 'take' ? serverData.loanPenaltyUntilYmd : accrued.loanPenaltyUntilYmd,
                 }, loanAction, {
                     todayYmd: today,
                     calendar: getBankLoanCalendar(),
-                    blockTakeBecauseLoan: loanAction === 'take' && loanStillOutstanding(serverData.bankLoan),
                     amount: loanAmount,
                     days: loanDays,
                     ratePercent: Number(globalSettings && globalSettings.bankInterestPercent) || 0,
-                    limit: personalLoanLimit({
-                        baseLimit: getClassLoanLimit(),
-                        regularSavings: accrued.bankRegularSavings,
-                        termSavings: sumBankTermDeposits(accrued.bankTermDeposits),
-                        indexValue: studentIndexInvestValue({ stockInvestments: serverData.stockInvestments }),
-                    }),
+                    limit: getClassLoanLimit(),
                 });
                 if (!acted.ok) {
+                    const keepLoan = loanAction === 'take' && loanStillOutstanding(serverData.bankLoan);
                     return {
                         ...accrued,
-                        bong: acted.bong,
-                        bankRegularSavings: acted.bankRegularSavings,
-                        bankLoan: acted.bankLoan,
-                        ...copyCreditFields(acted),
-                        loanMsgs: acted.msgs,
-                        loanChanged: true,
-                        changed: true,
                         rejected: true,
-                        keepLifecycle: true,
                         loanReason: acted.reason,
-                        loanLunchParts: acted.lunchParts,
+                        // 거절된 대출은 서버에 적힌 약정일을 화면에 그대로 둡니다.
+                        ...(keepLoan ? {
+                            bong: normalizeBongValue(Number(serverData.bong) || 0),
+                            bankRegularSavings: normalizeBongValue(Number(serverData.bankRegularSavings) || 0),
+                            bankLoan: serverData.bankLoan,
+                            creditDefaultUntilYmd: serverData.creditDefaultUntilYmd || '',
+                            bankNegativeSinceYmd: serverData.bankNegativeSinceYmd || '',
+                            loanPenaltyUntilYmd: serverData.loanPenaltyUntilYmd || '',
+                        } : {}),
                     };
                 }
                 return {
@@ -9644,12 +9421,13 @@ ${subjectLine}
                     bong: acted.bong,
                     bankRegularSavings: acted.bankRegularSavings,
                     bankLoan: acted.bankLoan,
-                    ...copyCreditFields(acted),
+                    creditDefaultUntilYmd: acted.creditDefaultUntilYmd || '',
+                    bankNegativeSinceYmd: acted.bankNegativeSinceYmd || '',
+                    loanPenaltyUntilYmd: acted.loanPenaltyUntilYmd || '',
                     loanMsgs: acted.msgs,
                     loanChanged: true,
                     changed: true,
                     rejected: false,
-                    repayAmount: Math.floor(Number(acted.amount) || 0),
                 };
             }
             const serverBase = {
@@ -9680,7 +9458,9 @@ ${subjectLine}
                 bong: normalizeBongValue(accrued.bong + bongDelta),
                 bankDailyBonusLastDate: bonusDate,
                 bankLoan: accrued.bankLoan,
-                ...copyCreditFields(accrued),
+                creditDefaultUntilYmd: accrued.creditDefaultUntilYmd || '',
+                bankNegativeSinceYmd: accrued.bankNegativeSinceYmd || '',
+                loanPenaltyUntilYmd: accrued.loanPenaltyUntilYmd || '',
                 maturityMsgs: accrued.maturityMsgs,
                 maturityCredit: accrued.maturityCredit,
                 bonusGranted: accrued.bonusGranted,
@@ -11646,11 +11426,14 @@ ${subjectLine}
         const LEARNING_THERMOMETER_DEFAULT_MAX = 20;
         const LEARNING_THERMOMETER_AUTO_HOUR = 15;
         const LEARNING_THERMOMETER_LOCK_STALE_MS = 5 * 60 * 1000;
+        const _thermometerLockOwner = createThermometerLockOwner();
         let _learningThermometerSaveTimer = null;
         let _learningThermometerSettlementRunning = false;
         let _learningThermometerEditActive = false;
         let _learningThermometerSavePending = false;
         let _learningThermometerIgnoreRemoteUntil = 0;
+        let _thermometerAuthPromptAt = 0;
+        let _thermometerSettleAuthNoticeDate = '';
         let _thermometerUnsaved = false;
         const _thermometerPendingVoteIds = new Set();
 
@@ -11663,7 +11446,7 @@ ${subjectLine}
         }
 
         function canEditLearningThermometer() {
-            return canManageLearningThermometer();
+            return canManageLearningThermometer() && isTeacherProvider(auth && auth.currentUser);
         }
 
         function learningThermometerHasUnsavedEdits() {
@@ -12034,7 +11817,8 @@ ${subjectLine}
 
         function updateClassToolsPanelVisibility() {
             const grid = document.getElementById('classtoolsAppGrid');
-            // 목록 표시와 편집은 마스터 PIN 로그인(isAdmin)만 본다.
+            // 목록 표시는 마스터 로그인(isAdmin)만 본다. 온도계 편집에 필요한
+            // 선생님 인증이 아직 없어도 마스터에게는 온도계 버튼을 숨기지 않는다.
             const isAdmin = !!(window.playerState && window.playerState.isAdmin);
             const masterBar = document.getElementById('classtoolsMasterBar');
             if (masterBar) masterBar.classList.toggle('hidden', !isAdmin);
@@ -14965,6 +14749,13 @@ ${subjectLine}
             });
         }
 
+        async function ensureThermometerTeacher() {
+            if (isTeacherProvider(auth && auth.currentUser)) return true;
+            if (Date.now() - _thermometerAuthPromptAt < 20000) return false;
+            _thermometerAuthPromptAt = Date.now();
+            return requireGmSettingsAuth();
+        }
+
         async function ensureLearningThermometerParent(state) {
             const ref = getLearningThermometerDocRef();
             const snap = await getDoc(ref);
@@ -15101,13 +14892,13 @@ ${subjectLine}
             const now = new Date();
             const today = getLocalDateStr();
             const unsavedText = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
-            let autoText = '15:00 이후 마스터 화면에서 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
+            let autoText = '15:00 이후, 선생님 인증이 있으면 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
             if (!canEdit && canManage) {
-                autoText = '마스터 PIN으로 다시 들어오면 슬라이더를 저장할 수 있습니다.';
+                autoText = '선생님 인증 필요. 슬라이더와 +/- 는 움직일 수 없습니다. 정산은 인증 후 지금 XP 반영으로 실행합니다.';
             } else if (now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR) {
                 autoText = state.settledDate === today
                     ? '오늘 15시 정산 완료'
-                    : '15시 이후입니다. 마스터 화면에서 자동 정산되거나, 지금 XP 반영을 누르세요.';
+                    : '15시 이후입니다. 선생님 인증이 있으면 자동 정산되고, 아니면 지금 XP 반영을 누르세요.';
             }
             status.innerHTML = `
                 <span class="font-bold text-sky-100">${today}</span>
@@ -15150,8 +14941,14 @@ ${subjectLine}
             }
             try {
                 _learningThermometerSavePending = true;
-                const authOk = await requireGmSettingsAuth();
-                if (!authOk) return false;
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('auth');
+                if (!isTeacherProvider(auth && auth.currentUser)) {
+                    _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
+                    if (!silent) await ensureThermometerTeacher();
+                    renderLearningThermometerPanel();
+                    return false;
+                }
                 const state = getLearningThermometerState();
                 await ensureLearningThermometerParent(state);
                 await seedMissingThermometerVotesFromLegacy(state);
@@ -15267,7 +15064,7 @@ ${subjectLine}
 
         /** 배포 직후 1회: 김라희(2번) 온도계 값이 버그로 최고치에 고정된 경우 초기화 */
         async function applyLearningThermometerRahiMaxHotfix() {
-            if (!db || !auth || !auth.currentUser) return;
+            if (!db || !isTeacherProvider(auth && auth.currentUser)) return;
             const markerRef = doc(db, 'artifacts', appId, 'public', 'data', 'maintenance', 'learning_thermometer_rahi_max_hotfix_v1');
             const thermoRef = getLearningThermometerDocRef();
             try {
@@ -15315,10 +15112,12 @@ ${subjectLine}
             const now = new Date();
             if (!manual && now.getHours() < LEARNING_THERMOMETER_AUTO_HOUR) return { status: 'too_early' };
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
-            const sessionOk = await ensureAnonAuthReady();
-            if (!sessionOk) return { status: 'auth' };
-            const ownerUid = auth && auth.currentUser ? auth.currentUser.uid : '';
-            if (!ownerUid) return { status: 'auth' };
+
+            if (!isTeacherProvider(auth && auth.currentUser)) {
+                if (!manual) return { status: 'auth' };
+                const teacherOk = await ensureThermometerTeacher();
+                if (!teacherOk) return { status: 'auth' };
+            }
 
             _learningThermometerSettlementRunning = true;
             try {
@@ -15331,7 +15130,7 @@ ${subjectLine}
                     voteRefFor: (sid) => getLearningThermometerVoteRef(sid),
                     studentRefFor: (sid) => doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
                     today,
-                    owner: ownerUid,
+                    owner: _thermometerLockOwner,
                     leaseMs: LEARNING_THERMOMETER_LOCK_STALE_MS,
                     manual,
                     minDefault: LEARNING_THERMOMETER_DEFAULT_MIN,
@@ -15365,6 +15164,14 @@ ${subjectLine}
             const state = getLearningThermometerState();
             const today = getLocalDateStr();
             if (state.settledDate === today && state.settlementStatus !== 'running') return;
+            if (!isTeacherProvider(auth && auth.currentUser)) {
+                if (_thermometerSettleAuthNoticeDate !== today) {
+                    _thermometerSettleAuthNoticeDate = today;
+                    renderLearningThermometerPanel();
+                    void window.customAlert('학습 온도계 자동 정산을 실행하지 못했습니다.\n\n선생님 계정 인증이 없습니다. 슬라이더 값은 저장되지 않습니다.\n학습 온도계의 지금 XP 반영 버튼으로 인증한 뒤 정산해 주세요.');
+                }
+                return;
+            }
             void settleLearningThermometer({ manual: false });
         }
 
@@ -18857,14 +18664,7 @@ ${subjectLine}
             return document.body;
         }
 
-        let _studentNoticeChain = Promise.resolve();
-        function enqueueStudentNotice(task) {
-            const run = _studentNoticeChain.then(() => task(), () => task());
-            _studentNoticeChain = run.then(() => {}, () => {});
-            return run;
-        }
-
-        window.customAlert = (m) => enqueueStudentNotice(() => new Promise(r => {
+        window.customAlert = (m) => new Promise(r => {
             const d = document.createElement('div'); 
             // 전역 로딩(z-390)·오프라인 배너(z-400)·수업도구(z-560)·용의 눈(z-730)보다 위 — 확인창이 가려져 이체·구매가 먹통처럼 보이는 문제 방지
             d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
@@ -18879,9 +18679,9 @@ ${subjectLine}
             let done = false;
             const finish = () => { if (done) return; done = true; d.remove(); r(true); };
             if (okBtn) okBtn.onclick = finish;
-        }));
+        });
 
-        window.customConfirm = (m) => enqueueStudentNotice(() => new Promise(r => {
+        window.customConfirm = (m) => new Promise(r => {
             const d = document.createElement('div'); 
             d.className = "sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4";
             d.innerHTML = `
@@ -18900,7 +18700,7 @@ ${subjectLine}
             const finish = (v) => { if (done) return; done = true; d.remove(); r(v); };
             if (yesBtn) yesBtn.onclick = () => finish(true);
             if (noBtn) noBtn.onclick = () => finish(false);
-        }));
+        });
 
         window.customPrompt = (m, type="password") => new Promise(r => {
             const d = document.createElement('div'); 
@@ -20051,13 +19851,8 @@ ${subjectLine}
                 auth = getAuth(app);
                 db = getFirestore(app);
                 if (useEmulator) {
-                    const emuParams = new URLSearchParams(window.location.search);
-                    const emuPort = (name, fallback) => {
-                        const port = Number(emuParams.get(name));
-                        return Number.isInteger(port) && port >= 1024 && port <= 65535 ? port : fallback;
-                    };
-                    connectAuthEmulator(auth, `http://127.0.0.1:${emuPort('authPort', 9099)}`, { disableWarnings: true });
-                    connectFirestoreEmulator(db, '127.0.0.1', emuPort('fsPort', 8080));
+                    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+                    connectFirestoreEmulator(db, '127.0.0.1', 8080);
                     window.__sambongE2E = {
                         projectId: firebaseConfig.projectId,
                         get appId() { return appId; },
@@ -20073,7 +19868,6 @@ ${subjectLine}
                             };
                         },
                         armIdleTimer() { resetGmIdleTimer(); },
-                        openSavePinDialog() { return showGmSavePinDialog(); },
                     };
                 }
                 try {
@@ -20248,15 +20042,6 @@ ${subjectLine}
                             const fromCache = !!(snap.metadata && snap.metadata.fromCache);
                             if (snap.exists()) {
                                 const settingsData = snap.data() || {};
-                                if (isClockPingOnlyChange(window.globalSettings, settingsData)) {
-                                    applyServerClockSample(settingsData);
-                                    window.globalSettings = {
-                                        ...window.globalSettings,
-                                        serverClockPing: settingsData.serverClockPing,
-                                        serverClockClientMs: settingsData.serverClockClientMs,
-                                    };
-                                    return;
-                                }
                                 const keepLocalLearningThermometer = isLearningThermometerLocallyBusy() || window._thermometerDocSeen;
                                 const localLearningThermometer = window.globalSettings && window.globalSettings.learningThermometer;
                                 window.globalSettings = { ...window.globalSettings, ...settingsData };
@@ -20273,7 +20058,7 @@ ${subjectLine}
                                         window.renderWorldSettingsPanel();
                                     }
                                 }
-                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate) {
+                                if (settingsData.applyDefaultTemplatePending && window.playerState?.isGM && !window._appliedPendingTemplate && isTeacherProvider(auth && auth.currentUser)) {
                                     window._appliedPendingTemplate = true;
                                     void (async () => {
                                         try {
@@ -20684,7 +20469,7 @@ ${subjectLine}
                 if (r.needSave) {
                     saveDataToCloud();
                     updateUI();
-                    if (r.alertNewDay) window.customAlert("🌞 새로운 하루가 시작됐어요! 오늘 할 수 있는 것들이 다시 채워졌어요.");
+                    if (r.alertNewDay) window.customAlert("🌞 새로운 하루가 시작되어 일일 퀘스트와 밥줄 투자가 초기화되었습니다!");
                 }
             }
 
@@ -20731,7 +20516,7 @@ ${subjectLine}
                     }
                     formatBankLoanLifecycleAlerts(loanLife.msgs);
                     void saveDataToCloud({
-                        operationLabel: termRes.changed ? '보물상자 적금 만기' : '대출 만기 상환',
+                        operationLabel: termRes.changed ? '보물상자 적금 만기' : '은행 대출 만기 자동이체',
                         bongLogSource: termRes.changed ? 'bankTermMaturity' : 'bankLoanDue',
                     });
                     if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
@@ -21124,14 +20909,11 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉" aria-label="따봉 ${praiseCount}개">👍 ${praiseCount}</button>`;
-                const rebukeBtn = `<button type="button" class="rebuke-btn" onclick="event.stopPropagation(); void window.givePeerRebuke('${targetId}')" title="역따봉" aria-label="역따봉">역따봉</button>`;
-                const teacherCard = canEdit && !isGMCard;
-                const praiseRow = `<div class="plaza-praise-row${teacherCard ? ' is-teacher' : ''}">${praiseBtn}${rebukeBtn}</div>`;
+                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
-                    <div class="plaza-card-core${teacherCard ? ' plaza-card-core-gm' : ''}">
+                    <div class="plaza-card-core${canEdit && !isGMCard ? ' plaza-card-core-gm' : ''}">
                         ${gmXpSide}
                         <div class="plaza-card-main">
                             ${shieldHtml}${jobHtml}${condHtml}
@@ -21142,7 +20924,7 @@ ${subjectLine}
                                 <div class="plaza-card-lv text-[8px] font-bold ${lv.info.textColor} bg-slate-900/50 px-1.5 py-0.5 rounded">Lv.${exactLv}<span class="plaza-rank-name"> ${lv.info.name}</span></div>
                             </div>
                             <div class="plaza-card-name font-bold text-white bg-slate-900 px-1 py-0.5 rounded text-[9px] sm:text-[10px] w-full text-center truncate border border-slate-700">${idLabel}</div>
-                            ${teacherCard ? '' : praiseRow}
+                            ${praiseBtn}
                             ${buildPlazaStatusMessageHtml(displayData)}
                         </div>
                         ${gmBongSide}
@@ -21152,9 +20934,8 @@ ${subjectLine}
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${isNegativeMoney(walletBong) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
+                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
-                    ${teacherCard ? praiseRow : ''}
                 </div>`;
             };
 
@@ -21294,7 +21075,7 @@ ${subjectLine}
                         <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 font-bold cursor-pointer ${isNegativeMoney(stu.bong) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
+                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
@@ -21931,7 +21712,12 @@ ${subjectLine}
             let queue = filterLunchQueueStudents(studentsData, getActiveStudentIds());
             queue = queue.filter((s) => lunchQueueDisplayName(s, STUDENT_NAMES));
             
-            queue = sortLunchQueue(queue, todayStr);
+            queue.sort((a, b) => {
+                const aBid = (a.lunchBid && a.lunchBid.date === todayStr) ? a.lunchBid.amount : 0;
+                const bBid = (b.lunchBid && b.lunchBid.date === todayStr) ? b.lunchBid.amount : 0;
+                if (bBid !== aBid) return bBid - aBid; 
+                return (b.xp || 0) - (a.xp || 0); 
+            });
             
             container.innerHTML = queue.map((s, idx) => {
                 const bidAmt = (s.lunchBid && s.lunchBid.date === todayStr) ? s.lunchBid.amount : 0;
@@ -21950,7 +21736,7 @@ ${subjectLine}
                         <div class="text-2xl relative">${crown}${face}</div>
                         <div>
                             <div class="font-bold text-xs text-white">${displayName}</div>
-                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}${studentIsCreditDefault(s, todayStr) ? ' · <span class="text-amber-200">신용 회복 중</span>' : ''}</div>
+                            <div class="text-[9px] text-slate-400">Lv.${exactLv} ${bidAmt > 0 ? '· <span class="text-orange-300">VIP</span>' : ''}</div>
                         </div>
                     </div>
                     <div class="bg-slate-900 px-2 py-1 rounded-lg border border-slate-600 text-right min-w-[52px]">
@@ -22846,7 +22632,7 @@ ${subjectLine}
         function applyBankLoanLifecycleLocal() {
             const out = { changed: false, msgs: [] };
             if (!window.playerState || window.playerState.isGuest) return out;
-            const life = applyLoanLifecycle(window.playerState, loanPlanToday(), getBankLoanCalendar());
+            const life = applyLoanLifecycle(window.playerState, getLocalDateStr(), getBankLoanCalendar());
             if (!life.changed) return out;
             Object.assign(window.playerState, loanFieldsFromLifecycle(life));
             out.changed = true;
@@ -22854,86 +22640,36 @@ ${subjectLine}
             return out;
         }
 
-        const _loanAlertSeen = new Set();
-        function loanNoticeStorageKey(alertKey) {
-            const sid = String(
-                (window.playerState && window.playerState.studentId)
-                || localStorage.getItem('sambong_student_id')
-                || ''
-            );
-            return `sambong_loan_notice_${sid}_${alertKey}`;
-        }
-        function loanNoticeAlreadyShown(alertKey) {
-            if (_loanAlertSeen.has(alertKey)) return true;
-            try {
-                if (localStorage.getItem(loanNoticeStorageKey(alertKey)) === '1') return true;
-            } catch (_) { /* 저장소를 못 열면 학생 문서만 봅니다. */ }
-            const keys = window.playerState && Array.isArray(window.playerState.loanNoticeShownKeys)
-                ? window.playerState.loanNoticeShownKeys
-                : [];
-            return keys.map(String).includes(alertKey);
-        }
-        function markLoanNoticeShown(alertKey) {
-            _loanAlertSeen.add(alertKey);
-            try { localStorage.setItem(loanNoticeStorageKey(alertKey), '1'); } catch (_) { /* 문서 표식은 남깁니다. */ }
-            if (!window.playerState) return;
-            const prev = Array.isArray(window.playerState.loanNoticeShownKeys)
-                ? window.playerState.loanNoticeShownKeys.map(String).filter((k) => k && k !== alertKey)
-                : [];
-            prev.push(alertKey);
-            window.playerState.loanNoticeShownKeys = prev.slice(-30);
-        }
-        let _pendingLoanNotices = [];
-        function loanAlertKey(m) {
-            return `${m.kind}|${m.releasedYmd || ''}|${m.untilYmd || ''}|${m.paid || ''}|${m.unpaid || ''}|${m.dueYmd || ''}`;
-        }
-        function loanNoticeText(m) {
-            if (m.kind === 'repay') {
-                return `🏦 약속한 날에 빌린 돈을 갚았어요.\n\n원금 ${formatBongAmount(m.principal)}, 이자 ${formatBongAmount(m.interest)}를 합쳐 ${formatBongAmount(m.due)}${moneyObjectParticle()} 지갑과 일반예금에서 갚았어요.\n적금은 그대로 둘게요.`;
-            }
-            if (m.kind === 'default_start') return creditDefaultBlockMessage(m.untilYmd);
-            if (m.kind === 'penalty_start') return loanPenaltyBlockMessage(m.untilYmd);
-            if (m.kind === 'auto_repay') {
-                return formatDueDayRepaySentence(m, getCurrencyUnit());
-            }
-            if (m.kind === 'default_end') {
-                return '신용불량 기간이 끝났어요. 남은 빚은 그대로예요.\n이 빚과 지금 마이너스 때문에 다시 신용불량이 되지는 않아요.';
-            }
-            return '';
-        }
-        /** 알림은 저장 트랜잭션이 학생 문서에 키를 새로 적은 뒤에만 띄웁니다. */
         function formatBankLoanLifecycleAlerts(msgs) {
             (msgs || []).forEach((m) => {
-                const alertKey = loanAlertKey(m);
-                if (loanNoticeAlreadyShown(alertKey)) return;
-                if (_pendingLoanNotices.some((row) => row.key === alertKey)) return;
-                _pendingLoanNotices.push({ key: alertKey, msg: m });
-            });
-        }
-        function flushClaimedLoanNotices(claimedKeys, wroteNotices) {
-            const claimed = new Set((claimedKeys || []).map(String));
-            const next = [];
-            _pendingLoanNotices.forEach((row) => {
-                if (claimed.has(row.key)) {
-                    if (loanNoticeAlreadyShown(row.key)) return;
-                    markLoanNoticeShown(row.key);
-                    const text = loanNoticeText(row.msg);
-                    if (text) setTimeout(() => { void window.customAlert(text); }, 80);
-                    return;
+                if (m.kind === 'repay') {
+                    setTimeout(() => {
+                        void window.customAlert(
+                            `🏦 대출 약정 자동이체\n\n원금 ${formatBongAmount(m.principal)} + 이자 ${formatBongAmount(m.interest)}\n합계 ${formatBongAmount(m.due)}를 지갑·일반예금에서 갚았습니다.\n(적금은 그대로 둡니다)`
+                        );
+                    }, 80);
+                } else if (m.kind === 'default_start') {
+                    setTimeout(() => {
+                        void window.customAlert(creditDefaultBlockMessage(m.untilYmd));
+                    }, 140);
+                } else if (m.kind === 'penalty_start') {
+                    setTimeout(() => {
+                        void window.customAlert(loanPenaltyBlockMessage(m.untilYmd));
+                    }, 180);
+                } else if (m.kind === 'penalty_half') {
+                    setTimeout(() => {
+                        void window.customAlert(
+                            `신용불량 정지가 끝났습니다.\n남은 빚의 50%인 ${formatBongAmount(m.charge)}를 걷었습니다.\n남은 빚은 ${m.nextDue}까지 갚아야 합니다.`
+                        );
+                    }, 200);
                 }
-                // 같은 접속의 다른 저장이 키를 먼저 적었을 수 있습니다.
-                // 여기서 본 것으로 처리하면, 키를 차지한 저장이 문장을 띄우지 못합니다.
-                if (wroteNotices && loanNoticeAlreadyShown(row.key)) return;
-                next.push(row);
             });
-            _pendingLoanNotices = next;
         }
 
         /** 일반예금+적금 원금 합 100 B 이상: 마지막 지급일 기준 3일마다 지갑으로 1 B */
         function applyBankRegularDailyBonus() {
             if (!window.playerState || window.playerState.isGuest || window.playerState.isAdmin) return false;
             if (isVacationAutomationPaused('bankBonus')) return false;
-            if (bankBonusBlocked(window.playerState, getLocalDateStr())) return false;
             const total = getBankTotalDeposits();
             if (total < 100) return false;
             const today = getLocalDateStr();
@@ -23008,28 +22744,10 @@ ${subjectLine}
             const walletBal = normalizeBongValue(Number(window.playerState.bong) || 0);
             const regularBal = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             w.textContent = `${formatBongAmount(walletBal)}`;
-            paintMoneyElement(w, walletBal);
             s.textContent = `${formatBongAmount(regularBal)}`;
-            paintMoneyElement(s, regularBal);
             r.textContent = `${rate.toFixed(1)}`;
-            const limitParts = {
-                base: getClassLoanLimit(),
-                deposits: Math.max(0, Math.floor(Number(window.playerState.bankRegularSavings) || 0)),
-                savings: sumBankTermDeposits(window.playerState.bankTermDeposits),
-                index: studentIndexInvestValue(window.playerState),
-            };
-            limitParts.total = personalLoanLimit({
-                baseLimit: limitParts.base,
-                regularSavings: limitParts.deposits,
-                termSavings: limitParts.savings,
-                indexValue: limitParts.index,
-            });
             const limitEl = document.getElementById('bankLoanLimitDisplay');
-            if (limitEl) limitEl.textContent = formatBongAmount(limitParts.total);
-            const limitDetail = document.getElementById('bankLoanLimitDetail');
-            if (limitDetail) {
-                limitDetail.textContent = `기본 ${formatBongAmount(limitParts.base)} + 예금 ${formatBongAmount(limitParts.deposits)} + 적금 ${formatBongAmount(limitParts.savings)} + 지수 ${formatBongAmount(limitParts.index)}`;
-            }
+            if (limitEl) limitEl.textContent = String(getClassLoanLimit());
             const creditLine = document.getElementById('bankCreditDefaultLine');
             if (creditLine) {
                 const inDefault = studentIsCreditDefault(window.playerState);
@@ -23038,39 +22756,24 @@ ${subjectLine}
             }
             const loanStatus = document.getElementById('bankLoanStatus');
             const loanForm = document.getElementById('bankLoanForm');
-            const repayBtn = document.getElementById('bankLoanRepayActions');
+            const repayBtn = document.getElementById('bankLoanRepayBtn');
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             const outstanding = loanStillOutstanding(rawLoan);
-            const cap = getPersonalLoanLimit(window.playerState);
+            const cap = getClassLoanLimit();
             const inDefault = studentIsCreditDefault(window.playerState);
-            const loanHelp = document.getElementById('bankLoanHelp');
-            if (loanHelp) {
-                const unit = getCurrencyUnit();
-                loanHelp.textContent = `${formatBongAmount(10)}씩, 학교 가는 날 최대 ${LOAN_MAX_BUSINESS_DAYS}일 빌릴 수 있어요. 약속한 날에는 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고, 주급에서 조금씩 갚아요. 그보다 많이 모자라면 신용불량이 되고, 30${unit}마다 1일, 최대 60일이에요. 끝나는 날이면 풀려요. 남은 빚은 그대로고, 같은 빚으로는 바로 다시 안 걸려요. 그동안 밥줄은 맨 뒤이고 주급·수업 점수는 안 들어와요.`;
-            }
             if (loanStatus) {
                 if (inDefault) {
                     loanStatus.innerHTML = `<span class="text-red-300 font-bold">${playerCreditDefaultMessage().replace(/\n/g, '<br>')}</span>`;
                 } else if (loan) {
-                    const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
-                    const todayLoan = loanPlanToday();
-                    const pastDue = !!(loan.dueYmd && todayLoan && todayLoan > loan.dueYmd);
-                    const shielded = lunchShieldCoversLoan(window.playerState, loan);
-                    if (shielded && pastDue) {
-                        loanStatus.innerHTML = `점심값으로 남겨 둔 빚 <b class="text-white">${formatBongAmountHtml(loanDueTotal(loan))}</b><br>${formatPastPromiseLine(dueLabel)} 주급을 받을 때 조금씩 갚아요. 신용불량은 아니에요.`;
-                    } else if (shielded) {
-                        loanStatus.innerHTML = `점심값으로 남겨 둔 빚 <b class="text-white">${formatBongAmountHtml(loanDueTotal(loan))}</b><br>약속한 날 <b class="text-amber-200">${dueLabel}</b>까지 갚으면 돼요. 그 빚은 신용불량이 아니고, 주급에서 조금씩 갚아요.`;
-                    } else {
-                        loanStatus.innerHTML = `지금 빌린 돈 <b class="text-white">${formatBongAmountHtml(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmountHtml(loan.interest)}</b><br>약속한 날 <b class="text-amber-200">${dueLabel}</b> · 합계 ${formatBongAmountHtml(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 또 빌릴 수 없어요.</span>`;
-                    }
+                    loanStatus.innerHTML = `진행 중: 원금 <b class="text-white">${formatBongAmount(loan.principal)}</b> + 이자 <b class="text-rose-200">${formatBongAmount(loan.interest)}</b><br>약정일 <b class="text-amber-200">${loan.dueYmd}</b> (${loan.days}영업일) · 합계 ${formatBongAmount(loanDueTotal(loan))}<br><span class="text-amber-100">갚기 전에는 새 대출을 받을 수 없습니다.</span>`;
                 } else if (outstanding) {
                     const dueLeft = String(rawLoan && rawLoan.dueYmd || '');
-                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약속한 날 ${dueLeft})` : '');
+                    loanStatus.textContent = takeLoanFailMessage('active') + (dueLeft ? ` (약정일 ${dueLeft})` : '');
                 } else if (cap < LOAN_MIN_UNIT) {
-                    loanStatus.textContent = '지금 빌릴 수 있는 돈이 없어요. 예금, 적금, 지수 투자가 생기면 그 만큼 더해져요.';
+                    loanStatus.textContent = '현재 학급에서는 대출이 닫혀 있습니다.';
                 } else {
-                    loanStatus.textContent = `지금 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 학교 가는 날 최대 ${LOAN_MAX_BUSINESS_DAYS}일. 기본 한도에 예금, 적금, 지수 투자 가치를 더한 값이에요. 갚기 전에는 다시 빌릴 수 없어요.`;
+                    loanStatus.textContent = `1인 한도 ${formatBongAmount(cap)} · 최소 ${formatBongAmount(LOAN_MIN_UNIT)} · 최대 ${LOAN_MAX_BUSINESS_DAYS}영업일. 갚을 대출이 남아 있으면 다시 빌릴 수 없습니다.`;
                 }
             }
             if (loanForm) loanForm.classList.toggle('hidden', !!(outstanding || inDefault || cap < LOAN_MIN_UNIT));
@@ -23143,7 +22846,7 @@ ${subjectLine}
                         const defTxt = studentIsCreditDefault(stu) ? '신용불량' : '';
                         rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right tabular-nums ${isNegativeMoney(wallet) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
+                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
                             <div class="text-right text-sky-300 tabular-nums">${formatBongAmount(regular)}</div>
                             <div class="text-right text-amber-200 tabular-nums">${formatBongAmount(termTotal)}</div>
                             <div class="text-right text-rose-200 tabular-nums">${loanTxt}</div>
@@ -23206,8 +22909,8 @@ ${subjectLine}
         function formatBankAdminInvestCell(row) {
             if (!row || !row.held) return '<span class="text-slate-600">—</span>';
             const delta = Number(row.delta) || 0;
-            const cls = delta > 0 ? 'text-emerald-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
-            const deltaTxt = delta > 0 ? formatMoneyHtml(`+${formatBongAmount(delta)}`, 1) : formatBongAmountHtml(delta);
+            const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
+            const deltaTxt = delta > 0 ? `+${formatBongAmount(delta)}` : formatBongAmount(delta);
             return `<div class="text-right leading-tight">
                 <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
                 <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
@@ -23235,7 +22938,7 @@ ${subjectLine}
                 const stu = (window.allStudentsData || []).find((s0) => String(s0.id) === String(sid)) || {};
                 const sum = summarizeStudentStockInvest(stu, _marketQuotes);
                 const name = STUDENT_NAMES[String(sid)] || sid;
-                const totalCls = sum.delta > 0 ? 'text-emerald-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const totalCls = sum.delta > 0 ? 'text-rose-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const totalDelta = sum.delta > 0 ? `+${formatBongAmount(sum.delta)}` : formatBongAmount(sum.delta);
                 const kospi = sum.markets.find((m) => m.id === 'kospi');
                 const kosdaq = sum.markets.find((m) => m.id === 'kosdaq');
@@ -23259,39 +22962,14 @@ ${subjectLine}
         function renderBankInvestPanel() {
             const line = document.getElementById('bankInvestQuoteLine');
             const box = document.getElementById('bankInvestPositions');
-            const adjustNote = document.getElementById('bankInvestAdjustNote');
-            const quoteNow = getServerNowMs();
-            const adjusting = isQuoteAdjustmentWindow(quoteNow);
-            const inSession = isKoreanStockSession(quoteNow);
-            const marketClosed = !adjusting && !inSession;
-            const storedSlot = String(_marketQuotes.hourSlot || '');
-            const quoteMissing = !adjusting && inSession && !!storedSlot && storedSlot !== marketHourSlot(quoteNow);
-            const slotLabel = storedSlot ? formatMarketHourSlot(storedSlot) : '';
             if (line) {
                 const bits = STOCK_MARKETS.map((m) => {
                     const q = _marketQuotes[m.id];
                     return q ? `${m.name} ${formatIndexPrice(q.price)} (${formatChangePct(q.changePct)})` : `${m.name} —`;
                 });
-                const prefix = adjusting ? '시세 조정 중 · ' : (quoteMissing ? '새 시세를 받지 못했어요. ' : '');
-                line.textContent = `${prefix}${slotLabel ? `${slotLabel} · ` : ''}${bits.join(' · ')}`;
-            }
-            if (adjustNote) {
-                adjustNote.classList.toggle('hidden', !(adjusting || marketClosed || quoteMissing));
-                adjustNote.textContent = adjusting
-                    ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.'
-                    : (quoteMissing
-                        ? '새 시세를 받지 못했어요. 잠시 뒤 다시 해 주세요.'
-                        : (marketClosed ? '장이 끝났어요. 마지막 시세로 사고팔 수 있어요.' : ''));
+                line.textContent = bits.join(' · ');
             }
             if (!box || !window.playerState) return;
-            const sellDrafts = {};
-            let focusedSellId = '';
-            STOCK_MARKETS.forEach((m) => {
-                const el = document.getElementById(`bankInvestSell_${m.id}`);
-                if (!el) return;
-                sellDrafts[m.id] = el.value;
-                if (document.activeElement === el) focusedSellId = el.id;
-            });
             const bag = sanitizeStockInvestments(window.playerState.stockInvestments);
             const rows = STOCK_MARKETS.map((m) => {
                 const pos = bag[m.id];
@@ -23300,66 +22978,30 @@ ${subjectLine}
                     return `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/50 text-[10px] text-slate-400">${m.name} 보유 없음 · ${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 매수</div>`;
                 }
                 const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
-                const deltaTxt = settled.delta > 0
-                    ? formatMoneyHtml(`+${formatBongAmount(settled.delta)}`, 1)
-                    : formatBongAmountHtml(settled.delta);
-                const deltaCls = settled.delta > 0 ? 'text-emerald-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
+                const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
+                const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
                 const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
                 const room = stockInvestRoom(pos);
                 const roomTxt = room >= STOCK_INVEST_MIN
-                    ? `더 살 수 있는 돈 ${formatBongAmountHtml(room)}`
-                    : '더 살 수 있는 한도가 가득 찼어요';
+                    ? `추가 매수 가능 ${formatBongAmount(room)}`
+                    : '추가 매수 한도 가득';
                 return `<div class="border border-amber-500/35 rounded-xl p-3 bg-slate-900/70">
                     <div class="flex justify-between gap-2 items-start">
                         <div class="min-w-0">
                             <div class="text-amber-100 font-bold text-sm">${m.name}</div>
-                            <div class="text-xs text-slate-400 mt-0.5">원금 ${formatBongAmountHtml(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
-                            <div class="text-xs ${deltaCls} font-bold mt-1">평가 ${formatBongAmountHtml(settled.payout)} (${deltaTxt} · ${retTxt})</div>
-                            <div class="text-xs text-slate-500 mt-0.5">${roomTxt}</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
+                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
+                            <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
                     </div>
-                    <label class="block text-xs text-slate-200 font-bold mt-2" for="bankInvestSell_${m.id}">얼마를 팔까요?
-                        <span class="block font-normal text-slate-400 mt-0.5">10봉 이상 적어요. 전부 팔려면 가진 원금을 그대로 적어요. 남기려면 10봉 이상 남아야 해요.</span>
-                        <span class="flex gap-2 flex-wrap items-center mt-1">
-                            <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" inputmode="numeric" aria-label="${m.name} 팔 원금" placeholder="예: 30" class="flex-1 min-w-[8rem] min-h-[44px] bg-slate-950 border border-amber-700/50 text-white px-3 py-2 rounded-xl text-base font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300" />
-                            <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn shrink-0 min-h-[44px] min-w-[44px] bg-amber-800 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-sm font-bold focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-300"${_stockTradeBusy ? ' disabled' : ''}>팔기</button>
-                        </span>
-                    </label>
+                    <div class="flex gap-2 flex-wrap items-center mt-2">
+                        <input type="number" id="bankInvestSell_${m.id}" min="1" max="${pos.principal}" step="1" placeholder="매도 원금 ${pos.principal}" class="flex-1 min-w-[96px] bg-slate-950 border border-amber-700/50 text-white px-2 py-1 rounded text-[10px] font-bold" />
+                        <button type="button" onclick="void window.sellStockIndex('${m.id}')" class="js-stock-trade-btn text-[10px] shrink-0 bg-amber-800 hover:bg-amber-700 text-white px-2 py-1 rounded"${_stockTradeBusy ? ' disabled' : ''}>매도</button>
+                    </div>
                 </div>`;
             });
-            const history = sanitizeStockHistory(window.playerState.stockInvestHistory);
-            const historyHtml = history.length
-                ? `<div class="border border-slate-700 rounded-xl p-3 bg-slate-950/40">
-                    <div class="text-xs font-bold text-slate-200 mb-1">사고팔기 기록</div>
-                    ${history.slice().reverse().slice(0, 8).map((row) => {
-                        const market = getStockMarket(row.marketId);
-                        const name = market ? market.name : row.marketId;
-                        const when = row.date || '';
-                        if (row.kind === 'sell') {
-                            const left = row.full ? '전부 팔았어요' : `남은 원금 ${formatBongAmountHtml(row.remaining)}`;
-                            return `<div class="text-xs text-slate-300 leading-snug py-0.5 break-words">${when} · ${name} ${formatBongAmountHtml(row.amount)} 팔기 · 지갑 ${formatBongAmountHtml(row.payout)} · ${left}</div>`;
-                        }
-                        return `<div class="text-xs text-slate-300 leading-snug py-0.5 break-words">${when} · ${name} ${formatBongAmountHtml(row.amount)} 사기</div>`;
-                    }).join('')}
-                </div>`
-                : '<p class="text-xs text-slate-500">아직 사고팔기 기록이 없어요. 일부를 팔면 여기에 남아요.</p>';
-            box.innerHTML = `${rows.join('')}<div id="bankInvestHistory" class="pt-1">${historyHtml}</div>`;
-            STOCK_MARKETS.forEach((m) => {
-                const el = document.getElementById(`bankInvestSell_${m.id}`);
-                if (el && Object.prototype.hasOwnProperty.call(sellDrafts, m.id)) el.value = sellDrafts[m.id];
-            });
-            if (focusedSellId) {
-                const again = document.getElementById(focusedSellId);
-                if (again) again.focus();
-            }
-            if (!_stockTradeBusy) {
-                document.querySelectorAll('.js-stock-trade-btn').forEach((el) => {
-                    el.disabled = adjusting;
-                    el.classList.toggle('opacity-50', adjusting);
-                    el.classList.toggle('pointer-events-none', adjusting);
-                });
-            }
+            box.innerHTML = rows.join('');
         }
 
         /** 지수 매수·매도가 겹치면 같은 원금을 여러 번 정산할 수 있어 한 건씩만 처리합니다. */
@@ -23378,58 +23020,26 @@ ${subjectLine}
                 : `${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉만 투자할 수 있습니다.`;
         }
         function stockSellFailMessage(reason, max) {
-            return reason === 'none' ? '팔 투자가 없어요.'
-                : reason === 'empty' ? '얼마를 팔지 숫자로 적어 주세요. 빈칸이나 0은 전부 팔기가 아니에요.'
-                : reason === 'min' ? `한 번에 ${formatBongAmount(STOCK_INVEST_MIN)}부터 팔 수 있어요. 전부 팔려면 가진 원금을 적어요.`
-                : reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 해요. 전부 팔거나 더 남겨 주세요.`
-                : reason === 'adjusting' ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.'
-                : reason === 'unavailable' ? '새 시세를 받지 못했어요. 잠시 뒤 다시 해 주세요.'
-                : reason === 'slot' || reason === 'price' ? '확인창에 나온 시세와 지금 시세가 달라요. 다시 확인해 주세요.'
-                : reason === 'amount' ? '확인할 때 본 금액과 달라서 팔지 않았어요. 다시 눌러 주세요.'
-                : `팔 돈은 ${formatBongAmount(STOCK_INVEST_MIN)}에서 ${formatBongAmount(max || 0)}까지예요.`;
-        }
-
-        function stockTradeWindowMessage(reason) {
-            return stockSellFailMessage(reason);
-        }
-
-        /** 장중에 이번 시세를 못 받았으면 옛 시세 확인창을 열지 않습니다. */
-        function stockQuoteMissingBeforeConfirm() {
-            const now = getServerNowMs();
-            if (!isKoreanStockSession(now)) return false;
-            return String(_marketQuotes.hourSlot || '') !== marketHourSlot(now);
+            return reason === 'none' ? '매도할 투자가 없습니다.'
+                : reason === 'remainder' ? `남기려면 ${formatBongAmount(STOCK_INVEST_MIN)} 이상이어야 합니다. 전액을 팔거나 원금을 더 남겨 주세요.`
+                : `팔 원금은 1~${formatBongAmount(max || 0)}만 입력할 수 있습니다. 칸을 비우면 전액 매도입니다.`;
         }
 
         window.buyStockIndex = async function(marketId) {
             if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const inp = document.getElementById('bankInvestAmount');
-            const typedAmount = inp ? inp.value : '';
             _stockTradeBusy = true;
             setStockTradeButtonsDisabled(true);
             try {
-                await syncServerClock();
-                if (isQuoteAdjustmentWindow(getServerNowMs())) {
-                    await window.customAlert(stockTradeWindowMessage('adjusting'));
-                    return;
-                }
                 await refreshMarketQuotes(false);
-                if (isQuoteAdjustmentWindow(getServerNowMs())) {
-                    await window.customAlert(stockTradeWindowMessage('adjusting'));
-                    return;
-                }
                 const market = getStockMarket(marketId);
                 const q = market && _marketQuotes[market.id];
-                const slot = String(_marketQuotes.hourSlot || '');
-                if (!q || !slot) {
+                if (!q) {
                     await window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
                     return;
                 }
-                if (stockQuoteMissingBeforeConfirm()) {
-                    await window.customAlert(stockTradeWindowMessage('unavailable'));
-                    return;
-                }
-                const amt = parseBankAmountInput(typedAmount !== '' ? typedAmount : NaN);
+                const inp = document.getElementById('bankInvestAmount');
+                const amt = parseBankAmountInput(inp && inp.value !== '' ? inp.value : NaN);
                 if (amt == null) {
                     await window.customAlert(`${STOCK_INVEST_MIN}~${STOCK_INVEST_MAX}봉 사이 금액을 입력하세요.`);
                     return;
@@ -23446,53 +23056,40 @@ ${subjectLine}
                 }
                 const ok = await window.customConfirm(
                     gate.adding
-                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 더 넣을까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)}에서 ${formatBongAmount(gate.nextPrincipal)}\n${formatMarketHourSlot(slot)} ${formatIndexPrice(q.price)}`
-                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n${formatMarketHourSlot(slot)} ${formatIndexPrice(q.price)}`
+                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 추가 매수할까요?\n원금 ${formatBongAmount(gate.nextPrincipal - gate.amount)} → ${formatBongAmount(gate.nextPrincipal)}\n현재 지수 ${formatIndexPrice(q.price)}로 평균 매수가에 합산됩니다.`
+                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣을까요?\n현재 지수 ${formatIndexPrice(q.price)}`
                 );
                 if (!ok) return;
-                await syncServerClock();
-                const quoteGate = evaluateStockTradeWindow({
-                    nowMs: getServerNowMs(),
-                    confirmSlot: slot,
-                    confirmPrice: q.price,
-                    quotes: _marketQuotes,
-                    marketId: market.id,
-                });
-                if (!quoteGate.ok) {
-                    await window.customAlert(stockTradeWindowMessage(quoteGate.reason));
-                    return;
-                }
+                // 확인 뒤에 최신 잔액·원금으로 다시 검사합니다. 창이 겹쳐도 같은 매수를 두 번 넣지 않습니다.
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+                const qNow = _marketQuotes[market.id] || q;
                 const gateNow = canBuyStock({
                     wallet: Number(window.playerState.bong) || 0,
                     amount: gate.amount,
                     existing: window.playerState.stockInvestments[market.id],
                 });
-                if (!gateNow.ok || gateNow.amount !== gate.amount) {
-                    await window.customAlert(gateNow.ok ? stockTradeWindowMessage('amount') : stockBuyFailMessage(gateNow.reason, gateNow.room));
+                if (!gateNow.ok) {
+                    await window.customAlert(stockBuyFailMessage(gateNow.reason, gateNow.room));
                     return;
                 }
-                const tradeToday = seoulYmd(getServerNowMs());
-                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, quoteGate.price, getServerNowMs(), tradeToday);
-                if (!bought.ok || bought.amount !== gate.amount) {
-                    await window.customAlert('확인할 때 본 금액과 달라서 사지 않았어요. 다시 눌러 주세요.');
+                const bought = applyBuyStock(window.playerState.stockInvestments, market.id, gateNow.amount, qNow.price, Date.now(), getLocalDateStr());
+                if (!bought.ok) {
+                    await window.customAlert('매수에 실패했습니다.');
                     return;
                 }
                 const trade = {
                     kind: 'buy',
                     marketId: market.id,
-                    amount: gate.amount,
-                    currentIndex: quoteGate.price,
-                    confirmSlot: slot,
-                    confirmPrice: quoteGate.price,
-                    today: tradeToday,
-                    nowMs: getServerNowMs(),
+                    amount: gateNow.amount,
+                    currentIndex: qNow.price,
+                    today: getLocalDateStr(),
+                    nowMs: Date.now(),
                 };
                 const saved = await saveDataToCloud({
                     allowBongDecrease: true,
-                    maxBongDecrease: gate.amount,
+                    maxBongDecrease: gateNow.amount,
                     requireServerBongBalance: true,
-                    operationLabel: gateNow.adding ? `${market.name} 더 사기` : `${market.name} 사기`,
+                    operationLabel: gateNow.adding ? `${market.name} 추가 매수` : `${market.name} 매수`,
                     stockTrade: trade,
                 });
                 if (!saved) return;
@@ -23504,8 +23101,8 @@ ${subjectLine}
                     : gateNow.nextPrincipal;
                 await window.customAlert(
                     gateNow.adding
-                        ? `${market.name}에 ${formatBongAmount(gate.amount)}를 더 넣었어요. 원금 ${formatBongAmount(nextPrincipal)}.`
-                        : `${market.name}에 ${formatBongAmount(gate.amount)}를 넣었어요.`
+                        ? `${market.name} ${formatBongAmount(gateNow.amount)} 추가 매수했습니다. 원금 ${formatBongAmount(nextPrincipal)}.`
+                        : `${market.name} ${formatBongAmount(gateNow.amount)} 매수했습니다.`
                 );
             } finally {
                 _stockTradeBusy = false;
@@ -23516,122 +23113,91 @@ ${subjectLine}
         window.sellStockIndex = async function(marketId) {
             if (_stockTradeBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            const sellInpEarly = document.getElementById(`bankInvestSell_${marketId}`);
-            const typed = sellInpEarly ? String(sellInpEarly.value || '').trim() : '';
-            if (typed === '' || Number(typed) === 0) {
-                await window.customAlert(stockSellFailMessage('empty'));
-                return;
-            }
             _stockTradeBusy = true;
             setStockTradeButtonsDisabled(true);
             try {
-                await syncServerClock();
-                if (isQuoteAdjustmentWindow(getServerNowMs())) {
-                    await window.customAlert(stockTradeWindowMessage('adjusting'));
-                    return;
-                }
-                await refreshMarketQuotes(false);
-                if (isQuoteAdjustmentWindow(getServerNowMs())) {
-                    await window.customAlert(stockTradeWindowMessage('adjusting'));
-                    return;
-                }
+                await refreshMarketQuotes(true);
                 const market = getStockMarket(marketId);
                 const q = market && _marketQuotes[market.id];
-                const slot = String(_marketQuotes.hourSlot || '');
-                if (!q || !slot) {
+                if (!q) {
                     await window.customAlert('지수를 아직 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                    return;
-                }
-                if (stockQuoteMissingBeforeConfirm()) {
-                    await window.customAlert(stockTradeWindowMessage('unavailable'));
                     return;
                 }
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
                 const held = window.playerState.stockInvestments[market.id];
-                const gate = canSellStock({ existing: held, amount: typed });
+                const sellInp = document.getElementById(`bankInvestSell_${market.id}`);
+                const sellRaw = sellInp && String(sellInp.value || '').trim() !== '' ? sellInp.value : '';
+                const gate = canSellStock({ existing: held, amount: sellRaw === '' ? null : sellRaw });
                 if (!gate.ok) {
                     await window.customAlert(stockSellFailMessage(gate.reason, gate.max));
                     return;
                 }
-                const tradeToday = seoulYmd(getServerNowMs());
+                const today = getLocalDateStr();
                 const preview = applySellStock(
                     window.playerState.stockInvestments,
                     market.id,
                     q.price,
                     window.playerState.stockInvestDaily,
-                    tradeToday,
-                    getServerNowMs(),
+                    today,
+                    Date.now(),
                     gate.amount
                 );
                 if (!preview.ok) {
-                    await window.customAlert('팔 투자가 없어요.');
+                    await window.customAlert('매도할 투자가 없습니다.');
                     return;
                 }
                 const remainTxt = preview.full
-                    ? '가진 원금을 전부 팔아요.'
+                    ? '전액 매도합니다.'
                     : `남은 원금 ${formatBongAmount(preview.remaining)}.`;
                 const ok = await window.customConfirm(
-                    `${market.name} ${formatBongAmount(preview.principal)}${moneyObjectParticle()} 팔까요?\n받을 돈 ${formatBongAmount(preview.payout)}\n${formatMarketHourSlot(slot)} ${formatIndexPrice(q.price)}\n${remainTxt}`
-                    + (preview.capped ? `\n오늘 이익은 ${formatBongAmount(8)}까지만 받아요.` : '')
+                    `${market.name} 원금 ${formatBongAmount(preview.principal)}를 매도할까요?\n정산 ${formatBongAmount(preview.payout)}`
+                    + `\n${remainTxt}`
+                    + (preview.capped ? '\n(하루 수익 상한이 적용되었습니다.)' : '')
                 );
                 if (!ok) return;
-                await syncServerClock();
-                const quoteGate = evaluateStockTradeWindow({
-                    nowMs: getServerNowMs(),
-                    confirmSlot: slot,
-                    confirmPrice: q.price,
-                    quotes: _marketQuotes,
-                    marketId: market.id,
-                });
-                if (!quoteGate.ok) {
-                    await window.customAlert(stockTradeWindowMessage(quoteGate.reason));
-                    return;
-                }
+                // 확인 뒤에 서버 원금 기준으로 다시 정산합니다. 아래 창이 남아 있어도 같은 매도를 두 번 넣지 않습니다.
                 window.playerState.stockInvestments = sanitizeStockInvestments(window.playerState.stockInvestments);
+                const qNow = _marketQuotes[market.id] || q;
                 const heldNow = window.playerState.stockInvestments[market.id];
-                const gateNow = canSellStock({ existing: heldNow, amount: typed });
-                if (!gateNow.ok || gateNow.amount !== gate.amount) {
-                    await window.customAlert(gateNow.ok ? stockTradeWindowMessage('amount') : stockSellFailMessage(gateNow.reason, gateNow.max));
+                const gateNow = canSellStock({ existing: heldNow, amount: gate.amount });
+                if (!gateNow.ok) {
+                    await window.customAlert(stockSellFailMessage(gateNow.reason, gateNow.max));
                     return;
                 }
                 const sold = applySellStock(
                     window.playerState.stockInvestments,
                     market.id,
-                    quoteGate.price,
+                    qNow.price,
                     window.playerState.stockInvestDaily,
-                    tradeToday,
-                    getServerNowMs(),
+                    getLocalDateStr(),
+                    Date.now(),
                     gateNow.amount
                 );
-                if (!sold.ok || sold.payout !== preview.payout || sold.principal !== preview.principal) {
-                    await window.customAlert(stockTradeWindowMessage('amount'));
+                if (!sold.ok) {
+                    await window.customAlert('이미 매도되었거나 매도할 수 없습니다.');
                     return;
                 }
                 const trade = {
                     kind: 'sell',
                     marketId: market.id,
                     amount: gateNow.amount,
-                    currentIndex: quoteGate.price,
-                    confirmSlot: slot,
-                    confirmPrice: quoteGate.price,
-                    confirmPayout: preview.payout,
-                    today: tradeToday,
-                    nowMs: getServerNowMs(),
+                    currentIndex: qNow.price,
+                    today: getLocalDateStr(),
+                    nowMs: Date.now(),
                 };
                 const saved = await saveDataToCloud({
                     maxBongIncrease: Math.max(1, sold.payout),
-                    operationLabel: sold.full ? `${market.name} 전부 팔기` : `${market.name} 일부 팔기`,
+                    operationLabel: sold.full ? `${market.name} 매도` : `${market.name} 일부 매도`,
                     stockTrade: trade,
                 });
                 if (!saved) return;
-                const liveInp = document.getElementById(`bankInvestSell_${market.id}`);
-                if (liveInp) liveInp.value = '';
+                if (sellInp) sellInp.value = '';
                 updateUI();
                 const applied = trade.applied || sold;
                 await window.customAlert(
                     applied.full
-                        ? `다 팔았어요. 지갑으로 ${formatBongAmount(applied.payout)}가 들어왔어요.`
-                        : `일부를 팔았어요. 지갑으로 ${formatBongAmount(applied.payout)}가 들어왔고, 원금 ${formatBongAmount(applied.remaining)}가 남았어요.`
+                        ? `매도 완료. 지갑으로 ${formatBongAmount(applied.payout)}를 받았습니다.`
+                        : `일부 매도 완료. 지갑으로 ${formatBongAmount(applied.payout)}를 받고, 원금 ${formatBongAmount(applied.remaining)}가 남았습니다.`
                 );
             } finally {
                 _stockTradeBusy = false;
@@ -23654,7 +23220,7 @@ ${subjectLine}
             window.playerState.bankRegularSavings = normalizeBongValue((Number(window.playerState.bankRegularSavings) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
-            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금', bongLogSource: 'bankRegular' });
+            const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: amt, requireServerBongBalance: true, allowBankFieldChanges: true, operationLabel: '일반예금 입금' });
             if (!saved) return;
             window.customAlert(`🏦 일반예금에 ${formatBongAmount(amt)}를 넣었습니다.`);
         };
@@ -23673,7 +23239,7 @@ ${subjectLine}
             window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) + amt);
             if (inp) inp.value = '';
             updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금', bongLogSource: 'bankRegular' });
+            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: amt, operationLabel: '일반예금 출금' });
             if (!saved) return;
             window.customAlert(`💵 ${formatBongAmount(amt)}를 찾았습니다.`);
         };
@@ -23690,7 +23256,7 @@ ${subjectLine}
             const inp = document.getElementById('bankWithdrawInput');
             if (inp) inp.value = '';
             updateUI();
-            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금', bongLogSource: 'bankRegular' });
+            const saved = await saveDataToCloud({ allowBankFieldChanges: true, requireServerBankRegularBalance: true, maxBankRegularDecrease: sav, operationLabel: '일반예금 전액 출금' });
             if (!saved) return;
             await window.customAlert(`💵 ${formatBongAmount(sav)}를 모두 찾았습니다.`);
         };
@@ -23781,8 +23347,8 @@ ${subjectLine}
                 if (typeof window.updateBankPanel === 'function') window.updateBankPanel();
                 await window.customAlert(
                     cap < LOAN_MIN_UNIT
-                        ? '기본 한도를 0으로 저장했어요. 예금, 적금, 지수 투자가 있으면 그 합만큼은 빌릴 수 있어요.'
-                        : `기본 한도를 ${formatBongAmount(cap)}로 저장했어요. 학생 한도는 여기에 예금, 적금, 지수 투자를 더한 값이에요.`
+                        ? '1인당 대출 한도를 0으로 저장했습니다. 대출이 닫힙니다.'
+                        : `1인당 대출 한도를 ${formatBongAmount(cap)}로 저장했습니다.`
                 );
             } catch (e) {
                 window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
@@ -23804,8 +23370,7 @@ ${subjectLine}
             const rawLoan = window.playerState && window.playerState.bankLoan;
             const loan = sanitizeBankLoan(rawLoan);
             if (loan) {
-                const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
-                preview.textContent = `약속한 날 ${dueLabel}. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.`;
+                preview.textContent = `약정일 ${loan.dueYmd}에 ${formatBongAmount(loanDueTotal(loan))}가 자동이체됩니다. 갚기 전에는 새 대출이 되지 않습니다.`;
                 return;
             }
             if (loanStillOutstanding(rawLoan)) {
@@ -23817,17 +23382,16 @@ ${subjectLine}
             const amount = sanitizeLoanAmount(amtEl && amtEl.value);
             const days = sanitizeLoanDays(dayEl && dayEl.value);
             const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-            const cap = getPersonalLoanLimit(window.playerState);
+            const cap = getClassLoanLimit();
             if (!amount) {
-                preview.textContent = opts.silent ? `한도 ${formatBongAmount(cap)} · 이자 ${rate}% · 이자는 최소 ${formatBongAmount(1)}` : `${formatBongAmount(10)}씩 적어 주세요.`;
+                preview.textContent = opts.silent ? `한도 ${formatBongAmount(cap)} · 이자율 ${rate}% · 최소 이자 1봉` : `금액을 ${LOAN_MIN_UNIT}봉 단위로 입력하세요.`;
                 return;
             }
             const interest = computeLoanInterest(amount, days, rate);
             const dueYmd = planTakeLoan({
-                amount, days, ratePercent: rate, limit: cap, todayYmd: loanPlanToday(), calendar: getBankLoanCalendar(), nowMs: 1,
+                amount, days, ratePercent: rate, limit: cap, todayYmd: getLocalDateStr(), calendar: getBankLoanCalendar(), nowMs: 1,
             }).loan?.dueYmd || '';
-            const dueLabel = dueYmd ? (formatPromiseDay(dueYmd) || dueYmd) : '';
-            preview.textContent = `${formatBongAmount(amount)} · 학교 가는 날 ${days}일 · 이자 ${formatBongAmount(interest)} · 갚을 돈 ${formatBongAmount(amount + interest)}${dueLabel ? ` · 약속한 날 ${dueLabel}` : ''}`;
+            preview.textContent = `${formatBongAmount(amount)} / ${days}영업일 → 이자 ${formatBongAmount(interest)} · 약정 합계 ${formatBongAmount(amount + interest)}${dueYmd ? ` · 약정일 ${dueYmd}` : ''}`;
         };
 
         window.takeBankLoan = async function() {
@@ -23841,7 +23405,7 @@ ${subjectLine}
                 const amount = sanitizeLoanAmount(amtEl && amtEl.value);
                 const days = sanitizeLoanDays(dayEl && dayEl.value);
                 const rate = Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0;
-                const cap = getPersonalLoanLimit(window.playerState);
+                const cap = getClassLoanLimit();
                 const plan = planTakeLoan({
                     existingLoan: window.playerState.bankLoan,
                     inDefault: studentIsCreditDefault(window.playerState),
@@ -23849,14 +23413,14 @@ ${subjectLine}
                     days,
                     ratePercent: rate,
                     limit: cap,
-                    todayYmd: loanPlanToday(),
+                    todayYmd: getLocalDateStr(),
                     calendar: getBankLoanCalendar(),
                 });
                 if (!plan.ok) return window.customAlert(takeLoanFailMessage(plan.reason, { limit: cap, unit: getCurrencyUnit() }));
                 const ok = await window.customConfirm(
-                    `${formatBongAmount(plan.loan.principal)}를 학교 가는 날 ${plan.loan.days}일 동안 빌릴까요?\n` +
-                    `이자는 ${formatBongAmount(plan.loan.interest)}예요.\n` +
-                    `약속한 날은 ${formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd}${koreanCopula(formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd)}. 그날까지 갚아요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요. 그보다 많이 모자라면 신용불량이 돼요.\n적금은 빼지 않아요.`
+                    `대출 ${formatBongAmount(plan.loan.principal)}를 ${plan.loan.days}영업일 받을까요?\n` +
+                    `이자 ${formatBongAmount(plan.loan.interest)} (적금 이율 ${rate}% × 1.5배 · 최소 1봉)\n` +
+                    `약정일 ${plan.loan.dueYmd}에 합계 ${formatBongAmount(plan.due)}가 지갑→일반예금 순으로 자동이체됩니다.\n적금은 건드리지 않습니다.`
                 );
                 if (!ok) return;
                 const saved = await saveDataToCloud({
@@ -23870,197 +23434,73 @@ ${subjectLine}
                 if (!saved) return;
                 if (amtEl) amtEl.value = '';
                 updateUI();
-                const promiseDay = formatPromiseDay(plan.loan.dueYmd) || plan.loan.dueYmd;
-                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔어요.\n약속한 날은 ${promiseDay}${koreanCopula(promiseDay)}. 이자는 ${formatBongAmount(plan.loan.interest)}예요.`);
+                await window.customAlert(`대출 ${formatBongAmount(plan.loan.principal)}가 지갑에 들어왔습니다.\n약정일 ${plan.loan.dueYmd} · 이자 ${formatBongAmount(plan.loan.interest)}`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
             }
         };
 
-        function loanRepayFailText(plan) {
-            if (plan && plan.reason === 'lunch') {
-                return formatLunchRepayBlocked(plan.lunchParts, getCurrencyUnit());
-            }
-            return repayLoanFailMessage(plan && plan.reason);
-        }
-
-        async function readServerRepayQuote(action, loanAmount) {
-            if (!db || !currentStudentDocRef) return { ok: false, reason: 'none' };
+        window.repayBankLoan = async function() {
+            if (_bankLoanBusy) return;
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const loan = sanitizeBankLoan(window.playerState.bankLoan);
+            if (!loan) return window.customAlert(repayLoanFailMessage('none'));
+            const due = loanDueTotal(loan);
+            const ok = await window.customConfirm(
+                `지금 갚으면 약정 이자 ${formatBongAmount(loan.interest)}가 그대로 포함됩니다.\n합계 ${formatBongAmount(due)}를 지갑→일반예금 순으로 갚을까요?\n모자라면 지갑이 마이너스가 됩니다.`
+            );
+            if (!ok) return;
+            _bankLoanBusy = true;
+            setBankLoanButtonsDisabled(true);
             try {
-                await syncServerClock();
-                const snap = await getDoc(currentStudentDocRef);
-                const serverData = snap.exists() ? (snap.data() || {}) : {};
-                const accrued = applyServerBankAccrual(serverData, window.globalSettings, {
-                    isAdmin: !!(window.playerState && window.playerState.isAdmin),
-                });
-                const acted = applyLoanAction({
-                    bong: accrued.bong,
-                    bankRegularSavings: accrued.bankRegularSavings,
-                    bankLoan: accrued.bankLoan,
-                    lastLunchDeductDate: serverData.lastLunchDeductDate,
-                    ...copyCreditFields(accrued),
-                }, action, {
-                    todayYmd: loanPlanToday(),
-                    calendar: getBankLoanCalendar(),
-                    amount: loanAmount,
-                });
-                const msg = (acted.msgs || []).slice().reverse().find((row) => row && (row.kind === 'repay_early' || row.kind === 'repay_partial'));
-                const lunchParts = (msg && Array.isArray(msg.lunchParts) && msg.lunchParts.length)
-                    ? msg.lunchParts
-                    : (Array.isArray(acted.lunchParts) ? acted.lunchParts : []);
-                const left = loanStillOutstanding(acted.bankLoan) ? loanDueTotal(acted.bankLoan) : 0;
-                return {
-                    ok: !!acted.ok && Math.floor(Number(acted.amount) || 0) > 0,
-                    reason: acted.ok ? '' : (acted.reason || 'funds'),
-                    amount: Math.floor(Number(acted.amount) || 0),
-                    left,
-                    full: !loanStillOutstanding(acted.bankLoan),
-                    lunchParts,
-                    withheldLunch: left > 0 && lunchParts.length > 0,
-                    withheld: Math.max(0, Math.floor(Number(msg && (msg.withheld != null ? msg.withheld : msg.reserveLunch)) || 0)),
-                    requested: Math.max(0, Math.floor(Number(msg && (msg.requested != null ? msg.requested : loanAmount)) || 0)),
-                    loan: sanitizeBankLoan(accrued.bankLoan) || sanitizeBankLoan(serverData.bankLoan),
-                    walletAfter: Math.floor(Number(acted.bong) || 0),
-                    lastLunchDeductDate: String(serverData.lastLunchDeductDate || ''),
-                    todayYmd: loanPlanToday(),
-                };
-            } catch (e) {
-                console.warn('readServerRepayQuote', e);
-                return { ok: false, reason: 'funds' };
-            }
-        }
-
-        async function confirmAndSaveRepayment({ action, loanAmount, operationLabel, confirmText, doneText }) {
-            for (let attempt = 0; attempt < 3; attempt += 1) {
-                const quote = await readServerRepayQuote(action, loanAmount);
-                if (!quote.ok) {
-                    await window.customAlert(loanRepayFailText(quote));
-                    return;
-                }
-                const ok = await window.customConfirm(confirmText(quote));
-                if (!ok) return;
-                const saveOpts = {
+                const saved = await saveDataToCloud({
                     allowBankFieldChanges: true,
                     allowBongDecrease: true,
-                    loanAction: action,
-                    loanAmount,
-                    operationLabel,
+                    loanAction: 'repay',
+                    operationLabel: '은행 대출 상환',
                     bongLogSource: 'bankLoanRepay',
-                    confirmRepayAmount: quote.amount,
-                };
-                const saved = await saveDataToCloud(saveOpts);
-                if (saved) {
-                    updateUI();
-                    await window.customAlert(doneText(quote));
-                    return;
-                }
-                if (saveOpts.repayMismatch) continue;
-                return;
-            }
-            await window.customAlert('갚는 금액이 바뀌어서 이번엔 갚지 않았어요. 잠시 뒤 다시 눌러 주세요.');
-        }
-
-        window.repayBankLoanClear = async function() {
-            if (_bankLoanBusy) return;
-            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            _bankLoanBusy = true;
-            setBankLoanButtonsDisabled(true);
-            try {
-                await confirmAndSaveRepayment({
-                    action: 'clear',
-                    operationLabel: '은행 대출 상환',
-                    confirmText(quote) {
-                        return formatClearRepayConfirm(quote.amount, getCurrencyUnit(), {
-                            walletAfter: quote.walletAfter,
-                            todayYmd: quote.todayYmd || loanPlanToday(),
-                            calendar: getBankLoanCalendar(),
-                            lastLunchDeductDate: quote.lastLunchDeductDate,
-                        });
-                    },
-                    doneText(quote) {
-                        return formatClearRepayDone(quote.amount, getCurrencyUnit());
-                    },
                 });
+                if (!saved) return;
+                updateUI();
+                await window.customAlert(`대출 ${formatBongAmount(due)}를 갚았습니다.`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
             }
         };
-
-        window.repayBankLoanKeepLunch = async function() {
-            if (_bankLoanBusy) return;
-            if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
-            _bankLoanBusy = true;
-            setBankLoanButtonsDisabled(true);
-            try {
-                await confirmAndSaveRepayment({
-                    action: 'keepLunch',
-                    operationLabel: '은행 대출 상환',
-                    confirmText(quote) {
-                        return formatKeepLunchConfirm({
-                            amount: quote.amount,
-                            left: quote.left,
-                            dueYmd: quote.loan ? quote.loan.dueYmd : '',
-                            todayYmd: quote.todayYmd || loanPlanToday(),
-                            lunchParts: quote.lunchParts,
-                            unit: getCurrencyUnit(),
-                        });
-                    },
-                    doneText(quote) {
-                        return formatKeepLunchDone({
-                            amount: quote.amount,
-                            left: quote.left,
-                            dueYmd: quote.loan ? quote.loan.dueYmd : '',
-                            todayYmd: quote.todayYmd || loanPlanToday(),
-                            lunchParts: quote.lunchParts,
-                            unit: getCurrencyUnit(),
-                        });
-                    },
-                });
-            } finally {
-                _bankLoanBusy = false;
-                setBankLoanButtonsDisabled(false);
-            }
-        };
-
-        window.repayBankLoan = window.repayBankLoanKeepLunch;
 
         window.repayBankLoanPartial = async function() {
             if (_bankLoanBusy) return;
             if (!window.playerState || window.playerState.isGuest) return window.customAlert('게스트는 이용할 수 없어요.');
+            const loan = sanitizeBankLoan(window.playerState.bankLoan);
+            if (!loan) return window.customAlert(repayLoanFailMessage('none'));
+            const due = loanDueTotal(loan);
             const amount = Math.floor(Number((document.getElementById('bankLoanPartialInput') || {}).value) || 0);
+            const plan = planPartialRepay(window.playerState, amount);
+            if (!plan.ok) return window.customAlert(repayLoanFailMessage(plan.reason));
+            const ok = await window.customConfirm(
+                plan.full
+                    ? `남은 ${formatBongAmount(due)}를 모두 갚을까요?`
+                    : `${formatBongAmount(amount)}만 갚을까요?\n갚고 나면 ${formatBongAmount(plan.left)}가 남고, 약정일 ${loan.dueYmd}는 그대로입니다.`
+            );
+            if (!ok) return;
             _bankLoanBusy = true;
             setBankLoanButtonsDisabled(true);
             try {
-                await confirmAndSaveRepayment({
-                    action: 'partial',
+                const saved = await saveDataToCloud({
+                    allowBankFieldChanges: true,
+                    allowBongDecrease: true,
+                    loanAction: plan.full ? 'repay' : 'partial',
                     loanAmount: amount,
                     operationLabel: '은행 대출 일부 상환',
-                    confirmText(quote) {
-                        const unit = getCurrencyUnit();
-                        const dueYmd = quote.loan ? quote.loan.dueYmd : '';
-                        const todayYmd = quote.todayYmd || loanPlanToday();
-                        const reason = formatWithheldLunchLine(quote.requested || 0, quote.amount, quote.withheld || 0, unit);
-                        const lines = [`${formatBongAmount(quote.amount)}${moneyObjectParticle()} 갚을까요?`];
-                        if (reason) lines.push(reason);
-                        if (quote.left > 0) lines.push(formatDebtLeftSentence(quote.left, dueYmd, unit, { todayYmd }));
-                        else lines.push('빚은 0이 돼요.');
-                        const hold = formatLunchWalletSentence(quote.lunchParts, unit);
-                        if (hold) lines.push(hold);
-                        return lines.join('\n');
-                    },
-                    doneText(quote) {
-                        return formatPartialRepayDone({
-                            amount: quote.amount,
-                            left: quote.full ? 0 : quote.left,
-                            dueYmd: quote.loan ? quote.loan.dueYmd : '',
-                            todayYmd: quote.todayYmd || loanPlanToday(),
-                            lunchParts: quote.lunchParts,
-                            unit: getCurrencyUnit(),
-                        });
-                    },
+                    bongLogSource: 'bankLoanRepay',
                 });
+                if (!saved) return;
+                const input = document.getElementById('bankLoanPartialInput');
+                if (input) input.value = '';
+                updateUI();
+                await window.customAlert(plan.full ? '대출을 모두 갚았습니다.' : `${formatBongAmount(amount)}를 갚았습니다. 남은 빚 ${formatBongAmount(plan.left)}.`);
             } finally {
                 _bankLoanBusy = false;
                 setBankLoanButtonsDisabled(false);
@@ -24071,101 +23511,20 @@ ${subjectLine}
             return doc(db, 'artifacts', appId, 'public', 'data', 'classOps', name);
         }
 
-        function rebukeItemRef(kind, id) {
-            return doc(db, 'artifacts', appId, 'public', 'data', 'classOps', kind, 'items', id);
-        }
-
-        function escapeRebukeHtml(value) {
-            return String(value ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-        }
-
-        function rebukeHiddenNames() {
-            return Object.values(STUDENT_NAMES || {})
-                .map((name) => String(name || '').trim())
-                .filter((name) => name.length >= 2);
-        }
-
-        function rebukeStudentLabel(id) {
-            const sid = String(id || '');
-            const name = (STUDENT_NAMES && STUDENT_NAMES[sid]) || (typeof getStudentDisplayLabel === 'function' ? getStudentDisplayLabel(sid) : sid) || sid;
-            return { id: sid, name: String(name) };
-        }
-
-        function normalizeRebukeConfig(data) {
-            const src = data && typeof data === 'object' ? data : {};
-            const roster = src.roster && typeof src.roster === 'object' ? { ...src.roster } : {};
-            return {
-                enabled: src.enabled === true,
-                epoch: Math.max(1, Math.floor(Number(src.epoch) || 1)),
-                roster,
-            };
-        }
-
-        function rebukeEventForViewer(raw) {
-            const row = rebukePublicEvent(raw);
-            const me = String(localStorage.getItem('sambong_student_id') || '');
-            const admin = !!(window.playerState && window.playerState.isAdmin);
-            if (admin || row.toId === me) return row;
-            return { ...row, reason: '' };
-        }
-
-        function applyRebukePublicLoad(cfgSnap, eventSnap) {
-            window._rebukeConfig = cfgSnap && cfgSnap.exists && cfgSnap.exists()
-                ? normalizeRebukeConfig(cfgSnap.data())
-                : defaultRebukeConfig();
-            const entries = [];
-            if (eventSnap && typeof eventSnap.forEach === 'function') {
-                eventSnap.forEach((row) => entries.push(rebukeEventForViewer(row.data())));
-            }
-            window._rebukeEvents = entries;
-            window._rebukeBoard = { entries };
-        }
-
-        async function ensureRebukeConfigDoc() {
-            const ref = classOpsRef('rebukeConfig');
-            const snap = await getDoc(ref);
-            if (snap.exists()) return normalizeRebukeConfig(snap.data());
-            const created = defaultRebukeConfig();
-            try {
-                await setDoc(ref, created);
-                return created;
-            } catch (e) {
-                const again = await getDoc(ref);
-                if (again.exists()) return normalizeRebukeConfig(again.data());
-                throw e;
-            }
-        }
-
-        function copyRebukeFields(payload, existing) {
-            const next = payload;
-            if (!existing || typeof existing !== 'object') return next;
-            ['rebukeSeq', 'rebukeEpoch', 'rebukeRoster'].forEach((key) => {
-                if (Object.prototype.hasOwnProperty.call(existing, key)) next[key] = existing[key];
-            });
-            return next;
-        }
-
         async function ensureClassOpsLoaded(force) {
             if (!db) return;
             if (window._classOpsLoading) return window._classOpsLoading;
             if (window._classOpsReady && !force) return;
             window._classOpsLoading = (async () => {
                 try {
-                    const [att, checks, praise, rebukeCfg, rebukeEvents] = await Promise.all([
+                    const [att, checks, praise] = await Promise.all([
                         getDoc(classOpsRef('attendance')),
                         getDoc(classOpsRef('checklists')),
                         getDoc(classOpsRef('praise')),
-                        getDoc(classOpsRef('rebukeConfig')).catch(() => null),
-                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeEvents', 'items')).catch(() => null),
                     ]);
                     window._attendanceDays = (att.exists() && att.data() && att.data().days) || {};
                     window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
                     window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
-                    applyRebukePublicLoad(rebukeCfg, rebukeEvents);
                     window._classOpsReady = true;
                     await maybeRollPraiseAtMidnight();
                 } finally {
@@ -24429,15 +23788,6 @@ ${subjectLine}
                     const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + toId);
                     const fromSnap = await tx.get(fromRef);
                     const toSnap = await tx.get(toRef);
-                    const fromData = fromSnap.exists() ? (fromSnap.data() || {}) : {};
-                    if (!window.playerState.isAdmin && studentIsCreditDefault(fromData)) {
-                        return {
-                            ok: false,
-                            reason: 'credit',
-                            until: fromData.creditDefaultUntilYmd || '',
-                            loanUntil: fromData.loanPenaltyUntilYmd || '',
-                        };
-                    }
                     const bump = (snap, deltaXp, deltaBong, extra) => {
                         const data = snap.exists() ? (snap.data() || {}) : {};
                         const xp = Math.max(0, Math.floor((Number(data.xp) || 0) + deltaXp));
@@ -24450,13 +23800,7 @@ ${subjectLine}
                     tx.set(praiseRef, fresh.board, { merge: false });
                     return { ok: true, fresh, fromNext, toNext };
                 });
-                if (!result || !result.ok) {
-                    if (result && result.reason === 'credit') {
-                        const stu = { creditDefaultUntilYmd: result.until, loanPenaltyUntilYmd: result.loanUntil };
-                        return window.customAlert(isLoanPenaltyActive(stu) ? loanPenaltyBlockMessage(result.loanUntil) : creditDefaultBlockMessage(result.until));
-                    }
-                    return window.customAlert(praiseFailMessage(result && result.reason));
-                }
+                if (!result || !result.ok) return window.customAlert(praiseFailMessage(result && result.reason));
                 window._praiseBoard = result.fresh.board;
                 mergeStudentDocIntoPlazaCache(fromId, { ...result.fromNext, id: fromId });
                 mergeStudentDocIntoPlazaCache(toId, { ...result.toNext, id: String(toId) });
@@ -24479,657 +23823,6 @@ ${subjectLine}
                 await window.customAlert('따봉을 저장하지 못했습니다.');
             }
         };
-
-        function renderRebukeSelf(toId) {
-            const cfg = window._rebukeConfig || defaultRebukeConfig();
-            const rosterEpoch = rebukeRosterEpoch(cfg, toId);
-            const reasons = visibleRebukeReasons(window._rebukeEvents || [], toId, cfg.epoch, rosterEpoch);
-            const count = receivedRebukeCount(window._rebukeEvents || [], toId, cfg.epoch, rosterEpoch);
-            const title = document.getElementById('rebukeSelfTitle');
-            const list = document.getElementById('rebukeSelfList');
-            if (title) title.textContent = `내가 받은 역따봉 ${count}개`;
-            if (!list) return;
-            list.innerHTML = reasons.length
-                ? reasons.map((row) => `<li class="rounded-xl border border-rose-900 bg-slate-950 px-3 py-2">${escapeRebukeHtml(row.reason)}</li>`).join('')
-                : '<li class="text-slate-400">아직 받은 글이 없어요.</li>';
-        }
-
-        function openRebukeSelf(toId) {
-            renderRebukeSelf(toId);
-            document.getElementById('rebukeSelfModal')?.classList.remove('hidden');
-        }
-
-        function rebukeSentMemoryKey(ymd) {
-            return `sambong_rebuke_sent_${ymd}`;
-        }
-
-        function readRebukeSentMemory(ymd) {
-            try {
-                const parsed = JSON.parse(localStorage.getItem(rebukeSentMemoryKey(ymd)) || '[]');
-                return Array.isArray(parsed) ? parsed.map((id) => String(id)) : [];
-            } catch (e) {
-                return [];
-            }
-        }
-
-        function rememberRebukeSent(ymd, toId) {
-            const cur = readRebukeSentMemory(ymd);
-            const id = String(toId || '');
-            if (!id || cur.includes(id)) return;
-            cur.push(id);
-            localStorage.setItem(rebukeSentMemoryKey(ymd), JSON.stringify(cur));
-        }
-
-        async function loadOwnRebukeCharges() {
-            if (!db || !auth || !auth.currentUser) return [];
-            const snap = await getDocs(query(
-                collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeCharges', 'items'),
-                where('authUid', '==', auth.currentUser.uid)
-            ));
-            const rows = [];
-            snap.forEach((row) => rows.push({ id: row.id, ...(row.data() || {}) }));
-            return rows;
-        }
-
-        function rebukeLimitReason(target, cfg, charges) {
-            const day = rebukeTodayYmd();
-            const epoch = Math.floor(Number(cfg && cfg.epoch) || 0);
-            const todayCharges = (Array.isArray(charges) ? charges : []).filter((row) => (
-                String(row.ymd || '') === day && Math.floor(Number(row.epoch) || 0) === epoch
-            ));
-            const memory = readRebukeSentMemory(day);
-            const id = String(target || '');
-            if (todayCharges.some((row) => String(row.toId || '') === id) || memory.includes(id)) return 'pair';
-            if (todayCharges.length >= 3 || memory.length >= 3) return 'send';
-            const rosterEpoch = rebukeRosterEpoch(cfg || defaultRebukeConfig(), id);
-            if (countRebukeReceivedToday(window._rebukeEvents || [], id, day, epoch, rosterEpoch) >= 3) return 'receive';
-            return '';
-        }
-
-        function rebukeWriteFailureMessage(error, fallback) {
-            if (error && error.alreadyNotified) return '';
-            if (firestorePermissionDenied(error)) return '선생님 비밀번호 세션이 없어 저장하지 못했어요. 비밀번호를 다시 확인해 주세요.';
-            return fallback;
-        }
-
-        async function rebukeTeacherWriteAuth() {
-            if (!window.playerState || !window.playerState.isAdmin) return false;
-            return requireGmSettingsAuth();
-        }
-
-        async function loadRebukeAudit() {
-            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeAudit', 'items'));
-            const map = {};
-            snap.forEach((row) => { map[row.id] = row.data() || {}; });
-            return map;
-        }
-
-        async function loadRebukeRefunds() {
-            const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeRefunds', 'items'));
-            const ids = new Set();
-            snap.forEach((row) => ids.add(row.id));
-            return ids;
-        }
-
-        function syncRebukeToggleLabel() {
-            const toggle = document.getElementById('rebukeToggleBtn');
-            const cfg = window._rebukeConfig || defaultRebukeConfig();
-            if (toggle) toggle.textContent = cfg.enabled === true ? '반 전체 역따봉 끄기' : '반 전체 역따봉 켜기';
-        }
-
-        function watchRebukeTeacher() {
-            if (window._rebukeTeacherUnsub || !db) return;
-            const col = collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeEvents', 'items');
-            window._rebukeTeacherUnsub = onSnapshot(col, (snap) => {
-                const entries = [];
-                snap.forEach((row) => entries.push(rebukeEventForViewer(row.data())));
-                window._rebukeEvents = entries;
-                window._rebukeBoard = { entries };
-                const modal = document.getElementById('rebukeTeacherModal');
-                if (modal && !modal.classList.contains('hidden')) void renderRebukeTeacherList();
-            });
-        }
-
-        window.closeRebukeTeacher = function() {
-            document.getElementById('rebukeTeacherModal')?.classList.add('hidden');
-            if (typeof window._rebukeTeacherUnsub === 'function') {
-                window._rebukeTeacherUnsub();
-                window._rebukeTeacherUnsub = null;
-            }
-        };
-
-        async function renderRebukeTeacherList() {
-            const list = document.getElementById('rebukeTeacherList');
-            const focus = String(window._rebukeTeacherFocus || '');
-            syncRebukeToggleLabel();
-            if (!list) return;
-            const token = (window._rebukeTeacherRender || 0) + 1;
-            window._rebukeTeacherRender = token;
-            let audit = {};
-            let refunds = new Set();
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (authOk) {
-                    [audit, refunds] = await Promise.all([loadRebukeAudit(), loadRebukeRefunds()]);
-                }
-            } catch (e) {
-                console.warn('renderRebukeTeacherList', e);
-            }
-            if (token !== window._rebukeTeacherRender) return;
-            const rows = (window._rebukeEvents || [])
-                .filter((row) => String(row.toId || '') === focus)
-                .sort((a, b) => Math.floor(Number(b.seq) || 0) - Math.floor(Number(a.seq) || 0));
-            if (!rows.length) {
-                list.innerHTML = '<p class="text-sm text-slate-400">이 친구에게 온 역따봉이 없어요.</p>';
-                return;
-            }
-            list.innerHTML = rows.map((row) => {
-                const eventId = `e~${row.epoch}~${row.rosterEpoch}~student_${row.toId}~${row.seq}`;
-                const from = audit[eventId] || {};
-                const sender = from.fromId ? rebukeStudentLabel(from.fromId) : null;
-                const senderLine = sender ? `${escapeRebukeHtml(sender.id)}번 ${escapeRebukeHtml(sender.name)}` : '보낸 사람 확인 중';
-                const uidShort = from.authUid ? String(from.authUid).slice(0, 6) : '';
-                const uid = uidShort ? `<span class="block text-[10px] text-slate-500">로그인 기기 번호 ${escapeRebukeHtml(uidShort)}</span>` : '';
-                const reason = row.hidden ? '숨긴 글' : escapeRebukeHtml(row.reason || from.reason || '');
-                const hideBtn = row.hidden ? '' : `<button type="button" class="min-h-[44px] px-3 rounded-lg bg-slate-800 text-rose-50 text-xs font-bold" onclick="void window.hideRebukeEvent('${escapeRebukeHtml(eventId)}')">숨기기</button>`;
-                const refundBtn = row.took > 0 && !refunds.has(eventId)
-                    ? `<button type="button" class="min-h-[44px] px-3 rounded-lg bg-amber-700 text-stone-950 text-xs font-bold" onclick="void window.refundRebukeEvent('${escapeRebukeHtml(eventId)}','${escapeRebukeHtml(row.toId)}')">감점 되돌리기</button>`
-                    : '';
-                const feeBtn = `<button type="button" class="min-h-[44px] px-3 rounded-lg bg-sky-700 text-white text-xs font-bold" onclick="void window.returnRebukeSenderFee('${escapeRebukeHtml(eventId)}')">보낸 5봉 돌려주기</button>`;
-                return `<article class="rounded-xl border border-rose-900 bg-slate-950 px-3 py-2 space-y-1">
-                    <p class="text-xs text-rose-100 font-bold">${senderLine} → ${escapeRebukeHtml(rebukeStudentLabel(row.toId).name)}</p>
-                    ${uid}
-                    <p class="text-sm text-slate-100">${reason}</p>
-                    <div class="flex flex-wrap gap-2">${hideBtn}${refundBtn}${feeBtn}</div>
-                </article>`;
-            }).join('');
-        }
-
-        async function openRebukeTeacher(toId) {
-            window._rebukeTeacherFocus = String(toId || '');
-            const modal = document.getElementById('rebukeTeacherModal');
-            const list = document.getElementById('rebukeTeacherList');
-            if (modal) modal.classList.remove('hidden');
-            syncRebukeToggleLabel();
-            if (list) list.innerHTML = '<p class="text-sm text-slate-300">불러오는 중이에요.</p>';
-            await ensureClassOpsLoaded(true);
-            watchRebukeTeacher();
-            await renderRebukeTeacherList();
-        }
-
-        window.givePeerRebuke = async function(toId) {
-            if (window._givingRebuke) return;
-            if (document.querySelector('.sambong-custom-modal')) return;
-            window._givingRebuke = true;
-            try {
-                const target = String(toId || '');
-                const fromId = String(localStorage.getItem('sambong_student_id') || '');
-                if (!fromId || !window.playerState || window.playerState.isGuest) {
-                    await window.customAlert('로그인 후 역따봉을 보낼 수 있어요.');
-                    return;
-                }
-                await ensureClassOpsLoaded();
-                const cfg = window._rebukeConfig || defaultRebukeConfig();
-                if (window.playerState.isAdmin) {
-                    await openRebukeTeacher(target);
-                    return;
-                }
-                const settledNow = await settleOwnRebukeCharges();
-                if (settledNow && settledNow.amount > 0) {
-                    window.playerState.bong = roundRebukeBong((Number(window.playerState.bong) || 0) - settledNow.amount);
-                    if (settledNow.blind) {
-                        await window.customAlert(`지난 역따봉 ${settledNow.amount}봉을 정산했어요.`);
-                    }
-                }
-                if (await rebukeDueBlocksSend(fromId)) {
-                    await window.customAlert(rebukeFailMessage('due'));
-                    return;
-                }
-                if (fromId === target) {
-                    openRebukeSelf(target);
-                    return;
-                }
-                if (isRebukeStaffId(fromId) || isRebukeStaffId(target)) {
-                    await window.customAlert(rebukeFailMessage('staff'));
-                    return;
-                }
-                if (cfg.enabled !== true) {
-                    await window.customAlert(rebukeFailMessage('off'));
-                    return;
-                }
-                if (isLoanPenaltyActive(window.playerState, rebukeTodayYmd())) {
-                    await window.customAlert(rebukeFailMessage('loan'));
-                    return;
-                }
-                if (studentIsCreditDefault(window.playerState, rebukeTodayYmd())) {
-                    await window.customAlert(rebukeFailMessage('credit'));
-                    return;
-                }
-                const who = rebukeStudentLabel(target);
-                const typed = await window.customPrompt(
-                    escapeRebukeHtml(`${who.id}번 ${who.name}에게 전할 행동을 적어 주세요.\n친구 이름은 빼 주세요.`),
-                    'text'
-                );
-                if (typed == null) return;
-                const issue = rebukeReasonIssue(typed, rebukeHiddenNames());
-                if (issue) {
-                    await window.customAlert(escapeRebukeHtml(rebukeFailMessage(issue)));
-                    return;
-                }
-                const ok = await window.customConfirm(
-                    escapeRebukeHtml(`${who.id}번 ${who.name}에게 역따봉을 보낼까요?\n내 봉 5개가 나갑니다.`)
-                );
-                if (!ok) return;
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk || !auth || !auth.currentUser) {
-                    await window.customAlert('인증에 실패했습니다.');
-                    return;
-                }
-                const ownCharges = await loadOwnRebukeCharges().catch(() => []);
-                const earlyLimit = rebukeLimitReason(target, cfg, ownCharges);
-                if (earlyLimit === 'pair' || earlyLimit === 'send' || earlyLimit === 'receive') {
-                    await window.customAlert(escapeRebukeHtml(rebukeFailMessage(earlyLimit)));
-                    return;
-                }
-                const todayCharges = (ownCharges || []).filter((row) => (
-                    String(row.ymd || '') === rebukeTodayYmd()
-                    && Math.floor(Number(row.epoch) || 0) === Math.floor(Number(cfg.epoch) || 0)
-                ));
-                let sentN = Math.max(1, todayCharges.length + 1);
-                let lastReason = '';
-                for (let attempt = 0; attempt < 4 && sentN <= 3; attempt += 1) {
-                    try {
-                        const result = await runTransaction(db, async (tx) => {
-                            const cfgSnap = await tx.get(classOpsRef('rebukeConfig'));
-                            const liveCfg = cfgSnap.exists() ? normalizeRebukeConfig(cfgSnap.data()) : defaultRebukeConfig();
-                            if (liveCfg.enabled !== true) return { ok: false, reason: 'off' };
-                            const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
-                            const toRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + target);
-                            const fromSnap = await tx.get(fromRef);
-                            const toSnap = await tx.get(toRef);
-                            if (!fromSnap.exists() || !toSnap.exists()) return { ok: false, reason: 'who' };
-                            const fromData = fromSnap.data() || {};
-                            const toData = toSnap.data() || {};
-                            if (studentIsCreditDefault(fromData, rebukeTodayYmd())) {
-                                return {
-                                    ok: false,
-                                    reason: isLoanPenaltyActive(fromData, rebukeTodayYmd()) ? 'loan' : 'credit',
-                                };
-                            }
-                            const epoch = liveCfg.epoch;
-                            const rosterEpoch = rebukeRosterEpoch(liveCfg, target);
-                            const receivedToday = countRebukeReceivedToday(window._rebukeEvents || [], target, rebukeTodayYmd(), epoch, rosterEpoch);
-                            const made = planPeerRebuke({
-                                config: liveCfg,
-                                fromId,
-                                toId: target,
-                                reason: typed,
-                                hiddenNames: rebukeHiddenNames(),
-                                today: rebukeTodayYmd(),
-                                senderBong: fromData.bong,
-                                receiverBong: toData.bong,
-                                receiverSeq: toData.rebukeSeq,
-                                receiverEpoch: toData.rebukeEpoch,
-                                receiverRoster: toData.rebukeRoster,
-                                sentN,
-                                receivedToday,
-                                creditDefault: false,
-                            });
-                            if (!made.ok) return made;
-                            const dueRef = rebukeItemRef('rebukeDue', `${liveCfg.epoch}~${fromId}`);
-                            const dueSnap = await tx.get(dueRef);
-                            const duePlan = planRebukeDue(dueSnap.exists() ? dueSnap.data() : null, {
-                                fromId,
-                                epoch: liveCfg.epoch,
-                                ymd: rebukeTodayYmd(),
-                                payerUid: auth.currentUser.uid,
-                                eventId: made.eventId,
-                            });
-                            if (!duePlan.ok) return duePlan;
-                            tx.set(dueRef, duePlan.due);
-                            tx.set(rebukeItemRef('rebukeEvents', made.eventId), made.event);
-                            tx.set(rebukeItemRef('rebukeAudit', made.eventId), {
-                                ...made.audit,
-                                authUid: auth.currentUser.uid,
-                            });
-                            tx.set(rebukeItemRef('rebukeCharges', made.eventId), {
-                                ...made.charge,
-                                authUid: auth.currentUser.uid,
-                            });
-                            tx.set(rebukeItemRef('rebukeDaily', made.daily.pairId), { eventId: made.eventId });
-                            tx.set(rebukeItemRef('rebukeDaily', made.daily.sentId), { eventId: made.eventId });
-                            tx.set(rebukeItemRef('rebukeDaily', made.daily.recvId), { eventId: made.eventId });
-                            tx.set(toRef, {
-                                bong: made.receiverBong,
-                                rebukeSeq: made.seq,
-                                rebukeEpoch: made.event.epoch,
-                                rebukeRoster: made.event.rosterEpoch,
-                            }, { merge: true });
-                            return { ok: true, made, toBong: made.receiverBong, toData };
-                        });
-                        if (result && result.ok) {
-                            rememberRebukeSent(rebukeTodayYmd(), target);
-                            window._rebukeEvents = [...(window._rebukeEvents || []), rebukeEventForViewer(result.made.event)];
-                            window._rebukeBoard = { entries: window._rebukeEvents };
-                            mergeStudentDocIntoPlazaCache(target, {
-                                ...result.toData,
-                                bong: result.toBong,
-                                rebukeSeq: result.made.seq,
-                                rebukeEpoch: result.made.event.epoch,
-                                rebukeRoster: result.made.event.rosterEpoch,
-                                id: target,
-                            });
-                            if (typeof window.renderPlaza === 'function') {
-                                window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
-                            }
-                            if (typeof updateUI === 'function') updateUI();
-                            const took = result.made.took;
-                            window.showToast && window.showToast(took > 0
-                                ? `역따봉을 보냈습니다. 친구 봉이 ${took}개 줄었어요. 내 5봉은 다음 날 빠집니다.`
-                                : '역따봉을 보냈습니다. 내 5봉은 다음 날 빠집니다.');
-                            return;
-                        }
-                        lastReason = result && result.reason ? result.reason : '';
-                        if (result && (result.reason === 'credit' || result.reason === 'loan')) {
-                            await window.customAlert(escapeRebukeHtml(rebukeFailMessage(result.reason)));
-                            return;
-                        }
-                        if (lastReason && lastReason !== 'send') {
-                            await window.customAlert(escapeRebukeHtml(rebukeFailMessage(lastReason)));
-                            return;
-                        }
-                    } catch (e) {
-                        console.warn('givePeerRebuke', e);
-                        const failedCharges = await loadOwnRebukeCharges().catch(() => ownCharges);
-                        const why = rebukeLimitReason(target, window._rebukeConfig || cfg, failedCharges);
-                        if (why === 'pair' || why === 'send' || why === 'receive') {
-                            await window.customAlert(escapeRebukeHtml(rebukeFailMessage(why)));
-                            return;
-                        }
-                        sentN += 1;
-                        try {
-                            const eventSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'classOps', 'rebukeEvents', 'items'));
-                            const entries = [];
-                            eventSnap.forEach((row) => entries.push(rebukePublicEvent(row.data())));
-                            window._rebukeEvents = entries;
-                            window._rebukeBoard = { entries };
-                        } catch (loadErr) {
-                            console.warn('rebuke reload', loadErr);
-                        }
-                    }
-                }
-                await window.customAlert(escapeRebukeHtml(rebukeFailMessage(lastReason)));
-            } finally {
-                window._givingRebuke = false;
-            }
-        };
-
-        window.hideRebukeEvent = async function(eventId) {
-            if (!await rebukeTeacherWriteAuth()) return;
-            const ok = await window.customConfirm('이 역따봉 글을 학생 화면에서 숨길까요?\n깎인 봉은 그대로입니다.');
-            if (!ok) return;
-            try {
-                await updateDoc(rebukeItemRef('rebukeEvents', eventId), { hidden: true, reason: '', reasonFold: '' });
-            } catch (e) {
-                console.warn('hideRebukeEvent', e);
-                const msg = rebukeWriteFailureMessage(e, '글을 숨기지 못했어요.');
-                if (msg) await window.customAlert(msg);
-                return;
-            }
-            window._rebukeEvents = (window._rebukeEvents || []).map((row) => {
-                const id = `e~${row.epoch}~${row.rosterEpoch}~student_${row.toId}~${row.seq}`;
-                return id === eventId ? { ...row, hidden: true, reason: '' } : row;
-            });
-            window._rebukeBoard = { entries: window._rebukeEvents };
-            await renderRebukeTeacherList();
-        };
-
-        async function returnRebukeFee(eventId) {
-            const chargeSnap = await getDoc(rebukeItemRef('rebukeCharges', eventId));
-            if (!chargeSnap.exists()) {
-                await window.customAlert('보낸 사람 기록을 찾지 못했어요.');
-                return false;
-            }
-            const charge = chargeSnap.data() || {};
-            const fromId = String(charge.fromId || '');
-            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
-            const dueRef = rebukeItemRef('rebukeDue', `${Math.max(1, Math.floor(Number(charge.epoch) || 1))}~${fromId}`);
-            await runTransaction(db, async (tx) => {
-                const dueSnap = await tx.get(dueRef);
-                const due = dueSnap.exists() ? (dueSnap.data() || {}) : null;
-                const paid = !!(due && due.settled === true && Math.floor(Number(due.owed) || 0) === 0);
-                if (paid) {
-                    const stuSnap = await tx.get(stuRef);
-                    if (!stuSnap.exists()) throw new Error('missing');
-                    const before = Number(stuSnap.data().bong);
-                    const afterBong = roundRebukeBong(before + 5);
-                    tx.set(rebukeItemRef('rebukePaybacks', eventId), {
-                        amount: 5,
-                        beforeBong: before,
-                        afterBong,
-                        authUid: charge.authUid,
-                    });
-                    tx.update(stuRef, { bong: afterBong });
-                    return;
-                }
-                tx.set(rebukeItemRef('rebukeWaivers', eventId), {
-                    authUid: charge.authUid,
-                    fromId,
-                });
-                if (due && Math.floor(Number(due.owed) || 0) >= 5 && due.settled !== true) {
-                    const nextN = Math.floor(Number(due.n) || 0) - 1;
-                    tx.update(dueRef, {
-                        owed: Math.floor(Number(due.owed) || 0) - 5,
-                        n: Math.max(0, nextN),
-                        openYmd: nextN <= 0 ? '' : String(due.openYmd || ''),
-                        settled: false,
-                    });
-                }
-            });
-            return true;
-        }
-
-        window.returnRebukeSenderFee = async function(eventId) {
-            if (!await rebukeTeacherWriteAuth()) return;
-            const ok = await window.customConfirm('보낸 사람이 낸 5봉을 돌려줄까요?\n누명을 쓴 학생을 구제할 때 써요.');
-            if (!ok) return;
-            try {
-                const done = await returnRebukeFee(eventId);
-                if (!done) return;
-            } catch (e) {
-                console.warn('returnRebukeSenderFee', e);
-                const msg = rebukeWriteFailureMessage(e, '5봉을 돌려주지 못했어요. 이미 돌려줬을 수 있어요.');
-                if (msg) await window.customAlert(msg);
-                return;
-            }
-            await window.customAlert('보낸 사람의 5봉을 돌려줬어요.');
-            await renderRebukeTeacherList();
-        };
-
-        window.refundRebukeEvent = async function(eventId, toId) {
-            if (!await rebukeTeacherWriteAuth()) return;
-            const ok = await window.customConfirm('이 역따봉으로 깎인 봉을 지금 봉에 더해 되돌릴까요?');
-            if (!ok) return;
-            const giveBack = await window.customConfirm('보낸 사람이 낸 5봉도 돌려줄까요?\n누명을 쓴 학생을 구제할 때 써요.');
-            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + toId);
-            try {
-                await runTransaction(db, async (tx) => {
-                    const evSnap = await tx.get(rebukeItemRef('rebukeEvents', eventId));
-                    const stuSnap = await tx.get(stuRef);
-                    if (!evSnap.exists() || !stuSnap.exists()) throw new Error('missing');
-                    const took = Number(evSnap.data().took);
-                    if (!Number.isFinite(took) || took < 1) throw new Error('zero');
-                    const before = Number(stuSnap.data().bong);
-                    const afterBong = Math.round((before + took) * 1000) / 1000;
-                    tx.set(rebukeItemRef('rebukeRefunds', eventId), {
-                        amount: took,
-                        beforeBong: before,
-                        afterBong,
-                    });
-                    tx.update(stuRef, { bong: afterBong });
-                });
-            } catch (e) {
-                console.warn('refundRebukeEvent', e);
-                if (e && e.message === 'zero') return window.customAlert('되돌릴 감점이 없어요.');
-                const refundSnap = await getDoc(rebukeItemRef('rebukeRefunds', eventId)).catch(() => null);
-                if (refundSnap && refundSnap.exists && refundSnap.exists()) {
-                    return window.customAlert('이미 감점을 되돌렸어요.');
-                }
-                const msg = rebukeWriteFailureMessage(e, '감점을 되돌리지 못했어요.');
-                if (msg) await window.customAlert(msg);
-                return;
-            }
-            if (giveBack) {
-                try {
-                    const done = await returnRebukeFee(eventId);
-                    if (done === false) return;
-                } catch (e) {
-                    console.warn('refund fee', e);
-                    const msg = rebukeWriteFailureMessage(e, '감점은 되돌렸지만, 보낸 사람의 5봉은 돌려주지 못했어요.');
-                    if (msg) await window.customAlert(msg);
-                    return;
-                }
-            }
-            await window.customAlert(giveBack
-                ? '감점을 지금 봉에 더해 되돌렸고, 보낸 사람의 5봉도 돌려줬어요.'
-                : '감점을 지금 봉에 더해 되돌렸어요.');
-            await renderRebukeTeacherList();
-        };
-
-        window.toggleRebukeClass = async function() {
-            if (!await rebukeTeacherWriteAuth()) return;
-            const ref = classOpsRef('rebukeConfig');
-            let cfg = defaultRebukeConfig();
-            try {
-                const snap = await getDoc(ref);
-                if (snap.exists()) cfg = normalizeRebukeConfig(snap.data());
-                const enabled = cfg.enabled !== true;
-                await setDoc(ref, {
-                    enabled,
-                    epoch: cfg.epoch,
-                    roster: cfg.roster || {},
-                });
-                window._rebukeConfig = { ...cfg, enabled };
-            } catch (e) {
-                console.warn('toggleRebukeClass', e);
-                const msg = rebukeWriteFailureMessage(e, '역따봉 설정을 바꾸지 못했어요.');
-                if (msg) await window.customAlert(msg);
-                return;
-            }
-            syncRebukeToggleLabel();
-            await renderRebukeTeacherList();
-        };
-
-        async function clearOldRebukeReasons(classId, nextEpoch) {
-            const snap = await getDocs(collection(db, 'artifacts', classId, 'public', 'data', 'classOps', 'rebukeEvents', 'items'));
-            let batch = writeBatch(db);
-            let count = 0;
-            for (const row of snap.docs) {
-                const data = row.data() || {};
-                if (Math.floor(Number(data.epoch) || 0) >= Math.floor(Number(nextEpoch) || 0)) continue;
-                if (!String(data.reason || '') && !String(data.reasonFold || '')) continue;
-                batch.update(row.ref, { reason: '', reasonFold: '' });
-                count += 1;
-                if (count >= 400) {
-                    await batch.commit();
-                    batch = writeBatch(db);
-                    count = 0;
-                }
-            }
-            if (count) await batch.commit();
-        }
-
-        async function commitRebukeDuePayment(fromId, epoch, amount) {
-            const today = rebukeTodayYmd();
-            const dueId = `${epoch}~${fromId}`;
-            const dueRef = rebukeItemRef('rebukeDue', dueId);
-            const stuRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
-            await runTransaction(db, async (tx) => {
-                const stuSnap = await tx.get(stuRef);
-                if (!stuSnap.exists()) throw new Error('missing');
-                const before = Number(stuSnap.data().bong);
-                if (!Number.isFinite(before)) throw new Error('bong');
-                const after = roundRebukeBong(before - amount);
-                tx.set(rebukeItemRef('rebukeSettlements', `due~${dueId}~${today}`), {
-                    amount,
-                    bongBefore: before,
-                    bongAfter: after,
-                    authUid: auth.currentUser.uid,
-                    epoch,
-                    fromId,
-                });
-                tx.update(dueRef, {
-                    owed: 0,
-                    n: 0,
-                    openYmd: '',
-                    settled: true,
-                    payerUid: auth.currentUser.uid,
-                });
-                // set(merge)는 만들기도 같이 검사해서, 칸이 많은 학생 문서에서 정산이 죽는다.
-                tx.update(stuRef, { bong: after });
-            });
-            return amount;
-        }
-
-        async function settleOwnRebukeCharges() {
-            if (window._rebukeSettling || !db || !auth || !auth.currentUser) return { amount: 0, blind: false };
-            window._rebukeSettling = true;
-            try {
-                const myId = String(localStorage.getItem('sambong_student_id') || '');
-                if (!myId || myId === 'gm' || myId === 'gm_a') return { amount: 0, blind: false };
-                if (!window._rebukeConfig) {
-                    const cfgSnap = await getDoc(classOpsRef('rebukeConfig')).catch(() => null);
-                    if (cfgSnap && cfgSnap.exists()) window._rebukeConfig = normalizeRebukeConfig(cfgSnap.data());
-                }
-                const epoch = Math.max(1, Math.floor(Number((window._rebukeConfig || defaultRebukeConfig()).epoch) || 1));
-                const dueRef = rebukeItemRef('rebukeDue', `${epoch}~${myId}`);
-                const today = rebukeTodayYmd();
-                let known = null;
-                let blind = false;
-                try {
-                    const snap = await getDoc(dueRef);
-                    known = snap.exists() ? (snap.data() || {}) : { owed: 0 };
-                } catch (e) {
-                    if (!firestorePermissionDenied(e)) throw e;
-                    blind = true;
-                }
-                const amounts = [];
-                if (blind) amounts.push(15, 10, 5);
-                else if (known && Math.floor(Number(known.owed) || 0) > 0 && String(known.openYmd || '') < today) {
-                    amounts.push(Math.floor(Number(known.owed) || 0));
-                }
-                for (const amount of amounts) {
-                    try {
-                        const dropped = await commitRebukeDuePayment(myId, epoch, amount);
-                        if (dropped > 0) return { amount: dropped, blind };
-                    } catch (e) {
-                        console.warn('rebuke due settle', amount, e);
-                    }
-                }
-                return { amount: 0, blind };
-            } finally {
-                window._rebukeSettling = false;
-            }
-        }
-
-        async function rebukeDueBlocksSend(fromId) {
-            const epoch = Math.max(1, Math.floor(Number((window._rebukeConfig || defaultRebukeConfig()).epoch) || 1));
-            const today = rebukeTodayYmd();
-            try {
-                const snap = await getDoc(rebukeItemRef('rebukeDue', `${epoch}~${fromId}`));
-                if (!snap.exists()) return '';
-                const due = snap.data() || {};
-                const owed = Math.floor(Number(due.owed) || 0);
-                if (owed <= 0) return '';
-                if (String(due.openYmd || '') < today) return 'due';
-                if (due.payerUid && due.payerUid !== auth.currentUser.uid) return 'due';
-                return '';
-            } catch (e) {
-                if (firestorePermissionDenied(e)) return 'due';
-                console.warn('rebuke due read', e);
-                return '';
-            }
-        }
 
         window.openClassroomRename = function() {
             if (!window.playerState || !window.playerState.isGM) return window.customAlert('담임교사만 교실 이름을 바꿀 수 있습니다.');
@@ -25167,51 +23860,7 @@ ${subjectLine}
             await window.customAlert(`교실 이름을 「${displayName}」(으)로 저장했습니다.`);
         };
 
-        let _loanMorningQueued = false;
-        let _loanMorningResolve = null;
-
-        function fillLoanMorningNotice(loan) {
-            const body = document.getElementById('loanMorningBody');
-            if (!body || !loan) return;
-            const due = loanDueTotal(loan);
-            const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
-            const dueLabel = formatPromiseDay(loan.dueYmd) || loan.dueYmd;
-            const todayLoan = loanPlanToday();
-            const pastDue = !!(loan.dueYmd && todayLoan && todayLoan > loan.dueYmd);
-            const shielded = lunchShieldCoversLoan(window.playerState, loan);
-            const follow = penalty
-                ? loanPenaltyBlockMessage(window.playerState && window.playerState.loanPenaltyUntilYmd)
-                : (shielded
-                    ? (pastDue
-                        ? `점심값으로 남겨 둔 빚이에요. ${formatPastPromiseLine(dueLabel)} 주급을 받을 때 조금씩 갚고, 신용불량은 아니에요.`
-                        : `점심값으로 남겨 둔 빚이에요. 약속한 날 ${dueLabel}까지 갚으면 돼요. 주급을 받을 때 조금씩 갚고, 신용불량은 아니에요.`)
-                    : '약속한 날까지 갚아 주세요. 그날 지갑과 예금에 있는 돈으로 먼저 갚아요. 점심값으로 남겨 둔 빚은 신용불량이 아니고 주급에서 갚아요.');
-            body.textContent =
-                `아직 갚지 않은 대출이 있어요.\n` +
-                `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
-                `약속한 날 ${dueLabel}\n\n` +
-                follow;
-        }
-
-        function showUnseenMoneyNotices() {
-            const list = window.playerState && Array.isArray(window.playerState.moneyNotices)
-                ? window.playerState.moneyNotices
-                : [];
-            list.forEach((notice) => {
-                if (!notice || !notice.id || !notice.text) return;
-                const key = `sambong_money_notice_${appId}_${notice.id}`;
-                try {
-                    if (localStorage.getItem(key) === '1') return;
-                    localStorage.setItem(key, '1');
-                } catch (_) {
-                    return;
-                }
-                void window.customAlert(String(notice.text));
-            });
-        }
-
         window.maybeShowLoanMorningNotice = function() {
-            if (_loanMorningQueued) return;
             if (!window.playerState || window.playerState.isGuest) return;
             const loan = sanitizeBankLoan(window.playerState.bankLoan);
             if (!loan || !loanStillOutstanding(window.playerState.bankLoan)) return;
@@ -25219,22 +23868,18 @@ ${subjectLine}
             const key = `sambongLoanNotice:${appId}:${sid}:${getLocalDateStr()}`;
             if (localStorage.getItem(key) === '1') return;
             const modal = document.getElementById('loanMorningModal');
-            if (!modal || !document.getElementById('loanMorningBody')) return;
-            _loanMorningQueued = true;
-            return enqueueStudentNotice(() => new Promise((resolve) => {
-                const still = sanitizeBankLoan(window.playerState && window.playerState.bankLoan);
-                if (localStorage.getItem(key) === '1' || !still || !loanStillOutstanding(window.playerState.bankLoan)) {
-                    _loanMorningQueued = false;
-                    resolve();
-                    return;
-                }
-                fillLoanMorningNotice(still);
-                modal.classList.remove('hidden');
-                _loanMorningResolve = () => {
-                    _loanMorningResolve = null;
-                    resolve();
-                };
-            }));
+            const body = document.getElementById('loanMorningBody');
+            if (!modal || !body) return;
+            const due = loanDueTotal(loan);
+            const penalty = isLoanPenaltyActive(window.playerState, getLocalDateStr());
+            body.textContent =
+                `너에게 아직 갚지 않은 대출이 있다.\n` +
+                `원금 ${formatBongAmount(loan.principal)} + 이자 ${formatBongAmount(loan.interest)} = ${formatBongAmount(due)}\n` +
+                `납기일 ${loan.dueYmd}\n\n` +
+                (penalty
+                    ? '이미 납기일을 넘겼다. 신용불량 도장이 찍혀 있고, 활동이 멈춰 있다.'
+                    : '이 날짜가 지나기 전에 갚아라. 일부만 갚을 수도 있다. 미루면 도장이 찍힌다.');
+            modal.classList.remove('hidden');
         };
 
         window.dismissLoanMorningNotice = function(goBank) {
@@ -25242,14 +23887,10 @@ ${subjectLine}
             const key = `sambongLoanNotice:${appId}:${sid}:${getLocalDateStr()}`;
             try { localStorage.setItem(key, '1'); } catch (_) { /* 저장 실패여도 창은 닫습니다. */ }
             document.getElementById('loanMorningModal')?.classList.add('hidden');
-            _loanMorningQueued = false;
-            const done = _loanMorningResolve;
-            _loanMorningResolve = null;
             if (goBank && typeof window.switchTab === 'function') {
                 window.switchTab('bank');
                 if (typeof window.switchInnerPane === 'function') window.switchInnerPane('bank', 'loan');
             }
-            if (done) done();
         };
 
         window.saveBankTransferFee = async function() {
@@ -25554,9 +24195,9 @@ ${subjectLine}
                 const loanLife = applyBankLoanLifecycleLocal();
                 if (loanLife.changed) {
                     bankProcessingNeedSave = true;
-                    const dueMsg = (loanLife.msgs || []).find((m) => m.kind === 'auto_repay');
+                    const dueMsg = (loanLife.msgs || []).find((m) => m.kind === 'repay');
                     if (dueMsg) {
-                        bankSaveOperationLabel = bankSaveOperationLabel || '대출 만기 상환';
+                        bankSaveOperationLabel = bankSaveOperationLabel || '은행 대출 만기 자동이체';
                         bankSaveBongLogSource = bankSaveBongLogSource || 'bankLoanDue';
                     }
                     formatBankLoanLifecycleAlerts(loanLife.msgs);
@@ -25729,11 +24370,7 @@ ${subjectLine}
                 dashCard.classList.toggle('is-credit-default', studentIsCreditDefault(window.playerState));
             }
             const dashStamp = document.getElementById('dashCreditStamp');
-            if (dashStamp) {
-                const creditOn = studentIsCreditDefault(window.playerState);
-                dashStamp.classList.toggle('hidden', !creditOn);
-                dashStamp.setAttribute('aria-hidden', creditOn ? 'false' : 'true');
-            }
+            if (dashStamp) dashStamp.classList.toggle('hidden', !studentIsCreditDefault(window.playerState));
             const dashRankBg = document.getElementById('dashRankBg');
             if (dashRankBg) {
                 // 등급 그림은 원형 캐릭터 뒤에만 두고, 카드 배경은 원래 그라데이션을 유지합니다.
@@ -25759,8 +24396,8 @@ ${subjectLine}
             if (dashBongEl) {
                 const bBal = Number(window.playerState.bong) || 0;
                 dashBongEl.innerText = formatBongDisplay(bBal);
-                dashBongEl.classList.remove('text-sb-gold', 'text-red-400', MONEY_NEGATIVE_CLASS);
-                dashBongEl.classList.add(isNegativeMoney(bBal) ? MONEY_NEGATIVE_CLASS : 'text-sb-gold');
+                dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
+                dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
             }
 
             const hp = shieldHpOf(window.playerState);
@@ -26022,7 +24659,6 @@ ${subjectLine}
             if (typeof window.renderAttendanceBoard === 'function') window.renderAttendanceBoard();
             if (typeof window.renderChecklistBoard === 'function') window.renderChecklistBoard();
             if (typeof window.maybeShowLoanMorningNotice === 'function') window.maybeShowLoanMorningNotice();
-            showUnseenMoneyNotices();
             if (typeof window.renderConstitutionContent === 'function') window.renderConstitutionContent();
             if (bankProcessingNeedSave) {
                 saveDataToCloud({
@@ -26043,8 +24679,6 @@ ${subjectLine}
                 setTimeout(() => { void maybeAlertStudentBongSupervision(); }, 200);
                 setTimeout(() => { void maybeAlertStudentXpSupervision(); }, 400);
             }
-            installMoneyPaint();
-            paintNegativeCurrency(document.body);
         }
 
         // 밥줄: 보유 10B 이하(또는 마이너스)면 추가 투자 불가. 시각으로 입찰을 막지 않습니다.
@@ -26107,8 +24741,8 @@ ${subjectLine}
                 ownedSkins: {}, equippedSkins: {}, hasShield: false, shieldHP: 100, 
                 inventory: ['wp1'], equippedWeapon: 'wp1', equippedShield: null, equippedShoes: null, gearEnhance: { wp1: 1 }, lunchBid: {date: '', amount: 0}, questHistory: [], usedRaidPasswords: [],
                 dragonBalls: [], dragonBallWeekendKey: '',
-                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', creditReleasedYmd: '', creditReleaseLoanId: '', creditWalletRecovered: false, loanDueHandledKey: '', dailyAllClearBonusDate: '',
-                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, stockInvestHistory: [],
+                bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '',
+                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 },
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 isGuest: true, isGM: false, isGMA: false, isAdmin: false 
             };
@@ -26194,10 +24828,9 @@ ${subjectLine}
                 resetGmIdleTimer();
                 return;
             }
-            // 원래 학급: 남아 있는 Google 계정만 끊는다.
-            // PIN 서버 세션, localStorage, 화면 로그인은 그대로 두고 새로고침하지 않는다.
+            // 원래 학급(sambong-class-2026): 선생님 인증 배지만 내린다.
+            // PIN localStorage, 화면 로그인, 익명 세션은 그대로 두고 새로고침하지 않는다.
             if (mode === 'end-teacher-auth') {
-                window.__sambongGmIdleRuns = (window.__sambongGmIdleRuns || 0) + 1;
                 const hadTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
                 await endGmAuthSession();
                 const stillTeacher = !!(auth && auth.currentUser && !auth.currentUser.isAnonymous);
@@ -26210,7 +24843,6 @@ ${subjectLine}
                 return;
             }
             clearLoginStorageKeepingClass();
-            await clearGmPinSession();
             await endGmAuthSession();
             location.reload();
         }
@@ -26240,10 +24872,7 @@ ${subjectLine}
             if(isOk) {
                 const wasGmSession = !!(window.playerState && window.playerState.isAdmin);
                 clearLoginStorageKeepingClass();
-                if (wasGmSession) {
-                    await clearGmPinSession();
-                    await endGmAuthSession();
-                }
+                if (wasGmSession) await endGmAuthSession();
                 location.reload();
             }
         };
@@ -26340,272 +24969,6 @@ ${subjectLine}
             await window.customAlert(`✅ 비밀번호를 바꿨습니다.\n${feeLabel}이 차감되었습니다.`);
         };
 
-        function gmAuthUid() {
-            return auth && auth.currentUser ? auth.currentUser.uid : '';
-        }
-
-        async function clearGmPinSession() {
-            const uid = gmAuthUid();
-            if (!uid || !db) return;
-            await Promise.all([
-                deleteDoc(doc(db, 'gmSessions', uid)).catch(() => {}),
-                deleteDoc(doc(db, 'gmPinProofs', uid)).catch(() => {}),
-            ]);
-        }
-
-        async function gmSessionStillValid(classId) {
-            const uid = gmAuthUid();
-            if (!uid) return false;
-            try {
-                const snap = await getDoc(doc(db, 'gmSessions', uid));
-                if (!snap.exists()) return false;
-                const data = snap.data() || {};
-                const exp = data.expiresAt && typeof data.expiresAt.toMillis === 'function'
-                    ? data.expiresAt.toMillis()
-                    : 0;
-                return data.classId === classId
-                    && exp > Date.now() + 60 * 1000
-                    && !Object.prototype.hasOwnProperty.call(data, 'pin');
-            } catch (e) {
-                console.warn('gmSessionStillValid', e);
-                return false;
-            }
-        }
-
-        function firestorePermissionDenied(error) {
-            const code = String((error && error.code) || '');
-            return code === 'permission-denied' || code.endsWith('/permission-denied');
-        }
-
-        function gmSessionExpiresAt(nowMs = Date.now()) {
-            return Timestamp.fromMillis(nowMs + GM_SESSION_TTL_MS - GM_SESSION_SKEW_MS);
-        }
-
-        function showGmSavePinDialog() {
-            return new Promise((resolve) => {
-                const d = document.createElement('div');
-                d.id = 'gmSavePinDialog';
-                d.className = 'sambong-custom-modal fixed inset-0 z-[800] flex items-center justify-center bg-black/80 px-4';
-                d.innerHTML = `
-                    <div class="bg-sb-panel p-6 rounded-3xl border border-slate-700 max-w-sm w-full text-center space-y-3 shadow-2xl">
-                        <h3 class="text-xl font-display text-sb-gold">저장하려면 PIN</h3>
-                        <p class="text-xs text-slate-300 leading-relaxed">바꾼 내용을 저장하려면 마스터 PIN이 필요해요. 화면을 연 것만으로는 묻지 않아요.</p>
-                        <input id="gmSavePinInput" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="••••••" class="w-full bg-slate-800 text-white rounded-xl px-4 py-3 text-center font-bold tracking-[0.4em] min-h-[44px]">
-                        <div class="flex gap-3 pt-1">
-                            <button type="button" data-act="no" class="bg-slate-700 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">취소</button>
-                            <button type="button" data-act="yes" class="bg-emerald-500 text-white font-bold py-2 w-full rounded-xl min-h-[44px]">저장</button>
-                        </div>
-                    </div>`;
-                document.body.appendChild(d);
-                const input = d.querySelector('#gmSavePinInput');
-                const finish = (value) => { d.remove(); resolve(value); };
-                d.querySelector('[data-act="yes"]').onclick = () => finish(input ? input.value : '');
-                d.querySelector('[data-act="no"]').onclick = () => finish(null);
-                if (input) input.focus();
-            });
-        }
-
-        async function extendLiveGmSession(classId) {
-            const uid = gmAuthUid();
-            if (!uid) return false;
-            try {
-                const ref = doc(db, 'gmSessions', uid);
-                const snap = await getDoc(ref);
-                if (!snap.exists()) return false;
-                const data = snap.data() || {};
-                const exp = data.expiresAt && typeof data.expiresAt.toMillis === 'function'
-                    ? data.expiresAt.toMillis()
-                    : 0;
-                if (data.classId !== classId || exp <= Date.now() || Object.prototype.hasOwnProperty.call(data, 'pin')) {
-                    return false;
-                }
-                await updateDoc(ref, { expiresAt: gmSessionExpiresAt() });
-                return true;
-            } catch (e) {
-                console.warn('extendLiveGmSession', e);
-                return false;
-            }
-        }
-
-        function pinAttemptSnapshot(data) {
-            if (!data) return null;
-            const lockedUntilMs = data.lockedUntil && typeof data.lockedUntil.toMillis === 'function'
-                ? data.lockedUntil.toMillis()
-                : 0;
-            const generation = Number(data.generation);
-            return {
-                count: Number(data.count) || 0,
-                generation: Number.isFinite(generation) && generation >= 1 ? generation : 0,
-                lockedUntilMs,
-            };
-        }
-
-        function pinLockMessage() {
-            return 'PIN 시도가 10번이 되어 15분 동안 잠겼어요. 잠시 뒤에 다시 입력해 주세요.';
-        }
-
-        async function openGmPinSession(classId, pin, { quiet = false } = {}) {
-            const code = String(pin || '').trim();
-            if (!gmAuthUid() || !/^\d{6}$/.test(code)) {
-                if (!quiet) await window.customAlert('PIN은 숫자 6자리로 입력해 주세요.');
-                return false;
-            }
-            const uid = gmAuthUid();
-            const proofRef = doc(db, 'gmPinProofs', uid);
-            const attemptRef = doc(db, 'gmPinAttempts', classId);
-            const sessionRef = doc(db, 'gmSessions', uid);
-            const expiresAt = gmSessionExpiresAt();
-            await deleteDoc(proofRef).catch(() => {});
-
-            let planned = null;
-            try {
-                planned = await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(attemptRef);
-                    const next = planPinAttempt(
-                        pinAttemptSnapshot(snap.exists() ? (snap.data() || {}) : null),
-                        Date.now(),
-                    );
-                    if (next.blocked) {
-                        const err = new Error('pin_locked');
-                        err.code = 'pin-locked';
-                        throw err;
-                    }
-                    const tryRef = doc(db, 'gmPinAttempts', classId, 'tries', `${next.generation}_${next.count}`);
-                    tx.set(attemptRef, {
-                        count: next.count,
-                        generation: next.generation,
-                        lockedUntil: next.lockedUntilMs ? Timestamp.fromMillis(next.lockedUntilMs) : null,
-                    });
-                    tx.set(tryRef, { n: next.count });
-                    tx.set(proofRef, {
-                        pin: code,
-                        classId,
-                        expiresAt,
-                        attemptCount: next.count,
-                        generation: next.generation,
-                    });
-                    return next;
-                });
-            } catch (e) {
-                if (!quiet) {
-                    await window.customAlert(e && e.code === 'pin-locked'
-                        ? pinLockMessage()
-                        : 'PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                }
-                return false;
-            }
-
-            try {
-                await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(attemptRef);
-                    const data = snap.exists() ? (snap.data() || {}) : null;
-                    const generation = (data && Number(data.generation) >= 1 ? Number(data.generation) : 0) + 1;
-                    tx.set(sessionRef, { classId, expiresAt });
-                    tx.delete(proofRef);
-                    tx.set(attemptRef, { count: 0, generation, lockedUntil: null });
-                });
-                return true;
-            } catch (e) {
-                await deleteDoc(proofRef).catch(() => {});
-                if (!quiet) {
-                    await window.customAlert(planned && planned.count >= PIN_ATTEMPT_MAX
-                        ? pinLockMessage()
-                        : (firestorePermissionDenied(e)
-                            ? 'PIN이 달라서 저장하지 않았어요'
-                            : 'PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'));
-                }
-                return false;
-            }
-        }
-
-        async function promptGmPinForSave(classId) {
-            const pin = await showGmSavePinDialog();
-            if (pin == null) {
-                await window.customAlert('저장을 취소했어요');
-                return false;
-            }
-            return openGmPinSession(classId, pin, { quiet: false });
-        }
-
-        async function ensureMasterWriteSession() {
-            const authOk = await ensureAnonAuthReady();
-            if (!authOk) {
-                await window.customAlert('PIN 확인에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                return false;
-            }
-            const savedId = localStorage.getItem('sambong_student_id');
-            if (savedId !== 'gm' && savedId !== 'gm_a') return true;
-            if (await extendLiveGmSession(appId)) return true;
-            return promptGmPinForSave(appId);
-        }
-
-        async function stripMasterPinDoc(studentKey) {
-            if (!db) return;
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', studentKey);
-            try {
-                const snap = await getDoc(ref);
-                if (!snap.exists() || !Object.prototype.hasOwnProperty.call(snap.data() || {}, 'pin')) return;
-                await updateDoc(ref, { pin: deleteField() });
-            } catch (e) {
-                console.warn('stripMasterPinDoc', studentKey, e);
-            }
-        }
-
-        function blankStudentRecord(pin) {
-            return {
-                pin,
-                xp: 0,
-                xpChangeLog: [],
-                bong: 0.0,
-                bongChangeLog: [],
-                itemRefundLedger: [],
-                ownedSkinInstances: {},
-                quests: {},
-                unlockedQuests: {},
-                jobs: [],
-                ownedSkins: {},
-                equippedSkins: {},
-                baseFaceId: '',
-                staffLookId: '',
-                inventory: [],
-                equippedWeapon: null,
-                equippedShield: null,
-                equippedShoes: null,
-                gearEnhance: {},
-                hasShield: false,
-                shieldHP: 0,
-                lunchBid: { date: '', amount: 0 },
-                lastLunchDeductDate: '',
-                questHistory: [],
-                usedRaidPasswords: [],
-                dragonBalls: [],
-                dragonBallWeekendKey: '',
-                bankRegularSavings: 0,
-                bankTermDeposits: [],
-                bankDailyBonusLastDate: '',
-                bankLoan: null,
-                creditDefaultUntilYmd: '',
-                bankNegativeSinceYmd: '',
-                creditReleasedYmd: '',
-                creditReleaseLoanId: '',
-                creditWalletRecovered: false,
-                loanDueHandledKey: '',
-                loanNoticeShownKeys: [],
-                loanLunchShieldLoanId: '',
-                loanLunchShieldAmount: 0,
-                dailyAllClearBonusDate: '',
-                stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
-                stockInvestDaily: { date: '', profit: 0, sells: 0 },
-                stockInvestHistory: [],
-                catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
-                classEventPurchases: [],
-                conveniencePurchases: [],
-                shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 },
-                lottoTickets: [],
-                worldCupBets: [],
-            };
-        }
-
         async function attemptLogin(studentId, pin, isAutoLogin) {
             // Firebase 미초기화(구버전 번들 등) 시 안내
             if (!auth || !db) {
@@ -26670,24 +25033,7 @@ ${subjectLine}
                 const docSnap = await getDoc(docRef); 
                 let data = docSnap.exists() ? docSnap.data() : null;
                 
-                if (isAdmin) {
-                    if (data && Object.prototype.hasOwnProperty.call(data, 'pin')) {
-                        try {
-                            await updateDoc(docRef, { pin: deleteField() });
-                        } catch (stripErr) {
-                            console.warn('strip master pin', stripErr);
-                        }
-                        delete data.pin;
-                    }
-                    await stripMasterPinDoc(isGM ? 'student_gm_a' : 'student_gm');
-                    if (!data) {
-                        if (isAutoLogin) return;
-                        data = blankStudentRecord(undefined);
-                        delete data.pin;
-                        await setDoc(docRef, data);
-                    }
-                } else if (data) {
-                    await clearGmPinSession();
+                if (data) {
                     if (!data.pin) {
                         if (isAutoLogin) return; 
                         const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
@@ -26705,11 +25051,11 @@ ${subjectLine}
                         return await window.customAlert("❌ 비밀번호가 틀렸어요!");
                     }
                 } else {
-                    await clearGmPinSession();
                     if (isAutoLogin) return; 
                     const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
                     if(!isOk) return;
-                    data = blankStudentRecord(pin);
+                    
+                    data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
                     await setDoc(docRef, data);
                 }
 
@@ -26756,77 +25102,12 @@ ${subjectLine}
         }
 
         async function saveDataToCloud(options = {}) {
-            // 화면 확인용. 배포 빌드에서는 빠집니다. 실제 저장은 서버 거래를 그대로 탑니다.
-            if (import.meta.env.DEV && window.__SAMBONG_LOCAL_SAVE === true && options && options.stockTrade) {
-                const trade = options.stockTrade;
-                const tradeNow = Number(trade.nowMs) || Date.now();
-                const tradeToday = seoulYmd(tradeNow) || String(trade.today || '');
-                if (trade.kind === 'sell') {
-                    const sold = applyStockSellFromServer({
-                        serverInvestments: window.playerState.stockInvestments,
-                        serverDaily: window.playerState.stockInvestDaily,
-                        serverBong: Number(window.playerState.bong) || 0,
-                        serverHistory: window.playerState.stockInvestHistory,
-                        marketId: trade.marketId,
-                        amount: trade.amount,
-                        currentIndex: Number(trade.currentIndex),
-                        today: tradeToday,
-                        nowMs: tradeNow,
-                    });
-                    if (!sold.ok) return false;
-                    if (Number(trade.confirmPayout) !== sold.payout || Number(trade.amount) !== sold.principal) return false;
-                    window.playerState.stockInvestments = sold.investments;
-                    window.playerState.stockInvestDaily = sold.daily;
-                    window.playerState.stockInvestHistory = sold.history;
-                    window.playerState.bong = normalizeBongValue(sold.bong);
-                    trade.applied = sold;
-                    return true;
-                }
-                if (trade.kind === 'buy') {
-                    const bought = applyStockBuyFromServer({
-                        serverInvestments: window.playerState.stockInvestments,
-                        serverBong: Number(window.playerState.bong) || 0,
-                        serverHistory: window.playerState.stockInvestHistory,
-                        marketId: trade.marketId,
-                        amount: trade.amount,
-                        buyIndex: Number(trade.currentIndex),
-                        today: tradeToday,
-                        nowMs: tradeNow,
-                    });
-                    if (!bought.ok) return false;
-                    if (Number(trade.amount) !== bought.amount) return false;
-                    window.playerState.stockInvestments = bought.investments;
-                    window.playerState.stockInvestHistory = bought.history;
-                    window.playerState.bong = normalizeBongValue(bought.bong);
-                    trade.applied = bought;
-                    return true;
-                }
-                return false;
-            }
-            if (import.meta.env.DEV && window.__SAMBONG_LOCAL_SAVE === true && options && isManualLoanAction(options.loanAction)) {
-                const acted = applyLoanAction(window.playerState, options.loanAction, {
-                    todayYmd: loanPlanToday(),
-                    calendar: getBankLoanCalendar(),
-                    amount: options.loanAmount,
-                    days: options.loanDays,
-                    ratePercent: Number(window.globalSettings && window.globalSettings.bankInterestPercent) || 0,
-                    limit: getPersonalLoanLimit(window.playerState),
-                    nowMs: getServerNowMs(),
-                });
-                if (!acted.ok) return false;
-                window.playerState.bong = acted.bong;
-                window.playerState.bankRegularSavings = acted.bankRegularSavings;
-                window.playerState.bankLoan = acted.bankLoan;
-                Object.assign(window.playerState, copyCreditFields(acted));
-                return true;
-            }
             if (window.playerState.isGuest || !currentStudentDocRef) return;
             const opts = {
                 allowXpDecrease: false,
                 allowBongDecrease: false,
                 maxXpDecrease: 0,
                 maxBongDecrease: 0,
-                maxBongIncrease: 0,
                 requireServerBongBalance: false,
                 allowBankFieldChanges: false,
                 allowJobChanges: false,
@@ -26860,11 +25141,7 @@ ${subjectLine}
             window._suppressXpSyncToast = true;
             let blockedByServerBalance = false;
             let blockedByBankReconcile = false;
-            let blockedByRepayMismatch = false;
             let blockedLoanReason = '';
-            let blockedLoanLunchParts = [];
-            let keepLoanLifecycle = false;
-            let blockedStockTradeReason = '';
             let blockedByDuplicateQuest = false;
             let blockedByStaleSeason2 = false;
             let blockedByStockTrade = false;
@@ -26878,28 +25155,14 @@ ${subjectLine}
                     }
                     return false;
                 }
-                const settledDebt = await settleOwnRebukeCharges();
-                const settledAmount = Math.floor(Number(settledDebt && settledDebt.amount) || 0);
-                if (settledAmount > 0) {
-                    window.playerState.bong = roundRebukeBong((Number(window.playerState.bong) || 0) - settledAmount);
-                    if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) {
-                        dataToSave.bong = roundRebukeBong((Number(dataToSave.bong) || 0) - settledAmount);
-                    }
-                }
                 await runTransaction(db, async (transaction) => {
                     const snap = await transaction.get(currentStudentDocRef);
-                    let wroteLunchDate = false;
-                    opts.lunchJustDeducted = false;
-                    opts.lunchFeeJustDeducted = 0;
                     if (opts.stockTrade && !snap.exists()) {
                         blockedByStockTrade = true;
                         return;
                     }
                     if (snap.exists()) {
                         const serverData = snap.data() || {};
-                        const clientBongAtStart = Number(dataToSave.bong);
-                        const clientLoanKeyAtStart = String(dataToSave.loanDueHandledKey || '');
-                        const clientLunchAtStart = String(dataToSave.lastLunchDeductDate || '');
                         const serverSeason = Math.floor(Number(serverData.seasonNumberApplied) || 0);
                         const localSeason = Math.floor(Number(dataToSave.seasonNumberApplied) || 0);
                         if (serverSeason >= 2 && localSeason < 2) {
@@ -26925,25 +25188,10 @@ ${subjectLine}
                                 dataToSave.xp = Math.floor(serverXp + maxRise);
                             }
                         }
-                        options.serverLunchDateKept = isLunchYmd(serverData.lastLunchDeductDate)
-                            ? String(serverData.lastLunchDeductDate).trim()
-                            : '';
-                        const todaySave = loanPlanToday();
+                        const todaySave = getLocalDateStr();
                         const bankAccrued = applyServerBankAccrual(serverData, window.globalSettings, {
                             isAdmin: !!window.playerState.isAdmin,
                         });
-                        let creditBasis = bankAccrued;
-                        if ((bankAccrued.loanMsgs || []).length) {
-                            formatBankLoanLifecycleAlerts(bankAccrued.loanMsgs);
-                        }
-                        const repaidNow = (bankAccrued.loanMsgs || []).some((m) => m && m.kind === 'auto_repay' && Math.floor(Number(m.paid) || 0) > 0);
-                        if (repaidNow) {
-                            opts.operationLabel = '대출 만기 상환';
-                            opts.bongLogSource = 'bankLoanDue';
-                        } else if (opts.bongLogSource === 'bankLoanDue') {
-                            opts.operationLabel = bankAccrued.lunchDeducted ? '점심값' : '저장';
-                            opts.bongLogSource = bankAccrued.lunchDeducted ? 'lunchDeduct' : 'saveDataToCloud';
-                        }
                         // 신용불량 중 학생 추가 XP는 막습니다. 교사 광장 지급(isAdmin)은 그대로 둡니다.
                         if (
                             !window.playerState.isAdmin
@@ -26955,7 +25203,7 @@ ${subjectLine}
                             dataToSave.xp = Math.floor(serverXp);
                         }
 
-                        const loanSave = isManualLoanAction(opts.loanAction);
+                        const loanSave = opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial';
                         if (opts.allowBankFieldChanges || loanSave) {
                             if (opts.requireServerBankRegularBalance && !loanSave) {
                                 const serverReg = normalizeBongValue(Number(serverData.bankRegularSavings) || 0);
@@ -26972,10 +25220,9 @@ ${subjectLine}
                                 loanAmount: opts.loanAmount,
                                 loanDays: opts.loanDays,
                             });
-                            if (reconciled.rejected && !reconciled.keepLifecycle) {
+                            if (reconciled.rejected) {
                                 blockedByBankReconcile = true;
                                 blockedLoanReason = String(reconciled.loanReason || '');
-                                blockedLoanLunchParts = Array.isArray(reconciled.loanLunchParts) ? reconciled.loanLunchParts : [];
                                 serverRestoreData = {
                                     ...serverData,
                                     bong: reconciled.bong,
@@ -26983,23 +25230,10 @@ ${subjectLine}
                                     bankTermDeposits: reconciled.bankTermDeposits,
                                     bankDailyBonusLastDate: reconciled.bankDailyBonusLastDate,
                                     bankLoan: reconciled.bankLoan,
-                                    ...copyCreditFields(reconciled),
+                                    creditDefaultUntilYmd: reconciled.creditDefaultUntilYmd,
+                                    bankNegativeSinceYmd: reconciled.bankNegativeSinceYmd,
+                                    loanPenaltyUntilYmd: reconciled.loanPenaltyUntilYmd || '',
                                 };
-                                return;
-                            }
-                            if (reconciled.keepLifecycle) {
-                                keepLoanLifecycle = true;
-                                blockedLoanReason = String(reconciled.loanReason || '');
-                                blockedLoanLunchParts = Array.isArray(reconciled.loanLunchParts) ? reconciled.loanLunchParts : [];
-                            }
-                            if (
-                                (opts.loanAction === 'repay' || opts.loanAction === 'keepLunch' || opts.loanAction === 'clear' || opts.loanAction === 'partial')
-                                && opts.confirmRepayAmount != null
-                                && !repayAmountsMatch(opts.confirmRepayAmount, reconciled.repayAmount)
-                            ) {
-                                blockedByRepayMismatch = true;
-                                options.repayMismatch = true;
-                                options.nextRepayAmount = Math.floor(Number(reconciled.repayAmount) || 0);
                                 return;
                             }
                             dataToSave.bong = reconciled.bong;
@@ -27007,14 +25241,17 @@ ${subjectLine}
                             dataToSave.bankTermDeposits = reconciled.bankTermDeposits;
                             dataToSave.bankDailyBonusLastDate = reconciled.bankDailyBonusLastDate;
                             dataToSave.bankLoan = reconciled.bankLoan;
-                            Object.assign(dataToSave, copyCreditFields(reconciled));
-                            creditBasis = reconciled;
+                            dataToSave.creditDefaultUntilYmd = reconciled.creditDefaultUntilYmd || '';
+                            dataToSave.bankNegativeSinceYmd = reconciled.bankNegativeSinceYmd || '';
+                            dataToSave.loanPenaltyUntilYmd = reconciled.loanPenaltyUntilYmd || '';
                         } else {
                             dataToSave.bankRegularSavings = bankAccrued.bankRegularSavings;
                             dataToSave.bankTermDeposits = bankAccrued.bankTermDeposits;
                             dataToSave.bankDailyBonusLastDate = bankAccrued.bankDailyBonusLastDate;
                             dataToSave.bankLoan = bankAccrued.bankLoan;
-                            Object.assign(dataToSave, copyCreditFields(bankAccrued));
+                            dataToSave.creditDefaultUntilYmd = bankAccrued.creditDefaultUntilYmd || '';
+                            dataToSave.bankNegativeSinceYmd = bankAccrued.bankNegativeSinceYmd || '';
+                            dataToSave.loanPenaltyUntilYmd = bankAccrued.loanPenaltyUntilYmd || '';
                             // 만기·자동이체·주기 보너스 뒤에는 낡은 잔액으로 되돌리지 않습니다.
                             if (bankAccrued.changed) {
                                 dataToSave.bong = bankAccrued.bong;
@@ -27022,25 +25259,18 @@ ${subjectLine}
                             }
                         }
 
-                        const manualBank = !!(
-                            opts.allowBankFieldChanges
-                            || opts.loanAction === 'take'
-                            || opts.loanAction === 'repay'
-                            || opts.loanAction === 'keepLunch'
-                            || opts.loanAction === 'clear'
-                            || opts.loanAction === 'partial'
+                        const serverBong = Number(
+                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial' || bankAccrued.changed)
+                                ? dataToSave.bong
+                                : serverData.bong
                         );
-                        const serverBong = walletSaveBaseline({
-                            serverBong: serverData.bong,
-                            proposedBong: dataToSave.bong,
-                            accruedBong: bankAccrued.bong,
-                            accruedChanged: !!bankAccrued.changed,
-                            lunchDeducted: !!bankAccrued.lunchDeducted,
-                            manualBank,
-                        });
                         const nextBong = Number(dataToSave.bong);
                         // 예금·적금은 이미 차감한 지갑으로 부족 검사를 하면 큰 입금이 막힙니다.
-                        const bongBeforeSpend = Number(bankAccrued.changed ? bankAccrued.bong : serverData.bong);
+                        const bongBeforeSpend = Number(
+                            (opts.allowBankFieldChanges || opts.loanAction === 'take' || opts.loanAction === 'repay' || opts.loanAction === 'partial')
+                                ? bankAccrued.bong
+                                : (bankAccrued.changed ? bankAccrued.bong : serverData.bong)
+                        );
                         if (opts.questCompletionId) {
                             const qid = String(opts.questCompletionId);
                             const serverQuests = serverData.quests || {};
@@ -27062,32 +25292,14 @@ ${subjectLine}
                         const trade = opts.stockTrade;
                         if (trade && (trade.kind === 'sell' || trade.kind === 'buy')) {
                             // 지수 매수·매도는 서버에 남은 원금·잔액만 정산합니다. 같은 포지션을 두 번 넣지 않습니다.
-                            // 확인창의 시세 시간대와 가격이 서버 시세와 같아야 하고, 정각 전후 1분은 막습니다.
-                            const tradeNow = getServerNowMs();
-                            const tradeToday = seoulYmd(tradeNow) || getLocalDateStr();
-                            let tradeIndex = Number(trade.currentIndex);
-                            const settingsSnap = await transaction.get(getGlobalSettingsDocRef());
-                            const serverQuotes = settingsSnap.exists() ? ((settingsSnap.data() || {}).marketQuotes || null) : null;
-                            const quoteGate = evaluateStockTradeWindow({
-                                nowMs: tradeNow,
-                                confirmSlot: trade.confirmSlot,
-                                confirmPrice: trade.confirmPrice,
-                                quotes: serverQuotes,
-                                marketId: trade.marketId,
-                            });
-                            if (!quoteGate.ok) {
-                                blockedByStockTrade = true;
-                                blockedStockTradeReason = quoteGate.reason;
-                                serverRestoreData = serverData;
-                                return;
-                            }
-                            tradeIndex = quoteGate.price;
+                            const tradeNow = Math.floor(Number(trade.nowMs) || Date.now());
+                            const tradeToday = String(trade.today || getLocalDateStr());
+                            const tradeIndex = Number(trade.currentIndex);
                             if (trade.kind === 'sell') {
                                 const sold = applyStockSellFromServer({
                                     serverInvestments: serverData.stockInvestments,
                                     serverDaily: serverData.stockInvestDaily,
                                     serverBong: Number.isFinite(serverBong) ? serverBong : 0,
-                                    serverHistory: serverData.stockInvestHistory,
                                     marketId: trade.marketId,
                                     amount: trade.amount,
                                     currentIndex: tradeIndex,
@@ -27096,26 +25308,17 @@ ${subjectLine}
                                 });
                                 if (!sold.ok) {
                                     blockedByStockTrade = true;
-                                    blockedStockTradeReason = sold.reason || 'none';
-                                    serverRestoreData = serverData;
-                                    return;
-                                }
-                                if (Number(trade.confirmPayout) !== sold.payout || Number(trade.amount) !== sold.principal) {
-                                    blockedByStockTrade = true;
-                                    blockedStockTradeReason = 'amount';
                                     serverRestoreData = serverData;
                                     return;
                                 }
                                 dataToSave.stockInvestments = sold.investments;
                                 dataToSave.stockInvestDaily = sold.daily;
-                                dataToSave.stockInvestHistory = sold.history;
                                 dataToSave.bong = normalizeBongValue(sold.bong);
                                 trade.applied = sold;
                             } else {
                                 const bought = applyStockBuyFromServer({
                                     serverInvestments: serverData.stockInvestments,
                                     serverBong: Number.isFinite(serverBong) ? serverBong : 0,
-                                    serverHistory: serverData.stockInvestHistory,
                                     marketId: trade.marketId,
                                     amount: trade.amount,
                                     buyIndex: tradeIndex,
@@ -27124,18 +25327,10 @@ ${subjectLine}
                                 });
                                 if (!bought.ok) {
                                     blockedByStockTrade = true;
-                                    blockedStockTradeReason = bought.reason || 'buy';
-                                    serverRestoreData = serverData;
-                                    return;
-                                }
-                                if (Number(trade.amount) !== bought.amount) {
-                                    blockedByStockTrade = true;
-                                    blockedStockTradeReason = 'amount';
                                     serverRestoreData = serverData;
                                     return;
                                 }
                                 dataToSave.stockInvestments = bought.investments;
-                                dataToSave.stockInvestHistory = bought.history;
                                 dataToSave.bong = normalizeBongValue(bought.bong);
                                 trade.applied = bought;
                             }
@@ -27161,94 +25356,27 @@ ${subjectLine}
                             if (Number.isFinite(serverBong) && Number.isFinite(nextBong) && nextBong < serverBong) {
                                 if (opts.allowBongDecrease) {
                                     dataToSave.bong = normalizeBongValue(Math.max(nextBong, normalizeBongValue(serverBong - maxBongDrop)));
-                                } else if (!(bankAccrued.changed || bankAccrued.lunchDeducted)) {
+                                } else {
                                     dataToSave.bong = normalizeBongValue(serverBong);
                                 }
                             }
-                            const allowedRise = Math.max(0, Number(opts.maxBongIncrease) || 0)
-                                + (opts.loanAction === 'take' ? Math.max(0, Math.floor(Number(opts.loanAmount) || 0)) : 0);
-                            // 기본 증가 허용량은 0입니다. 보상·대출 실행처럼 경로에 적힌 값만 서버보다 올라갑니다.
-                            dataToSave.bong = normalizeBongValue(capBongIncrease(
-                                serverBong,
-                                dataToSave.bong,
-                                allowedRise,
-                            ));
+                            const maxBongRise = Math.max(0, Number(opts.maxBongIncrease) || 0);
+                            if (
+                                maxBongRise > 0 &&
+                                Number.isFinite(serverBong) &&
+                                Number.isFinite(Number(dataToSave.bong)) &&
+                                Number(dataToSave.bong) > serverBong + maxBongRise + 0.0001
+                            ) {
+                                dataToSave.bong = normalizeBongValue(serverBong + maxBongRise);
+                            }
                         }
-                        if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && !manualBank) {
-                            dataToSave.bong = normalizeBongValue(resolveBongKeepingLoanRepayment({
-                                clientBong: clientBongAtStart,
-                                clientKey: clientLoanKeyAtStart,
-                                accruedBong: bankAccrued.bong,
-                                accruedKey: bankAccrued.loanDueHandledKey,
-                                proposedBong: dataToSave.bong,
-                                serverBong: serverData.bong,
-                                serverKey: serverData.loanDueHandledKey,
-                            }));
-                            const lunchRoom = Math.max(0, Number(opts.maxBongIncrease) || 0)
-                                + Math.max(0, Number(bankAccrued.maturityCredit) || 0)
-                                + Math.max(0, Number(bankAccrued.bonusGranted) || 0)
-                                + (opts.loanAction === 'take' ? Math.max(0, Math.floor(Number(opts.loanAmount) || 0)) : 0);
-                            dataToSave.bong = normalizeBongValue(bongPreservingCommittedLunch({
-                                serverBong: serverData.bong,
-                                proposedBong: dataToSave.bong,
-                                serverLunchDate: serverData.lastLunchDeductDate,
-                                clientLunchDate: clientLunchAtStart,
-                                todayYmd: todaySave,
-                                allowedIncrease: lunchRoom,
-                            }));
-                        }
-                        if (!(trade && (trade.kind === 'sell' || trade.kind === 'buy')) && Array.isArray(serverData.stockInvestHistory)) {
-                            dataToSave.stockInvestHistory = sanitizeStockHistory(serverData.stockInvestHistory);
-                        }
-                        const judgedBong = normalizeBongValue(creditBasis && creditBasis.bong != null ? creditBasis.bong : serverData.bong);
-                        const settledBong = normalizeBongValue(dataToSave.bong);
-                        if (settledBong !== judgedBong) {
-                            Object.assign(dataToSave, creditJudgedOnFinalBong({
-                                beforeState: serverData,
-                                lifecycle: {
-                                    ...creditBasis,
-                                    bong: judgedBong,
-                                    bankRegularSavings: dataToSave.bankRegularSavings,
-                                    bankLoan: dataToSave.bankLoan,
-                                },
-                                finalBong: settledBong,
-                                todayYmd: todaySave,
-                                calendar: getBankLoanCalendar(),
-                            }));
-                        }
-                        const finalBong = settledBong;
-                        const logBeforeBong = normalizeBongValue(Number(serverData.bong) || 0);
-                        if (opts.bongLogSource === 'bankLoanDue' && finalBong > logBeforeBong + 0.0001) {
-                            opts.operationLabel = '저장';
-                            opts.bongLogSource = 'saveDataToCloud';
-                        }
-                        if (Math.abs(finalBong - logBeforeBong) > 0.0001) {
+                        const finalBong = normalizeBongValue(Number(dataToSave.bong));
+                        if (Number.isFinite(serverBong) && Math.abs(finalBong - serverBong) > 0.0001) {
                             const bongLogs = Array.isArray(serverData.bongChangeLog) ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1) : [];
-                            const logExtra = {
+                            bongLogs.push(buildBongChangeLogEntry(opts.operationLabel, serverBong, finalBong, {
                                 source: opts.bongLogSource || 'saveDataToCloud',
                                 allowBongDecrease: !!opts.allowBongDecrease,
-                            };
-                            if (trade && trade.kind === 'sell' && trade.applied) {
-                                logExtra.source = 'stockSell';
-                                logExtra.principal = Math.max(0, Math.floor(Number(trade.applied.principal) || 0));
-                                logExtra.profit = Math.max(0, Math.floor(Number(trade.applied.delta) || 0));
-                            }
-                            if (bankAccrued.lunchDeducted) {
-                                const afterLunch = normalizeBongValue(logBeforeBong - Math.max(0, Number(bankAccrued.lunchFee) || 0));
-                                bongLogs.push(buildBongChangeLogEntry('점심값', logBeforeBong, afterLunch, {
-                                    source: 'lunchDeduct',
-                                    allowBongDecrease: true,
-                                }));
-                                if (Math.abs(finalBong - afterLunch) > 0.0001) {
-                                    const repaid = (bankAccrued.loanMsgs || []).some((row) => row && row.kind === 'auto_repay' && Math.floor(Number(row.paid) || 0) > 0);
-                                    bongLogs.push(buildBongChangeLogEntry(repaid ? '대출 만기 상환' : (opts.operationLabel || '저장'), afterLunch, finalBong, {
-                                        source: repaid ? 'bankLoanDue' : (opts.bongLogSource || 'saveDataToCloud'),
-                                        allowBongDecrease: true,
-                                    }));
-                                }
-                            } else {
-                                bongLogs.push(buildBongChangeLogEntry(opts.operationLabel, logBeforeBong, finalBong, logExtra));
-                            }
+                            }));
                             dataToSave.bongChangeLog = bongLogs;
                         } else if (Object.prototype.hasOwnProperty.call(serverData, 'bongChangeLog')) {
                             dataToSave.bongChangeLog = serverData.bongChangeLog;
@@ -27318,41 +25446,9 @@ ${subjectLine}
                         } else {
                             delete dataToSave.thermometerUsedStaleValues;
                         }
-                        if (bankAccrued.lunchDeducted && isLunchYmd(bankAccrued.lastLunchDeductDate)) {
-                            dataToSave.lastLunchDeductDate = laterLunchDate(
-                                serverData.lastLunchDeductDate,
-                                bankAccrued.lastLunchDeductDate,
-                                todaySave,
-                            );
-                            wroteLunchDate = true;
-                            opts.lunchJustDeducted = true;
-                            opts.lunchFeeJustDeducted = bankAccrued.lunchFee;
-                        }
-                        // 오래 열린 탭이 역따봉으로 깎인 횟수와 봉을 되돌리지 못하게 서버 값을 유지합니다.
-                        ['rebukeSeq', 'rebukeEpoch', 'rebukeRoster'].forEach((key) => {
-                            if (Object.prototype.hasOwnProperty.call(serverData, key)) dataToSave[key] = serverData[key];
-                            else delete dataToSave[key];
-                        });
                     }
-                    if (_pendingLoanNotices.length) {
-                        const noticeClaim = claimLoanNoticesForSave(
-                            snap.exists() ? ((snap.data() || {}).loanNoticeShownKeys) : [],
-                            dataToSave.loanNoticeShownKeys,
-                            _pendingLoanNotices.map((row) => row.key),
-                        );
-                        dataToSave.loanNoticeShownKeys = noticeClaim.merged;
-                        opts.claimedLoanNoticeKeys = noticeClaim.claimed;
-                        opts.wroteLoanNotices = true;
-                    }
-                    if (!wroteLunchDate) delete dataToSave.lastLunchDeductDate;
                     transaction.set(currentStudentDocRef, dataToSave, { merge: true });
                 });
-                if (blockedByRepayMismatch) {
-                    if (window.playerState && Object.prototype.hasOwnProperty.call(options, 'serverLunchDateKept')) {
-                        window.playerState.lastLunchDeductDate = options.serverLunchDateKept || '';
-                    }
-                    return false;
-                }
                 if (blockedByServerBalance || blockedByDuplicateQuest || blockedByStaleSeason2 || blockedByBankReconcile || blockedByStockTrade) {
                     if (serverRestoreData) {
                         const roleFlags = {
@@ -27380,21 +25476,11 @@ ${subjectLine}
                                 ? takeLoanFailMessage('active')
                                 : blockedLoanReason === 'default'
                                 ? takeLoanFailMessage('default')
-                                : blockedLoanReason === 'lunch'
-                                ? formatLunchRepayBlocked(blockedLoanLunchParts, getCurrencyUnit())
                                 : blockedLoanReason === 'funds' || blockedLoanReason === 'amount' || blockedLoanReason === 'none'
                                 ? repayLoanFailMessage(blockedLoanReason)
                                 : '은행 거래가 서버 기준과 맞지 않아 저장하지 못했습니다.\n새로고침 후 잔액을 확인하고 다시 시도해 주세요.')
                             : blockedByStockTrade
-                            ? (blockedStockTradeReason === 'adjusting'
-                                ? '시세 조정 중이에요. 정각 전후 1분에는 사고팔 수 없어요.'
-                                : blockedStockTradeReason === 'unavailable'
-                                ? '새 시세를 받지 못했어요. 잠시 뒤 다시 해 주세요.'
-                                : blockedStockTradeReason === 'slot' || blockedStockTradeReason === 'price'
-                                ? '확인창에 나온 시세와 지금 시세가 달라요. 다시 확인해 주세요.'
-                                : blockedStockTradeReason === 'amount'
-                                ? '확인할 때 본 금액과 달라서 체결하지 않았어요. 다시 눌러 주세요.'
-                                : '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.')
+                            ? '이미 처리된 지수 거래입니다.\n같은 매도를 여러 번 눌러 봉이 늘어나지 않도록 저장하지 않았습니다. 화면을 서버 기준으로 맞춰 두었습니다.'
                             : `서버 최신 잔액 기준으로 ${opts.operationLabel}에 필요한 삼봉이 부족합니다.\n` +
                                 '오래 열린 창의 낡은 잔액으로 차감되는 것을 막았습니다. 새로고침 후 다시 확인해 주세요.'
                     );
@@ -27402,16 +25488,6 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'xp')) window.playerState.xp = dataToSave.xp;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bong')) window.playerState.bong = dataToSave.bong;
-                if (window.playerState) {
-                    const keptLunch = Object.prototype.hasOwnProperty.call(dataToSave, 'lastLunchDeductDate')
-                        ? dataToSave.lastLunchDeductDate
-                        : (options.serverLunchDateKept || '');
-                    window.playerState.lastLunchDeductDate = laterLunchDate(
-                        window.playerState.lastLunchDeductDate,
-                        keptLunch,
-                        loanPlanToday(),
-                    ) || keptLunch || '';
-                }
                 if (opts.keepServerSkinPurchase) {
                     if (dataToSave.ownedSkins && typeof dataToSave.ownedSkins === 'object') {
                         window.playerState.ownedSkins = { ...dataToSave.ownedSkins };
@@ -27441,9 +25517,6 @@ ${subjectLine}
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestDaily')) {
                     window.playerState.stockInvestDaily = dataToSave.stockInvestDaily;
                 }
-                if (Object.prototype.hasOwnProperty.call(dataToSave, 'stockInvestHistory')) {
-                    window.playerState.stockInvestHistory = sanitizeStockHistory(dataToSave.stockInvestHistory);
-                }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'shieldHP')) window.playerState.shieldHP = dataToSave.shieldHP;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'hasShield')) window.playerState.hasShield = dataToSave.hasShield;
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'bankRegularSavings')) {
@@ -27466,24 +25539,6 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'loanPenaltyUntilYmd')) {
                     window.playerState.loanPenaltyUntilYmd = dataToSave.loanPenaltyUntilYmd || '';
-                }
-                Object.assign(window.playerState, copyCreditFields(dataToSave));
-                if (opts.wroteLoanNotices) flushClaimedLoanNotices(opts.claimedLoanNoticeKeys, true);
-                if (Array.isArray(dataToSave.loanNoticeShownKeys)) {
-                    window.playerState.loanNoticeShownKeys = dataToSave.loanNoticeShownKeys;
-                }
-                if (opts.lunchJustDeducted && opts.lunchFeeJustDeducted) {
-                    void showLunchPaidAlert(loanPlanToday(), opts.lunchFeeJustDeducted);
-                }
-                if (keepLoanLifecycle && blockedLoanReason) {
-                    const notice = blockedLoanReason === 'settled' || blockedLoanReason === 'default' || blockedLoanReason === 'active' || blockedLoanReason === 'limit' || blockedLoanReason === 'amount' || blockedLoanReason === 'days' || blockedLoanReason === 'disabled'
-                        ? takeLoanFailMessage(blockedLoanReason, { limit: getPersonalLoanLimit(window.playerState), unit: getCurrencyUnit() })
-                        : blockedLoanReason === 'lunch'
-                        ? formatLunchRepayBlocked(blockedLoanLunchParts, getCurrencyUnit())
-                        : repayLoanFailMessage(blockedLoanReason);
-                    if (typeof updateUI === 'function') updateUI();
-                    await window.customAlert(notice);
-                    return false;
                 }
                 return true;
             } catch (e) {
@@ -28071,7 +26126,7 @@ ${subjectLine}
             if (!applied.ok) return;
             window.playerState.inventory = applied.inventory;
             window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
-            if (QUEST_DROP_SAVES_SEPARATELY && !window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
+            if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
             const slotName = gearSlotLabel(g && g.slot);
             const n = applied.count;
             const lv = gearEnhanceOf(window.playerState, dropped);
@@ -28834,13 +26889,7 @@ ${subjectLine}
                 playSfx('bong', win);
                 if (!window.playerState.isAdmin) incrementShopDailyPurchase(window.playerState, id);
                 updateUI();
-                const saved = await saveDataToCloud({
-                    allowBongDecrease: true,
-                    maxBongDecrease: bet,
-                    maxBongIncrease: window.playerState.isAdmin ? payout : Math.max(0, payout - bet),
-                    requireServerBongBalance: true,
-                    operationLabel: '미스테리 박스 투자',
-                });
+                const saved = await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: bet, requireServerBongBalance: true, operationLabel: '미스테리 박스 투자' });
                 if (!saved) {
                     if (!window.playerState.isAdmin) {
                         const used = getShopDailyPurchaseUsed(window.playerState, id);
@@ -30768,9 +28817,8 @@ ${subjectLine}
             'hasShield', 'shieldHP', 'condition', 'statusMessage', 'unlockedFeatures', 'homeLookMode', 'dragonBalls', 'dragonBallWeekendKey', 'earlyBirdCount',
             'inventory', 'equippedWeapon', 'equippedShield', 'equippedShoes', 'gearEnhance', 'lunchBid', 'lastLunchDeductDate', 'questHistory', 'usedRaidPasswords',
             'bankRegularSavings', 'bankTermDeposits', 'bankDailyBonusLastDate', 'dailyAllClearBonusDate',
-            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'creditReleasedYmd', 'creditReleaseLoanId', 'creditWalletRecovered', 'loanDueHandledKey', 'attendanceMark', 'praiseCount',
-            'rebukeSeq', 'rebukeEpoch', 'rebukeRoster',
-            'stockInvestments', 'stockInvestDaily', 'stockInvestHistory', 'catBattle', 'boardGameRecords',
+            'bankLoan', 'creditDefaultUntilYmd', 'bankNegativeSinceYmd', 'loanPenaltyUntilYmd', 'attendanceMark', 'praiseCount',
+            'stockInvestments', 'stockInvestDaily', 'catBattle', 'boardGameRecords',
             'classEventPurchases', 'conveniencePurchases', 'lastDailyReset', 'lastWeeklyReset', 'shopDailyPurchase', 'lottoTickets', 'worldCupBets',
             'itemRefundLedger', 'bongChangeLog', 'ownedSkinInstances', 'ownedSkinPaid',
             'seasonNumberApplied', 'season1Xp', 'season1SettledAt', 'season1BongReward', 'seasonSkinRefundCount', 'lastSkinRefundDate',
@@ -30790,12 +28838,10 @@ ${subjectLine}
         }
 
         async function saveStudentBackupDoc(stuId, existingData = {}) {
-            const data = extractStudentGameData(existingData);
-            if (String(stuId) === 'gm' || String(stuId) === 'gm_a') delete data.pin;
             const payload = {
                 studentId: String(stuId),
                 savedAt: new Date().toISOString(),
-                data,
+                data: extractStudentGameData(existingData),
             };
             await setDoc(getStudentBackupRef(stuId), payload);
             return payload;
@@ -30866,49 +28912,22 @@ ${subjectLine}
                 for (const sid of ids) {
                     const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid);
                     let serverData = {};
-                    let existed = false;
                     try {
                         const snap = await readStudentDocPreferServer(ref);
-                        if (snap && snap.exists()) {
-                            serverData = snap.data() || {};
-                            existed = true;
-                        }
+                        if (snap && snap.exists()) serverData = snap.data() || {};
                     } catch (e) {
                         const cached = (window.allStudentsData || []).find((s) => String(s.id) === String(sid));
                         serverData = cached || {};
-                        existed = !!cached;
                     }
                     const stu = { id: sid, ...serverData };
                     const built = buildSeason2StudentPatch(stu, nowMs);
-                    rows.push({ sid, stu, built, existed });
+                    rows.push({ sid, stu, built });
                 }
-
-                let rebukeSeason = null;
-                try {
-                    rebukeSeason = await ensureRebukeConfigDoc();
-                } catch (e) {
-                    console.warn('startSeason2 rebuke', e);
-                }
-                const nextRebukeEpoch = rebukeSeason ? rebukeSeason.epoch + 1 : 0;
 
                 await runWithNetworkRetry(async () => {
                     const batch = writeBatch(db);
-                    rows.forEach(({ sid, stu, built, existed }) => {
-                        const rebukeClear = rebukeSeason ? {
-                            rebukeSeq: 0,
-                            rebukeEpoch: nextRebukeEpoch,
-                            rebukeRoster: rebukeRosterEpoch(rebukeSeason, sid),
-                        } : null;
-                        if (built.skip) {
-                            if (rebukeClear && existed) {
-                                batch.set(
-                                    doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                                    rebukeClear,
-                                    { merge: true }
-                                );
-                            }
-                            return;
-                        }
+                    rows.forEach(({ sid, stu, built }) => {
+                        if (built.skip) return;
                         batch.set(getStudentBackupRef(sid), {
                             studentId: String(sid),
                             savedAt: new Date().toISOString(),
@@ -30923,20 +28942,12 @@ ${subjectLine}
                         delete payload.bankTermDeposits;
                         delete payload.bankDailyBonusLastDate;
                         if ((built.bongDelta || 0) > 0) payload.bong = increment(built.bongDelta);
-                        if (rebukeClear && existed) Object.assign(payload, rebukeClear);
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
                             payload,
                             { merge: true }
                         );
                     });
-                    if (rebukeSeason) {
-                        batch.set(classOpsRef('rebukeConfig'), {
-                            enabled: rebukeSeason.enabled === true,
-                            epoch: nextRebukeEpoch,
-                            roster: rebukeSeason.roster || {},
-                        });
-                    }
                     const nextWorld = sanitizeWorldSettings(worldSettingsForSeason2(getWorldSettings()));
                     batch.set(getGlobalSettingsDocRef(), {
                         worldSettings: nextWorld,
@@ -30952,7 +28963,6 @@ ${subjectLine}
                         window.globalSettings.season2WeaponsClearedAt = nowMs;
                     }
                 }, '시즌 2 시작');
-                if (rebukeSeason) await clearOldRebukeReasons(appId, nextRebukeEpoch);
 
                 applyWorldBranding();
                 const paid = rows.filter((r) => !r.built.skip);
@@ -30978,6 +28988,7 @@ ${subjectLine}
         /** 마스터 접속 시 1회 마이그레이션은 서버 설정을 확인한 뒤에만 돌립니다. */
         async function runAdminOneShotMigrations() {
             if (!window.playerState || !window.playerState.isAdmin || !db) return;
+            if (!isTeacherProvider(auth && auth.currentUser)) return;
             if (window._adminOneShotMigrationsDone || window._adminOneShotMigrationsRunning) return;
             window._adminOneShotMigrationsRunning = true;
             try {
@@ -31318,16 +29329,11 @@ ${subjectLine}
                 creditDefaultUntilYmd: '',
                 bankNegativeSinceYmd: '',
                 loanPenaltyUntilYmd: '',
-                creditReleasedYmd: '',
-                creditReleaseLoanId: '',
-                creditWalletRecovered: false,
-                loanDueHandledKey: '',
                 attendanceMark: null,
                 praiseCount: 0,
                 dailyAllClearBonusDate: '',
                 stockInvestments: { kospi: null, kosdaq: null, nasdaq: null },
                 stockInvestDaily: { date: '', profit: 0, sells: 0 },
-                stockInvestHistory: [],
                 catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 },
                 classEventPurchases: [],
                 conveniencePurchases: [],
@@ -31355,32 +29361,13 @@ ${subjectLine}
             if (!ok2) return;
 
             try {
-                await assertGmSettingsAuth();
                 window.showGlobalLoading(`[${label}] 초기화 중…`);
                 const stu = window.allStudentsData.find((s) => String(s.id) === String(stuId)) || {};
                 await runWithNetworkRetry(async () => {
                     await saveStudentBackupDoc(stuId, stu);
-                    await ensureRebukeConfigDoc();
+                    const payload = buildStudentResetPayload(stu);
                     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId);
-                    await runTransaction(db, async (tx) => {
-                        const cfgSnap = await tx.get(classOpsRef('rebukeConfig'));
-                        if (!cfgSnap.exists()) throw new Error('rebuke-config');
-                        const live = normalizeRebukeConfig(cfgSnap.data());
-                        const roster = { ...(live.roster || {}) };
-                        const prev = rebukeRosterEpoch(live, stuId);
-                        roster[String(stuId)] = prev + 1;
-                        const payload = buildStudentResetPayload(stu);
-                        if (String(stuId) === 'gm' || String(stuId) === 'gm_a') delete payload.pin;
-                        payload.rebukeSeq = 0;
-                        payload.rebukeEpoch = live.epoch;
-                        payload.rebukeRoster = prev + 1;
-                        tx.set(classOpsRef('rebukeConfig'), {
-                            enabled: live.enabled === true,
-                            epoch: live.epoch,
-                            roster,
-                        });
-                        tx.set(docRef, payload);
-                    });
+                    await setDoc(docRef, payload);
                 }, '학생 초기화');
 
                 const myId = localStorage.getItem('sambong_student_id');
@@ -31394,9 +29381,7 @@ ${subjectLine}
                 await window.customAlert(`✅ [${label}] 학생 데이터 초기화가 완료되었습니다.\n(직전 상태는 복구 버튼으로 되돌릴 수 있습니다.)`);
             } catch (e) {
                 console.error('resetStudentData', e);
-                if (e && e.alreadyNotified) return;
-                const msg = rebukeWriteFailureMessage(e, '초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
-                if (msg) await window.customAlert(msg);
+                await window.customAlert('초기화 중 오류: ' + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -31443,13 +29428,7 @@ ${subjectLine}
                     const liveSnap = await transaction.get(docRef);
                     const live = liveSnap.exists() ? (liveSnap.data() || {}) : {};
                     restorePayload = keepServerClassXpSlot(backup.data, live);
-                    ['rebukeSeq', 'rebukeEpoch', 'rebukeRoster'].forEach((key) => {
-                        if (!Object.prototype.hasOwnProperty.call(restorePayload, key) && Object.prototype.hasOwnProperty.call(live, key)) {
-                            restorePayload[key] = live[key];
-                        }
-                    });
-                    if (String(stuId) === 'gm' || String(stuId) === 'gm_a') delete restorePayload.pin;
-                    else if (stu.pin) restorePayload.pin = stu.pin;
+                    if (stu.pin) restorePayload.pin = stu.pin;
                     transaction.set(docRef, restorePayload);
                 });
 
@@ -31489,17 +29468,9 @@ ${subjectLine}
             if (!ok2) return;
             
             try {
-                await assertGmSettingsAuth();
                 window.showGlobalLoading('이 학급 초기화 실행 중…');
-                const rebukeSeason = await ensureRebukeConfigDoc();
-                const nextRebukeEpoch = rebukeSeason.epoch + 1;
                 await runWithNetworkRetry(async () => {
                     const batch = writeBatch(db);
-                    batch.set(classOpsRef('rebukeConfig'), {
-                        enabled: rebukeSeason.enabled === true,
-                        epoch: nextRebukeEpoch,
-                        roster: rebukeSeason.roster || {},
-                    });
                     getActiveStudentIds().forEach((sid) => {
                         const stu = window.allStudentsData.find(s => s.id === String(sid)) || {};
                         batch.set(getStudentBackupRef(sid), {
@@ -31507,27 +29478,17 @@ ${subjectLine}
                             savedAt: new Date().toISOString(),
                             data: extractStudentGameData(stu),
                         });
-                        const resetPayload = buildStudentResetPayload(stu);
-                        if (String(sid) === 'gm' || String(sid) === 'gm_a') delete resetPayload.pin;
-                        if (stu && (stu.id || Object.prototype.hasOwnProperty.call(stu, 'xp') || Object.prototype.hasOwnProperty.call(stu, 'bong'))) {
-                            resetPayload.rebukeSeq = 0;
-                            resetPayload.rebukeEpoch = nextRebukeEpoch;
-                            resetPayload.rebukeRoster = rebukeRosterEpoch(rebukeSeason, sid);
-                        }
                         batch.set(
                             doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + sid),
-                            resetPayload
+                            buildStudentResetPayload(stu)
                         );
                     });
                     batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), { shieldStock: SHIELD_STOCK_DEFAULT }, { merge: true });
                     await batch.commit();
                 }, '학급 초기화');
-                await clearOldRebukeReasons(appId, nextRebukeEpoch);
                 await window.customAlert(`✅ 「${classLabel}」 학급 초기화가 완료되었습니다.\n각 학생의 직전 상태는 마스터 탭에서 개별 복구할 수 있습니다.`);
             } catch(e) {
-                if (e && e.alreadyNotified) return;
-                const msg = rebukeWriteFailureMessage(e, "초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
-                if (msg) window.customAlert(msg);
+                window.customAlert("초기화 중 오류 발생: " + (e && e.message ? e.message : String(e)));
             } finally {
                 window.hideGlobalLoading();
             }
@@ -31568,6 +29529,7 @@ ${subjectLine}
             let permissionDenied = 0;
 
             await Promise.all(stuList.map(async (stu) => {
+                if (studentIsCreditDefault(stu)) return;
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
                 attempted += 1;
                 try {
@@ -31575,9 +29537,7 @@ ${subjectLine}
                         const snap = await transaction.get(ref);
                         if (!snap.exists()) return 'missing';
                         const data = snap.data() || {};
-                        const decision = classXpGrantDecision(data.xp, data.lastClassXpSlot, todayKey, {
-                            blocked: studentIsCreditDefault(data, slot.ymd),
-                        });
+                        const decision = classXpGrantDecision(data.xp, data.lastClassXpSlot, todayKey);
                         if (decision !== 'grant') return decision;
                         transaction.set(ref, {
                             xp: increment(5),
@@ -31587,7 +29547,6 @@ ${subjectLine}
                         return 'granted';
                     });
                     if (result === 'granted') grantedCount += 1;
-                    else if (result === 'credit-default') skipped.push({ id: stu.id, reason: 'credit' });
                     else if (result === 'invalid-xp') skipped.push({ id: stu.id, reason: 'xp' });
                 } catch (e) {
                     console.warn('checkAndDistributeClassXP', stu.id, e);
@@ -31597,11 +29556,9 @@ ${subjectLine}
             }));
 
             skipped.sort((a, b) => String(a.id).localeCompare(String(b.id), 'ko'));
+            const skippedLabel = skipped.map((row) => String(row.id)).join(', ');
 
-            const creditSkips = skipped.filter((row) => row.reason === 'credit');
-            const otherSkips = skipped.filter((row) => row.reason !== 'credit');
             if (!grantedCount) {
-                if (otherSkips.length === 0) return;
                 if (attempted > 0 && permissionDenied === attempted && _classXpWriteNoticeKey !== todayKey) {
                     _classXpWriteNoticeKey = todayKey;
                     await window.customAlert(
@@ -31610,11 +29567,10 @@ ${subjectLine}
                         '이 기기 시계나 시간대가 한국 표준시와 다르면 서버가 거절합니다.\n' +
                         '시간대를 서울로 맞추고 시각을 자동으로 설정한 뒤 이 화면을 다시 열어 주세요.'
                     );
-                } else if (otherSkips.length) {
-                    const otherLabel = otherSkips.map((row) => String(row.id)).join(', ');
+                } else if (skipped.length) {
                     await window.customAlert(
                         `⏰ [${timeStr}] 수업 종료 경험치를 넘긴 학생이 있습니다.\n` +
-                        `건너뛴 학생: ${otherLabel}\n` +
+                        `건너뛴 학생: ${skippedLabel}\n` +
                         '경험치가 숫자가 아니거나 그 학생 기록만 거절된 경우입니다.'
                     );
                 }
@@ -31631,12 +29587,7 @@ ${subjectLine}
             window.globalSettings.lastAutoXpTime = todayKey;
             const npcEl = document.getElementById('npcText');
             if (npcEl) npcEl.innerText = `"[공지] ${announcement}"`;
-            const otherLabel = otherSkips.map((row) => String(row.id)).join(', ');
-            const creditLabel = creditSkips.map((row) => String(row.id)).join(', ');
-            const skipLine = [
-                otherLabel ? `\n\n건너뛴 학생: ${otherLabel}\n(경험치가 숫자가 아니거나 기록에 실패한 학생입니다.)` : '',
-                creditLabel ? `\n\n신용불량이라 이번 경험치를 받지 않은 학생: ${creditLabel}` : '',
-            ].join('');
+            const skipLine = skipped.length ? `\n\n건너뛴 학생: ${skippedLabel}\n(경험치가 숫자가 아니거나 기록에 실패한 학생입니다.)` : '';
             window.customAlert(`⏰ [${timeStr}] 수업 종료!\n학생 ${grantedCount}명에게 경험치 +5 자동 지급을 완료했습니다.${skipLine}`);
         };
 
@@ -31668,62 +29619,24 @@ ${subjectLine}
                     const last = settingsSnap.exists() ? settingsSnap.data().lastSalaryWeek : null;
                     if (last === wId) return null;
 
-                    const todayPay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    const catalog = getJobCatalog();
-                    const reads = [];
-                    for (const stu of stuList) {
-                        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
-                        reads.push({ stu, ref, snap: await transaction.get(ref) });
-                    }
                     let count = 0;
-                    for (const row of reads) {
-                        const data = row.snap.exists() ? (row.snap.data() || {}) : row.stu;
-                        const plan = weeklySalaryGrantPlan(data, catalog, todayPay);
-                        if (!plan.grant) continue;
-                        const collected = collectShieldedDebtFromSalary(data, {
-                            salary: plan.pay,
-                            todayYmd: todayPay,
-                            calendar: getBankLoanCalendar(),
-                        });
-                        const beforePay = normalizeBongValue(Number(data.bong) || 0);
-                        const afterPay = normalizeBongValue(beforePay + Math.max(0, Math.floor(Number(plan.pay) || 0)));
-                        const salaryLogs = Array.isArray(data.bongChangeLog) ? data.bongChangeLog.slice(-(BONG_CHANGE_LOG_LIMIT - 2)) : [];
-                        salaryLogs.push(buildBongChangeLogEntry('주급', beforePay, afterPay, {
-                            source: 'salary',
-                            allowBongDecrease: false,
-                        }));
-                        if (collected.collected > 0) {
-                            salaryLogs.push(buildBongChangeLogEntry('주급에서 빚 갚기', afterPay, collected.bong, {
-                                source: 'salaryDebt',
-                                allowBongDecrease: true,
-                            }));
+                    for (const stu of stuList) {
+                        let pay = 0;
+                        if (stu.jobs) {
+                            const catalog = getJobCatalog();
+                            resolveStudentJobsFromCatalog(stu.jobs, catalog).forEach((j) => {
+                                const ji = catalog.find((jd) =>
+                                    (jd.id && j.id && String(jd.id) === String(j.id))
+                                    || jd.name === j.name
+                                    || (jd.icon === j.icon && jd.color === j.color));
+                                if (ji) pay += ji.pay;
+                            });
                         }
-                        const salaryLeft = collected.bankLoan ? loanDueTotal(collected.bankLoan) : 0;
-                        const salaryText = formatSalaryCollectionNotice({
-                            salary: plan.pay,
-                            collected: collected.collected,
-                            left: salaryLeft,
-                            unit: getCurrencyUnit(),
-                        });
-                        const salaryNotices = (Array.isArray(data.moneyNotices) ? data.moneyNotices : [])
-                            .filter((notice) => notice && notice.id && notice.text)
-                            .slice(-8);
-                        const salaryNoticeId = `${wId}:${row.stu.id}`;
-                        if (salaryText && !salaryNotices.some((notice) => notice.id === salaryNoticeId)) {
-                            salaryNotices.push({ id: salaryNoticeId, text: salaryText });
+                        if (pay > 0) {
+                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stu.id);
+                            transaction.set(ref, { bong: increment(pay) }, { merge: true });
+                            count++;
                         }
-                        const salaryPatch = {
-                            bong: normalizeBongValue(collected.bong),
-                            bongChangeLog: salaryLogs.slice(-BONG_CHANGE_LOG_LIMIT),
-                            moneyNotices: salaryNotices.slice(-8),
-                        };
-                        if (collected.collected > 0) {
-                            salaryPatch.bankLoan = collected.bankLoan;
-                            salaryPatch.loanLunchShieldLoanId = collected.loanLunchShieldLoanId;
-                            salaryPatch.loanLunchShieldAmount = collected.loanLunchShieldAmount;
-                        }
-                        transaction.set(row.ref, salaryPatch, { merge: true });
-                        count++;
                     }
 
                     transaction.set(settingsRef, { lastSalaryWeek: wId }, { merge: true });
@@ -31738,164 +29651,26 @@ ${subjectLine}
             }
         };
 
-        // 평일 12시(서울, 서버 시각 우선) 이후 점심값. 서버 문서 트랜잭션에서 하루 1회만 뺍니다.
-        let _lunchDeductChain = Promise.resolve();
-        const _lunchAlertYmd = new Set();
-        async function showLunchPaidAlert(ymd, fee) {
-            const day = String(ymd || '').trim();
-            const price = Math.floor(Number(fee) || 0);
-            if (!day || price <= 0 || _lunchAlertYmd.has(day)) return;
-            const sid = String(localStorage.getItem('sambong_student_id') || '');
-            const key = lunchAlertStorageKey(appId, sid, day);
-            let claimed = true;
-            try {
-                claimed = await claimLunchAlertShownOnce(localStorage, key);
-            } catch {
-                claimed = true;
-            }
-            if (!claimed) {
-                _lunchAlertYmd.add(day);
-                return;
-            }
-            _lunchAlertYmd.add(day);
-            const paid = formatBongAmount(price);
-            await window.customAlert(`🍱 오늘 점심값 ${paid}${moneyObjectParticle()} 냈어요. 지갑이 모자라면 잔액이 마이너스로 보여요. 점심값은 하루에 한 번만 나가요.`);
-        }
-        window.applyPersonalLunchDeductionIfNeeded = function() {
-            const run = _lunchDeductChain.then(() => deductPersonalLunchOnce());
-            _lunchDeductChain = run.then(() => {}, () => {});
-            return run;
-        };
-
-        async function deductPersonalLunchOnce() {
-            if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef || !db) return;
+        // 평일 12시(정오) 이후, 학생 계정당 하루 1회 점심값 10B 차감 (잔액 부족 시 마이너스 허용)
+        window.applyPersonalLunchDeductionIfNeeded = async function() {
+            if (!window.playerState || window.playerState.isGuest || !currentStudentDocRef) return;
             if (window.playerState.isAdmin) return;
 
-            if (!_serverClockReady) await syncServerClock();
-            let nowMs = lunchClockMs();
-            if (nowMs == null) {
-                await syncServerClock();
-                nowMs = lunchClockMs();
-            }
-            if (nowMs == null) return;
-            const classHolidays = getWorldSettings().holidays;
-            const day = seoulSchoolDay(nowMs, { holidays: classHolidays });
-            if (!day || !day.lunchOpen) return;
-            if (isVacationAutomationPaused('lunch', day.ymd)) return;
+            const now = new Date();
+            if (isVacationAutomationPaused('lunch', now)) return;
+            const day = now.getDay();
+            if (day < 1 || day > 5) return;
+            if (now.getHours() < 12) return;
 
-            let outcome = null;
-            try {
-                const authOk = await ensureAnonAuthReady();
-                if (!authOk) return;
-                let claimedLunchNotices = [];
-                await runTransaction(db, async (transaction) => {
-                    const snap = await transaction.get(currentStudentDocRef);
-                    const serverData = snap.exists() ? (snap.data() || {}) : {};
-                    const settled = settleLunchAndLoan(serverData, {
-                        nowMs,
-                        todayYmd: loanPlanToday(),
-                        calendar: getBankLoanCalendar(),
-                        classHolidays,
-                        vacationPaused: isVacationAutomationPaused('lunch', day.ymd),
-                    });
-                    if (!settled.lunchDeducted && !settled.changed) {
-                        outcome = {
-                            deducted: false,
-                            bong: normalizeBongValue(serverData.bong),
-                            lastLunchDeductDate: settled.lastLunchDeductDate || '',
-                            today: day.ymd,
-                        };
-                        return;
-                    }
-                    const beforeBong = normalizeBongValue(serverData.bong);
-                    const logs = Array.isArray(serverData.bongChangeLog)
-                        ? serverData.bongChangeLog.slice(-BONG_CHANGE_LOG_LIMIT + 1)
-                        : [];
-                    if (settled.lunchDeducted) {
-                        const afterLunch = normalizeBongValue(beforeBong - settled.lunchFee);
-                        logs.push(buildBongChangeLogEntry('점심값', beforeBong, afterLunch, {
-                            source: 'lunchDeduct',
-                            allowBongDecrease: true,
-                        }));
-                        if (Math.abs(normalizeBongValue(settled.bong) - afterLunch) > 0.0001) {
-                            logs.push(buildBongChangeLogEntry('대출 만기 상환', afterLunch, settled.bong, {
-                                source: 'bankLoanDue',
-                                allowBongDecrease: true,
-                            }));
-                        }
-                    } else if (Math.abs(normalizeBongValue(settled.bong) - beforeBong) > 0.0001) {
-                        const rose = normalizeBongValue(settled.bong) > beforeBong;
-                        logs.push(buildBongChangeLogEntry(rose ? '저장' : '대출 만기 상환', beforeBong, settled.bong, {
-                            source: rose ? 'saveDataToCloud' : 'bankLoanDue',
-                            allowBongDecrease: true,
-                        }));
-                    }
-                    if ((settled.loanMsgs || []).length) formatBankLoanLifecycleAlerts(settled.loanMsgs);
-                    const patch = {
-                        bong: normalizeBongValue(settled.bong),
-                        bankRegularSavings: settled.bankRegularSavings,
-                        bankLoan: settled.bankLoan,
-                        bongChangeLog: logs,
-                        ...copyCreditFields(settled),
-                    };
-                    if (settled.lunchDeducted && isLunchYmd(settled.lastLunchDeductDate)) {
-                        patch.lastLunchDeductDate = laterLunchDate(
-                            serverData.lastLunchDeductDate,
-                            settled.lastLunchDeductDate,
-                            settled.lastLunchDeductDate,
-                        );
-                    }
-                    if (_pendingLoanNotices.length) {
-                        const noticeClaim = claimLoanNoticesForSave(
-                            serverData.loanNoticeShownKeys,
-                            patch.loanNoticeShownKeys,
-                            _pendingLoanNotices.map((row) => row.key),
-                        );
-                        patch.loanNoticeShownKeys = noticeClaim.merged;
-                        claimedLunchNotices = noticeClaim.claimed;
-                    }
-                    transaction.set(currentStudentDocRef, patch, { merge: true });
-                    outcome = {
-                        deducted: !!settled.lunchDeducted,
-                        changed: true,
-                        bong: normalizeBongValue(settled.bong),
-                        lastLunchDeductDate: patch.lastLunchDeductDate || settled.lastLunchDeductDate || '',
-                        today: day.ymd,
-                        fee: settled.lunchFee,
-                        credit: copyCreditFields(settled),
-                        bankLoan: settled.bankLoan,
-                        bankRegularSavings: settled.bankRegularSavings,
-                    };
-                });
-                if (claimedLunchNotices.length) flushClaimedLoanNotices(claimedLunchNotices, true);
-            } catch (e) {
-                console.warn('applyPersonalLunchDeductionIfNeeded', e);
-                return;
-            }
-            if (!outcome || !window.playerState) return;
-            if (outcome.deducted || outcome.changed) {
-                window.playerState.bong = outcome.bong;
-                if (outcome.lastLunchDeductDate) window.playerState.lastLunchDeductDate = outcome.lastLunchDeductDate;
-                if (outcome.credit) Object.assign(window.playerState, outcome.credit);
-                if (Object.prototype.hasOwnProperty.call(outcome, 'bankLoan')) window.playerState.bankLoan = outcome.bankLoan;
-                if (Object.prototype.hasOwnProperty.call(outcome, 'bankRegularSavings')) {
-                    window.playerState.bankRegularSavings = outcome.bankRegularSavings;
-                }
-                if (typeof updateUI === 'function') updateUI();
-                if (outcome.deducted && outcome.today) {
-                    await showLunchPaidAlert(outcome.today, outcome.fee);
-                }
-                return;
-            }
-            if (outcome.today && lunchAlreadyRecorded(outcome.lastLunchDeductDate, outcome.today)) {
-                window.playerState.lastLunchDeductDate = outcome.lastLunchDeductDate;
-                const serverBong = normalizeBongValue(outcome.bong);
-                if (normalizeBongValue(window.playerState.bong) > serverBong) {
-                    window.playerState.bong = serverBong;
-                    if (typeof updateUI === 'function') updateUI();
-                }
-            }
-        }
+            const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            if (window.playerState.lastLunchDeductDate === todayYmd) return;
+
+            window.playerState.bong = normalizeBongValue((Number(window.playerState.bong) || 0) - 10);
+            window.playerState.lastLunchDeductDate = todayYmd;
+            await saveDataToCloud({ allowBongDecrease: true, maxBongDecrease: 10 });
+            updateUI();
+            await window.customAlert(`🍱 점심값으로 삼봉 10B가 차감되었습니다.\n부족하면 잔액이 마이너스로 표시돼요.\n(오늘 날짜 기준 1회만 적용)`);
+        };
 
         // 이전 버전 호환용 (일괄 차감). 현재는 applyPersonalLunchDeductionIfNeeded 로 개별 처리합니다.
         window.checkAndDeductLunch = async function() {};

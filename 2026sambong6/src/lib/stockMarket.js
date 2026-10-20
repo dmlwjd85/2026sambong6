@@ -17,12 +17,8 @@ export const TICKER_MARKETS = STOCK_MARKETS;
 export const MARKET_REFRESH_MS = 60 * 60 * 1000;
 /** 공유·로컬 캐시가 이 시간보다 짧으면 다시 치지 않습니다. */
 export const MARKET_CACHE_TTL_MS = 50 * 60 * 1000;
-/** 정각 전후 1분은 시세를 맞추는 시간이라 사고팔 수 없습니다. */
-export const QUOTE_ADJUST_MS = 60 * 1000;
 
 export const STOCK_INVEST_MIN = 10;
-/** 지수 사고팔기 기록은 최근 30건만 남깁니다. */
-export const STOCK_HISTORY_LIMIT = 30;
 /** 시장별 원금 합계 한도. 추가 매수해도 이 값을 넘지 못합니다. */
 export const STOCK_INVEST_MAX = 1000;
 export const STOCK_DAILY_PROFIT_CAP = 8;
@@ -55,126 +51,19 @@ export function isKoreanStockSession(nowMs = Date.now()) {
     return minutes >= 9 * 60 && minutes < 15 * 60 + 30;
 }
 
-function seoulParts(nowMs) {
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'Asia/Seoul',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hourCycle: 'h23',
-    }).formatToParts(new Date(nowMs));
-    const map = {};
-    parts.forEach((p) => {
-        if (p.type !== 'literal') map[p.type] = p.value;
-    });
-    return {
-        year: map.year || '',
-        month: map.month || '',
-        day: map.day || '',
-        hour: map.hour || '00',
-        minute: Number(map.minute) || 0,
-        second: Number(map.second) || 0,
-    };
-}
-
-/** 서버 시각의 서울 날짜. 기기 달력과 다를 수 있습니다. */
-export function seoulYmd(nowMs) {
-    const p = seoulParts(nowMs);
-    if (!p.year || !p.month || !p.day) return '';
-    return `${p.year}-${p.month}-${p.day}`;
-}
-
-/** 서버 시각 기준 정시 시간대. 예: 2026-09-02T10 */
-export function marketHourSlot(nowMs) {
-    const p = seoulParts(nowMs);
-    return `${p.year}-${p.month}-${p.day}T${p.hour}`;
-}
-
-/** 학생에게 보여줄 시세 시간. */
-export function formatMarketHourSlot(slot) {
-    const m = String(slot || '').match(/^(\d{4}-\d{2}-\d{2})T(\d{2})$/);
-    if (!m) return '이번 시세';
-    return `${m[1]} ${Number(m[2])}시 시세`;
-}
-
-/** 정각 1분 전과 1분 뒤는 시세 조정 중입니다. */
-export function isQuoteAdjustmentWindow(nowMs) {
-    const p = seoulParts(nowMs);
-    const sec = p.minute * 60 + p.second;
-    return sec < QUOTE_ADJUST_MS / 1000 || sec >= 59 * 60;
-}
-
 /**
- * 시세 조정 안내가 다음으로 바뀌기까지 기다릴 시간.
- * 정각 1분 전, 정각, 정각 1분 뒤에 화면을 다시 그립니다.
- */
-export function msUntilQuoteUiBoundary(nowMs) {
-    const p = seoulParts(nowMs);
-    const sec = p.minute * 60 + p.second;
-    let target = 59 * 60;
-    if (sec < 60) target = 60;
-    else if (sec >= 59 * 60) target = 3600;
-    const delta = target - sec;
-    return Math.max(1, delta) * 1000;
-}
-
-/**
- * 시세는 서버 시간으로 정한 시간대에 한 번만 다시 읽습니다.
- * 같은 시간대 문서는 다시 갱신하지 않습니다.
+ * 장중에는 캐시가 오래되면 다시 읽고, 장 마감 뒤에는 마지막 시세를 유지합니다.
  * 시세가 하나도 없으면 장 여부와 관계없이 한 번은 가져옵니다.
- * 장 마감 뒤에는 마지막 시세를 유지합니다.
  */
 export function shouldFetchLiveMarketQuotes(nowMs, opts) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    const force = !!o.force;
+    const cacheAgeMs = Number.isFinite(Number(o.cacheAgeMs)) ? Number(o.cacheAgeMs) : Infinity;
     const hasAnyQuote = !!o.hasAnyQuote;
-    const storedSlot = String(o.storedSlot || '');
-    const slot = marketHourSlot(nowMs);
-    if (hasAnyQuote && storedSlot && storedSlot === slot) return false;
-    if (!hasAnyQuote || !storedSlot) return true;
-    if (!isKoreanStockSession(nowMs)) return false;
-    return storedSlot !== slot;
-}
-
-function sameQuotePrice(a, b) {
-    const x = Number(a);
-    const y = Number(b);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-    return Math.abs(x - y) < 0.000001;
-}
-
-/**
- * 확인창에 보인 시간대·가격이 체결 가격과 같은지 확인합니다.
- * 정각 전후 1분은 막습니다.
- * 장중에는 지금 시각의 시간대와 시세 문서가 같아야 합니다.
- * 장 밖에는 마지막 시세 시간대 가격으로 체결합니다.
- */
-export function evaluateStockTradeWindow({
-    nowMs,
-    confirmSlot,
-    confirmPrice,
-    quotes,
-    marketId,
-} = {}) {
-    if (isQuoteAdjustmentWindow(nowMs)) return { ok: false, reason: 'adjusting' };
-    const storedSlot = String(quotes && quotes.hourSlot || '');
-    const shownSlot = String(confirmSlot || '');
-    const row = quotes && quotes[marketId];
-    const price = Number(row && row.price);
-    if (!storedSlot || !shownSlot) return { ok: false, reason: 'slot' };
-    if (isKoreanStockSession(nowMs)) {
-        const slot = marketHourSlot(nowMs);
-        if (storedSlot !== slot) return { ok: false, reason: 'unavailable' };
-        if (shownSlot !== slot) return { ok: false, reason: 'slot' };
-    } else if (shownSlot !== storedSlot) {
-        return { ok: false, reason: 'slot' };
-    }
-    if (!Number.isFinite(price) || price <= 0) return { ok: false, reason: 'price' };
-    if (!sameQuotePrice(confirmPrice, price)) return { ok: false, reason: 'price' };
-    const slot = isKoreanStockSession(nowMs) ? marketHourSlot(nowMs) : storedSlot;
-    return { ok: true, reason: '', slot, price };
+    const fresh = hasAnyQuote && cacheAgeMs < MARKET_CACHE_TTL_MS;
+    if (fresh && !force) return false;
+    if (!hasAnyQuote) return true;
+    return isKoreanStockSession(nowMs);
 }
 
 export function yahooChartUrl(symbol) {
@@ -249,41 +138,7 @@ export function sanitizeStockPosition(raw) {
         buyIndex,
         openedAt,
         openedDate: String(src.openedDate || '').slice(0, 10),
-        realizedProfit: Math.max(0, Math.floor(Number(src.realizedProfit) || 0)),
     };
-}
-
-export function sanitizeStockHistoryEntry(raw) {
-    const src = raw && typeof raw === 'object' ? raw : null;
-    if (!src) return null;
-    const kind = src.kind === 'buy' || src.kind === 'sell' ? src.kind : '';
-    const marketId = String(src.marketId || '');
-    if (!kind || !getStockMarket(marketId)) return null;
-    const amount = Math.floor(Number(src.amount) || 0);
-    if (amount < 1) return null;
-    return {
-        at: Math.max(0, Math.floor(Number(src.at) || 0)),
-        date: String(src.date || '').slice(0, 10),
-        kind,
-        marketId,
-        amount,
-        payout: Math.max(0, Math.floor(Number(src.payout) || 0)),
-        remaining: Math.max(0, Math.floor(Number(src.remaining) || 0)),
-        full: src.full === true,
-    };
-}
-
-export function sanitizeStockHistory(raw) {
-    const list = Array.isArray(raw) ? raw : [];
-    return list.map(sanitizeStockHistoryEntry).filter(Boolean).slice(-STOCK_HISTORY_LIMIT);
-}
-
-/** 매수·매도 한 건을 기록 뒤에 붙입니다. 일부 매도도 같은 기록에 남습니다. */
-export function appendStockHistory(history, entry) {
-    const row = sanitizeStockHistoryEntry(entry);
-    const base = sanitizeStockHistory(history);
-    if (!row) return base;
-    return sanitizeStockHistory([...base, row]);
 }
 
 export function sanitizeStockInvestments(raw) {
@@ -344,39 +199,6 @@ export function sanitizeStockInvestDaily(raw, today) {
     };
 }
 
-function holdingDayCount(openedAt, nowMs) {
-    const elapsed = Math.max(0, Number(nowMs) || 0) - Math.max(0, Number(openedAt) || 0);
-    return Math.max(1, Math.ceil(elapsed / 86400000));
-}
-
-function indexScaleUnits(n) {
-    const x = Number(n);
-    if (!Number.isFinite(x) || x <= 0) return 0n;
-    return BigInt(Math.round(x * 10000));
-}
-
-/**
- * 매도 대금을 정수로 계산합니다.
- * 지수 비율의 소수 오차가 봉을 바꾸지 않게 1만 배 정수로 나눕니다.
- * rounding이 round면 가진 원금을 한 번에 팔 때, floor면 일부 매도입니다.
- */
-export function integerIndexPayout(principal, buyIndex, currentIndex, openedAt, nowMs, rounding) {
-    const p = BigInt(Math.max(0, Math.floor(Number(principal) || 0)));
-    const buy = indexScaleUnits(buyIndex);
-    const cur = indexScaleUnits(currentIndex);
-    if (p <= 0n || buy <= 0n || cur <= 0n) return 0;
-    const capBps = BigInt(Math.min(1200, holdingDayCount(openedAt, nowMs) * 350));
-    const bps = 10000n;
-    const lo = (buy * (bps - capBps)) / bps;
-    const hi = (buy * (bps + capBps)) / bps;
-    let used = cur;
-    if (used < lo) used = lo;
-    if (used > hi) used = hi;
-    const num = p * used;
-    if (rounding === 'round') return Number((num + (buy / 2n)) / buy);
-    return Number(num / buy);
-}
-
 export function clampedIndexRatio(buyIndex, currentIndex, openedAt, nowMs) {
     const buy = Number(buyIndex);
     const cur = Number(currentIndex);
@@ -392,9 +214,9 @@ export function clampedIndexRatio(buyIndex, currentIndex, openedAt, nowMs) {
 export function settleStockPosition(pos, currentIndex, nowMs = Date.now()) {
     const row = sanitizeStockPosition(pos);
     if (!row) return { ok: false, reason: 'none' };
-    const payout = integerIndexPayout(row.principal, row.buyIndex, currentIndex, row.openedAt, nowMs, 'round');
+    const ratio = clampedIndexRatio(row.buyIndex, currentIndex, row.openedAt, nowMs);
+    const payout = Math.max(0, Math.round(row.principal * ratio));
     const delta = payout - row.principal;
-    const ratio = row.principal > 0 ? payout / row.principal : 1;
     return { ok: true, principal: row.principal, payout, delta, ratio };
 }
 
@@ -453,7 +275,6 @@ export function applyBuyStock(investments, marketId, amount, buyIndex, nowMs, to
             buyIndex: blendStockBuyIndex(held.principal, held.buyIndex, amt, idx),
             openedAt: held.openedAt,
             openedDate: held.openedDate,
-            realizedProfit: Math.max(0, Math.floor(Number(held.realizedProfit) || 0)),
         };
         return { ok: true, investments: bag, added: true, amount: amt };
     }
@@ -467,24 +288,17 @@ export function applyBuyStock(investments, marketId, amount, buyIndex, nowMs, to
 }
 
 /**
- * 원금 중 팔 금액. 빈칸·0은 전액이 아닙니다.
- * 일부만 팔 때는 최소 10봉이고, 남기려면 10봉 이상이어야 합니다.
- * 가진 원금을 그대로 적으면 전부 팝니다.
+ * 원금 중 팔 금액. 비우면 전액. 남기려면 최소 매수 단위 이상이어야 합니다.
  */
 export function canSellStock({ existing, amount } = {}) {
     const held = sanitizeStockPosition(existing);
     if (!held) return { ok: false, reason: 'none' };
     const blank = amount == null || amount === '';
-    if (blank) return { ok: false, reason: 'empty', min: STOCK_INVEST_MIN, max: held.principal };
-    const raw = Math.floor(Number(amount) || 0);
-    if (!Number.isFinite(raw) || raw <= 0) {
-        return { ok: false, reason: 'empty', min: STOCK_INVEST_MIN, max: held.principal };
+    const raw = blank ? held.principal : Math.floor(Number(amount) || 0);
+    if (!Number.isFinite(raw) || raw < 1 || raw > held.principal) {
+        return { ok: false, reason: 'amount', max: held.principal };
     }
-    if (raw > held.principal) return { ok: false, reason: 'amount', max: held.principal };
     const remaining = held.principal - raw;
-    if (remaining > 0 && raw < STOCK_INVEST_MIN) {
-        return { ok: false, reason: 'min', min: STOCK_INVEST_MIN, max: held.principal };
-    }
     if (remaining > 0 && remaining < STOCK_INVEST_MIN) {
         return { ok: false, reason: 'remainder', remaining, min: STOCK_INVEST_MIN, max: held.principal };
     }
@@ -498,32 +312,19 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
     const held = bag[market.id];
     const gate = canSellStock({ existing: held, amount });
     if (!gate.ok) return { ok: false, reason: gate.reason };
+    const ratio = clampedIndexRatio(held.buyIndex, currentIndex, held.openedAt, nowMs);
     const sellPrincipal = gate.amount;
-    // 일부 매도는 학생에게 불리하게 내림합니다. 지금 가진 원금을 한 번에 팔 때만 반올림합니다.
-    let payout = integerIndexPayout(
-        sellPrincipal,
-        held.buyIndex,
-        currentIndex,
-        held.openedAt,
-        nowMs,
-        gate.remaining === 0 ? 'round' : 'floor'
-    );
+    let payout = Math.max(0, Math.round(sellPrincipal * ratio));
     let delta = payout - sellPrincipal;
     const uncappedDelta = delta;
     const day = sanitizeStockInvestDaily(daily, today);
-    const taken = Math.max(0, Math.floor(Number(held.realizedProfit) || 0));
-    const dayTaken = Math.max(0, Math.floor(Number(day.profit) || 0));
     if (delta > 0) {
-        const room = Math.min(
-            Math.max(0, STOCK_DAILY_PROFIT_CAP - taken),
-            Math.max(0, STOCK_DAILY_PROFIT_CAP - dayTaken)
-        );
+        const room = Math.max(0, STOCK_DAILY_PROFIT_CAP - day.profit);
         if (delta > room) {
             payout = sellPrincipal + room;
             delta = room;
         }
     }
-    const nextTaken = taken + Math.max(0, delta);
     if (gate.remaining === 0) {
         bag[market.id] = null;
     } else {
@@ -532,7 +333,6 @@ export function applySellStock(investments, marketId, currentIndex, daily, today
             buyIndex: held.buyIndex,
             openedAt: held.openedAt,
             openedDate: held.openedDate,
-            realizedProfit: nextTaken,
         };
     }
     return {
@@ -555,7 +355,6 @@ export function applyStockSellFromServer({
     serverInvestments,
     serverDaily,
     serverBong,
-    serverHistory,
     marketId,
     amount,
     currentIndex,
@@ -572,20 +371,9 @@ export function applyStockSellFromServer({
         amount
     );
     if (!sold.ok) return { ok: false, reason: sold.reason || 'none' };
-    const history = appendStockHistory(serverHistory, {
-        at: Math.floor(Number(nowMs) || Date.now()),
-        date: String(today || ''),
-        kind: 'sell',
-        marketId,
-        amount: sold.principal,
-        payout: sold.payout,
-        remaining: sold.remaining,
-        full: sold.full,
-    });
     return {
         ...sold,
         bong: Math.floor(Number(serverBong) || 0) + sold.payout,
-        history,
     };
 }
 
@@ -595,7 +383,6 @@ export function applyStockSellFromServer({
 export function applyStockBuyFromServer({
     serverInvestments,
     serverBong,
-    serverHistory,
     marketId,
     amount,
     buyIndex,
@@ -613,22 +400,11 @@ export function applyStockBuyFromServer({
     if (!gate.ok) return { ok: false, reason: gate.reason };
     const bought = applyBuyStock(bag, market.id, gate.amount, buyIndex, nowMs, today);
     if (!bought.ok) return { ok: false, reason: bought.reason || 'buy' };
-    const history = appendStockHistory(serverHistory, {
-        at: Math.floor(Number(nowMs) || Date.now()),
-        date: String(today || ''),
-        kind: 'buy',
-        marketId: market.id,
-        amount: gate.amount,
-        payout: 0,
-        remaining: bought.investments[market.id] ? bought.investments[market.id].principal : 0,
-        full: false,
-    });
     return {
         ok: true,
         investments: bought.investments,
         bong: Math.floor(Number(serverBong) || 0) - gate.amount,
         amount: gate.amount,
         added: !!bought.added,
-        history,
     };
 }

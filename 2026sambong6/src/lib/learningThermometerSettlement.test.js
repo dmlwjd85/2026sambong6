@@ -7,13 +7,11 @@ import {
     decideThermometerLockClaim,
     planThermometerSettlement,
     priorRunningThermometerSettlementKey,
-    resolveContinuingSettlementValues,
     settlementLockHeld,
     studentSettlementAlreadyApplied,
     thermometerSettlementMarker,
     thermometerStudentGrantPlan,
     thermometerValueSource,
-    thermometerVoteIdsToClear,
     thermometerXpIncrement,
 } from './learningThermometerSettlement.js';
 import { planThermometerLegacyVoteWrites } from './learningThermometerVotes.js';
@@ -384,45 +382,5 @@ describe('학습 온도계 정산 값 출처', () => {
         }, { today: '2026-10-16' });
         assert.equal(payload.usedStaleValues, true);
         assert.equal('values' in payload, false);
-        assert.equal('settlementPending' in payload, false);
-    });
-
-    it('H3: 잠근 뒤 바꾼 표는 이번 정산에서 지우지 않습니다', () => {
-        assert.deepEqual(resolveContinuingSettlementValues({
-            continuing: true,
-            storedPending: { '2': 5, '3': 4 },
-            pendingValues: { '2': 8, '3': 4 },
-        }), { '2': 5, '3': 4 });
-        assert.deepEqual(resolveContinuingSettlementValues({
-            continuing: false,
-            storedPending: { '2': 5 },
-            pendingValues: { '2': 8 },
-        }), { '2': 8 });
-        assert.deepEqual(resolveContinuingSettlementValues({
-            continuing: true,
-            storedPending: null,
-            pendingValues: { '2': 8 },
-        }), { '2': 8 });
-
-        assert.deepEqual(thermometerVoteIdsToClear({
-            snapshot: { '2': 5, '3': 4 },
-            currentVotes: { '2': 8, '3': 4 },
-            requestedIds: ['2', '3', '9'],
-        }), ['3', '9']);
-        assert.deepEqual(thermometerVoteIdsToClear({
-            snapshot: null,
-            currentVotes: { '2': 8 },
-            requestedIds: ['2'],
-        }), ['2']);
-
-        const payload = buildThermometerParentPayload({
-            date: '2026-10-16',
-            min: -20,
-            max: 20,
-            settlementKey: '2026-10-16',
-            settlementStatus: 'running',
-            settlementPending: { '2': 5, '3': 0, 'bad id': 4 },
-        }, { today: '2026-10-16' });
-        assert.deepEqual(payload.settlementPending, { '2': 5 });
     });
 });

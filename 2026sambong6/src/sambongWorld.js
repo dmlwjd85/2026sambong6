@@ -393,6 +393,7 @@ import {
     teacherAuthFailureMessage,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
+import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping } from './lib/preLoginGuard.js';
 import {
     extractWeatherJson,
     isSharedWeatherFresh,
@@ -1598,6 +1599,7 @@ function redrawPlazaGrantsUi() {
         }
 
         async function persistSharedSchoolWeather(weather, region) {
+            if (!allowBackgroundCloudWrite(isLoggedInSession())) return;
             if (!db || !weather || !weather.ok) return;
             try {
                 const authOk = await ensureAnonAuthReady();
@@ -1829,7 +1831,7 @@ function redrawPlazaGrantsUi() {
             if (hasAnyMarketQuote(got)) {
                 _marketQuotes = { ..._marketQuotes, ...got, fetchedAt: now };
                 renderMarketTicker();
-                if (db) {
+                if (db && allowBackgroundCloudWrite(isLoggedInSession())) {
                     try {
                         const authOk = await ensureAnonAuthReady();
                         if (authOk) {
@@ -2906,10 +2908,14 @@ function redrawPlazaGrantsUi() {
             if (!code || !id || !db) return;
             const ref = doc(db, 'inviteCodes', code);
             const existing = await getDoc(ref);
-            if (existing.exists()) {
-                const prev = String(existing.data()?.classId || '').trim();
-                if (prev && prev !== id) throw new Error('invite_code_taken');
-            }
+            const prev = existing.exists() ? String(existing.data()?.classId || '').trim() : '';
+            if (existing.exists() && prev && prev !== id) throw new Error('invite_code_taken');
+            if (!shouldPersistInviteMapping({
+                loggedIn: isLoggedInSession(),
+                exists: existing.exists(),
+                existingClassId: prev,
+                classId: id,
+            })) return;
             await setDoc(ref, {
                 classId: id,
                 displayName: String(extra.displayName || '').slice(0, 40),
@@ -3093,7 +3099,7 @@ function redrawPlazaGrantsUi() {
                     const hadCoTeacher = Array.isArray(window.classMeta.staff)
                         && window.classMeta.staff.some((s) => s && String(s.id) === 'gm_a');
                     window.classMeta.staff = cleanedStaff;
-                    if (hadCoTeacher) {
+                    if (hadCoTeacher && isLoggedInSession()) {
                         try {
                             await setDoc(classRef, { staff: cleanedStaff, updatedAt: serverTimestamp() }, { merge: true });
                         } catch (_) { /* ignore */ }
@@ -3105,21 +3111,25 @@ function redrawPlazaGrantsUi() {
                         window.classMeta.roster = buildBlankRoster(data.studentCount || 25);
                     }
                 }
-                if (!window.classMeta.inviteCode) {
+                if (!window.classMeta.inviteCode && isLoggedInSession()) {
                     window.classMeta.inviteCode = await generateUniqueInviteCode().catch(() => generateInviteCode());
                     try {
                         await setDoc(classRef, { inviteCode: window.classMeta.inviteCode, updatedAt: serverTimestamp() }, { merge: true });
                     } catch (_) { /* ignore */ }
                 }
-                try {
-                    await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
-                } catch (e) {
-                    console.warn('registerInviteCode(load)', e);
+                if (isLoggedInSession()) {
+                    try {
+                        await registerInviteCode(window.classMeta.inviteCode, appId, { displayName: window.classMeta.displayName });
+                    } catch (e) {
+                        console.warn('registerInviteCode(load)', e);
+                    }
                 }
             } else if (appId === SEED_CLASS_ID) {
                 const defaultMeta = buildDefaultClassMeta(appId);
                 window.classMeta = defaultMeta;
-                await setDoc(classRef, { ...defaultMeta, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+                if (isLoggedInSession()) {
+                    await setDoc(classRef, { ...defaultMeta, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+                }
             } else {
                 // 아직 메타가 없는 신규 ID — 시드 명단을 쓰지 않음
                 window.classMeta = buildBlankClassMeta(appId);
@@ -4731,6 +4741,11 @@ function redrawPlazaGrantsUi() {
         
         let db, auth, currentStudentDocRef = null, unsubscribeGlobal = null, unsubscribeSettings = null, unsubscribeAutoXp = null, unsubscribeThermometer = null, unsubscribeThermometerVotes = null, unsubscribeRaid = null, unsubscribeDragonBall = null;
         let _firestoreListenersReady = false;
+        let _sambongLoggedIn = false;
+        function isLoggedInSession() {
+            return _sambongLoggedIn === true;
+        }
+        let openLoggedInServices = function() {};
         let unsubscribeGoldenBell = null;
         let unsubscribeMasterQuiz = null;
         let unsubscribeShopGroupBuy = null;
@@ -11433,7 +11448,6 @@ ${subjectLine}
         let _learningThermometerSavePending = false;
         let _learningThermometerIgnoreRemoteUntil = 0;
         let _thermometerAuthPromptAt = 0;
-        let _thermometerSettleAuthNoticeDate = '';
         let _thermometerUnsaved = false;
         const _thermometerPendingVoteIds = new Set();
 
@@ -15157,6 +15171,10 @@ ${subjectLine}
         }
 
         function checkLearningThermometerAutoSettlement() {
+            if (!shouldAutoSettleLearningThermometer({
+                loggedIn: isLoggedInSession(),
+                isTeacher: isTeacherProvider(auth && auth.currentUser),
+            })) return;
             if (!window.playerState || !window.playerState.isAdmin) return;
             if (isVacationAutomationPaused('thermometer')) return;
             const now = new Date();
@@ -15164,14 +15182,6 @@ ${subjectLine}
             const state = getLearningThermometerState();
             const today = getLocalDateStr();
             if (state.settledDate === today && state.settlementStatus !== 'running') return;
-            if (!isTeacherProvider(auth && auth.currentUser)) {
-                if (_thermometerSettleAuthNoticeDate !== today) {
-                    _thermometerSettleAuthNoticeDate = today;
-                    renderLearningThermometerPanel();
-                    void window.customAlert('학습 온도계 자동 정산을 실행하지 못했습니다.\n\n선생님 계정 인증이 없습니다. 슬라이더 값은 저장되지 않습니다.\n학습 온도계의 지금 XP 반영 버튼으로 인증한 뒤 정산해 주세요.');
-                }
-                return;
-            }
             void settleLearningThermometer({ manual: false });
         }
 
@@ -19880,15 +19890,16 @@ ${subjectLine}
                 }
                 
                 await auth.authStateReady();
-                // 새로고침 때 선생님 계정이 남아 있으면 익명으로 바꾸지 않습니다.
-                if (!auth.currentUser) await signInAnonymously(auth);
-                /** 스냅샷·setDoc가 토큰 없이 먼저 나가는 레이스 완화 */
-                if (auth.currentUser) {
-                    await auth.currentUser.getIdToken();
-                }
                 // ?c=초대코드 / /c/CODE → 해당 학급으로 이동 (페이지 리로드 시 true)
                 if (await applyInviteCodeFromUrlIfNeeded()) return;
                 await loadClassMeta();
+                window.hideGlobalLoading?.();
+
+                openLoggedInServices = function(user) {
+                    // 익명 로그인만으로는 스냅샷·자동 정산을 열지 않습니다. 학생/마스터 로그인 뒤에만 엽니다.
+                    if (!user || !_sambongLoggedIn || _firestoreListenersReady) return;
+                    _firestoreListenersReady = true;
+                    if (user) {
                 void applyDragonBallEmergencyRestores();
                 void applyDailyQuestEmergencySanitization();
                 void applyDuplicateQuestBongHotfix();
@@ -19899,11 +19910,6 @@ ${subjectLine}
                 void applyLegendaryTimeGroupBuyPoolWipeMigration();
                 void applyPeClassGroupBuySettleMigration();
 
-                onAuthStateChanged(auth, user => {
-                    void refreshTeacherAuthBadge();
-                    if (!user || _firestoreListenersReady) return;
-                    _firestoreListenersReady = true;
-                    if (user) {
                         checkTimeEvents();
                         setInterval(checkTimeEvents, 60000);
                         checkClassBells(new Date());
@@ -20426,13 +20432,17 @@ ${subjectLine}
                             }
                         );
 
-                        const savedId = localStorage.getItem('sambong_student_id'); 
-                        const savedPin = localStorage.getItem('sambong_student_pin');
-                        if (savedId && savedPin) {
-                            attemptLogin(savedId, savedPin, true);
-                        }
                     }
+                }
+                onAuthStateChanged(auth, (user) => {
+                    void refreshTeacherAuthBadge();
+                    openLoggedInServices(user);
                 });
+                const savedId = localStorage.getItem('sambong_student_id');
+                const savedPin = localStorage.getItem('sambong_student_pin');
+                if (savedId && savedPin) {
+                    await attemptLogin(savedId, savedPin, true);
+                }
             } catch(e) {
                 console.error("Firebase 초기화 에러", e);
             }
@@ -25060,6 +25070,8 @@ ${subjectLine}
                 }
 
                 window.playerState = { ...data, isGuest: false, isGM, isGMA, isAdmin };
+                _sambongLoggedIn = true;
+                if (auth && auth.currentUser) openLoggedInServices(auth.currentUser);
                 window.playerState.dragonBalls = sanitizeDragonBallList(window.playerState.dragonBalls);
                 window._questHistorySyncReady = false;
                 window._localQuestCompleteKeys = new Set();

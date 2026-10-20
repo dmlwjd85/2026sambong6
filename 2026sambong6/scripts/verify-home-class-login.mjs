@@ -34,12 +34,6 @@ function appUrl(params) {
     return url.toString();
 }
 
-function masterDoc() {
-    const data = studentDoc(GM_PIN);
-    delete data.pin;
-    return data;
-}
-
 function studentDoc(pin) {
     return {
         pin,
@@ -112,11 +106,9 @@ async function seed(uid) {
             email: TEACHER_EMAIL,
             classIds: [HOME, OTHER],
         });
-        await setDoc(doc(db, 'secrets', HOME), { pin: GM_PIN });
-        await setDoc(doc(db, 'secrets', OTHER), { pin: GM_PIN });
-        await setDoc(doc(db, 'artifacts', HOME, 'public', 'data', 'students', 'student_gm'), masterDoc());
+        await setDoc(doc(db, 'artifacts', HOME, 'public', 'data', 'students', 'student_gm'), studentDoc(GM_PIN));
         await setDoc(doc(db, 'artifacts', HOME, 'public', 'data', 'students', 'student_1'), studentDoc(STUDENT_PIN));
-        await setDoc(doc(db, 'artifacts', OTHER, 'public', 'data', 'students', 'student_gm'), masterDoc());
+        await setDoc(doc(db, 'artifacts', OTHER, 'public', 'data', 'students', 'student_gm'), studentDoc(GM_PIN));
         await setDoc(doc(db, 'classes', OTHER), {
             classId: OTHER,
             displayName: '다른 학급',
@@ -232,7 +224,7 @@ try {
         await context2.close();
     }
 
-    // (b) 원래 학급 유휴: PIN 로그인과 서버 세션은 유지하고 새로고침하지 않는다
+    // (b) 원래 학급 유휴: 로그인은 유지, 선생님 배지만 미인증
     {
         const context = await browser.newContext();
         await seedPinOnce(context, {
@@ -249,21 +241,27 @@ try {
         await waitLoggedIn(page, '마스터');
         await dismissAlerts(page);
         await page.evaluate(() => window.switchTab('admin'));
+        await page.evaluate(({ email, password }) => window.__sambongE2E.signInTeacher(email, password), {
+            email: TEACHER_EMAIL,
+            password: TEACHER_PASSWORD,
+        });
         await page.waitForFunction(() => {
             const el = document.querySelector('#adminSection .teacher-auth-badge');
-            return !!el && el.textContent.includes('마스터 PIN');
+            return !!el && el.textContent.includes('인증됨');
         }, null, { timeout: 15000 });
         await shot(page, 'b-home-before-idle-authenticated.png');
         const beforeNav = navigations;
-        await page.evaluate(() => { window.__stay = 1; window.__sambongGmIdleRuns = 0; window.__sambongE2E.armIdleTimer(); });
+        await page.evaluate(() => { window.__stay = 1; window.__sambongE2E.armIdleTimer(); });
         await page.waitForFunction(() => {
             const el = document.querySelector('#adminSection .teacher-auth-badge');
+            const toast = document.getElementById('appToast');
             const auth = window.__sambongE2E.authSummary();
-            return (window.__sambongGmIdleRuns || 0) >= 1
-                && !!el
-                && el.textContent.includes('마스터 PIN')
+            return !!el
+                && el.textContent.trim() === '미인증'
                 && auth.anonymous === true
-                && !auth.email;
+                && !auth.email
+                && !!toast
+                && toast.textContent.includes('선생님 인증이 풀렸어요');
         }, null, { timeout: 12000 });
         const after = await page.evaluate(() => ({
             stay: window.__stay,
@@ -285,10 +283,10 @@ try {
             && after.id === 'gm'
             && after.classId === HOME
             && after.name.includes('마스터')
-            && after.badge.includes('마스터 PIN')
+            && after.badge === '미인증'
+            && after.notice.includes('선생님 인증이 풀렸어요')
             && after.logout.includes('로그아웃')
-            && after.auth.anonymous === true
-            && !after.auth.email;
+            && after.auth.anonymous === true;
         record('b-home-idle-keeps-pin', ok, JSON.stringify({ ...after, navigations, beforeNav }));
         await context.close();
     }
@@ -333,7 +331,7 @@ try {
         await context.close();
     }
 
-    // 원래 학급 학생 PIN: 새로고침 뒤에도 학생으로 로그인되고 익명 인증을 유지한다
+    // 원래 학급 학생 PIN + 남아 있는 선생님 세션: 새로고침 뒤 학생은 로그인되고 선생님 세션은 끊긴다
     {
         const context = await browser.newContext();
         await seedPinOnce(context, {
@@ -346,12 +344,21 @@ try {
         await page.goto(appUrl({ gmIdleMs: 120000 }), { waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => window.__sambongE2E, null, { timeout: 20000 });
         await waitLoggedIn(page, '김단엘');
+        await page.evaluate(() => window.switchTab('admin'));
+        await page.evaluate(({ email, password }) => window.__sambongE2E.signInTeacher(email, password), {
+            email: TEACHER_EMAIL,
+            password: TEACHER_PASSWORD,
+        });
+        await page.waitForFunction(() => {
+            const el = document.querySelector('#adminSection .teacher-auth-badge');
+            return !!el && el.textContent.includes('인증됨');
+        }, null, { timeout: 15000 });
         await page.reload({ waitUntil: 'domcontentloaded' });
         await page.waitForFunction(() => window.__sambongE2E, null, { timeout: 20000 });
         await waitLoggedIn(page, '김단엘');
         await page.waitForFunction(() => {
-            const el = document.querySelector('.teacher-auth-badge');
-            return !!el && el.textContent.trim() === '학생 화면';
+            const el = document.querySelector('#adminSection .teacher-auth-badge');
+            return !!el && el.textContent.trim() === '미인증';
         }, null, { timeout: 15000 });
         const after = await page.evaluate(() => ({
             id: localStorage.getItem('sambong_student_id'),
@@ -369,7 +376,7 @@ try {
             && after.pin === STUDENT_PIN
             && after.classId === HOME
             && after.name.includes('김단엘')
-            && after.badge === '학생 화면'
+            && after.badge === '미인증'
             && after.auth.anonymous === true;
         record('d-home-student-reload', ok, JSON.stringify(after));
         await context.close();

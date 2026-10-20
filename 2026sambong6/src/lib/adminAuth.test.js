@@ -9,9 +9,6 @@ import {
     isOriginalHomeClass,
     isTeacherProvider,
     planGmIdleExpiry,
-    planPinAttempt,
-    PIN_ATTEMPT_MAX,
-    PIN_LOCK_MS,
     readGmIdleLogoutOverride,
     resolveGmIdleLogoutMs,
     HOME_CLASS_IDLE_AUTH_NOTICE,
@@ -66,11 +63,10 @@ describe('선생님 인증 판별', () => {
         assert.equal(teacherAuthStatusText({ allowlisted: true, email: '' }), '인증됨');
         assert.match(teacherAuthFailureMessage('popup_blocked'), /이메일/);
         assert.match(teacherAuthFailureMessage('not_allowlisted'), /권한 없음/);
-        assert.match(teacherAuthFailureMessage('permission_denied'), /값 형식/);
-        assert.doesNotMatch(teacherAuthFailureMessage('permission_denied'), /admins/);
+        assert.match(teacherAuthFailureMessage('permission_denied'), /admins/);
     });
 
-    it('규칙의 GM 전용 키 목록은 남고 Google·admins 조건은 없다', () => {
+    it('규칙의 GM 전용 키 목록과 맞고 updatedBy 검사는 없다', () => {
         const rules = fs.readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8');
         const listed = [...rules.matchAll(/'([A-Za-z0-9_]+)'/g)].map((match) => match[1]);
         GM_ONLY_SETTING_KEYS.forEach((key) => {
@@ -78,19 +74,10 @@ describe('선생님 인증 판별', () => {
         });
         assert.equal(GM_IDLE_LOGOUT_MS, 15 * 60 * 1000);
         assert.equal(ORIGINAL_HOME_CLASS_ID, 'sambong-class-2026');
-        assert.match(rules, /function gmOnlyKeys\(\)/);
-        assert.match(rules, /function shopDiscountChangeIsValid\(\)/);
-        assert.match(rules, /function autoXpShapeOk\(\)/);
-        assert.match(rules, /function thermometerShapeOk\(\)/);
-        assert.match(rules, /function isPinMaster\(appId\)/);
-        assert.match(rules, /match \/secrets\/\{appId\}/);
-        assert.match(rules, /match \/gmSessions\/\{uid\}/);
-        assert.match(rules, /match \/gmPinProofs\/\{uid\}/);
-        assert.match(rules, /allow read: if false;/);
-        assert.doesNotMatch(rules, /function isAdmin\(\)/);
-        assert.doesNotMatch(rules, /function isAdminForApp\(/);
-        assert.doesNotMatch(rules, /sign_in_provider != 'anonymous'/);
-        assert.doesNotMatch(rules, /documents\/admins\/\$\(request\.auth\.uid\)/);
+        assert.match(rules, /function isAdmin\(\)/);
+        assert.match(rules, /function isAdminForApp\(appId\)/);
+        assert.match(rules, /sign_in_provider != 'anonymous'/);
+        assert.match(rules, /documents\/admins\/\$\(request\.auth\.uid\)/);
         assert.doesNotMatch(rules, /updatedBy\s*==/);
         assert.doesNotMatch(rules, /\.updatedBy/);
         assert.match(rules, /allow delete: if false;/);
@@ -116,37 +103,6 @@ describe('원래 학급 PIN 로그인 유지', () => {
         }), 'defer');
         assert.equal(planGmIdleExpiry({ classId: 'sambong-class-2026', isAdmin: false }), 'ignore');
         assert.equal(planGmIdleExpiry({ classId: 'other-class', isAdmin: false, projectionActive: true }), 'ignore');
-    });
-
-    it('PIN 시도는 학급당 10번째 틀린 입력에 15분 잠그고, 잠긴 동안은 더하지 않는다', () => {
-        const start = 1_000_000;
-        assert.deepEqual(planPinAttempt(null, start), {
-            count: 1,
-            generation: 1,
-            lockedUntilMs: null,
-            blocked: false,
-        });
-        assert.deepEqual(
-            planPinAttempt({ count: 1, generation: 1, lockedUntilMs: null }, start + 1000),
-            { count: 2, generation: 1, lockedUntilMs: null, blocked: false },
-        );
-        assert.deepEqual(
-            planPinAttempt({ count: 0, generation: 2, lockedUntilMs: null }, start),
-            { count: 1, generation: 2, lockedUntilMs: null, blocked: false },
-        );
-        const tenth = planPinAttempt({ count: PIN_ATTEMPT_MAX - 1, generation: 3, lockedUntilMs: null }, start);
-        assert.equal(tenth.count, PIN_ATTEMPT_MAX);
-        assert.equal(tenth.generation, 3);
-        assert.equal(tenth.lockedUntilMs, start + PIN_LOCK_MS);
-        assert.equal(tenth.blocked, false);
-        assert.deepEqual(
-            planPinAttempt({ count: PIN_ATTEMPT_MAX, generation: 3, lockedUntilMs: start + PIN_LOCK_MS }, start + 1000),
-            { count: PIN_ATTEMPT_MAX, generation: 3, lockedUntilMs: start + PIN_LOCK_MS, blocked: true },
-        );
-        assert.deepEqual(
-            planPinAttempt({ count: PIN_ATTEMPT_MAX, generation: 3, lockedUntilMs: start + PIN_LOCK_MS }, start + PIN_LOCK_MS),
-            { count: 1, generation: 4, lockedUntilMs: null, blocked: false },
-        );
     });
 
     it('유휴 시간은 운영 한도보다 짧게만 덮어쓴다', () => {

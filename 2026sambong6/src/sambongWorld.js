@@ -636,6 +636,7 @@ import {
     normalizeJobIcon,
     pickUnusedJobLook,
     resolveStudentJobsFromCatalog,
+    setJobAssignment,
     studentHasJob,
     toggleJobAssignment,
 } from './lib/jobs.js';
@@ -25485,7 +25486,15 @@ ${subjectLine}
                             );
                         }
                         // 직업은 본인 확인·마스터 장착 경로만 씁니다. 다른 저장이 낡은 jobs를 덮어쓰지 않게 서버 값을 지킵니다.
-                        if (!opts.allowJobChanges) {
+                        // 이번 저장이 켜거나 끄는 직업 하나만 서버 목록에 반영합니다. 그 사이 달린 다른 직업은 남깁니다.
+                        if (opts.jobAssignment && opts.jobAssignment.job) {
+                            dataToSave.jobs = setJobAssignment(
+                                serverData.jobs,
+                                opts.jobAssignment.job,
+                                getJobCatalog(),
+                                !!opts.jobAssignment.enabled,
+                            );
+                        } else if (!opts.allowJobChanges) {
                             if (Object.prototype.hasOwnProperty.call(serverData, 'jobs')) {
                                 dataToSave.jobs = serverData.jobs;
                             } else {
@@ -25613,6 +25622,11 @@ ${subjectLine}
                 }
                 if (Object.prototype.hasOwnProperty.call(dataToSave, 'loanPenaltyUntilYmd')) {
                     window.playerState.loanPenaltyUntilYmd = dataToSave.loanPenaltyUntilYmd || '';
+                }
+                if (opts.jobAssignment && Object.prototype.hasOwnProperty.call(dataToSave, 'jobs')) {
+                    window.playerState.jobs = dataToSave.jobs;
+                    const myId = String(localStorage.getItem('sambong_student_id') || '');
+                    if (myId) mergeStudentDocIntoPlazaCache(myId, { id: myId, jobs: dataToSave.jobs });
                 }
                 return true;
             } catch (e) {
@@ -28156,10 +28170,15 @@ ${subjectLine}
             } else if (!await window.customConfirm(`[${job.name}] 직업을 선택할까요?`)) {
                 return;
             }
+            const enabled = !had;
             const prevJobs = window.playerState.jobs;
-            window.playerState.jobs = toggleJobAssignment(window.playerState.jobs, job, catalog);
+            window.playerState.jobs = setJobAssignment(window.playerState.jobs, job, catalog, enabled);
             updateUI();
-            const saved = await saveDataToCloud({ allowJobChanges: true, operationLabel: '직업 변경' });
+            const saved = await saveDataToCloud({
+                allowJobChanges: true,
+                jobAssignment: { job, enabled },
+                operationLabel: '직업 변경',
+            });
             if (saved === false) {
                 window.playerState.jobs = prevJobs;
                 updateUI();
@@ -28213,9 +28232,16 @@ ${subjectLine}
                         : `${who}에게 [${job.name}]을(를) 달까요?`;
                     if (!await window.customConfirm(msg)) return;
                 }
-                const nextJobs = toggleJobAssignment(stu.jobs, job, catalog);
-                await setDoc(ref, { jobs: nextJobs }, { merge: true });
-                mergeStudentDocIntoPlazaCache(sid, { ...stu, id: sid, jobs: nextJobs });
+                const enabled = !had;
+                // 확인 창이 떠 있는 동안 다른 직업이 저장돼도, 서버 목록에서 이번 직업만 맞춥니다.
+                const nextJobs = await runTransaction(db, async (tx) => {
+                    const live = await tx.get(ref);
+                    const serverJobs = live.exists() ? (live.data() || {}).jobs : [];
+                    const next = setJobAssignment(serverJobs, job, getJobCatalog(), enabled);
+                    tx.set(ref, { jobs: next }, { merge: true });
+                    return next;
+                });
+                mergeStudentDocIntoPlazaCache(sid, { id: sid, jobs: nextJobs });
                 if (typeof renderJobGrid === 'function') renderJobGrid();
                 if (typeof window.renderPlaza === 'function') {
                     window.renderPlaza(window.allStudentsData, window.gmData, window.gmaData);

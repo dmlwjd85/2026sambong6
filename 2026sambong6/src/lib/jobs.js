@@ -361,3 +361,15 @@ export function toggleJobAssignment(jobs, jobSpec, catalog = []) {
     if (jobSpec.id != null && jobSpec.id !== '') entry.id = String(jobSpec.id);
     return list.concat([entry]);
 }
+
+/**
+ * 원하는 장착 상태만 맞춥니다. 이미 그 상태면 목록을 뒤집지 않습니다.
+ * 같은 순간에 다른 직업을 달아도 이번 직업만 넣고 빼서 나머지를 남깁니다.
+ */
+export function setJobAssignment(jobs, jobSpec, catalog = [], enabled) {
+    const list = Array.isArray(jobs) ? jobs.slice() : [];
+    if (!jobSpec || (!jobSpec.name && !jobSpec.id)) return list;
+    const has = studentHasJob(list, jobSpec, catalog);
+    if (has === !!enabled) return list;
+    return toggleJobAssignment(list, jobSpec, catalog);
+}

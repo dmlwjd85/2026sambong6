@@ -3,8 +3,6 @@
 @tailwind utilities;
 
         body { color: #f8fafc; overflow-x: hidden; transition: background 0.5s ease-in-out; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-        /* 음수 금액은 어느 화면에서나 이 클래스로 빨갛게 보입니다. */
-        .money-negative { color: #f87171 !important; }
         h1, h2, h3, .font-display { font-family: 'Black Han Sans', sans-serif; letter-spacing: 1px; }
 
         /* 상단 헤더: 좁은 화면에서도 학급·이름·로그아웃이 한 줄입니다. */

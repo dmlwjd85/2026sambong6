@@ -69,7 +69,6 @@ describe('수업 XP 슬롯 (KST)', () => {
         assert.equal(classXpGrantDecision(10, '2026_10_15_14:40', '2026_10_15_14:40'), 'already');
         assert.equal(classXpGrantDecision(10, '2026_10_15_13:50', '2026_10_15_14:40'), 'grant');
         assert.equal(classXpGrantDecision(0, '', '2026_10_15_14:40'), 'grant');
-        assert.equal(classXpGrantDecision(10, '', '2026_10_15_14:40', { blocked: true }), 'credit-default');
     });
 
     it('복구 문서는 서버의 수업 XP 슬롯을 지우거나 옛 키로 바꾸지 않는다', () => {

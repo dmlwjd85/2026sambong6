@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence, connectAuthEmulator } from 'firebase/auth';
 import {
     getFirestore,
     connectFirestoreEmulator,
@@ -394,12 +394,6 @@ import {
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
 import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping } from './lib/preLoginGuard.js';
-import {
-    clearPersistedLoginIdentity,
-    readPersistedLogin,
-    shouldRestoreLoginWithoutServerPin,
-    writePersistedLogin,
-} from './lib/loginSession.js';
 import {
     extractWeatherJson,
     isSharedWeatherFresh,
@@ -3243,7 +3237,8 @@ function redrawPlazaGrantsUi() {
             }
             try {
                 localStorage.removeItem('sambong_class_id');
-                clearPersistedLoginIdentity(localStorage);
+                localStorage.removeItem('sambong_student_id');
+                localStorage.removeItem('sambong_student_pin');
             } catch (_) { /* ignore */ }
             const url = new URL(window.location.href);
             url.searchParams.delete('class');
@@ -19904,8 +19899,7 @@ ${subjectLine}
                     };
                 }
                 try {
-                    // 탭을 닫거나 TV·휴대폰 앱을 종료해도 인증이 남게 합니다. 세션 저장소는 그때 비워집니다.
-                    await setPersistence(auth, browserLocalPersistence);
+                    await setPersistence(auth, browserSessionPersistence);
                 } catch (e) {
                     console.warn('setPersistence', e);
                 }
@@ -20485,9 +20479,10 @@ ${subjectLine}
                     void refreshTeacherAuthBadge();
                     openLoggedInServices(user);
                 });
-                const savedLogin = readPersistedLogin(localStorage);
-                if (savedLogin) {
-                    await attemptLogin(savedLogin.studentId, savedLogin.pin, true);
+                const savedId = localStorage.getItem('sambong_student_id');
+                const savedPin = localStorage.getItem('sambong_student_pin');
+                if (savedId && savedPin) {
+                    await attemptLogin(savedId, savedPin, true);
                 }
             } catch(e) {
                 console.error("Firebase 초기화 에러", e);
@@ -24774,13 +24769,11 @@ ${subjectLine}
         // ★ 로그인, 식권 구매 및 데이터 저장 로직 ★
         // ==========================================
         document.getElementById('btnLogin').onclick = () => {
-            window._pendingLoginRole = 'student';
             attemptLogin(document.getElementById('loginId').value, document.getElementById('loginPin').value, false);
         };
         const btnLoginTeacher = document.getElementById('btnLoginTeacher');
         if (btnLoginTeacher) {
             btnLoginTeacher.onclick = () => {
-                window._pendingLoginRole = 'teacher';
                 attemptLogin(
                     document.getElementById('loginIdTeacher')?.value,
                     document.getElementById('loginPinTeacher')?.value,
@@ -25101,22 +25094,17 @@ ${subjectLine}
                 
                 if (data) {
                     if (!data.pin) {
-                        if (isAutoLogin) {
-                            // 서버에 pin이 없어도 이 기기의 마스터 세션은 유지합니다. 여기서는 쓰지 않습니다.
-                            if (!shouldRestoreLoginWithoutServerPin({ isAutoLogin: true, isAdmin, savedPin: pin })) return;
-                            data = { ...data, pin };
-                        } else {
-                            const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
-                            if(!isOk) return; 
-                            data.pin = pin; 
-                            try {
-                                await setDoc(docRef, { pin: pin }, { merge: true });
-                            } catch (pinErr) {
-                                // 배포된 규칙은 마스터 학생 문서에 pin을 두지 못하게 할 수 있습니다.
-                                if (!(isAdmin && classifyAuthError(pinErr) === 'permission_denied')) throw pinErr;
-                                delete data.pin;
-                                console.warn('master pin write skipped', pinErr && pinErr.code);
-                            }
+                        if (isAutoLogin) return; 
+                        const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
+                        if(!isOk) return; 
+                        data.pin = pin; 
+                        try {
+                            await setDoc(docRef, { pin: pin }, { merge: true });
+                        } catch (pinErr) {
+                            // 배포된 규칙은 마스터 학생 문서에 pin을 두지 못하게 할 수 있습니다.
+                            if (!(isAdmin && classifyAuthError(pinErr) === 'permission_denied')) throw pinErr;
+                            delete data.pin;
+                            console.warn('master pin write skipped', pinErr && pinErr.code);
                         }
                     } else if (data.pin !== pin) {
                         if (isAutoLogin) {
@@ -25151,10 +25139,8 @@ ${subjectLine}
                 window._localQuestCompleteKeys = new Set();
                 window._prevTodayQuestKeys = todayQuestHistoryKeys(window.playerState.questHistory, getLocalDateStr());
                 if (isAdmin) ensureMasterAllGear();
-                const storedRole = isAutoLogin
-                    ? (readPersistedLogin(localStorage)?.role || '')
-                    : (window._pendingLoginRole === 'teacher' && isAdmin ? 'teacher' : (isAdmin ? 'master' : 'student'));
-                writePersistedLogin(localStorage, { studentId, pin, role: storedRole, classId: appId });
+                localStorage.setItem('sambong_student_id', studentId);
+                localStorage.setItem('sambong_student_pin', pin);
                 currentStudentDocRef = docRef;
                 /** 로그인 직후에도 checkTimeEvents·스냅샷과 동일한 일일 퀘스트 달력 동기화 */
                 if (!isAdmin) {

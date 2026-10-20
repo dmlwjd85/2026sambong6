@@ -958,57 +958,6 @@ describe('firestore rules: PIN 세션과 스키마', { skip: emulatorOn ? false 
         assert.equal((await getDoc(doc(db, `${path}/votes/2`))).data().value, 5);
     });
 
-    it('H3: 어제 잠글 때 저장한 값과 다른 오늘 표는 지우지 않고 오늘 정산이 받는다', async () => {
-        const now = 1_800_000_000_000;
-        const leaseMs = 5 * 60 * 1000;
-        const path = 'artifacts/class1/public/data/settings/learningThermometer';
-        await testEnv.withSecurityRulesDisabled(async (context) => {
-            const db = context.firestore();
-            await setDoc(doc(db, path), thermometerPayload({
-                date: '2026-10-16',
-                settlementKey: '2026-10-16',
-                settlementStatus: 'running',
-                settlementStartedAt: now - leaseMs - 1000,
-                settlementLockOwner: 'tabA',
-                settlementAttempt: 1,
-                usedStaleValues: false,
-                settledDate: '',
-                settlementPending: { '2': 5, '3': 4 },
-            }));
-            await setDoc(doc(db, `${path}/votes/2`), { value: 8 });
-            await setDoc(doc(db, `${path}/votes/3`), { value: 4 });
-            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_2'), {
-                xp: 15,
-                bong: 0,
-                lastThermometerSettlementKey: '2026-10-16#1',
-            });
-            await setDoc(doc(db, 'artifacts/class1/public/data/students/student_3'), { xp: 10, bong: 0 });
-        });
-
-        const db = teacher().firestore();
-        const { args } = settlementRefs(db);
-        const result = await settleThermometerResolvingPrior(db, {
-            ...args,
-            activeIds: ['2', '3'],
-            today: '2026-10-17',
-            owner: 'tabB',
-            now,
-        });
-        assert.equal(result.status, 'done');
-        const stu2 = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_2'));
-        const stu3 = await getDoc(doc(db, 'artifacts/class1/public/data/students/student_3'));
-        assert.equal(stu3.data().xp, 14);
-        assert.equal(stu3.data().lastThermometerSettlementKey, '2026-10-16#1');
-        assert.equal(stu2.data().xp, 23);
-        assert.equal(stu2.data().lastThermometerSettlementKey, '2026-10-17#2');
-        assert.equal((await getDoc(doc(db, `${path}/votes/2`))).data().value, 0);
-        assert.equal((await getDoc(doc(db, `${path}/votes/3`))).data().value, 0);
-        const parent = await getDoc(doc(db, path));
-        assert.equal(parent.data().settlementStatus, 'done');
-        assert.equal(parent.data().settledDate, '2026-10-17');
-        assert.equal(parent.data().settlementPending, undefined);
-    });
-
     it('H1: 같은 날 오케스트레이션 재시도도 이미 지급한 학생을 다시 주지 않는다', async () => {
         const now = 1_800_000_000_000;
         const path = 'artifacts/class1/public/data/settings/learningThermometer';

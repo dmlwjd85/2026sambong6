@@ -20,6 +20,8 @@ import {
 const emulatorOn = !!process.env.FIRESTORE_EMULATOR_HOST;
 const projectId = 'demo-sambong';
 const settingsPath = 'artifacts/class1/public/data/settings/global';
+const rulesSrc = fs.readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8');
+const deployedPinRules = rulesSrc.includes('function isPinMaster');
 
 function validDiscount(extra = {}) {
     return {
@@ -32,7 +34,11 @@ function validDiscount(extra = {}) {
     };
 }
 
-describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'FIRESTORE_EMULATOR_HOST 없음' }, () => {
+describe('firestore rules: admins 허용목록', {
+    skip: !emulatorOn
+        ? 'FIRESTORE_EMULATOR_HOST 없음'
+        : (deployedPinRules ? '배포된 PIN 세션 규칙이라 admins 허용목록 시험은 보지 않습니다' : false),
+}, () => {
     /** @type {import('@firebase/rules-unit-testing').RulesTestEnvironment | null} */
     let testEnv = null;
 
@@ -1042,6 +1048,117 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             raidPassword: '1234',
             shieldStock: 5,
         }));
+    });
+});
+
+function thermometerPayload(extra = {}) {
+    return {
+        date: '2026-10-21',
+        min: -20,
+        max: 20,
+        settledDate: '',
+        lastSettlementAt: 0,
+        settlementKey: '',
+        settlementStatus: '',
+        settlementStartedAt: 0,
+        settlementLockOwner: '',
+        settlementAttempt: 0,
+        usedStaleValues: false,
+        settlementAppliedCount: 0,
+        settlementTotalDelta: 0,
+        ...extra,
+    };
+}
+
+describe('익명 로그인 마스터 설정', {
+    skip: emulatorOn && deployedPinRules ? false : '에뮬레이터와 배포 규칙이 있을 때만',
+}, () => {
+    /** @type {import('@firebase/rules-unit-testing').RulesTestEnvironment | null} */
+    let testEnv = null;
+
+    before(async () => {
+        testEnv = await initializeTestEnvironment({
+            projectId,
+            firestore: { rules: rulesSrc },
+        });
+    });
+
+    after(async () => {
+        if (testEnv) await testEnv.cleanup();
+    });
+
+    beforeEach(async () => {
+        await testEnv.clearFirestore();
+    });
+
+    function anon() {
+        return testEnv.authenticatedContext('anon-master', { firebase: { sign_in_provider: 'anonymous' } });
+    }
+
+    it('로그인한 익명 사용자는 공지·상점·퀘스트·직업·은행·레이드·할인을 저장한다', async () => {
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, settingsPath), { announcement: '오늘 공지' }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), { shopPrices: { shield: 12 } }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), { customQuests: [{ id: 'q1', name: '돕기' }] }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), { customJobs: [{ id: 'j1', name: '도서' }] }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), { bankInterestPercent: 3 }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), { raidPassword: '2468' }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
+            weekendRaidRewardXp: 40,
+            weekendRaidRewardBong: 20,
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/raid/draft'), {
+            questionCount: 5,
+            rewardMaxXp: 40,
+        }, { merge: true }));
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
+            shopDiscount: { enabled: false, percent: 0 },
+        }, { merge: true }));
+        await assertFails(setDoc(doc(db, settingsPath), {
+            shopDiscount: { enabled: true, percent: 150, startAt: 1, endAt: 2 },
+        }, { merge: true }));
+        await assertFails(deleteDoc(doc(db, settingsPath)));
+    });
+
+    it('로그인한 익명 사용자는 온도계와 표를 저장하고, 로그인 없으면 공지를 쓰지 못한다', async () => {
+        const db = anon().firestore();
+        const parent = 'artifacts/class1/public/data/settings/learningThermometer';
+        await assertSucceeds(setDoc(doc(db, parent), thermometerPayload()));
+        await assertSucceeds(setDoc(doc(db, `${parent}/votes/3`), { value: 4 }));
+        await assertFails(setDoc(doc(db, `${parent}/votes/3`), { value: 99 }));
+        await assertFails(deleteDoc(doc(db, parent)));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, settingsPath), { announcement: '몰래' }, { merge: true }));
+    });
+
+    it('마스터 학생 PIN과 비밀 문서는 그대로 막고, 학생 상태 메시지는 저장된다', async () => {
+        const db = anon().firestore();
+        await assertFails(setDoc(doc(db, 'artifacts/class1/public/data/students/student_gm'), {
+            xp: 0,
+            bong: 0,
+            pin: '1234',
+        }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/students/student_1'), {
+            xp: 10,
+            bong: 0,
+            statusMessage: '수업',
+        }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/students/student_1'), {
+            statusMessage: '끝',
+        }, { merge: true }));
+        await assertFails(getDoc(doc(db, 'secrets/sambong-class-2026')));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/other-class/public/data/settings/global'), {
+            announcement: '다른 학급',
+        }, { merge: true }));
+    });
+
+    it('로그인한 익명 사용자는 OX 문제 은행 경로를 저장하고, 로그인 없으면 저장하지 못한다', async () => {
+        const db = anon().firestore();
+        const bank = 'artifacts/class1/public/data/oxQuizBank/bank';
+        await assertSucceeds(setDoc(doc(db, bank), { questions: [{ q: '맞나요', answer: true }] }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/oxQuizBank/q1'), { prompt: '맞나요', answer: true }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, bank), { questions: [] }));
     });
 });
 

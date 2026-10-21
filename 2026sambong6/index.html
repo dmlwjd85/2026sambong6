@@ -9,18 +9,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="MATE">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230f172a'/><text x='50%25' y='54%25' font-size='48' dominant-baseline='central' text-anchor='middle' fill='%2367e8f9' font-family='sans-serif' font-weight='700'>M</text></svg>">
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%25' y='54%25' font-size='48' dominant-baseline='central' text-anchor='middle' fill='%2367e8f9' font-family='sans-serif' font-weight='700'>M</text></svg>">
-    <script>
-        const manifest = {
-            "name": "MATE", "short_name": "MATE", "start_url": window.location.pathname,
-            "display": "standalone", "background_color": "#f0f9ff", "theme_color": "#0ea5e9",
-            "icons": [{"src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><text x='50%25' y='50%25' font-size='65' dominant-baseline='central' text-anchor='middle'>👑</text></svg>", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable"}]
-        };
-        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-        const manifestUrl = URL.createObjectURL(manifestBlob);
-        document.write(`<link rel="manifest" href="${manifestUrl}">`);
-    </script>
+    <meta name="theme-color" content="#0ea5e9">
+    <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="%BASE_URL%favicon-16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="%BASE_URL%apple-touch-icon.png">
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest">
+    <script>if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('%BASE_URL%sw.js', { scope: '%BASE_URL%' }).catch(() => {}));</script>
     <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Do+Hyeon&family=Gaegu:wght@400;700&family=Jua&family=Nanum+Pen+Script&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>

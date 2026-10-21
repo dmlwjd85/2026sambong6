@@ -2554,7 +2554,7 @@ function redrawPlazaGrantsUi() {
                 const shoes = getGear(row.equippedShoes) || SHOE_DATA.find((g) => g.id === row.equippedShoes);
                 if (shoes) overlays += shoeMarkHtml(shoes, gearEnhanceOf(row, row.equippedShoes));
             }
-            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none">${rankLayer}<span class="char-portrait-frame">${inner}</span>${overlays}</div>`;
+            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none"><span class="char-portrait-frame">${rankLayer}${inner}</span>${overlays}</div>`;
         }
 
         function applyEquippedAura(data, fallbackBorder, fallbackGlow) {

@@ -12,6 +12,7 @@ import {
     ACCIDENTAL_POINTER_SUPPRESS_MS,
     unexpectedQuestCompletions,
     questCompleteConfirmMessage,
+    creditDefaultAllowsQuestXpGain,
     todayQuestHistoryKeys,
     patchStudentQuestBoardRow,
 } from './questCompletionGuard.js';
@@ -145,5 +146,13 @@ describe('퀘스트 오완료 방지', () => {
         assert.deepEqual(unexpected, ['q6|2026-09-13']);
         assert.match(questCompleteConfirmMessage('잔반 제로'), /잔반 제로/);
         assert.match(questCompleteConfirmMessage('잔반 제로'), /본인이 직접/);
+    });
+
+    it('신용불량 중에도 퀘스트 완료 저장만 경험치 상승을 허용한다', () => {
+        assert.equal(creditDefaultAllowsQuestXpGain(undefined), false);
+        assert.equal(creditDefaultAllowsQuestXpGain({}), false);
+        assert.equal(creditDefaultAllowsQuestXpGain({ operationLabel: '상점' }), false);
+        assert.equal(creditDefaultAllowsQuestXpGain({ questCompletionId: 'q1' }), true);
+        assert.equal(creditDefaultAllowsQuestXpGain({ allowCreditDefaultQuestXp: true }), true);
     });
 });

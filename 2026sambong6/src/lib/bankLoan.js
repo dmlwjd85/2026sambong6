@@ -190,8 +190,8 @@ export function creditDefaultBlockMessage(untilYmd) {
     const until = String(untilYmd || '');
     const last = until ? addCalendarDaysYmd(until, -1) : '';
     return last
-        ? `신용불량 상태입니다 (${last}까지).\n퀘스트와 추가 경험치를 받을 수 없습니다.`
-        : '신용불량 상태입니다.\n퀘스트와 추가 경험치를 받을 수 없습니다.';
+        ? `신용불량 상태입니다 (${last}까지).\n퀘스트는 완료할 수 있습니다. 대출·상점 등 추가 경험치는 받을 수 없습니다.`
+        : '신용불량 상태입니다.\n퀘스트는 완료할 수 있습니다. 대출·상점 등 추가 경험치는 받을 수 없습니다.';
 }
 
 /**

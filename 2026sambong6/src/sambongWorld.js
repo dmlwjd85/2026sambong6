@@ -71,6 +71,7 @@ import {
     isWeeklyQuestCompletedThisWeek,
     patchStudentQuestBoardRow,
     questCompleteConfirmMessage,
+    creditDefaultAllowsQuestXpGain,
     sanitizeDailyQuestFlags,
     sanitizeWeeklyQuestFlags,
     todayQuestHistoryKeys,
@@ -24509,9 +24510,8 @@ ${subjectLine}
             const weekRangeUi = weekRangeMondaySunday();
             const creditHint = document.getElementById('creditDefaultQuestHint');
             if (creditHint) {
-                const blocked = studentIsCreditDefault(window.playerState) && !window.playerState.isAdmin;
-                creditHint.classList.toggle('hidden', !blocked);
-                creditHint.textContent = blocked ? playerCreditDefaultMessage() : '';
+                creditHint.classList.add('hidden');
+                creditHint.textContent = '';
             }
             if (pointerIsDown) markAccidentalPointerSuppression();
             const skipQuestButtons = !!pointerIsDown;
@@ -24568,7 +24568,6 @@ ${subjectLine}
 
             const renderQuests = (quests, containerId) => {
                 const today = new Date().getDay();
-                const creditBlocked = studentIsCreditDefault(window.playerState) && !window.playerState.isAdmin;
                 document.getElementById(containerId).innerHTML = quests.map(q => {
                     const done = isQuestCompletedForUi(window.playerState, q, todayStrUi, weekRangeUi);
                     const unlocked = window.playerState.unlockedQuests && window.playerState.unlockedQuests[q.id];
@@ -24581,10 +24580,6 @@ ${subjectLine}
                                 ? 'border-cyan-400/80 bg-gradient-to-br from-cyan-950/50 to-slate-900/80 ring-1 ring-cyan-500/35 shadow-[0_0_12px_rgba(34,211,238,0.12)]'
                                 : 'border-sb-blue bg-slate-800';
                         act = `window.cancelQuest('${q.id}', ${q.xp}, ${q.bong})`;
-                    }
-                    else if (creditBlocked) {
-                        cls = "opacity-50 border-red-800";
-                        act = `window.customAlert(${JSON.stringify(playerCreditDefaultMessage())})`;
                     }
                     else if (q.type === 'locked' && !unlocked) {
                         cls = "opacity-50 border-slate-700";
@@ -25280,9 +25275,10 @@ ${subjectLine}
                         const bankAccrued = applyServerBankAccrual(serverData, window.globalSettings, {
                             isAdmin: !!window.playerState.isAdmin,
                         });
-                        // 신용불량 중 학생 추가 XP는 막습니다. 교사 광장 지급(isAdmin)은 그대로 둡니다.
+                        // 신용불량 중 학생 추가 XP는 막습니다. 퀘스트 완료 보상과 교사 광장 지급은 그대로 둡니다.
                         if (
                             !window.playerState.isAdmin
+                            && !creditDefaultAllowsQuestXpGain(opts)
                             && studentIsCreditDefault(bankAccrued, todaySave)
                             && Number.isFinite(serverXp)
                             && Number.isFinite(Number(dataToSave.xp))
@@ -26214,7 +26210,13 @@ ${subjectLine}
             if (!applied.ok) return;
             window.playerState.inventory = applied.inventory;
             window.playerState.gearEnhance = sanitizeGearEnhance(window.playerState.gearEnhance, window.playerState.inventory);
-            if (!window.playerState.isGuest && currentStudentDocRef) await saveDataToCloud();
+            if (!window.playerState.isGuest && currentStudentDocRef) {
+                await saveDataToCloud(
+                    opts.allowCreditDefaultQuestXp
+                        ? { allowCreditDefaultQuestXp: true, operationLabel: '퀘스트 보상 장비' }
+                        : undefined
+                );
+            }
             const slotName = gearSlotLabel(g && g.slot);
             const n = applied.count;
             const lv = gearEnhanceOf(window.playerState, dropped);
@@ -26229,9 +26231,6 @@ ${subjectLine}
             if (window.playerState.isGuest) return await window.customAlert("👀 게스트는 이용할 수 없어요.");
             if (shouldIgnoreAccidentalPointer()) return;
             if (window._questActionRunning) return;
-            if (studentIsCreditDefault(window.playerState)) {
-                return await window.customAlert(playerCreditDefaultMessage());
-            }
             applyDailyQuestResetIfNewDay({ silent: true });
 
             const todayStr = getLocalDateStr();
@@ -26328,7 +26327,7 @@ ${subjectLine}
             window.playerState.bong = normalizeBongValue(Number(window.playerState.bong) || 0);
             await window.customAlert(alertMsg.trim());
 
-            await handleQuestDrop(catalogPay.xp, { allDailyDone });
+            await handleQuestDrop(catalogPay.xp, { allDailyDone, allowCreditDefaultQuestXp: true });
 
             updateUI();
             if (typeof window.renderAdminQuestBoard === 'function') {

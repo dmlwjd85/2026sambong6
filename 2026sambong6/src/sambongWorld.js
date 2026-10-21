@@ -666,6 +666,14 @@ import {
     sanitizePraiseBoard,
 } from './lib/peerPraise.js';
 import {
+    DISLIKE_XP_COST,
+    dislikeCountForToday,
+    dislikeFailMessage,
+    latestDislikeReason,
+    planPeerDislike,
+    sanitizeDislikeBoard,
+} from './lib/peerDislike.js';
+import {
     buildScreenNotice,
     closeScreenNotice,
     readDismissedScreenNoticeId,
@@ -2546,7 +2554,7 @@ function redrawPlazaGrantsUi() {
                 const shoes = getGear(row.equippedShoes) || SHOE_DATA.find((g) => g.id === row.equippedShoes);
                 if (shoes) overlays += shoeMarkHtml(shoes, gearEnhanceOf(row, row.equippedShoes));
             }
-            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none">${rankLayer}${inner}${overlays}</div>`;
+            return `<div class="char-avatar-stack${rankStackClass} relative inline-block leading-none">${rankLayer}<span class="char-portrait-frame">${inner}</span>${overlays}</div>`;
         }
 
         function applyEquippedAura(data, fallbackBorder, fallbackGlow) {
@@ -20834,6 +20842,24 @@ ${subjectLine}
             return Math.max(0, Math.floor(Number(storedCount) || 0));
         }
 
+        function plazaDislikeCount(studentId) {
+            const today = getLocalDateStr();
+            if (window._classOpsReady) return dislikeCountForToday(window._dislikeBoard, studentId, today);
+            if (!window._classOpsLoading && typeof db !== 'undefined' && db) {
+                void ensureClassOpsLoaded().then(() => {
+                    if (typeof window.renderPlaza === 'function') {
+                        window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                    }
+                });
+            }
+            return 0;
+        }
+
+        function plazaDislikeReason(studentId) {
+            if (!window._classOpsReady) return '';
+            return latestDislikeReason(window._dislikeBoard, studentId);
+        }
+
         window.renderPlaza = function(studentsData, gmData, gmaData) {
             const container = document.getElementById('plazaContainer');
             if(!container) return;
@@ -20966,7 +20992,15 @@ ${subjectLine}
                 const attendanceStatus = attendanceMarkForToday(displayData.attendanceMark, getLocalDateStr());
                 const attendanceDim = attendanceDimsCard(attendanceStatus);
                 const praiseCount = plazaPraiseCount(targetId, displayData.praiseCount);
-                const praiseBtn = `<button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉">👍 ${praiseCount}</button>`;
+                const dislikeCount = plazaDislikeCount(targetId);
+                const dislikeReason = plazaDislikeReason(targetId);
+                const dislikeReasonHtml = dislikeReason
+                    ? `<div class="plaza-dislike-reason" title="${escapeHtmlAttr(dislikeReason)}">${escapeConvenienceHtml(dislikeReason)}</div>`
+                    : '';
+                const praiseBtn = `<div class="praise-pair" onclick="event.stopPropagation();">
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerPraise('${targetId}')" title="따봉"><img src="nav/thumbs-up.svg" alt="따봉" width="16" height="16"><span>${praiseCount}</span></button>
+                    <button type="button" class="praise-btn" onclick="event.stopPropagation(); void window.givePeerDislike('${targetId}')" title="비추천"><img src="nav/thumbs-up.svg" alt="비추천" width="16" height="16" class="praise-thumb-down"><span>${dislikeCount}</span></button>
+                </div>${dislikeReasonHtml}`;
 
                 return `
                 <div ${gmOnClick} class="plaza-card flex flex-col items-center p-2 rounded-xl border w-full transition ${glow} ${border} ${lv.info.bgColor} ${gmCursor} relative${creditOn ? ' is-credit-default' : ''}${attendanceDim ? ' is-attendance-dim' : ''}">
@@ -23574,14 +23608,16 @@ ${subjectLine}
             if (window._classOpsReady && !force) return;
             window._classOpsLoading = (async () => {
                 try {
-                    const [att, checks, praise] = await Promise.all([
+                    const [att, checks, praise, dislikes] = await Promise.all([
                         getDoc(classOpsRef('attendance')),
                         getDoc(classOpsRef('checklists')),
                         getDoc(classOpsRef('praise')),
+                        getDoc(classOpsRef('dislikes')),
                     ]);
                     window._attendanceDays = (att.exists() && att.data() && att.data().days) || {};
                     window._checklists = sanitizeChecklists(checks.exists() ? checks.data() : []);
                     window._praiseBoard = sanitizePraiseBoard(praise.exists() ? praise.data() : {});
+                    window._dislikeBoard = sanitizeDislikeBoard(dislikes.exists() ? dislikes.data() : {});
                     window._classOpsReady = true;
                     await maybeRollPraiseAtMidnight();
                 } finally {
@@ -23878,6 +23914,59 @@ ${subjectLine}
             } catch (e) {
                 console.error('givePeerPraise', e);
                 await window.customAlert('따봉을 저장하지 못했습니다.');
+            }
+        };
+
+        window.givePeerDislike = async function(toId) {
+            if (!window.playerState || window.playerState.isGuest) return window.customAlert('로그인 후 비추천할 수 있습니다.');
+            const fromId = String(localStorage.getItem('sambong_student_id') || '');
+            if (!fromId) return;
+            if (!db) return window.customAlert('데이터베이스에 연결되지 않았습니다.');
+            await ensureClassOpsLoaded();
+            const today = getLocalDateStr();
+            const gate = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: '확인' });
+            if (!gate.ok) return window.customAlert(dislikeFailMessage(gate.reason));
+            const typed = await window.customPrompt('비추천 사유를 적어 주세요.\n누르면 내 경험치가 10 줄어듭니다.', 'text');
+            if (typed == null) return;
+            const plan = planPeerDislike(window._dislikeBoard, { fromId, toId: String(toId), today, reason: typed });
+            if (!plan.ok) return window.customAlert(dislikeFailMessage(plan.reason));
+            if ((Number(window.playerState.xp) || 0) < plan.xpCost) return window.customAlert(dislikeFailMessage('xp'));
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return window.customAlert('인증에 실패했습니다.');
+            const dislikeRef = classOpsRef('dislikes');
+            try {
+                const result = await runTransaction(db, async (tx) => {
+                    const boardSnap = await tx.get(dislikeRef);
+                    const fresh = planPeerDislike(boardSnap.exists() ? boardSnap.data() : {}, {
+                        fromId,
+                        toId: String(toId),
+                        today,
+                        reason: typed,
+                    });
+                    if (!fresh.ok) return fresh;
+                    const fromRef = doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + fromId);
+                    const fromSnap = await tx.get(fromRef);
+                    if (!fromSnap.exists()) return { ok: false, reason: 'who' };
+                    const data = fromSnap.data() || {};
+                    const before = Math.max(0, Math.floor(Number(data.xp) || 0));
+                    if (before < fresh.xpCost) return { ok: false, reason: 'xp' };
+                    const xp = before - fresh.xpCost;
+                    tx.set(fromRef, { xp }, { merge: true });
+                    tx.set(dislikeRef, fresh.board, { merge: false });
+                    return { ok: true, fresh, xp };
+                });
+                if (!result || !result.ok) return window.customAlert(dislikeFailMessage(result && result.reason));
+                window._dislikeBoard = result.fresh.board;
+                mergeStudentDocIntoPlazaCache(fromId, { xp: result.xp, id: fromId });
+                if (window.playerState && fromId === String(localStorage.getItem('sambong_student_id') || '')) {
+                    window.playerState.xp = result.xp;
+                }
+                if (typeof window.renderPlaza === 'function') window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
+                updateUI();
+                window.showToast && window.showToast(`비추천을 남겼습니다. 내 경험치 -${DISLIKE_XP_COST}.`);
+            } catch (e) {
+                console.error('givePeerDislike', e);
+                await window.customAlert('비추천을 저장하지 못했습니다.');
             }
         };
 

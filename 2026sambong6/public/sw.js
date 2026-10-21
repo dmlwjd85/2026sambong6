@@ -7,7 +7,9 @@
    로그인 저장소와 인증 저장소는 지우지 않습니다.
    activate 안에서 navigate를 기다리지 않습니다.
    fetch는 탐색을 네트워크로만 받고, 등록을 해제하거나 navigate하지 않습니다.
-   ?sw-clear 문서는 가로채지 않습니다. */
+   ?sw-clear 문서는 가로채지 않습니다.
+   그 주소의 등록 해제·캐시 삭제·한 번만 새로고침은 페이지가 합니다.
+   fetch 안에서 등록을 해제하면 그 문서가 끝나지 않습니다. */
 const SW_CLEAR = '20261019';
 const OFFLINE_HTML = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>연결 없음</title><p style="font-family:sans-serif;text-align:center;padding:2rem">인터넷에 연결되어 있지 않아요. 연결을 확인한 뒤 다시 열어 주세요.</p>';
 

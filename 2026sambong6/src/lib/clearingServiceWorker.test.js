@@ -37,6 +37,16 @@ describe('설치용 서비스 워커', () => {
         const fetchAt = src.indexOf("addEventListener('fetch'");
         assert.equal(src.slice(fetchAt).includes('client.navigate'), false);
         assert.equal(src.slice(fetchAt).includes('unregister'), false);
+        const head = indexHtml.slice(0, indexHtml.indexOf('</head>'));
+        assert.match(head, /mate-sw-clear-once/);
+        assert.match(head, /getRegistrations\(\)/);
+        assert.match(head, /\.unregister\(\)/);
+        assert.match(head, /caches\.delete\(key\)/);
+        assert.match(head, /location\.reload\(\)/);
+        assert.match(head, /sessionStorage\.getItem\(onceKey\) !== SW_CLEAR/);
+        const recoveryAt = head.indexOf("params.get('sw-clear') === SW_CLEAR");
+        const registerAt = head.indexOf('function registerWorker');
+        assert.ok(recoveryAt > 0 && registerAt > 0 && recoveryAt < head.indexOf('location.reload()'));
     });
 });
 

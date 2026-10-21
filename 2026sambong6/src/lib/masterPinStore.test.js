@@ -26,5 +26,7 @@ describe('마스터 PIN 개인 문서', () => {
         assert.equal(src.includes('signInWithPopup'), false);
         assert.equal(src.includes('GoogleAuthProvider'), false);
         assert.match(src, /writeStoredMasterPin/);
+        assert.match(src, /students', 'student_' \+ studentId/);
+        assert.match(src, /pin: pinText/);
     });
 });

@@ -3345,7 +3345,10 @@ function redrawPlazaGrantsUi() {
             byKey.forEach((data, key) => {
                 const sid = key === 'student_gm' ? 'gm' : (key === 'student_gm_a' ? 'gm_a' : key.replace(/^student_/, ''));
                 const payload = buildStudentResetPayload(data);
-                if (key === 'student_gm' || key === 'student_gm_a') delete payload.pin;
+                if (key === 'student_gm' || key === 'student_gm_a') {
+                    if (rotateMasterPin && newPin) payload.pin = newPin;
+                    else delete payload.pin;
+                }
                 batch.set(studentBackupRefForClass(id, sid), {
                     studentId: String(sid),
                     savedAt: new Date().toISOString(),
@@ -4850,15 +4853,32 @@ function redrawPlazaGrantsUi() {
         }
 
         async function writeStoredMasterPin(pin, studentId) {
+            const pinText = String(pin || '');
             const ref = masterPinDocRef();
-            if (!ref) return { ok: false, reason: 'no-auth' };
-            try {
-                await setDoc(ref, masterPinUserPayload({ pin, classId: appId, studentId }), { merge: true });
-                return { ok: true };
-            } catch (e) {
-                console.warn('writeStoredMasterPin', e);
-                return { ok: false, reason: classifyAuthError(e) };
+            let userOk = false;
+            let userReason = ref ? '' : 'no-auth';
+            if (ref) {
+                try {
+                    await setDoc(ref, masterPinUserPayload({ pin: pinText, classId: appId, studentId }), { merge: true });
+                    userOk = true;
+                } catch (e) {
+                    console.warn('writeStoredMasterPin', e);
+                    userReason = classifyAuthError(e);
+                }
             }
+            let gmOk = false;
+            if (db && isMasterPinStudentId(studentId) && /^\d{4}$/.test(pinText)) {
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId), {
+                        pin: pinText,
+                    }, { merge: true });
+                    gmOk = true;
+                } catch (e) {
+                    console.warn('writeStoredMasterPin gm', e);
+                }
+            }
+            if (userOk || gmOk) return { ok: true, userOk, gmOk };
+            return { ok: false, reason: userReason || 'permission_denied' };
         }
 
         function renderTeacherAuthBadges(state) {
@@ -25118,10 +25138,7 @@ ${subjectLine}
                     if(!isOk) return;
                     
                     data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
-                    if (isAdmin) {
-                        await writeStoredMasterPin(pin, studentId);
-                        delete data.pin;
-                    }
+                    if (isAdmin) await writeStoredMasterPin(pin, studentId);
                     try {
                         await setDoc(docRef, data);
                     } catch (createErr) {

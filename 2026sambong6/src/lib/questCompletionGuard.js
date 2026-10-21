@@ -163,6 +163,15 @@ export function questCompleteConfirmMessage(questName) {
 }
 
 /**
+ * 신용불량 중에도 퀘스트 완료 저장의 경험치 상승은 허용합니다.
+ * 상점·퀴즈 등 다른 저장은 이 표식이 없어 기존처럼 막습니다.
+ */
+export function creditDefaultAllowsQuestXpGain(opts) {
+    if (!opts || typeof opts !== 'object') return false;
+    return !!(opts.questCompletionId || opts.allowCreditDefaultQuestXp);
+}
+
+/**
  * 현황판용 학생 명단에 지금 플레이어의 퀘스트 기록을 바로 반영합니다.
  * 서버 스냅샷이 오기 전에 취소·완료가 ✓에 나타나게 합니다.
  */

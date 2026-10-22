@@ -521,7 +521,7 @@ import {
     melodyForClassBell,
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
-import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
+import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import {
     allowLegacyThermometerValues,
     buildThermometerParentPayload,
@@ -11486,7 +11486,7 @@ ${subjectLine}
         }
 
         function canEditLearningThermometer() {
-            return canManageLearningThermometer();
+            return masterCanEditLearningThermometer({ isAdmin: canManageLearningThermometer() });
         }
 
         function learningThermometerHasUnsavedEdits() {
@@ -14929,14 +14929,12 @@ ${subjectLine}
             const now = new Date();
             const today = getLocalDateStr();
             const unsavedText = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
-            let autoText = '15:00 이후, 선생님 인증이 있으면 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
-            if (!canEdit && canManage) {
-                autoText = '선생님 인증 필요. 슬라이더와 +/- 는 움직일 수 없습니다. 정산은 인증 후 지금 XP 반영으로 실행합니다.';
-            } else if (now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR) {
-                autoText = state.settledDate === today
-                    ? '오늘 15시 정산 완료'
-                    : '15시 이후입니다. 선생님 인증이 있으면 자동 정산되고, 아니면 지금 XP 반영을 누르세요.';
-            }
+            const autoText = learningThermometerAutoNote({
+                canEdit,
+                hour: now.getHours(),
+                autoHour: LEARNING_THERMOMETER_AUTO_HOUR,
+                settledToday: state.settledDate === today,
+            });
             status.innerHTML = `
                 <span class="font-bold text-sky-100">${today}</span>
                 · 범위 ${state.min} ~ +${state.max} XP

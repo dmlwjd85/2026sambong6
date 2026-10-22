@@ -10,6 +10,7 @@ import {
     downloadOxCsvTemplate,
     downloadOxTemplate,
     listOxSubjects,
+    mergeOxQuestions,
     parseOxQuizFile,
     pickOxRound,
 } from './oxQuiz.js';
@@ -41,6 +42,7 @@ export function bindOxQuiz(stage, api) {
         timeSec: 15,
         count: 10,
         lives: 3,
+        uploadMode: 'append',
         mode: 'setup',
         round: [],
         index: 0,
@@ -73,9 +75,21 @@ export function bindOxQuiz(stage, api) {
                 ? `최고 ${record.correct}문제 · ${Math.round((record.elapsedMs || 0) / 1000)}초`
                 : '최고 기록 없음';
         }
+        stage.classList.toggle('is-play', state.mode === 'play');
         if (state.mode === 'play') renderPlay();
         else if (state.mode === 'review') renderReview();
         else renderSetup();
+    }
+
+    async function persistSettings() {
+        if (!api.isAdmin()) return;
+        const settings = { timeSec: state.timeSec, count: state.count, lives: state.lives };
+        try {
+            await api.saveSettings(settings);
+            state.bank.settings = settings;
+        } catch (e) {
+            await api.alert('설정 저장 실패: ' + (e && e.message ? e.message : String(e)));
+        }
     }
 
     function renderSetup() {
@@ -86,11 +100,19 @@ export function bindOxQuiz(stage, api) {
                 return `<button type="button" class="ox-choice${on}" data-ox-subject="${esc(subject)}">${esc(subject)}</button>`;
             }).join('')
             : '<p class="ox-empty">문제 은행이 비어 있습니다. 양식을 받아 채워 올리세요.</p>';
+        const appendOn = state.uploadMode !== 'replace' ? ' is-on' : '';
+        const replaceOn = state.uploadMode === 'replace' ? ' is-on' : '';
         const admin = api.isAdmin()
-            ? `<div class="ox-row">
+            ? `<p class="ox-label">문제 은행</p>
+               <div class="ox-row">
+                <button type="button" class="ox-choice${appendOn}" data-ox-upload-mode="append">추가</button>
+                <button type="button" class="ox-choice${replaceOn}" data-ox-upload-mode="replace">전체 바꾸기</button>
+               </div>
+               <div class="ox-row">
                 <button type="button" class="ox-choice" data-ox-action="template">양식 받기</button>
                 <button type="button" class="ox-choice" data-ox-action="csv">CSV 양식</button>
                 <button type="button" class="ox-choice" data-ox-action="upload">문제 올리기</button>
+                <button type="button" class="ox-choice" data-ox-action="reset-records">최고기록 초기화</button>
                </div>`
             : '';
         body.innerHTML = `
@@ -115,9 +137,10 @@ export function bindOxQuiz(stage, api) {
         const hearts = Array.from({ length: state.lives }, (_, i) => (
             `<span class="ox-heart${i < state.livesLeft ? ' is-on' : ''}"></span>`
         )).join('');
+        const version = typeof window !== 'undefined' && window.APP_VERSION ? window.APP_VERSION : '';
         body.innerHTML = `
             <div class="ox-play-top">
-                <span>${state.index + 1} / ${state.round.length}</span>
+                <span class="ox-play-count"><span>${state.index + 1} / ${state.round.length}</span>${version ? `<span class="ox-version">${esc(version)}</span>` : ''}</span>
                 <span class="ox-hearts">${hearts}</span>
                 <span data-ox-timer>${state.timeSec}</span>
             </div>
@@ -227,6 +250,17 @@ export function bindOxQuiz(stage, api) {
         render();
     }
 
+    async function selectUploadMode(mode) {
+        if (mode === 'replace' && state.uploadMode !== 'replace') {
+            const ok = api.confirm
+                ? await api.confirm('전체 바꾸기로 올리면 지금 있는 문제가 모두 삭제됩니다. 이 방식으로 올릴까요?')
+                : false;
+            if (!ok) return;
+        }
+        state.uploadMode = mode === 'replace' ? 'replace' : 'append';
+        render();
+    }
+
     async function uploadFile(file) {
         if (!file || !api.isAdmin()) return;
         const buffer = await file.arrayBuffer();
@@ -235,12 +269,39 @@ export function bindOxQuiz(stage, api) {
             await api.alert(parsed.errors.slice(0, 8).join('\n'));
             return;
         }
-        await api.saveQuestions(parsed.questions);
-        state.bank.questions = parsed.questions;
-        state.subjectsOn = listOxSubjects(parsed.questions);
+        const replacing = state.uploadMode === 'replace';
+        let next = parsed.questions;
+        if (!replacing) {
+            const merged = mergeOxQuestions(state.bank.questions, parsed.questions);
+            if (merged.error) {
+                await api.alert(merged.error);
+                return;
+            }
+            next = merged.questions;
+        }
+        await api.saveQuestions(next);
+        state.bank.questions = next;
+        state.subjectsOn = listOxSubjects(next);
         state.mode = 'setup';
         render();
-        await api.alert(`${parsed.questions.length}문제를 올렸습니다.`);
+        await api.alert(replacing
+            ? `${parsed.questions.length}문제로 바꿨습니다.`
+            : `${parsed.questions.length}문제를 추가했습니다.`);
+    }
+
+    async function resetRecords() {
+        if (!api.isAdmin()) return;
+        const ok = api.confirm
+            ? await api.confirm('모든 학생의 최고 기록을 지울까요? 지운 기록은 되돌릴 수 없습니다.')
+            : false;
+        if (!ok) return;
+        try {
+            await api.clearRecords();
+            state.bank.records = {};
+            render();
+        } catch (e) {
+            await api.alert('최고 기록 초기화 실패: ' + (e && e.message ? e.message : String(e)));
+        }
     }
 
     body.addEventListener('click', (event) => {
@@ -252,6 +313,11 @@ export function bindOxQuiz(stage, api) {
             render();
             return;
         }
+        const modeBtn = event.target.closest('[data-ox-upload-mode]');
+        if (modeBtn) {
+            void selectUploadMode(modeBtn.getAttribute('data-ox-upload-mode'));
+            return;
+        }
         const choice = event.target.closest('[data-ox-choice]');
         if (choice) {
             const name = choice.getAttribute('data-ox-choice');
@@ -260,6 +326,7 @@ export function bindOxQuiz(stage, api) {
             if (name === 'count') state.count = clampOxChoice(value, OX_COUNT_CHOICES, state.count);
             if (name === 'lives') state.lives = clampOxChoice(value, OX_LIVES_CHOICES, state.lives);
             render();
+            void persistSettings();
             return;
         }
         const answer = event.target.closest('[data-ox-answer]');
@@ -273,6 +340,7 @@ export function bindOxQuiz(stage, api) {
         if (action === 'template') downloadOxTemplate();
         if (action === 'csv') downloadOxCsvTemplate();
         if (action === 'upload' && fileInput) fileInput.click();
+        if (action === 'reset-records') void resetRecords();
         if (action === 'start') void startRound();
         if (action === 'setup') {
             state.mode = 'setup';
@@ -295,6 +363,7 @@ export function bindOxQuiz(stage, api) {
 
     stage.querySelector('[data-ox-close]')?.addEventListener('click', () => {
         stopTimer();
+        stage.classList.remove('is-play');
         stage.classList.add('hidden');
     });
 
@@ -321,6 +390,7 @@ export function bindOxQuiz(stage, api) {
         },
         close() {
             stopTimer();
+            stage.classList.remove('is-play');
             stage.classList.add('hidden');
         },
     };

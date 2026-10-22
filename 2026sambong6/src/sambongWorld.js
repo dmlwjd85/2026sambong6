@@ -9915,6 +9915,14 @@ ${subjectLine}
                     updatedAt: Date.now(),
                 }, { merge: true });
             },
+            clearRecords: async () => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    records: {},
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
             saveRecord: async (studentId, record) => {
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('인증에 실패했습니다.');
@@ -9932,6 +9940,7 @@ ${subjectLine}
             studentId: () => localStorage.getItem('sambong_student_id') || '',
             isGuest: () => !!(window.playerState && window.playerState.isGuest),
             alert: (message) => window.customAlert(message),
+            confirm: (message) => window.customConfirm(message),
         });
         window.openOxQuiz = function() {
             if (oxQuizUi) void oxQuizUi.open();

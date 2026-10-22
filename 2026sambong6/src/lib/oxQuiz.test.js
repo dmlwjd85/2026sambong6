@@ -6,11 +6,16 @@ import {
     buildOxTemplateWorkbook,
     chooseOxRecord,
     listOxSubjects,
+    mergeOxQuestions,
     normalizeOxAnswer,
+    OX_TEMPLATE_CSV,
+    OX_TEMPLATE_XLSX,
     parseOxQuizAoa,
+    parseOxQuizFile,
     parseOxQuizWorkbook,
     pickOxRound,
 } from './oxQuiz.js';
+import { readFileSync } from 'node:fs';
 
 describe('OX 문제 은행', () => {
     it('잘못된 행은 시트 행 번호로 알리고 문제를 갈아 끼우지 않습니다', () => {
@@ -70,6 +75,32 @@ describe('OX 문제 은행', () => {
         assert.equal(round.error, '');
         assert.ok(round.questions.every((item) => item.subject === '과학'));
         assert.equal(round.questions.length, 2);
+    });
+
+    it('추가는 기존 문제를 남기고 id가 겹치지 않게 붙입니다', () => {
+        const merged = mergeOxQuestions(
+            [{ id: 'L2', subject: '과학', prompt: '기존', answer: 'O' }],
+            [{ id: 'L2', subject: '사회', prompt: '추가', answer: 'X' }],
+        );
+        assert.equal(merged.error, '');
+        assert.equal(merged.questions.length, 2);
+        assert.equal(merged.questions[0].prompt, '기존');
+        assert.equal(merged.questions[0].id, 'L2');
+        assert.notEqual(merged.questions[1].id, 'L2');
+        assert.equal(merged.questions[1].prompt, '추가');
+    });
+
+    it('양식 받기는 public/ox 파일을 가리키고 그 파일을 그대로 읽습니다', () => {
+        assert.equal(OX_TEMPLATE_XLSX, 'ox/ox-quiz-template.xlsx');
+        assert.equal(OX_TEMPLATE_CSV, 'ox/ox-quiz-template.csv');
+        const xlsx = readFileSync(new URL('../../public/ox/ox-quiz-template.xlsx', import.meta.url));
+        const csv = readFileSync(new URL('../../public/ox/ox-quiz-template.csv', import.meta.url));
+        const fromXlsx = parseOxQuizFile(xlsx, 'ox-quiz-template.xlsx');
+        const fromCsv = parseOxQuizFile(csv, 'ox-quiz-template.csv');
+        assert.equal(fromXlsx.errors.length, 0);
+        assert.equal(fromCsv.errors.length, 0);
+        assert.ok(fromXlsx.questions.length >= 1);
+        assert.equal(fromCsv.questions[0].answer, fromXlsx.questions[0].answer);
     });
 
     it('최고 기록은 맞힌 수가 우선이고 같으면 더 짧은 시간입니다', () => {

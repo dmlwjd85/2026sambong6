@@ -143,7 +143,7 @@ export function oxGuideRows() {
         ['2. 2행부터 한 문제씩 적습니다. 빈 행은 건너뜁니다.'],
         ['3. 정답은 O 또는 X만 적습니다. 다른 글자는 그 행 번호와 함께 거절됩니다.'],
         ['4. 과목과 문제는 비우지 마세요. 해설, 단원, 난이도는 비워도 됩니다.'],
-        ['5. 파일을 올리면 문제 은행이 이 파일 내용으로 바뀝니다. 최고 기록은 유지됩니다.'],
+        ['5. 올리기 기본은 추가입니다. 전체 바꾸기는 확인 후에만 문제 은행을 이 파일로 바꿉니다. 최고 기록은 유지됩니다.'],
         ['6. 예시 두 줄은 지우고 학급 문제로 바꾸세요.'],
     ];
 }
@@ -159,20 +159,25 @@ export function buildOxTemplateWorkbook() {
     return wb;
 }
 
-export function downloadOxTemplate() {
-    XLSX.writeFile(buildOxTemplateWorkbook(), 'ox-quiz-template.xlsx');
-}
+/** 양식 받기는 생성하지 않고 public/ox 파일을 그대로 내려받습니다. */
+export const OX_TEMPLATE_XLSX = 'ox/ox-quiz-template.xlsx';
+export const OX_TEMPLATE_CSV = 'ox/ox-quiz-template.csv';
 
-export function downloadOxCsvTemplate() {
-    const blob = new Blob([`\uFEFF${oxTemplateCsv()}`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+export function downloadOxPublicFile(href, filename) {
     const link = document.createElement('a');
-    link.href = url;
-    link.download = 'ox-quiz-template.csv';
+    link.href = href;
+    if (filename) link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
+}
+
+export function downloadOxTemplate() {
+    downloadOxPublicFile(OX_TEMPLATE_XLSX, 'ox-quiz-template.xlsx');
+}
+
+export function downloadOxCsvTemplate() {
+    downloadOxPublicFile(OX_TEMPLATE_CSV, 'ox-quiz-template.csv');
 }
 
 export function oxTemplateCsv() {
@@ -180,6 +185,29 @@ export function oxTemplateCsv() {
         const text = String(cell);
         return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
     }).join(',')).join('\n');
+}
+
+/** 추가 업로드. 기존 문제 id와 겹치지 않게 새 id를 붙입니다. */
+export function mergeOxQuestions(existing, incoming) {
+    const base = (existing || []).filter((item) => item && item.prompt && item.answer);
+    const used = new Set(base.map((item) => String(item.id || '')));
+    const added = [];
+    (incoming || []).forEach((item, index) => {
+        if (!item || !item.prompt || !item.answer) return;
+        let n = index + 1;
+        let id = `A${n}`;
+        while (used.has(id)) {
+            n += 1;
+            id = `A${n}`;
+        }
+        used.add(id);
+        added.push({ ...item, id });
+    });
+    const questions = base.concat(added);
+    if (questions.length > OX_BANK_MAX) {
+        return { questions: [], error: `문제가 ${OX_BANK_MAX}개를 넘습니다. 나눠 올려 주세요.` };
+    }
+    return { questions, error: '' };
 }
 
 export function listOxSubjects(questions) {

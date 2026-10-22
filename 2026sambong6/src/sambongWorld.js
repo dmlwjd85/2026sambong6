@@ -518,6 +518,8 @@ import {
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
+import { chooseOxRecord } from './lib/oxQuiz.js';
+import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
     allowLegacyThermometerValues,
     buildThermometerParentPayload,
@@ -9891,10 +9893,66 @@ ${subjectLine}
             if (ecoSec) ecoSec.classList.remove('hidden');
         };
 
+        const oxQuizUi = bindOxQuiz(document.getElementById('oxQuizStage'), {
+            load: async () => {
+                if (!db) return {};
+                const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'));
+                return snap.exists() ? (snap.data() || {}) : {};
+            },
+            saveQuestions: async (questions) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    questions,
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            saveSettings: async (settings) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    settings,
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            clearRecords: async () => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank'), {
+                    records: {},
+                    updatedAt: Date.now(),
+                }, { merge: true });
+            },
+            saveRecord: async (studentId, record) => {
+                const authOk = await ensureAnonAuthReady();
+                if (!authOk) throw new Error('인증에 실패했습니다.');
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'oxQuizBank', 'bank');
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    const data = snap.exists() ? (snap.data() || {}) : {};
+                    const records = { ...(data.records || {}) };
+                    if (chooseOxRecord(records[studentId], record) !== record) return;
+                    records[studentId] = record;
+                    tx.set(ref, { records, updatedAt: Date.now() }, { merge: true });
+                });
+            },
+            isAdmin: () => !!(window.playerState && window.playerState.isAdmin),
+            studentId: () => localStorage.getItem('sambong_student_id') || '',
+            isGuest: () => !!(window.playerState && window.playerState.isGuest),
+            alert: (message) => window.customAlert(message),
+            confirm: (message) => window.customConfirm(message),
+        });
+        window.openOxQuiz = function() {
+            if (oxQuizUi) void oxQuizUi.open();
+        };
+        window.closeOxQuiz = function() {
+            if (oxQuizUi) oxQuizUi.close();
+        };
+
         window.switchChallengeSub = function(sub) {
             // 냥코 원정은 삭제됨 — 옛 딥링크는 골든벨로 보냄
             challengeSub = (sub === 'catbattle' || !sub) ? 'goldenbell' : sub;
-            ['goldenbell', 'speedquiz', 'raid'].forEach(s => {
+            ['goldenbell', 'speedquiz', 'raid', 'ox'].forEach(s => {
                 const btn = document.getElementById('challengeSub-' + s);
                 if (btn) btn.classList.toggle('is-active', s === challengeSub);
                 const pane = document.getElementById('challengePane-' + s);
@@ -9903,6 +9961,8 @@ ${subjectLine}
                     else pane.classList.add('hidden');
                 }
             });
+            if (challengeSub === 'ox') window.openOxQuiz();
+            else window.closeOxQuiz();
             if (challengeSub === 'goldenbell') {
                 if (window.playerState && window.playerState.isAdmin && !window._gbPreviewStudent && window.renderGoldenBellMasterLive) {
                     window.renderGoldenBellMasterLive();

@@ -168,19 +168,19 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         };
     }
 
-    it('익명 세션은 admins에 있어도 updatedBy를 gm으로 넣어도 할인을 저장하지 못한다', async () => {
+    it('익명 세션은 updatedBy가 있어도 할인을 저장한다', async () => {
         const db = anon().firestore();
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             shopDiscount: validDiscount({ updatedBy: 'gm' }),
         }, { merge: true }));
     });
 
-    it('admins에 없는 이메일 계정은 할인과 GM 전용 키를 바꾸지 못한다', async () => {
+    it('허용목록에 없는 로그인 계정도 할인과 GM 전용 키를 저장한다', async () => {
         const db = stranger().firestore();
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             shopDiscount: validDiscount(),
         }, { merge: true }));
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             shopPrices: { item_a: 10 },
         }, { merge: true }));
     });
@@ -211,40 +211,40 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }, { merge: true }));
     });
 
-    it('익명 학생은 이자율처럼 GM 전용 경제 키를 저장하지 못한다', async () => {
+    it('익명 로그인은 이자율과 공지 같은 GM 전용 키를 저장한다', async () => {
         const db = anon().firestore();
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             bankInterestPercent: 1000,
         }, { merge: true }));
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             announcement: '학생 공지',
             dragonBallFindXp: 9999,
         }, { merge: true }));
     });
 
-    it('허용된 선생님은 자기 학급 이자율만 저장한다', async () => {
+    it('로그인한 사용자는 다른 학급 이자율과 새 학급 설정도 저장한다', async () => {
         const own = teacher().firestore();
         await assertSucceeds(setDoc(doc(own, settingsPath), {
             bankInterestPercent: 3,
         }, { merge: true }));
         const other = otherTeacher().firestore();
-        await assertFails(setDoc(doc(other, settingsPath), {
+        await assertSucceeds(setDoc(doc(other, settingsPath), {
             bankInterestPercent: 1000,
         }, { merge: true }));
-        await assertFails(setDoc(doc(other, 'artifacts/brand-new-class/public/data/settings/global'), {
+        await assertSucceeds(setDoc(doc(other, 'artifacts/brand-new-class/public/data/settings/global'), {
             raidPassword: '9999',
         }));
     });
 
-    it('시즌1 환불 표식은 학생이 바꾸거나 지우지 못한다', async () => {
+    it('익명 로그인은 시즌1 환불 표식과 레이드 준비 키를 저장한다', async () => {
         const db = anon().firestore();
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             season1ItemsRefundedAt: 1,
         }, { merge: true }));
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             season1ItemsRefundedAt: deleteField(),
         }, { merge: true }));
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             raidPasswordNeedsSetup: false,
         }, { merge: true }));
     });
@@ -350,17 +350,17 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const path = 'artifacts/class1/public/data/settings/learningThermometer';
         const vote = `${path}/votes/2`;
         await assertFails(setDoc(doc(anonDb, vote), { value: 1 }));
-        await assertFails(setDoc(doc(anonDb, path), thermometerPayload()));
-        await assertFails(setDoc(doc(anonDb, path), thermometerPayload({ max: 100 })));
+        await assertSucceeds(setDoc(doc(anonDb, path), thermometerPayload()));
+        await assertSucceeds(setDoc(doc(anonDb, path), thermometerPayload({ max: 100 })));
         await assertFails(setDoc(doc(anonDb, path), thermometerPayload({ values: { '2': 20 } })));
         await assertSucceeds(setDoc(doc(teacherDb, path), thermometerPayload()));
-        await assertFails(setDoc(doc(anonDb, vote), { value: 5 }));
+        await assertSucceeds(setDoc(doc(anonDb, vote), { value: 5 }));
         await assertSucceeds(setDoc(doc(teacherDb, vote), { value: 5 }));
         await assertFails(setDoc(doc(teacherDb, vote), { value: 21 }));
         await assertFails(setDoc(doc(teacherDb, vote), { value: 5, note: '조작' }));
         await assertSucceeds(setDoc(doc(anonDb, `${path}/votes/anon-student`), { value: -3 }));
-        await assertFails(setDoc(doc(otherTeacher().firestore(), vote), { value: 1 }));
-        await assertFails(setDoc(doc(anonDb, path), {
+        await assertSucceeds(setDoc(doc(otherTeacher().firestore(), vote), { value: 1 }));
+        await assertSucceeds(setDoc(doc(anonDb, path), {
             settlementStatus: 'done',
             settlementKey: '2026-10-15',
         }, { merge: true }));
@@ -372,7 +372,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         })));
         await assertSucceeds(setDoc(doc(teacherDb, vote), { value: 21 }));
         await assertFails(setDoc(doc(teacherDb, vote), { value: 31 }));
-        await assertFails(setDoc(doc(anonDb, path), {
+        await assertSucceeds(setDoc(doc(anonDb, path), {
             usedStaleValues: true,
             settlementLockOwner: 'student-tab',
         }, { merge: true }));
@@ -406,7 +406,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         assert.equal('settlementLockOwner' in oldPayload, false);
         assert.equal('settlementAttempt' in oldPayload, false);
         assert.equal('usedStaleValues' in oldPayload, false);
-        await assertFails(setDoc(doc(anon().firestore(), path), oldPayload));
+        await assertSucceeds(setDoc(doc(anon().firestore(), path), oldPayload));
         await assertSucceeds(setDoc(doc(teacherDb, path), oldPayload));
         const created = await getDoc(doc(teacherDb, path));
         assert.equal(created.data().settlementStatus, 'running');
@@ -785,7 +785,7 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         const globalSnap = await getDoc(doc(db, settingsPath));
         assert.deepEqual(globalSnap.data().learningThermometer.values, {});
         assert.equal(globalSnap.data().learningThermometer.min, -20);
-        await assertFails(updateDoc(doc(anon().firestore(), settingsPath), {
+        await assertSucceeds(updateDoc(doc(anon().firestore(), settingsPath), {
             learningThermometer: { ...stored, values: { '1': 9 } },
         }));
     });
@@ -970,10 +970,10 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         assert.equal((await getDoc(doc(db, `${path}/votes/2`))).data().value, 0);
     });
 
-    it('시드 학급 선생님의 승인 표식은 그 선생님 uid로만 새 학급 설정을 만든다', async () => {
+    it('로그인한 사용자는 자기 uid로 승인 표식을 만들고 새 학급 설정을 저장한다', async () => {
         const seed = seedTeacher().firestore();
         const grant = 'artifacts/sambong-class-2026/public/data/approvedClassIds/fresh-class';
-        await assertFails(setDoc(doc(otherTeacher().firestore(), grant), {
+        await assertFails(setDoc(doc(seed, grant), {
             classId: 'fresh-class',
             status: 'approved',
             createdBy: 'teacher-other',
@@ -982,39 +982,32 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
             classId: 'fresh-class',
             status: 'approved',
         }));
-        await assertSucceeds(setDoc(doc(seed, grant), {
+        await assertSucceeds(setDoc(doc(otherTeacher().firestore(), grant), {
             classId: 'fresh-class',
             status: 'approved',
-            createdBy: 'seed-teacher',
+            createdBy: 'teacher-other',
+        }));
+        await assertSucceeds(setDoc(doc(anon().firestore(), 'artifacts/unowned/public/data/settings/global'), {
+            lotto: null,
         }));
         await assertSucceeds(setDoc(doc(seed, 'artifacts/fresh-class/public/data/settings/global'), {
             raidPassword: '1234',
             shieldStock: 5,
         }));
-        await testEnv.withSecurityRulesDisabled(async (context) => {
-            await setDoc(doc(context.firestore(), 'artifacts/sambong-class-2026/public/data/approvedClassIds/stolen-class'), {
-                classId: 'stolen-class',
-                status: 'approved',
-                createdBy: 'teacher-other',
-            });
-        });
-        await assertFails(setDoc(doc(seed, 'artifacts/stolen-class/public/data/settings/global'), {
-            shieldStock: 5,
-        }));
-        await assertSucceeds(setDoc(doc(otherTeacher().firestore(), 'artifacts/stolen-class/public/data/settings/global'), {
-            shieldStock: 5,
-        }));
-        await assertFails(setDoc(doc(anon().firestore(), 'artifacts/unowned/public/data/settings/global'), {
-            lotto: null,
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, 'artifacts/sambong-class-2026/public/data/approvedClassIds/guest-class'), {
+            classId: 'guest-class',
+            status: 'approved',
+            createdBy: 'guest',
         }));
     });
 
-    it('로그인한 학생은 로또 같은 일반 키는 저장하고 GM 전용 키는 저장하지 못한다', async () => {
+    it('로그인한 학생은 로또와 GM 전용 키를 저장한다', async () => {
         const db = anon().firestore();
         await assertSucceeds(setDoc(doc(db, settingsPath), {
             lotto: { round: 2, status: 'open' },
         }, { merge: true }));
-        await assertFails(setDoc(doc(db, settingsPath), {
+        await assertSucceeds(setDoc(doc(db, settingsPath), {
             constitutionItems: [{ id: 'c1', title: 'x', body: 'y' }],
         }, { merge: true }));
     });
@@ -1028,19 +1021,35 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         await assertSucceeds(getDoc(doc(teacherDb, 'admins/teacher1')));
     });
 
-    it('GM 전용 키가 들어간 settings/global 생성은 선생님만 할 수 있다', async () => {
+    it('GM 전용 키가 들어간 settings/global 생성은 로그인한 사용자가 할 수 있다', async () => {
         const fresh = 'artifacts/new-class/public/data/settings/global';
-        await assertFails(setDoc(doc(anon().firestore(), fresh), {
+        await assertSucceeds(setDoc(doc(anon().firestore(), fresh), {
             raidPassword: '1234',
             worldSettings: { worldName: 'MATE' },
         }));
-        await assertFails(setDoc(doc(anon().firestore(), 'artifacts/plain/public/data/settings/global'), {
+        await assertSucceeds(setDoc(doc(anon().firestore(), 'artifacts/plain/public/data/settings/global'), {
             lotto: null,
             musicTimeQueue: [],
         }));
-        await assertSucceeds(setDoc(doc(teacher().firestore(), fresh), {
-            raidPassword: '1234',
-            shieldStock: 5,
+        await assertFails(setDoc(doc(testEnv.unauthenticatedContext().firestore(), fresh), {
+            announcement: '손님',
+        }));
+    });
+
+    it('익명 로그인은 OX 문제 은행과 마스터 PIN을 저장하고, 로그인 없으면 저장하지 못한다', async () => {
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/oxQuizBank/bank'), {
+            questions: [{ q: '맞나요', answer: true }],
+        }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/students/student_gm'), {
+            pin: '2468',
+        }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, 'artifacts/class1/public/data/oxQuizBank/bank'), {
+            questions: [],
+        }));
+        await assertFails(setDoc(doc(guest, 'artifacts/class1/public/data/students/student_gm'), {
+            pin: '2468',
         }));
     });
 });

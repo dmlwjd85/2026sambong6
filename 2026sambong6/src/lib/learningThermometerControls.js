@@ -3,7 +3,28 @@ function escapeHtmlAttr(value) {
 }
 
 /**
- * 선생님 인증 전에는 range와 +/- 가 포커스·포인터로 값을 바꾸지 못합니다.
+ * 마스터 PIN 로그인이면 구글·선생님 계정 없이 온도계를 조절합니다.
+ * 학생·게스트(isAdmin 아님)는 조절하지 못합니다.
+ */
+export function masterCanEditLearningThermometer({ isAdmin } = {}) {
+    return isAdmin === true;
+}
+
+/**
+ * 상태 줄. 로그인한 마스터에게 선생님 인증을 요구하지 않습니다.
+ */
+export function learningThermometerAutoNote({ canEdit, hour, autoHour = 15, settledToday = false } = {}) {
+    if (!canEdit) return '';
+    if (Number(hour) >= autoHour) {
+        return settledToday
+            ? '오늘 15시 정산 완료'
+            : '15시 이후입니다. 로그인한 마스터 화면에서 자동 정산되고, 지금 XP 반영으로도 바로 반영할 수 있습니다.';
+    }
+    return '15:00 이후 로그인한 마스터 화면에서 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
+}
+
+/**
+ * canEdit가 아니면 range와 +/- 가 포커스·포인터로 값을 바꾸지 못합니다.
  * canEdit가 아닐 때 oninput/onclick을 넣지 않습니다.
  */
 export function learningThermometerStudentControls({ id, value, min, max, canEdit, valueClass }) {

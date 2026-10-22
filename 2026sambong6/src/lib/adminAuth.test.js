@@ -76,6 +76,7 @@ describe('선생님 인증 판별', () => {
         assert.equal(ORIGINAL_HOME_CLASS_ID, 'sambong-class-2026');
         assert.match(rules, /function isAdmin\(\)/);
         assert.match(rules, /function isAdminForApp\(appId\)/);
+        assert.match(rules, /return signedIn\(\) && appId is string;/);
         assert.match(rules, /sign_in_provider != 'anonymous'/);
         assert.match(rules, /documents\/admins\/\$\(request\.auth\.uid\)/);
         assert.doesNotMatch(rules, /updatedBy\s*==/);

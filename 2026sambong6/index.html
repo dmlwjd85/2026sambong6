@@ -337,6 +337,15 @@
     </div>
 
     <!-- ★ 마스터 스피드 퀴즈 모달 (선착순 정답 1명 보상) ★ -->
+    <div id="oxQuizStage" class="ox-stage hidden" role="dialog" aria-modal="true" aria-labelledby="oxQuizHeading">
+        <div class="ox-stage-bar">
+            <button type="button" class="ox-text-btn" data-ox-close>닫기</button>
+            <h2 id="oxQuizHeading">OX 퀴즈</h2>
+            <p data-ox-meta>최고 기록 없음</p>
+        </div>
+        <div class="ox-stage-body" data-ox-body></div>
+        <input type="file" data-ox-file class="sr-only" accept=".xlsx,.xls,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+    </div>
     <div id="masterQuizModal" class="hidden fixed inset-0 z-[262] bg-black/75 backdrop-blur-sm flex items-center justify-center px-3 py-6 transition-all duration-300">
         <div class="glass-panel p-5 sm:p-6 rounded-3xl max-w-lg w-full border-t-4 border-t-cyan-400 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <div class="flex items-start justify-between gap-2 mb-3">
@@ -1651,9 +1660,9 @@
             <div class="max-w-7xl mx-auto space-y-4">
                 <div class="mb-2">
                     <h2 class="text-xl sm:text-2xl font-display text-yellow-300"><i class="fa-solid fa-trophy"></i> 도전</h2>
-                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
+                    <p class="text-[10px] sm:text-xs text-slate-400 mt-1">골든벨 · 스피드퀴즈 · 퀴즈 레이드 · OX퀴즈에 참가합니다. 출제·레이드 시작은 마스터만 사용할 수 있어요.</p>
                 </div>
-                <div id="challengeSubtabs" class="app-sub-dock cols-3">
+                <div id="challengeSubtabs" class="app-sub-dock cols-4">
                     <button type="button" id="challengeSub-goldenbell" onclick="window.switchChallengeSub('goldenbell')" class="app-sub-item is-active">
                         <span class="app-sub-icon"><img src="nav/nav-goldenbell.webp" alt="" width="192" height="192"></span>
                         <span>골든벨</span>
@@ -1666,6 +1675,14 @@
                         <span class="app-sub-icon"><img src="nav/nav-raid.webp" alt="" width="192" height="192"></span>
                         <span>퀴즈레이드</span>
                     </button>
+                    <button type="button" id="challengeSub-ox" onclick="window.switchChallengeSub('ox')" class="app-sub-item">
+                        <span class="app-sub-icon"><img src="nav/nav-oxquiz.jpg" alt="" width="192" height="192"></span>
+                        <span>OX퀴즈</span>
+                    </button>
+                </div>
+
+                <div id="challengePane-ox" class="hidden space-y-3">
+                    <button type="button" onclick="window.openOxQuiz()" class="ox-go">OX 퀴즈 열기</button>
                 </div>
 
                 <div id="challengePane-goldenbell" class="space-y-3">

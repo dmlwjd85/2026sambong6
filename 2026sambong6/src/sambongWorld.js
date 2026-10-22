@@ -14989,6 +14989,7 @@ ${subjectLine}
                 }));
                 ids.forEach((sid) => _thermometerPendingVoteIds.delete(sid));
                 _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
+                _learningThermometerSavePending = false;
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 renderLearningThermometerPanel();
@@ -14996,6 +14997,7 @@ ${subjectLine}
             } catch (e) {
                 console.error('saveLearningThermometerState', e);
                 _thermometerUnsaved = true;
+                _learningThermometerSavePending = false;
                 renderLearningThermometerPanel();
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;

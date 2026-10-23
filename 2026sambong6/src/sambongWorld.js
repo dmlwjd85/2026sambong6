@@ -501,6 +501,7 @@ import {
     mergeClassDirectory,
     safeManagedClassId,
     sanitizeClassDirectoryEntry,
+    pinForResetMasterDoc,
     shouldRotateMasterPinOnReset,
     sortClassDirectory,
     visibleClassDirectory,
@@ -3346,8 +3347,7 @@ function redrawPlazaGrantsUi() {
                 const sid = key === 'student_gm' ? 'gm' : (key === 'student_gm_a' ? 'gm_a' : key.replace(/^student_/, ''));
                 const payload = buildStudentResetPayload(data);
                 if (key === 'student_gm' || key === 'student_gm_a') {
-                    if (rotateMasterPin && newPin) payload.pin = newPin;
-                    else delete payload.pin;
+                    payload.pin = pinForResetMasterDoc(data.pin, { rotate: rotateMasterPin, newPin });
                 }
                 batch.set(studentBackupRefForClass(id, sid), {
                     studentId: String(sid),

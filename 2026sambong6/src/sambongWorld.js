@@ -530,8 +530,11 @@ import {
     settleThermometerResolvingPrior,
 } from './lib/learningThermometerSettlement.js';
 import {
+    applyThermometerLegacySeeds,
     pickThermometerDisplayValues,
     planThermometerLegacyVoteWrites,
+    retainThermometerPendingIds,
+    thermometerVoteValue,
     thermometerVotesShouldReplaceValues,
 } from './lib/learningThermometerVotes.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
@@ -11472,6 +11475,7 @@ ${subjectLine}
         let _learningThermometerSettlementRunning = false;
         let _learningThermometerEditActive = false;
         let _learningThermometerSavePending = false;
+        let _learningThermometerSaveGen = 0;
         let _learningThermometerIgnoreRemoteUntil = 0;
         let _thermometerAuthPromptAt = 0;
         let _thermometerUnsaved = false;
@@ -14797,9 +14801,12 @@ ${subjectLine}
             const ref = getLearningThermometerDocRef();
             const snap = await getDoc(ref);
             if (snap.exists()) return;
-            await setDoc(ref, thermometerParentPayload(state));
-            Object.keys((state && state.values) || {}).forEach((sid) => {
-                if (Math.round(Number(state.values[sid]) || 0) !== 0) _thermometerPendingVoteIds.add(String(sid));
+            // 부모를 만드는 사이에 움직인 값이 있으면 그 값을 남깁니다.
+            const latest = getLearningThermometerState();
+            const payloadState = latest || state;
+            await setDoc(ref, thermometerParentPayload(payloadState));
+            Object.keys((payloadState && payloadState.values) || {}).forEach((sid) => {
+                if (Math.round(Number(payloadState.values[sid]) || 0) !== 0) _thermometerPendingVoteIds.add(String(sid));
             });
         }
 
@@ -14837,11 +14844,17 @@ ${subjectLine}
                 max: state.max,
             });
             if (!seeds) return;
-            Object.entries(seeds).forEach(([sid, value]) => {
-                state.values[sid] = value;
-                _thermometerPendingVoteIds.add(String(sid));
+            // 시드를 얹기 전에 다시 읽습니다. 인자로 받은 복사는 저장 시작 시각의 값이라,
+            // 그 사이에 움직인 학생을 통째로 되돌리면 안 됩니다.
+            const latest = getLearningThermometerState();
+            const mergedValues = applyThermometerLegacySeeds(latest.values, seeds);
+            Object.keys(seeds).forEach((sid) => {
+                const id = String(sid);
+                if (!Object.prototype.hasOwnProperty.call(latest.values || {}, id)) {
+                    _thermometerPendingVoteIds.add(id);
+                }
             });
-            setLocalLearningThermometerState(state);
+            setLocalLearningThermometerState({ ...latest, values: mergedValues });
         }
 
         function getLearningThermometerValueClass(value) {
@@ -14974,6 +14987,7 @@ ${subjectLine}
                 if (!silent) await window.customAlert('데이터베이스에 연결되지 않았습니다.');
                 return false;
             }
+            const genAtStart = _learningThermometerSaveGen;
             try {
                 _learningThermometerSavePending = true;
                 const authOk = await ensureAnonAuthReady();
@@ -14981,34 +14995,53 @@ ${subjectLine}
                 const state = getLearningThermometerState();
                 await ensureLearningThermometerParent(state);
                 await seedMissingThermometerVotesFromLegacy(state);
-                if (writeParent) await setDoc(getLearningThermometerDocRef(), thermometerParentPayload(state));
+                // 부모 확인·시드가 네트워크를 기다리는 동안 바뀐 값을 다시 읽습니다.
+                const latest = getLearningThermometerState();
+                if (writeParent) await setDoc(getLearningThermometerDocRef(), thermometerParentPayload(latest));
                 const ids = [..._thermometerPendingVoteIds];
+                const writtenValues = {};
                 await Promise.all(ids.map(async (sid) => {
-                    const value = Math.max(state.min, Math.min(state.max, Math.round(Number(state.values[sid]) || 0)));
-                    await setDoc(getLearningThermometerVoteRef(sid), { value });
+                    const id = String(sid);
+                    const value = thermometerVoteValue(latest.values, id, latest.min, latest.max);
+                    writtenValues[id] = value;
+                    await setDoc(getLearningThermometerVoteRef(id), { value });
                 }));
-                ids.forEach((sid) => _thermometerPendingVoteIds.delete(sid));
+                const after = getLearningThermometerState();
+                const keep = retainThermometerPendingIds({
+                    pendingIds: _thermometerPendingVoteIds,
+                    writtenValues,
+                    currentValues: after.values,
+                    min: after.min,
+                    max: after.max,
+                });
+                _thermometerPendingVoteIds.clear();
+                keep.forEach((id) => _thermometerPendingVoteIds.add(id));
                 _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
-                _learningThermometerSavePending = false;
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
-                if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
+                if (_thermometerPendingVoteIds.size > 0) scheduleLearningThermometerSave();
                 renderLearningThermometerPanel();
+                if (!silent && _thermometerPendingVoteIds.size === 0) {
+                    await window.customAlert('학습 온도계를 저장했습니다.');
+                }
                 return true;
             } catch (e) {
                 console.error('saveLearningThermometerState', e);
                 _thermometerUnsaved = true;
-                _learningThermometerSavePending = false;
                 renderLearningThermometerPanel();
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;
             } finally {
-                _learningThermometerSavePending = false;
+                // 저장 중에 다시 움직였으면 그 예약이 표시를 유지합니다.
+                if (_learningThermometerSaveGen === genAtStart) {
+                    _learningThermometerSavePending = false;
+                }
             }
         }
 
         function scheduleLearningThermometerSave(sid) {
             if (sid) _thermometerPendingVoteIds.add(String(sid));
             clearTimeout(_learningThermometerSaveTimer);
+            _learningThermometerSaveGen += 1;
             _learningThermometerSavePending = true;
             _learningThermometerSaveTimer = setTimeout(() => {
                 void saveLearningThermometerState({ silent: true });

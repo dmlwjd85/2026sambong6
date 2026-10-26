@@ -416,7 +416,7 @@ import {
     shouldUseLocalFirebaseEmulator,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
-import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping } from './lib/preLoginGuard.js';
+import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll } from './lib/preLoginGuard.js';
 import {
     clearPersistedLoginIdentity,
     readPersistedLogin,
@@ -24297,8 +24297,10 @@ ${subjectLine}
         async function maybeRollPraiseAtMidnight() {
             if (typeof db === 'undefined' || !db || window._praiseRollRunning || !window._classOpsReady) return;
             const today = getLocalDateStr();
+            if (!shouldRunPraiseMidnightRoll({ loggedIn: isLoggedInSession(), lastRollDate: window._praiseRollDate, today })) return;
             const local = rollPraiseDay(window._praiseBoard, today);
             if (!local.reset && !local.changed && !window._praiseCountsNeedSync) return;
+            window._praiseRollDate = today;
             window._praiseRollRunning = true;
             try {
                 const praiseRef = classOpsRef('praise');

@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping } from './preLoginGuard.js';
+import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll } from './preLoginGuard.js';
 
 describe('로그인 전 쓰기', () => {
     it('로그인 전에는 날씨·시세 같은 배경 쓰기를 하지 않습니다', () => {
@@ -95,4 +95,12 @@ describe('레벨업 암막', () => {
         assert.match(css, /#rankUpCelebrate\.hidden\s*\{[^}]*display:\s*none\s*!important/);
         assert.doesNotMatch(css, /\.rank-up-celebrate\.hidden\s*\{[^}]*display:\s*none\s*!important/);
     });
+});
+
+it('자정 칭찬 판 넘김: 로그인 전에는 쓰지 않고, 로그인 후 하루 한 번만', () => {
+    assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: false, lastRollDate: null, today: '2026-10-27' }), false);
+    assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: null, today: '2026-10-27' }), true);
+    assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: '2026-10-27', today: '2026-10-27' }), false);
+    assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: '2026-10-27', today: '2026-10-28' }), true);
+    assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: null, today: '' }), false);
 });

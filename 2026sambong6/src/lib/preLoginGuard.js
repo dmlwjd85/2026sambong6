@@ -26,3 +26,13 @@ export function shouldPersistInviteMapping({ loggedIn, exists, existingClassId, 
     if (prev && prev !== next) return false;
     return true;
 }
+
+/**
+ * 자정 칭찬 판 넘김 쓰기는 로그인한 세션에서 하루 한 번만 합니다.
+ * @param {{ loggedIn: boolean, lastRollDate?: string|null, today: string }} p
+ */
+export function shouldRunPraiseMidnightRoll({ loggedIn, lastRollDate, today }) {
+    if (!allowBackgroundCloudWrite(loggedIn)) return false;
+    if (!today) return false;
+    return lastRollDate !== today;
+}

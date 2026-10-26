@@ -12,7 +12,7 @@
 import { ALKKAGI_DT, ALKKAGI_MAX_STEPS, applyAlkkagiShot, isAlkkagiResting, parseAlkkagiShot, stepAlkkagi } from './alkkagiPhysics.js';
 import { ALKKAGI_CONFIG, alkkagiPhysicsState, simulateAlkkagiTurn } from './alkkagiGame.js';
 import { alkkagiHitLevel, createAlkkagiSound } from './alkkagiSound.js';
-import { ALKKAGI_LIGHT_KEEP_MS, ALKKAGI_LIGHT_KEY, alkkagiLightRemembered, alkkagiShouldGoLight } from './alkkagiPerf.js';
+import { ALKKAGI_OLD_LIGHT_KEY, alkkagiProbeWork, createAlkkagiLightProbe } from './alkkagiPerf.js';
 import { alkkagiFinalShot, alkkagiIsTrembling } from './alkkagiAim.js';
 import { alkkagiPointInside, alkkagiGestureCancel, alkkagiGestureDown, alkkagiGestureMove, alkkagiGestureUp, createAlkkagiGestureState } from './alkkagiGesture.js';
 
@@ -358,9 +358,9 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     const fx = { ripples: [], shakes: [], falls: [] };
     let raf = 0;
     let lastFrame = 0;
-    let frameTimes = [];
+    let probe = createAlkkagiLightProbe();
     let idlePending = false;
-    let light = readLightMemory();
+    let light = false; // 가벼운 모드는 이 판·이 화면에서만 써요(기억하지 않아요)
     let sound = null;
     let destroyed = false;
     let lastVib = 0;
@@ -368,20 +368,25 @@ export function createAlkkagiBoard(canvas, opts = {}) {
 
     const nowSec = () => performance.now() / 1000;
 
-    function readLightMemory() {
-        try {
-            return alkkagiLightRemembered(localStorage.getItem(ALKKAGI_LIGHT_KEY), Date.now());
-        } catch (_) {
-            return false;
-        }
-    }
+    // 예전 '사흘 기억' 키는 읽지 않고 지우기만 해요.
+    try { localStorage.removeItem(ALKKAGI_OLD_LIGHT_KEY); } catch (_) { /* 무시 */ }
 
     function goLight() {
         light = true; // 가벼운 모드: 흔들림·빛결·가루를 줄여요
-        try {
-            localStorage.setItem(ALKKAGI_LIGHT_KEY, String(Date.now() + ALKKAGI_LIGHT_KEEP_MS));
-        } catch (_) { /* 무시 */ }
         emit({ type: 'light' });
+    }
+
+    /** 새 판·새 화면: 가벼운 모드를 끄고, 가만히 있는 판 프레임으로 다시 재요. */
+    function startPerfCheck() {
+        light = false;
+        probe = createAlkkagiLightProbe();
+        lastFrame = 0;
+        kick();
+    }
+
+    function settlePerf() {
+        probe.settle();
+        lastFrame = 0;
     }
 
     function ensureSound() {
@@ -436,6 +441,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
         if (L && next.cssW === L.cssW && next.BW === L.BW && canvas.width === Math.round(next.cssW * dpr)) return;
         L = next;
+        settlePerf(); // 크기를 바꾼 바로 뒤 프레임은 튀어서 재지 않아요
         canvas.style.height = `${L.cssH}px`;
         canvas.width = Math.round(L.cssW * dpr);
         canvas.height = Math.round(L.cssH * dpr);
@@ -552,11 +558,12 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         if (destroyed || !L) return;
         const tNow = performance.now();
         const frameSec = lastFrame ? Math.min(0.25, (tNow - lastFrame) / 1000) : 1 / 60;
-        // 프레임이 이어서 돌 때(알을 당기는 동안·굴러가는 동안)마다 재요. 그래서 첫 샷 전에도 알아채요.
-        if (lastFrame) {
-            frameTimes.push(tNow - lastFrame);
-            if (frameTimes.length > 60) frameTimes.shift();
-            if (!light && alkkagiShouldGoLight(frameTimes)) goLight();
+        // 판을 띄운 뒤 가만히 있는 판의 프레임만 재요(굴러가거나 당기는 중인 프레임은 빼요).
+        if (lastFrame && !probe.done && !(typeof document !== 'undefined' && document.hidden)) {
+            const busy = !!(anim || drag || idlePending || fx.ripples.length || fx.shakes.length || fx.falls.length);
+            // 가만히 있는 프레임마다 정해진 계산을 한 번 해 보고 걸린 시간도 같이 넣어요(건너뛰는 처음 프레임은 몸풀기예요).
+            const workMs = busy ? null : alkkagiProbeWork();
+            if (probe.push(tNow - lastFrame, { busy, workMs }) === 'light' && !light) goLight();
         }
         lastFrame = tNow;
         const t = nowSec();
@@ -683,7 +690,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
             idlePending = false;
             if (typeof opts.onBusyChange === 'function') opts.onBusyChange(false);
         }
-        if (anim || drag || idlePending || fx.ripples.length || fx.shakes.length || fx.falls.length) kick();
+        if (anim || drag || idlePending || fx.ripples.length || fx.shakes.length || fx.falls.length || !probe.done) kick();
         else lastFrame = 0; // 쉬었다 다시 그릴 때의 빈 시간은 재지 않아요
     }
 
@@ -997,6 +1004,9 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         if (!captured) onCancel({ type: 'lostpointercapture', pointerId: e.pointerId });
     }
 
+    // 탭을 다시 열면 처음 몇 프레임이 튀어서, 모으던 프레임을 버리고 다시 재요.
+    const onVisibility = () => settlePerf();
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('pointerup', onUp, true);
     window.addEventListener('pointercancel', onCancel, true);
@@ -1024,6 +1034,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         isAiPulling: () => !!(drag && drag.ai),
         eventLog: () => log.slice(),
         isLight: () => light,
+        startPerfCheck,
         /** 확인용: 알의 화면 위치(CSS px, 캔버스 기준) */
         stonePoints: () => (L ? (anim ? anim.state : display).stones.map((s) => {
             const [x, y] = toScreen(s.x, s.y);
@@ -1033,6 +1044,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         destroy() {
             destroyed = true;
             if (raf) cancelAnimationFrame(raf);
+            document.removeEventListener('visibilitychange', onVisibility);
             window.removeEventListener('pointerdown', onDown, true);
             window.removeEventListener('pointerup', onUp, true);
             window.removeEventListener('pointercancel', onCancel, true);

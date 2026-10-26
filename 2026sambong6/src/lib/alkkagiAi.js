@@ -4,8 +4,9 @@
  * - alkkagiPhysics.js로 후보 샷을 실제로 굴려 보고 점수를 매겨요.
  *   상대 알을 판 밖으로 밀어내면 크게 더하고, 내 알이 떨어지면 크게 빼요.
  *   판 가장자리에 걸린 상대 알은 조금 더하고, 내 알이 가장자리에 남으면 조금 빼요.
- * - 난이도: easy(쉬움)는 일부러 크게 빗나가고 좋은 수 몇 개 중에서 아무거나 골라요.
- *   normal(보통)은 조금 빗나가요. hard(고수)는 후보가 많고, 조금 빗나가도 괜찮은 수를 골라요.
+ * - 난이도: easy(쉬움)는 후보가 적고 크게 빗나가며, 좋은 수 몇 개 중에서 아무거나 골라요.
+ *   normal(보통)은 후보가 더 많지만 꽤 빗나가요. hard(고수)는 후보가 많고, 조금 빗나가도 괜찮은 수를 골라요.
+ * - 값은 모의 학생(각도 오차 sd 0.12, 120판)이 쉬움 약 75%·보통 약 50%·고수 약 25% 이기도록 맞췄어요.
  * - 끝까지 당기는 샷(힘 0.95 초과)은 사람과 같이 떨림 오차가 붙어요(alkkagiAim.js).
  * - 같은 판·같은 seed면 늘 같은 샷이에요. 시간 제한으로 끊지 않고 후보 수로 정해서
  *   기기가 느려도 결과가 같아요. 화면이 멈추지 않게 조금씩 나눠 계산할 수 있어요(runAlkkagiAiChunked).
@@ -18,8 +19,8 @@ export const ALKKAGI_AI_LEVELS = Object.freeze(['easy', 'normal', 'hard']);
 
 const LEVEL = Object.freeze({
     easy: { label: 'AI 쉬움', offsets: [0], powers: [0.62, 0.8, 0.94], pickTop: 6, angleErr: 0.22, powerErr: 0.22, robust: 0 },
-    normal: { label: 'AI 보통', offsets: [0, -0.07, 0.07], powers: [0.6, 0.78, 0.94, 1], pickTop: 2, angleErr: 0.05, powerErr: 0.06, robust: 0 },
-    hard: { label: 'AI 고수', offsets: [0, -0.05, 0.05, -0.11, 0.11], powers: [0.6, 0.8, 0.94, 1], pickTop: 1, angleErr: 0.012, powerErr: 0.02, robust: 6 },
+    normal: { label: 'AI 보통', offsets: [0, -0.07, 0.07], powers: [0.6, 0.78, 0.94, 1], pickTop: 4, angleErr: 0.225, powerErr: 0.1, robust: 0 },
+    hard: { label: 'AI 고수', offsets: [0, -0.05, 0.05, -0.11, 0.11], powers: [0.6, 0.8, 0.94, 1], pickTop: 2, angleErr: 0.11, powerErr: 0.06, robust: 6 },
 });
 
 export function sanitizeAlkkagiAiLevel(level) {

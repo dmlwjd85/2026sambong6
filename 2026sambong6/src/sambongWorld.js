@@ -11995,8 +11995,11 @@ ${subjectLine}
         let _alkLocal = null; // { game, ai } — 한 화면 둘이서(ai 없음) 또는 AI와 하기(ai: { level, color, seed, job, thinking, pulling })
         const _alkLeftRooms = new Set(); // 판 중에 나간 방: 자동으로 다시 들어가지 않아요
         let _alkResumeTried = false;
-        const ALKKAGI_GUIDE_KEY = 'sambong_alk_guide_seen';
+        const ALKKAGI_GUIDE_OLD_KEY = 'sambong_alk_guide_seen'; // 예전 '기기당 한 번' 기억(이제 안 써요, 지우기만 해요)
         const ALKKAGI_GUIDE_TEXT = '세게 당길수록 멀리 가지만, 알이 떨리면 조금 빗나갈 수 있어요.';
+        // 판 아래 두 줄 자리에 맞춘 짧은 안내(판 크기가 바뀌지 않게 두 줄 안에 들어가요)
+        const ALKKAGI_GUIDE_SHORT = '세게 당기면 알이 떨려서 조금 빗나가요.';
+        let _alkGuideDone = false; // 이번 판에서 첫 발을 쐈는지(판마다 새로 시작해요)
         let _alkSeen = { roomId: '', moveCount: -1 };
         let _alkWriting = false;
         let _alkBusy = false;
@@ -12387,7 +12390,7 @@ ${subjectLine}
             if (title) title.textContent = alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
             if (lead) {
                 lead.textContent = alk
-                    ? '방을 만들고 친구가 참가 신청을 하면 방장이 받아 줘요. 방장은 검은 알이고 먼저 쏴요. 한 대로 둘이 하려면 「한 화면 둘이서」, 혼자 하려면 「AI와 하기」에서 쉬움·보통·고수를 골라요. 10분 동안 아무도 안 쏘면 방이 사라져요. 하는 중에 나가면 지는 걸로 기록돼요.'
+                    ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 하다가 나가면 져요.'
                     : chess
                     ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.'
                     : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.';
@@ -13793,11 +13796,11 @@ ${subjectLine}
         }
 
         function alkkagiGuideSeen() {
-            try { return localStorage.getItem(ALKKAGI_GUIDE_KEY) === '1'; } catch (_) { return true; }
+            return _alkGuideDone;
         }
 
         function markAlkkagiGuideSeen() {
-            try { localStorage.setItem(ALKKAGI_GUIDE_KEY, '1'); } catch (_) { /* 무시 */ }
+            _alkGuideDone = true;
         }
 
         function alkkagiLocalRoomView() {
@@ -13855,6 +13858,7 @@ ${subjectLine}
             });
             const view = document.getElementById('boardgameAlkkagiPlayView');
             if (view) view.addEventListener('pointerdown', () => { if (_alkBoard) _alkBoard.ensureSound(); }, { passive: true });
+            try { localStorage.removeItem(ALKKAGI_GUIDE_OLD_KEY); } catch (_) { /* 무시 */ }
             if (window.__sambongE2E) window.__alkkagiQA = _alkBoard;
             return _alkBoard;
         }
@@ -13906,9 +13910,11 @@ ${subjectLine}
             const turnName = memberNameBySeat(room, game.turn === ALKKAGI_WHITE ? 'white' : 'black');
             let pillLine = '';
             let endCard = null;
-            let tipHtml = '알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.';
-            // 처음 몇 번은 '세게 당기면 떨려요' 안내를 팁 줄에 같이 보여 줘요(화면은 가리지 않아요).
-            if (!alkkagiGuideSeen()) tipHtml += `<span class="alk-guide">${ALKKAGI_GUIDE_TEXT}</span>`;
+            // 판마다 첫 발을 쏘기 전까지는 둘째 줄에 '세게 당기면 떨려요' 안내를 보여 줘요.
+            // 늘 두 줄 자리 안에 들어가서 판 크기는 그대로예요.
+            let tipHtml = alkkagiGuideSeen()
+                ? '알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.'
+                : `알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<span class="alk-guide">${ALKKAGI_GUIDE_SHORT}</span>`;
             const waiting = (!local && game.turn !== myColor) || aiTurn;
             if (over && !_alkBusy) {
                 pillLine = '판이 끝났어요';
@@ -14031,6 +14037,9 @@ ${subjectLine}
                 const shot = game.lastShot;
                 const isNewRoom = seen.roomId !== room.id;
                 if (isNewRoom || game.moveCount < seen.moveCount) {
+                    // 새 판·새 화면: 안내는 다시 보이고, 가벼운 모드 판단도 이 판에서 새로 해요.
+                    _alkGuideDone = false;
+                    board.startPerfCheck();
                     board.setView({ stones: game.stones, flip, myColor });
                 } else if (game.moveCount > seen.moveCount) {
                     const replay = !_alkLocal && shot && shot.shot && shot.seq === game.moveCount

@@ -69,23 +69,32 @@ test('상대 알을 밀어내고 내 알은 지키는 수를 좋아해요', () =
     const trade = before.map((s) => (s.id === 'w0' || s.id === 'b0' ? { ...s, alive: false } : s));
     assert.ok(scoreAlkkagiOutcome(before, trade, 'white') < scoreAlkkagiOutcome(before, before, 'white'), '맞바꾸기는 손해예요');
 
-    // 고수·보통은 실제로 b0을 판 밖으로 밀어내요(여러 seed).
+    // 고수·보통은 늘 b0을 밀어내는 수를 골라요(빗나가는 건 난이도만큼).
     for (const level of ['hard', 'normal']) {
-        let pushed = 0;
         for (let seed = 1; seed <= 6; seed += 1) {
             const r = planAlkkagiAiShot(easyPushBoard(), 'white', { level, seed });
+            assert.ok(r.score >= 100, `${level} seed ${seed}: 점수 ${r.score}`);
+        }
+    }
+    // 실제로 밀어내는 횟수는 고수가 쉬움보다 많아요.
+    const pushedOf = (level) => {
+        let pushed = 0;
+        for (let seed = 1; seed <= 24; seed += 1) {
+            const r = planAlkkagiAiShot(easyPushBoard(), 'white', { level, seed });
             const game = { ...emptyAlkkagiGame(), stones: easyPushBoard(), turn: 'white' };
-            const sim = simulateAlkkagiTurn(game, r.shot);
-            const after = sim.finalStones;
+            const after = simulateAlkkagiTurn(game, r.shot).finalStones;
             const blackAlive = after.filter((s) => s.alive && s.color === 'black').length;
             const whiteAlive = after.filter((s) => s.alive && s.color === 'white').length;
             if (blackAlive < 2 && whiteAlive === 2) pushed += 1;
         }
-        assert.ok(pushed >= 5, `${level}: ${pushed}/6`);
-    }
+        return pushed;
+    };
+    const hardPushed = pushedOf('hard');
+    const easyPushed = pushedOf('easy');
+    assert.ok(hardPushed > easyPushed * 2, `hard ${hardPushed}/24, easy ${easyPushed}/24`);
 });
 
-test('쉬움은 일부러 크게 빗나가고, 고수는 거의 안 빗나가요', () => {
+test('쉬움은 일부러 크게 빗나가고, 고수는 덜 빗나가요', () => {
     const g = emptyAlkkagiGame();
     const errOf = (level) => {
         let sum = 0;
@@ -95,8 +104,8 @@ test('쉬움은 일부러 크게 빗나가고, 고수는 거의 안 빗나가요
     const easy = errOf('easy');
     const hard = errOf('hard');
     assert.ok(easy > 0.08, `easy 평균 오차 ${easy}`);
-    assert.ok(hard < 0.04, `hard 평균 오차 ${hard}`);
-    assert.ok(easy > hard * 3);
+    assert.ok(hard < 0.1, `hard 평균 오차 ${hard}`);
+    assert.ok(easy > hard * 1.4, `easy ${easy}, hard ${hard}`);
 });
 
 test('쏠 알이 없으면 쏘지 않아요', () => {

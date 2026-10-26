@@ -2534,7 +2534,7 @@ function redrawPlazaGrantsUi() {
         }
 
         /** 학생/스태프 초상 + 통짜 캐릭터·무기·방패·신발. 방패는 오른쪽, 신발은 아래. */
-        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, showShield, showShoes, showRankBg = false, portraitClass = '' } = {}) {
+        function buildCharacterAvatarHtml({ studentId, data, isStaff, showWeapon = true, showShield, showShoes, showRankBg = false, rankFrame = false, portraitClass = '' } = {}) {
             const row = data || {};
             const equipped = row.equippedSkins || {};
             const drawShield = showShield !== undefined ? !!showShield : !!showWeapon;
@@ -2569,6 +2569,18 @@ function redrawPlazaGrantsUi() {
                     rankStackClass = ` char-avatar-has-rank${ring ? ` char-rank-${ring}` : ''}`;
                 }
             }
+            // 광장 카드: 대시보드와 같은 등급 그림 테두리·오라를 초상 뒤에 깝니다. 캐릭터는 테두리 앞입니다.
+            let rankFrameHtml = '';
+            if (rankFrame && showRankBg && !isStaff) {
+                const ring = (getLevelInfo(row.xp || 0).info || {}).ring || '';
+                const frameSrc = dashRankFrameSrc(ring);
+                if (frameSrc) {
+                    const auraSrc = dashRankAuraSrc(ring);
+                    rankFrameHtml = `${auraSrc ? `<img class="plaza-rank-aura" src="${auraSrc}" alt="" aria-hidden="true" decoding="async" loading="lazy">` : ''}<img class="plaza-rank-frame" src="${frameSrc}" alt="" aria-hidden="true" decoding="async" loading="lazy">`;
+                    rankStackClass += ` plaza-rank-framed plaza-rank-${ring}`;
+                }
+            }
+            if (rankFrameHtml) rankLayer = rankFrameHtml;
             let overlays = '';
             if (showWeapon && row.equippedWeapon) {
                 const wp = WEAPON_DATA.find((w) => w.id === row.equippedWeapon);
@@ -21526,6 +21538,7 @@ ${subjectLine}
                     data: displayData,
                     isStaff: !!isGMCard,
                     showRankBg: !isGMCard,
+                    rankFrame: !isGMCard,
                 });
                 const overlays = '';
                 

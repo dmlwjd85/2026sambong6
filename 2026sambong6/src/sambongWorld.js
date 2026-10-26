@@ -416,7 +416,7 @@ import {
     shouldUseLocalFirebaseEmulator,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
-import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll } from './lib/preLoginGuard.js';
+import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll, runPraiseMidnightRollOnce } from './lib/preLoginGuard.js';
 import {
     clearPersistedLoginIdentity,
     readPersistedLogin,
@@ -24294,36 +24294,34 @@ ${subjectLine}
             if (writes) await batch.commit();
         }
 
+        const praiseRollState = { running: false, lastRollDate: null };
         async function maybeRollPraiseAtMidnight() {
-            if (typeof db === 'undefined' || !db || window._praiseRollRunning || !window._classOpsReady) return;
+            if (typeof db === 'undefined' || !db || praiseRollState.running || !window._classOpsReady) return;
             const today = getLocalDateStr();
-            if (!shouldRunPraiseMidnightRoll({ loggedIn: isLoggedInSession(), lastRollDate: window._praiseRollDate, today })) return;
             const local = rollPraiseDay(window._praiseBoard, today);
             if (!local.reset && !local.changed && !window._praiseCountsNeedSync) return;
-            window._praiseRollDate = today;
-            window._praiseRollRunning = true;
             try {
-                const praiseRef = classOpsRef('praise');
-                const outcome = await runTransaction(db, async (tx) => {
-                    const snap = await tx.get(praiseRef);
-                    const rolled = rollPraiseDay(snap.exists() ? snap.data() : {}, today);
-                    if (!rolled.changed) return { reset: false, board: rolled.board };
-                    tx.set(praiseRef, rolled.board, { merge: false });
-                    return { reset: rolled.reset, board: rolled.board };
+                await runPraiseMidnightRollOnce(praiseRollState, { loggedIn: isLoggedInSession(), today }, async () => {
+                    const praiseRef = classOpsRef('praise');
+                    const outcome = await runTransaction(db, async (tx) => {
+                        const snap = await tx.get(praiseRef);
+                        const rolled = rollPraiseDay(snap.exists() ? snap.data() : {}, today);
+                        if (!rolled.changed) return { reset: false, board: rolled.board };
+                        tx.set(praiseRef, rolled.board, { merge: false });
+                        return { reset: rolled.reset, board: rolled.board };
+                    });
+                    window._praiseBoard = outcome.board;
+                    if (outcome.reset) window._praiseCountsNeedSync = true;
+                    if (window._praiseCountsNeedSync) {
+                        await syncStoredPraiseCounts(outcome.board);
+                        window._praiseCountsNeedSync = false;
+                    }
                 });
-                window._praiseBoard = outcome.board;
-                if (outcome.reset) window._praiseCountsNeedSync = true;
-                if (window._praiseCountsNeedSync) {
-                    await syncStoredPraiseCounts(outcome.board);
-                    window._praiseCountsNeedSync = false;
-                }
                 if (typeof window.renderPlaza === 'function') {
                     window.renderPlaza(window.allStudentsData || [], window.gmData, window.gmaData);
                 }
             } catch (e) {
                 console.error('maybeRollPraiseAtMidnight', e);
-            } finally {
-                window._praiseRollRunning = false;
             }
         }
 

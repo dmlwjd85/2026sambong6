@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll } from './preLoginGuard.js';
+import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping, shouldRunPraiseMidnightRoll, runPraiseMidnightRollOnce } from './preLoginGuard.js';
 
 describe('로그인 전 쓰기', () => {
     it('로그인 전에는 날씨·시세 같은 배경 쓰기를 하지 않습니다', () => {
@@ -103,4 +103,28 @@ it('자정 칭찬 판 넘김: 로그인 전에는 쓰지 않고, 로그인 후 �
     assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: '2026-10-27', today: '2026-10-27' }), false);
     assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: '2026-10-27', today: '2026-10-28' }), true);
     assert.equal(shouldRunPraiseMidnightRoll({ loggedIn: true, lastRollDate: null, today: '' }), false);
+});
+
+describe('runPraiseMidnightRollOnce', () => {
+    it('성공한 뒤에만 날짜를 기록하고, 실패하면 같은 날 다시 시도한다', async () => {
+        const st = { running: false, lastRollDate: null };
+        await assert.rejects(runPraiseMidnightRollOnce(st, { loggedIn: true, today: '2026-10-27' }, async () => { throw new Error('x'); }));
+        assert.equal(st.lastRollDate, null);
+        assert.equal(st.running, false);
+        assert.equal(await runPraiseMidnightRollOnce(st, { loggedIn: true, today: '2026-10-27' }, async () => {}), true);
+        assert.equal(st.lastRollDate, '2026-10-27');
+        let n = 0;
+        assert.equal(await runPraiseMidnightRollOnce(st, { loggedIn: true, today: '2026-10-27' }, async () => { n++; }), false);
+        assert.equal(n, 0);
+    });
+    it('동시에 두 번 실행되지 않고, 로그인 전에는 쓰지 않는다', async () => {
+        const st = { running: false, lastRollDate: null };
+        let n = 0; let release;
+        const gate = new Promise((r) => { release = r; });
+        const a = runPraiseMidnightRollOnce(st, { loggedIn: true, today: '2026-10-28' }, async () => { n++; await gate; });
+        assert.equal(await runPraiseMidnightRollOnce(st, { loggedIn: true, today: '2026-10-28' }, async () => { n++; }), false);
+        release(); assert.equal(await a, true); assert.equal(n, 1);
+        assert.equal(await runPraiseMidnightRollOnce({}, { loggedIn: false, today: '2026-10-28' }, async () => { n++; }), false);
+        assert.equal(n, 1);
+    });
 });

@@ -36,3 +36,24 @@ export function shouldRunPraiseMidnightRoll({ loggedIn, lastRollDate, today }) {
     if (!today) return false;
     return lastRollDate !== today;
 }
+
+/**
+ * 자정 칭찬 판 넘김을 한 번에 하나만 실행하고, 쓰기가 성공한 뒤에만 그날 날짜를 기록합니다.
+ * 실패하면 날짜를 남기지 않아 다음 틱에서 다시 시도합니다.
+ * @param {{ running?: boolean, lastRollDate?: string|null }} state
+ * @param {{ loggedIn: boolean, today: string }} p
+ * @param {() => Promise<unknown>} write
+ * @returns {Promise<boolean>} 이번 호출에서 쓰기가 성공했는지
+ */
+export async function runPraiseMidnightRollOnce(state, { loggedIn, today }, write) {
+    if (state.running) return false;
+    if (!shouldRunPraiseMidnightRoll({ loggedIn, lastRollDate: state.lastRollDate, today })) return false;
+    state.running = true;
+    try {
+        await write();
+        state.lastRollDate = today;
+        return true;
+    } finally {
+        state.running = false;
+    }
+}

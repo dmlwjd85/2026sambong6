@@ -1,5 +1,5 @@
 ﻿import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, connectAuthEmulator } from 'firebase/auth';
 import {
     getFirestore,
     connectFirestoreEmulator,
@@ -78,6 +78,11 @@ import {
     unexpectedQuestCompletions,
     weekRangeMondaySunday,
 } from './lib/questCompletionGuard.js';
+import {
+    isMasterPinStudentId,
+    masterPinRecordFromUserData,
+    masterPinUserPayload,
+} from './lib/masterPinStore.js';
 import {
     formatDragonBallHomeRewardHint,
     mergeDragonBallCollections,
@@ -391,7 +396,6 @@ import {
     shouldApplyTeacherBadgeRead,
     shouldSignOutNonAnonymousForPinLogin,
     shouldUseLocalFirebaseEmulator,
-    teacherAuthFailureMessage,
     teacherAuthStatusText,
 } from './lib/adminAuth.js';
 import { allowBackgroundCloudWrite, shouldAutoSettleLearningThermometer, shouldPersistInviteMapping } from './lib/preLoginGuard.js';
@@ -517,7 +521,7 @@ import {
     melodyForClassBell,
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
-import { learningThermometerStudentControls } from './lib/learningThermometerControls.js';
+import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
@@ -3343,7 +3347,10 @@ function redrawPlazaGrantsUi() {
             byKey.forEach((data, key) => {
                 const sid = key === 'student_gm' ? 'gm' : (key === 'student_gm_a' ? 'gm_a' : key.replace(/^student_/, ''));
                 const payload = buildStudentResetPayload(data);
-                if (key === 'student_gm' && rotateMasterPin) payload.pin = newPin;
+                if (key === 'student_gm' || key === 'student_gm_a') {
+                    if (rotateMasterPin && newPin) payload.pin = newPin;
+                    else delete payload.pin;
+                }
                 batch.set(studentBackupRefForClass(id, sid), {
                     studentId: String(sid),
                     savedAt: new Date().toISOString(),
@@ -3352,6 +3359,9 @@ function redrawPlazaGrantsUi() {
                 batch.set(studentDocRefForClass(id, key), payload);
             });
             await batch.commit();
+            if (rotateMasterPin && id === appId && newPin) {
+                try { await writeStoredMasterPin(newPin, 'gm'); } catch (e) { console.warn('reset master pin', e); }
+            }
             return { newPin, displayName: classData.displayName || id, inviteCode: classData.inviteCode || '' };
         }
 
@@ -4820,9 +4830,57 @@ function redrawPlazaGrantsUi() {
 
         function describeSettingsWriteFailure(error) {
             if (classifyAuthError(error) === 'permission_denied') {
-                return teacherAuthFailureMessage('permission_denied');
+                return '저장이 거부되었습니다. 배포된 규칙은 익명 로그인으로 이 설정(artifacts/…/settings/global 의 마스터 항목, 상점 할인, 온도계 수동 저장)을 바꾸지 못합니다.';
             }
             return (error && error.message) ? error.message : String(error);
+        }
+
+        function masterPinDocRef() {
+            if (!db || !auth || !auth.currentUser) return null;
+            return doc(db, 'users', auth.currentUser.uid);
+        }
+
+        async function readStoredMasterPin(studentId) {
+            const ref = masterPinDocRef();
+            if (!ref) return '';
+            try {
+                const snap = await getDoc(ref);
+                if (!snap.exists()) return '';
+                const record = masterPinRecordFromUserData(snap.data(), { classId: appId, studentId });
+                return record ? record.pin : '';
+            } catch (e) {
+                console.warn('readStoredMasterPin', e);
+                return '';
+            }
+        }
+
+        async function writeStoredMasterPin(pin, studentId) {
+            const pinText = String(pin || '');
+            const ref = masterPinDocRef();
+            let userOk = false;
+            let userReason = ref ? '' : 'no-auth';
+            if (ref) {
+                try {
+                    await setDoc(ref, masterPinUserPayload({ pin: pinText, classId: appId, studentId }), { merge: true });
+                    userOk = true;
+                } catch (e) {
+                    console.warn('writeStoredMasterPin', e);
+                    userReason = classifyAuthError(e);
+                }
+            }
+            let gmOk = false;
+            if (db && isMasterPinStudentId(studentId) && /^\d{4}$/.test(pinText)) {
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + studentId), {
+                        pin: pinText,
+                    }, { merge: true });
+                    gmOk = true;
+                } catch (e) {
+                    console.warn('writeStoredMasterPin gm', e);
+                }
+            }
+            if (userOk || gmOk) return { ok: true, userOk, gmOk };
+            return { ok: false, reason: userReason || 'permission_denied' };
         }
 
         function renderTeacherAuthBadges(state) {
@@ -4874,75 +4932,27 @@ function redrawPlazaGrantsUi() {
             }
         }
 
-        async function ensureTeacherAuth(options = {}) {
-            if (!auth || !db) {
-                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown') };
+        async function ensureTeacherAuth() {
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                return { ok: false, reason: 'unknown', message: '인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.' };
             }
-            await auth.authStateReady();
-            let user = auth.currentUser;
-            const email = String(options.email || '').trim();
-            const password = String(options.password || '');
-            if (email && password) {
-                try {
-                    const cred = await signInWithEmailAndPassword(auth, email, password);
-                    user = cred.user;
-                } catch (e) {
-                    const reason = classifyAuthError(e);
-                    return { ok: false, reason, message: teacherAuthFailureMessage(reason), showEmail: true };
-                }
-            } else if (!isTeacherProvider(user)) {
-                try {
-                    const provider = new GoogleAuthProvider();
-                    provider.setCustomParameters({ prompt: 'select_account' });
-                    const cred = await signInWithPopup(auth, provider);
-                    user = cred.user;
-                } catch (e) {
-                    const reason = classifyAuthError(e);
-                    return {
-                        ok: false,
-                        reason,
-                        message: teacherAuthFailureMessage(reason),
-                        showEmail: reason === 'popup_blocked',
-                    };
-                }
-            }
-            if (!isTeacherProvider(user)) {
-                return { ok: false, reason: 'unknown', message: teacherAuthFailureMessage('unknown'), showEmail: true };
-            }
-            const state = await readTeacherAllowlist(user);
-            renderTeacherAuthBadges(state);
-            try {
-                await user.getIdToken(true);
-            } catch (e) {
-                console.warn('teacher getIdToken', e);
-            }
-            if (!state.allowlisted) {
-                return { ok: false, reason: 'not_allowlisted', message: teacherAuthFailureMessage('not_allowlisted') };
-            }
-            if (window.playerState && window.playerState.isAdmin) void runAdminOneShotMigrations();
-            if (typeof updateClassToolsPanelVisibility === 'function') updateClassToolsPanelVisibility();
-            return { ok: true, email: state.email };
+            return { ok: true, email: '' };
         }
 
         async function requireGmSettingsAuth() {
-            const result = await ensureTeacherAuth();
-            if (!result.ok) {
-                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
-                    window.openTeacherAuthModal({ showEmail: true });
-                }
-                await window.customAlert(result.message);
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                await window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 return false;
             }
             return true;
         }
 
         async function assertGmSettingsAuth() {
-            const result = await ensureTeacherAuth();
-            if (!result.ok) {
-                if (result.showEmail && typeof window.openTeacherAuthModal === 'function') {
-                    window.openTeacherAuthModal({ showEmail: true });
-                }
-                const err = new Error(result.message);
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) {
+                const err = new Error('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
                 err.teacherAuth = true;
                 throw err;
             }
@@ -4974,29 +4984,21 @@ function redrawPlazaGrantsUi() {
         window.startTeacherGoogleAuth = async function() {
             const result = await ensureTeacherAuth();
             if (!result.ok) {
-                if (result.showEmail) window.openTeacherAuthModal({ showEmail: true });
                 await window.customAlert(result.message);
                 return;
             }
             window.closeTeacherAuthModal();
-            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
+            await window.customAlert('마스터 비밀번호로 이용합니다. Google 로그인은 사용하지 않습니다.');
         };
 
         window.startTeacherEmailAuth = async function() {
-            const email = String(document.getElementById('teacherAuthEmail')?.value || '').trim();
-            const password = String(document.getElementById('teacherAuthPassword')?.value || '');
-            if (!email || !password) {
-                await window.customAlert('이메일과 비밀번호를 입력해 주세요.');
-                return;
-            }
-            const result = await ensureTeacherAuth({ email, password });
+            const result = await ensureTeacherAuth();
             if (!result.ok) {
-                window.openTeacherAuthModal({ showEmail: true });
                 await window.customAlert(result.message);
                 return;
             }
             window.closeTeacherAuthModal();
-            await window.customAlert(result.email ? `인증됨(${result.email})` : '인증됨');
+            await window.customAlert('마스터 비밀번호로 이용합니다. 이메일 로그인은 사용하지 않습니다.');
         };
 
         /** 전역 로딩 스피너 / 에러 표시 */
@@ -11544,7 +11546,7 @@ ${subjectLine}
         }
 
         function canEditLearningThermometer() {
-            return canManageLearningThermometer() && isTeacherProvider(auth && auth.currentUser);
+            return masterCanEditLearningThermometer({ isAdmin: canManageLearningThermometer() });
         }
 
         function learningThermometerHasUnsavedEdits() {
@@ -14848,10 +14850,7 @@ ${subjectLine}
         }
 
         async function ensureThermometerTeacher() {
-            if (isTeacherProvider(auth && auth.currentUser)) return true;
-            if (Date.now() - _thermometerAuthPromptAt < 20000) return false;
-            _thermometerAuthPromptAt = Date.now();
-            return requireGmSettingsAuth();
+            return ensureAnonAuthReady();
         }
 
         async function ensureLearningThermometerParent(state) {
@@ -14990,14 +14989,12 @@ ${subjectLine}
             const now = new Date();
             const today = getLocalDateStr();
             const unsavedText = learningThermometerHasUnsavedEdits() ? ' · <span class="font-black text-amber-200">미저장</span>' : '';
-            let autoText = '15:00 이후, 선생님 인증이 있으면 자동 정산됩니다. 그 전에는 지금 XP 반영을 누르세요.';
-            if (!canEdit && canManage) {
-                autoText = '선생님 인증 필요. 슬라이더와 +/- 는 움직일 수 없습니다. 정산은 인증 후 지금 XP 반영으로 실행합니다.';
-            } else if (now.getHours() >= LEARNING_THERMOMETER_AUTO_HOUR) {
-                autoText = state.settledDate === today
-                    ? '오늘 15시 정산 완료'
-                    : '15시 이후입니다. 선생님 인증이 있으면 자동 정산되고, 아니면 지금 XP 반영을 누르세요.';
-            }
+            const autoText = learningThermometerAutoNote({
+                canEdit,
+                hour: now.getHours(),
+                autoHour: LEARNING_THERMOMETER_AUTO_HOUR,
+                settledToday: state.settledDate === today,
+            });
             status.innerHTML = `
                 <span class="font-bold text-sky-100">${today}</span>
                 · 범위 ${state.min} ~ +${state.max} XP
@@ -15041,12 +15038,6 @@ ${subjectLine}
                 _learningThermometerSavePending = true;
                 const authOk = await ensureAnonAuthReady();
                 if (!authOk) throw new Error('auth');
-                if (!isTeacherProvider(auth && auth.currentUser)) {
-                    _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
-                    if (!silent) await ensureThermometerTeacher();
-                    renderLearningThermometerPanel();
-                    return false;
-                }
                 const state = getLearningThermometerState();
                 await ensureLearningThermometerParent(state);
                 await seedMissingThermometerVotesFromLegacy(state);
@@ -15058,6 +15049,7 @@ ${subjectLine}
                 }));
                 ids.forEach((sid) => _thermometerPendingVoteIds.delete(sid));
                 _thermometerUnsaved = _thermometerPendingVoteIds.size > 0;
+                _learningThermometerSavePending = false;
                 _learningThermometerIgnoreRemoteUntil = Date.now() + 1200;
                 if (!silent) await window.customAlert('학습 온도계를 저장했습니다.');
                 renderLearningThermometerPanel();
@@ -15065,6 +15057,7 @@ ${subjectLine}
             } catch (e) {
                 console.error('saveLearningThermometerState', e);
                 _thermometerUnsaved = true;
+                _learningThermometerSavePending = false;
                 renderLearningThermometerPanel();
                 if (!silent) await window.customAlert('저장 실패: ' + (e && e.message ? e.message : String(e)));
                 return false;
@@ -15211,11 +15204,8 @@ ${subjectLine}
             if (!manual && now.getHours() < LEARNING_THERMOMETER_AUTO_HOUR) return { status: 'too_early' };
             if (!manual && (!window.playerState || !window.playerState.isAdmin)) return { status: 'admin_only' };
 
-            if (!isTeacherProvider(auth && auth.currentUser)) {
-                if (!manual) return { status: 'auth' };
-                const teacherOk = await ensureThermometerTeacher();
-                if (!teacherOk) return { status: 'auth' };
-            }
+            const authOk = await ensureAnonAuthReady();
+            if (!authOk) return { status: 'auth' };
 
             _learningThermometerSettlementRunning = true;
             try {
@@ -15257,7 +15247,7 @@ ${subjectLine}
         function checkLearningThermometerAutoSettlement() {
             if (!shouldAutoSettleLearningThermometer({
                 loggedIn: isLoggedInSession(),
-                isTeacher: isTeacherProvider(auth && auth.currentUser),
+                isTeacher: !!(window.playerState && window.playerState.isAdmin),
             })) return;
             if (!window.playerState || !window.playerState.isAdmin) return;
             if (isVacationAutomationPaused('thermometer')) return;
@@ -25155,23 +25145,39 @@ ${subjectLine}
                 let data = docSnap.exists() ? docSnap.data() : null;
                 
                 if (data) {
-                    if (!data.pin) {
-                        if (isAutoLogin) {
-                            // 서버에 pin이 없어도 이 기기의 마스터 세션은 유지합니다. 여기서는 쓰지 않습니다.
+                    if (!data.pin && isAdmin) {
+                        const storedPin = await readStoredMasterPin(studentId);
+                        if (storedPin) {
+                            if (storedPin !== pin) {
+                                if (isAutoLogin) {
+                                    const classId = localStorage.getItem('sambong_class_id');
+                                    localStorage.clear();
+                                    if (classId) localStorage.setItem('sambong_class_id', classId);
+                                    location.reload();
+                                    return;
+                                }
+                                return await window.customAlert("❌ 비밀번호가 틀렸어요!");
+                            }
+                        } else if (isAutoLogin) {
                             if (!shouldRestoreLoginWithoutServerPin({ isAutoLogin: true, isAdmin, savedPin: pin })) return;
-                            data = { ...data, pin };
+                            await writeStoredMasterPin(pin, studentId);
                         } else {
                             const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
-                            if(!isOk) return; 
-                            data.pin = pin; 
-                            try {
-                                await setDoc(docRef, { pin: pin }, { merge: true });
-                            } catch (pinErr) {
-                                // 배포된 규칙은 마스터 학생 문서에 pin을 두지 못하게 할 수 있습니다.
-                                if (!(isAdmin && classifyAuthError(pinErr) === 'permission_denied')) throw pinErr;
-                                delete data.pin;
-                                console.warn('master pin write skipped', pinErr && pinErr.code);
-                            }
+                            if (!isOk) return;
+                            await writeStoredMasterPin(pin, studentId);
+                        }
+                        delete data.pin;
+                    } else if (!data.pin) {
+                        if (isAutoLogin) return;
+                        const isOk = await window.customConfirm(`[${STUDENT_NAMES[studentId]}]\n입력하신 [${pin}] 번호가 앞으로 계속 쓸 비밀번호가 됩니다.\n이대로 접속할까요?`);
+                        if(!isOk) return; 
+                        data.pin = pin; 
+                        try {
+                            await setDoc(docRef, { pin: pin }, { merge: true });
+                        } catch (pinErr) {
+                            if (classifyAuthError(pinErr) !== 'permission_denied') throw pinErr;
+                            delete data.pin;
+                            console.warn('student pin write skipped', pinErr && pinErr.code);
                         }
                     } else if (data.pin !== pin) {
                         if (isAutoLogin) {
@@ -25182,6 +25188,9 @@ ${subjectLine}
                             return;
                         }
                         return await window.customAlert("❌ 비밀번호가 틀렸어요!");
+                    } else if (isAdmin) {
+                        await writeStoredMasterPin(pin, studentId);
+                        delete data.pin;
                     }
                 } else {
                     if (isAutoLogin) return; 
@@ -25189,6 +25198,7 @@ ${subjectLine}
                     if(!isOk) return;
                     
                     data = { pin, xp: 0, xpChangeLog: [], bong: 0.0, bongChangeLog: [], itemRefundLedger: [], ownedSkinInstances: {}, quests: {}, unlockedQuests: {}, jobs: [], ownedSkins: {}, equippedSkins: {}, baseFaceId: '', staffLookId: '', inventory: [], equippedWeapon: null, equippedShield: null, equippedShoes: null, gearEnhance: {}, hasShield: false, shieldHP: 0, lunchBid: {date: '', amount: 0}, lastLunchDeductDate: '', questHistory: [], usedRaidPasswords: [], dragonBalls: [], dragonBallWeekendKey: '', bankRegularSavings: 0, bankTermDeposits: [], bankDailyBonusLastDate: '', bankLoan: null, creditDefaultUntilYmd: '', bankNegativeSinceYmd: '', dailyAllClearBonusDate: '', stockInvestments: { kospi: null, kosdaq: null, nasdaq: null }, stockInvestDaily: { date: '', profit: 0, sells: 0 }, catBattle: { cleared: 0, friends: [], dailyDate: '', dailyWins: 0 }, classEventPurchases: [], conveniencePurchases: [], shopDailyPurchase: { date: getLocalDateStr(), item_random: 0, item_xp_pack: 0, custom_xp: 0 }, lottoTickets: [], worldCupBets: [] };
+                    if (isAdmin) await writeStoredMasterPin(pin, studentId);
                     try {
                         await setDoc(docRef, data);
                     } catch (createErr) {
@@ -25266,6 +25276,9 @@ ${subjectLine}
             delete dataToSave.isGM;
             delete dataToSave.isGMA;
             delete dataToSave.isAdmin;
+            if (window.playerState && (window.playerState.isAdmin || isMasterPinStudentId(localStorage.getItem('sambong_student_id')))) {
+                delete dataToSave.pin;
+            }
             dataToSave.dragonBalls = sanitizeDragonBallList(dataToSave.dragonBalls);
             dataToSave.unlockedFeatures = sanitizeUnlockedFeatures(dataToSave.unlockedFeatures);
             dataToSave.statusMessage = sanitizeStatusMessage(dataToSave.statusMessage);
@@ -30133,7 +30146,24 @@ ${subjectLine}
             if (window.playerState.isGMA && stuId !== '13') return;
             
             const newPin = await window.customPrompt(`[${stuName}] 새 4자리 PIN 입력:`, "number");
-            if (newPin && newPin.length === 4) { 
+            if (newPin && newPin.length === 4) {
+                if (isMasterPinStudentId(stuId)) {
+                    const authOk = await ensureAnonAuthReady();
+                    if (!authOk) return window.customAlert('인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.');
+                    const saved = await writeStoredMasterPin(newPin, stuId);
+                    if (localStorage.getItem('sambong_student_id') === String(stuId)) {
+                        writePersistedLogin(localStorage, {
+                            studentId: stuId,
+                            pin: newPin,
+                            role: 'master',
+                            classId: appId,
+                        });
+                    }
+                    if (!saved.ok) {
+                        return window.customAlert('이 기기에는 바꿨지만, 서버의 개인 문서(users/본인)에는 저장하지 못했습니다.');
+                    }
+                    return window.customAlert("✅ 변경 완료");
+                }
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'students', 'student_' + stuId), { pin: newPin }, { merge: true }); 
                 window.customAlert("✅ 변경 완료"); 
             }

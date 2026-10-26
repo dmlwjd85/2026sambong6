@@ -2572,9 +2572,7 @@
                     <div id="boardgameAlkkagiPlayView" class="boardgame-view boardgame-play alk-view hidden">
                         <div class="alk-paper">
                             <header class="alk-head">
-                                <button type="button" class="alk-back alk-hanji" onclick="void window.leaveBoardGameTable()" aria-label="나가기">
-                                    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="#6e4a2c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                                </button>
+                                <button type="button" class="alk-back alk-hanji" onclick="void window.leaveBoardGameTable()"><span>나가기</span></button>
                                 <h2 class="alk-title">알까기</h2>
                                 <div class="alk-head-side">
                                     <span id="alkkagiHudTimer" class="alk-timer" hidden></span>
@@ -2596,10 +2594,21 @@
                                     <div class="alk-left"><span id="alkkagiLeftWhite" class="alk-n">5개</span><span id="alkkagiDotsWhite" class="alk-dots" aria-hidden="true"></span></div>
                                 </div>
                             </div>
+                            <div class="alk-turn-row">
+                                <div id="alkkagiTurn" class="alk-turn" aria-live="polite"><i id="alkkagiTurnDot" class="alk-mini b" aria-hidden="true"></i><span id="alkkagiTurnText">차례를 기다려요</span></div>
+                            </div>
                             <div id="alkkagiStage" class="alk-stage">
                                 <div class="alk-board-wrap">
-                                    <div id="alkkagiTurn" class="alk-turn"><i id="alkkagiTurnDot" class="alk-mini b" aria-hidden="true"></i><span id="alkkagiTurnText">차례를 기다려요</span></div>
                                     <canvas id="alkkagiCanvas" class="alk-canvas" role="img" aria-label="알까기 판" data-fit-el="alkkagiStage" data-max-board="520"></canvas>
+                                </div>
+                                <div id="alkkagiResult" class="alk-result hidden" role="status">
+                                    <div class="alk-result-card alk-hanji">
+                                        <span class="alk-spark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                                        <i id="alkkagiResultStone" class="alk-result-stone b" aria-hidden="true"></i>
+                                        <p id="alkkagiResultTitle" class="alk-result-title">검은 알 승리</p>
+                                        <p id="alkkagiResultLine" class="alk-result-line"></p>
+                                        <p id="alkkagiResultLeft" class="alk-result-left"></p>
+                                    </div>
                                 </div>
                             </div>
                             <p id="alkkagiTip" class="alk-tip">알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.</p>
@@ -2611,7 +2620,8 @@
                                 <button type="button" class="alk-btn main" onclick="void window.continueAlkkagi()"><span>한 판 더 할래요</span></button>
                                 <button type="button" class="alk-btn sub alk-hanji" onclick="void window.closeAlkkagi()"><span id="alkkagiCloseLabel">방 닫을게요</span></button>
                             </div>
-                            <p class="alk-cr">글꼴: 쨈 제목 — © 2026 쨈 폰트 팀<br>글꼴: 쨈 본문(JJAEM Body) —<br>Resource Han Rounded(Cyano Hao, SIL OFL 1.1) 바탕</p>
+                            <button type="button" class="alk-cr-link" onclick="void window.showAlkkagiFontCredit()">글꼴 정보</button>
+                            <template id="alkkagiFontCredit"><p class="alk-cr">글꼴: 쨈 제목 — © 2026 쨈 폰트 팀<br>글꼴: 쨈 본문(JJAEM Body) —<br>Resource Han Rounded(Cyano Hao, SIL OFL 1.1) 바탕</p></template>
                         </div>
                     </div>
                 </div>

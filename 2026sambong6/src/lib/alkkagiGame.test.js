@@ -4,6 +4,7 @@ import { serializeAlkkagiShot, verifyAlkkagiReplay } from './alkkagiPhysics.js';
 import {
     alkkagiAliveCount,
     alkkagiEndText,
+    alkkagiSubject,
     alkkagiErrorText,
     alkkagiGameToDoc,
     alkkagiPhysicsState,
@@ -139,6 +140,7 @@ describe('알까기 기권·시간 초과', () => {
         assert.equal(r.game.winner, 'black');
         assert.equal(r.game.endReason, 'forfeit');
         assert.match(alkkagiEndText(r.game, { blackName: 'A', whiteName: 'B' }), /B님이 기권/);
+        assert.equal(alkkagiEndText(r.game, { blackName: '검은 알', whiteName: '흰 알', honor: false }), '흰 알이 기권해서 검은 알이 이겼어요.');
         assert.equal(applyAlkkagiForfeit(r.game, { color: 'black' }).error, 'already_over');
         assert.equal(applyAlkkagiForfeit(emptyAlkkagiGame(), { color: '' }).error, 'bad_color');
     });
@@ -148,4 +150,10 @@ describe('알까기 기권·시간 초과', () => {
         assert.equal(r.game.winner, 'white');
         assert.equal(r.game.endReason, 'timeout');
     });
+});
+
+it('이/가를 받침에 맞춰 붙여요', () => {
+    assert.equal(alkkagiSubject('검은 알'), '검은 알이');
+    assert.equal(alkkagiSubject('하나'), '하나가');
+    assert.equal(alkkagiSubject('Tom'), 'Tom이(가)');
 });

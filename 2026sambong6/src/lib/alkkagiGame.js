@@ -264,13 +264,27 @@ export function alkkagiErrorText(code) {
     return ALKKAGI_ERROR_LABEL[String(code || '')] || '';
 }
 
-export function alkkagiEndText(game, { blackName = '흑', whiteName = '백' } = {}) {
+/** 받침에 맞춰 이/가를 붙여요. 한글이 아니면 '이(가)'처럼 두 가지를 다 써요. */
+export function alkkagiSubject(name) {
+    const s = String(name || '');
+    const code = s.charCodeAt(s.length - 1);
+    if (!(code >= 0xac00 && code <= 0xd7a3)) return `${s}이(가)`;
+    return (code - 0xac00) % 28 ? `${s}이` : `${s}가`;
+}
+
+/**
+ * 끝난 판 한 줄 설명이에요.
+ * honor: 사람 이름이면 '님'을 붙이고(온라인), 혼자 두기의 '검은 알'·'흰 알'처럼 알 이름이면 붙이지 않아요.
+ */
+export function alkkagiEndText(game, { blackName = '흑', whiteName = '백', honor = true } = {}) {
     const g = sanitizeAlkkagiGame(game);
     if (g.endReason === 'draw') return '마지막 알이 함께 떨어졌어요. 비겼어요.';
     if (!g.winner) return '';
     const win = g.winner === ALKKAGI_BLACK ? blackName : whiteName;
     const lose = g.winner === ALKKAGI_BLACK ? whiteName : blackName;
-    if (g.endReason === 'forfeit') return `${lose}님이 기권해서 ${win}님이 이겼어요.`;
-    if (g.endReason === 'timeout') return `${lose}님 시간이 다 돼서 ${win}님이 이겼어요.`;
-    return `${win}님이 마지막 알까지 밀어냈어요!`;
+    const who = (n) => (honor ? `${n}님이` : alkkagiSubject(n));
+    const whose = (n) => (honor ? `${n}님` : `${n}의`);
+    if (g.endReason === 'forfeit') return `${who(lose)} 기권해서 ${who(win)} 이겼어요.`;
+    if (g.endReason === 'timeout') return `${whose(lose)} 시간이 다 돼서 ${who(win)} 이겼어요.`;
+    return `${who(win)} 마지막 알까지 밀어냈어요!`;
 }

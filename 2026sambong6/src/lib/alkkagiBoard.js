@@ -12,6 +12,8 @@
 import { ALKKAGI_DT, ALKKAGI_MAX_STEPS, applyAlkkagiShot, isAlkkagiResting, parseAlkkagiShot, serializeAlkkagiShot, stepAlkkagi } from './alkkagiPhysics.js';
 import { ALKKAGI_CONFIG, alkkagiPhysicsState, simulateAlkkagiTurn } from './alkkagiGame.js';
 import { alkkagiHitLevel, createAlkkagiSound } from './alkkagiSound.js';
+import { alkkagiShouldGoLight } from './alkkagiPerf.js';
+import { alkkagiPointInside, alkkagiGestureCancel, alkkagiGestureDown, alkkagiGestureMove, alkkagiGestureUp, createAlkkagiGestureState } from './alkkagiGesture.js';
 
 const W = ALKKAGI_CONFIG.width;
 const PULL_MAX = 120; // 물리 단위. 이만큼 당기면 힘이 가득 차요.
@@ -355,7 +357,8 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     const fx = { ripples: [], shakes: [], falls: [] };
     let raf = 0;
     let lastFrame = 0;
-    let slowFrames = 0;
+    let frameTimes = [];
+    let idlePending = false;
     let light = false;
     let sound = null;
     let destroyed = false;
@@ -533,9 +536,9 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         const tNow = performance.now();
         const frameSec = lastFrame ? Math.min(0.25, (tNow - lastFrame) / 1000) : 1 / 60;
         if (anim && lastFrame) {
-            if (tNow - lastFrame > 26) slowFrames += 1;
-            else slowFrames = Math.max(0, slowFrames - 1);
-            if (slowFrames > 12 && !light) light = true; // 가벼운 모드: 흔들림·빛결·가루를 줄여요
+            frameTimes.push(tNow - lastFrame);
+            if (frameTimes.length > 60) frameTimes.shift();
+            if (!light && alkkagiShouldGoLight(frameTimes)) light = true; // 가벼운 모드: 흔들림·빛결·가루를 줄여요
         }
         lastFrame = tNow;
         const t = nowSec();
@@ -656,7 +659,12 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         fx.ripples = fx.ripples.filter((e) => t - e.t0 < 0.52);
         fx.shakes = fx.shakes.filter((e) => t - e.t0 < 0.16);
         fx.falls = fx.falls.filter((e) => t - e.t0 < FALL_SEC + 0.02);
-        if (anim || drag || fx.ripples.length || fx.shakes.length || fx.falls.length) kick();
+        // 차례 알림은 알과 탈락·파동 연출이 다 끝난 뒤에 바꿔요.
+        if (idlePending && !anim && !fx.falls.length && !fx.ripples.length) {
+            idlePending = false;
+            if (typeof opts.onBusyChange === 'function') opts.onBusyChange(false);
+        }
+        if (anim || drag || idlePending || fx.ripples.length || fx.shakes.length || fx.falls.length) kick();
     }
 
     function kick() {
@@ -733,8 +741,8 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         emit({ type: 'slide', level: 0, step: a.state.step });
         emit({ type: 'rest', step: a.state.step });
         display = a.final ? alkkagiPhysicsState(a.final) : a.state;
-        slowFrames = 0;
-        if (typeof opts.onBusyChange === 'function') opts.onBusyChange(false);
+        idlePending = true;
+        kick();
         if (typeof a.onDone === 'function') a.onDone();
         if (pendingView) {
             const v = pendingView;
@@ -775,6 +783,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         if (sound) sound.launch(parsed.shot.power);
         emit({ type: 'launch', power: parsed.shot.power, step: 0 });
         vibrate(10, 0);
+        idlePending = false;
         if (typeof opts.onBusyChange === 'function') opts.onBusyChange(true);
         lastFrame = 0;
         kick();
@@ -787,9 +796,25 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         return [e.clientX - rect.left, e.clientY - rect.top];
     }
 
-    function onDown(e) {
-        ensureSound();
-        if (!view.canShoot || anim || drag || !L) return;
+    let gst = createAlkkagiGestureState();
+    const CANCEL_DIST = ALKKAGI_CONFIG.radius * 1.1; // 알 가까이로 돌아와 놓으면 취소(약 12px)
+
+    function insideRelease(e) {
+        const x = e.clientX;
+        const y = e.clientY;
+        const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (!alkkagiPointInside(x, y, { left: 0, top: 0, right: vw - 1, bottom: vh - 1 })) return false;
+        const area = opts.boundsEl || null;
+        if (area && typeof area.getBoundingClientRect === 'function') {
+            const r = area.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0 && !alkkagiPointInside(x, y, r)) return false;
+        }
+        return true;
+    }
+
+    function pickStone(e) {
+        if (e.target !== canvas || !view.canShoot || anim || !L) return null;
         const [px, py] = localPoint(e);
         const [u, v] = toBoard(px, py);
         let best = null;
@@ -802,12 +827,26 @@ export function createAlkkagiBoard(canvas, opts = {}) {
                 best = s;
             }
         }
-        if (!best) return;
+        return best;
+    }
+
+    function onDown(e) {
+        if (e.target === canvas) ensureSound();
+        // 새로 닿은 첫 손가락이면 혹시 남은 기록을 비워요(놓친 pointerup 대비)
+        if (e.isPrimary && !gst.drag && e.pointerType === 'touch') gst = createAlkkagiGestureState();
+        const best = pickStone(e);
+        const r = alkkagiGestureDown(gst, { pointerId: e.pointerId, canStart: !!best });
+        gst = r.state;
+        if (r.action === 'cancel') {
+            cancelDrag();
+            return;
+        }
+        if (r.action !== 'start') return;
         e.preventDefault();
         try {
             canvas.setPointerCapture(e.pointerId);
         } catch (_) { /* 무시 */ }
-        drag = { id: best.id, pointerId: e.pointerId, sx: best.x, sy: best.y, pull: 0, angle: 0, viewAngle: 0, t0: performance.now(), full: false };
+        drag = { id: best.id, pointerId: e.pointerId, sx: best.x, sy: best.y, pull: 0, angle: 0, viewAngle: 0, t0: performance.now(), full: false, outside: false };
         canvas.classList.add('is-dragging');
         vibrate(5, 0);
         kick();
@@ -819,8 +858,10 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         const dx = drag.sx - u;
         const dy = drag.sy - v;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        drag.dist = dist;
-        drag.pull = dist < ALKKAGI_CONFIG.radius * 1.1 ? 0 : Math.min(1, dist / PULL_MAX);
+        drag.dist = Number.isFinite(dist) ? dist : 0;
+        drag.outside = !insideRelease(e);
+        // 밖으로 나가 있으면 힘을 풀어 보여 줘요(놓으면 취소예요). 돌아오면 다시 살아나요.
+        drag.pull = drag.outside || drag.dist < CANCEL_DIST ? 0 : Math.min(1, drag.dist / PULL_MAX);
         drag.angle = Math.atan2(dy, dx);
         drag.viewAngle = view.flip ? drag.angle + Math.PI : drag.angle;
         if (drag.pull > 0.95 && !drag.full) {
@@ -833,6 +874,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         if (!drag || e.pointerId !== drag.pointerId) return;
         e.preventDefault();
         updateDrag(e);
+        gst = alkkagiGestureMove(gst, { pointerId: e.pointerId, inside: !drag.outside }).state;
         kick();
     }
 
@@ -843,12 +885,15 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     }
 
     function onUp(e) {
-        if (!drag || e.pointerId !== drag.pointerId) return;
+        const mine = drag && e.pointerId === drag.pointerId;
+        if (mine) updateDrag(e);
+        const r = alkkagiGestureUp(gst, { pointerId: e.pointerId, inside: mine ? !drag.outside : true, dist: mine ? drag.dist : 0, cancelDist: CANCEL_DIST });
+        gst = r.state;
+        if (!mine) return;
         e.preventDefault();
-        updateDrag(e);
         const d = drag;
         cancelDrag();
-        if (d.pull < MIN_POWER) return; // 알 가까이로 돌아와 놓으면 취소예요
+        if (r.action !== 'fire' || d.pull < MIN_POWER) return; // 취소: 알은 제자리에 있어요
         const shot = serializeAlkkagiShot({ id: d.id, angle: d.angle, power: d.pull });
         if (!shot) return;
         const from = display.stones.map((s) => ({ id: s.id, color: s.color, x: s.x, y: s.y, alive: s.alive }));
@@ -860,15 +905,28 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     }
 
     function onCancel(e) {
-        if (!drag || e.pointerId !== drag.pointerId) return;
-        cancelDrag();
+        // pointercancel은 손가락이 빠진 것, lostpointercapture는 끌던 손가락만 취소해요.
+        const release = e.type === 'pointercancel';
+        const r = alkkagiGestureCancel(gst, { pointerId: e.pointerId, release });
+        gst = r.state;
+        if (r.action === 'cancel' && drag && drag.pointerId === e.pointerId) cancelDrag();
     }
 
-    canvas.addEventListener('pointerdown', onDown);
+    function onLeave(e) {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        let captured = false;
+        try {
+            captured = canvas.hasPointerCapture(e.pointerId);
+        } catch (_) { /* 무시 */ }
+        if (!captured) onCancel({ type: 'lostpointercapture', pointerId: e.pointerId });
+    }
+
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
     canvas.addEventListener('pointermove', onMove);
-    canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', onCancel);
     canvas.addEventListener('lostpointercapture', onCancel);
+    canvas.addEventListener('pointerleave', onLeave);
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => resize()) : null;
     if (ro) {
         ro.observe(canvas);
@@ -883,6 +941,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         playShot,
         ensureSound,
         isBusy: () => !!anim,
+        isSettling: () => !!anim || idlePending,
         isDragging: () => !!drag,
         eventLog: () => log.slice(),
         isLight: () => light,
@@ -895,9 +954,11 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         destroy() {
             destroyed = true;
             if (raf) cancelAnimationFrame(raf);
-            canvas.removeEventListener('pointerdown', onDown);
+            window.removeEventListener('pointerdown', onDown, true);
+            window.removeEventListener('pointerup', onUp, true);
+            window.removeEventListener('pointercancel', onCancel, true);
             canvas.removeEventListener('pointermove', onMove);
-            canvas.removeEventListener('pointerup', onUp);
+            canvas.removeEventListener('pointerleave', onLeave);
             canvas.removeEventListener('pointercancel', onCancel);
             canvas.removeEventListener('lostpointercapture', onCancel);
             if (ro) ro.disconnect();

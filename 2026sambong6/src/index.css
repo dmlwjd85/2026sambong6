@@ -673,7 +673,7 @@
             gap: 0.3rem;
         }
 
-        .plaza-card { min-width: 0; overflow: visible; }
+        .plaza-card { min-width: 0; overflow: visible; container-type: inline-size; }
         .plaza-card-face { overflow: visible; }
         .plaza-card.is-credit-default {
             border-color: #ef4444 !important;
@@ -683,9 +683,21 @@
             opacity: 0.38;
             filter: grayscale(0.65);
         }
-        .praise-btn {
+        .praise-pair {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.2rem;
             margin-top: 0.2rem;
+            width: 100%;
+        }
+        .praise-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.15rem;
             min-height: 1.6rem;
+            min-width: 2.4rem;
             border-radius: 999px;
             border: 1px solid #fbbf24;
             background: #422006;
@@ -693,6 +705,27 @@
             font-size: 9px;
             font-weight: 900;
             padding: 0 0.4rem;
+            line-height: 1;
+        }
+        .praise-btn img {
+            width: 0.95rem;
+            height: 0.95rem;
+            display: block;
+            flex: 0 0 auto;
+        }
+        .praise-thumb-down { transform: rotate(180deg); }
+        .plaza-dislike-reason {
+            max-width: 100%;
+            margin-top: 0.12rem;
+            padding: 0 0.15rem;
+            font-size: 8px;
+            line-height: 1.2;
+            font-weight: 700;
+            color: #fecaca;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
         .checklist-grid {
             display: grid;
@@ -2269,10 +2302,11 @@
                 0 4px 10px rgba(0, 0, 0, 0.35);
         }
         .rank-badge-clip .rank-badge {
-            width: 124%;
-            height: 124%;
-            max-width: none;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
             object-fit: cover;
+            object-position: center;
             border-radius: 0;
             box-shadow: none;
             background: transparent;
@@ -2424,6 +2458,27 @@
         @media (min-width: 640px) {
             .app-nav-icon { width: 2.65rem; height: 2.65rem; border-radius: 0.9rem; }
             .app-nav-label { font-size: 10px; }
+        }
+        /* 휴대폰: 아이콘이 3줄로 넘어가지 않게 7칸·2줄. 버튼 칸은 44px 이상. */
+        @media (max-width: 767px) {
+            .app-nav-dock {
+                grid-template-columns: repeat(7, minmax(0, 1fr));
+                gap: 0.04rem 0.06rem;
+                padding: 0.12rem 0.15rem calc(0.16rem + env(safe-area-inset-bottom, 0px));
+            }
+            .app-nav-item {
+                min-height: 44px;
+                width: 100%;
+                gap: 0;
+                padding: 0.04rem 0 0.06rem;
+                justify-content: center;
+            }
+            .app-nav-icon {
+                width: 1.55rem;
+                height: 1.55rem;
+                border-radius: 0.42rem;
+            }
+            .app-nav-label { font-size: 9px; }
         }
         @media (min-width: 768px) {
             .app-nav-item { color: #f1f5f9; opacity: 0.9; }
@@ -4423,6 +4478,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
 
         /* 스티커북 코디: 초상과 착장을 같은 1:1 프레임에 겹칩니다 */
         .char-avatar-stack { overflow: visible; isolation: isolate; }
+        .char-portrait-frame {
+            position: relative;
+            display: inline-block;
+            line-height: 0;
+            vertical-align: bottom;
+            z-index: 1;
+            max-width: 100%;
+        }
         #dashAvatar { overflow: visible; padding: 1.55rem 1.55rem 1.35rem; }
         .dash-rank-bg {
             position: absolute;
@@ -4520,6 +4583,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             width: 100%;
             margin-bottom: 0.3rem;
             overflow: visible;
+        }
+        /* 카드가 초상보다 좁으면 레벨을 아래로 내려 등급 그림이 카드 밖으로 나가지 않게 합니다. */
+        @container (max-width: 4.7rem) {
+            .plaza-card-figure {
+                flex-direction: column;
+                align-items: center;
+                gap: 0.12rem;
+            }
         }
         .plaza-card-figure .plaza-card-face {
             margin-bottom: 0 !important;
@@ -4660,7 +4731,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .char-rank-bg {
             position: absolute;
-            inset: -42%;
+            inset: 0;
             z-index: 0;
             pointer-events: none;
             display: flex;
@@ -4672,12 +4743,16 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             background: transparent;
         }
         .char-rank-bg img {
-            width: 130%;
-            height: 130%;
-            max-width: none;
+            width: 100%;
+            height: 100%;
+            max-width: 100%;
             object-fit: cover;
             object-position: center;
+            display: block;
         }
+        /* 등급 그림은 초상 원 안에만 두고, 프로필은 카드 여백 안에서 조금 더 크게 둡니다. */
+        .char-portrait-frame .char-rank-bg { inset: 0; }
+        #dashAvatar .char-portrait-frame .char-rank-bg { inset: -0.85rem; }
         .char-rank-bg-emoji { font-size: 1.15em; opacity: 0.85; background: transparent; }
         .char-avatar-stack .char-portrait-clip { position: relative; z-index: 1; }
         /* 등급마다 원형 테두리 색을 달리 해 한눈에 구별합니다. */

@@ -74,6 +74,17 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    function isEstateStateDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/estate/state$');
+    }
+
+    // 자리 배열이 없거나 비어 있으면 기존 주인·임시 배치를 지우지 못합니다.
+    function estateSeatsPresent() {
+      return request.resource.data.seats is list
+        && request.resource.data.seats.size() > 0
+        && request.resource.data.seats.size() <= 144;
+    }
+
     function isStudentDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/[^/]+$');
     }
@@ -419,8 +430,24 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
+    // 부동산 자리표. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
+    // 로그인한 학생의 자리 구매는 좌석 배열이 있을 때만 허용하고, 빈 배열·삭제로 자리를 지우지는 못합니다.
+    // 상점 가격 등 GM 전용 키는 아래 settings/global 의 #68 조건을 유지합니다. 학생 화면에는 열지 않습니다.
+    match /artifacts/{appId}/public/data/estate/state {
+      allow read: if true;
+      allow create: if signedIn() && estateSeatsPresent();
+      allow update: if signedIn() && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['seats'])
+        || estateSeatsPresent()
+      );
+      allow delete: if false;
+    }
+
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 로그인한 사용자(익명 포함)가 GM 전용 키와 shopDiscount를 만들고 고칩니다. 삭제는 금지입니다.
+    // #68: 로그인한 사용자(익명 포함)가 GM 전용 키와 shopDiscount를 만들고 고칩니다.
+    // 익명 인증에는 학번이 없어 규칙만으로 학생과 마스터를 나누지 않습니다.
+    // 상점 가격 수정은 화면에서 마스터 PIN(isGM)일 때만 호출하고, 학생 계정에는 열지 않습니다.
+    // 삭제는 금지입니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
       allow create: if canCreateClassSettings(appId)
@@ -495,6 +522,7 @@ service cloud.firestore {
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
         && !isOxQuizBankDoc()
+        && !isEstateStateDoc()
         && studentClassXpSlotAllowed();
     }
 

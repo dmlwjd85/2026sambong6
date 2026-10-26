@@ -537,6 +537,8 @@ import {
     thermometerVotesShouldReplaceValues,
 } from './lib/learningThermometerVotes.js';
 import { buildPlazaSeatingPlan } from './lib/plazaSeating.js';
+import { planEstateMerge } from './lib/estateWrite.js';
+import { pinMasterCanEditShopPrices, pinMasterSkipsTeacherGoogle } from './lib/masterAdminAccess.js';
 import {
     listAllCharacterBases,
     listCharacterBases,
@@ -4838,7 +4840,7 @@ function redrawPlazaGrantsUi() {
 
         function describeSettingsWriteFailure(error) {
             if (classifyAuthError(error) === 'permission_denied') {
-                return '저장이 거부되었습니다. 배포된 규칙은 익명 로그인으로 이 설정(artifacts/…/settings/global 의 마스터 항목, 상점 할인, 온도계 수동 저장)을 바꾸지 못합니다.';
+                return '저장이 거부되었습니다. 마스터 비밀번호로 저장을 시도했습니다. 배포된 규칙이 이 버전보다 오래되면 규칙 배포 뒤에 반영됩니다.';
             }
             return (error && error.message) ? error.message : String(error);
         }
@@ -4967,6 +4969,10 @@ function redrawPlazaGrantsUi() {
         }
 
         window.openTeacherAuthModal = function(options = {}) {
+            if (pinMasterSkipsTeacherGoogle({ isAdmin: !!(window.playerState && window.playerState.isAdmin) })) {
+                if (window.showToast) window.showToast('마스터 비밀번호로 이미 열려 있습니다. 추가 인증은 필요 없습니다.');
+                return;
+            }
             const modal = document.getElementById('teacherAuthModal');
             const form = document.getElementById('teacherAuthEmailForm');
             const hint = document.getElementById('teacherAuthModalHint');
@@ -20305,17 +20311,29 @@ ${subjectLine}
 
                         onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), snap => {
                             if(snap.exists()) {
-                                window.estateState = normalizeEstateState(snap.data());
-                                if (Array.isArray(window.estateState.seats)) {
-                                    window.estateState.seats.forEach((s) => {
-                                        if (s.owner || s.locked || isEstateSeatDisabled(s)) {
-                                            s.assignee = null;
-                                        }
-                                    });
-                                }
-                                if (isLoggedInSession()) {
-                                    window.ensureEstateSeokRestore();
-                                    window.ensureEstateHwangRestore();
+                                const raw = snap.data() || {};
+                                rememberEstateServer(raw);
+                                const serverSeats = Array.isArray(raw.seats) && raw.seats.length > 0;
+                                if (serverSeats) {
+                                    window.estateState = normalizeEstateState(raw);
+                                    if (Array.isArray(window.estateState.seats)) {
+                                        window.estateState.seats.forEach((s) => {
+                                            if (s.owner || s.locked || isEstateSeatDisabled(s)) {
+                                                s.assignee = null;
+                                            }
+                                        });
+                                    }
+                                    if (isLoggedInSession()) {
+                                        window.ensureEstateSeokRestore();
+                                        window.ensureEstateHwangRestore();
+                                    }
+                                } else {
+                                    // 좌석 필드가 없으면 빈 교실을 만들어 저장하지 않습니다. 광장은 기존 5열로 그립니다.
+                                    window.estateState = {
+                                        ...raw,
+                                        seats: [],
+                                        purchaseHistory: Array.isArray(raw.purchaseHistory) ? raw.purchaseHistory : [],
+                                    };
                                 }
                                 window.renderEstate(); 
                             } else if (isLoggedInSession()) {
@@ -20331,11 +20349,12 @@ ${subjectLine}
                                 initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
                                 initialSeats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].hidden = false;
                                 const ph = [{ studentId: '13', seatId: ESTATE_RESTORE_SEOK_SEAT_INDEX, price: 500, at: Date.now(), note: '봄 시즌 초기 데이터(석서영 자리 복구)' }];
-                                setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                                rememberEstateServer({});
+                                void commitEstateState({
                                     seats: initialSeats,
                                     layout: built.layout,
                                     purchaseHistory: ph,
-                                });
+                                }, { allowCreateSeats: true }).catch((e) => console.warn('estate create', e));
                             } else {
                                 const built = buildEstateSeatsFromLayout(4, 4, {
                                     defaultPrice: ESTATE_DEFAULT_PRICE,
@@ -25860,6 +25879,38 @@ ${subjectLine}
         // ★ 퀘스트, 아이템, 무기 및 부동산 로직 ★
         // ==========================================
 
+        function rememberEstateServer(raw) {
+            const data = raw && typeof raw === 'object' ? raw : {};
+            window._estateServerState = {
+                seats: Array.isArray(data.seats) ? data.seats.map((seat) => ({ ...seat })) : null,
+                layout: data.layout && typeof data.layout === 'object' ? { ...data.layout } : null,
+                purchaseHistory: Array.isArray(data.purchaseHistory) ? data.purchaseHistory.map((row) => ({ ...row })) : null,
+            };
+        }
+
+        /**
+         * 자리표는 문서 전체를 교체하지 않고, 넘긴 필드만 merge 합니다.
+         * 좌석이 없거나 앉은 학생을 빈 값으로 지우면 저장하지 않습니다.
+         */
+        async function commitEstateState(patch, opts = {}) {
+            if (!db) return false;
+            const plan = planEstateMerge(window._estateServerState, patch, { requireSeats: true, ...opts });
+            if (!plan.write) {
+                console.warn('estate write skipped', plan.seatsSkipped);
+                return false;
+            }
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), plan.patch, { merge: true });
+            const prev = window._estateServerState || {};
+            window._estateServerState = {
+                seats: plan.patch.seats !== undefined ? plan.patch.seats.map((seat) => ({ ...seat })) : prev.seats,
+                layout: plan.patch.layout !== undefined ? { ...plan.patch.layout } : prev.layout,
+                purchaseHistory: plan.patch.purchaseHistory !== undefined
+                    ? plan.patch.purchaseHistory.map((row) => ({ ...row }))
+                    : prev.purchaseHistory,
+            };
+            return true;
+        }
+
         /** 빈 자리일 때 석서영(13번) 학생의 지정 자리(8번) 소유를 복구 — 시드(데모) 학급·기본 4×4 전용 */
         window.ensureEstateSeokRestore = async function() {
             if (!isSeedDemoClass()) return;
@@ -25877,7 +25928,10 @@ ${subjectLine}
                 note: '자동 복구(데이터 동기화 시 빈 자리 감지)'
             });
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                await commitEstateState({
+                    seats: window.estateState.seats,
+                    purchaseHistory: window.estateState.purchaseHistory,
+                });
             } catch (e) { console.warn('ensureEstateSeokRestore', e); }
         };
 
@@ -25893,7 +25947,7 @@ ${subjectLine}
             if (!seat || isEstateSeatDisabled(seat) || seat.locked || seat.owner || seat.noAutoRestore) return;
             seat.owner = '12';
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                await commitEstateState({ seats: window.estateState.seats });
             } catch (e) { console.warn('ensureEstateHwangRestore', e); }
         };
         
@@ -25928,7 +25982,11 @@ ${subjectLine}
                 price: price,
                 at: Date.now()
             });
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+            const wrote = await commitEstateState({
+                seats: window.estateState.seats,
+                purchaseHistory: window.estateState.purchaseHistory,
+            });
+            if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 기존 자리가 비어 있어 빈 값으로 덮지 않았습니다.');
             window.customAlert(`🎉 ${seatId + 1}번 자리를 구매했습니다! 자리표에 내 이름이 새겨집니다.`);
         };
 
@@ -25941,7 +25999,8 @@ ${subjectLine}
             if(ok) {
                 seat.locked = !seat.locked;
                 if (seat.locked) seat.assignee = null;
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                const wrote = await commitEstateState({ seats: window.estateState.seats });
+                if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 기존 자리가 비어 있어 빈 값으로 덮지 않았습니다.');
                 window.renderEstate();
             }
         };
@@ -26067,7 +26126,14 @@ ${subjectLine}
                 if (priceChanged) seat.price = newPrice;
 
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                    const wrote = await commitEstateState({
+                        seats: window.estateState.seats,
+                        purchaseHistory: window.estateState.purchaseHistory,
+                    }, { allowClearOccupants: true });
+                    if (!wrote) {
+                        await window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
+                        return;
+                    }
                     window.renderEstate();
                     await window.customAlert(`✅ ${seatId + 1}번 자리 변경 완료!\n${changeLines.join('\n')}`);
                 } catch (e) {
@@ -26128,7 +26194,11 @@ ${subjectLine}
             }
 
             try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), window.estateState);
+                const wrote = await commitEstateState({ seats: window.estateState.seats });
+                if (!wrote) {
+                    await window.customAlert('자리표를 저장하지 못했습니다. 앉은 학생이 있는 자리를 빈 값으로 덮지 않았습니다.');
+                    return;
+                }
                 window.renderEstate();
                 let tail = '';
                 if (shuffledStudents.length > placeCount) {
@@ -26185,11 +26255,12 @@ ${subjectLine}
                     built.seats[ESTATE_RESTORE_HHWANG_SEAT_INDEX].locked = false;
                 }
             }
-            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+            const wrote = await commitEstateState({
                 seats: built.seats,
                 layout: built.layout,
                 purchaseHistory: prevHistory,
-            });
+            }, { allowClearOccupants: true, allowCreateSeats: true });
+            if (!wrote) return window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
             window.customAlert("✅ 부동산 전체 자리가 초기화되었습니다. (구매 기록·배열 설정은 보존되었습니다.)");
         };
 
@@ -26328,11 +26399,15 @@ ${subjectLine}
                     note: `자리 배열 변경 → ${draftRows}×${draftCols} (사용 ${total - draftHidden.size})`,
                 });
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'estate', 'state'), {
+                    const wrote = await commitEstateState({
                         seats: built.seats,
                         layout: built.layout,
                         purchaseHistory: prevHistory,
-                    });
+                    }, { allowClearOccupants: true, allowCreateSeats: true });
+                    if (!wrote) {
+                        await window.customAlert('자리표를 저장하지 못했습니다. 빈 좌석으로는 덮지 않습니다.');
+                        return;
+                    }
                     d.remove();
                     await window.customAlert(`✅ 자리 배열을 저장했습니다.\n${draftRows}행 × ${draftCols}열`);
                 } catch (e) {
@@ -27328,7 +27403,7 @@ ${subjectLine}
         };
 
         window.saveShopPricesAdmin = async function () {
-            if (!window.playerState || !window.playerState.isGM) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
+            if (!pinMasterCanEditShopPrices({ isGM: !!(window.playerState && window.playerState.isGM) })) return await window.customAlert(`${getMasterDisplayName()}만 저장할 수 있습니다.`);
             if (!db) return await window.customAlert('데이터베이스에 연결되지 않았습니다.');
             const shopPrices = {};
             getAllShopItems().forEach((s) => {

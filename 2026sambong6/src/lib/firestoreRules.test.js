@@ -1036,6 +1036,44 @@ describe('firestore rules: admins 허용목록', { skip: emulatorOn ? false : 'F
         }));
     });
 
+    it('자리표는 빈 좌석으로 덮거나 지우지 못하고, 좌석이 있으면 부분 저장은 된다', async () => {
+        const path = 'artifacts/class1/public/data/estate/state';
+        const seats = [
+            { id: 0, owner: '2', assignee: null, hidden: false, price: 500 },
+            { id: 1, owner: null, assignee: '5', hidden: false, price: 500 },
+        ];
+        await testEnv.withSecurityRulesDisabled(async (context) => {
+            await setDoc(doc(context.firestore(), path), {
+                seats,
+                layout: { rows: 1, cols: 2 },
+                purchaseHistory: [{ studentId: '2' }],
+            });
+        });
+        const db = anon().firestore();
+        await assertSucceeds(setDoc(doc(db, path), {
+            seats: [
+                { id: 0, owner: '2', assignee: null, hidden: false, price: 500 },
+                { id: 1, owner: '9', assignee: null, hidden: false, price: 500 },
+            ],
+        }, { merge: true }));
+        await assertFails(setDoc(doc(db, path), { seats: [] }, { merge: true }));
+        await assertFails(updateDoc(doc(db, path), { seats: [] }));
+        await assertFails(deleteDoc(doc(db, path)));
+        await assertSucceeds(setDoc(doc(db, path), {
+            layout: { rows: 1, cols: 2 },
+        }, { merge: true }));
+        await assertFails(setDoc(doc(db, 'artifacts/class2/public/data/estate/state'), {
+            seats: [],
+            layout: { rows: 1, cols: 1 },
+        }));
+        await assertSucceeds(setDoc(doc(db, 'artifacts/class2/public/data/estate/state'), {
+            seats,
+            layout: { rows: 1, cols: 2 },
+        }));
+        const guest = testEnv.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(guest, path), { seats }, { merge: true }));
+    });
+
     it('익명 로그인은 OX 문제 은행과 마스터 PIN을 저장하고, 로그인 없으면 저장하지 못한다', async () => {
         const db = anon().firestore();
         await assertSucceeds(setDoc(doc(db, 'artifacts/class1/public/data/oxQuizBank/bank'), {

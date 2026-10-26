@@ -4628,19 +4628,23 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         .dash-figure #dashAvatar {
             margin: 0;
-            padding: 0.95rem 0.95rem 0.45rem;
+            padding: 0;
         }
+        .dash-portrait-slot { min-height: 8.8rem; }
         .dash-rank-frame {
             position: absolute;
             left: 50%;
             top: 50%;
             width: 8.8rem;
             height: 8.8rem;
+            max-width: none;
+            max-height: none;
             aspect-ratio: 1 / 1;
             transform: translate(-50%, -50%);
             object-fit: contain;
             pointer-events: none;
-            z-index: 3;
+            /* 초상(z-index 1)보다 앞, 무기·스티커(z-index 20+)보다는 뒤. */
+            z-index: 6;
         }
         .dash-rank-aura {
             position: absolute;
@@ -4777,17 +4781,24 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             #dashAvatarCard .dash-rank-fx { animation: none !important; opacity: 0.28; transform: translateX(-50%); }
             #dashAvatarCard .dash-rank-aura { animation: none !important; opacity: 1; transform: translate(-50%, -50%); }
         }
+        /* 대시보드 초상만 테두리 구멍에 맞춥니다. 광장 초상 크기는 그대로입니다. */
+        #dashAvatar .char-portrait-lg { width: 5.1rem; height: 5.1rem; }
+        /* 원형 등급 링·등급 그림은 대시보드에서 그림 테두리로 바꿉니다. 별·이름 색은 유지합니다. */
+        #dashAvatarCard .char-avatar-has-rank .char-portrait-clip { box-shadow: none; }
+        #dashAvatarCard .char-rank-bg { display: none; }
         @media (max-width: 420px) {
             #dashAvatarCard { padding: 0.9rem 0.7rem 1rem; }
+            .dash-portrait-slot { min-height: 7.6rem; }
             .dash-rank-frame { width: 7.6rem; height: 7.6rem; }
             .dash-rank-aura { width: 9rem; height: 9rem; }
-            #dashAvatar .char-portrait-lg { width: 6.2rem; height: 6.2rem; }
+            #dashAvatar .char-portrait-lg { width: 4.4rem; height: 4.4rem; }
             .dash-rank-star { width: 1rem; height: 1rem; }
         }
         @media (min-width: 1600px) {
+            .dash-portrait-slot { min-height: 9.6rem; }
             .dash-rank-frame { width: 9.6rem; height: 9.6rem; }
             .dash-rank-aura { width: 11.4rem; height: 11.4rem; }
-            #dashAvatar .char-portrait-lg { width: 8rem; height: 8rem; }
+            #dashAvatar .char-portrait-lg { width: 5.55rem; height: 5.55rem; }
         }
         .bong-neg { color: #f87171 !important; }
         /* 초상은 원형 클립만 남기고, 네모 흰 모서리·흰 테두리는 안쪽에서 확대해 가립니다. */

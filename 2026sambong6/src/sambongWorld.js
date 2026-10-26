@@ -24639,6 +24639,12 @@ ${subjectLine}
             if (dashStars) dashStars.innerHTML = dashRankStarHtml(rankRing);
             
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>`;
+            const dashStack = document.querySelector('#dashAvatar .char-avatar-stack');
+            if (dashFrame && dashStack) {
+                const portraitFrame = dashStack.querySelector('.char-portrait-frame');
+                if (portraitFrame) portraitFrame.after(dashFrame);
+                else dashStack.appendChild(dashFrame);
+            }
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();
             if (window.playerState && window.playerState.isAdmin) {

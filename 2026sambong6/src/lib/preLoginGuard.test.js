@@ -74,8 +74,9 @@ describe('게스트 읽기와 마스터 PIN', () => {
         const start = src.indexOf('async function attemptLogin');
         const end = src.indexOf('async function saveDataToCloud', start);
         const body = src.slice(start, end);
-        assert.match(body, /master pin write skipped/);
-        assert.match(body, /classifyAuthError\(pinErr\) === 'permission_denied'/);
+        assert.match(body, /writeStoredMasterPin/);
+        assert.match(body, /readStoredMasterPin/);
+        assert.equal(body.includes('signInWithPopup'), false);
     });
 
     it('로그인 전 밥줄·수업 탭을 다시 보여 줍니다', () => {

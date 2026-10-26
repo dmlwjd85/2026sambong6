@@ -30,11 +30,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/admins/$(request.auth.uid)).data;
     }
 
-    // 이미 있는 학급 설정은 admins.classIds 에 그 학급 ID가 있을 때만 고칩니다.
+    // 비밀번호로 들어온 익명 로그인도 그 학급의 마스터 설정을 저장합니다.
+    // Google 허용목록은 더 이상 이 저장의 조건이 아닙니다.
     function isAdminForApp(appId) {
-      return isAdmin()
-        && adminRecord().classIds is list
-        && appId in adminRecord().classIds;
+      return signedIn() && appId is string;
     }
 
     function hasApprovedClassGrant(classId) {
@@ -75,8 +74,44 @@ service cloud.firestore {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/sambong-class-2026/public/data/approvedClassIds/[^/]+$');
     }
 
+    function isEstateStateDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/estate/state$');
+    }
+
+    // 자리 배열이 없거나 비어 있으면 기존 주인·임시 배치를 지우지 못합니다.
+    function estateSeatsPresent() {
+      return request.resource.data.seats is list
+        && request.resource.data.seats.size() > 0
+        && request.resource.data.seats.size() <= 144;
+    }
+
     function isStudentDoc() {
       return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/students/[^/]+$');
+    }
+
+    function isMasterPinDoc(studentId) {
+      return studentId == 'student_gm' || studentId == 'student_gm_a';
+    }
+
+    function masterPinShapeOk() {
+      return request.resource.data.pin is string
+        && request.resource.data.pin.matches('^[0-9]{4}$');
+    }
+
+    // 기기 바꿔도 같은 비밀번호를 쓰도록, 로그인한 사용자는 마스터 문서에 4자리 pin만 남깁니다.
+    function masterPinOnlyWrite(studentId) {
+      return signedIn()
+        && isMasterPinDoc(studentId)
+        && masterPinShapeOk()
+        && (
+          request.method == 'create'
+            ? request.resource.data.keys().hasOnly(['pin'])
+            : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pin'])
+        );
+    }
+
+    function isOxQuizBankDoc() {
+      return string(request.path).matches('^/databases/[^/]+/documents/artifacts/[^/]+/public/data/oxQuizBank($|/.*)');
     }
 
     // 학생 문서는 공개 와일드카드와 OR 됩니다. 슬롯 키 검사는 이쪽에도 있어야 우회되지 않습니다.
@@ -377,8 +412,8 @@ service cloud.firestore {
 
     match /artifacts/{appId}/public/data/students/{studentId} {
       allow read: if true;
-      allow create: if studentCreateIsSafe();
-      allow update: if studentUpdateIsSafe();
+      allow create: if studentCreateIsSafe() || masterPinOnlyWrite(studentId);
+      allow update: if studentUpdateIsSafe() || masterPinOnlyWrite(studentId);
       allow delete: if false;
     }
 
@@ -395,9 +430,24 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
+    // 부동산 자리표. 공개 와일드카드와 OR 되지 않게 빼 둡니다.
+    // 로그인한 학생의 자리 구매는 좌석 배열이 있을 때만 허용하고, 빈 배열·삭제로 자리를 지우지는 못합니다.
+    // 상점 가격 등 GM 전용 키는 아래 settings/global 의 #68 조건을 유지합니다. 학생 화면에는 열지 않습니다.
+    match /artifacts/{appId}/public/data/estate/state {
+      allow read: if true;
+      allow create: if signedIn() && estateSeatsPresent();
+      allow update: if signedIn() && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['seats'])
+        || estateSeatsPresent()
+      );
+      allow delete: if false;
+    }
+
     // 공개 와일드카드와 OR 되므로, 이 문서의 쓰기는 여기서만 허용합니다.
-    // 생성은 classIds 또는 시드 학급 승인 표식이 있어야 합니다.
-    // shopDiscount 와 GM 전용 키를 바꾸려면 학급 관리자입니다. 앱은 이 문서를 지우지 않습니다.
+    // #68: 로그인한 사용자(익명 포함)가 GM 전용 키와 shopDiscount를 만들고 고칩니다.
+    // 익명 인증에는 학번이 없어 규칙만으로 학생과 마스터를 나누지 않습니다.
+    // 상점 가격 수정은 화면에서 마스터 PIN(isGM)일 때만 호출하고, 학생 계정에는 열지 않습니다.
+    // 삭제는 금지입니다.
     match /artifacts/{appId}/public/data/settings/global {
       allow read: if true;
       allow create: if canCreateClassSettings(appId)
@@ -423,7 +473,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 학습 온도계 부모. 생성·수정은 그 학급 선생님만 합니다. 학생별 값은 votes 하위 문서입니다.
+    // 학습 온도계 부모. 형식에 맞으면 로그인한 사용자(익명 포함)가 만들고 고칩니다.
     match /artifacts/{appId}/public/data/settings/learningThermometer {
       allow read: if true;
       allow create: if isAdminForApp(appId) && thermometerShapeOk();
@@ -439,7 +489,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 학급 개설 직전, 시드 학급 선생님만 만들고 createdBy에 자기 uid를 남깁니다.
+    // 학급 개설 표식. 로그인한 사용자가 자기 uid를 createdBy에 남길 때만 만듭니다.
     match /artifacts/sambong-class-2026/public/data/approvedClassIds/{classId} {
       allow read: if signedIn();
       allow create: if isAdminForApp('sambong-class-2026')
@@ -449,6 +499,12 @@ service cloud.firestore {
         && request.resource.data.createdBy is string
         && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if false;
+    }
+
+    // OX 퀴즈 문제 은행. artifacts/{학급}/public/data/oxQuizBank/{문서}
+    match /artifacts/{appId}/public/data/oxQuizBank/{document=**} {
+      allow read: if true;
+      allow write: if signedIn();
     }
 
     // 콘솔 또는 Admin SDK 에서만 만듭니다. 클라이언트 쓰기는 막습니다.
@@ -465,6 +521,8 @@ service cloud.firestore {
         && !isLearningThermometerDoc()
         && !isLearningThermometerVoteDoc()
         && !isApprovedClassIdDoc()
+        && !isOxQuizBankDoc()
+        && !isEstateStateDoc()
         && studentClassXpSlotAllowed();
     }
 

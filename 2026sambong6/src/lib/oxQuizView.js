@@ -10,9 +10,9 @@ import {
     downloadOxCsvTemplate,
     downloadOxTemplate,
     listOxSubjects,
-    mergeOxQuestions,
     parseOxQuizFile,
     pickOxRound,
+    oxUploadBlockReason,
 } from './oxQuiz.js';
 
 function esc(value) {
@@ -43,6 +43,8 @@ export function bindOxQuiz(stage, api) {
         count: 10,
         lives: 3,
         uploadMode: 'append',
+        bankReady: false,
+        loadGen: 0,
         mode: 'setup',
         round: [],
         index: 0,
@@ -94,7 +96,9 @@ export function bindOxQuiz(stage, api) {
 
     function renderSetup() {
         const subjects = listOxSubjects(state.bank.questions);
-        const subjectHtml = subjects.length
+        const subjectHtml = !state.bankReady
+            ? '<p class="ox-empty">문제 은행을 불러오지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.</p>'
+            : subjects.length
             ? subjects.map((subject) => {
                 const on = state.subjectsOn.includes(subject) ? ' is-on' : '';
                 return `<button type="button" class="ox-choice${on}" data-ox-subject="${esc(subject)}">${esc(subject)}</button>`;
@@ -270,16 +274,14 @@ export function bindOxQuiz(stage, api) {
             return;
         }
         const replacing = state.uploadMode === 'replace';
-        let next = parsed.questions;
-        if (!replacing) {
-            const merged = mergeOxQuestions(state.bank.questions, parsed.questions);
-            if (merged.error) {
-                await api.alert(merged.error);
-                return;
-            }
-            next = merged.questions;
+        const blocked = oxUploadBlockReason(state.bankReady);
+        if (blocked) {
+            await api.alert(blocked);
+            return;
         }
-        await api.saveQuestions(next);
+        // 추가분은 서버 문제 뒤에 붙입니다. 이 화면의 목록으로 은행을 통째로 바꾸지 않습니다.
+        const saved = await api.saveQuestions(parsed.questions, replacing ? 'replace' : 'append');
+        const next = Array.isArray(saved) ? saved : [];
         state.bank.questions = next;
         state.subjectsOn = listOxSubjects(next);
         state.mode = 'setup';
@@ -369,17 +371,22 @@ export function bindOxQuiz(stage, api) {
 
     return {
         async open() {
+            const gen = ++state.loadGen;
             stage.classList.remove('hidden');
             try {
                 const loaded = await api.load();
+                if (gen !== state.loadGen) return;
                 state.bank = {
                     questions: Array.isArray(loaded.questions) ? loaded.questions : [],
                     settings: loaded.settings || {},
                     records: loaded.records || {},
                 };
+                state.bankReady = true;
             } catch (e) {
+                if (gen !== state.loadGen) return;
                 console.warn('ox load', e);
             }
+            if (gen !== state.loadGen) return;
             const settings = state.bank.settings || {};
             state.timeSec = clampOxChoice(Number(settings.timeSec), OX_TIME_CHOICES, 15);
             state.count = clampOxChoice(Number(settings.count), OX_COUNT_CHOICES, 10);

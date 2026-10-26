@@ -9,8 +9,10 @@ describe('대시보드 등급 카드', () => {
         assert.equal(DASH_RANK_SPECS.saenaegi.motion, '');
         assert.equal(DASH_RANK_SPECS.saenaegi.aura, '');
         assert.equal(DASH_RANK_SPECS.chobo.stars, 2);
+        assert.equal(DASH_RANK_SPECS.chobo.star, 'green');
         assert.equal(DASH_RANK_SPECS.chobo.motion, 'soft');
         assert.equal(DASH_RANK_SPECS.jungsu.stars, 2);
+        assert.equal(DASH_RANK_SPECS.jungsu.star, 'silver');
         assert.equal(DASH_RANK_SPECS.jungsu.name, 'silver');
         assert.equal(DASH_RANK_SPECS.jungsu.motion, 'halo');
         assert.equal(DASH_RANK_SPECS.gosu.stars, 3);
@@ -33,6 +35,10 @@ describe('대시보드 등급 카드', () => {
         const stars = dashRankStarHtml('guardian');
         assert.equal((stars.match(/<img /g) || []).length, 5);
         assert.match(stars, /star-purple\.png/);
+        assert.equal((dashRankStarHtml('chobo').match(/<img /g) || []).length, 2);
+        assert.equal((dashRankStarHtml('jungsu').match(/<img /g) || []).length, 2);
+        assert.match(dashRankStarHtml('chobo'), /is-green/);
+        assert.match(dashRankStarHtml('jungsu'), /is-silver/);
         assert.equal(dashRankStarHtml(''), '');
     });
 });

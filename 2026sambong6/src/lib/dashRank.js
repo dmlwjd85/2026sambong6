@@ -25,6 +25,6 @@ export function dashRankStarHtml(ring) {
     const spec = dashRankSpec(ring);
     if (!spec) return '';
     return Array.from({ length: spec.stars }, () => (
-        `<img src="ranks/dash/star-${spec.star}.png" alt="" class="dash-rank-star">`
+        `<img src="ranks/dash/star-${spec.star}.png" alt="" class="dash-rank-star is-${spec.star}">`
     )).join('');
 }

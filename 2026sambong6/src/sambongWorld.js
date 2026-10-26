@@ -24638,12 +24638,14 @@ ${subjectLine}
             const dashStars = document.getElementById('dashRankStars');
             if (dashStars) dashStars.innerHTML = dashRankStarHtml(rankRing);
             
+            const dashFront = document.getElementById('dashRankFront');
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>`;
             const dashStack = document.querySelector('#dashAvatar .char-avatar-stack');
             if (dashFrame && dashStack) {
                 const portraitFrame = dashStack.querySelector('.char-portrait-frame');
                 if (portraitFrame) portraitFrame.after(dashFrame);
                 else dashStack.appendChild(dashFrame);
+                if (dashFront) dashFrame.after(dashFront);
             }
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();

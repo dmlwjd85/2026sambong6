@@ -183,6 +183,8 @@ import {
     sanitizeGomokuAiLevel,
 } from './lib/gomokuAi.js';
 import {
+    alkkagiRecordResult,
+    alkkagiResultKey,
     applyBoardGameRecord,
     boardGameRecordText,
     chessRecordResult,
@@ -249,6 +251,21 @@ import {
     setBoardRoomTimer,
     turnRemainingMs,
 } from './lib/boardGameRooms.js';
+import {
+    ALKKAGI_BLACK,
+    ALKKAGI_STONES_PER_SIDE,
+    ALKKAGI_WHITE,
+    alkkagiAliveCount,
+    alkkagiEndText,
+    alkkagiErrorText,
+    alkkagiSeatColor,
+    applyAlkkagiForfeit,
+    applyAlkkagiShotTurn,
+    applyAlkkagiTimeout,
+    emptyAlkkagiGame,
+    isAlkkagiOver,
+} from './lib/alkkagiGame.js';
+import { createAlkkagiBoard } from './lib/alkkagiBoard.js';
 import {
     DAILY_ALL_CLEAR_BONG,
     DAILY_ALL_CLEAR_XP,
@@ -11967,6 +11984,13 @@ ${subjectLine}
         let _boardGameRooms = [];
         let _boardGameView = 'home';
         let _boardGameType = 'gomoku';
+        // 알까기 상태
+        let _alkBoard = null;
+        let _alkLocal = null; // { game } — 한 화면 둘이서
+        let _alkSeen = { roomId: '', moveCount: -1 };
+        let _alkWriting = false;
+        let _alkBusy = false;
+        let _alkFontsLoaded = false;
         let _boardGameActiveId = '';
         let _boardGameWriteChain = Promise.resolve();
         let _boardGameIdleTimer = 0;
@@ -12030,7 +12054,7 @@ ${subjectLine}
             if (mineActive) void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
-            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession) {
+            if (minePlaying && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
                 enterBoardGameTable(minePlaying.id);
             }
             if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
@@ -12050,10 +12074,13 @@ ${subjectLine}
         }
 
         function activeBoardPlayKind() {
+            if (_alkLocal) return 'alkkagi';
             if (_chessAiSession) return 'chess';
             if (_gomokuAiSession) return 'gomoku';
             const room = currentBoardGameRoom();
             if (room && room.gameType === 'chess') return 'chess';
+            if (room && room.gameType === 'alkkagi') return 'alkkagi';
+            if (_boardGameType === 'alkkagi') return 'alkkagi';
             return _boardGameType === 'chess' ? 'chess' : 'gomoku';
         }
 
@@ -12068,6 +12095,8 @@ ${subjectLine}
             if (lobby) lobby.classList.toggle('hidden', _boardGameView !== 'lobby');
             if (play) play.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'gomoku'));
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
+            const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
+            if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
         }
 
         function gomokuAiRoomView() {
@@ -12230,10 +12259,14 @@ ${subjectLine}
             if (!room || room.status !== 'finished') return;
             const me = boardGameSelfId();
             if (!me || !window.playerState || window.playerState.isGuest) return;
-            const type = room.gameType === 'chess' ? 'chess' : 'gomoku';
+            if (room.id === 'alkkagi-local') return;
+            const type = room.gameType === 'chess' ? 'chess' : (room.gameType === 'alkkagi' ? 'alkkagi' : 'gomoku');
             let result = '';
             let key = '';
-            if (type === 'chess') {
+            if (type === 'alkkagi') {
+                result = alkkagiRecordResult(room.game, alkkagiSeatColor(roomMemberSeat(room, me)));
+                key = alkkagiResultKey(room, room.game);
+            } else if (type === 'chess') {
                 const myColor = _chessAiSession
                     ? _chessAiSession.human
                     : chessSeatColor(roomMemberSeat(room, me));
@@ -12251,7 +12284,11 @@ ${subjectLine}
             window.playerState.boardGameRecords = after;
             void saveDataToCloud();
             const recEl = document.getElementById('boardgameMyRecord');
-            if (recEl) recEl.textContent = `내 ${type === 'chess' ? '체스' : '오목'} 전적 ${boardGameRecordText(after, type)}`;
+            if (recEl) recEl.textContent = `내 ${boardGameTypeLabel(type)} 전적 ${boardGameRecordText(after, type)}`;
+            if (type === 'alkkagi' && _boardGameView === 'play') {
+                const cur = currentAlkkagiPlayRoom();
+                if (cur) renderAlkkagiChrome(cur);
+            }
         }
 
         async function vacateOtherBoardRooms(exceptRoomId) {
@@ -12284,7 +12321,17 @@ ${subjectLine}
             }
         }
 
+        function boardGameTypeLabel(type) {
+            if (type === 'chess') return '체스';
+            if (type === 'alkkagi') return '알까기';
+            return '오목';
+        }
+
         function renderBoardGamePanel() {
+            if (_alkLocal) {
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
             if (_chessAiSession) {
                 renderChessPlay(chessAiRoomView());
                 return;
@@ -12302,6 +12349,7 @@ ${subjectLine}
                     return;
                 }
                 if (room.gameType === 'chess') renderChessPlay(room);
+                else if (room.gameType === 'alkkagi') renderAlkkagiPlay(room);
                 else renderGomokuPlay(room);
                 return;
             }
@@ -12315,13 +12363,16 @@ ${subjectLine}
 
         function syncBoardGameLobbyChrome() {
             const chess = _boardGameType === 'chess';
+            const alk = _boardGameType === 'alkkagi';
             const kicker = document.querySelector('#boardgameLobbyView .boardgame-kicker');
             const title = document.querySelector('#boardgameLobbyView .boardgame-title');
             const lead = document.getElementById('boardgameLobbyLead');
-            if (kicker) kicker.textContent = chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY';
-            if (title) title.textContent = chess ? '체스 방' : '오목 방';
+            if (kicker) kicker.textContent = alk ? 'ALKKAGI LOBBY' : (chess ? 'CHESS LOBBY' : 'GOMOKU LOBBY');
+            if (title) title.textContent = alk ? '알까기 방' : (chess ? '체스 방' : '오목 방');
             if (lead) {
-                lead.textContent = chess
+                lead.textContent = alk
+                    ? '방을 만들고 친구가 참가 신청을 하면 방장이 받아 줘요. 방장은 검은 알이고 먼저 쏴요. 한 대로 둘이 하려면 「한 화면 둘이서」를 눌러요. 10분 동안 아무도 안 쏘면 방이 사라져요. 하는 중에 나가면 지는 걸로 기록돼요.'
+                    : chess
                     ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.'
                     : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.';
             }
@@ -12335,12 +12386,17 @@ ${subjectLine}
             if (bBtn) bBtn.classList.toggle('is-on', _chessAiHumanColor === CHESS_BLACK);
             const lobby = document.getElementById('boardgameLobbyView');
             if (lobby) lobby.classList.toggle('is-chess-theme', chess);
+            const localBtn = document.getElementById('boardgameLocalBtn');
+            if (localBtn) localBtn.classList.toggle('hidden', !alk);
+            document.querySelectorAll('#boardgameLobbyView .boardgame-ai-row[aria-label="AI 난이도"]').forEach((row) => {
+                row.classList.toggle('hidden', alk);
+            });
         }
 
         function renderBoardGameLobby() {
             syncBoardGameLobbyChrome();
             const recEl = document.getElementById('boardgameMyRecord');
-            const label = _boardGameType === 'chess' ? '체스' : '오목';
+            const label = boardGameTypeLabel(_boardGameType);
             if (recEl) recEl.textContent = `내 ${label} 전적 ${myBoardGameRecordText(_boardGameType)}`;
             const box = document.getElementById('boardgameRoomList');
             if (!box) return;
@@ -12351,7 +12407,9 @@ ${subjectLine}
                 now
             );
             if (!rooms.length) {
-                box.innerHTML = '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI 고수」「AI 초인」으로 시작하세요.</p>';
+                box.innerHTML = _boardGameType === 'alkkagi'
+                    ? '<p class="boardgame-lead">아직 열린 방이 없어요. 「방 만들기」나 「한 화면 둘이서」로 시작해요.</p>'
+                    : '<p class="boardgame-lead">아직 열린 방이 없습니다. 「방 만들기」 또는 「AI 고수」「AI 초인」으로 시작하세요.</p>';
                 return;
             }
             box.innerHTML = rooms.map((room) => {
@@ -12817,7 +12875,10 @@ ${subjectLine}
                 const room = currentBoardGameRoom();
                 if (!room || _boardGameView !== 'play') return;
                 if (room.timerEnabled && room.status === 'playing') {
-                    const timerEl = document.getElementById(room.gameType === 'chess' ? 'chessHudTimer' : 'gomokuHudTimer');
+                    const timerEl = room.gameType === 'alkkagi'
+                        ? null
+                        : document.getElementById(room.gameType === 'chess' ? 'chessHudTimer' : 'gomokuHudTimer');
+                    if (room.gameType === 'alkkagi') updateAlkkagiTimer(room);
                     if (timerEl) {
                         const sec = Math.ceil(turnRemainingMs(room, Date.now()) / 1000);
                         timerEl.hidden = false;
@@ -12862,9 +12923,12 @@ ${subjectLine}
                 const roomLabel = boardRoomErrorText(code);
                 const moveLabel = gomokuErrorText(code);
                 const chessLabel = chessErrorText(code);
+                const room = _boardGameRooms.find((r) => r.id === roomId);
                 const shown = roomLabel !== '처리할 수 없습니다.'
                     ? roomLabel
-                    : (moveLabel !== '둘 수 없습니다.' ? moveLabel : chessLabel);
+                    : (room && room.gameType === 'alkkagi'
+                        ? alkkagiErrorText(code)
+                        : (moveLabel !== '둘 수 없습니다.' ? moveLabel : chessLabel));
                 await window.customAlert(shown);
                 return null;
             }
@@ -13208,6 +13272,7 @@ ${subjectLine}
         function enterBoardGameTable(roomId) {
             clearGomokuAiSession();
             clearChessAiSession();
+            clearAlkkagiLocal();
             _boardGameActiveId = String(roomId || '');
             _gomokuPending = null;
             _gomokuNeedFit = true;
@@ -13216,8 +13281,10 @@ ${subjectLine}
             _chessPromo = null;
             const room = currentBoardGameRoom();
             if (room && room.gameType === 'chess') _boardGameType = 'chess';
+            if (room && room.gameType === 'alkkagi') _boardGameType = 'alkkagi';
             showBoardGameView('play');
             if (room && room.gameType === 'chess') renderChessPlay(room);
+            else if (room && room.gameType === 'alkkagi') renderAlkkagiPlay(room);
             else if (room) renderGomokuPlay(room);
         }
 
@@ -13236,6 +13303,7 @@ ${subjectLine}
         window.backBoardGameHome = function () {
             clearGomokuAiSession();
             clearChessAiSession();
+            clearAlkkagiLocal();
             _boardGameActiveId = '';
             _gomokuPending = null;
             showBoardGameView('home');
@@ -13255,6 +13323,7 @@ ${subjectLine}
         };
 
         window.startBoardGameAi = function (level) {
+            if (_boardGameType === 'alkkagi') return window.startAlkkagiLocal();
             if (_boardGameType === 'chess') {
                 if (window.playerState && window.playerState.isGuest) {
                     return window.customAlert('👀 게스트는 이용할 수 없어요.');
@@ -13480,7 +13549,9 @@ ${subjectLine}
                 if (!isTurnTimedOut(cur, Date.now())) return { ok: true, room: cur };
                 const timed = cur.gameType === 'chess'
                     ? applyChessTimeout(cur.game, { now: Date.now() })
-                    : applyGomokuTimeout(cur.game, { now: Date.now() });
+                    : (cur.gameType === 'alkkagi'
+                        ? applyAlkkagiTimeout(cur.game, { now: Date.now() })
+                        : applyGomokuTimeout(cur.game, { now: Date.now() }));
                 if (!timed.ok) return { ok: false, error: timed.error };
                 return { ok: true, room: applyBoardRoomGame(cur, { game: timed.game, now: Date.now(), finished: true }) };
             }));
@@ -13553,9 +13624,376 @@ ${subjectLine}
             renderBoardGameLobby();
         };
 
+        /* ---------- 알까기 ---------- */
+
+        function alkkagiLocalRoomView() {
+            const s = _alkLocal;
+            if (!s) return null;
+            const over = isAlkkagiOver(s.game);
+            return {
+                id: 'alkkagi-local',
+                gameType: 'alkkagi',
+                status: over ? 'finished' : 'playing',
+                hostId: boardGameSelfId(),
+                timerEnabled: false,
+                members: [
+                    { id: 'local-b', name: '검은 알', seat: 'black', role: 'host' },
+                    { id: 'local-w', name: '흰 알', seat: 'white', role: 'player' },
+                ],
+                game: s.game,
+            };
+        }
+
+        function currentAlkkagiPlayRoom() {
+            if (_alkLocal) return alkkagiLocalRoomView();
+            const room = currentBoardGameRoom();
+            return room && room.gameType === 'alkkagi' ? room : null;
+        }
+
+        function alkkagiMyColor(room) {
+            if (_alkLocal) return _alkLocal.game.turn;
+            return alkkagiSeatColor(roomMemberSeat(room, boardGameSelfId()));
+        }
+
+        function ensureAlkkagiBoard() {
+            if (_alkBoard) return _alkBoard;
+            const canvas = document.getElementById('alkkagiCanvas');
+            if (!canvas) return null;
+            if (!_alkFontsLoaded) {
+                _alkFontsLoaded = true;
+                import('./alkkagiFonts.css').catch((e) => console.warn('alkkagiFonts', e));
+            }
+            _alkBoard = createAlkkagiBoard(canvas, {
+                onShot: (shot) => { void submitAlkkagiShot(shot); },
+                onEvent: (e) => {
+                    if (e.type !== 'out') return;
+                    const room = currentAlkkagiPlayRoom();
+                    if (room) renderAlkkagiChrome(room);
+                },
+                onBusyChange: (busy) => {
+                    _alkBusy = busy;
+                    const room = currentAlkkagiPlayRoom();
+                    if (room) renderAlkkagiChrome(room);
+                },
+            });
+            const view = document.getElementById('boardgameAlkkagiPlayView');
+            if (view) view.addEventListener('pointerdown', () => { if (_alkBoard) _alkBoard.ensureSound(); }, { passive: true });
+            if (window.__sambongE2E) window.__alkkagiQA = _alkBoard;
+            return _alkBoard;
+        }
+
+        function renderAlkkagiDots(el, alive) {
+            if (!el) return;
+            let html = '';
+            for (let i = 0; i < ALKKAGI_STONES_PER_SIDE; i += 1) {
+                html += `<i class="alk-mini ${el.id === 'alkkagiDotsBlack' ? 'b' : 'w'}${i < alive ? '' : ' gone'}"></i>`;
+            }
+            el.innerHTML = html;
+        }
+
+        function renderAlkkagiChrome(room) {
+            const game = room.game || emptyAlkkagiGame();
+            const me = boardGameSelfId();
+            const local = !!_alkLocal;
+            const myColor = alkkagiMyColor(room);
+            const over = room.status === 'finished' || isAlkkagiOver(game);
+            const host = !local && isRoomHost(room, me);
+            // 알이 움직이는 동안에는 화면에 보이는 알 수를 따라가요.
+            const live = _alkBusy && _alkBoard;
+            const aliveB = live ? _alkBoard.aliveCount(ALKKAGI_BLACK) : alkkagiAliveCount(game, ALKKAGI_BLACK);
+            const aliveW = live ? _alkBoard.aliveCount(ALKKAGI_WHITE) : alkkagiAliveCount(game, ALKKAGI_WHITE);
+            const mySeatColor = local ? '' : myColor;
+            [['Black', ALKKAGI_BLACK, aliveB, 'black'], ['White', ALKKAGI_WHITE, aliveW, 'white']].forEach(([k, color, alive, seat]) => {
+                const card = document.getElementById(`alkkagiCard${k}`);
+                const nameEl = document.getElementById(`alkkagiName${k}`);
+                const left = document.getElementById(`alkkagiLeft${k}`);
+                if (card) card.classList.toggle('on', !over && game.turn === color);
+                if (nameEl) {
+                    nameEl.textContent = memberNameBySeat(room, seat);
+                    const badge = nameEl.parentElement && nameEl.parentElement.querySelector('.alk-me');
+                    if (mySeatColor === color && !badge) nameEl.insertAdjacentHTML('afterend', '<span class="alk-me">나</span>');
+                    if (mySeatColor !== color && badge) badge.remove();
+                }
+                if (left) left.textContent = `${alive}개`;
+                renderAlkkagiDots(document.getElementById(`alkkagiDots${k}`), alive);
+            });
+            const pill = document.getElementById('alkkagiTurn');
+            const pillDot = document.getElementById('alkkagiTurnDot');
+            const pillText = document.getElementById('alkkagiTurnText');
+            const tip = document.getElementById('alkkagiTip');
+            const turnName = memberNameBySeat(room, game.turn === ALKKAGI_WHITE ? 'white' : 'black');
+            let pillLine = '';
+            let tipHtml = '알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.';
+            const waiting = !local && game.turn !== myColor;
+            if (over && !_alkBusy) {
+                pillLine = game.endReason === 'draw' ? '비겼어요' : `${memberNameBySeat(room, game.winner === ALKKAGI_WHITE ? 'white' : 'black')} 승리`;
+                const endLine = alkkagiEndText(game, {
+                    blackName: memberNameBySeat(room, 'black'),
+                    whiteName: memberNameBySeat(room, 'white'),
+                });
+                tipHtml = local ? escapeBoardGameText(endLine) : `${escapeBoardGameText(endLine)}<br>내 알까기 전적 ${escapeBoardGameText(myBoardGameRecordText('alkkagi'))}`;
+            } else if (_alkBusy) {
+                pillLine = '알이 미끄러지는 중';
+                tipHtml = '알이 멈출 때까지 잠깐 기다려요.';
+            } else if (local) {
+                pillLine = `${turnName} 차례`;
+            } else if (waiting) {
+                pillLine = `${turnName}님 차례`;
+                tipHtml = '친구가 알을 고르고 있어요.<br>내 차례가 되면 알을 당겨요.';
+            } else {
+                pillLine = '내 차례예요';
+            }
+            if (pill) {
+                pill.classList.toggle('is-end', over && !_alkBusy);
+                pill.classList.toggle('is-wait', !over && !_alkBusy && waiting);
+                pill.classList.toggle('is-busy', _alkBusy);
+            }
+            if (pillDot) pillDot.className = `alk-mini ${(over && !_alkBusy ? game.winner || ALKKAGI_BLACK : game.turn) === ALKKAGI_WHITE ? 'w' : 'b'}`;
+            if (pillText) pillText.textContent = pillLine;
+            if (tip) tip.innerHTML = tipHtml;
+            const playActs = document.getElementById('alkkagiPlayActions');
+            const resultActs = document.getElementById('alkkagiResultActions');
+            const showResult = over && !_alkBusy;
+            if (playActs) playActs.classList.toggle('hidden', showResult);
+            if (resultActs) resultActs.classList.toggle('hidden', !showResult);
+            const closeLabel = document.getElementById('alkkagiCloseLabel');
+            if (closeLabel) closeLabel.textContent = local ? '그만할래요' : '방 닫을게요';
+            const toggleWrap = document.getElementById('alkkagiTimerToggleWrap');
+            const toggle = document.getElementById('alkkagiTimerToggle');
+            if (toggleWrap) {
+                const hide = local || !host || over;
+                toggleWrap.classList.toggle('hidden', hide);
+            }
+            if (toggle) toggle.checked = !!room.timerEnabled;
+            const timerEl = document.getElementById('alkkagiHudTimer');
+            if (timerEl) {
+                const show = !local && room.timerEnabled && room.status === 'playing';
+                timerEl.hidden = !show;
+                if (show) updateAlkkagiTimer(room);
+            }
+            if (_alkBoard) {
+                _alkBoard.setView({
+                    canShoot: room.status === 'playing' && !over && !_alkWriting && (local || game.turn === myColor),
+                    myColor,
+                });
+            }
+        }
+
+        function updateAlkkagiTimer(room) {
+            const timerEl = document.getElementById('alkkagiHudTimer');
+            if (!timerEl) return;
+            const cap = Math.max(1, Number(room.timerSec) || 30);
+            const sec = Math.min(cap, Math.ceil(turnRemainingMs(room, Date.now()) / 1000));
+            timerEl.hidden = false;
+            timerEl.textContent = `${sec}초`;
+            timerEl.classList.toggle('is-low', sec <= 5);
+        }
+
+        function renderAlkkagiPlay(room) {
+            showBoardGameView('play');
+            const board = ensureAlkkagiBoard();
+            const game = room.game || emptyAlkkagiGame();
+            const myColor = alkkagiMyColor(room);
+            const flip = !_alkLocal && myColor === ALKKAGI_WHITE;
+            if (board) {
+                board.resize();
+                const seen = _alkSeen;
+                const shot = game.lastShot;
+                const isNewRoom = seen.roomId !== room.id;
+                if (isNewRoom || game.moveCount < seen.moveCount) {
+                    board.setView({ stones: game.stones, flip, myColor });
+                } else if (game.moveCount > seen.moveCount) {
+                    const replay = !_alkLocal && shot && shot.shot && shot.seq === game.moveCount
+                        && shot.by !== myColor && Array.isArray(shot.from) && shot.from.length
+                        && game.moveCount === seen.moveCount + 1;
+                    if (replay && !board.isBusy()) {
+                        board.setView({ flip, myColor });
+                        board.playShot({ from: shot.from, shot: shot.shot, final: game.stones });
+                    } else {
+                        board.setView({ stones: game.stones, flip, myColor });
+                    }
+                } else {
+                    board.setView({ stones: game.stones, flip, myColor });
+                }
+            }
+            _alkSeen = { roomId: room.id, moveCount: game.moveCount };
+            if (room.status === 'finished' && !_alkLocal) maybeRecordBoardGameResult(room);
+            renderAlkkagiChrome(room);
+            if (!_alkLocal) startGomokuTick();
+        }
+
+        async function submitAlkkagiShot({ shot, finalStones, steps }) {
+            const replayMs = Math.round((Number(steps) || 0) / 120 * 1000);
+            if (_alkLocal) {
+                const done = applyAlkkagiShotTurn(_alkLocal.game, {
+                    color: _alkLocal.game.turn,
+                    shot,
+                    finalStones,
+                    now: Date.now(),
+                    replayMs,
+                });
+                if (!done.ok) {
+                    await alkkagiDialog(alkkagiErrorText(done.error));
+                    return;
+                }
+                _alkLocal.game = done.game;
+                _alkSeen = { roomId: 'alkkagi-local', moveCount: done.game.moveCount };
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room || room.gameType !== 'alkkagi') return;
+            const color = alkkagiSeatColor(roomMemberSeat(room, boardGameSelfId()));
+            _alkWriting = true;
+            _alkSeen = { roomId: room.id, moveCount: (room.game && room.game.moveCount || 0) + 1 };
+            const next = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const done = applyAlkkagiShotTurn(cur.game, { color, shot, finalStones, now: Date.now(), replayMs });
+                if (!done.ok) return { ok: false, error: done.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: done.game, now: Date.now(), finished: isAlkkagiOver(done.game) }) };
+            }));
+            _alkWriting = false;
+            const latest = currentBoardGameRoom();
+            if (!next && latest && latest.gameType === 'alkkagi') {
+                // 저장이 안 됐으면 저장된 판으로 되돌려요.
+                _alkSeen = { roomId: latest.id, moveCount: latest.game.moveCount };
+                if (_alkBoard) _alkBoard.setView({ stones: latest.game.stones });
+            }
+            if (latest && latest.gameType === 'alkkagi' && _boardGameView === 'play') renderAlkkagiChrome(latest);
+        }
+
+        /** 한지 느낌의 확인 창이에요. buttons: [{label, value, main}] */
+        function alkkagiDialog(message, buttons = [{ label: '알겠어요', value: true, main: true }], title = '') {
+            return new Promise((resolve) => {
+                const host = document.getElementById('boardgameAlkkagiPlayView') || document.body;
+                const wrap = document.createElement('div');
+                wrap.className = 'alk-modal';
+                wrap.setAttribute('role', 'dialog');
+                wrap.setAttribute('aria-modal', 'true');
+                wrap.innerHTML = `<div class="alk-modal-card alk-hanji">
+                    ${title ? `<p class="alk-modal-title">${escapeBoardGameText(title)}</p>` : ''}
+                    <p class="alk-modal-text">${message}</p>
+                    <div class="alk-btns">${buttons.map((b, i) => `<button type="button" class="alk-btn ${b.main ? 'main' : 'sub alk-hanji'}" data-i="${i}"><span>${escapeBoardGameText(b.label)}</span></button>`).join('')}</div>
+                </div>`;
+                host.appendChild(wrap);
+                let done = false;
+                const finish = (v) => {
+                    if (done) return;
+                    done = true;
+                    wrap.remove();
+                    resolve(v);
+                };
+                wrap.querySelectorAll('[data-i]').forEach((btn) => {
+                    btn.addEventListener('click', () => finish(buttons[Number(btn.getAttribute('data-i'))].value));
+                });
+                const first = wrap.querySelector('.alk-btn.main') || wrap.querySelector('.alk-btn');
+                if (first) first.focus();
+            });
+        }
+
+        window.startAlkkagiLocal = function () {
+            if (window.playerState && window.playerState.isGuest) return window.customAlert('👀 게스트는 이용할 수 없어요.');
+            clearGomokuAiSession();
+            clearChessAiSession();
+            _boardGameActiveId = '';
+            _boardGameType = 'alkkagi';
+            _alkLocal = { game: emptyAlkkagiGame({ now: Date.now() }) };
+            _alkSeen = { roomId: '', moveCount: -1 };
+            _alkBusy = false;
+            renderAlkkagiPlay(alkkagiLocalRoomView());
+        };
+
+        function clearAlkkagiLocal() {
+            _alkLocal = null;
+            _alkSeen = { roomId: '', moveCount: -1 };
+            _alkBusy = false;
+        }
+
+        window.showAlkkagiRules = function () {
+            return alkkagiDialog(
+                '내 알을 꾹 잡고 반대쪽으로 당겼다가 놓으면 알이 튕겨 나가요.<br>많이 당길수록 세게 나가요.<br>'
+                + '상대 알을 판 밖으로 밀어내요. 내 알이 떨어져도 다시 못 돌아와요.<br>'
+                + '상대 알을 먼저 모두 떨어뜨리면 이겨요.<br>알 가까이로 돌아와서 놓으면 안 쏘고 취소돼요.',
+                [{ label: '알겠어요', value: true, main: true }],
+                '알까기 규칙',
+            );
+        };
+
+        window.forfeitAlkkagi = async function () {
+            const room = currentAlkkagiPlayRoom();
+            if (!room || room.status !== 'playing') return;
+            const ok = await alkkagiDialog(
+                _alkLocal ? '지금 차례인 쪽이 기권해요. 정말 기권할까요?' : '기권하면 지는 걸로 기록돼요.<br>정말 기권할까요?',
+                [{ label: '계속할래요', value: false }, { label: '기권할게요', value: true, main: true }],
+            );
+            if (!ok) return;
+            await forfeitAlkkagiNow();
+        };
+
+        async function forfeitAlkkagiNow() {
+            if (_alkLocal) {
+                const done = applyAlkkagiForfeit(_alkLocal.game, { color: _alkLocal.game.turn, now: Date.now() });
+                if (done.ok) _alkLocal.game = done.game;
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room || room.gameType !== 'alkkagi') return;
+            const color = alkkagiSeatColor(roomMemberSeat(room, boardGameSelfId()));
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => {
+                const done = applyAlkkagiForfeit(cur.game, { color, now: Date.now() });
+                if (!done.ok) return { ok: false, error: done.error };
+                return { ok: true, room: applyBoardRoomGame(cur, { game: done.game, now: Date.now(), finished: true }) };
+            }));
+        }
+
+        window.continueAlkkagi = async function () {
+            if (_alkLocal) {
+                _alkLocal.game = emptyAlkkagiGame({ now: Date.now() });
+                _alkSeen = { roomId: '', moveCount: -1 };
+                renderAlkkagiPlay(alkkagiLocalRoomView());
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => continueBoardRoom(cur, {
+                actorId: boardGameSelfId(),
+                now: Date.now(),
+            })));
+        };
+
+        window.closeAlkkagi = async function () {
+            if (_alkLocal) {
+                clearAlkkagiLocal();
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                return;
+            }
+            const room = currentBoardGameRoom();
+            if (!room) return;
+            const ok = await alkkagiDialog('방을 닫을까요?<br>목록에서도 사라져요.', [
+                { label: '그대로 둘래요', value: false },
+                { label: '닫을게요', value: true, main: true },
+            ]);
+            if (!ok) return;
+            const closed = await enqueueBoardGameWrite(() => mutateBoardRoom(room.id, (cur) => closeBoardRoom(cur, {
+                actorId: boardGameSelfId(),
+                now: Date.now(),
+            })));
+            if (closed) {
+                try { await deleteDoc(boardGameRoomRef(room.id)); } catch (_) { /* 목록 필터로도 빠져요 */ }
+            }
+            _boardGameActiveId = '';
+            showBoardGameView('lobby');
+            renderBoardGameLobby();
+        };
+
         async function forfeitCurrentGomoku() {
             const me = boardGameSelfId();
             _gomokuPending = null;
+            if (_alkLocal || (currentBoardGameRoom() && currentBoardGameRoom().gameType === 'alkkagi')) {
+                await forfeitAlkkagiNow();
+                return;
+            }
             if (_chessAiSession) {
                 const done = applyChessForfeit(_chessAiSession.game, { color: _chessAiSession.human, now: Date.now() });
                 if (done.ok) _chessAiSession.game = done.game;
@@ -13590,6 +14028,28 @@ ${subjectLine}
         }
 
         window.leaveBoardGameTable = async function () {
+            const alkRoom = currentAlkkagiPlayRoom();
+            if (alkRoom) {
+                if (_alkLocal) {
+                    clearAlkkagiLocal();
+                    showBoardGameView('lobby');
+                    renderBoardGameLobby();
+                    return;
+                }
+                if (alkRoom.status === 'playing') {
+                    const ok = await alkkagiDialog('지금 나가면 지는 걸로 기록돼요.<br>그래도 나갈까요?', [
+                        { label: '계속할래요', value: false },
+                        { label: '나갈게요', value: true, main: true },
+                    ]);
+                    if (!ok) return;
+                    await forfeitAlkkagiNow();
+                    return;
+                }
+                _boardGameActiveId = '';
+                showBoardGameView('lobby');
+                renderBoardGameLobby();
+                return;
+            }
             const room = currentChessPlayRoom() || currentGomokuPlayRoom();
             if (room && room.status === 'playing') {
                 const ok = await window.customConfirm('나가면 패배로 기록됩니다. 나갈까요?');

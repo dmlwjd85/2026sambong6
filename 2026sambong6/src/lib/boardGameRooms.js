@@ -13,6 +13,7 @@
  * - 종료(closed) 또는 만료된 방은 목록에 보이지 않습니다.
  */
 
+import { alkkagiGameToDoc, emptyAlkkagiGame, sanitizeAlkkagiGame } from './alkkagiGame.js';
 import { emptyChessGame, chessGameToDoc, sanitizeChessGame } from './chessGame.js';
 import { emptyGomokuGame, gomokuGameToDoc, sanitizeGomokuGame } from './gomokuGame.js';
 
@@ -37,6 +38,13 @@ export const BOARD_GAME_CATALOG = Object.freeze({
     chess: Object.freeze({
         id: 'chess',
         label: '체스',
+        minPlayers: 2,
+        maxPlayers: 2,
+        timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
+    }),
+    alkkagi: Object.freeze({
+        id: 'alkkagi',
+        label: '알까기',
         minPlayers: 2,
         maxPlayers: 2,
         timerSec: BOARD_ROOM_DEFAULT_TIMER_SEC,
@@ -135,12 +143,14 @@ function uniqueById(list) {
 function emptyGameForType(gameType, now) {
     if (gameType === 'gomoku') return emptyGomokuGame({ now });
     if (gameType === 'chess') return emptyChessGame({ now });
+    if (gameType === 'alkkagi') return emptyAlkkagiGame({ now });
     return null;
 }
 
 function sanitizeGameForType(gameType, raw, now) {
     if (gameType === 'gomoku') return sanitizeGomokuGame(raw, { now });
     if (gameType === 'chess') return sanitizeChessGame(raw, { now });
+    if (gameType === 'alkkagi') return sanitizeAlkkagiGame(raw, { now });
     return raw && typeof raw === 'object' ? raw : null;
 }
 
@@ -220,7 +230,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
         id: hid,
         name: room.hostName,
         role: 'host',
-        seat: def.id === 'gomoku' ? 'black' : (def.id === 'chess' ? 'white' : ''),
+        seat: def.id === 'gomoku' || def.id === 'alkkagi' ? 'black' : (def.id === 'chess' ? 'white' : ''),
     }];
     return { ok: true, error: '', room };
 }
@@ -310,7 +320,7 @@ export function requestJoinBoardRoom(room, { studentId, studentName, now } = {})
 }
 
 function nextSeatForGame(room) {
-    if (room.gameType !== 'gomoku' && room.gameType !== 'chess') return '';
+    if (room.gameType !== 'gomoku' && room.gameType !== 'chess' && room.gameType !== 'alkkagi') return '';
     const used = new Set(room.members.map((m) => m.seat).filter(Boolean));
     if (room.gameType === 'chess') {
         if (!used.has('black')) return 'black';
@@ -506,6 +516,6 @@ export function boardRoomToDoc(room) {
     const r = sanitizeBoardRoom(room);
     const game = r.gameType === 'gomoku'
         ? gomokuGameToDoc(r.game)
-        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : r.game);
+        : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : r.game));
     return { ...r, game };
 }

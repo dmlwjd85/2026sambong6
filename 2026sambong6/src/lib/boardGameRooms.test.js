@@ -72,6 +72,19 @@ describe('보드게임 방 만들기', () => {
         assert.equal(approved.room.members[1].seat, 'black');
         assert.equal(approved.room.status, 'playing');
     });
+    it('알까기 방은 방장이 흑(먼저 치기)이고, 좌표가 문서로 저장된다', () => {
+        const created = createBoardRoom({ gameType: 'alkkagi', hostId: '1', hostName: '민준', now: 1 });
+        assert.equal(created.ok, true);
+        assert.equal(created.room.members[0].seat, 'black');
+        assert.equal(created.room.game.turn, 'black');
+        const asked = requestJoinBoardRoom(created.room, { studentId: '7', studentName: '서연', now: 2 });
+        const approved = approveJoinBoardRoom(asked.room, { hostId: '1', studentId: '7', now: 3 });
+        assert.equal(approved.room.members[1].seat, 'white');
+        assert.equal(approved.room.status, 'playing');
+        const doc = boardRoomToDoc(approved.room);
+        assert.equal(doc.game.stones.length, 10);
+        assert.equal(sanitizeBoardRoom(JSON.parse(JSON.stringify(doc))).game.stones.length, 10);
+    });
 });
 
 describe('참가 신청·방장 승인', () => {

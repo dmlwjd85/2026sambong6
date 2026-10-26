@@ -1,12 +1,13 @@
 /**
- * 학생별 보드게임 승패 기록(오목·체스).
+ * 학생별 보드게임 승패 기록(오목·체스·알까기).
  * 학생 문서 `boardGameRecords` 에 두고, 로비·결과 화면에 짧게 보여 줍니다.
  */
 
+import { ALKKAGI_BLACK, ALKKAGI_WHITE, sanitizeAlkkagiGame } from './alkkagiGame.js';
 import { CHESS_BLACK, CHESS_WHITE, sanitizeChessGame } from './chessGame.js';
 import { GOMOKU_BLACK, GOMOKU_WHITE, sanitizeGomokuGame } from './gomokuGame.js';
 
-export const BOARD_GAME_RECORD_TYPES = Object.freeze(['gomoku', 'chess']);
+export const BOARD_GAME_RECORD_TYPES = Object.freeze(['gomoku', 'chess', 'alkkagi']);
 
 export function emptyBoardGameTypeRecord() {
     return { wins: 0, losses: 0, draws: 0 };
@@ -16,6 +17,7 @@ export function emptyBoardGameRecords() {
     return {
         gomoku: emptyBoardGameTypeRecord(),
         chess: emptyBoardGameTypeRecord(),
+        alkkagi: emptyBoardGameTypeRecord(),
         recentKeys: [],
     };
 }
@@ -44,6 +46,7 @@ export function sanitizeBoardGameRecords(raw) {
     return {
         gomoku: sanitizeTypeRecord(src.gomoku),
         chess: sanitizeTypeRecord(src.chess),
+        alkkagi: sanitizeTypeRecord(src.alkkagi),
         recentKeys,
     };
 }
@@ -66,17 +69,16 @@ export function mergeBoardGameRecords(a, b) {
         seen.add(k);
         recentKeys.push(k);
     });
+    const out = {};
+    BOARD_GAME_RECORD_TYPES.forEach((type) => {
+        out[type] = {
+            wins: Math.max(left[type].wins, right[type].wins),
+            losses: Math.max(left[type].losses, right[type].losses),
+            draws: Math.max(left[type].draws, right[type].draws),
+        };
+    });
     return {
-        gomoku: {
-            wins: Math.max(left.gomoku.wins, right.gomoku.wins),
-            losses: Math.max(left.gomoku.losses, right.gomoku.losses),
-            draws: Math.max(left.gomoku.draws, right.gomoku.draws),
-        },
-        chess: {
-            wins: Math.max(left.chess.wins, right.chess.wins),
-            losses: Math.max(left.chess.losses, right.chess.losses),
-            draws: Math.max(left.chess.draws, right.chess.draws),
-        },
+        ...out,
         recentKeys: recentKeys.slice(-24),
     };
 }
@@ -125,4 +127,19 @@ export function gomokuResultKey(roomOrId, game) {
     const id = typeof roomOrId === 'string' ? roomOrId : String((roomOrId && roomOrId.id) || 'local');
     const g = sanitizeGomokuGame(game || (roomOrId && roomOrId.game) || {});
     return `${id}:${g.turnStartedAt}:${g.moveCount}:${g.winner}:${g.endReason || ''}`.slice(0, 80);
+}
+
+export function alkkagiRecordResult(game, myColor) {
+    const g = sanitizeAlkkagiGame(game);
+    const mine = myColor === ALKKAGI_BLACK || myColor === ALKKAGI_WHITE ? myColor : '';
+    if (!mine) return '';
+    if (g.endReason === 'draw') return 'draw';
+    if (!g.winner) return '';
+    return g.winner === mine ? 'win' : 'loss';
+}
+
+export function alkkagiResultKey(roomOrId, game) {
+    const id = typeof roomOrId === 'string' ? roomOrId : String((roomOrId && roomOrId.id) || 'local');
+    const g = sanitizeAlkkagiGame(game || (roomOrId && roomOrId.game) || {});
+    return `${id}:alkkagi:${g.turnStartedAt}:${g.moveCount}:${g.winner}:${g.endReason || ''}`.slice(0, 80);
 }

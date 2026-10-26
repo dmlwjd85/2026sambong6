@@ -4643,9 +4643,10 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             transform: translate(-50%, -50%);
             object-fit: contain;
             pointer-events: none;
-            /* 초상(z-index 1)보다 앞, 무기·스티커(z-index 20+)보다는 뒤. */
+            /* 얼굴보다 뒤. 구멍 밖 수정·날개·루비는 초상 원 바깥에 남습니다. */
             z-index: 6;
         }
+        #dashAvatar .char-portrait-frame { z-index: 8; }
         .dash-rank-aura {
             position: absolute;
             left: 50%;
@@ -4923,8 +4924,14 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             #dashAvatarCard .dash-ember,
             #dashAvatarCard .dash-crown { animation: none !important; opacity: 0; transform: none; }
         }
-        /* 대시보드 초상만 테두리 구멍에 맞춥니다. 광장 초상 크기는 그대로입니다. */
+        /* 대시보드 초상만 구멍보다 조금 크게 해 테두리 앞에 앉힙니다. 광장 크기는 그대로입니다. */
         #dashAvatar .char-portrait-lg { width: 5.1rem; height: 5.1rem; }
+        #dashAvatarCard.dash-rank-saenaegi #dashAvatar .char-portrait-lg { width: 5.63rem; height: 5.63rem; }
+        #dashAvatarCard.dash-rank-chobo #dashAvatar .char-portrait-lg { width: 5.1rem; height: 5.1rem; }
+        #dashAvatarCard.dash-rank-jungsu #dashAvatar .char-portrait-lg { width: 5.46rem; height: 5.46rem; }
+        #dashAvatarCard.dash-rank-gosu #dashAvatar .char-portrait-lg { width: 4.58rem; height: 4.58rem; }
+        #dashAvatarCard.dash-rank-guardian #dashAvatar .char-portrait-lg { width: 4.4rem; height: 4.4rem; }
+        #dashAvatarCard.dash-rank-legend #dashAvatar .char-portrait-lg { width: 4.22rem; height: 4.22rem; }
         /* 원형 등급 링·등급 그림은 대시보드에서 그림 테두리로 바꿉니다. 별·이름 색은 유지합니다. */
         #dashAvatarCard .char-avatar-has-rank .char-portrait-clip { box-shadow: none; }
         #dashAvatarCard .char-rank-bg { display: none; }
@@ -4935,6 +4942,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .dash-rank-front { width: 7.6rem; height: 7.6rem; }
             .dash-rank-aura { width: 9rem; height: 9rem; }
             #dashAvatar .char-portrait-lg { width: 4.4rem; height: 4.4rem; }
+            #dashAvatarCard.dash-rank-saenaegi #dashAvatar .char-portrait-lg { width: 4.86rem; height: 4.86rem; }
+            #dashAvatarCard.dash-rank-chobo #dashAvatar .char-portrait-lg { width: 4.41rem; height: 4.41rem; }
+            #dashAvatarCard.dash-rank-jungsu #dashAvatar .char-portrait-lg { width: 4.71rem; height: 4.71rem; }
+            #dashAvatarCard.dash-rank-gosu #dashAvatar .char-portrait-lg { width: 3.95rem; height: 3.95rem; }
+            #dashAvatarCard.dash-rank-guardian #dashAvatar .char-portrait-lg { width: 3.8rem; height: 3.8rem; }
+            #dashAvatarCard.dash-rank-legend #dashAvatar .char-portrait-lg { width: 3.65rem; height: 3.65rem; }
             .dash-rank-star { width: 1rem; height: 1rem; }
             #dashAvatarCard.dash-rank-jungsu .dash-rank-star { width: 1.12rem; height: 1.12rem; }
         }
@@ -4944,6 +4957,12 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             .dash-rank-front { width: 9.6rem; height: 9.6rem; }
             .dash-rank-aura { width: 11.4rem; height: 11.4rem; }
             #dashAvatar .char-portrait-lg { width: 5.55rem; height: 5.55rem; }
+            #dashAvatarCard.dash-rank-saenaegi #dashAvatar .char-portrait-lg { width: 6.14rem; height: 6.14rem; }
+            #dashAvatarCard.dash-rank-chobo #dashAvatar .char-portrait-lg { width: 5.57rem; height: 5.57rem; }
+            #dashAvatarCard.dash-rank-jungsu #dashAvatar .char-portrait-lg { width: 5.95rem; height: 5.95rem; }
+            #dashAvatarCard.dash-rank-gosu #dashAvatar .char-portrait-lg { width: 4.99rem; height: 4.99rem; }
+            #dashAvatarCard.dash-rank-guardian #dashAvatar .char-portrait-lg { width: 4.8rem; height: 4.8rem; }
+            #dashAvatarCard.dash-rank-legend #dashAvatar .char-portrait-lg { width: 4.61rem; height: 4.61rem; }
         }
         .bong-neg { color: #f87171 !important; }
         /* 초상은 원형 클립만 남기고, 네모 흰 모서리·흰 테두리는 안쪽에서 확대해 가립니다. */

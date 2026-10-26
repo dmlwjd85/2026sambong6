@@ -523,7 +523,7 @@ import {
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
 import { applyBongTone, bongToneClass } from './lib/bongTone.js';
-import { dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
+import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
@@ -24618,21 +24618,22 @@ ${subjectLine}
                 dashFrame.hidden = !frameSrc;
                 if (frameSrc) dashFrame.src = frameSrc;
             }
+            const dashAuraEl = document.getElementById('dashRankAura');
+            if (dashAuraEl) {
+                const auraSrc = dashRankAuraSrc(rankRing);
+                const motionKey = auraSrc && rankSpec && rankSpec.motion ? `${rankRing}:${rankSpec.motion}` : '';
+                dashAuraEl.hidden = !auraSrc;
+                if (auraSrc && dashAuraEl.getAttribute('src') !== auraSrc) dashAuraEl.src = auraSrc;
+                if (dashAuraEl.dataset.motion !== motionKey) {
+                    dashAuraEl.dataset.motion = motionKey;
+                    dashAuraEl.classList.remove('is-soft', 'is-halo', 'is-rays', 'is-particles', 'is-flame');
+                    if (motionKey) dashAuraEl.classList.add(`is-${rankSpec.motion}`);
+                }
+            }
             const dashFx = document.getElementById('dashRankFx');
             if (dashFx) {
-                const fxSrc = rankSpec && rankSpec.motion === 'once'
-                    ? 'ranks/dash/star-gold.png'
-                    : (rankSpec && rankSpec.motion ? 'ranks/dash/holo-foil.jpg' : '');
-                const motionKey = fxSrc ? `${rankRing}:${rankSpec.motion}` : '';
-                dashFx.hidden = !fxSrc;
-                if (fxSrc && dashFx.getAttribute('src') !== fxSrc) dashFx.src = fxSrc;
-                if (dashFx.dataset.motion !== motionKey) {
-                    dashFx.dataset.motion = motionKey;
-                    dashFx.classList.remove('is-once', 'is-slow', 'is-legend');
-                    if (rankSpec && rankSpec.motion === 'once') dashFx.classList.add('is-once');
-                    if (rankSpec && rankSpec.motion === 'slow') dashFx.classList.add('is-slow');
-                    if (rankSpec && rankSpec.motion === 'legend') dashFx.classList.add('is-legend');
-                }
+                dashFx.hidden = true;
+                dashFx.classList.remove('is-once', 'is-slow', 'is-legend');
             }
             const dashStars = document.getElementById('dashRankStars');
             if (dashStars) dashStars.innerHTML = dashRankStarHtml(rankRing);

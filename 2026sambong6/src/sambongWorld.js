@@ -522,6 +522,8 @@ import {
 } from './lib/classBell.js';
 import { classXpCatchupSlot, classXpGrantDecision, keepServerClassXpSlot, omitClassXpSlot } from './lib/classXpSlot.js';
 import { learningThermometerAutoNote, learningThermometerStudentControls, masterCanEditLearningThermometer } from './lib/learningThermometerControls.js';
+import { applyBongTone, bongToneClass } from './lib/bongTone.js';
+import { dashRankAuraSrc, dashRankFrameSrc, dashRankSpec, dashRankStarHtml } from './lib/dashRank.js';
 import { chooseOxRecord } from './lib/oxQuiz.js';
 import { bindOxQuiz } from './lib/oxQuizView.js';
 import {
@@ -7536,7 +7538,7 @@ ${subjectLine}
             const rowsHtml = report.alerts.map((a) => `
                 <div class="rounded-lg border border-amber-600/40 bg-amber-950/20 px-2 py-1.5 text-[9px] sm:text-[10px]">
                     <div class="font-bold text-amber-100">${escapeConvenienceHtml(a.name)} <span class="text-slate-400">(${escapeConvenienceHtml(a.sid)}번)</span></div>
-                    <div class="text-amber-200/90 mt-0.5">보유 ${formatBongAmount(a.totalBong)} · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
+                    <div class="text-amber-200/90 mt-0.5">보유 <span class="${bongToneClass(a.totalBong)}">${formatBongAmount(a.totalBong)}</span> · 오늘 +${formatBongAmount(a.todayGain)} · 환불 ${a.refundCount}회</div>
                     <ul class="list-none mt-1 space-y-1">${a.incidents.map(buildSupervisionIncidentHtml).join('')}</ul>
                 </div>`).join('');
             el.innerHTML = `
@@ -21094,7 +21096,7 @@ ${subjectLine}
                     <div class="plaza-card-stats w-full mt-1 flex justify-between items-center px-1 bg-slate-900/40 rounded border border-slate-700/50">
                         <span class="plaza-stat-xp text-[9px] sm:text-[10px] text-sb-blue font-black tabular-nums">${(displayData.xp || 0).toLocaleString()}</span>
                         ${buildPlazaLearningThermometerHtml(targetId)}
-                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
+                        <span class="plaza-stat-bong text-[9px] sm:text-[10px] font-black tabular-nums ${walletBong < 0 ? 'text-red-400 bong-neg' : 'text-sb-gold'}">${formatBongDisplay(walletBong)}</span>
                     </div>
                 </div>`;
             };
@@ -21235,7 +21237,7 @@ ${subjectLine}
                         <td class="p-2 text-sb-blue font-bold cursor-pointer" onclick="window.editStudentStat('${stu.id}', 'xp', '${stuName}', ${stu.xp || 0})">
                             ${(stu.xp||0)}
                         </td>
-                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
+                        <td class="p-2 font-bold cursor-pointer ${(Number(stu.bong)||0) < 0 ? 'text-red-400 bong-neg' : 'text-sb-gold'}" onclick="window.editStudentStat('${stu.id}', 'bong', '${stuName}', ${stu.bong || 0})">
                             ${formatBongAmount(stu.bong || 0)}
                         </td>
                         <td class="p-2 border-l border-slate-700/50 w-24">
@@ -22905,6 +22907,8 @@ ${subjectLine}
             const regularBal = normalizeBongValue(Number(window.playerState.bankRegularSavings) || 0);
             w.textContent = `${formatBongAmount(walletBal)}`;
             s.textContent = `${formatBongAmount(regularBal)}`;
+            applyBongTone(w, walletBal);
+            applyBongTone(s, regularBal);
             r.textContent = `${rate.toFixed(1)}`;
             const limitEl = document.getElementById('bankLoanLimitDisplay');
             if (limitEl) limitEl.textContent = String(getClassLoanLimit());
@@ -23006,9 +23010,9 @@ ${subjectLine}
                         const defTxt = studentIsCreditDefault(stu) ? '신용불량' : '';
                         rows.push(`<div class="grid grid-cols-6 gap-1 px-2 py-1.5 border-b border-slate-800 items-center">
                             <div class="font-bold text-slate-200 truncate">${STUDENT_NAMES[String(sid)] || sid}</div>
-                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
-                            <div class="text-right text-sky-300 tabular-nums">${formatBongAmount(regular)}</div>
-                            <div class="text-right text-amber-200 tabular-nums">${formatBongAmount(termTotal)}</div>
+                            <div class="text-right tabular-nums ${wallet < 0 ? 'text-red-400 bong-neg' : 'text-sb-gold'}">${formatBongAmount(wallet)}</div>
+                            <div class="text-right text-sky-300 tabular-nums ${bongToneClass(regular)}">${formatBongAmount(regular)}</div>
+                            <div class="text-right text-amber-200 tabular-nums ${bongToneClass(termTotal)}">${formatBongAmount(termTotal)}</div>
                             <div class="text-right text-rose-200 tabular-nums">${loanTxt}</div>
                             <div class="text-right text-red-300 font-bold">${defTxt}</div>
                         </div>`);
@@ -23071,9 +23075,11 @@ ${subjectLine}
             const delta = Number(row.delta) || 0;
             const cls = delta > 0 ? 'text-rose-300' : delta < 0 ? 'text-sky-300' : 'text-slate-300';
             const deltaTxt = delta > 0 ? `+${formatBongAmount(delta)}` : formatBongAmount(delta);
+            const deltaHtml = delta < 0 ? `<span class="bong-neg">${deltaTxt}</span>` : deltaTxt;
+            const payoutHtml = Number(row.payout) < 0 ? `<span class="bong-neg">${formatBongAmount(row.payout)}</span>` : formatBongAmount(row.payout);
             return `<div class="text-right leading-tight">
                 <div class="text-amber-100 font-bold tabular-nums">${formatBongAmount(row.principal)}</div>
-                <div class="${cls} text-[9px] tabular-nums">${formatBongAmount(row.payout)} (${deltaTxt})</div>
+                <div class="${cls} text-[9px] tabular-nums">${payoutHtml} (${deltaHtml})</div>
                 <div class="text-[8px] text-slate-400 tabular-nums">매수 ${formatIndexPrice(row.buyIndex)}</div>
             </div>`;
         }
@@ -23100,6 +23106,8 @@ ${subjectLine}
                 const name = STUDENT_NAMES[String(sid)] || sid;
                 const totalCls = sum.delta > 0 ? 'text-rose-300' : sum.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const totalDelta = sum.delta > 0 ? `+${formatBongAmount(sum.delta)}` : formatBongAmount(sum.delta);
+                const totalDeltaHtml = sum.delta < 0 ? `<span class="bong-neg">${totalDelta}</span>` : totalDelta;
+                const totalPayoutHtml = Number(sum.payout) < 0 ? `<span class="bong-neg">${formatBongAmount(sum.payout)}</span>` : formatBongAmount(sum.payout);
                 const kospi = sum.markets.find((m) => m.id === 'kospi');
                 const kosdaq = sum.markets.find((m) => m.id === 'kosdaq');
                 const nasdaq = sum.markets.find((m) => m.id === 'nasdaq');
@@ -23110,7 +23118,7 @@ ${subjectLine}
                     ${formatBankAdminInvestCell(nasdaq)}
                     <div class="text-right leading-tight">
                         <div class="text-white font-bold tabular-nums">${sum.held ? formatBongAmount(sum.principal) : '—'}</div>
-                        ${sum.held ? `<div class="${totalCls} text-[9px] tabular-nums">${formatBongAmount(sum.payout)} (${totalDelta})</div>` : '<div class="text-slate-600 text-[9px]">미보유</div>'}
+                        ${sum.held ? `<div class="${totalCls} text-[9px] tabular-nums">${totalPayoutHtml} (${totalDeltaHtml})</div>` : '<div class="text-slate-600 text-[9px]">미보유</div>'}
                     </div>
                 </div>`);
             });
@@ -23139,6 +23147,8 @@ ${subjectLine}
                 }
                 const settled = q ? settleStockPosition(pos, q.price, Date.now()) : { payout: pos.principal, delta: 0 };
                 const deltaTxt = settled.delta > 0 ? `+${formatBongAmount(settled.delta)}` : formatBongAmount(settled.delta);
+                const deltaHtml = settled.delta < 0 ? `<span class="bong-neg">${deltaTxt}</span>` : deltaTxt;
+                const payoutHtml = Number(settled.payout) < 0 ? `<span class="bong-neg">${formatBongAmount(settled.payout)}</span>` : formatBongAmount(settled.payout);
                 const deltaCls = settled.delta > 0 ? 'text-rose-300' : settled.delta < 0 ? 'text-sky-300' : 'text-slate-300';
                 const retPct = pos.principal > 0 ? (settled.delta / pos.principal) * 100 : 0;
                 const retTxt = `${retPct > 0 ? '+' : ''}${retPct.toFixed(2)}%`;
@@ -23151,7 +23161,7 @@ ${subjectLine}
                         <div class="min-w-0">
                             <div class="text-amber-100 font-bold text-sm">${m.name}</div>
                             <div class="text-[10px] text-slate-400 mt-0.5">원금 ${formatBongAmount(pos.principal)} · 평균 매수 ${formatIndexPrice(pos.buyIndex)}</div>
-                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${formatBongAmount(settled.payout)} (${deltaTxt} · ${retTxt})</div>
+                            <div class="text-[10px] ${deltaCls} font-bold mt-1">평가 ${payoutHtml} (${deltaHtml} · ${retTxt})</div>
                             <div class="text-[9px] text-slate-500 mt-0.5">${roomTxt}</div>
                         </div>
                     </div>
@@ -24580,26 +24590,72 @@ ${subjectLine}
             const overlays = '';
             
             const dashCard = document.getElementById('dashAvatarCard');
+            const rankRing = (!window.playerState.isAdmin && lvInfo.info && lvInfo.info.ring) ? lvInfo.info.ring : '';
+            const rankSpec = dashRankSpec(rankRing);
             if (dashCard) {
-                dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible bg-card-grad ${cardGlow} border-2 ${cardBorder} transition duration-300`;
+                dashCard.className = `glass-panel rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-visible ${cardGlow} border-2 ${cardBorder} transition duration-300`;
+                if (rankSpec) {
+                    dashCard.classList.add('dash-rank', `dash-rank-${rankRing}`);
+                    if (rankSpec.statsGold) dashCard.classList.add('dash-stats-gold');
+                }
                 dashCard.classList.toggle('is-credit-default', studentIsCreditDefault(window.playerState));
             }
             const dashStamp = document.getElementById('dashCreditStamp');
             if (dashStamp) dashStamp.classList.toggle('hidden', !studentIsCreditDefault(window.playerState));
             const dashRankBg = document.getElementById('dashRankBg');
             if (dashRankBg) {
-                // 등급 그림은 원형 캐릭터 뒤에만 두고, 카드 배경은 원래 그라데이션을 유지합니다.
-                dashRankBg.innerHTML = '';
-                dashRankBg.classList.remove('is-on');
+                if (rankSpec && rankSpec.art) {
+                    dashRankBg.innerHTML = `<img src="${rankSpec.art}" alt="">`;
+                    dashRankBg.classList.add('is-on');
+                } else {
+                    dashRankBg.innerHTML = '';
+                    dashRankBg.classList.remove('is-on');
+                }
             }
+            const dashFrame = document.getElementById('dashRankFrame');
+            if (dashFrame) {
+                const frameSrc = dashRankFrameSrc(rankRing);
+                dashFrame.hidden = !frameSrc;
+                if (frameSrc) dashFrame.src = frameSrc;
+            }
+            const dashAuraEl = document.getElementById('dashRankAura');
+            if (dashAuraEl) {
+                const auraSrc = dashRankAuraSrc(rankRing);
+                const motionKey = auraSrc && rankSpec && rankSpec.motion ? `${rankRing}:${rankSpec.motion}` : '';
+                dashAuraEl.hidden = !auraSrc;
+                if (auraSrc && dashAuraEl.getAttribute('src') !== auraSrc) dashAuraEl.src = auraSrc;
+                if (dashAuraEl.dataset.motion !== motionKey) {
+                    dashAuraEl.dataset.motion = motionKey;
+                    dashAuraEl.classList.remove('is-soft', 'is-halo', 'is-rays', 'is-particles', 'is-flame');
+                    if (motionKey) dashAuraEl.classList.add(`is-${rankSpec.motion}`);
+                }
+            }
+            const dashFx = document.getElementById('dashRankFx');
+            if (dashFx) {
+                dashFx.hidden = true;
+                dashFx.classList.remove('is-once', 'is-slow', 'is-legend');
+            }
+            const dashStars = document.getElementById('dashRankStars');
+            if (dashStars) dashStars.innerHTML = dashRankStarHtml(rankRing);
             
+            const dashFront = document.getElementById('dashRankFront');
             document.getElementById('dashAvatar').innerHTML = `<div class="relative inline-block leading-none">${face}${overlays}</div>`;
+            const dashStack = document.querySelector('#dashAvatar .char-avatar-stack');
+            if (dashFrame && dashStack) {
+                const portraitFrame = dashStack.querySelector('.char-portrait-frame');
+                if (portraitFrame) portraitFrame.after(dashFrame);
+                else dashStack.appendChild(dashFrame);
+                if (dashFront) dashFrame.after(dashFront);
+            }
             if (typeof renderBaseFacePicker === 'function') renderBaseFacePicker();
             if (typeof renderSkinVault === 'function') renderSkinVault();
             if (window.playerState && window.playerState.isAdmin) {
                 void runAdminOneShotMigrations();
             }
-            document.getElementById('dashName').innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
+            const dashNameEl = document.getElementById('dashName');
+            dashNameEl.innerText = STUDENT_NAMES[localStorage.getItem('sambong_student_id')] || '손님';
+            dashNameEl.classList.remove('dash-name-white', 'dash-name-silver', 'dash-name-gold', 'dash-name-rainbow', 'text-white');
+            dashNameEl.classList.add(rankSpec ? `dash-name-${rankSpec.name}` : 'text-white');
             const dashChangePinBtn = document.getElementById('dashChangePinBtn');
             if (dashChangePinBtn) {
                 const canChangePin = !!(window.playerState && !window.playerState.isGuest && !window.playerState.isAdmin);
@@ -24613,6 +24669,7 @@ ${subjectLine}
                 dashBongEl.innerText = formatBongDisplay(bBal);
                 dashBongEl.classList.remove('text-sb-gold', 'text-red-400');
                 dashBongEl.classList.add(bBal < 0 ? 'text-red-400' : 'text-sb-gold');
+                applyBongTone(dashBongEl, bBal);
             }
 
             const hp = shieldHpOf(window.playerState);

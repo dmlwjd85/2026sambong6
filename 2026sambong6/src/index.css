@@ -6520,9 +6520,11 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         .plaza-rank-framed {
             --pr-scale: 1.72;
             --pr-base: 3.15rem;
-            /* 1.2: 캐릭터 감정 모션(크기·기울기)이 커질 때까지 포함한 여유, 1.7rem: 옆에 붙는 Lv 표시만큼 초상이 비켜난 거리 */
-            --pr-w: min(var(--pr-base), calc((100cqi - 1.7rem) / (var(--pr-scale) * 1.2)));
-            --pr-pad: calc((var(--pr-scale) * 1.2 - 1) * 0.5 * var(--pr-w));
+            /* 초상은 원래 크기를 지키고, 날개·왕관이 있는 테두리 그림만 카드 폭(cqi) 안에 맞춰 줄입니다.
+               1.2: 캐릭터 감정 모션(크기·기울기) 여유, 1.7rem: 옆에 붙는 Lv 표시만큼 초상이 비켜난 거리 */
+            --pr-w: var(--pr-base);
+            --pr-f: min(calc(var(--pr-w) * var(--pr-scale)), calc((100cqi - 1.7rem) / 1.2));
+            --pr-pad: max(0px, calc((var(--pr-f) * 1.2 - var(--pr-w)) * 0.5));
         }
         @media (max-width: 639px) {
             .plaza-rank-framed { --pr-base: 2.35rem; }
@@ -6547,7 +6549,7 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             position: absolute;
             left: 50%;
             top: 50%;
-            width: calc(100% * var(--pr-scale));
+            width: var(--pr-f);
             height: auto;
             aspect-ratio: 1 / 1;
             max-width: none;

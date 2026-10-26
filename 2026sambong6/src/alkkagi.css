@@ -286,6 +286,11 @@
     background: repeating-linear-gradient(92deg, rgba(255, 255, 255, 0) 0 3px, rgba(255, 255, 255, 0.25) 3px 4px, rgba(0, 0, 0, 0.08) 4px 7px);
 }
 .alk-btn.sub { flex: 1; border: 1px solid #dcc29a; box-shadow: 0 3px 0 #d6bf98, 0 6px 12px rgba(80, 45, 15, 0.1); }
+/* 기권·나가기·닫기처럼 되돌릴 수 없는 버튼은 연한 한지에 붉은 갈색 글자로, 눈에 덜 띄게 해요. */
+.alk-btn.danger { color: #9a3f22; border-color: #e2b9a0; box-shadow: 0 3px 0 #dcb79c, 0 6px 12px rgba(80, 45, 15, 0.08); }
+.alk-btn:focus-visible { outline: 3px solid #c98a3c; outline-offset: 3px; }
+/* 처음 시작할 때만 보이는 한 줄 안내. 판을 가리지 않게 아래 안내 글자 자리에 들어가요. */
+.alk-guide { display: block; margin-top: 2px; font-size: 13px; color: #8a5a2b; }
 .alk-cr {
     margin: 12px 0 0;
     padding-top: 10px;
@@ -416,7 +421,8 @@
     margin: 0 0 10px;
     text-shadow: 0 1px 0 #fff6e6;
 }
-.alk-modal-text { font-size: 15px; line-height: 1.6; color: var(--alk-ink); margin: 4px 2px 0; }
+.alk-modal-text { font-size: 15px; line-height: 1.6; color: var(--alk-ink); margin: 4px 2px 0; word-break: keep-all; overflow-wrap: break-word; }
+.alk-modal-text .alk-guide { font-size: 14px; margin-top: 6px; }
 .alk-modal .alk-btns { margin-top: 16px; }
 @keyframes alk-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes alk-pop { from { transform: scale(0.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }

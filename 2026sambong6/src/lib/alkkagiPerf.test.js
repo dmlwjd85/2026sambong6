@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alkkagiShouldGoLight } from './alkkagiPerf.js';
+import { ALKKAGI_LIGHT_KEEP_MS, alkkagiLightRemembered, alkkagiShouldGoLight } from './alkkagiPerf.js';
 
 const rep = (n, f) => Array.from({ length: n }, (_, i) => f(i));
 
@@ -8,6 +8,13 @@ test('보통 60fps는 켜지지 않아요(가끔 늦은 프레임 포함)', () =
     assert.equal(alkkagiShouldGoLight(rep(60, () => 16.7)), false);
     assert.equal(alkkagiShouldGoLight(rep(60, (i) => (i % 15 === 0 ? 34 : 16.7))), false);
     assert.equal(alkkagiShouldGoLight(rep(60, () => 8.3)), false); // 120Hz
+});
+
+test('가비지 정리처럼 두 번 툭 끊기는 건 켜지지 않아요', () => {
+    const f = rep(12, () => 16.7);
+    f[3] = 50;
+    f[9] = 50;
+    assert.equal(alkkagiShouldGoLight(f), false);
 });
 
 test('16/33ms가 번갈아 나오는 기기(평균 46fps, 최대 117ms)는 켜져요', () => {
@@ -20,4 +27,17 @@ test('계속 느리면 켜지고, 프레임 수가 적으면 아직 판단하지
     assert.equal(alkkagiShouldGoLight(rep(30, () => 22)), true);
     assert.equal(alkkagiShouldGoLight(rep(10, () => 50)), false);
     assert.equal(alkkagiShouldGoLight(null), false);
+});
+
+test('CPU 4배 느린 기기(프레임 30~45ms)는 12프레임(약 0.4초) 만에 켜져요', () => {
+    assert.equal(alkkagiShouldGoLight(rep(12, (i) => 30 + (i % 4) * 5)), true);
+    assert.equal(alkkagiShouldGoLight(rep(11, (i) => 30 + (i % 4) * 5)), false);
+});
+
+test('느렸던 기억은 정한 때까지만 남아요', () => {
+    const now = 1_000_000;
+    assert.equal(alkkagiLightRemembered(String(now + ALKKAGI_LIGHT_KEEP_MS), now), true);
+    assert.equal(alkkagiLightRemembered(String(now - 1), now), false);
+    assert.equal(alkkagiLightRemembered(null, now), false);
+    assert.equal(alkkagiLightRemembered('abc', now), false);
 });

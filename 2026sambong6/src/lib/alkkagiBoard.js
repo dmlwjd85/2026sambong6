@@ -9,10 +9,11 @@
  * - prefers-reduced-motion이면 떨림·흔들림·파동을 줄이고, 프레임이 계속 늦으면 가벼운 모드로 바꿔요.
  */
 
-import { ALKKAGI_DT, ALKKAGI_MAX_STEPS, applyAlkkagiShot, isAlkkagiResting, parseAlkkagiShot, serializeAlkkagiShot, stepAlkkagi } from './alkkagiPhysics.js';
+import { ALKKAGI_DT, ALKKAGI_MAX_STEPS, applyAlkkagiShot, isAlkkagiResting, parseAlkkagiShot, stepAlkkagi } from './alkkagiPhysics.js';
 import { ALKKAGI_CONFIG, alkkagiPhysicsState, simulateAlkkagiTurn } from './alkkagiGame.js';
 import { alkkagiHitLevel, createAlkkagiSound } from './alkkagiSound.js';
-import { alkkagiShouldGoLight } from './alkkagiPerf.js';
+import { ALKKAGI_LIGHT_KEEP_MS, ALKKAGI_LIGHT_KEY, alkkagiLightRemembered, alkkagiShouldGoLight } from './alkkagiPerf.js';
+import { alkkagiFinalShot, alkkagiIsTrembling } from './alkkagiAim.js';
 import { alkkagiPointInside, alkkagiGestureCancel, alkkagiGestureDown, alkkagiGestureMove, alkkagiGestureUp, createAlkkagiGestureState } from './alkkagiGesture.js';
 
 const W = ALKKAGI_CONFIG.width;
@@ -359,13 +360,29 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     let lastFrame = 0;
     let frameTimes = [];
     let idlePending = false;
-    let light = false;
+    let light = readLightMemory();
     let sound = null;
     let destroyed = false;
     let lastVib = 0;
     const log = [];
 
     const nowSec = () => performance.now() / 1000;
+
+    function readLightMemory() {
+        try {
+            return alkkagiLightRemembered(localStorage.getItem(ALKKAGI_LIGHT_KEY), Date.now());
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function goLight() {
+        light = true; // 가벼운 모드: 흔들림·빛결·가루를 줄여요
+        try {
+            localStorage.setItem(ALKKAGI_LIGHT_KEY, String(Date.now() + ALKKAGI_LIGHT_KEEP_MS));
+        } catch (_) { /* 무시 */ }
+        emit({ type: 'light' });
+    }
 
     function ensureSound() {
         if (sound) {
@@ -535,13 +552,15 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         if (destroyed || !L) return;
         const tNow = performance.now();
         const frameSec = lastFrame ? Math.min(0.25, (tNow - lastFrame) / 1000) : 1 / 60;
-        if (anim && lastFrame) {
+        // 프레임이 이어서 돌 때(알을 당기는 동안·굴러가는 동안)마다 재요. 그래서 첫 샷 전에도 알아채요.
+        if (lastFrame) {
             frameTimes.push(tNow - lastFrame);
             if (frameTimes.length > 60) frameTimes.shift();
-            if (!light && alkkagiShouldGoLight(frameTimes)) light = true; // 가벼운 모드: 흔들림·빛결·가루를 줄여요
+            if (!light && alkkagiShouldGoLight(frameTimes)) goLight();
         }
         lastFrame = tNow;
         const t = nowSec();
+        if (drag && drag.ai) stepAiDrag();
         if (anim) stepAnim(frameSec, t);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, L.cssW, L.cssH);
@@ -633,7 +652,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
                 const va = drag.viewAngle;
                 let jx = 0;
                 let jy = 0;
-                if (pull > 0.95) {
+                if (alkkagiIsTrembling(pull)) {
                     // 가득 당기면 바들바들 떨려요
                     const amp = R * (reduce ? 0.025 : light ? 0.07 : 0.13);
                     jx = Math.sin(t * 131) * amp + Math.sin(t * 57) * amp * 0.4;
@@ -665,6 +684,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
             if (typeof opts.onBusyChange === 'function') opts.onBusyChange(false);
         }
         if (anim || drag || idlePending || fx.ripples.length || fx.shakes.length || fx.falls.length) kick();
+        else lastFrame = 0; // 쉬었다 다시 그릴 때의 빈 시간은 재지 않아요
     }
 
     function kick() {
@@ -763,7 +783,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         }
         view = merged;
         if (Array.isArray(next.stones)) display = alkkagiPhysicsState(next.stones);
-        if (!view.canShoot && drag) cancelDrag();
+        if (!view.canShoot && drag && !drag.ai) cancelDrag();
         kick();
     }
 
@@ -788,6 +808,60 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         lastFrame = 0;
         kick();
         return true;
+    }
+
+    /* ---------- AI 차례: 사람처럼 당겼다 놓기 ---------- */
+    function stepAiDrag() {
+        const d = drag;
+        const el = performance.now() - d.t0;
+        const q = Math.min(1, el / d.pullMs);
+        const ease = 1 - (1 - q) * (1 - q) * (1 - q);
+        // 끝으로 갈수록 천천히, 아주 살짝 손이 흔들리는 듯이 당겨요.
+        d.pull = d.target * ease * (q < 1 ? 1 + Math.sin(el / 70) * 0.015 : 1);
+        if (el >= d.pullMs + d.holdMs) releaseAiDrag();
+    }
+
+    function releaseAiDrag() {
+        const d = drag;
+        drag = null;
+        const from = display.stones.map((s) => ({ id: s.id, color: s.color, x: s.x, y: s.y, alive: s.alive }));
+        const sim = simulateAlkkagiTurn({ stones: from }, d.shot);
+        if (!sim.ok) {
+            if (typeof d.onRelease === 'function') d.onRelease({ ok: false, error: sim.error });
+            return;
+        }
+        playShot({ from, shot: d.shot, final: sim.finalStones, own: true });
+        if (typeof d.onRelease === 'function') d.onRelease({ ok: true, shot: d.shot, finalStones: sim.finalStones, steps: sim.steps, from });
+    }
+
+    /**
+     * AI 샷을 사람처럼 보여 줘요: 알을 잡고 천천히 당겼다가(세면 떨려요) 놓아요.
+     * aim은 AI가 노린 방향(그림용), shot은 떨림 오차까지 들어간 최종 샷이에요.
+     */
+    function playAiShot({ shot, aim = null } = {}, { pullMs = 900, holdMs = 380, onRelease = null } = {}) {
+        if (anim || !L) return false;
+        const parsed = parseAlkkagiShot(shot, { state: display });
+        if (!parsed.ok) return false;
+        const s = display.stones.find((x) => x.id === parsed.shot.id);
+        if (!s || !s.alive) return false;
+        const angle = aim && Number.isFinite(aim.angle) ? aim.angle : parsed.shot.angle;
+        const target = Math.max(0.15, Math.min(1, aim && Number.isFinite(aim.power) ? aim.power : parsed.shot.power));
+        drag = {
+            ai: true, id: s.id, pointerId: null, sx: s.x, sy: s.y, pull: 0, angle,
+            viewAngle: view.flip ? angle + Math.PI : angle, t0: performance.now(),
+            full: false, outside: false, target, pullMs: Math.max(120, pullMs * (0.6 + target * 0.5)), holdMs, shot, onRelease,
+        };
+        ensureSound();
+        kick();
+        return true;
+    }
+
+    /** 진행 중인 AI 당기기를 쏘지 않고 멈춰요(나가기·새 판). */
+    function cancelAiShot() {
+        if (drag && drag.ai) {
+            drag = null;
+            kick();
+        }
     }
 
     /* ---------- 입력 ---------- */
@@ -841,7 +915,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
             cancelDrag();
             return;
         }
-        if (r.action !== 'start') return;
+        if (r.action !== 'start' || (drag && drag.ai)) return;
         e.preventDefault();
         try {
             canvas.setPointerCapture(e.pointerId);
@@ -864,7 +938,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         drag.pull = drag.outside || drag.dist < CANCEL_DIST ? 0 : Math.min(1, drag.dist / PULL_MAX);
         drag.angle = Math.atan2(dy, dx);
         drag.viewAngle = view.flip ? drag.angle + Math.PI : drag.angle;
-        if (drag.pull > 0.95 && !drag.full) {
+        if (alkkagiIsTrembling(drag.pull) && !drag.full) {
             drag.full = true;
             vibrate(8, 0);
         } else if (drag.pull < 0.9) drag.full = false;
@@ -879,6 +953,7 @@ export function createAlkkagiBoard(canvas, opts = {}) {
     }
 
     function cancelDrag() {
+        if (drag && drag.ai) return; // AI 당기기는 손가락으로 끊기지 않아요
         drag = null;
         canvas.classList.remove('is-dragging');
         kick();
@@ -894,7 +969,8 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         const d = drag;
         cancelDrag();
         if (r.action !== 'fire' || d.pull < MIN_POWER) return; // 취소: 알은 제자리에 있어요
-        const shot = serializeAlkkagiShot({ id: d.id, angle: d.angle, power: d.pull });
+        // 끝까지 당겨 떨리고 있으면 조금 빗나가요. 여기서 한 번만 정해서 보내고, 받는 쪽은 그대로 재생해요.
+        const shot = alkkagiFinalShot({ id: d.id, angle: d.angle, power: d.pull });
         if (!shot) return;
         const from = display.stones.map((s) => ({ id: s.id, color: s.color, x: s.x, y: s.y, alive: s.alive }));
         const sim = simulateAlkkagiTurn({ stones: from }, shot);
@@ -939,10 +1015,13 @@ export function createAlkkagiBoard(canvas, opts = {}) {
         resize,
         setView,
         playShot,
+        playAiShot,
+        cancelAiShot,
         ensureSound,
         isBusy: () => !!anim,
         isSettling: () => !!anim || idlePending,
         isDragging: () => !!drag,
+        isAiPulling: () => !!(drag && drag.ai),
         eventLog: () => log.slice(),
         isLight: () => light,
         /** 확인용: 알의 화면 위치(CSS px, 캔버스 기준) */

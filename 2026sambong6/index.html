@@ -2485,6 +2485,11 @@
                                 <span class="boardgame-game-name">체스</span>
                                 <span class="boardgame-game-meta">2명 · 8×8 · 정식 규칙 · AI 고수/초인</span>
                             </button>
+                            <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('alkkagi')">
+                                <span class="boardgame-game-emoji" aria-hidden="true">🥌</span>
+                                <span class="boardgame-game-name">알까기</span>
+                                <span class="boardgame-game-meta">2명 · 알 5개씩 · 당겨서 튕기기 · 한 화면 둘이서</span>
+                            </button>
                         </div>
                     </div>
 
@@ -2500,6 +2505,7 @@
                                 <button type="button" id="boardgameAiColorWhite" class="boardgame-mini-btn is-on hidden" onclick="window.setBoardGameAiColor('w')">내가 백</button>
                                 <button type="button" id="boardgameAiColorBlack" class="boardgame-mini-btn hidden" onclick="window.setBoardGameAiColor('b')">내가 흑</button>
                             </div>
+                            <button type="button" id="boardgameLocalBtn" class="boardgame-primary-btn hidden" onclick="void window.startAlkkagiLocal()">한 화면 둘이서</button>
                             <div class="boardgame-ai-row" role="group" aria-label="AI 난이도">
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.startBoardGameAi('gosu')">AI 고수</button>
                                 <button type="button" class="boardgame-primary-btn" onclick="void window.startBoardGameAi('choin')">AI 초인</button>
@@ -2586,6 +2592,61 @@
                                 <button type="button" class="boardgame-primary-btn" onclick="void window.continueBoardGameRoom()">다시 두기</button>
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.endBoardGameRoom()">방 종료</button>
                             </div>
+                        </div>
+                    </div>
+                    <div id="boardgameAlkkagiPlayView" class="boardgame-view boardgame-play alk-view hidden">
+                        <div class="alk-paper">
+                            <header class="alk-head">
+                                <button type="button" class="alk-back alk-hanji" onclick="void window.leaveBoardGameTable()"><span>나가기</span></button>
+                                <h2 class="alk-title">알까기</h2>
+                                <div class="alk-head-side">
+                                    <span id="alkkagiHudTimer" class="alk-timer" hidden></span>
+                                    <label id="alkkagiTimerToggleWrap" class="alk-timer-toggle hidden">
+                                        <input type="checkbox" id="alkkagiTimerToggle" onchange="void window.toggleBoardGameTimer(this.checked)">
+                                        <span>30초씩</span>
+                                    </label>
+                                </div>
+                            </header>
+                            <div class="alk-cards">
+                                <div id="alkkagiCardBlack" class="alk-card alk-hanji">
+                                    <i class="alk-rib" aria-hidden="true"></i>
+                                    <div class="alk-who"><i class="alk-mini b" aria-hidden="true"></i><span id="alkkagiNameBlack" class="alk-name">흑</span></div>
+                                    <div class="alk-left"><span id="alkkagiLeftBlack" class="alk-n">5개</span><span id="alkkagiDotsBlack" class="alk-dots" aria-hidden="true"></span></div>
+                                </div>
+                                <div id="alkkagiCardWhite" class="alk-card alk-hanji">
+                                    <i class="alk-rib" aria-hidden="true"></i>
+                                    <div class="alk-who"><i class="alk-mini w" aria-hidden="true"></i><span id="alkkagiNameWhite" class="alk-name">백</span></div>
+                                    <div class="alk-left"><span id="alkkagiLeftWhite" class="alk-n">5개</span><span id="alkkagiDotsWhite" class="alk-dots" aria-hidden="true"></span></div>
+                                </div>
+                            </div>
+                            <div class="alk-turn-row">
+                                <div id="alkkagiTurn" class="alk-turn" aria-live="polite"><i id="alkkagiTurnDot" class="alk-mini b" aria-hidden="true"></i><span id="alkkagiTurnText">차례를 기다려요</span></div>
+                            </div>
+                            <div id="alkkagiStage" class="alk-stage">
+                                <div class="alk-board-wrap">
+                                    <canvas id="alkkagiCanvas" class="alk-canvas" role="img" aria-label="알까기 판" data-fit-el="alkkagiStage" data-max-board="520"></canvas>
+                                </div>
+                                <div id="alkkagiResult" class="alk-result hidden" role="status">
+                                    <div class="alk-result-card alk-hanji">
+                                        <span class="alk-spark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                                        <i id="alkkagiResultStone" class="alk-result-stone b" aria-hidden="true"></i>
+                                        <p id="alkkagiResultTitle" class="alk-result-title">검은 알 승리</p>
+                                        <p id="alkkagiResultLine" class="alk-result-line"></p>
+                                        <p id="alkkagiResultLeft" class="alk-result-left"></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <p id="alkkagiTip" class="alk-tip">알을 꾹 잡고 쏘고 싶은 반대쪽으로 당겨요.<br>손을 떼면 알이 미끄러져 나가요.</p>
+                            <div id="alkkagiPlayActions" class="alk-btns">
+                                <button type="button" class="alk-btn sub alk-hanji" onclick="void window.forfeitAlkkagi()"><span>기권할게요</span></button>
+                                <button type="button" class="alk-btn sub alk-hanji" onclick="void window.showAlkkagiRules()"><span>규칙 볼래요</span></button>
+                            </div>
+                            <div id="alkkagiResultActions" class="alk-btns hidden">
+                                <button type="button" class="alk-btn main" onclick="void window.continueAlkkagi()"><span>한 판 더 할래요</span></button>
+                                <button type="button" class="alk-btn sub alk-hanji" onclick="void window.closeAlkkagi()"><span id="alkkagiCloseLabel">방 닫을게요</span></button>
+                            </div>
+                            <button type="button" class="alk-cr-link" onclick="void window.showAlkkagiFontCredit()">글꼴 정보</button>
+                            <template id="alkkagiFontCredit"><p class="alk-cr">글꼴: 쨈 제목 — © 2026 쨈 폰트 팀<br>글꼴: 쨈 본문(JJAEM Body) —<br>Resource Han Rounded(Cyano Hao, SIL OFL 1.1) 바탕</p></template>
                         </div>
                     </div>
                 </div>

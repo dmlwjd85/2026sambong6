@@ -2488,7 +2488,7 @@
                             <button type="button" class="boardgame-game-card" onclick="window.openBoardGameLobby('alkkagi')">
                                 <span class="boardgame-game-emoji" aria-hidden="true">🥌</span>
                                 <span class="boardgame-game-name">알까기</span>
-                                <span class="boardgame-game-meta">2명 · 알 5개씩 · 당겨서 튕기기 · 한 화면 둘이서</span>
+                                <span class="boardgame-game-meta">2명 · 알 5개씩 · 당겨서 튕기기 · 한 화면 둘이서 · AI 쉬움/보통/고수</span>
                             </button>
                         </div>
                     </div>
@@ -2506,6 +2506,12 @@
                                 <button type="button" id="boardgameAiColorBlack" class="boardgame-mini-btn hidden" onclick="window.setBoardGameAiColor('b')">내가 흑</button>
                             </div>
                             <button type="button" id="boardgameLocalBtn" class="boardgame-primary-btn hidden" onclick="void window.startAlkkagiLocal()">한 화면 둘이서</button>
+                            <div id="boardgameAlkAiRow" class="boardgame-ai-row boardgame-alk-ai hidden" role="group" aria-labelledby="boardgameAlkAiLabel">
+                                <span id="boardgameAlkAiLabel" class="boardgame-ai-label">AI와 하기</span>
+                                <button type="button" class="boardgame-mini-btn" aria-label="AI 쉬움" onclick="void window.startAlkkagiAi('easy')">쉬움</button>
+                                <button type="button" class="boardgame-mini-btn" aria-label="AI 보통" onclick="void window.startAlkkagiAi('normal')">보통</button>
+                                <button type="button" class="boardgame-mini-btn" aria-label="AI 고수" onclick="void window.startAlkkagiAi('hard')">고수</button>
+                            </div>
                             <div class="boardgame-ai-row" role="group" aria-label="AI 난이도">
                                 <button type="button" class="boardgame-mini-btn" onclick="void window.startBoardGameAi('gosu')">AI 고수</button>
                                 <button type="button" class="boardgame-primary-btn" onclick="void window.startBoardGameAi('choin')">AI 초인</button>

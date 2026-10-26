@@ -5872,6 +5872,19 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             align-items: center;
             gap: 0.4rem;
         }
+        .boardgame-ai-label {
+            font-size: 12px;
+            font-weight: 900;
+            color: #fde68a;
+            padding-right: 0.1rem;
+        }
+        .boardgame-alk-ai {
+            flex-basis: 100%;
+        }
+        /* 알까기 로비에서 오목·체스용 'AI 고수/초인' 줄이 가려지지 않던 문제: hidden이 flex에 밀렸어요. */
+        .boardgame-ai-row.hidden {
+            display: none;
+        }
         .boardgame-room-list {
             display: flex;
             flex-direction: column;

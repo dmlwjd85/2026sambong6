@@ -6514,16 +6514,34 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
 
         /* 광장 학생 카드: 대시보드와 같은 등급 그림 테두리·오라. 캐릭터(초상)는 테두리 앞, 바깥 장식은 초상 밖에 남습니다.
+           테두리(날개·왕관 포함)와 오라 전체가 카드 폭 안에 들어가도록 카드 폭(cqi) 비율로 초상 크기를 정하고,
+           위아래에는 테두리가 초상 밖으로 나오는 만큼 여백을 둡니다. 고정 px 오프셋은 쓰지 않습니다.
            움직임은 오라 opacity만 씁니다. 줄인 모션이면 멈춥니다. */
-        .plaza-rank-framed { --pr-scale: 1.72; }
+        .plaza-rank-framed {
+            --pr-scale: 1.72;
+            --pr-base: 3.15rem;
+            /* 1.2: 캐릭터 감정 모션(크기·기울기)이 커질 때까지 포함한 여유, 1.7rem: 옆에 붙는 Lv 표시만큼 초상이 비켜난 거리 */
+            --pr-w: min(var(--pr-base), calc((100cqi - 1.7rem) / (var(--pr-scale) * 1.2)));
+            --pr-pad: calc((var(--pr-scale) * 1.2 - 1) * 0.5 * var(--pr-w));
+        }
+        @media (max-width: 639px) {
+            .plaza-rank-framed { --pr-base: 2.35rem; }
+        }
         .plaza-rank-framed.plaza-rank-saenaegi { --pr-scale: 1.56; }
         .plaza-rank-framed.plaza-rank-chobo { --pr-scale: 1.72; }
         .plaza-rank-framed.plaza-rank-jungsu { --pr-scale: 1.61; }
         .plaza-rank-framed.plaza-rank-gosu { --pr-scale: 1.92; }
         .plaza-rank-framed.plaza-rank-guardian { --pr-scale: 2; }
         .plaza-rank-framed.plaza-rank-legend { --pr-scale: 2.08; }
+        .plaza-card-face .char-avatar-stack.plaza-rank-framed,
+        .plaza-cards-seating .plaza-card-face .char-avatar-stack.plaza-rank-framed {
+            padding-top: var(--pr-pad);
+            padding-bottom: var(--pr-pad);
+        }
         .plaza-rank-framed .char-portrait-clip,
         .plaza-rank-framed.char-avatar-has-rank .char-portrait-clip { box-shadow: none; background: transparent; }
+        .plaza-cards-seating .plaza-rank-framed .char-portrait-clip,
+        .plaza-rank-framed .char-portrait-clip { width: var(--pr-w); height: var(--pr-w); max-width: none; }
         .plaza-rank-frame,
         .plaza-rank-aura {
             position: absolute;
@@ -6540,8 +6558,6 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
             z-index: 0;
         }
         .plaza-rank-aura {
-            top: 42%;
-            width: calc(118% * var(--pr-scale));
             opacity: 0.85;
             will-change: opacity;
             animation: plaza-aura-breathe 4s ease-in-out infinite;
@@ -6552,28 +6568,4 @@ button, .login-mode-btn, .teacher-sub-btn, #swipeTabBar button {
         }
         @media (prefers-reduced-motion: reduce) {
             .plaza-rank-aura { animation: none !important; opacity: 0.85; }
-        }
-        /* 광장은 카드가 좁아 고수 이상은 초상+테두리를 함께 살짝 줄여 옆 카드와 겹치지 않게 합니다(transform만, 자리 크기는 그대로). */
-        .plaza-rank-framed .char-portrait-frame { transform: scale(var(--pr-fit, 1)); transform-origin: 50% 55%; }
-        .plaza-rank-framed.plaza-rank-chobo { --pr-fit: 0.93; }
-        .plaza-rank-framed.plaza-rank-gosu { --pr-fit: 0.83; }
-        .plaza-rank-framed.plaza-rank-guardian { --pr-fit: 0.8; }
-        .plaza-rank-framed.plaza-rank-legend { --pr-fit: 0.77; }
-        /* 430px 이하: 테두리(날개 포함)가 카드 폭 안에 들어오도록 초상 크기를 카드 폭(cqi) 기준으로 맞추고,
-           테두리 윗부분(왕관·수정)이 잘리지 않게 위쪽 여백을 테두리 높이만큼 둡니다. */
-        @media (max-width: 430px) {
-            .plaza-rank-framed {
-                --pr-w: min(2.35rem, calc(86cqi / var(--pr-scale)));
-                padding-top: calc((var(--pr-scale) - 1) * 0.5 * var(--pr-w)) !important;
-            }
-            .plaza-rank-framed .char-portrait-frame { transform: none; }
-            .plaza-cards-seating .plaza-rank-framed .char-portrait-clip,
-            .plaza-rank-framed .char-portrait-clip { width: var(--pr-w); height: var(--pr-w); }
-        }
-        /* 넓은 화면: 테두리 윗부분이 윗줄 카드에 닿지 않게 위쪽 여백을 둡니다. */
-        @media (min-width: 431px) {
-            .plaza-cards-seating .plaza-card-face .plaza-rank-framed,
-            .plaza-rank-framed {
-                padding-top: calc((var(--pr-scale) * var(--pr-fit, 1) - 1) * 0.5 * 3.15rem) !important;
-            }
         }

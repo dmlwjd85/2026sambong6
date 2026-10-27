@@ -245,16 +245,18 @@ import {
     createBoardRoom,
     decideBoardRoomCreate,
     deleteWaitingBoardRoom,
-    expireIdleBoardRoom,
     getBoardGameDef,
     hostBoardRoomId,
     isRoomHost,
-    isRoomIdleExpired,
     isRoomMember,
     isTurnTimedOut,
     listLobbyBoardRooms,
+    parseBoardRoomCleanedMemory,
+    pickBoardRoomsToCleanup,
     pickMyActiveBoardRoom,
+    boardRoomCleanupKey,
     rejectJoinBoardRoom,
+    rememberBoardRoomCleaned,
     remainingSeats,
     requestJoinBoardRoom,
     roomMemberSeat,
@@ -12079,6 +12081,8 @@ ${subjectLine}
             return doc(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms', roomId);
         }
 
+        let _boardPlaySeenId = ''; // 판 화면에서 실제로 본 방 id(사라짐 안내용)
+        const _boardGoneNoticed = new Set(); // 사라짐 안내를 이미 띄운 방 id
         function currentBoardGameRoom() {
             return _boardGameRooms.find((r) => r.id === _boardGameActiveId) || null;
         }
@@ -12258,15 +12262,31 @@ ${subjectLine}
             if (minePlaying && minePlaying.status === 'finished') maybeRecordBoardGameResult(minePlaying);
         }
 
+        // 정리한(지우기를 시도한) 방을 이 기기에 기억해요. 같은 방을 다시 지우느라 쓰기를 쓰지 않게 해요.
+        const BOARD_CLEANED_STORAGE_KEY = 'sambong_board_cleaned_v1';
+        function readBoardCleanedMemory(now) {
+            try { return parseBoardRoomCleanedMemory(localStorage.getItem(BOARD_CLEANED_STORAGE_KEY), now); } catch (_) { return {}; }
+        }
+        function writeBoardCleanedMemory(mem) {
+            try { localStorage.setItem(BOARD_CLEANED_STORAGE_KEY, JSON.stringify(mem)); } catch (_) { /* 저장 못 해도 괜찮아요 */ }
+        }
+
+        // 방 목록을 연 기기가 정리 대상 방을 한 번씩 지워요.
+        // 30분 지난 방(두는 중이고 10분 안에 활동한 판은 빼요)은 누구나, 10분 쉰 방은 내 방·옛 방만 지워요(규칙과 같은 기준).
         async function sweepIdleBoardRooms(now = Date.now()) {
             if (!db || !auth || !auth.currentUser) return;
-            const expired = _boardGameRooms.filter((r) => r.status !== 'closed' && isRoomIdleExpired(r, now));
-            for (const room of expired) {
+            if (_boardGameView !== 'lobby' || classtoolSub !== 'boardgames') return;
+            let mem = readBoardCleanedMemory(now);
+            const due = pickBoardRoomsToCleanup(_boardGameRooms, { now, uid: auth.currentUser.uid, memory: mem });
+            if (!due.length) return;
+            // 지우기 전에 먼저 기억해요. 실패해도 이 기기는 다시 시도하지 않아요(다른 기기나 30분 정리가 맡아요).
+            due.forEach((room) => { mem = rememberBoardRoomCleaned(mem, boardRoomCleanupKey(room), now); });
+            writeBoardCleanedMemory(mem);
+            for (const room of due) {
                 try {
-                    const closed = expireIdleBoardRoom(room, now);
-                    if (closed.ok) await deleteDoc(boardGameRoomRef(room.id));
+                    await deleteDoc(boardGameRoomRef(room.id));
                 } catch (e) {
-                    console.warn('sweepIdleBoardRooms', e);
+                    console.warn('sweepIdleBoardRooms', room.id, e && e.code);
                 }
             }
         }
@@ -12550,11 +12570,21 @@ ${subjectLine}
                 const alkGone = room && room.gameType === 'alkkagi'
                     && (room.status === 'waiting' || !isRoomMember(room, boardGameSelfId()));
                 if (!room || room.status === 'closed' || alkGone) {
+                    // 보던 방 문서가 아예 사라졌으면(정리·방장 지움) 한 번만 알려 줘요.
+                    const goneId = !room && _boardGameActiveId && _boardPlaySeenId === _boardGameActiveId ? _boardGameActiveId : '';
                     _boardGameActiveId = '';
+                    _boardPlaySeenId = '';
                     showBoardGameView('lobby');
                     renderBoardGameLobby();
+                    if (goneId && !_boardGoneNoticed.has(goneId)) {
+                        _boardGoneNoticed.add(goneId);
+                        void alkkagiDialog('방이 정리됐어요.<br>로비로 돌아갈게요.', [
+                            { label: '알겠어요', value: true, main: true },
+                        ], '', { scope: 'lobby' });
+                    }
                     return;
                 }
+                _boardPlaySeenId = room.id;
                 if (room.gameType === 'chess') renderChessPlay(room);
                 else if (room.gameType === 'alkkagi') renderAlkkagiPlay(room);
                 else renderGomokuPlay(room);
@@ -12580,8 +12610,8 @@ ${subjectLine}
                 lead.textContent = alk
                     ? '방을 만들어 친구와 하거나, 「한 화면 둘이서」나 「AI와 하기」로 바로 해요. 하다가 나가면 져요.'
                     : chess
-                    ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.'
-                    : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라집니다. 대국 중 나가면 패배입니다.';
+                    ? '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 색을 고른 뒤 「AI 고수」 또는 「AI 초인」을 누르세요. 정식 체스 규칙이며 방장은 백(선공)입니다. 10분 동안 아무도 두지 않으면 방이 사라지고, 기다리는 방은 만든 지 30분이 지나면 정리됩니다. 대국 중 나가면 패배입니다.'
+                    : '방장 이름·남은 자리·상태(대기/대국)가 보입니다. 참가 신청 후 방장이 받아 주면 시작합니다. 혼자 두려면 「AI 고수」 또는 「AI 초인」을 누르세요. 판은 20×20이고, 흑만 3·3(열린 삼이 두 갈래)을 금합니다. 백은 3·3을 둘 수 있습니다. 10분 동안 아무도 두지 않으면 방이 사라지고, 기다리는 방은 만든 지 30분이 지나면 정리됩니다. 대국 중 나가면 패배입니다.';
             }
             const wBtn = document.getElementById('boardgameAiColorWhite');
             const bBtn = document.getElementById('boardgameAiColorBlack');
@@ -12629,11 +12659,9 @@ ${subjectLine}
                 let action = '';
                 if (mine && (room.status === 'playing' || room.status === 'finished')) {
                     action = `<button type="button" class="boardgame-primary-btn" data-enter="${escapeBoardGameText(room.id)}">입장</button>`;
-                } else if (host && room.status === 'waiting' && room.gameType === 'alkkagi') {
-                    // 내가 만든 알까기 대기 방은 여기서 바로 지울 수 있어요.
-                    action = `<div class="boardgame-room-actions"><span class="boardgame-room-meta">방장</span><button type="button" class="boardgame-mini-btn boardgame-room-delete" data-delete-room="${escapeBoardGameText(room.id)}">방 지우기</button></div>`;
                 } else if (host && room.status === 'waiting') {
-                    action = `<span class="boardgame-room-meta">방장</span>`;
+                    // 내가 만든 대기 방(오목·체스·알까기)은 여기서 바로 지울 수 있어요.
+                    action = `<div class="boardgame-room-actions"><span class="boardgame-room-meta">방장</span><button type="button" class="boardgame-mini-btn boardgame-room-delete" data-delete-room="${escapeBoardGameText(room.id)}">방 지우기</button></div>`;
                 } else if (pending) {
                     action = `<span class="boardgame-room-meta">승인 대기</span>`;
                 } else if (rejected) {
@@ -13148,6 +13176,11 @@ ${subjectLine}
             } catch (e) {
                 const code = e && e.message;
                 if (silent) {
+                    console.warn('mutateBoardRoom', roomId, code);
+                    return null;
+                }
+                // 두던 방이 정리돼 사라졌으면 경고 대신 '방이 정리됐어요' 안내(판 화면 갱신)가 맡아요.
+                if (code === 'expired' && _boardGameView === 'play' && _boardGameActiveId === roomId) {
                     console.warn('mutateBoardRoom', roomId, code);
                     return null;
                 }
@@ -13698,18 +13731,20 @@ ${subjectLine}
         /** 알까기: 방장마다 정해진 id 하나에 트랜잭션으로 써서, 여러 번 눌러도·창이 여러 개여도 방이 하나만 생겨요. */
         async function createHostBoardRoomOnce(def, me, roomId) {
             const ref = boardGameRoomRef(roomId);
+            const myUid = auth && auth.currentUser ? auth.currentUser.uid : '';
             return runTransaction(db, async (tx) => {
                 const snap = await tx.get(ref);
                 const now = Date.now();
                 const existing = snap.exists() ? sanitizeBoardRoom({ id: snap.id, ...snap.data() }, now) : null;
                 const decision = decideBoardRoomCreate(existing, { hostId: me, now });
                 if (decision.action === 'create') {
-                    const made = createBoardRoom({ gameType: def.id, hostId: me, hostName: boardGameSelfName(), now, id: roomId });
+                    const made = createBoardRoom({ gameType: def.id, hostId: me, hostName: boardGameSelfName(), now, id: roomId, hostUid: myUid });
                     if (!made.ok) return { action: 'error', error: made.error };
                     tx.set(ref, boardRoomToDoc(made.room));
                 } else if (decision.action === 'reuse') {
                     // 이미 있는 내 방은 방금 쓴 것으로 표시해, 곧바로 10분 정리에 걸리지 않게 해요.
-                    tx.set(ref, boardRoomToDoc({ ...existing, lastActivityAt: now, updatedAt: now }));
+                    // hostUid가 없는 옛 방이면 이번에 내 uid를 적어 둬요(있으면 그대로 둬요).
+                    tx.set(ref, boardRoomToDoc({ ...existing, hostUid: existing.hostUid || myUid, lastActivityAt: now, updatedAt: now }));
                 }
                 return decision;
             });
@@ -13743,6 +13778,7 @@ ${subjectLine}
                         hostId: me,
                         hostName: boardGameSelfName(),
                         now: Date.now(),
+                        hostUid: auth && auth.currentUser ? auth.currentUser.uid : '',
                     });
                     if (!made.ok) {
                         outcome = { action: 'alert', text: boardRoomErrorText(made.error) };

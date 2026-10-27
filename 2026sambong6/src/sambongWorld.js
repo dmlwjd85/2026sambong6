@@ -20,6 +20,11 @@ import {
     serverTimestamp,
     query,
     where,
+    limit,
+    orderBy,
+    documentId,
+    startAt,
+    endBefore,
 } from 'firebase/firestore';
 import {
     ADMIN_EXPORT_SHEET_OPTIONS,
@@ -226,10 +231,17 @@ import {
     listLegalChessMoves,
 } from './lib/chessGame.js';
 import {
+    BOARD_LOBBY_QUERY_LIMIT,
+    BOARD_MINE_ID_SPLIT,
+    BOARD_MINE_OTHER_QUERY_LIMIT,
+    BOARD_MINE_QUERY_LIMIT,
     applyBoardRoomGame,
     approveJoinBoardRoom,
+    boardLobbyQueryStatuses,
     boardRoomErrorText,
     boardRoomInstanceKey,
+    boardRoomScopeKey,
+    boardRoomSubscriptionScope,
     boardRoomToDoc,
     boardRoomStatusLabel,
     cancelJoinBoardRoom,
@@ -242,6 +254,8 @@ import {
     expireIdleBoardRoom,
     getBoardGameDef,
     hostBoardRoomId,
+    parseBoardLeftRooms,
+    rememberBoardLeftRoom,
     isRoomHost,
     isRoomIdleExpired,
     isRoomMember,
@@ -250,6 +264,7 @@ import {
     pickMyActiveBoardRoom,
     rejectJoinBoardRoom,
     remainingSeats,
+    shouldAutoEnterBoardRoom,
     requestJoinBoardRoom,
     roomMemberSeat,
     sanitizeBoardRoom,
@@ -12023,7 +12038,20 @@ ${subjectLine}
         // 알까기 상태
         let _alkBoard = null;
         let _alkLocal = null; // { game, ai } — 한 화면 둘이서(ai 없음) 또는 AI와 하기(ai: { level, color, seed, job, thinking, pulling })
-        const _alkLeftRooms = new Set(); // 판 중에 나간 방(boardRoomInstanceKey): 자동으로 다시 들어가지 않아요
+        // 판 중에 나갔거나 끝난 판에서 나온 방(boardRoomInstanceKey): 자동으로 다시 들어가지 않아요.
+        // 새로고침해도 옛 방으로 끌려가지 않게 같은 탭 sessionStorage에도 남겨요.
+        const BOARD_LEFT_ROOMS_KEY = 'sambong_board_left_rooms_v1';
+        const _alkLeftRooms = new Set((() => {
+            try { return parseBoardLeftRooms(sessionStorage.getItem(BOARD_LEFT_ROOMS_KEY)); } catch (_) { return []; }
+        })());
+        function rememberLeftBoardRoom(room) {
+            const key = boardRoomInstanceKey(room);
+            if (!key) return;
+            _alkLeftRooms.add(key);
+            try {
+                sessionStorage.setItem(BOARD_LEFT_ROOMS_KEY, JSON.stringify(rememberBoardLeftRoom(Array.from(_alkLeftRooms), key)));
+            } catch (_) { /* 저장 못 해도 이번 화면에서는 기억해요 */ }
+        }
         let _alkResumeTried = false;
         const ALKKAGI_GUIDE_OLD_KEY = 'sambong_alk_guide_seen'; // 예전 '기기당 한 번' 기억(이제 안 써요, 지우기만 해요)
         const ALKKAGI_GUIDE_TEXT = '세게 당길수록 멀리 가지만, 알이 떨리면 조금 빗나갈 수 있어요.';
@@ -12101,23 +12129,192 @@ ${subjectLine}
             return _boardGameRooms.find((r) => r.id === _boardGameActiveId) || null;
         }
 
-        function applyBoardGameRoomsSnapshot(snap) {
-            const now = Date.now();
-            const rows = [];
-            snap.forEach((d) => {
-                rows.push(sanitizeBoardRoom({ id: d.id, ...d.data() }, now));
+        // ── 방 구독 범위: 전체 방 컬렉션 대신 지금 화면에 필요한 방만 받아요(읽기 비용 절약) ──
+        // lobby: 보고 있는 게임의 방 목록 / mine: 내가 참가·신청한 오목·체스 방(bg_) / mineOther: 내가 참가·신청한 알까기 방(alk_) / room: 대전 중인 내 방 문서 하나
+        const _boardRoomSources = { lobby: new Map(), mine: new Map(), mineOther: new Map(), room: new Map() };
+        const _boardRoomUnsubs = { lobby: null, mine: null, mineOther: null, room: null };
+        // 이 화면을 연 시각과, 이 화면에서 기다리거나 두는 모습을 본 판(boardRoomInstanceKey).
+        // 새 탭·다른 기기에서 예전에 끝난 판 결과로 저절로 끌려가지 않게 해요(shouldAutoEnterBoardRoom).
+        const _boardScreenStartedAt = Date.now();
+        const _boardSeenLiveRooms = new Set();
+        let _boardRoomScopeKey = '';
+        let _boardRoomScopeTimer = null;
+
+        function mergedBoardRoomRows() {
+            const byId = new Map();
+            ['lobby', 'mine', 'mineOther', 'room'].forEach((k) => {
+                _boardRoomSources[k].forEach((row, id) => byId.set(id, row));
             });
+            return Array.from(byId.values());
+        }
+
+        function stopBoardRoomSource(key) {
+            if (_boardRoomUnsubs[key]) {
+                try { _boardRoomUnsubs[key](); } catch (_) { /* 이미 풀린 구독 */ }
+                _boardRoomUnsubs[key] = null;
+            }
+            _boardRoomSources[key].clear();
+        }
+
+        function boardRoomsLobbyVisible() {
+            if (typeof document === 'undefined' || document.hidden) return false;
+            const el = document.getElementById('boardgameLobbyView');
+            return !!(el && !el.classList.contains('hidden') && el.getClientRects().length > 0);
+        }
+
+        function boardRoomQuerySnapshotToMap(snap) {
+            const now = Date.now();
+            const map = new Map();
+            snap.forEach((d) => {
+                map.set(d.id, sanitizeBoardRoom({ id: d.id, ...d.data() }, now));
+            });
+            return map;
+        }
+
+        function listenBoardRoomQuery(key, primary, fallback) {
+            const start = (q, canFallback) => onSnapshot(q, (snap) => {
+                _boardRoomSources[key] = boardRoomQuerySnapshotToMap(snap);
+                applyBoardGameRoomsRows(mergedBoardRoomRows());
+            }, (err) => {
+                console.warn('boardGameRooms listen', key, err && err.code);
+                // 색인이 없다는 오류 등이 나면 더 단순한 질의로 한 번만 다시 받아요.
+                if (canFallback && fallback && _boardRoomUnsubs[key]) {
+                    try { _boardRoomUnsubs[key](); } catch (_) { /* noop */ }
+                    _boardRoomUnsubs[key] = start(fallback, false);
+                }
+            });
+            _boardRoomUnsubs[key] = start(primary, true);
+        }
+
+        /** 화면이 바뀔 때마다 불러도 돼요. 범위가 같으면 아무것도 하지 않아요. */
+        function syncBoardRoomSubscriptions() {
+            if (!db) return;
+            const scope = boardRoomSubscriptionScope({
+                toolOpen: classtoolSub === 'boardgames' && !(window.playerState && window.playerState.isGuest),
+                view: _boardGameView,
+                gameType: _boardGameType,
+                activeRoomId: _boardGameActiveId,
+                selfId: boardGameSelfId(),
+                lobbyVisible: boardRoomsLobbyVisible(),
+                localPlay: !!(_alkLocal || _gomokuAiSession || _chessAiSession),
+            });
+            const key = boardRoomScopeKey(scope);
+            if (key === _boardRoomScopeKey) return;
+            const prev = _boardRoomScopeKey.split('|');
+            _boardRoomScopeKey = key;
+            const roomsCol = collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms');
+            // 대전으로 넘어가는 순간에도 내 방이 잠깐 비지 않게, 목록에서 받아 둔 내 방을 room 쪽으로 옮겨 둬요.
+            if (scope.roomId && !_boardRoomSources.room.has(scope.roomId)) {
+                const carry = _boardRoomSources.lobby.get(scope.roomId) || _boardRoomSources.mine.get(scope.roomId) || _boardRoomSources.mineOther.get(scope.roomId);
+                if (carry) _boardRoomSources.room.set(scope.roomId, carry);
+            }
+            if (prev[0] !== scope.lobbyGameType) {
+                stopBoardRoomSource('lobby');
+                if (scope.lobbyGameType) {
+                    const t = scope.lobbyGameType;
+                    listenBoardRoomQuery('lobby',
+                        query(roomsCol, where('gameType', '==', t), where('status', 'in', boardLobbyQueryStatuses(t)), limit(BOARD_LOBBY_QUERY_LIMIT)),
+                        query(roomsCol, where('gameType', '==', t), limit(BOARD_LOBBY_QUERY_LIMIT)));
+                }
+            }
+            if (prev[1] !== scope.mineId) {
+                stopBoardRoomSource('mine');
+                stopBoardRoomSource('mineOther');
+                if (scope.mineId) {
+                    // 문서 id로 둘로 나눠 받아요. 알까기 방(alk_)은 id가 bg_보다 앞이라, 한 질의로 받으면 끝난 알까기 방이
+                    // 칸을 다 채워 새 오목·체스 방이 안 와요. id 범위만 쓰니 복합 색인은 필요 없어요.
+                    const mineIs = where('participantIds', 'array-contains', scope.mineId);
+                    listenBoardRoomQuery('mine',
+                        query(roomsCol, mineIs, orderBy(documentId()), startAt(BOARD_MINE_ID_SPLIT), limit(BOARD_MINE_QUERY_LIMIT)),
+                        query(roomsCol, mineIs, limit(BOARD_MINE_QUERY_LIMIT)));
+                    listenBoardRoomQuery('mineOther',
+                        query(roomsCol, mineIs, orderBy(documentId()), endBefore(BOARD_MINE_ID_SPLIT), limit(BOARD_MINE_OTHER_QUERY_LIMIT)),
+                        null);
+                }
+            }
+            if (prev[2] !== scope.roomId || (!scope.roomId && _boardRoomSources.room.size)) {
+                if (_boardRoomUnsubs.room) {
+                    try { _boardRoomUnsubs.room(); } catch (_) { /* noop */ }
+                    _boardRoomUnsubs.room = null;
+                }
+                const keep = scope.roomId && _boardRoomSources.room.get(scope.roomId);
+                _boardRoomSources.room.clear();
+                if (keep) _boardRoomSources.room.set(scope.roomId, keep);
+                if (scope.roomId) {
+                    const id = scope.roomId;
+                    _boardRoomUnsubs.room = onSnapshot(boardGameRoomRef(id), (snap) => {
+                        const next = new Map();
+                        if (snap.exists()) next.set(snap.id, sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now()));
+                        _boardRoomSources.room = next;
+                        applyBoardGameRoomsRows(mergedBoardRoomRows());
+                    }, (err) => console.warn('boardGameRoom listen', err && err.code));
+                }
+            }
+            _boardGameRooms = mergedBoardRoomRows();
+        }
+
+        function startBoardRoomScopeWatch() {
+            // 탭을 옮기거나 창을 가렸을 때도 범위를 맞추려고 가볍게 확인해요(화면만 보고, Firestore는 읽지 않아요).
+            if (!_boardRoomScopeTimer) _boardRoomScopeTimer = setInterval(syncBoardRoomSubscriptions, 1500);
+            if (!startBoardRoomScopeWatch.bound && typeof document !== 'undefined') {
+                startBoardRoomScopeWatch.bound = true;
+                document.addEventListener('visibilitychange', () => syncBoardRoomSubscriptions());
+            }
+            syncBoardRoomSubscriptions();
+        }
+
+        /** 새로고침 뒤 알까기 이어 하기: 저장해 둔 방 하나만 한 번 읽어요(전체 방 구독 없이). */
+        async function bootBoardRoomResume() {
+            if (_alkResumeTried) return;
+            _alkResumeTried = true;
+            const saved = _alkResumeBoot;
+            let rows = [];
+            if (saved && saved.kind === 'room' && saved.id && db) {
+                try {
+                    const snap = await getDoc(boardGameRoomRef(saved.id));
+                    if (snap.exists()) {
+                        const row = sanitizeBoardRoom({ id: snap.id, ...snap.data() }, Date.now());
+                        _boardRoomSources.room.set(row.id, row);
+                        _boardGameRooms = mergedBoardRoomRows();
+                        rows = [row];
+                    }
+                } catch (e) {
+                    console.warn('alkkagi resume read', e);
+                }
+            }
+            tryResumeAlkkagi(rows);
+            // 이어 하지 않았으면 잠깐 넣어 둔 방은 버려요(대전 화면이 아닐 때 옛 방이 남지 않게).
+            if (rows.length && !(_boardGameView === 'play' && _boardGameActiveId === rows[0].id)) {
+                _boardRoomSources.room.delete(rows[0].id);
+                _boardGameRooms = mergedBoardRoomRows();
+            }
+            syncBoardRoomSubscriptions();
+        }
+
+        function applyBoardGameRoomsRows(rows) {
+            const now = Date.now();
             _boardGameRooms = rows;
             void sweepIdleBoardRooms(now);
             const me = boardGameSelfId();
             // 두는 중 > 대기 > 결과 순서로 내 방을 골라요. 끝난 옛 방 때문에 방금 만든 방이 닫히지 않게 해요.
             const mineActive = pickMyActiveBoardRoom(rows, me);
-            if (mineActive) void vacateOtherBoardRooms(mineActive.id);
+            // 끝난 판은 '지금 앉은 자리'가 아니에요. 끝난 방 때문에 새로 낸 참가 신청·새로 연 방이 지워지지 않게 해요.
+            if (mineActive && mineActive.status !== 'finished') void vacateOtherBoardRooms(mineActive.id);
             if (classtoolSub === 'boardgames') renderBoardGamePanel();
             const minePlaying = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || r.status === 'finished'));
             // 알까기는 두는 중인 판에만 저절로 들어가요. 결과 화면에서 나온 뒤 끝난 방으로 다시 끌려가지 않아요.
-            const mineEnter = rows.find((r) => isRoomMember(r, me) && (r.status === 'playing' || (r.status === 'finished' && r.gameType !== 'alkkagi')));
-            if (mineEnter && !_alkLeftRooms.has(boardRoomInstanceKey(mineEnter)) && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
+            // 결과를 보고 스스로 나온 방은 건너뛰어요(내 방 구독이 목록을 열 때마다 바로 와서, 끝난 방으로 다시 끌려가지 않게).
+            // 새 탭·다른 기기에서 처음 연 목록에서는 끝난 옛 판으로 들어가지 않아요(이 화면에서 두는 걸 봤거나, 연 뒤에 끝난 판만).
+            const mineEnter = rows.find((r) => shouldAutoEnterBoardRoom(r, {
+                selfId: me,
+                leftKeys: _alkLeftRooms,
+                seenLiveKeys: _boardSeenLiveRooms,
+                sinceMs: _boardScreenStartedAt,
+            }));
+            rows.forEach((r) => {
+                if ((r.status === 'waiting' || r.status === 'playing') && isRoomMember(r, me)) _boardSeenLiveRooms.add(boardRoomInstanceKey(r));
+            });
+            if (mineEnter && _boardGameView === 'lobby' && classtoolSub === 'boardgames' && !_gomokuAiSession && !_chessAiSession && !_alkLocal) {
                 enterBoardGameTable(mineEnter.id);
             }
             if (!_alkResumeTried) {
@@ -12168,6 +12365,7 @@ ${subjectLine}
             if (chessPlay) chessPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'chess'));
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
+            syncBoardRoomSubscriptions();
         }
 
         function gomokuAiRoomView() {
@@ -13379,8 +13577,8 @@ ${subjectLine}
             _chessPending = null;
             _chessPromo = null;
             const room = currentBoardGameRoom();
-            if (room && room.gameType === 'chess') _boardGameType = 'chess';
-            if (room && room.gameType === 'alkkagi') _boardGameType = 'alkkagi';
+            // 다른 게임 목록에서 '내 방'으로 들어올 때도 그 방 게임 화면을 보여 줘요(오목 방이 체스 판으로 보이던 문제).
+            if (room && getBoardGameDef(room.gameType)) _boardGameType = room.gameType;
             showBoardGameView('play');
             if (room && room.gameType === 'chess') renderChessPlay(room);
             else if (room && room.gameType === 'alkkagi') renderAlkkagiPlay(room);
@@ -14561,7 +14759,7 @@ ${subjectLine}
                     if (!ok) return;
                     await forfeitAlkkagiNow();
                     // 나간 사람은 결과 카드 대신 방 목록으로 가요. 이 방으로는 저절로 다시 들어가지 않아요.
-                    _alkLeftRooms.add(boardRoomInstanceKey(alkRoom));
+                    rememberLeftBoardRoom(alkRoom);
                     _boardGameActiveId = '';
                     saveAlkkagiResume('');
                     showBoardGameView('lobby');
@@ -14581,6 +14779,8 @@ ${subjectLine}
                 await forfeitCurrentGomoku();
                 return;
             }
+            // 끝난 판에서 나가면 그 방으로는 저절로 다시 들어가지 않아요.
+            if (room && room.status === 'finished') rememberLeftBoardRoom(room);
             clearGomokuAiSession();
             clearChessAiSession();
             _boardGameActiveId = '';
@@ -21384,10 +21584,11 @@ ${subjectLine}
                             if (classtoolSub === 'openlesson') renderOpenLessonPanel();
                         });
 
+                        // 방 컬렉션 전체를 구독하지 않아요. 보드게임 로비·대전 화면에 있을 때만 필요한 방을 받아요.
                         if (unsubscribeBoardRooms) unsubscribeBoardRooms();
-                        unsubscribeBoardRooms = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'boardGameRooms'), (snap) => {
-                            applyBoardGameRoomsSnapshot(snap);
-                        });
+                        unsubscribeBoardRooms = null;
+                        startBoardRoomScopeWatch();
+                        void bootBoardRoomResume();
 
                         if(unsubscribeRaid) unsubscribeRaid();
                         unsubscribeRaid = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'raid', 'state'), snap => {

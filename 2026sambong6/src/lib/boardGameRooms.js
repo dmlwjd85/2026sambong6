@@ -69,8 +69,19 @@ export function boardRoomStatusLabel(status) {
     return map[String(status || '')] || '대기';
 }
 
-export function createBoardRoomId() {
-    return `bg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+/** 방 id 시간 부분의 기준(36진수 9자리 최대값). 이 값에서 만든 시각을 빼서 새 방일수록 id가 앞에 와요. */
+export const BOARD_ROOM_ID_TIME_MAX = 36 ** 9 - 1;
+
+/**
+ * 새 방 id: `bg_0` + (기준 − 만든 시각)을 36진수 9자리로 + 임의 6자.
+ * Firestore는 orderBy가 없으면 문서 id 오름차순으로 limit을 자르므로, 새 방일수록 id가 앞에 오게 만들어
+ * 정렬·복합 색인 없이도 방이 많을 때 옛 방부터 잘리게 해요.
+ * 예전 id(`bg_` + 시각, 맨 앞 글자가 '0'이 아님)보다 항상 앞에 와요.
+ */
+export function createBoardRoomId(now = Date.now()) {
+    const t = Math.max(0, Math.floor(Number(now) || Date.now()));
+    const rev = Math.max(0, BOARD_ROOM_ID_TIME_MAX - t).toString(36).padStart(9, '0');
+    return `bg_0${rev}_${Math.random().toString(36).slice(2, 8).padEnd(6, '0')}`;
 }
 
 /**
@@ -184,6 +195,7 @@ export function emptyBoardRoom(gameType = 'gomoku', now = 0) {
         lastActivityAt: t,
         createdAt: t,
         updatedAt: t,
+        round: 0,
         game: emptyGameForType(def.id, t),
     };
 }
@@ -214,8 +226,15 @@ export function sanitizeBoardRoom(raw, now = 0) {
         lastActivityAt,
         createdAt,
         updatedAt,
+        round: sanitizeBoardRoomRound(raw.round),
         game: sanitizeGameForType(def.id, raw.game, t || updatedAt),
     };
+}
+
+/** '한 판 더'를 누를 때마다 1씩 올리는 판 번호예요. 0 이상의 정수만 받아요. */
+function sanitizeBoardRoomRound(raw) {
+    const n = Math.floor(Number(raw));
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 1_000_000) : 0;
 }
 
 function touchRoom(room, now, extra = {}) {
@@ -234,7 +253,7 @@ export function createBoardRoom({ gameType, hostId, hostName, now, timerEnabled 
     if (!def || !hid) return { ok: false, error: 'bad_create', room: null };
     const t = Math.max(0, Math.floor(Number(now) || Date.now()));
     const room = emptyBoardRoom(def.id, t);
-    room.id = String(id || '').trim().slice(0, 40) || createBoardRoomId();
+    room.id = String(id || '').trim().slice(0, 40) || createBoardRoomId(t);
     room.hostId = hid;
     room.hostName = cleanName(hostName) || hid;
     room.timerEnabled = timerEnabled === true;
@@ -431,10 +450,62 @@ export function pickMyActiveBoardRoom(rooms, studentId) {
     return mine[0] || null;
 }
 
-/** 같은 id를 다시 쓰는 방(알까기)도 판마다 구별되게, id와 만든 시각을 함께 써요. */
+/**
+ * 같은 id를 다시 쓰는 방(알까기)도 판마다 구별되게, id와 만든 시각을 함께 써요.
+ * '한 판 더'로 새 판이 되면 판 번호(round)가 붙어서, 앞 판에서 나온 사람도 새 판에는 다시 들어와요.
+ * 판 번호가 0이면 예전 키(`id:만든 시각`) 그대로라, 이미 저장해 둔 '나온 방' 기억과 맞아요.
+ */
 export function boardRoomInstanceKey(room) {
     const r = sanitizeBoardRoom(room);
-    return r.id ? `${r.id}:${r.createdAt}` : '';
+    if (!r.id) return '';
+    return r.round > 0 ? `${r.id}:${r.createdAt}:${r.round}` : `${r.id}:${r.createdAt}`;
+}
+
+/**
+ * 방 목록 화면에서 이 방으로 저절로 들어갈지 정해요(순수 함수).
+ * - 내가 앉은 방만, 스스로 나온 판(leftKeys)은 빼요.
+ * - 두는 중인 판은 들어가요.
+ * - 끝난 판(알까기 제외)은 이 화면에서 두는 중이거나 기다리는 모습을 본 판(seenLiveKeys)이거나,
+ *   이 화면을 연 뒤(sinceMs 이후)에 끝난 판일 때만 들어가요. 새 탭·다른 기기에서 예전에 끝난 결과로 끌려가지 않게 해요.
+ * @param {object} room
+ * @param {{ selfId?: string, leftKeys?: Set<string>, seenLiveKeys?: Set<string>, sinceMs?: number }} [o]
+ */
+export function shouldAutoEnterBoardRoom(room, o = {}) {
+    const r = sanitizeBoardRoom(room);
+    if (!r.id || !isRoomMember(r, o.selfId)) return false;
+    const key = boardRoomInstanceKey(r);
+    if (o.leftKeys && o.leftKeys.has(key)) return false;
+    if (r.status === 'playing') return true;
+    if (r.status !== 'finished' || r.gameType === 'alkkagi') return false;
+    if (o.seenLiveKeys && o.seenLiveKeys.has(key)) return true;
+    const since = Number(o.sinceMs) || 0;
+    return since > 0 && r.updatedAt >= since;
+}
+
+/** 나온 끝난 방 기억(같은 탭 sessionStorage)에 남기는 최대 개수. */
+export const BOARD_LEFT_ROOMS_MAX = 30;
+
+/** 저장해 둔 '나온 방' 목록을 읽어요. 깨진 값은 빈 목록이에요. */
+export function parseBoardLeftRooms(raw) {
+    let arr = raw;
+    if (typeof raw === 'string') {
+        try { arr = JSON.parse(raw); } catch (_) { arr = null; }
+    }
+    if (!Array.isArray(arr)) return [];
+    const out = [];
+    arr.forEach((k) => {
+        const key = typeof k === 'string' ? k.trim().slice(0, 80) : '';
+        if (key && !out.includes(key)) out.push(key);
+    });
+    return out.slice(-BOARD_LEFT_ROOMS_MAX);
+}
+
+/** '나온 방' 목록에 하나 더해요. 오래된 것부터 버려 상한을 지켜요. */
+export function rememberBoardLeftRoom(list, key) {
+    const out = parseBoardLeftRooms(list).filter((k) => k !== key);
+    const k = typeof key === 'string' ? key.trim().slice(0, 80) : '';
+    if (k) out.push(k);
+    return out.slice(-BOARD_LEFT_ROOMS_MAX);
 }
 
 /**
@@ -526,7 +597,8 @@ export function continueBoardRoom(room, { actorId, now } = {}) {
     return {
         ok: true,
         error: '',
-        room: touchRoom(r, t, { status: 'playing', game }),
+        // 방 id·만든 시각은 그대로 두고 판 번호만 올려요(#88 규칙: hostUid·createdAt 바꾸지 않기).
+        room: touchRoom(r, t, { status: 'playing', game, round: r.round + 1 }),
     };
 }
 
@@ -590,5 +662,68 @@ export function boardRoomToDoc(room) {
     const game = r.gameType === 'gomoku'
         ? gomokuGameToDoc(r.game)
         : (r.gameType === 'chess' ? chessGameToDoc(r.game) : (r.gameType === 'alkkagi' ? alkkagiGameToDoc(r.game) : r.game));
-    return { ...r, game };
+    return { ...r, game, participantIds: boardRoomParticipantIds(r) };
+}
+
+/**
+ * 방 문서에 함께 넣는 참가자 id 목록(방장·멤버·대기 중인 참가 신청).
+ * members 는 객체 배열이라 Firestore 질의를 못 해서, 이 목록으로 `array-contains` 질의를 해요(단일 필드 색인만 써요).
+ */
+export function boardRoomParticipantIds(room) {
+    const r = room && typeof room === 'object' ? room : {};
+    const ids = [];
+    const push = (raw) => {
+        const id = cleanId(raw);
+        if (id && !ids.includes(id)) ids.push(id);
+    };
+    push(r.hostId);
+    (Array.isArray(r.members) ? r.members : []).forEach((m) => push(m && m.id));
+    (Array.isArray(r.joinRequests) ? r.joinRequests : []).forEach((j) => {
+        if (j && j.status === 'pending') push(j.id);
+    });
+    return ids;
+}
+
+/** 로비 목록 질의 한 번에 받는 방 수 상한. 방 id가 새 방일수록 앞이라(createBoardRoomId) 넘치면 옛 방부터 빠져요. */
+export const BOARD_LOBBY_QUERY_LIMIT = 30;
+/** 내 방(참가 중·신청 중) 중 `bg_`로 시작하는 방(오목·체스) 질의 상한. 넘치면 옛 방부터 빠져요. */
+export const BOARD_MINE_QUERY_LIMIT = 10;
+/**
+ * 내 방 질의를 문서 id로 둘로 나누는 경계예요. 알까기 방(`alk_<방장>`)은 id가 이보다 앞이라 따로 받아요.
+ * 끝난 알까기 방이 오목·체스 '내 방' 칸을 채워 새 대전에 못 들어가던 문제를 막아요(복합 색인 없이 id 범위만 써요).
+ */
+export const BOARD_MINE_ID_SPLIT = 'bg_';
+/** 알까기 등 `bg_` 앞 id 방의 '내 방' 질의 상한. 알까기 방은 방장마다 하나라 반 인원 정도면 충분해요. */
+export const BOARD_MINE_OTHER_QUERY_LIMIT = 20;
+
+/** 로비 질의에 넣을 상태. 알까기는 끝난 방을 목록에 보이지 않아서 빼요. */
+export function boardLobbyQueryStatuses(gameType) {
+    return gameType === 'alkkagi' ? ['waiting', 'playing'] : ['waiting', 'playing', 'finished'];
+}
+
+/**
+ * 지금 화면에 필요한 방 구독 범위를 정해요(순수 함수).
+ * - 보드게임 창이 아니면 아무것도 구독하지 않아요.
+ * - 로비가 화면에 보일 때만: 그 게임의 방 목록 + 내 방(다른 게임 방 포함).
+ * - 대전 중: 내 방 문서 하나만.
+ * @param {{ toolOpen?: boolean, view?: string, gameType?: string, activeRoomId?: string, selfId?: string, lobbyVisible?: boolean, localPlay?: boolean }} [o]
+ * @returns {{ lobbyGameType: string, mineId: string, roomId: string }}
+ */
+export function boardRoomSubscriptionScope(o = {}) {
+    const none = { lobbyGameType: '', mineId: '', roomId: '' };
+    if (!o || !o.toolOpen) return none;
+    if (o.view === 'play') {
+        const roomId = o.localPlay ? '' : String(o.activeRoomId || '').trim();
+        return { ...none, roomId };
+    }
+    if (o.view === 'lobby' && o.lobbyVisible && isBoardGameType(o.gameType)) {
+        return { lobbyGameType: o.gameType, mineId: cleanId(o.selfId), roomId: '' };
+    }
+    return none;
+}
+
+/** 범위가 같은지 비교할 때 쓰는 키. */
+export function boardRoomScopeKey(scope) {
+    const s = scope || {};
+    return `${s.lobbyGameType || ''}|${s.mineId || ''}|${s.roomId || ''}`;
 }

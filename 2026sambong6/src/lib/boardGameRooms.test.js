@@ -1,7 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    BOARD_LEFT_ROOMS_MAX,
+    BOARD_LOBBY_QUERY_LIMIT,
+    BOARD_MINE_QUERY_LIMIT,
+    createBoardRoomId,
+    parseBoardLeftRooms,
+    rememberBoardLeftRoom,
+    boardRoomInstanceKey,
     BOARD_ROOM_IDLE_TTL_MS,
+    boardLobbyQueryStatuses,
+    boardRoomParticipantIds,
+    boardRoomScopeKey,
+    boardRoomSubscriptionScope,
     approveJoinBoardRoom,
     closeBoardRoom,
     continueBoardRoom,
@@ -333,5 +344,205 @@ describe('알까기 방 지우기', () => {
         const again = mod.deleteWaitingBoardRoom(closed, { actorId: '1', now: 1300 });
         assert.equal(again.ok, true);
         assert.equal(again.room.status, 'closed');
+    });
+});
+
+describe('boardGameRooms subscription scope (읽기 절약)', () => {
+    it('boardRoomToDoc 에 방장·멤버·대기 신청 id 를 participantIds 로 넣어요', () => {
+        const made = createBoardRoom({ gameType: 'gomoku', hostId: 'h1', hostName: '방장', now: 1000 });
+        let room = requestJoinBoardRoom(made.room, { studentId: 's2', studentName: '둘', now: 1100 }).room;
+        room = requestJoinBoardRoom(room, { studentId: 's3', studentName: '셋', now: 1200 }).room;
+        room = rejectJoinBoardRoom(room, { hostId: 'h1', studentId: 's3', now: 1300 }).room;
+        assert.deepEqual(boardRoomParticipantIds(room), ['h1', 's2']);
+        assert.deepEqual(boardRoomToDoc(room).participantIds, ['h1', 's2']);
+        const approved = approveJoinBoardRoom(room, { hostId: 'h1', studentId: 's2', now: 1400 }).room;
+        assert.deepEqual(boardRoomToDoc(approved).participantIds, ['h1', 's2']);
+        assert.deepEqual(boardRoomParticipantIds(null), []);
+    });
+
+    it('보드게임 창이 아니면 아무 방도 구독하지 않아요', () => {
+        const s = boardRoomSubscriptionScope({ toolOpen: false, view: 'lobby', gameType: 'gomoku', selfId: 'a', lobbyVisible: true });
+        assert.deepEqual(s, { lobbyGameType: '', mineId: '', roomId: '' });
+        assert.deepEqual(boardRoomSubscriptionScope(), { lobbyGameType: '', mineId: '', roomId: '' });
+    });
+
+    it('로비가 보일 때만 그 게임 목록과 내 방을 구독해요', () => {
+        assert.deepEqual(
+            boardRoomSubscriptionScope({ toolOpen: true, view: 'lobby', gameType: 'chess', selfId: 'a', lobbyVisible: true }),
+            { lobbyGameType: 'chess', mineId: 'a', roomId: '' },
+        );
+        assert.deepEqual(
+            boardRoomSubscriptionScope({ toolOpen: true, view: 'lobby', gameType: 'chess', selfId: 'a', lobbyVisible: false }),
+            { lobbyGameType: '', mineId: '', roomId: '' },
+        );
+        assert.equal(boardRoomSubscriptionScope({ toolOpen: true, view: 'lobby', gameType: 'nope', selfId: 'a', lobbyVisible: true }).lobbyGameType, '');
+        assert.equal(boardRoomSubscriptionScope({ toolOpen: true, view: 'home', gameType: 'gomoku', selfId: 'a', lobbyVisible: true }).lobbyGameType, '');
+    });
+
+    it('대전 중에는 내 방 문서 하나만, AI·혼자 하기는 구독하지 않아요', () => {
+        assert.deepEqual(
+            boardRoomSubscriptionScope({ toolOpen: true, view: 'play', gameType: 'gomoku', activeRoomId: 'r1', selfId: 'a', lobbyVisible: false }),
+            { lobbyGameType: '', mineId: '', roomId: 'r1' },
+        );
+        assert.equal(boardRoomSubscriptionScope({ toolOpen: true, view: 'play', activeRoomId: 'r1', localPlay: true }).roomId, '');
+    });
+
+    it('범위 키와 로비 상태 목록', () => {
+        assert.equal(boardRoomScopeKey({ lobbyGameType: 'gomoku', mineId: 'a', roomId: '' }), 'gomoku|a|');
+        assert.equal(boardRoomScopeKey(null), '||');
+        assert.deepEqual(boardLobbyQueryStatuses('alkkagi'), ['waiting', 'playing']);
+        assert.deepEqual(boardLobbyQueryStatuses('gomoku'), ['waiting', 'playing', 'finished']);
+        assert.ok(BOARD_LOBBY_QUERY_LIMIT >= 20);
+    });
+});
+
+// Firestore는 orderBy 없이 limit을 걸면 문서 id 오름차순으로 앞에서부터 잘라요(같은 바이트 순서로 흉내 내요).
+function firestoreLimit(rooms, pred, n) {
+    return rooms.filter(pred).sort((a, b) => (a.id < b.id ? -1 : (a.id > b.id ? 1 : 0))).slice(0, n);
+}
+
+describe('방이 많아도 새 방이 목록에 보여요(정렬·색인 없이)', () => {
+    const T0 = Date.UTC(2026, 9, 27, 1, 0, 0);
+
+    it('새 방 id일수록 앞에 오고, 예전 id(bg_+시각)보다도 앞이에요', () => {
+        const a = createBoardRoomId(T0);
+        const b = createBoardRoomId(T0 + 1);
+        const c = createBoardRoomId(T0 + 60 * 60 * 1000);
+        assert.match(a, /^bg_0[0-9a-z]{9}_[0-9a-z]{6}$/);
+        assert.ok(c < b && b < a);
+        const legacy = `bg_${(T0 + 5 * 60 * 60 * 1000).toString(36)}_abcdef`;
+        assert.ok(a < legacy, '예전 형식 방은 새 형식 뒤에 와요');
+        assert.ok(a.length <= 40);
+    });
+
+    it('같은 종류 방이 31개 넘게 있어도 방금 만든 방이 로비 질의(limit)에 들어가요', () => {
+        const rooms = [];
+        for (let i = 0; i < 35; i++) {
+            const st = ['waiting', 'playing', 'finished'][i % 3];
+            const made = createBoardRoom({ gameType: 'gomoku', hostId: `h${i}`, hostName: `방장${i}`, now: T0 + i * 1000 }).room;
+            rooms.push({ ...made, status: st });
+        }
+        const fresh = createBoardRoom({ gameType: 'gomoku', hostId: 'new1', hostName: '새방장', now: T0 + 40 * 1000 }).room;
+        rooms.push(fresh);
+        assert.ok(rooms.length > BOARD_LOBBY_QUERY_LIMIT);
+        const statuses = boardLobbyQueryStatuses('gomoku');
+        const got = firestoreLimit(rooms, (r) => r.gameType === 'gomoku' && statuses.includes(r.status), BOARD_LOBBY_QUERY_LIMIT);
+        assert.equal(got.length, BOARD_LOBBY_QUERY_LIMIT);
+        assert.ok(got.some((r) => r.id === fresh.id), '새 방이 보여야 해요');
+        // 잘리는 건 가장 옛 방들이에요.
+        assert.ok(!got.some((r) => r.hostId === 'h0'));
+        assert.ok(listVisibleBoardRooms(got, T0 + 41 * 1000).some((r) => r.id === fresh.id));
+    });
+
+    it('내 방이 11개 넘게 있어도 방금 참가 신청한 방이 내 방 질의(limit)에 들어가요', () => {
+        const rooms = [];
+        for (let i = 0; i < 12; i++) {
+            const type = i % 2 ? 'chess' : 'gomoku';
+            const made = createBoardRoom({ gameType: type, hostId: `m${i}`, hostName: `방장${i}`, now: T0 + i * 1000 }).room;
+            const asked = requestJoinBoardRoom(made, { studentId: 's1', studentName: '나', now: T0 + i * 1000 + 10 }).room;
+            rooms.push(boardRoomToDoc(asked));
+        }
+        const fresh = createBoardRoom({ gameType: 'chess', hostId: 'mx', hostName: '새방장', now: T0 + 60 * 1000 }).room;
+        const freshAsked = boardRoomToDoc(requestJoinBoardRoom(fresh, { studentId: 's1', studentName: '나', now: T0 + 61 * 1000 }).room);
+        rooms.push(freshAsked);
+        assert.ok(rooms.length > BOARD_MINE_QUERY_LIMIT);
+        const got = firestoreLimit(rooms, (r) => r.participantIds.includes('s1'), BOARD_MINE_QUERY_LIMIT);
+        assert.equal(got.length, BOARD_MINE_QUERY_LIMIT);
+        assert.ok(got.some((r) => r.id === fresh.id), '새로 신청한 방이 보여야 해요');
+    });
+});
+
+describe('나온 끝난 방 기억(sessionStorage)', () => {
+    it('저장·읽기와 상한, 깨진 값', () => {
+        const room = createBoardRoom({ gameType: 'gomoku', hostId: 'a', hostName: 'A', now: 1000 }).room;
+        const key = boardRoomInstanceKey(room);
+        const saved = JSON.stringify(rememberBoardLeftRoom([], key));
+        assert.deepEqual(parseBoardLeftRooms(saved), [key]);
+        assert.deepEqual(parseBoardLeftRooms('{깨짐'), []);
+        assert.deepEqual(parseBoardLeftRooms(null), []);
+        let list = [];
+        for (let i = 0; i < BOARD_LEFT_ROOMS_MAX + 5; i++) list = rememberBoardLeftRoom(list, `r${i}:1`);
+        assert.equal(list.length, BOARD_LEFT_ROOMS_MAX);
+        assert.equal(list[list.length - 1], `r${BOARD_LEFT_ROOMS_MAX + 4}:1`);
+        assert.ok(!list.includes('r0:1'));
+        assert.deepEqual(rememberBoardLeftRoom(['x:1', 'y:1'], 'x:1'), ['y:1', 'x:1']);
+    });
+});
+
+describe('#86 r3: 끝난 방 자동 입장·내 방 나눠 받기·한 판 더 판 번호', () => {
+    const m = roomLib;
+    function finishedPair(now = 1000) {
+        let room = createBoardRoom({ gameType: 'gomoku', hostId: 'a', hostName: '가', now }).room;
+        room = requestJoinBoardRoom(room, { studentId: 'b', studentName: '나', now: now + 100 }).room;
+        room = approveJoinBoardRoom(room, { hostId: 'a', studentId: 'b', now: now + 200 }).room;
+        return finishBoardRoom(room, { game: { ...room.game, winner: 1, endReason: 'five' }, now: now + 300 }).room;
+    }
+
+    it('N1: 새 탭에서 처음 받은 끝난 옛 판에는 들어가지 않고, 두는 판에는 들어간다', () => {
+        const fin = finishedPair(1000);
+        const opts = { selfId: 'b', leftKeys: new Set(), seenLiveKeys: new Set(), sinceMs: 50_000 };
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, opts), false);
+        const playing = continueBoardRoom(fin, { actorId: 'a', now: 60_000 }).room;
+        assert.equal(m.shouldAutoEnterBoardRoom(playing, opts), true);
+        assert.equal(m.shouldAutoEnterBoardRoom(playing, { ...opts, selfId: 'z' }), false);
+    });
+
+    it('N1: 이 화면에서 두는 걸 봤거나, 화면을 연 뒤에 끝난 판이면 결과로 들어간다', () => {
+        const fin = finishedPair(100_000);
+        const key = boardRoomInstanceKey(fin);
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', seenLiveKeys: new Set([key]), sinceMs: 999_999 }), true);
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', sinceMs: 100_000 }), true);
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', leftKeys: new Set([key]), sinceMs: 1 }), false);
+    });
+
+    it('N1: 끝난 알까기·기다리는 방에는 저절로 들어가지 않는다', () => {
+        const fin = { ...finishedPair(100_000), gameType: 'alkkagi', id: 'alk_a' };
+        assert.equal(m.shouldAutoEnterBoardRoom(fin, { selfId: 'b', sinceMs: 1 }), false);
+        const waiting = createBoardRoom({ gameType: 'gomoku', hostId: 'a', now: 1000 }).room;
+        assert.equal(m.shouldAutoEnterBoardRoom(waiting, { selfId: 'a', sinceMs: 1 }), false);
+    });
+
+    it('N3: 한 판 더를 누르면 판 번호가 올라 키가 바뀌고, 방 id·만든 시각·방장은 그대로다', () => {
+        const fin = finishedPair(1000);
+        assert.equal(fin.round, 0);
+        const oldKey = boardRoomInstanceKey(fin);
+        const next = continueBoardRoom(fin, { actorId: 'a', now: 9000 }).room;
+        assert.equal(next.round, 1);
+        assert.equal(next.id, fin.id);
+        assert.equal(next.createdAt, fin.createdAt);
+        assert.equal(next.hostId, fin.hostId);
+        assert.notEqual(boardRoomInstanceKey(next), oldKey);
+        assert.equal(boardRoomInstanceKey(next), `${fin.id}:${fin.createdAt}:1`);
+        // 앞 판에서 나온 B도 새 판에는 다시 들어와요.
+        assert.equal(m.shouldAutoEnterBoardRoom(next, { selfId: 'b', leftKeys: new Set([oldKey]), sinceMs: 1 }), true);
+        // 문서로 저장했다 다시 읽어도 판 번호가 남아요.
+        assert.equal(sanitizeBoardRoom(boardRoomToDoc(next)).round, 1);
+        const again = continueBoardRoom(finishBoardRoom(next, { game: next.game, now: 9500 }).room, { actorId: 'b', now: 9600 }).room;
+        assert.equal(again.round, 2);
+    });
+
+    it('N3: 판 번호가 이상한 값이면 0으로 읽는다(예전 문서 호환)', () => {
+        assert.equal(sanitizeBoardRoom({ id: 'x', round: -3 }).round, 0);
+        assert.equal(sanitizeBoardRoom({ id: 'x', round: 'abc' }).round, 0);
+        assert.equal(sanitizeBoardRoom({ id: 'x' }).round, 0);
+        assert.equal(sanitizeBoardRoom({ id: 'x', round: 2.7 }).round, 2);
+    });
+
+    it('N2: 상대 12명과 끝난 알까기 방이 있어도 새 오목 방은 오목·체스 내 방 칸에 들어온다', () => {
+        const split = m.BOARD_MINE_ID_SPLIT;
+        const alk = Array.from({ length: 12 }, (_, i) => `alk_s${String(i).padStart(2, '0')}`);
+        const oldBg = Array.from({ length: 3 }, (_, i) => `bg_${(1_700_000_000_000 + i).toString(36)}`);
+        const fresh = createBoardRoomId(1_800_000_000_000);
+        const all = [...alk, ...oldBg, fresh].sort();
+        // 예전 한 질의: id 오름차순으로 10개 → 알까기 방만 와요.
+        assert.ok(!all.slice(0, BOARD_MINE_QUERY_LIMIT).includes(fresh));
+        // 새 질의: bg_ 부터 10개 + bg_ 앞(알까기) 따로.
+        const bgPart = all.filter((id) => id >= split).slice(0, BOARD_MINE_QUERY_LIMIT);
+        const other = all.filter((id) => id < split).slice(0, m.BOARD_MINE_OTHER_QUERY_LIMIT);
+        assert.equal(bgPart[0], fresh);
+        assert.equal(other.length, 12);
+        assert.ok(alk.every((id) => id < split));
+        assert.ok(m.hostBoardRoomId('alkkagi', 'zzzz') < split);
+        assert.ok(createBoardRoomId(0) >= split && createBoardRoomId(Date.now()) >= split);
     });
 });

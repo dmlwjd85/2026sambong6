@@ -96,3 +96,59 @@ export function classXpGrantDecision(xp, lastSlot, slotKey) {
     if (String(lastSlot || '') === String(slotKey || '')) return 'already';
     return 'grant';
 }
+
+/**
+ * 이번 슬롯에 서버 트랜잭션을 돌릴 학생만 고릅니다.
+ * 마스터 계정, 빈 id(예: 'student_' 문서), 이미 이번 슬롯을 받은 학생은 읽지 않습니다.
+ * 화면 데이터에서 xp가 숫자가 아닌 학생은 invalidXp로 따로 돌려줍니다.
+ * skip(학생 → true)으로 신용 불량처럼 대상이 아닌 학생을 뺍니다.
+ */
+export function classXpTargets(students, slotKey, skip = () => false) {
+    const pending = [];
+    const invalidXp = [];
+    for (const stu of Array.isArray(students) ? students : []) {
+        if (!stu || typeof stu !== 'object') continue;
+        const id = String(stu.id == null ? '' : stu.id).trim();
+        if (!id || id === 'gm' || id === 'gm_a') continue;
+        if (skip(stu)) continue;
+        const decision = classXpGrantDecision(stu.xp, stu.lastClassXpSlot, slotKey);
+        if (decision === 'already') continue;
+        if (decision === 'invalid-xp') invalidXp.push(id);
+        else pending.push(id);
+    }
+    return { pending, invalidXp };
+}
+
+/** 저장 실패를 거절(denied), 사용량 초과(quota), 그 밖(other)으로 나눕니다. */
+export function classXpErrorKind(error) {
+    const code = String((error && error.code) || '');
+    if (code === 'permission-denied' || code.endsWith('/permission-denied')) return 'denied';
+    if (code === 'resource-exhausted' || code.endsWith('/resource-exhausted')) return 'quota';
+    return 'other';
+}
+
+function labelList(labels, max = 5) {
+    const list = (Array.isArray(labels) ? labels : []).map((v) => String(v || '').trim()).filter(Boolean);
+    if (list.length <= max) return list.join(', ');
+    return `${list.slice(0, max).join(', ')} 외 ${list.length - max}명`;
+}
+
+/**
+ * 선생님 화면에 띄울 짧은 알림 한 줄. 알릴 게 없으면 ''입니다.
+ * kind: 'quota' | 'denied' | 'other' | 'xp'
+ */
+export function classXpIssueMessage(kind, timeStr, labels = []) {
+    const when = timeStr ? `${timeStr} ` : '';
+    const who = labelList(labels);
+    if (kind === 'quota') {
+        return `⏰ ${when}수업 종료 경험치를 아직 못 줬어요. 오늘 서버 사용량이 다 차서 저장이 막혔어요. 풀리면 자동으로 다시 줄게요.`;
+    }
+    if (kind === 'denied') {
+        return `⏰ ${when}수업 종료 경험치를 저장하지 못했어요. 이 기기 시계를 한국 시간(서울)으로 자동 설정한 뒤 다시 열어 주세요.`;
+    }
+    if (!who) return '';
+    if (kind === 'xp') {
+        return `⏰ ${when}수업 종료 경험치를 못 준 학생이 있어요. 경험치 값이 숫자가 아니에요: ${who}`;
+    }
+    return `⏰ ${when}수업 종료 경험치를 못 받은 학생이 있어요. 잠시 뒤 다시 줄게요: ${who}`;
+}

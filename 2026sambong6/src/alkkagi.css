@@ -404,6 +404,16 @@
     background: rgba(59, 36, 18, 0.38);
     animation: alk-fade 0.16s ease-out;
 }
+/* 방 목록 위에 띄우는 알까기 창(방 지우기·이미 만든 방 안내). 판 화면 밖이라 색 변수를 여기서 줘요. */
+.alk-modal.is-lobby {
+    --alk-ink: #3b2412;
+    --alk-ink2: #6e4a2c;
+    --alk-cream: #f8efdc;
+    position: fixed;
+    z-index: 80;
+    font-family: 'JJAEM Body', 'Pretendard', 'Apple SD Gothic Neo', sans-serif;
+    color: var(--alk-ink);
+}
 .alk-modal-card {
     width: 100%;
     max-width: 320px;

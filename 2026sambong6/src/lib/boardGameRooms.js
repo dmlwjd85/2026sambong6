@@ -106,6 +106,23 @@ export function hostBoardRoomId(gameType, hostId) {
     return `alk_${hid}`;
 }
 
+/**
+ * 같은 학번이 다른 기기(uid)에서 알까기 방을 만들 때 쓰는 두 번째 id예요(#88 r3 R2-2).
+ * 규칙은 hostUid가 있는 방을 같은 학번만으로 덮어쓰지 못하게 해요. 그래서 기기(uid)마다 정해진 id를 따로 써요.
+ * alk_ 로 시작해서 '내 방' 질의(bg_ 앞쪽)에도 그대로 잡혀요. 같은 기기에서 여러 번 눌러도 id는 하나예요.
+ */
+export function hostBoardRoomFallbackId(gameType, hostId, uid) {
+    const base = hostBoardRoomId(gameType, hostId);
+    const me = typeof uid === 'string' ? uid.trim() : '';
+    if (!base || !me) return '';
+    let h = 2166136261;
+    for (let i = 0; i < me.length; i += 1) {
+        h ^= me.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return `${base}_${h.toString(36).padStart(6, '0').slice(-6)}`;
+}
+
 function cleanId(raw) {
     return String(raw || '').trim().slice(0, 20);
 }
@@ -397,6 +414,83 @@ export function claimBoardRoomHostUid(room, { hostId, uid } = {}) {
     return { ...room, hostUid: me, members };
 }
 
+/**
+ * 정해진 id(alk_학번)에 다른 기기가 만든 방이 아직 살아 있으면, 이 기기는 두 번째 id로 만들어야 해요(#88 r3 R2-2).
+ * 30분 정리 대상이면 누구나 덮어쓸 수 있어서 그대로 써요. hostUid가 없는 옛 방도 그대로 써요.
+ */
+export function needsHostBoardRoomFallback(existing, { uid = '', now } = {}) {
+    if (!existing || typeof existing !== 'object') return false;
+    const me = cleanUid(uid);
+    const owner = cleanUid(existing.hostUid);
+    if (!me || !owner || owner === me) return false;
+    return !isBoardRoomCleanupAgeDue(existing, now);
+}
+
+/**
+ * 승인될 때 uid가 비어 있던 내 자리(섞인 버전 화면에서 승인된 자리)에 이 기기 uid를 채워요(#88 r3 R2-4).
+ * 규칙은 이 채우기만 따로 받아요(다른 칸은 그대로). 채울 필요가 없으면 null이에요.
+ */
+export function claimBoardRoomSeatUid(room, { studentId, uid } = {}) {
+    const me = cleanUid(uid);
+    const id = cleanId(studentId);
+    if (!room || typeof room !== 'object' || !me || !id) return null;
+    if (cleanUid(room.hostUid) === me) return null;
+    const members = Array.isArray(room.members) ? room.members : [];
+    if (members.some((m) => m && cleanUid(m.uid) === me)) return null;
+    const idx = members.findIndex((m) => m && cleanId(m.id) === id);
+    if (idx < 0 || cleanUid(members[idx].uid)) return null;
+    const next = members.map((m, i) => (i === idx ? { ...m, uid: me } : m));
+    return { ...room, members: next };
+}
+
+/** 기기 시계가 이만큼 넘게 틀리면 규칙(서버 시각 ±10분)에 막힐 수 있다고 안내해요. */
+export const BOARD_ROOM_CLOCK_WARN_MS = 9 * 60 * 1000;
+
+/**
+ * 서버 응답의 Date 머리글로 기기 시계가 얼마나 틀렸는지 재요(양수면 기기가 빨라요).
+ * 머리글이 없거나 깨졌으면 null이에요.
+ */
+export function boardRoomClockSkewMs(dateHeader, { sentAt, receivedAt } = {}) {
+    const server = Date.parse(String(dateHeader || ''));
+    const a = Number(sentAt);
+    const b = Number(receivedAt);
+    if (!Number.isFinite(server) || !Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
+    return Math.round((a + b) / 2 - server);
+}
+
+/**
+ * 규칙이 방 쓰기를 막았을 때 왜 막혔는지 골라요(#88 r3 R2-4·R2-5).
+ * - clock: 기기 시계가 9분 넘게 틀려요.
+ * - other_device: 내 자리(또는 방장 자리)는 다른 기기 uid로 적혀 있어요.
+ * - stale: 그 밖(옛 화면 등). 예전처럼 새로고침 안내를 띄워요.
+ */
+export function boardRoomDeniedReason({ room = null, studentId = '', uid = '', skewMs = null } = {}) {
+    if (typeof skewMs === 'number' && Math.abs(skewMs) > BOARD_ROOM_CLOCK_WARN_MS) return 'clock';
+    const me = cleanUid(uid);
+    const id = cleanId(studentId);
+    if (room && typeof room === 'object' && me && id) {
+        if (cleanId(room.hostId) === id && cleanUid(room.hostUid) && cleanUid(room.hostUid) !== me) return 'other_device';
+        const seat = (Array.isArray(room.members) ? room.members : []).find((m) => m && cleanId(m.id) === id);
+        if (seat && cleanUid(seat.uid) && cleanUid(seat.uid) !== me) return 'other_device';
+    }
+    return 'stale';
+}
+
+/** 막힌 까닭에 맞는 안내 문구예요(stale은 화면 쪽 새로고침 안내를 그대로 써요). */
+export function boardRoomDeniedText(reason, { skewMs = 0, host = false } = {}) {
+    if (reason === 'clock') {
+        const min = Math.max(1, Math.round(Math.abs(Number(skewMs) || 0) / 60000));
+        const way = Number(skewMs) > 0 ? '빠르게' : '느리게';
+        return `기기 시계가 약 ${min}분 ${way} 맞춰져 있어서 저장하지 못했어요.<br>기기 설정에서 날짜·시간을 '자동'으로 맞춘 뒤 다시 해 주세요.`;
+    }
+    if (reason === 'other_device') {
+        return host
+            ? '이 방은 처음 만든 기기에서만 바꿀 수 있어요.<br>그 기기로 이어서 하거나, 이 방을 두고 새 방을 만들어 주세요.'
+            : '이 자리는 처음 들어간 기기에 묶여 있어요.<br>그 기기로 이어서 하거나, 방장에게 판을 끝내 달라고 해 주세요.';
+    }
+    return '';
+}
+
 /** 정리한 방을 기기에 기억하는 키. 같은 id를 다시 쓰는 알까기 방도 판마다 따로 기억해요. */
 export function boardRoomCleanupKey(room) {
     return boardRoomInstanceKey(room);
@@ -658,8 +752,9 @@ export function rememberBoardLeftRoom(list, key) {
  * 다른 방에 들어가거나 방을 새로 만들 때 정리할 대상.
  * 내가 방장으로 열어 둔 대기 방, 다른 방에 넣어 둔 참가 대기만 모읍니다.
  */
-export function collectBoardRoomVacateActions(rooms, { studentId, exceptRoomId = '' } = {}) {
+export function collectBoardRoomVacateActions(rooms, { studentId, exceptRoomId = '', uid = '' } = {}) {
     const id = cleanId(studentId);
+    const me = cleanUid(uid);
     const except = String(exceptRoomId || '').trim();
     const closeHostIds = [];
     const cancelJoinIds = [];
@@ -667,7 +762,8 @@ export function collectBoardRoomVacateActions(rooms, { studentId, exceptRoomId =
     (Array.isArray(rooms) ? rooms : []).forEach((raw) => {
         const r = sanitizeBoardRoom(raw);
         if (!r.id || r.id === except || r.status === 'closed') return;
-        if (r.status === 'waiting' && r.hostId === id) closeHostIds.push(r.id);
+        // 다른 기기(uid)가 연 내 학번 방은 이 기기가 닫지 못해요(규칙). 괜히 막힌 쓰기를 보내지 않아요.
+        if (r.status === 'waiting' && r.hostId === id && !(me && r.hostUid && r.hostUid !== me)) closeHostIds.push(r.id);
         if ((r.joinRequests || []).some((row) => row.id === id && row.status === 'pending')) {
             cancelJoinIds.push(r.id);
         }

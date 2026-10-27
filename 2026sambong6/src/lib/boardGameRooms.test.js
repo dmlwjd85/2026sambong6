@@ -676,3 +676,78 @@ describe('#86 r3: 끝난 방 자동 입장·내 방 나눠 받기·한 판 더 �
         assert.ok(createBoardRoomId(0) >= split && createBoardRoomId(Date.now()) >= split);
     });
 });
+
+// #88 r3 (QA r2 R2-2·R2-4·R2-5)
+import * as R3 from './boardGameRooms.js';
+
+describe('r3 R2-2: 다른 기기 알까기 두 번째 id', () => {
+    it('alk_학번_ 6자, 같은 uid면 같은 id, uid가 다르면 다른 id', () => {
+        const a = R3.hostBoardRoomFallbackId('alkkagi', '1', 'uid-A');
+        assert.match(a, /^alk_1_[0-9a-z]{6}$/);
+        assert.equal(R3.hostBoardRoomFallbackId('alkkagi', '1', 'uid-A'), a);
+        assert.notEqual(R3.hostBoardRoomFallbackId('alkkagi', '1', 'uid-B'), a);
+        assert.equal(R3.hostBoardRoomFallbackId('gomoku', '1', 'uid-A'), '');
+        assert.equal(R3.hostBoardRoomFallbackId('alkkagi', '1', ''), '');
+        assert.ok(a < R3.BOARD_MINE_ID_SPLIT, '내 방 질의(bg_ 앞쪽)에 잡혀요');
+    });
+    it('남의 uid로 살아 있는 방이면 두 번째 id, 내 방·옛 방·30분 정리 대상이면 그대로', () => {
+        const now = 1_800_000_000_000;
+        const room = R3.createBoardRoom({ gameType: 'alkkagi', hostId: '1', hostName: '가', now: now - 60000, id: 'alk_1', hostUid: 'uid-A' }).room;
+        assert.equal(R3.needsHostBoardRoomFallback(room, { uid: 'uid-B', now }), true);
+        assert.equal(R3.needsHostBoardRoomFallback(room, { uid: 'uid-A', now }), false);
+        assert.equal(R3.needsHostBoardRoomFallback({ ...room, hostUid: '' }, { uid: 'uid-B', now }), false);
+        assert.equal(R3.needsHostBoardRoomFallback(room, { uid: 'uid-B', now: now + 31 * 60000 }), false);
+        assert.equal(R3.needsHostBoardRoomFallback(null, { uid: 'uid-B', now }), false);
+    });
+    it('다른 기기가 연 내 학번 대기 방은 닫기 목록에 넣지 않아요', () => {
+        const rooms = [
+            { id: 'alk_1', status: 'waiting', hostId: '1', hostUid: 'uid-A', members: [{ id: '1' }] },
+            { id: 'alk_1_x', status: 'waiting', hostId: '1', hostUid: 'uid-B', members: [{ id: '1' }] },
+        ];
+        assert.deepEqual(R3.collectBoardRoomVacateActions(rooms, { studentId: '1', uid: 'uid-B' }).closeHostIds, ['alk_1_x']);
+        assert.deepEqual(R3.collectBoardRoomVacateActions(rooms, { studentId: '1' }).closeHostIds, ['alk_1', 'alk_1_x']);
+    });
+});
+
+describe('r3 R2-4: uid 없는 내 자리 채우기', () => {
+    const room = { hostId: '1', hostUid: 'uid-A', members: [{ id: '1', uid: 'uid-A' }, { id: '2', name: '나', seat: 1 }] };
+    it('내 자리만 uid를 채우고 다른 칸은 그대로', () => {
+        const c = R3.claimBoardRoomSeatUid(room, { studentId: '2', uid: 'uid-B' });
+        assert.deepEqual(c.members, [{ id: '1', uid: 'uid-A' }, { id: '2', name: '나', seat: 1, uid: 'uid-B' }]);
+        assert.equal(c.hostUid, 'uid-A');
+    });
+    it('채울 필요가 없으면 null', () => {
+        assert.equal(R3.claimBoardRoomSeatUid(room, { studentId: '3', uid: 'uid-C' }), null);
+        assert.equal(R3.claimBoardRoomSeatUid(room, { studentId: '1', uid: 'uid-A' }), null);
+        assert.equal(R3.claimBoardRoomSeatUid(room, { studentId: '2', uid: 'uid-A' }), null);
+        const done = { ...room, members: [room.members[0], { id: '2', uid: 'uid-B2' }] };
+        assert.equal(R3.claimBoardRoomSeatUid(done, { studentId: '2', uid: 'uid-B' }), null);
+        assert.equal(R3.claimBoardRoomSeatUid(room, { studentId: '2', uid: '' }), null);
+    });
+});
+
+describe('r3 R2-4·R2-5: 막힌 까닭 안내', () => {
+    it('Date 머리글로 시계 차이를 재요', () => {
+        const server = Date.parse('Tue, 27 Oct 2026 05:00:00 GMT');
+        assert.equal(R3.boardRoomClockSkewMs('Tue, 27 Oct 2026 05:00:00 GMT', { sentAt: server + 11 * 60000 - 100, receivedAt: server + 11 * 60000 + 100 }), 11 * 60000);
+        assert.equal(R3.boardRoomClockSkewMs('', { sentAt: 1, receivedAt: 2 }), null);
+        assert.equal(R3.boardRoomClockSkewMs('x', { sentAt: 1, receivedAt: 2 }), null);
+    });
+    it('시계 9분 넘게 틀리면 clock, 다른 기기 자리면 other_device, 아니면 stale', () => {
+        const room = { hostId: '1', hostUid: 'uid-A', members: [{ id: '1', uid: 'uid-A' }, { id: '2', uid: 'uid-B' }] };
+        assert.equal(R3.boardRoomDeniedReason({ room, studentId: '1', uid: 'uid-A', skewMs: 11 * 60000 }), 'clock');
+        assert.equal(R3.boardRoomDeniedReason({ room, studentId: '1', uid: 'uid-A', skewMs: -11 * 60000 }), 'clock');
+        assert.equal(R3.boardRoomDeniedReason({ room, studentId: '1', uid: 'uid-A', skewMs: 8 * 60000 }), 'stale');
+        assert.equal(R3.boardRoomDeniedReason({ room, studentId: '1', uid: 'uid-A2', skewMs: 0 }), 'other_device');
+        assert.equal(R3.boardRoomDeniedReason({ room, studentId: '2', uid: 'uid-B2', skewMs: null }), 'other_device');
+        assert.equal(R3.boardRoomDeniedReason({ room, studentId: '3', uid: 'uid-C' }), 'stale');
+        assert.equal(R3.boardRoomDeniedReason({}), 'stale');
+    });
+    it('안내 문구', () => {
+        assert.match(R3.boardRoomDeniedText('clock', { skewMs: 11 * 60000 }), /약 11분 빠르게.*자동/);
+        assert.match(R3.boardRoomDeniedText('clock', { skewMs: -12 * 60000 }), /약 12분 느리게/);
+        assert.match(R3.boardRoomDeniedText('other_device', { host: true }), /처음 만든 기기/);
+        assert.match(R3.boardRoomDeniedText('other_device'), /방장에게 판을 끝내/);
+        assert.equal(R3.boardRoomDeniedText('stale'), '');
+    });
+});

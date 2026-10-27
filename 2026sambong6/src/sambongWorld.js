@@ -263,6 +263,13 @@ import {
     pickBoardRoomsToCleanup,
     boardRoomCleanupDelayMs,
     claimBoardRoomHostUid,
+    claimBoardRoomSeatUid,
+    boardRoomClockSkewMs,
+    boardRoomDeniedReason,
+    boardRoomDeniedText,
+    boardRoomMemberUids,
+    hostBoardRoomFallbackId,
+    needsHostBoardRoomFallback,
     pickMyActiveBoardRoom,
     boardRoomCleanupKey,
     rejectJoinBoardRoom,
@@ -12345,19 +12352,27 @@ ${subjectLine}
             writeBoardCleanedMemory(mem);
             const myUid = auth.currentUser.uid;
             // 여러 기기가 같은 방을 동시에 지우지 않게 기기마다 다르게 기다린 뒤, 실시간 목록에 그대로 있을 때만 지워요.
-            for (const room of due) {
+            // r3 R2-6: 방마다 따로(한꺼번에) 기다려요. 방이 여러 개여도 마지막 방이 앞 방들 기다림만큼 밀리지 않아요.
+            await Promise.all(due.map(async (room) => {
                 const key = boardRoomCleanupKey(room);
                 const wait = boardRoomCleanupDelayMs(room, myUid);
                 if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
                 const live = _boardGameRooms.find((r) => r.id === room.id);
-                if (!live || boardRoomCleanupKey(live) !== key) continue;
-                if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) continue;
+                if (!live || boardRoomCleanupKey(live) !== key) return;
+                if (!auth.currentUser || auth.currentUser.uid !== myUid) return;
+                if (!pickBoardRoomsToCleanup([live], { now: Date.now(), uid: myUid }).length) return;
                 try {
                     await deleteDoc(boardGameRoomRef(room.id));
                 } catch (e) {
                     console.warn('sweepIdleBoardRooms', room.id, e && e.code);
                 }
-            }
+            }));
+        }
+
+        // r3 R2-6: 방 목록(로비)을 열면 30초마다 정리를 다시 봐요. 목록이 그대로여도(새 스냅샷이 없어도) 정리 시각이 오면 지워요.
+        function ensureBoardIdleSweepTimer() {
+            if (_boardGameIdleTimer) return;
+            _boardGameIdleTimer = setInterval(() => { void sweepIdleBoardRooms(Date.now()); }, 30000);
         }
 
         function activeBoardPlayKind() {
@@ -12389,6 +12404,7 @@ ${subjectLine}
             const alkPlay = document.getElementById('boardgameAlkkagiPlayView');
             if (alkPlay) alkPlay.classList.toggle('hidden', !(_boardGameView === 'play' && kind === 'alkkagi'));
             syncBoardRoomSubscriptions();
+            if (_boardGameView === 'lobby') ensureBoardIdleSweepTimer();
         }
 
         function gomokuAiRoomView() {
@@ -12589,6 +12605,7 @@ ${subjectLine}
             const { closeHostIds, cancelJoinIds } = collectBoardRoomVacateActions(_boardGameRooms, {
                 studentId: me,
                 exceptRoomId,
+                uid: auth && auth.currentUser ? auth.currentUser.uid : '',
             });
             if (!closeHostIds.length && !cancelJoinIds.length) return;
             _boardGameVacating = true;
@@ -13213,9 +13230,7 @@ ${subjectLine}
                     }
                 }
             }, 250);
-            if (!_boardGameIdleTimer) {
-                _boardGameIdleTimer = setInterval(() => { void sweepIdleBoardRooms(Date.now()); }, 30000);
-            }
+            ensureBoardIdleSweepTimer();
         }
 
         async function enqueueBoardGameWrite(task) {
@@ -13242,6 +13257,58 @@ ${subjectLine}
             await window.customAlert(BOARD_STALE_NOTICE);
         }
 
+        // r3 R2-4·R2-5: 규칙이 막으면 까닭(기기 시계, 다른 기기 자리)을 먼저 살펴 맞는 안내를 띄워요.
+        async function measureBoardClockSkewMs() {
+            try {
+                const sentAt = Date.now();
+                const res = await fetch(window.location.href.split('#')[0], { method: 'HEAD', cache: 'no-store' });
+                const receivedAt = Date.now();
+                return boardRoomClockSkewMs(res.headers.get('date'), { sentAt, receivedAt });
+            } catch (_) {
+                return null;
+            }
+        }
+        async function showBoardDeniedNotice(roomId, { quiet = false, room = null } = {}) {
+            const uid = auth && auth.currentUser ? auth.currentUser.uid : '';
+            const me = boardGameSelfId();
+            const cur = room || (roomId ? _boardGameRooms.find((r) => r.id === roomId) : null) || null;
+            const skewMs = await measureBoardClockSkewMs();
+            const reason = boardRoomDeniedReason({ room: cur, studentId: me, uid, skewMs });
+            console.warn('boardDenied', roomId, reason, skewMs);
+            if (reason === 'stale') return showBoardStaleNotice(quiet);
+            const text = boardRoomDeniedText(reason, { skewMs, host: !!(cur && isRoomHost(cur, me)) });
+            const now = Date.now();
+            if (now - _boardStaleNoticeAt < 60000) return;
+            _boardStaleNoticeAt = now;
+            if (quiet && typeof window.showToast === 'function') {
+                window.showToast(text.replace(/<br>/g, ' '), 8000);
+                return;
+            }
+            await window.customAlert(text);
+        }
+
+        // r3 R2-4: 승인될 때 uid가 비어 있던 내 자리에 이 기기 uid만 먼저 채워요(규칙이 이 쓰기만 따로 받아요).
+        async function claimBoardSeatIfNeeded(ref) {
+            const uid = auth && auth.currentUser ? auth.currentUser.uid : '';
+            const me = boardGameSelfId();
+            if (!uid || !me) return;
+            const cached = _boardGameRooms.find((r) => r.id === ref.id);
+            if (cached && !claimBoardRoomSeatUid(cached, { studentId: me, uid })) return;
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(ref);
+                    if (!snap.exists()) return;
+                    const raw = snap.data() || {};
+                    const claimed = claimBoardRoomSeatUid(raw, { studentId: me, uid });
+                    if (!claimed) return;
+                    const before = Array.isArray(raw.memberUids) ? raw.memberUids.filter((u) => typeof u === 'string') : boardRoomMemberUids(raw);
+                    tx.update(ref, { members: claimed.members, memberUids: before.includes(uid) ? before : [...before, uid] });
+                });
+            } catch (e) {
+                console.warn('claimBoardSeat', ref.id, e && e.code);
+            }
+        }
+
         async function mutateBoardRoom(roomId, mutator, opts = {}) {
             if (!db) return null;
             const silent = !!(opts && opts.silent);
@@ -13251,6 +13318,7 @@ ${subjectLine}
                 return null;
             }
             const ref = boardGameRoomRef(roomId);
+            await claimBoardSeatIfNeeded(ref);
             try {
                 return await runTransaction(db, async (tx) => {
                     const snap = await tx.get(ref);
@@ -13270,7 +13338,7 @@ ${subjectLine}
                 const code = e && e.message;
                 if (isBoardWriteDenied(e)) {
                     console.warn('mutateBoardRoom', roomId, 'permission-denied');
-                    await showBoardStaleNotice(silent);
+                    await showBoardDeniedNotice(roomId, { quiet: silent });
                     return null;
                 }
                 if (silent) {
@@ -13835,6 +13903,10 @@ ${subjectLine}
                 const now = Date.now();
                 const existing = snap.exists() ? sanitizeBoardRoom({ id: snap.id, ...snap.data() }, now) : null;
                 const decision = decideBoardRoomCreate(existing, { hostId: me, now });
+                // r3 R2-2: 다른 기기(uid)가 연 내 학번 방이 살아 있으면 이 기기는 두 번째 id로 만들어요(규칙이 덮어쓰기를 막아요).
+                if (decision.action !== 'enter' && needsHostBoardRoomFallback(existing, { uid: myUid, now })) {
+                    return { action: 'fallback', error: '' };
+                }
                 if (decision.action === 'create') {
                     const made = createBoardRoom({ gameType: def.id, hostId: me, hostName: boardGameSelfName(), now, id: roomId, hostUid: myUid });
                     if (!made.ok) return { action: 'error', error: made.error };
@@ -13867,10 +13939,18 @@ ${subjectLine}
                 if (!authOk) {
                     outcome = { action: 'alert', text: '인증에 실패했습니다. 새로고침 후 다시 시도해 주세요.' };
                 } else if (fixedId) {
-                    const decision = await createHostBoardRoomOnce(def, me, fixedId);
+                    let roomId = fixedId;
+                    let decision = await createHostBoardRoomOnce(def, me, roomId);
+                    if (decision.action === 'fallback') {
+                        roomId = hostBoardRoomFallbackId(def.id, me, auth && auth.currentUser ? auth.currentUser.uid : '');
+                        decision = roomId
+                            ? await createHostBoardRoomOnce(def, me, roomId)
+                            : { action: 'error', error: 'bad_create' };
+                        if (decision.action === 'fallback') decision = { action: 'error', error: 'bad_create' };
+                    }
                     outcome = decision.action === 'error'
                         ? { action: 'alert', text: boardRoomErrorText(decision.error) }
-                        : { ...decision, roomId: fixedId };
+                        : { ...decision, roomId };
                 } else {
                     const made = createBoardRoom({
                         gameType: def.id,
@@ -13888,9 +13968,14 @@ ${subjectLine}
                 }
             } catch (e) {
                 console.error('createBoardGameRoom', e);
-                outcome = isBoardWriteDenied(e)
-                    ? { action: 'alert', text: BOARD_STALE_NOTICE }
-                    : { action: 'alert', text: '방을 만들지 못했습니다.' };
+                if (isBoardWriteDenied(e)) {
+                    // r3 R2-5: 기기 시계가 틀려 막혔으면 시계 안내를, 아니면 예전처럼 새로고침 안내를 띄워요.
+                    const skewMs = await measureBoardClockSkewMs();
+                    const reason = boardRoomDeniedReason({ studentId: me, uid: auth && auth.currentUser ? auth.currentUser.uid : '', skewMs });
+                    outcome = { action: 'alert', text: reason === 'clock' ? boardRoomDeniedText(reason, { skewMs }) : BOARD_STALE_NOTICE };
+                } else {
+                    outcome = { action: 'alert', text: '방을 만들지 못했습니다.' };
+                }
             } finally {
                 _boardGameCreating = false;
                 setBoardGameCreateBusy(false);
